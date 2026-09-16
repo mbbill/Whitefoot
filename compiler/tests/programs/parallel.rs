@@ -133,7 +133,6 @@ corpus_units! {
     corpus_par_grayscale_pixels => ["grayscale_pixels.wf"],
     corpus_par_growable_vec => ["growable_vec.wf"],
     corpus_par_heap_run => ["heap_run.wf"],
-    corpus_par_host_string_bytes => ["host_string_bytes.wf"],
     corpus_par_ipv4_checksum => ["ipv4_checksum.wf"],
     corpus_par_mandelbrot_grid => ["mandelbrot_grid.wf"],
     corpus_par_option_slots => ["option_slots.wf"],

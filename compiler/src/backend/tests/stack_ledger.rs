@@ -35,61 +35,7 @@ use super::{compile, test_directory};
 /// later read from a nonuniform array, keeping the complete local array live
 /// across the call. Reading only the slot just overwritten with depth lets
 /// LLVM eliminate the array and solve the recursion, leaving no wide frame.
-fn wide_frame_source(depth: u64) -> Vec<u8> {
-    format!(
-        r#"fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {{
-  let pad = fixed_vector::<u64, 256>();
-  for @fill (
-    at in 0_u64..256_u64,
-    invariant grown: len_of(pad) >= at,
-    invariant spare: room_of(pad) + at >= 256_u64,
-    invariant flat: head_of(pad) <= 0_u64
-  ) {{
-    let seed = v +wrap at;
-    let square = seed *wrap seed;
-    place_back(vector: &uniq pad, value: square);
-  }}
-  let wide = cvt::<u8, u64>(i);
-  set pad[wide] = depth;
-  let done = depth == 0_u64;
-  if done {{
-    return pad[wide];
-  }}
-  let next = depth -wrap 1_u64;
-  let a = spine(depth: next, v: v, i: i);
-  let after = a % 256_u64;
-  let b = pad[after];
-  return a +wrap b;
-}}
-
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {{
-  let Inputs(args: args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;
-  region {{
-    close_directory(factory: &uniq factory, directory: move cwd);
-  }}
-  let count = 0_u64;
-  region {{
-    set count = args_count(args: &args);
-  }}
-  match cvt::<u64, u8>(count) {{
-    Ok(value: idx) => {{
-      let depth = count *wrap {depth}_u64;
-      let r = spine(depth: depth, v: 3_u64, i: idx);
-      let ok = r > 0_u64;
-      if ok {{
-        return exit_status(code: 0_u8);
-      }}
-      return exit_status(code: 1_u8);
-    }}
-    Err(error: e) => {{
-      return exit_status(code: 9_u8);
-    }}
-  }}
-}}
-"#
-    )
-    .into_bytes()
-}
+use crate::native_test_support::wide_frame_source;
 
 /// The ledger for one already-emitted module, so a caller can ask for the
 /// overlapped world as well as the sequential one.
@@ -220,7 +166,7 @@ fn the_selected_architecture_matches_the_rust_target() {
 /// caller overhead and two WF frames. It cannot hide a factor-of-two frame bug.
 #[test]
 fn the_reported_ceiling_is_the_measured_one() {
-    for (wide, source) in [(false, spine_source(0)), (true, wide_frame_source(0))] {
+    for (wide, source) in [(false, spine_source(0)), (true, wide_frame_source(0, 256))] {
         let directory = test_directory();
         let emitted = compile(&source)
             .replacen(

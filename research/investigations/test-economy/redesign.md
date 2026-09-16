@@ -3586,3 +3586,99 @@ with the built compiler (no native link/run), both canonical assertions passed,
 and all 29 compiler-independent conformance-tool tests passed. Full repository
 gate, remaining redesign work and the independent completion/DCR checkpoint
 remain outstanding; no paired performance claim is made.
+
+### Implementation evidence — shared Windows programs and native boundaries
+
+B04j-r replace the Windows workflow's parallel test implementation with the
+existing corpus executable. `programs/windows.rs` retains shipped-CLI builds
+for RelativePath/AB, native components/WX and the two layout lowerings;
+`programs/network.rs` supplies the hosted echo/refusal scenarios and byte oracle.
+Its other POSIX cases retain their previous host scope rather than implicitly
+adding a new Windows matrix. `native_windows/mod.rs` owns the selected compiler
+worker/floor obligations in that same executable. Ordinary POSIX programs and
+conformance collection are unchanged. The Windows workflow selects these owned
+groups; it does not claim a complete Windows conformance run.
+
+Construction selects the actual host runtime sources, Clang and link libraries,
+and shares immutable native objects inside the process. Owned child processes
+drain both output channels concurrently, carry a 60-second execution deadline,
+and terminate/reap their process group on timeout or unwinding. Socket connect,
+accept, reads and writes have separate bounds. A control verifies exact captured
+channels/status and that a deliberately sleeping child is terminated. This is
+harness failure behavior, never a language rejection or proof budget. The
+refusal case checks two usable calls, not factory-credit restoration, and
+reports a released port subsequently acquired by another process as a fixture
+race. A different process can still claim and release that port entirely
+between observations; this test cannot atomically reserve a non-listening port
+using Rust's listener API.
+
+The component source moves from research to
+`tests/programs/windows/component_open.wf`. Both actual UTF-16 argument names
+must have native length two, copy endpoint two, complete bytes AB/BB and an
+unchanged next byte. Unicode files contain WX and narrow-name decoys DE.
+These observations subsume `host_string_bytes.wf`, which is removed together
+with its duplicate collection row. One required-IOCP build/run replaces the
+indistinguishable default/`--no-overlap` pair. The AB CLI case also reuses its
+image to reject a correct fallback result under a required-IOCP claim.
+
+The 1,009-line standalone `windows_namespace_probe.c`, its image and caller are
+retired. The receiving ordinary-library directory fixture performs actual opens,
+reads, listing and closes through a saved production directory while ambient cwd
+is elsewhere. It checks complete native Unicode names and kinds in production
+records, missing-name classification, a component's terminal-reparse refusal
+and actual handle disposal/credit restoration, and RelativePath following that
+same link to its content. Real Windows CI must create the symlink. This does not
+copy the old probe's private component validator or its dot/dot-dot policies.
+
+The short layout fixture's complete independent result remains
+`420a993efa7437a1 41fa962893d45299\n`. POSIX and Windows share the same forwarding
+observer: each fold brackets a real runtime publication and requires a distinct
+worker before the owner can join. The old aggregate-grant assertion and the
+workflow's control/ASan/debugger rebuilds after failure are removed. Their runs
+added diagnosis, not a passing verdict. Normal captured stdout/stderr/status
+remain available on failure. Malformed workers are already covered before user
+entry by the shared startup group.
+
+Windows exhaustion uses the same runtime-depth C caller and WF source
+geometries as the POSIX measured boundary. A narrow spine and an 8 KiB live
+array each compile once to assembly with a stack-usage report; the measured
+assembly itself is linked. The small-floor variant changes only the reservation
+to 1 MiB. A real command thread and an explicitly handed-off non-owner worker
+report their actual bounds and must each have at least a 64 KiB exception
+stack guarantee. Available ordinary space subtracts that guarantee, following
+[Microsoft's documented calculation](https://devblogs.microsoft.com/oldnewthing/20200610-00/?p=103855).
+The criterion fixed before the first Windows run is the measured per-level
+frame and remaining space, with the same allowance of two pages, 4,096 caller
+bytes and two WF frames; it must stay below ten percent of remaining space.
+Each geometry/thread runs just inside and outside that boundary. Outside must
+match the same image's real CRT abort control and emit exactly one stack record;
+only documented Windows abort dispositions 3 or 0xc0000409 are admitted, not
+POSIX signals or arbitrary nonzero exits. An additional ordinary-floor link of
+the narrow geometry queries both actual 1 GiB reservations without exhausting
+them. Thus the previous ten unobserved 100-million-depth executions disappear.
+Missing worker handoff, guarantee, handler or resource record cannot pass as a
+successful overflow observation. These are compiler/runtime obligations, not
+new normative rejection verdicts.
+
+Initial local evidence: the shared network/support cases passed 13 tests in
+7.08 s execution / 11.20 s including incremental Rust construction. The migrated
+component source passes canonical rendering and compiler acceptance without a
+native build. The native ordinary group passed file, directory/cursor and TCP
+checks on both helper configurations; one sandboxed attempt first reached the
+file/directory passes but was refused permission to bind its loopback socket,
+then the authorized loopback execution passed. Real Windows evidence and the
+remaining final validation are still pending for this increment.
+
+The final local shared-code run passed all 52 compiler cases across exhaustion,
+stack ledger, parallel lowering and loop splitting: 19.24 s execution / 97.06 s
+including a 77-second Rust test construction. The updated corpus then passed
+all 15 selected network/support/canonical cases in 7.05 s execution / 11.14 s
+total. All-target Clippy, formatting and diff whitespace checks passed. Ruby's
+YAML parser accepted the ten-step Windows job. Cargo metadata still contains
+one library, one compiler binary and the two existing integration executables
+`corpus` and the not-yet-migrated `snapshot`; the new Windows modules create no
+additional test executable. These focused checks do not replace the remaining
+repository-wide gate or real Windows execution. The preceding published
+revision `a49abe17` passed both hosted io-hosts jobs; its general gate still has
+the known automatic-research dependency violation while the remaining
+extractions are in progress.

@@ -102,8 +102,8 @@ fn discard_open_result(factory: &uniq HandleFactory, outcome: own Result<ReadFil
 
 fn exercise(args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(out, files) {
   doc "Copies two target-native argument names into component buffers, opens them without following terminal links, and publishes their first bytes.";
-  let name_a = buffer_new(32_u64, 0_u8);
-  let name_b = buffer_new(32_u64, 0_u8);
+  let name_a = buffer_new(8_u64, 125_u8);
+  let name_b = buffer_new(8_u64, 125_u8);
   let data_a = buffer_new(1_u64, 0_u8);
   let data_b = buffer_new(1_u64, 0_u8);
   let pair = buffer_new(2_u64, 0_u8);
@@ -111,18 +111,66 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, files: &u
     match arg_get(args: args, position: 1_u64) {
       Ok(value: text_a) => {
         region {
+          let native_length_a = host_bytes_len(value: &text_a);
+          if native_length_a == 2_u64 {
+          } else {
+            return exit_status(code: 20_u8);
+          }
           let native_window_128 = mut_slice_of(&uniq name_a);
           region {
-            match host_copy_bytes(value: &text_a, destination: &uniq native_window_128, start: 0_u64, end: 32_u64) {
+            match host_copy_bytes(value: &text_a, destination: &uniq native_window_128, start: 0_u64, end: 2_u64) {
               Ok(value: name_end_a) => {
+                if name_end_a == 2_u64 {
+                } else {
+                  return exit_status(code: 21_u8);
+                }
+                let first_a = native_window_128[0_u64];
+                if first_a == 65_u8 {
+                } else {
+                  return exit_status(code: 22_u8);
+                }
+                let second_a = native_window_128[1_u64];
+                if second_a == 66_u8 {
+                } else {
+                  return exit_status(code: 23_u8);
+                }
+                let after_a = native_window_128[2_u64];
+                if after_a == 125_u8 {
+                } else {
+                  return exit_status(code: 24_u8);
+                }
                 region {
                   match arg_get(args: args, position: 2_u64) {
                     Ok(value: text_b) => {
                       region {
+                        let native_length_b = host_bytes_len(value: &text_b);
+                        if native_length_b == 2_u64 {
+                        } else {
+                          return exit_status(code: 20_u8);
+                        }
                         let native_window_127 = mut_slice_of(&uniq name_b);
                         region {
-                          match host_copy_bytes(value: &text_b, destination: &uniq native_window_127, start: 0_u64, end: 32_u64) {
+                          match host_copy_bytes(value: &text_b, destination: &uniq native_window_127, start: 0_u64, end: 2_u64) {
                             Ok(value: name_end_b) => {
+                              if name_end_b == 2_u64 {
+                              } else {
+                                return exit_status(code: 21_u8);
+                              }
+                              let first_b = native_window_127[0_u64];
+                              if first_b == 66_u8 {
+                              } else {
+                                return exit_status(code: 22_u8);
+                              }
+                              let second_b = native_window_127[1_u64];
+                              if second_b == 66_u8 {
+                              } else {
+                                return exit_status(code: 23_u8);
+                              }
+                              let after_b = native_window_127[2_u64];
+                              if after_b == 125_u8 {
+                              } else {
+                                return exit_status(code: 24_u8);
+                              }
                               region {
                                 let native_window_122 = slice_of(&name_a);
                                 region {

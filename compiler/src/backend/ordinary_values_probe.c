@@ -249,7 +249,17 @@ static void file_probe(wf_inputs *inputs) {
 /* The fixture has one file and whichever self/parent entries this host
  * returns. A successful batch must consume new entries, so at most three
  * successful batches can precede EOF; there is no open-ended iteration. */
-static unsigned directory_contents(wf_value *source, int empty_first) {
+struct expected_entry { const void *name; size_t bytes; unsigned kind; };
+#if defined(_WIN32)
+#define WF_ENTRY(name, kind) { L##name, sizeof(L##name) - sizeof(wchar_t), kind }
+#else
+#define WF_ENTRY(name, kind) { name, sizeof(name) - 1, kind }
+#endif
+static const struct expected_entry ordinary_entries[] = {
+    WF_ENTRY(".", 2), WF_ENTRY("..", 2), WF_ENTRY("ordinary-directory.data", 1)
+};
+static unsigned directory_contents(wf_value *source, int empty_first,
+                                   const struct expected_entry *expected, unsigned count) {
     unsigned seen = 0;
     unsigned char bytes[4096], unchanged[sizeof(bytes)];
     wf_view window = {bytes, sizeof(bytes)};
@@ -278,7 +288,8 @@ static unsigned directory_contents(wf_value *source, int empty_first) {
             memcpy(unchanged + end - sizeof(eof_flags), &eof_flags, sizeof(eof_flags));
 #endif
             assert(memcmp(bytes, unchanged, sizeof(bytes)) == 0);
-            assert((seen & 4u) != 0);
+            unsigned required = ((1u << count) - 1u) & ~3u;
+            assert((seen & required) == required);
             return seen;
         }
         assert(listed.next > start && listed.entries > 0);
@@ -290,24 +301,15 @@ static unsigned directory_contents(wf_value *source, int empty_first) {
             size_t length = (size_t)bytes[at + 1] | ((size_t)bytes[at + 2] << 8);
             assert(length > 0 && length <= listed.next - at - 3);
             const unsigned char *name = bytes + at + 3;
-            char text[64];
-#if defined(_WIN32)
-            assert(length % 2 == 0 && length / 2 < sizeof(text));
-            for (size_t i = 0; i < length / 2; ++i) {
-                assert(name[2 * i + 1] == 0);
-                text[i] = (char)name[2 * i];
+            unsigned bit = 0;
+            for (unsigned entry = 0; entry < count; ++entry) {
+                if (length == expected[entry].bytes &&
+                    memcmp(name, expected[entry].name, length) == 0) {
+                    bit = 1u << entry;
+                    assert(bytes[at] == expected[entry].kind);
+                    break;
+                }
             }
-            text[length / 2] = 0;
-            assert(strlen(text) == length / 2);
-#else
-            assert(length < sizeof(text));
-            memcpy(text, name, length);
-            text[length] = 0;
-            assert(strlen(text) == length);
-#endif
-            unsigned bit = strcmp(text, ".") == 0 ? 1u :
-                           strcmp(text, "..") == 0 ? 2u :
-                           strcmp(text, "ordinary-directory.data") == 0 ? 4u : 0u;
             assert(bit && !(seen & bit));
             seen |= bit;
             at += 3 + length;
@@ -334,8 +336,8 @@ static void directory_probe(wf_inputs *inputs) {
     assert(first.tag == 0 && inputs->handles.words[0] == before - 1);
     wf_open_directory_source(&second, &inputs->handles, &inputs->cwd);
     assert(second.tag == 0 && inputs->handles.words[0] == before - 2);
-    unsigned first_entries = directory_contents(&first.value, 1);
-    unsigned second_entries = directory_contents(&second.value, 0);
+    unsigned first_entries = directory_contents(&first.value, 1, ordinary_entries, 3);
+    unsigned second_entries = directory_contents(&second.value, 0, ordinary_entries, 3);
     assert(first_entries == second_entries);
     wf_close_directory_source(&closed, &inputs->handles, &second.value);
     check_close(&closed);
@@ -345,6 +347,89 @@ static void directory_probe(wf_inputs *inputs) {
     assert(inputs->handles.words[0] == before);
     assert(remove("ordinary-directory.data") == 0);
 }
+
+#if defined(_WIN32)
+/* A saved production DirectoryRead, not the process cwd or a private NT
+ * wrapper, owns these operations. This child has exclusive cwd ownership. */
+static void windows_namespace_probe(wf_inputs *inputs) {
+    static const wchar_t file_name[] = L"\x4241", directory_name[] = L"\x4242";
+    static const wchar_t link_name[] = L"link", missing_name[] = L"missing";
+    static const struct expected_entry expected[] = {
+        WF_ENTRY(".", 2), WF_ENTRY("..", 2), WF_ENTRY("\x4241", 1),
+        WF_ENTRY("\x4242", 2), WF_ENTRY("link", 3), WF_ENTRY("ambient", 2)
+    };
+    HANDLE file = CreateFileW(file_name, GENERIC_WRITE, 0, NULL, CREATE_NEW,
+                              FILE_ATTRIBUTE_NORMAL, NULL);
+    DWORD written = 0;
+    assert(file != INVALID_HANDLE_VALUE);
+    assert(WriteFile(file, "N", 1, &written, NULL) && written == 1);
+    assert(CloseHandle(file));
+    assert(CreateDirectoryW(directory_name, NULL));
+    assert(CreateDirectoryW(L"ambient", NULL));
+    BOOLEAN linked = CreateSymbolicLinkW(link_name, file_name, 2u);
+    if (!linked && GetLastError() == ERROR_INVALID_PARAMETER)
+        linked = CreateSymbolicLinkW(link_name, file_name, 0);
+    if (!linked) fprintf(stderr, "required real Windows symlink fixture failed: %lu\n", (unsigned long)GetLastError());
+    assert(linked);
+    assert(SetCurrentDirectoryW(L"ambient"));
+    assert(GetFileAttributesW(file_name) == INVALID_FILE_ATTRIBUTES
+           && GetLastError() == ERROR_FILE_NOT_FOUND);
+
+    const uint64_t credits = inputs->handles.words[0];
+    wf_open_result opened;
+    wf_close_result closed;
+    wf_read_result read;
+    unsigned char byte = 0;
+    wf_view destination = { &byte, 1 };
+    wf_view name = { (void *)file_name, sizeof(file_name) - sizeof(wchar_t) };
+    wf__body_open_file(&opened, &inputs->handles, &inputs->cwd, &name, 0, name.length);
+    assert(opened.tag == 0 && inputs->handles.words[0] == credits - 1);
+    wf__body_read_at(&read, &inputs->handles, &opened.value, &destination, 0, 0, 1);
+    assert(read.tag == 0 && read.value == 1 && byte == 'N');
+    wf_close_read(&closed, &inputs->handles, &opened.value); check_close(&closed);
+
+    name.data = (void *)directory_name; name.length = sizeof(directory_name) - sizeof(wchar_t);
+    wf__body_open_directory(&opened, &inputs->handles, &inputs->cwd, &name, 0, name.length);
+    assert(opened.tag == 0);
+    wf_close_directory(&closed, &inputs->handles, &opened.value); check_close(&closed);
+    wf_open_directory_source(&opened, &inputs->handles, &inputs->cwd);
+    assert(opened.tag == 0);
+    (void)directory_contents(&opened.value, 1, expected, 6);
+    wf_close_directory_source(&closed, &inputs->handles, &opened.value); check_close(&closed);
+    assert(inputs->handles.words[0] == credits);
+
+    name.data = (void *)missing_name; name.length = sizeof(missing_name) - sizeof(wchar_t);
+    wf__body_open_file(&opened, &inputs->handles, &inputs->cwd, &name, 0, name.length);
+    assert(opened.tag == 1 && opened.error.tag == 0);
+    assert(opened.error.detail[0].code == ERROR_FILE_NOT_FOUND && opened.error.detail[0].origin == 1);
+    assert(inputs->handles.words[0] == credits);
+
+    /* Component open must dispose its terminal reparse handle on refusal;
+     * RelativePath open deliberately follows that same link to the regular file. */
+    DWORD handles_before = 0, handles_after = 0;
+    assert(GetProcessHandleCount(GetCurrentProcess(), &handles_before));
+    name.data = (void *)link_name; name.length = sizeof(link_name) - sizeof(wchar_t);
+    wf__body_open_file(&opened, &inputs->handles, &inputs->cwd, &name, 0, name.length);
+    assert(opened.tag == 1 && opened.error.tag == 10);
+    assert(opened.error.detail[10].code == 0 && opened.error.detail[10].origin == 0);
+    assert(inputs->handles.words[0] == credits);
+    assert(GetProcessHandleCount(GetCurrentProcess(), &handles_after));
+    assert(handles_after == handles_before);
+    wf_value text = {{ (uint64_t)(uintptr_t)link_name, 4, 0, 0 }};
+    wf_value_result path;
+    wf_relative_path(&path, &text); assert(path.tag == 0);
+    wf_open_read(&opened, &inputs->handles, &inputs->cwd, &path.value);
+    assert(opened.tag == 0 && inputs->handles.words[0] == credits - 1);
+    byte = 0;
+    wf__body_read_at(&read, &inputs->handles, &opened.value, &destination, 0, 0, 1);
+    assert(read.tag == 0 && read.value == 1 && byte == 'N');
+    wf_close_read(&closed, &inputs->handles, &opened.value); check_close(&closed);
+    assert(inputs->handles.words[0] == credits);
+    assert(SetCurrentDirectoryW(L".."));
+    assert(DeleteFileW(link_name) && DeleteFileW(file_name));
+    assert(RemoveDirectoryW(directory_name) && RemoveDirectoryW(L"ambient"));
+}
+#endif
 
 static uint16_t listener_port(const wf_value *listener) {
     unsigned port = wf_test_socket_port((int)listener->words[0]);
@@ -522,6 +607,13 @@ int wf_ordinary_values_tests(const char *scratch, const char *group) {
     assert(inputs.handles.words[0] >= 8);
     if (files) { wf_test_guard_phase("ordinary file/credits"); file_probe(&inputs); puts("ordinary file/credits: PASS"); }
     if (directory) { wf_test_guard_phase("ordinary directory/cursors"); directory_probe(&inputs); puts("ordinary directory/cursors: PASS"); }
+#if defined(_WIN32)
+    if (directory) {
+        wf_test_guard_phase("ordinary saved directory/native names/reparse");
+        windows_namespace_probe(&inputs);
+        puts("ordinary saved directory/native names/reparse: PASS");
+    }
+#endif
     if (tcp) {
         wf_test_guard_phase("ordinary TCP crossed halves/concurrent close/credits");
         assert(wf_prim_wait_init(&half_close.wait) == 0);

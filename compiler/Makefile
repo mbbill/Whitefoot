@@ -502,9 +502,6 @@ $(COMPLETION_TMP)/windows-ordinary-values-probe.exe: $(filter-out $(WINDOWS_OBJE
 $(COMPLETION_TMP)/windows-bridge-init-fail-stop-probe.exe: $(filter-out $(WINDOWS_OBJECT_DIR)/completion/bridge.o,$(WINDOWS_OBJECTS)) $(WINDOWS_OBJECT_DIR)/bridge-init-fault.o $(WINDOWS_OBJECT_DIR)/completion/windows_bridge_init_fail_stop_probe.o
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
 
-$(COMPLETION_TMP)/windows-namespace-probe.exe: $(WINDOWS_OBJECT_DIR)/windows_namespace_probe.o
-	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
-
 # Scheduler probes include core.c to expose its test hooks; their ordinary
 # entry/host leaf objects are still compatible with the runtime images above.
 $(WINDOWS_OBJECT_DIR)/sched/smoke.o: $(SCHED_DIR)/smoke.c $(SCHED_DIR)/core.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
@@ -545,7 +542,7 @@ completion-windows-route-build: $(COMPLETION_TMP)/windows-default-route-probe.ex
 completion-windows-cross: completion-windows-route-build \
     $(COMPLETION_TMP)/windows-ordinary-values-probe.exe \
     $(COMPLETION_TMP)/windows-bridge-init-fail-stop-probe.exe \
-    $(COMPLETION_TMP)/windows-namespace-probe.exe $(WINDOWS_OBJECT_DIR)/wf_floor_windows.o \
+    $(WINDOWS_OBJECT_DIR)/wf_floor_windows.o \
     $(COMPLETION_TMP)/windows-sched-smoke.exe $(COMPLETION_TMP)/windows-sched-cpu-levels.exe \
     $(COMPLETION_TMP)/windows-sched-deque.exe $(COMPLETION_TMP)/windows-sched-deque-no-stats.exe
 	@echo "Windows strict native construction: PASS (execution is a separate check)"

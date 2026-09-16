@@ -1234,20 +1234,7 @@ pub(super) fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
 
 /// Select a real worker execution without changing the runtime's code. Only
 /// call sites are wrapped; declarations and the actual queue/join stay intact.
-pub(super) fn observe_worker_schedule(module: &str) -> String {
-    format!(
-        "{}\ndeclare void @wf_test_worker_publish(ptr, ptr)\ndeclare void @wf_test_worker_join(ptr)\n",
-        module
-            .replace(
-                "call void @wf__par_publish(",
-                "call void @wf_test_worker_publish("
-            )
-            .replace(
-                "call void @wf__par_join(",
-                "call void @wf_test_worker_join("
-            )
-    )
-}
+pub(super) use crate::native_test_support::observe_worker_schedule;
 
 pub(super) const WORKER_SCHEDULE: &str = include_str!("worker_schedule.c");
 
@@ -2488,45 +2475,7 @@ fn layout_folds_preserve_permissions_and_each_execute_a_worker() {
         "no verdict may be withheld after all source bounds are proved:\n{ledger}"
     );
 
-    let mut observed = observe_worker_schedule(&llvm);
-    for (index, name) in ["layout", "layout_banded"].iter().enumerate() {
-        let body = function_body(&observed, &format!("@wf_{name}")).to_owned();
-        let entry = body
-            .lines()
-            .find(|line| line.ends_with(':'))
-            .expect("entry block");
-        let replacement = body
-            .replacen(
-                entry,
-                &format!("{entry}\n  call void @wf_test_worker_schedule_begin()"),
-                1,
-            )
-            .replace(
-                "  ret double ",
-                &format!("  call void @wf_test_layout_end(i32 {index})\n  ret double "),
-            );
-        assert!(replacement.contains(&format!("@wf_test_layout_end(i32 {index})")));
-        observed = observed.replacen(&body, &replacement, 1);
-    }
-    observed.push_str(
-        "\ndeclare void @wf_test_worker_schedule_begin()\ndeclare void @wf_test_layout_end(i32)\n",
-    );
-    let host = format!(
-        "#define WF_TEST_SCHEDULE_MANUAL\n{WORKER_SCHEDULE}\n{}",
-        r#"
-static unsigned folds;
-void wf_test_layout_end(unsigned which) {
-    if (which != folds || !atomic_load(&schedule_entered)) {
-        fprintf(stderr, "layout fold %u did not enter a real worker\n", which);
-        exit(116);
-    }
-    ++folds;
-    wf_test_worker_schedule_end();
-}
-static void report(void) { if (folds != 2) { fputs("missing layout fold\n", stderr); _Exit(117); } }
-__attribute__((constructor)) static void observe(void) { atexit(report); }
-"#
-    );
+    let (observed, host) = crate::native_test_support::observe_layout(&llvm);
     let directory = test_directory();
     let executable = build_linked_executable(&observed, Some(&host), &[], &directory);
     let output = Command::new(executable)

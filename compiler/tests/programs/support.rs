@@ -1,19 +1,86 @@
-use std::ffi::{OsStr, OsString};
-use std::io::{Read, Write};
+#[cfg(unix)]
+use std::ffi::OsStr;
+use std::ffi::OsString;
+use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Output, Stdio};
+use std::process::{Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(unix)]
+use std::time::{Duration, Instant};
 
 use whitefoot::{
-    CompilationFailure, CompilerLimits, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
-    OverlapLowering, SourceInput, compile, compile_with_overlap, compile_with_permission_ledger,
+    CompilationFailure, CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, SourceInput,
+    compile, compile_with_overlap, compile_with_permission_ledger,
 };
 
-use crate::support::append_runtime_objects;
+use crate::support::{CLANG, COMPILE_ARGUMENTS, LINK_LIBRARIES, append_runtime_objects};
+pub(super) use crate::support::{ProgramChild, run_command};
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
+
+fn select_route(command: &mut Command, native: bool) {
+    command.env_remove("WF_REQUIRE_WINDOWS_IOCP");
+    if native {
+        command.env_remove("WF_IO_NO_NATIVE_RING");
+        #[cfg(windows)]
+        command.env("WF_REQUIRE_WINDOWS_IOCP", "1");
+    } else {
+        command.env("WF_IO_NO_NATIVE_RING", "1");
+    }
+}
+
+/// Preserves the shipped CLI startup and link boundary for host programs whose
+/// contract includes it. Other program cases reuse the library construction.
+#[cfg(windows)]
+pub(super) fn build_cli_program(name: &str, parallel: bool) -> CompiledProgram {
+    let sequence = NEXT_EXECUTION.fetch_add(1, Ordering::Relaxed);
+    let directory =
+        std::env::temp_dir().join(format!("whitefoot-cli-{}-{sequence}", std::process::id()));
+    std::fs::create_dir(&directory).expect("create CLI program directory");
+    let executable = directory.join("program.exe");
+    let program = CompiledProgram {
+        directory,
+        executable,
+    };
+    let mut command = Command::new(env!("CARGO_BIN_EXE_whitefootc"));
+    command
+        .arg(corpus_directory().join(name))
+        .arg("-o")
+        .arg(&program.executable);
+    if parallel {
+        command.arg("--par");
+    }
+    let output = crate::support::timed("whitefoot-and-native-cli-build", || {
+        run_command(&mut command)
+    });
+    assert!(
+        output.status.success(),
+        "driver construction of {name}: {output:?}"
+    );
+    program
+}
+
+#[cfg(unix)]
+#[test]
+fn owned_children_capture_both_channels_and_enforce_their_deadline() {
+    let output =
+        run_command(Command::new("/bin/sh").args(["-c", "printf out; printf err >&2; exit 7"]));
+    assert_eq!(output.status.code(), Some(7));
+    assert_eq!(output.stdout, b"out");
+    assert_eq!(output.stderr, b"err");
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", "exec sleep 30"]);
+    let child = ProgramChild::spawn_with_limit(&mut command, Duration::from_millis(50))
+        .expect("spawn deadline control");
+    let started = Instant::now();
+    let error = child
+        .wait_with_output()
+        .expect_err("deadline must stop the child");
+    assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
 
 /// One invocation argument, from the bytes a case names to the host's own
 /// argument value.
@@ -39,17 +106,17 @@ fn invocation_argument(bytes: &[u8]) -> OsString {
 
 /// Links one emitted module with the same ordinary library as the driver.
 fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
-    let mut command = Command::new("/usr/bin/clang");
+    let mut command = Command::new(CLANG);
     command.arg("-x").arg("ir").arg(module);
-    command.arg("-pthread");
+    command.args(COMPILE_ARGUMENTS);
     let (sources, objects) = append_runtime_objects(&mut command, directory, None, None);
-    let compilation = command
-        .args(HOST_OPTIMIZATION_ARGUMENTS)
-        .args(HOST_LINK_LIBRARIES)
-        .arg("-o")
-        .arg(executable)
-        .output()
-        .expect("invoke host clang");
+    let compilation = run_command(
+        command
+            .args(HOST_OPTIMIZATION_ARGUMENTS)
+            .args(LINK_LIBRARIES)
+            .arg("-o")
+            .arg(executable),
+    );
     assert!(
         compilation.status.success(),
         "clang rejected emitted LLVM:\n{}\n{}",
@@ -206,16 +273,13 @@ pub fn compile_and_run(llvm: &str) -> Output {
     ));
     std::fs::create_dir(&directory).expect("create unique integration-test directory");
     let module = directory.join("program.ll");
-    let executable = directory.join("program");
+    let executable = directory.join(format!("program{}", std::env::consts::EXE_SUFFIX));
     std::fs::write(&module, llvm).expect("write integration-test module");
     crate::support::timed("native-build", || {
         link_module(&module, &executable, llvm, &directory);
     });
-    let output = crate::support::timed("native-run", || {
-        Command::new(&executable)
-            .output()
-            .expect("run integration-test executable")
-    });
+    let output =
+        crate::support::timed("native-run", || run_command(&mut Command::new(&executable)));
     std::fs::remove_file(&executable).expect("remove integration-test executable");
     std::fs::remove_file(&module).expect("remove integration-test module");
     std::fs::remove_dir(&directory).expect("remove integration-test directory");
@@ -241,7 +305,7 @@ pub fn build_program(llvm: &str) -> CompiledProgram {
     ));
     std::fs::create_dir(&directory).expect("create unique program directory");
     let module = directory.join("program.ll");
-    let executable = directory.join("program");
+    let executable = directory.join(format!("program{}", std::env::consts::EXE_SUFFIX));
     std::fs::write(&module, llvm).expect("write program module");
     crate::support::timed("native-build", || {
         link_module(&module, &executable, llvm, &directory);
@@ -253,6 +317,11 @@ pub fn build_program(llvm: &str) -> CompiledProgram {
 }
 
 impl CompiledProgram {
+    #[cfg(windows)]
+    pub(super) fn executable(&self) -> &Path {
+        &self.executable
+    }
+
     /// Runs the program in `working_directory` with `arguments` as argv[1..].
     ///
     /// Arguments are raw bytes, because the program reads them through the
@@ -260,11 +329,11 @@ impl CompiledProgram {
     /// argument that is not valid UTF-8.
     pub fn run(&self, working_directory: &Path, arguments: &[&[u8]]) -> Output {
         crate::support::timed("native-run", || {
-            Command::new(&self.executable)
-                .current_dir(working_directory)
-                .args(arguments.iter().map(|bytes| invocation_argument(bytes)))
-                .output()
-                .expect("run compiled program")
+            run_command(
+                Command::new(&self.executable)
+                    .current_dir(working_directory)
+                    .args(arguments.iter().map(|bytes| invocation_argument(bytes))),
+            )
         })
     }
 
@@ -302,9 +371,7 @@ impl CompiledProgram {
             Some(count) => command.env("WF_WORKERS", count),
             None => command.env_remove("WF_WORKERS"),
         };
-        crate::support::timed("native-run", || {
-            command.output().expect("run compiled program")
-        })
+        crate::support::timed("native-run", || run_command(&mut command))
     }
 
     /// Fresh process with explicit scheduler settings; used for the shipped
@@ -322,9 +389,7 @@ impl CompiledProgram {
         for (name, value) in settings {
             command.env(name, value);
         }
-        crate::support::timed("native-run", || {
-            command.output().expect("run configured program")
-        })
+        crate::support::timed("native-run", || run_command(&mut command))
     }
 
     /// Starts the program on one runtime route with raw invocation arguments,
@@ -337,7 +402,7 @@ impl CompiledProgram {
     /// route exactly as the standard-input cases do — `true` is the shipped
     /// default, `false` sets `WF_IO_NO_NATIVE_RING` so the same program runs
     /// through the shared file adapter instead of the kernel completion ring.
-    pub fn spawn_on_route(&self, native_ring: bool, arguments: &[&[u8]]) -> Child {
+    pub fn spawn_on_route(&self, native_ring: bool, arguments: &[&[u8]]) -> ProgramChild {
         self.spawn_on_route_with_workers(native_ring, None, arguments)
     }
 
@@ -354,7 +419,7 @@ impl CompiledProgram {
         native_ring: bool,
         workers: Option<&str>,
         arguments: &[&[u8]],
-    ) -> Child {
+    ) -> ProgramChild {
         let mut command = Command::new(&self.executable);
         command
             .current_dir(&self.directory)
@@ -362,16 +427,12 @@ impl CompiledProgram {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        if native_ring {
-            command.env_remove("WF_IO_NO_NATIVE_RING");
-        } else {
-            command.env("WF_IO_NO_NATIVE_RING", "1");
-        }
+        select_route(&mut command, native_ring);
         match workers {
             Some(count) => command.env("WF_WORKERS", count),
             None => command.env_remove("WF_WORKERS"),
         };
-        command.spawn().expect("spawn compiled program")
+        ProgramChild::spawn(&mut command).expect("spawn compiled program")
     }
 
     /// Runs the program with standard output on a pipe whose read end this
@@ -392,22 +453,18 @@ impl CompiledProgram {
         // closed before the child exists.
         let (reader, writer) = std::io::pipe().expect("create the closed destination");
         drop(reader);
-        let mut child = Command::new(&self.executable)
+        let mut command = Command::new(&self.executable);
+        command
             .current_dir(working_directory)
             .args(arguments.iter().map(|bytes| invocation_argument(bytes)))
+            .stdin(Stdio::null())
             .stdout(Stdio::from(writer))
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn compiled program");
-        let mut diagnostics = Vec::new();
-        child
-            .stderr
-            .take()
-            .expect("piped standard error")
-            .read_to_end(&mut diagnostics)
-            .expect("read the program's diagnostics");
-        let status = child.wait().expect("wait for compiled program");
-        (status, diagnostics)
+            .stderr(Stdio::piped());
+        let output = ProgramChild::spawn(&mut command)
+            .expect("spawn closed-output program")
+            .wait_with_output()
+            .expect("wait for closed-output program");
+        (output.status, output.stderr)
     }
 
     /// Runs the program with its standard input redirected from a pipe this
@@ -427,17 +484,16 @@ impl CompiledProgram {
             .stdin(Stdio::from(reader))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        if native_ring {
-            command.env_remove("WF_IO_NO_NATIVE_RING");
-        } else {
-            command.env("WF_IO_NO_NATIVE_RING", "1");
-        }
-        let child = command.spawn().expect("spawn compiled program");
-        // The writer is closed before the child is waited on, or a program
-        // that reads to end would never observe one.
-        writer.write_all(bytes).expect("fill the input pipe");
-        drop(writer);
-        child.wait_with_output().expect("wait for compiled program")
+        select_route(&mut command, native_ring);
+        let child = ProgramChild::spawn(&mut command).expect("spawn compiled program");
+        let bytes = bytes.to_vec();
+        let writer = std::thread::spawn(move || writer.write_all(&bytes));
+        let output = child.wait_with_output().expect("wait for compiled program");
+        writer
+            .join()
+            .expect("input writer thread")
+            .expect("fill input pipe");
+        output
     }
 
     /// Runs the program with its standard input redirected from a regular
@@ -456,12 +512,11 @@ impl CompiledProgram {
             .stdin(Stdio::from(file))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        if native_ring {
-            command.env_remove("WF_IO_NO_NATIVE_RING");
-        } else {
-            command.env("WF_IO_NO_NATIVE_RING", "1");
-        }
-        command.output().expect("run compiled program")
+        select_route(&mut command, native_ring);
+        ProgramChild::spawn(&mut command)
+            .expect("spawn file-input program")
+            .wait_with_output()
+            .expect("finish file-input program")
     }
 }
 
@@ -497,6 +552,7 @@ impl FixtureDirectory {
     /// makes elsewhere: a name that is any byte sequence is a fact about a
     /// POSIX file system, and it is the subject of the cases that call it.
     /// No loopback case reaches it.
+    #[cfg(unix)]
     pub fn write(&self, name: &[u8], bytes: &[u8]) -> PathBuf {
         let path = self.path.join(OsStr::from_bytes(name));
         std::fs::write(&path, bytes).expect("write fixture file");
@@ -528,6 +584,7 @@ impl FixtureDirectory {
     }
 
     /// Places a real symbolic link at `name` pointing at `target`.
+    #[cfg(unix)]
     pub fn symlink(&self, name: &str, target: &Path) {
         std::os::unix::fs::symlink(target, self.path.join(name)).expect("create fixture symlink");
     }
@@ -554,6 +611,7 @@ impl Drop for FixtureDirectory {
 ///
 /// This is not a skip. The case still fails here, because the behavior it
 /// covers genuinely went unverified.
+#[cfg(unix)]
 pub fn close_path(path: &Path) {
     set_fixture_mode(path, 0o000);
     let still_reaches = if path.is_dir() {
@@ -572,10 +630,12 @@ pub fn close_path(path: &Path) {
 }
 
 /// Restores `mode` on a path closed by `close_path`.
+#[cfg(unix)]
 pub fn reopen_path(path: &Path, mode: u32) {
     set_fixture_mode(path, mode);
 }
 
+#[cfg(unix)]
 fn set_fixture_mode(path: &Path, mode: u32) {
     let mut permissions = std::fs::metadata(path)
         .expect("fixture path metadata")

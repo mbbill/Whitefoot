@@ -16,13 +16,38 @@ use std::time::Instant;
 use whitefoot::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
-    COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
-    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
-    COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER, FLOOR_RUNTIME_SOURCE,
-    HOST_OPTIMIZATION_ARGUMENTS, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
-    ORDINARY_VALUES_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
-    SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, WINDOWS_RUNTIME_HEADER,
+    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
+    COMPLETION_WINDOWS_IOCP_HEADER, HOST_OPTIMIZATION_ARGUMENTS, ORDINARY_VALUES_HEADER,
+    ORDINARY_VALUES_LLVM, ORDINARY_VALUES_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
+    SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, WINDOWS_RUNTIME_HEADER,
 };
+
+#[cfg(unix)]
+use whitefoot::{
+    COMPLETION_FILE_POSIX_SOURCE as FILE_SOURCE, COMPLETION_LINUX_IO_URING_SOURCE as NATIVE_SOURCE,
+    COMPLETION_WAIT_HOST_SOURCE as WAIT_SOURCE, FLOOR_RUNTIME_SOURCE as FLOOR_SOURCE,
+    SCHED_PRIM_HOST_SOURCE as PRIM_SOURCE,
+};
+#[cfg(windows)]
+use whitefoot::{
+    COMPLETION_FILE_WINDOWS_SOURCE as FILE_SOURCE, COMPLETION_WAIT_WINDOWS_SOURCE as WAIT_SOURCE,
+    COMPLETION_WINDOWS_IOCP_SOURCE as NATIVE_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE as FLOOR_SOURCE,
+    SCHED_PRIM_WINDOWS_SOURCE as PRIM_SOURCE, WINDOWS_RUNTIME_SOURCE,
+};
+
+#[cfg(unix)]
+pub(crate) const CLANG: &str = "/usr/bin/clang";
+#[cfg(windows)]
+pub(crate) const CLANG: &str = "clang";
+#[cfg(unix)]
+pub(crate) const COMPILE_ARGUMENTS: &[&str] = &["-pthread"];
+#[cfg(windows)]
+pub(crate) const COMPILE_ARGUMENTS: &[&str] = &[];
+#[cfg(unix)]
+#[allow(dead_code)]
+pub(crate) const LINK_LIBRARIES: &[&str] = whitefoot::HOST_LINK_LIBRARIES;
+#[cfg(windows)]
+pub(crate) const LINK_LIBRARIES: &[&str] = &["-lws2_32", "-lshell32"];
 
 static DEFAULT_OBJECTS: OnceLock<Vec<Vec<u8>>> = OnceLock::new();
 static C11_OBJECTS: OnceLock<Vec<Vec<u8>>> = OnceLock::new();
@@ -73,7 +98,7 @@ pub(crate) fn timed<T>(phase: &str, run: impl FnOnce() -> T) -> T {
 }
 
 const SOURCES: &[(&str, &str)] = &[
-    ("wf_floor.c", FLOOR_RUNTIME_SOURCE),
+    ("wf_floor.c", FLOOR_SOURCE),
     ("ordinary_values.h", ORDINARY_VALUES_HEADER),
     ("ordinary_values.c", ORDINARY_VALUES_SOURCE),
     ("ordinary_values.ll", ORDINARY_VALUES_LLVM),
@@ -81,7 +106,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("sched/prim.h", SCHED_PRIM_HEADER),
     ("sched/entry.h", SCHED_ENTRY_HEADER),
     ("sched/core.c", SCHED_CORE_SOURCE),
-    ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
+    ("sched/prim_host.c", PRIM_SOURCE),
     ("sched/entry.c", SCHED_ENTRY_SOURCE),
     ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
     ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
@@ -97,15 +122,14 @@ const SOURCES: &[(&str, &str)] = &[
     ),
     ("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
     ("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
+    #[cfg(windows)]
+    ("windows_runtime.c", WINDOWS_RUNTIME_SOURCE),
     ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
-    ("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
+    ("completion/wait_host.c", WAIT_SOURCE),
     ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-    ("completion/file_posix.c", COMPLETION_FILE_POSIX_SOURCE),
+    ("completion/file_posix.c", FILE_SOURCE),
     ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
-    (
-        "completion/linux_io_uring.c",
-        COMPLETION_LINUX_IO_URING_SOURCE,
-    ),
+    ("completion/linux_io_uring.c", NATIVE_SOURCE),
 ];
 
 // Preserve the original link order, including all library bodies. These are
@@ -123,6 +147,8 @@ const UNITS: &[&str] = &[
     "completion/linux_io_uring.c",
     "ordinary_values.c",
     "ordinary_values.ll",
+    #[cfg(windows)]
+    "windows_runtime.c",
 ];
 
 fn stage_sources(directory: &Path) -> Vec<PathBuf> {
@@ -152,12 +178,12 @@ fn compile_objects(c_standard: Option<&str>) -> Vec<Vec<u8>> {
         .enumerate()
         .map(|(index, name)| {
             let object = directory.join(format!("unit-{index}.o"));
-            let mut command = Command::new("/usr/bin/clang");
+            let mut command = Command::new(CLANG);
             if let Some(standard) = c_standard {
                 command.arg(format!("-std={standard}"));
             }
-            let result = command
-                .arg("-pthread")
+            command
+                .args(COMPILE_ARGUMENTS)
                 .args(HOST_OPTIMIZATION_ARGUMENTS)
                 .arg("-I")
                 .arg(directory.join("completion"))
@@ -168,9 +194,8 @@ fn compile_objects(c_standard: Option<&str>) -> Vec<Vec<u8>> {
                 .arg(directory.join(name))
                 .arg("-c")
                 .arg("-o")
-                .arg(&object)
-                .output()
-                .expect("compile native library object");
+                .arg(&object);
+            let result = run_command(&mut command);
             assert!(
                 result.status.success(),
                 "clang rejected native unit {name}:\n{}",
@@ -227,3 +252,14 @@ pub(crate) fn append_runtime_objects(
         .collect();
     (sources, paths)
 }
+
+// Each harness uses a different subset of the shared native observations.
+#[allow(dead_code)]
+mod native;
+#[allow(unused_imports)]
+pub(crate) use native::{observe_layout, observe_worker_schedule, spine_source, wide_frame_source};
+
+#[allow(dead_code)]
+mod process;
+#[allow(unused_imports)]
+pub(crate) use process::{ProgramChild, run_command};

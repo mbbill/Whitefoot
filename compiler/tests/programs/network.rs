@@ -4,17 +4,23 @@
 //! These private choices preserve bytes and outcomes. C2 removed PAR-3, so
 //! the previous reverse-peer scheduling assertion and staged-lane shape
 //! assertion are retired; the source fanout loop now serves peers in order.
+//! Windows selects the existing hosted echo/refusal scope. The remaining
+//! POSIX scenarios keep their existing collection; porting a harness does not
+//! silently add another host matrix for every historical case.
 
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
-use std::process::Child;
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
 use whitefoot::{CompilerLimits, OverlapLowering, SourceInput};
 
 use super::support::{
-    CompiledProgram, build_program, compile_and_run, compile_program, compile_program_with_overlap,
-    compile_program_without_overlap, emitted_function, program_permission_ledger,
+    CompiledProgram, ProgramChild, build_program, compile_program, compile_program_with_overlap,
+};
+#[cfg(unix)]
+use super::support::{
+    compile_and_run, compile_program_without_overlap, emitted_function, program_permission_ledger,
 };
 
 /// One port the host is not using, released before the program binds it.
@@ -42,8 +48,8 @@ fn connect_when_ready(port: u16) -> TcpStream {
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
-        match TcpStream::connect(address) {
-            Ok(stream) => return stream,
+        match TcpStream::connect_timeout(&address, Duration::from_millis(100)) {
+            Ok(stream) => return bounded_stream(stream),
             Err(error) if Instant::now() < deadline => {
                 let _ = error;
                 std::thread::sleep(Duration::from_millis(10));
@@ -53,9 +59,43 @@ fn connect_when_ready(port: u16) -> TcpStream {
     }
 }
 
+fn bounded_stream(stream: TcpStream) -> TcpStream {
+    stream.set_nonblocking(false).expect("blocking peer socket");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .expect("bound peer reads");
+    stream
+        .set_write_timeout(Some(Duration::from_secs(10)))
+        .expect("bound peer writes");
+    stream
+}
+
+#[cfg(unix)]
+fn accept_when_ready(listener: &TcpListener) -> TcpStream {
+    listener
+        .set_nonblocking(true)
+        .expect("bound listener acceptance");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => return bounded_stream(stream),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("client did not connect within the test deadline: {error}"),
+        }
+    }
+}
+
 /// The exit code one finished child reported, with its diagnostics on failure.
-fn finished(child: Child) -> (i32, Vec<u8>) {
+fn finished(child: ProgramChild) -> (i32, Vec<u8>) {
     let output = child.wait_with_output().expect("wait for compiled program");
+    assert!(
+        output.stderr.is_empty(),
+        "native program diagnostics: {output:?}"
+    );
     (output.status.code().unwrap_or(-1), output.stdout)
 }
 
@@ -88,6 +128,7 @@ fn echo_exchange(program: &CompiledProgram, native_ring: bool, bytes: &[u8]) -> 
     (returned, status)
 }
 
+#[cfg(unix)]
 #[test]
 fn ipv4_checksum_uses_one_slice_consumer_for_static_and_runtime_storage() {
     let llvm = compile_program("ipv4_checksum.wf");
@@ -112,6 +153,7 @@ fn ipv4_checksum_uses_one_slice_consumer_for_static_and_runtime_storage() {
     assert!(output.stderr.is_empty());
 }
 
+#[cfg(unix)]
 #[test]
 fn tcp_calls_use_ordinary_linked_declarations() {
     let llvm = compile_program("tcp_echo.wf");
@@ -137,30 +179,32 @@ fn tcp_calls_use_ordinary_linked_declarations() {
 }
 
 #[test]
-fn a_loopback_echo_returns_every_byte_on_both_routes() {
-    let llvm = compile_program("tcp_echo.wf");
-    let program = build_program(&llvm);
+fn a_loopback_echo_preserves_all_bytes_and_half_close_on_both_routes() {
     let bytes = payload();
-    for native_ring in [true, false] {
-        let (returned, status) = echo_exchange(&program, native_ring, &bytes);
-        assert_eq!(status, 0, "native ring: {native_ring}");
-        assert_eq!(returned, bytes, "native ring: {native_ring}");
+    for parallel in [false, true] {
+        let llvm = if parallel {
+            compile_program_with_overlap("tcp_echo.wf")
+        } else {
+            compile_program("tcp_echo.wf")
+        };
+        let program = build_program(&llvm);
+        for native_ring in [true, false] {
+            for bytes in [bytes.as_slice(), &[]] {
+                let (returned, status) = echo_exchange(&program, native_ring, bytes);
+                assert_eq!(
+                    status, 0,
+                    "parallel: {parallel}, native ring: {native_ring}"
+                );
+                assert_eq!(
+                    returned, bytes,
+                    "parallel: {parallel}, native ring: {native_ring}"
+                );
+            }
+        }
     }
 }
 
-#[test]
-fn a_peer_that_stops_sending_is_the_receiving_direction_s_end_on_both_routes() {
-    let llvm = compile_program("tcp_echo.wf");
-    let program = build_program(&llvm);
-    for native_ring in [true, false] {
-        // Nothing at all is sent, so the very first `receive_next` observes
-        // the end and the program returns without failure.
-        let (returned, status) = echo_exchange(&program, native_ring, &[]);
-        assert_eq!(status, 0, "native ring: {native_ring}");
-        assert!(returned.is_empty(), "native ring: {native_ring}");
-    }
-}
-
+#[cfg(unix)]
 #[test]
 fn a_peer_that_resets_reaches_the_program_as_its_own_outcome_on_both_routes() {
     let llvm = compile_program("tcp_echo.wf");
@@ -200,6 +244,7 @@ fn a_peer_that_resets_reaches_the_program_as_its_own_outcome_on_both_routes() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn a_whitefoot_client_sends_and_receives_on_both_routes() {
     let llvm = compile_program("tcp_client.wf");
@@ -209,7 +254,7 @@ fn a_whitefoot_client_sends_and_receives_on_both_routes() {
         let port = listener.local_addr().expect("the listening address").port();
         let text = port.to_string();
         let child = program.spawn_on_route(native_ring, &[text.as_bytes()]);
-        let (mut stream, _) = listener.accept().expect("accept the client");
+        let mut stream = accept_when_ready(&listener);
         let mut sent = [0_u8; 8];
         stream
             .read_exact(&mut sent)
@@ -225,6 +270,7 @@ fn a_whitefoot_client_sends_and_receives_on_both_routes() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn four_connections_reach_one_listener_on_both_routes() {
     let llvm = compile_program("tcp_fanout.wf");
@@ -248,6 +294,7 @@ fn four_connections_reach_one_listener_on_both_routes() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn the_fanout_loop_has_only_ordinary_counted_permission() {
     // PAR-2 checks the explicit ordinary close/serve statements under its
@@ -268,7 +315,7 @@ fn the_fanout_loop_has_only_ordinary_counted_permission() {
 }
 
 #[test]
-fn a_refused_connect_restores_factory_capacity_on_both_routes() {
+fn two_refused_connects_leave_the_factory_usable_on_both_routes() {
     let llvm = compile_program("tcp_refused.wf");
     let program = build_program(&llvm);
     for native_ring in [true, false] {
@@ -280,7 +327,13 @@ fn a_refused_connect_restores_factory_capacity_on_both_routes() {
         let (status, _) = finished(child);
         // Both attempts must report ConnectionRefused; failed construction
         // leaves the same factory available for the second ordinary call.
-        assert_eq!(status, 0, "native ring: {native_ring}");
+        let reservation = TcpListener::bind(("127.0.0.1", port))
+            .expect("refusal fixture's released port was claimed by another process");
+        assert_eq!(
+            status, 0,
+            "native ring: {native_ring}; this is a released-port fixture, not a credit-count assertion"
+        );
+        drop(reservation);
     }
 }
 
@@ -289,6 +342,7 @@ fn a_refused_connect_restores_factory_capacity_on_both_routes() {
 /// peers speaking in acceptance order. The earlier reverse-order test was
 /// specifically a managed-stack concurrency requirement; this does not claim
 /// the same head-of-line-blocking behavior or throughput.
+#[cfg(unix)]
 #[test]
 fn four_peers_are_served_in_order_under_par_on_both_routes() {
     let llvm = compile_program_with_overlap("tcp_fanout.wf");
@@ -324,6 +378,7 @@ fn four_peers_are_served_in_order_under_par_on_both_routes() {
 
 /// Ordinary PAR-2 body-shape rules leave this fanout loop sequential; no
 /// suspension classification decides which calls may be handed out.
+#[cfg(unix)]
 #[test]
 fn the_fanout_loop_keeps_denied_calls_on_the_current_stack() {
     let overlapped = compile_program_with_overlap("tcp_fanout.wf");
@@ -348,6 +403,7 @@ fn the_fanout_loop_keeps_denied_calls_on_the_current_stack() {
 
 // Reconstruct two ordinary structs from unrelated halves, then close each
 // in a different order. The surviving cross must still exchange its bytes.
+#[cfg(unix)]
 const CROSSED_CONNECTIONS: &str = r#"fn cross(first: own TcpConnection, second: own TcpConnection) -> (a: own TcpConnection, b: own TcpConnection) pure {
   let TcpConnection(receive: first_receive, send: first_send) = move first;
   let TcpConnection(receive: second_receive, send: second_send) = move second;
@@ -502,6 +558,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 }
 "#;
 
+#[cfg(unix)]
 #[test]
 fn crossed_ordinary_tcp_halves_keep_the_other_directions_live() {
     for overlap in [None, Some(OverlapLowering::Off), Some(OverlapLowering::On)] {
