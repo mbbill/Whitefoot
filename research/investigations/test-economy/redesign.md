@@ -211,10 +211,13 @@ Current resource guards remain; new timing optimization is deferred.
 
 ## Review of the remaining checks
 
-Proceed after discussing the basic contract. Present one independent check
-at a time, or one inseparable group of build variants whose differences are
-explained. Do not use a whole-directory label to hide unrelated assertions.
-Read its sources and current callers before recommending a disposition.
+After accepting R07, the owner changed the discussion unit from individual
+checks to batches of related checks. Group by the protected property and
+shared resources, explain construction and callers once, and give a separate
+row for each materially different observation or disposition. A batch is a
+discussion unit, not a requirement to merge its executables. Do not use a
+whole-directory label to hide unrelated assertions. Read the sources and
+current callers before recommending dispositions.
 
 For each item, show the following in the conversation in Chinese:
 
@@ -231,9 +234,10 @@ For each item, show the following in the conversation in Chinese:
 5. **Overlap and recommendation:** identify actual receiving checks when
    proposing a merge; explain distinct coverage that must survive. Recommend
    keep, move/merge, retire, or explicit experiment-only use with reasons.
-6. **Owner decision:** record the ruling and any remaining uncertainty, then
-   present the next item. Do not advance through multiple unresolved items or
-   implement changes while the owner's execution deferral remains in force.
+6. **Owner decision:** accept a ruling on the whole batch or specified rows,
+   record exceptions and remaining uncertainty, then present the next batch.
+   Do not treat grouping as approval of its recommendations or implement
+   changes while the owner's execution deferral remains in force.
 
 Use the inventory's remaining runtime probes, platform/sanitizer checks,
 research models/oracles, benchmark construction/correctness checks,
@@ -243,12 +247,24 @@ remain selected; only a newly discovered conflict or changed premise reopens
 one. Audit individual compiler/corpus cases under the baseline as needed
 during their migration, rather than assuming their current classification is correct.
 
-The owner agreed to R01 through R06's dispositions; implementation remains
-deferred. The current item is `ordinary_values_probe.c::tcp_probe`, covering
-crossed TCP values and factory accounting. The concurrent-close group in the
-same source file remains the next separate item.
-The next item is presented only after the current owner ruling; none of these
-recommendations has been implemented.
+The owner agreed to R01 through R07's dispositions; implementation remains
+deferred. The current batch is B01, covering eight C runtime test functions
+for publication, wake and resource lifetime. It includes the concurrent TCP
+half-close case that would previously have been the next single item.
+The remaining inventory is grouped below; these are review scopes, not eight
+new test targets or a promise that every scope fits one conversation. Individual
+compiler/corpus migration audits still apply under the accepted baseline.
+
+| Batch | Related checks and existing homes | Status |
+|---|---|---|
+| B01 | Completion publication, wake and lifetime: selected `completion/harness.c` functions and `ordinary_values_probe.c::concurrent_half_close_probe` | Current; recommendations pending |
+| B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Not yet reviewed, except the selected R01-R07 coverage |
+| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/` and the related Rust backend sampling modules | Not yet reviewed |
+| B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Organization and remaining assertions not yet reviewed; preserve earlier selected host distinctions |
+| B05 | Standalone research models, compiler witnesses and their oracles under `research/experiments/`, including proof-use-cost and container representation | Not yet reviewed |
+| B06 | IO/compute benchmark construction, output correctness, regression decisions and explicit timing protocols | Not yet reviewed |
+| B07 | Repository/specification checks, formatting/lint/docs, test collection, runner/process-guard and design-tool self-tests | Not yet reviewed, except the already selected spec/grammar simplifications |
+| B08 | Historical or explicit experiment/instrument runners outside the default gate | Not yet reviewed |
 
 | Item | Check | Recommendation | Owner ruling |
 |---|---|---|---|
@@ -258,7 +274,7 @@ recommendations has been implemented.
 | R04 | Text values in the ordinary linked-library probe | Keep focused C encoding/value assertions, strengthen existing buffer observations and stop repeating text for helper settings that it does not use; details below | Agreed; implementation deferred |
 | R05 | Ordinary file acquisition, reads, close and factory accounting | Keep focused C library integration assertions for exact credits and result construction, tighten refusal/buffer observations and correct overstated overlap claims; details below | Agreed; implementation deferred |
 | R06 | Ordinary directory enumeration and independent cursors | Keep the real-directory C integration case; observe known entries and cursor independence, require progress and bounded completion, and check the actual writable window; details below | Agreed; implementation deferred |
-| R07 | Crossed ordinary TCP halves and factory accounting | Keep precise native per-resource credit observations, retarget the existing transfer fixture to the surviving halves and share TCP setup/guards without adding a WF case; details below | Pending |
+| R07 | Crossed ordinary TCP halves and factory accounting | Keep precise native per-resource credit observations, retarget the existing transfer fixture to the surviving halves and share TCP setup/guards without adding a WF case; details below | Agreed; implementation deferred |
 
 ### R01 — Completion core/read probe
 
@@ -911,7 +927,7 @@ implementation remains deferred.
   this ruling neither retires their cases nor adds new WF runs to duplicate
   the focused C observations.
 
-The TCP-value and concurrent-close groups remain separate upcoming items.
+The TCP-value and concurrent-close groups are recorded separately below.
 No implementation, test retirement, specification change, execution or timing
 measurement accompanies this record.
 
@@ -994,7 +1010,8 @@ to have carried the calls. `false` disables the native engine. That matrix
 retains its separate review scope; this item does not add another WF case,
 change its configurations or equate an allowed default with observed routing.
 
-**Recommendation, pending owner ruling.**
+**Selected disposition.** The owner agreed to the following recommendations.
+Implementation remains deferred; this ruling does not change the live tree.
 
 - Keep this focused C ordinary-library integration group in the existing
   backend test area and common runtime verification stage of local and host
@@ -1028,6 +1045,118 @@ change its configurations or equate an allowed default with observed routing.
 
 No implementation, test retirement, specification revision, construction,
 execution or timing measurement accompanies this record.
+
+### B01 — C runtime publication, wake and lifetime
+
+**Shared boundary and construction.** These eight existing test functions
+check native implementation obligations. They use C assertions and direct
+runtime calls, not Rust `#[test]`, WF compilation or compiler-emitted ABI
+evidence. Seven live in `compiler/src/backend/completion/harness.c`; the
+eighth is `compiler/src/backend/ordinary_values_probe.c::concurrent_half_close_probe`.
+They are grouped for review, not proposed as a new executable.
+
+The completion harness is built from eleven C translation units:
+`sched/{core,prim_host,entry}.c` and
+`completion/{runtime,wait_host,file_adapter,file_posix,bridge,linux_io_uring,native_contract,harness}.c`.
+Compiler `completion-test` uses C11, `-O2 -g`, strict warnings and pthreads,
+with the directory/poll and harness observation macros in `compiler/Makefile`.
+It runs the whole harness with helpers 0, 1 and 4, and again with no-cache
+policy and helpers 1. Root `make check` and compiler `static` reach this
+target; Linux/macOS gate and Linux IO-host CI call it. Linux can additionally
+require the native ring. ASan/UBSan and TSan rebuild this harness with the
+same hooks; TSan runs helpers 0, 1 and 4. These are instrumented executions,
+not WF tests. A required-ring invocation does not mean each pure state test
+uses the ring.
+
+The ordinary-values executable retains R04-R07's eleven-source POSIX or
+twelve-source Windows construction, real host callers and helpers 0/2. Its
+`WF_COMPLETION_SHUTDOWN` observer differs from the completion harness's
+hooks. No current ordinary-values sanitizer caller was found; the other
+harness's sanitizer results do not cover this executable.
+
+Both need a C toolchain and executable scratch storage. Additional resources
+are listed per row. Counts below describe source-defined work, not newly
+measured durations or proof that an observed schedule is exhaustive.
+
+| Row and function in `harness.c` unless qualified | Actual work and failure observation | Recommendation, pending owner ruling |
+|---|---|---|
+| B01a `test_exactly_one_completion_per_submission_under_race` | Create an eight-byte file; start 12 pthread callers together. Each submits/joins 64 one-byte positioned reads through its own stack records: 768 requests per invocation. Check every value/error/byte and the aggregate publication delta of 768; join all callers. Detects observed lost/extra publications, result mixups and hangs, not every possible schedule. | Keep the real concurrent bridge test and useful route/helper/sanitizer variants. Do not replace it with a single-thread state test or retire rounds solely from the number 768. Reassess its worker/round matrix with the common configuration review, with a stated failure mechanism for retained dimensions. |
+| B01b `test_a_completion_publishes_results` | Two direct, same-thread record publications with no registered record waiter. The first checks PENDING, then DONE and value 7; the second checks publication of a close record. No file or extra caller thread. | Keep a small record-publication unit check in the common C runner. Do not describe the previously stored value surviving a same-thread call as cross-thread visibility evidence or give it its own helper matrix/executable. |
+| B01c `test_unified_wake_epoch` | On a fresh local runtime, notify with no sleeper: epoch advances, no host wake. Parking against the old epoch returns immediately. Then arrange one real sleeping pthread, notify compute and require a wake plus exact callback/statistic deltas. | Keep the distinct no-sleeper, changed-epoch and one-sleeper branches as a wake-protocol unit group. It does not use file helpers or native IO routing. |
+| B01d `test_equal_epoch_notification_rearms_before_resleep` | With one real sleeper, deliver a delayed notification's reset/broadcast tail without advancing its captured epoch. A wait-return hook and mutex handshake observe that it really wakes and rearms before sleeping again. A subsequent notification must wake it and leave no parked thread. | Keep this controlled lost-wakeup regression. It observes an interleaving absent from ordinary one-wake success; do not replace the handshake with sleeps or bulk repetition. |
+| B01e `test_one_epoch_wakes_every_announced_thread` | Arrange two real sleepers at one epoch. One compute notification must release both, while the host callback and wake-signal counters advance once. | Keep the two-sleeper/broadcast observation alongside the one-sleeper case. One cannot establish the other's branch; two threads are sufficient for this stated distinction. |
+| B01f `test_condition_notifications_coalesce_without_suppressing_external_wakes` | Same-thread scripted announcements, with no actual sleeper: three bursts of 1,024 notifications. Check condition-signal coalescing, rearming for a new announcement, cancellation/no-waiter handling, and an external callback for every notification while announced. | Keep all these state transitions as unit cases, with a small explicit sequence containing repeated notifications. The current Boolean rearm/announcement branches give no separate boundary meaning to 1,024; this is not a concurrent stress test. Keep real sleeper delivery in B01c-e. |
+| B01g `test_shutdown_refuses_every_later_entry` | Real pipe, scripted clock, one primer read and 20 queued reads grow four helpers; feed/drain the reads before shutdown. After shutdown check zero/unused query results, `EINVAL` for changing the cap and for a second shutdown. It tests post-shutdown guards and teardown of a previously populated pool, not cancellation with pending IO or concurrent new admission. | Preserve all six post-shutdown observations, but append them to `test_pool_grows_when_operations_wait` after its existing shutdown, retaining its four-helper precondition. That case already uses the same pipe, cap, scripted clock and 21-read growth/drain fixture. Remove this duplicate fixture invocation rather than the teardown coverage; the broader helper-policy review remains B02. |
+| B01h `ordinary_values_probe.c::concurrent_half_close_probe` | Real port-zero loopback sockets plus one auxiliary native caller. Pause one direction immediately before actual host `shutdown`; complete the other; resume the paused call. Check credit timing/recipient, then require the next connection to reuse the released descriptor slot, transfer one byte each way and close everything with balanced credits. Run both paused directions. | Keep this deliberate lifetime race and same-slot reuse observation in the ordinary-library C integration group; sequential crossed values and raw bridge release counts do not replace it. Add a common bounded process/phase guard and make the same-slot fixture premise explicit and controlled. Details below. |
+
+**TCP schedule and its limits.** B01h first acquires a listener and one
+connected pair (three credits). The extra caller selects receive or send and
+requests a 1 MiB thread stack. The shutdown hook announces that it is paused
+under a mutex and waits for an explicit resume predicate; the main caller
+waits for that announcement before closing the other direction. The actual
+host operation can run on a helper or the joining caller. It is the host
+shutdown that is paused, not necessarily the auxiliary thread itself.
+
+While it is paused, the opposite close succeeds without returning a credit
+to the input factory. After resumption, the original call must succeed and
+return exactly one credit to its initially empty, separate factory. That
+factory opens the replacement connection and falls to zero. The test asserts
+that the replacement's runtime descriptor equals the released descriptor:
+an OS descriptor on POSIX, a CRT descriptor resolving to a Winsock handle on
+Windows. Both replacement directions transfer `q`; their closes, the old
+client's closes and the listener close restore the input factory's initial
+capacity. Normal execution uses eighteen ordinary IO calls per direction
+case, five acquisitions in total and at most four simultaneously live socket
+descriptors. Two direction choices across helpers 0/2 give four controlled
+interleavings per ordinary-values target, without a repeated stress loop.
+
+The thread primitive is detached on POSIX and closes its thread handle on
+Windows. The `finished` predicate and wait mutex publish the callback's last
+use of the stack argument; the lack of a pthread join is not itself evidence
+of a lifetime defect. The important gaps are the unbounded pause/finish waits
+and blocking socket calls, no direct native-socket liveness observation at
+the paused checkpoint, and a same-slot assertion without explicit fixture
+control over intervening descriptor allocation. Preserve the equality
+observation: dropping it would stop testing reset of that descriptor's
+half-close state. Establish a small host-specific reuse fixture or otherwise
+justify and control the allocation premise; do not add an unbounded
+open-until-reused loop. Observe native socket validity and the existing
+factory balances at the paused checkpoint before releasing the hook.
+
+The implementation ground is concrete: `file_posix.c` and `file_windows.c`
+perform shutdown before `wf_file_connection_release`; the latter resets its
+per-descriptor state before final close. Publishing a direction's release
+before its last host use would permit the other direction to close/recycle
+the resource too early. Fresh bidirectional IO and balanced final closes
+also check that the reused slot starts with fresh half-close state. R03's
+sequential bridge lifetime assertions, R07's crossed identity/accounting
+and compiled WF's process-alive EOF observation retain their separate value.
+
+**Common home and stage recommendation, pending owner ruling.** Keep these
+as native runtime implementation tests under the existing backend owners,
+executed in the local runtime correctness stage and applicable host CI.
+They do not belong in conformance or programs merely because some use real
+sockets. Share compatible construction and report logical subcases; add no
+WF wrapper or per-row executable. Run local-runtime wake/state cases once
+per relevant host/instrumentation configuration, not again for every helper,
+ring and no-cache setting they do not inspect. Keep genuine concurrent
+bridge/helper/host distinctions and fresh assertions; a changed macro/link
+configuration is still a separate construction input.
+
+The completion harness already has a single 300-second process alarm that
+names the current test, plus five-second waits in its wake probes. This is
+not a reset-on-progress watchdog or a separate bound for every case. Reuse
+the common bounded process/phase reporting policy for both harnesses and
+preserve deterministic handshakes. Include real threaded cases, including
+the ordinary shutdown observer, in the appropriate shared sanitizer scope
+when B04 settles its wiring; TSan does not establish absence of logical
+lost-wakeup or premature-close errors, so keep the explicit assertions.
+
+The adjacent harness timing loop, remaining helper/join/adapter cases and
+platform-specific wake implementations are outside this batch. No tests,
+builds, timing runs, specification changes or new DCR/completion review
+accompany these pending recommendations. R07's accepted disposition and the
+owner's grouped-review instruction are the only new rulings recorded here.
 
 ## Affected material and evidence
 
