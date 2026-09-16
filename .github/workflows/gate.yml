@@ -6,7 +6,7 @@
 # every compiler-owned C unit, the ELF link path — was covered by a container
 # on that same machine or by nothing at all. These jobs run the identical
 # group inventory and recipes on GitHub-hosted Linux and macOS
-# runner, so a Linux result is a real x86-64 Linux kernel rather than a
+# runners, so a Linux result is a real x86-64 Linux kernel rather than a
 # virtualized aarch64 guest.
 #
 # Local make check walks the root Makefile's groups in order. This workflow
