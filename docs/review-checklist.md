@@ -208,10 +208,10 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
   not only job names. Useful cases and necessary oracles are extracted into
   formal test ownership; the remaining research stays explicitly invoked.
   Moving a wrapper or copying a whole experiment is not sufficient.
-  Check that automated boundary enforcement covers changed executable paths
-  and that formal CI runs without research inputs. Changed enforcement needs
-  representative forbidden-dependency and allowed-citation controls; a text
-  scan alone does not establish absence of dynamic dependencies.
+  Check automated dependency-check coverage for changed executable paths;
+  inspect dynamic or indirect paths it cannot resolve. Changed checking needs
+  representative forbidden-dependency and allowed-citation controls. Keep
+  normal complete checkouts; hiding or removing research is not enforcement.
 
 ## R. Decisions — changed choices, premises or relevant evidence
 

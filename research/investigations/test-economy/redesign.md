@@ -199,54 +199,40 @@ already stopped reaching research.
 an automatic mechanism to prevent future research dependencies. Formally
 owned reference implementations and independent oracles remain permitted.
 
-The proposed mechanism has two complementary parts, implemented with the
-selected extraction rather than enabled now with exceptions for old imports:
+Extend the existing `repository-invariants` check, reached by `make static`,
+`make check` and the CI static job, with a lightweight compiler-independent
+dependency check. Retain ordinary complete checkouts locally and in CI.
+Omitting research from checkout was considered, but adds checkout and cache
+conditions beyond the demonstrated need to catch accidental dependency
+regressions. Do not omit, hide, rename or delete research to enforce this rule.
 
-1. Extend the existing `repository-invariants` check, reached by `make static`,
-   `make check` and the CI static job, with a compiler-independent dependency
-   check. It covers executable source/build configuration in the compiler and
-   formal tests, and commands/helpers reached by automatic workflows. Report
-   the referring file/line and forbidden destination for detectable input
-   references: Rust include/path attributes, C/LLVM includes or adapter inputs,
-   runtime fixture reads, Cargo/build inputs and Make/script invocations.
-   Account for relative paths and symlink destinations. Documentation and
-   source comments may cite research evidence; research may use formal tests.
-   Explicit-only research commands remain legal, but a whole-file exclusion
-   cannot hide an automatic arm in the same Makefile or workflow. Keep this
-   a small check of supported reference forms, not a new Rust executable or
-   a purported universal interpreter for Rust, shell, Make and workflow code.
-2. Run the ordinary formal CI builds/tests, including paired performance
-   inputs, from checkouts without materialized `research/` inputs. Use the
-   existing scheduled runs, not a second build/test matrix. This exposes an
-   actual file dependency even when its path was assembled dynamically and
-   missed by static inspection. It changes CI-owned workspaces only; a local
-   gate must never rename or delete the owner's research directory. Manual
-   experiment jobs retain their research inputs. Shared caches/artifacts must
-   not restore research source or silently supply a previously constructed
-   research-dependent product; establish the boundary with appropriate fresh
-   construction at migration, without requiring every later gate to be cold.
+Check detectable input references in compiler/formal-test source and build
+configuration, plus automatic workflow commands and their helpers: Rust
+include/path attributes, C includes, LLVM adapter and runtime fixture paths,
+Cargo/build inputs and Make/script invocations. Report the referring file/line
+and forbidden destination, handling supported relative paths and symlink
+destinations. Documentation and source comments may cite research evidence;
+research may reuse formally owned fixtures. Explicit-only research commands
+remain legal, but excluding a whole mixed-purpose Makefile or workflow must
+not conceal an automatic arm.
 
-The cheap scan provides early local diagnostics and can catch dormant literal
-imports; absent CI inputs check the paths actually built/executed. Neither a
-text scan nor a passing run proves independence of every unexecuted dynamic
-path. This is repository dependency discipline, not a hostile-code sandbox:
-fetching inputs back from git, another checkout or a cache is not an exception.
-Completion-checklist T6 still follows changed callers and transitive inputs.
-The implementation must report its actual scanner coverage and CI execution
-scope instead of claiming a general dependency proof.
+Keep the check small and state exactly which forms it recognizes. It does not
+interpret arbitrary Rust, shell or Make, and cannot establish the destination
+of every dynamically constructed path. Completion-checklist T6 follows changed
+callers and transitive inputs, including paths the check cannot resolve.
+Splitting a forbidden path to evade the check does not make the dependency
+permitted. This is an early diagnostic for repository discipline, not a
+security boundary or a complete dependency proof.
 
-Validate the new machinery with small temporary fixtures for a direct include,
-a helper-to-research dependency, a dynamic required-input read and a symlink,
-plus allowed documentation/comment citations and research-to-formal reuse.
-These controls should exercise the selected checker/environment, not compile
-another WF program. No warning-only mode or permanent allowlist of the current
-fourteen Rust consumers is selected. If the check needs a helper script,
-its home is the existing `.github/` verification tooling, wired to the existing
-target; do not put repository checking in the conformance runner merely because
-both can use Python. B07's repository-invariants review owns the exact wiring;
-B06 must account for both candidate and baseline performance inputs. The
-enforcement implementation and its case-level acceptance evidence remain
-deferred with the rest of the redesign.
+Validate the checker with small source/configuration fixtures for the supported
+direct and helper references, relative paths/symlinks and allowed citations;
+do not compile another WF program. Enable it with the selected extraction,
+without a permanent allowlist for the existing fourteen Rust consumers or a
+warning-only substitute. If a helper script is needed, use existing `.github/`
+verification tooling and wire it to the current target; this repository rule
+does not belong in the conformance runner. B07's repository-invariants review
+owns exact wiring and coverage, and B06 includes both candidate and baseline
+performance inputs. Implementation remains deferred with the redesign.
 
 ### What earns a test its place
 
