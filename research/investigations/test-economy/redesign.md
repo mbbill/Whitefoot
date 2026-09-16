@@ -65,9 +65,10 @@ individual retirements and the final target layout.
 ## Basic test contract
 
 The owner selected the review method: establish this baseline for compiler
-`#[test]` cases and the four corpora first, then consider every remaining
-check one at a time. The owner selected the baseline, including admission by
-protected property, and added caution about the cumulative cost of new cases
+`#[test]` cases and the four corpora first, then consider the remaining
+checks. The discussion now uses the related batches below. The owner selected
+the baseline, including admission by protected property, and added caution
+about the cumulative cost of new cases
 that compile and run WF. These choices are recorded for later implementation;
 execution remains deferred. They introduce no WF language rule, elapsed-time
 limit or new measurement campaign. The corresponding additions to the pending
@@ -247,24 +248,42 @@ remain selected; only a newly discovered conflict or changed premise reopens
 one. Audit individual compiler/corpus cases under the baseline as needed
 during their migration, rather than assuming their current classification is correct.
 
-The owner agreed to R01 through R07's dispositions; implementation remains
-deferred. The current batch is B01, covering eight C runtime test functions
-for publication, wake and resource lifetime. It includes the concurrent TCP
-half-close case that would previously have been the next single item.
+The owner agreed to R01 through R07 and B01, and selected the common C runner
+direction described below. Implementation remains deferred. The current batch
+is B02: twenty-two remaining completion adapter/bridge behavior functions,
+grouped into nine related rows. The adjacent platform inventory and timing
+loop retain their explicit B04/B06 review homes.
 The remaining inventory is grouped below; these are review scopes, not eight
 new test targets or a promise that every scope fits one conversation. Individual
 compiler/corpus migration audits still apply under the accepted baseline.
 
 | Batch | Related checks and existing homes | Status |
 |---|---|---|
-| B01 | Completion publication, wake and lifetime: selected `completion/harness.c` functions and `ordinary_values_probe.c::concurrent_half_close_probe` | Current; recommendations pending |
-| B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Not yet reviewed, except the selected R01-R07 coverage |
+| B01 | Completion publication, wake and lifetime: selected `completion/harness.c` functions and `ordinary_values_probe.c::concurrent_half_close_probe` | Agreed; implementation deferred |
+| B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Current; recommendations pending |
 | B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/` and the related Rust backend sampling modules | Not yet reviewed |
 | B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Organization and remaining assertions not yet reviewed; preserve earlier selected host distinctions |
 | B05 | Standalone research models, compiler witnesses and their oracles under `research/experiments/`, including proof-use-cost and container representation | Not yet reviewed |
 | B06 | IO/compute benchmark construction, output correctness, regression decisions and explicit timing protocols | Not yet reviewed |
 | B07 | Repository/specification checks, formatting/lint/docs, test collection, runner/process-guard and design-tool self-tests | Not yet reviewed, except the already selected spec/grammar simplifications |
 | B08 | Historical or explicit experiment/instrument runners outside the default gate | Not yet reviewed |
+
+**Selected C runner organization.** The owner agreed to consolidate compatible
+C cases into one main runtime test executable, with logical case groups rather
+than a binary per category. Scope scripted directory/clock/other hooks to the
+case that needs them and forward ordinary host calls elsewhere. Preserve the
+small number of justified construction variants: the isolated core/read
+publication implementation conflicts with the real bridge's strong symbol,
+the uninstrumented default-policy probe needs its actual shipped-call build,
+and sanitizer instrumentation changes the artifact. Share compatible native
+objects with correct dependencies across those variants.
+
+One executable can still need several fresh processes: helper count and native
+engine selection are initialized once per process. Select only the cases that
+observe each setting rather than rerunning the entire suite for every setting.
+Compatible cases run together under one configuration, through a common entry
+point. This is not authorization to merge incompatible hooks, reset live
+runtime singletons, remove required host observations or start implementation.
 
 | Item | Check | Recommendation | Owner ruling |
 |---|---|---|---|
@@ -1048,6 +1067,9 @@ execution or timing measurement accompanies this record.
 
 ### B01 — C runtime publication, wake and lifetime
 
+**Owner ruling.** Agreed, including the common runner direction above;
+implementation remains deferred. No exact live-tree wording was approved.
+
 **Shared boundary and construction.** These eight existing test functions
 check native implementation obligations. They use C assertions and direct
 runtime calls, not Rust `#[test]`, WF compilation or compiler-emitted ABI
@@ -1078,7 +1100,7 @@ Both need a C toolchain and executable scratch storage. Additional resources
 are listed per row. Counts below describe source-defined work, not newly
 measured durations or proof that an observed schedule is exhaustive.
 
-| Row and function in `harness.c` unless qualified | Actual work and failure observation | Recommendation, pending owner ruling |
+| Row and function in `harness.c` unless qualified | Actual work and failure observation | Selected disposition |
 |---|---|---|
 | B01a `test_exactly_one_completion_per_submission_under_race` | Create an eight-byte file; start 12 pthread callers together. Each submits/joins 64 one-byte positioned reads through its own stack records: 768 requests per invocation. Check every value/error/byte and the aggregate publication delta of 768; join all callers. Detects observed lost/extra publications, result mixups and hangs, not every possible schedule. | Keep the real concurrent bridge test and useful route/helper/sanitizer variants. Do not replace it with a single-thread state test or retire rounds solely from the number 768. Reassess its worker/round matrix with the common configuration review, with a stated failure mechanism for retained dimensions. |
 | B01b `test_a_completion_publishes_results` | Two direct, same-thread record publications with no registered record waiter. The first checks PENDING, then DONE and value 7; the second checks publication of a close record. No file or extra caller thread. | Keep a small record-publication unit check in the common C runner. Do not describe the previously stored value surviving a same-thread call as cross-thread visibility evidence or give it its own helper matrix/executable. |
@@ -1132,7 +1154,7 @@ also check that the reused slot starts with fresh half-close state. R03's
 sequential bridge lifetime assertions, R07's crossed identity/accounting
 and compiled WF's process-alive EOF observation retain their separate value.
 
-**Common home and stage recommendation, pending owner ruling.** Keep these
+**Selected common home and stage.** Keep these
 as native runtime implementation tests under the existing backend owners,
 executed in the local runtime correctness stage and applicable host CI.
 They do not belong in conformance or programs merely because some use real
@@ -1155,8 +1177,76 @@ lost-wakeup or premature-close errors, so keep the explicit assertions.
 The adjacent harness timing loop, remaining helper/join/adapter cases and
 platform-specific wake implementations are outside this batch. No tests,
 builds, timing runs, specification changes or new DCR/completion review
-accompany these pending recommendations. R07's accepted disposition and the
-owner's grouped-review instruction are the only new rulings recorded here.
+accompany this discussion record. The owner subsequently accepted the batch
+and the common-runner direction; no implementation is claimed.
+
+### B02 — Completion adapter, bridge and progress behavior
+
+**Shared inputs, construction and callers.** All twenty-two functions below
+are in `compiler/src/backend/completion/harness.c`, using its existing C
+assertion runner, the eleven-source build and hooks described in B01. No Rust
+test executable, WF source or compiler invocation is involved. The existing
+`completion-test`, compiler `static`, root `make check`, Linux/macOS gate and
+Linux IO-host callers currently repeat the whole executable across helper,
+no-cache and some required-ring configurations. ASan/UBSan and TSan are
+separate instrumented builds. This POSIX harness is not itself the Windows
+test runner; B04 owns equivalent actual-host evidence and final variant wiring.
+
+The sources use scratch files/directories/FIFOs, pipes, local sockets and
+native threads. A scripted clock chooses measured-wait classifications; these
+are deterministic policy inputs, not measurements of this machine's speed.
+Local adapters created by a case have their own explicit helper bounds, while
+the bridge uses its process-wide initialized configuration. Keep that
+distinction when consolidating invocations.
+
+**Recommendations below are pending the owner's ruling.** Function names in
+the table omit the common `test_` prefix. Counts describe one invocation of
+the present source, not newly measured execution costs.
+
+| Row and current functions | Actual operations and observations | Recommendation |
+|---|---|---|
+| B02a `linux_independent_operations_use_available_target`; `bridge_independent_positioned_reads` | The Linux case creates an `xy` file, submits two one-byte reads and checks bytes plus exact native/fallback submission deltas; its native arm also expects no initialized target helpers. The second creates a different file, submits two four-byte reads at different offsets and joins in reverse order; it additionally refuses an offset above `INT64_MAX`, requiring `EINVAL`, one publication, no inline execution and an unchanged buffer. Its success-route checks use cumulative `>= 2` counters. | Merge the two-read fixtures into one bridge read group. Retain result/offset association, reverse join, the oversized-offset refusal and exact per-case route observations. Replace cumulative counters with deltas tied to the operations being claimed. Reverse join is not proof of reverse completion; R01 retains its deliberately arranged completion order. Keep native startup/helper expectations at an explicit fresh-process phase rather than making them depend on unrelated tests having initialized the adapter or not. |
+| B02b `single_thread_file_progress`; `bridge_open_status_and_close_are_typed_operations`; `checked_open_rejects_and_closes_nonregular_descriptors`; `open_failure_classes_are_typed_outcomes` | Direct zero-helper adapter: queue an open and invalid close together, observe queue/progress counts and `EBADF`, then positioned write/read, status and close. Bridge: open/status/close and a second close returning `EBADF`. Kind/failure fixtures add FIFO-as-regular, directory-as-regular, missing name, regular-as-directory and a successful directory control; wrong-kind results must already have closed their returned native descriptor. Status checks currently establish the returned byte count, not decoded size/kind. | Share a controlled fixture and operation/result helpers; consolidate kind/failure expectations as named rows, keeping exact error/discriminator and descriptor-lifetime assertions. Retain the distinct direct-adapter and bridge entry obligations rather than counting them as two language rules. Inspect stable status fields such as the known file size and kind, not raw `struct stat` padding. No standalone executable or duplicate WF case is needed. |
+| B02c `submitted_open_resolves_the_submitters_bytes`; `a_name_no_pool_record_could_hold_takes_the_completion_path`; `open_results_reach_every_independent_owner` | The first observes the caller's path pointer in a delayed direct-adapter request, then two bridge opens resolving separate A/B marker files, plus a directory marker. It also creates a second directory that is never opened. The long-path case builds up to five 240-byte components, submits a 1,211-byte relative file name and compares the result with the same host's ordinary open, including host refusal; its 1,024-byte threshold names a retired buffer. The owner case starts six threads opening the same empty file; half yield 64 times before joining, with no actual observation that completion preceded the join. | Use one marked-name/independent-owner group with distinct file identities and controlled completion observations. Preserve the delayed borrowed-pointer obligation, directory resolution and the long path reaching the engine unchanged; remove the unused second directory and historical-buffer naming as an active contract. Two independent callers with different marker files supply the identity distinction better than six identical opens. Arrange/observe an already-completed record before its join; use B02g for the real waiting path. Do not treat yielding as a scheduling guarantee or mutate loaned path bytes. |
+| B02d `more_operations_outstanding_than_the_old_capacity`; `a_submitted_operation_is_kicked_before_it_waits` | Submit 96 positioned reads of an eight-byte file before joining any, then check each result. This exceeds the current 64-entry native submission depth, although operations may finish during submission: it does not establish 96 simultaneously pending kernel operations. The doorbell case opens an eight-byte file, makes one read then a two-read batch, and on the native route checks no submit-time enter, one enter on the first join and no extra enter on the second. | Keep admission/progress beyond the current engine batch boundary and the one-/two-request enter-count observations. Name current queue/engine behavior, not a deleted pool limit; establish the pressure/progress condition instead of inferring it solely from the number 96. Scope doorbell assertions to an observed/required native route, with shared fixtures and fresh counter deltas. Its non-native branch merely repeats file success already covered elsewhere. These operation counts protect a mechanism and are not an exploratory timing benchmark. |
+| B02e `uncached_reads_are_target_policy_only` | Four opens on an eight-byte regular file/missing name: checked success, unchecked success, wrong-kind refusal and absent-name failure; one read verifies the bytes. Check relevant open flags and the aggregate number of forwarded no-cache host hints, two when enabled and zero otherwise. | Keep one cache-policy group selected with the setting absent/present in fresh processes; do not repeat the entire harness to exercise it. Share the normal open/refusal assertions from B02b and inspect hint deltas at each existing call so an incorrect first/second distribution cannot hide in the total. Preserve flags, bytes and failure behavior; this is policy correctness, not proof that caching or IO speed changed. |
+| B02f `process_wide_target_helper_budget`; `pool_stays_empty_when_operations_do_not_wait`; `pool_grows_when_operations_wait`; `helper_growth_stops_at_the_declared_bound`; `helper_count_above_its_bound_is_refused` | Process-wide count check against the selected environment. Separately, a fresh local adapter performs 32 serialized reads with a scripted short duration and must retain zero helpers, change UNMEASURED to SHORT and allow caller execution. Two blocked-pipe fixtures each perform one primer plus 20 reads: grow to four, or request a cap of eight under a bound of two and stop at two. Initial count two under bound one returns `EINVAL` without starting that pool. | Keep these different policy branches in one group and fold the process-wide count into the relevant configuration observation. The harness pins an omitted helper setting to one, so its default-count branch is not evidence for shipped default policy; R02 supplies that evidence. Keep a queue genuinely deep enough to test growth/capping. The 32-read sequence crosses the current one-in-sixteen sampling interval; relate its count to that purpose rather than calling it generic stress. Check actual read length/byte as well as the existing error/terminal state. Attach B01g's six post-shutdown assertions to the four-helper fixture. Do not rerun these locally configured cases under every unrelated global helper setting. |
+| B02g `a_helper_completion_wakes_a_waiting_join`; `an_io_join_waits_on_the_current_stack` | A real empty-pipe read gets a byte from a writer that sleeps 20 ms; check byte, result and one publication, but the fallback count is cumulative. A separate publisher sleeps 20 ms then completes a synthetic record with value 11; the joining thread must see the result, one publication and an increased wait-announcement count. | Keep the real bridge/pipe integration and the direct publication-to-parked-join regression as subcases. Replace sleeps with bounded handshakes observing the needed engine/record/wait state, and use local counter deltas. A zero-helper join may execute the host read on its own thread: do not wait for a helper-only parking event on that route. A delayed thread alone does not establish which execution/park path ran. |
+| B02h `readiness_refusal_is_not_a_terminal_outcome`; `directory_progress_is_internal` | A direct adapter reads an empty nonblocking pipe; a writer sleeps 20 ms then supplies `r`; require success and one publication, but no assertion observes an actual `EAGAIN` or poll. The directory case deliberately scripts `EINTR`, then `EAGAIN`, then one byte; a prefilled pipe supplies readiness. It asserts exactly three host attempts, one poll on that descriptor with `POLLIN` and timeout -1, the byte, and Darwin's changed/Linux's unchanged position cell. | Keep shared retry/progress checks with operation-specific observations. Gate the pipe writer on the observed readiness-wait hook so the refused read cannot be skipped by scheduling; retain a real poll and exact descriptor/events. Preserve the directory script's distinct ABI/position behavior. Enable scripts only for their own case and restore forwarding afterward; R06's real directory records/cursors remain separate integration evidence. |
+| B02i `a_peer_bound_request_is_left_to_a_helper` | Start with no helpers and an unmeasured local adapter bounded at two. Submit three accepts on a port-zero listener: two helpers block, one accept stays queued; the caller's progress must leave it there. Connect three peers and check all accepts complete. A second zero-cap adapter, with a peer connected first, must execute accept through caller progress. | Keep this controlled starvation/progress regression and share existing TCP setup/deadlines. It tests eager growth for a peer-bound kind, refusal to block the caller when helpers own that work, and caller progress when zero helpers are explicitly selected. It is not a throughput workload. It directly exercises accept; do not claim it separately observes receive/connect/send execution merely because the classifier lists those kinds. |
+
+**Dispositions and scope.** These are native implementation obligations in
+the existing completion owner, running in the common runtime correctness
+stage locally and on the appropriate real hosts. Apply the selected main
+runner organization, with dependency-correct reuse and only the necessary
+fresh-process configuration selections. B02b/c/f/g/h/i can share their
+respective setup/helpers without merging distinct assertions into a vague
+smoke result. The marker, status, per-operation counters and controlled wait
+observations strengthen existing fixtures; they add no WF compilations.
+
+Most functions already share a binary. Reducing function count alone is not
+the purpose: remove duplicate filesystem/thread setup and irrelevant repeated
+configurations while preserving named failures. A completed operation may
+legitimately be observed before the join; a pending one may run on the joining
+caller, a helper or a native engine. Each test must establish the state/path
+its assertion requires. The three 20 ms sleeps and the 64 yields do not do
+that; the existing B01 wait hook and B02 directory script illustrate the
+kind of explicit observation to retain. No proposed timeout chooses a WF
+acceptance verdict, and no recommendation lowers round counts on speed alone.
+
+The native contract table self-check (`test_native_contract_inventory`) and
+its actual consumers are assigned to B04. The adjacent
+`benchmark_record_roundtrip` performs 100,000 same-thread publications and
+prints nanoseconds per operation with no regression decision; B06 will rule
+on its automatic versus explicit measurement home. R03 already owns the
+remaining socket lifecycle function, and B01 owns the seven publication,
+wake and shutdown functions. Together these assignments account for all
+31 test functions and the timing function in the current completion harness.
+
+Only the B01/common-runner rulings and this pending B02 proposal are added in
+this discussion revision. No C code, tests, callers, specification, amendment
+text or live-tree decision changes; no build, execution, timing campaign or
+new completion/DCR checkpoint is claimed.
 
 ## Affected material and evidence
 
