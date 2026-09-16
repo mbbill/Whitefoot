@@ -249,13 +249,13 @@ one. Audit individual compiler/corpus cases under the baseline as needed
 during their migration, rather than assuming their current classification is correct.
 
 The owner agreed to R01 through R07, B01 and B02, and selected the common C
-runner direction described below. B02b's consumer-dependent retirement is
-revisited with the completed current-source audit in pending B04a below.
+runner direction described below. B04a's completed current-consumer audit
+and retirement recommendation for B02b's orphaned operations are now agreed.
 The owner also agreed to B03a-ah: the scheduler C probes, Rust parallel
 lowering, loop splitting, resource exhaustion, derived cleanup and all four
-adjacent stack-ledger tests. Implementation remains deferred. The current
-proposal is B04a-i: native adapters and platform check wiring. Native
-namespace and Windows WF callers remain the next part of B04;
+adjacent stack-ledger tests. B04a-i's native-adapter and platform-wiring
+recommendations are also agreed. Implementation remains deferred. The current
+proposal is B04j-r: Windows namespace and compiled-program checks;
 the timing loop retains its explicit B06 review home.
 The remaining inventory is grouped below; these are review scopes, not eight
 new test targets or a promise that every scope fits one conversation. Individual
@@ -264,9 +264,9 @@ compiler/corpus migration audits still apply under the accepted baseline.
 | Batch | Related checks and existing homes | Status |
 |---|---|---|
 | B01 | Completion publication, wake and lifetime: selected `completion/harness.c` functions and `ordinary_values_probe.c::concurrent_half_close_probe` | Agreed; implementation deferred |
-| B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Agreed, including conditional consumer audit; implementation deferred |
+| B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Agreed; B04a's consumer audit and orphaned-operation retirement also agreed; implementation deferred |
 | B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/`, the related Rust backend sampling modules and adjacent stack-ledger tests | All five reviewed parts agreed; implementation deferred |
-| B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Native adapter/platform-wiring recommendations pending; native namespace and Windows WF assertions remain next |
+| B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Native adapter/platform wiring agreed; Windows namespace/compiled-program recommendations pending |
 | B05 | Standalone research models, compiler witnesses and their oracles under `research/experiments/`, including proof-use-cost and container representation | Not yet reviewed |
 | B06 | IO/compute benchmark construction, output correctness, regression decisions and explicit timing protocols | Not yet reviewed |
 | B07 | Repository/specification checks, formatting/lint/docs, test collection, runner/process-guard and design-tool self-tests | Not yet reviewed, except the already selected spec/grammar simplifications |
@@ -1975,7 +1975,7 @@ ASan/UBSan and TSan change the generated native artifact; they cannot reuse
 uninstrumented objects as though flags did not matter. No Cargo profile or
 WF optimization option is selected by these C compiler flags.
 
-**Recommendations below are pending the owner's ruling.**
+**The owner agreed to all nine rows, with implementation deferred.**
 
 | Row | Actual checks and gaps | Recommendation, home and stage |
 |---|---|---|
@@ -2064,7 +2064,129 @@ Windows WF/source-compiler/ABI/floor callers are still unreviewed in this
 part. Their earlier accepted component obligations remain selected while
 B04's next part audits their additional observations and repeated callers.
 
-Only the B03ae-ah owner ruling and this pending B04a-i proposal are added in
+The owner subsequently accepted B04a-i. No implementation is claimed.
+
+### B04 — Windows namespace and compiled programs, second part
+
+**Scope.** This part covers the complete
+`compiler/src/backend/windows_namespace_probe.c` and the six WF execution
+steps at the end of `.github/workflows/io-hosts.yml`'s Windows job. The earlier
+deque, CPU-leaf, startup, ordinary-values, default-route, direct-adapter and
+bridge-failure steps retain their B03/R/B04a-i rulings; their Windows callers
+have been accounted for, not selected for a second independent suite.
+
+**Current construction and execution, not timings.** The workflow first
+builds the native Windows compiler with
+`cargo build --manifest-path compiler/Cargo.toml --profile gate --locked
+--bin whitefootc`. That constructs `compiler/target/gate/whitefootc.exe`;
+it is not a Rust unit-test build. The six steps then use that compiler to
+check/lower WF and normally invoke Clang at the project's fixed `-O2` to
+link the emitted module with the ordinary library and Windows runtime.
+`--par` selects compute-overlap lowering, not an optimization level.
+
+| Current input and location | WF compilations | Native images constructed | Executions on a normal passing path | Oracle/resources |
+|---|---:|---:|---:|---|
+| `compiler/src/backend/windows_namespace_probe.c` | 0 | 1 C-only image | 1 | Strict C11 `-O2 -g`; dynamically resolved NT calls, temporary directories/files, UTF-16 names, changed process cwd and a created symbolic link. Links no Whitefoot runtime. Real Windows CI requires the symlink fixture; exit 77 is failure there. |
+| `tests/programs/completion_read_boundary.wf` | 1 | 1 | 1 | Two one-byte files A/B, argument paths, exact stdout `AB`, successful status and empty diagnostics; IOCP-required environment setting. |
+| `tests/programs/tcp_echo.wf`, `tests/programs/tcp_refused.wf` | 3 | 3 | 5 | Echo default/parallel and refusal default; echo runs on normal IOCP, parallel IOCP and forced fallback; refusal runs on both routes. Controlled .NET peer, 10,000 known bytes, half-close/EOF, exact echo, expected refusal statuses and empty stderr. |
+| `tests/programs/host_string_bytes.wf` | 1 | 1 | 1 | Actual process argument U+4241; the program requires two raw bytes 0x41/0x42, byte length/copy endpoint two, status zero and no output. |
+| `research/experiments/io-completion-bench/programs/windows_component_open.wf` | 2 | 2 | 2 | Default and `--no-overlap` builds; argument names U+4241/U+4242 name files containing W/X, while ASCII AB/BB decoys contain D/E. Both outputs must be WX; only the second run sets the IOCP requirement. |
+| `tests/programs/par_layout.wf` | 3, one emits LLVM only | 3 | 4 | Driver-built default and `--par` images, plus manually linked `--par` LLVM with `sched/grant_observer.c`. Compare outputs; reject malformed workers before program output; require observed `grants>0`. |
+| `runaway.wf` written inside the workflow | 1 | 1 | 10 | One `--par` recursion with source depth 100,000,000; five runs each with default workers and workers 4. Nonzero status, empty stdout and one matching stack-resource record. |
+| Six WF steps together, excluding the C-only row | 11 | 11 | 23 | Excludes building the Rust compiler, preceding C probes and extra diagnosis after failure. |
+
+The parallel failure branch can additionally build/run an unobserved manual
+control, build/run an ASan image and rerun under `cdb` if available. Those
+commands diagnose a failed run; they cannot make it pass and are outside the
+passing-path counts. No command in this inventory was executed for this audit.
+
+**Recommendations below are pending the owner's ruling.**
+
+| Row | Actual evidence and gap | Recommendation, home and stage |
+|---|---|---|
+| B04j: namespace probe's private policy and bookkeeping | The standalone probe implements its own component validator, open wrapper, directory decoder and six-handle close tracker. Eight rejection rows exercise that private validator: empty, dot, dot-dot, slash, backslash, drive prefix, UNC prefix and embedded NUL. It does not call `ordinary_values.c` or `windows_runtime.c`. Its policy/limits also differ from the shipped component and relative-path entry points; for example it rejects dot/dot-dot itself, while the production relative-path validator allows them. Its close counters count its own wrapper's `CloseHandle` calls. | Retire these parallel implementations/self-checks when the useful host observations in B04k have a receiving home. Test current component byte validation and result construction through the ordinary C library, sharing R04/R05's group. Do not copy the eight verdicts wholesale into conformance or the runtime: component names and `RelativePath` are distinct inputs, and the active rule/library obligation must select each expectation. The old probe's validator is no authority for a new refusal. Production resource accounting belongs with R05's real per-resource checks, not this private close counter. |
+| B04k: real directory-root and reparse observations | The probe takes a directory handle, changes cwd to an empty sibling, and then opens/enumerates non-ASCII names through the saved handle. It checks regular/directory attributes, missing-name error conversion, opening a symlink itself with no-follow and following it to a regular target. Its decoder uses `FileNamesInformation`; production uses `FileDirectoryInformation` and converts to the ordinary directory record. Merely finding the two expected names in the probe does not validate that production conversion. | Keep the root-versus-ambient-cwd, native-name, known-entry, missing-name and follow/no-follow distinctions in the shared Windows C runtime group, extending R05/R06's actual ordinary-library fixture. Exercise the shipped open/enumeration/close path and exact relevant results. In the no-follow component path, preserve rejection and disposal of a terminal reparse object; the probe's successful raw HANDLE to a link is not the ordinary API's expected result. Use real link creation, with required Windows CI failing if that fixture cannot be established. Isolate cwd mutation in a selected child or otherwise exclusive fixture. Retire the standalone 1,009-line probe and its dedicated executable/cross-build caller only after those observations run against production code. |
+| B04l: argument paths through the shipped compiler | `completion_read_boundary.wf` destructures ordinary Inputs, constructs two `RelativePath` values, opens with `open_read`, reads one byte each and writes them in argument order. The default lowering is Off; two source reads do not establish simultaneous outstanding IO. This differs from the component-byte/`open_file` API below. | Keep one complete CLI-build-and-run program scenario in the programs organization, selected on Windows with exact AB/status/stderr checks and effective native-route evidence. Reuse existing sources/construction and common host orchestration; C-only IOCP success cannot establish emitted ABI, startup and driver link correctness. Describe it as ordinary file/argument/output integration, not proof of source IO overlap. Do not merge away its distinct `RelativePath` entry merely because another test also reads two files. |
+| B04m: WF TCP on real Windows | The echo transfers 10,000 nonuniform bytes through a 4,096-byte program buffer, stopping the sender and requiring the peer to receive the complete echo. The refusal program attempts two connects using one factory and succeeds only on two `ConnectionRefused` outcomes. This proves continued usability, not exact credit restoration: the normal factory has ample remaining credits even if two were lost. Comparable program/oracle logic already exists in `compiler/tests/programs/network.rs`. | Keep real Windows program behavior on both engines and the `--par` construction combination, sharing program sources, payload/oracle logic and host process support with programs. Preserve compile/run differences only while the emitted paths or required observations differ. Do not claim the `--par` echo observed a stolen task merely from its flag. Keep exact factory-credit obligations in the constrained C tests already selected. Bound socket connect/write/read and child lifetime, clean up on every failure, and distinguish a released-port allocation race from the intended refusal. |
+| B04n: HostString's complete native bytes | A real UTF-16 process argument crosses ordinary input initialization and the emitted callable/view ABI before `host_bytes_len` and `host_copy_bytes` are checked. R04's C representation tests do not by themselves exercise that complete path. The component-opening program already consumes those same actual process arguments and copies their bytes, but does not currently make all the standalone length/endpoint/byte assertions. | Merge the exact native length, copy endpoint and byte assertions into the receiving component-opening program/fixture in B04o, preserving the actual argument and relevant copy-window observations. Then retire the separate WF image/run and source only after its observations are accounted for, updating corpus collection too. Keep R04's distinct direct C encoding/buffer checks. This saves a duplicate complete construction without replacing a compiler/host boundary by a self-built C value. |
+| B04o: copied component names and obsolete two-build control | The Unicode names and AB/BB decoys discriminate native code-unit bytes from accidental narrow-name interpretation. However, `Options::overlap` selects Off for both default and `--no-overlap`; both link the ordinary completion runtime. Neither build flag forces the helper route. The first run does not require IOCP but may use it, so the old direct-versus-completion explanation no longer describes two implementations. The source is also collected automatically by the IO bench Makefile's `programs/*.wf` wildcard. | Keep this useful host-interaction scenario under programs, with B04n's additional byte assertions. Use one construction and one effective required-IOCP execution for the existing observations, preserving the WX output and decoys. Do not retain duplicate builds as a claimed engine comparison. Update the Windows caller, corpus/canonical collection and the benchmark wildcard ownership together when moving the source; no duplicate file or benchmark-only correctness copy. A future different configuration needs a named missing observation. |
+| B04p: layout output, actual workers and startup | The workflow builds a sequential program, a production parallel program and an observed parallel image; output equality and one aggregate steal count check different properties. Each ordinary invocation builds a depth-six tree (127 nodes), uses an 8,192-element table and repeats each of its two folds 800 times, with full-width and 4,096-element scans. Only the last value of each fold is published. Correctness CI measures no performance regression here. The current aggregate observer does not identify which fold was stolen. | Keep program-result equivalence and the Windows shipped-driver path in programs. Give correctness a bounded representative invocation of the same source; reserve benchmark repetition for its explicit performance consumer, reviewed in B06. Keep actual non-owner execution in the controlled compiler/runtime boundary selected by B03, on real Windows, with successful output as well as worker identity/path evidence; do not compensate for an uncontrolled handoff by rerunning the large workload. Reuse compatible emission/objects and the existing observer, retaining production-link evidence. Move malformed-worker startup checks into the shared startup group with an explicit before-entry observation. Compare complete output, not only equal/truncated streams or any matching grant line. |
+| B04q: real Windows exhaustion | The inline WF source prevents trivial tail-recursion elimination and requests a depth well beyond the runtime's fixed stacks. The ten runs inspect no thread identity; default and workers 4 do not guarantee separate entry and worker overflows. A nonzero process status plus a matching line is weaker than observing the intended classified termination, and there is no per-run bound. | Apply B03w/x's shared entry/worker exhaustion design to the actual Windows floor: controlled smaller stacks with real Windows probing/guard and emergency-stack requirements, explicit entry versus non-owner handoff, exact resource output and verified termination, in isolated bounded children. Preserve the separate default stack-reservation observation. Replace the inline source and ten probabilistic large runs only after the receiver detects the protected floor defects. Do not substitute Linux signal expectations or a Wine pass for Windows exception behavior. Keep in compiler native checks; resource-record bytes and thread provisioning are implementation obligations, not a new conformance verdict. |
+| B04r: host runner, required-route verdict and failure diagnosis | The Windows steps duplicate shell/PowerShell build/run/output code. Existing Rust program support uses `/usr/bin/clang` and POSIX runtime objects, so merely moving a test name there would not create Windows coverage. Several processes have no local guard; the TCP receive loop runs before its `WaitForExit(60000)`, so that wait does not bound a blocked stream read. Crucially, `wf_bridge_ring_start` registers the `WF_REQUIRE_WINDOWS_IOCP` exit verifier only after successful initialization. Initialization/refusal fallback can therefore omit that verifier entirely. When registered, it checks only nonzero aggregate submissions and matching completion count, not every operation's routing. | Centralize host-aware construction, per-child environment, byte-preserving output, deadlines and cleanup in the existing test support/caller organization; keep real Windows CI execution and at least the selected ordinary CLI boundaries. Make the required-native verdict fail on unavailable/uninitialized/unexercised IOCP as well as incomplete submissions, including a controlled refusal negative control reusing an existing program image. Preserve ordinary fallback without that requirement. Attribute per-operation route claims only to observations that actually distinguish them. Keep useful failure logs/artifacts automatically; move the extra control/ASan/debugger reproduction out of default failure handling into explicit diagnosis. It adds no passing verdict and its unbounded reruns can prolong the failure. |
+
+**Namespace authority and migration.** The raw probe is useful evidence that
+a host facility can be exercised, but its comment about a future target row
+does not describe the current ordinary library. Its eight private validation
+outcomes are not eight source-language rejections. PRE-1 provides ordinary
+declarations/contracts; it does not adopt this C enum or select all of its
+host policies. In particular, the existing relative-path tests preserve dot
+components, while the standalone probe refuses them before reaching Windows.
+Keep these API distinctions explicit and consult the current owner before
+selecting any new behavior. This discussion changes no accepted WF program,
+native library behavior, conformance expectation or specification text.
+
+The receiving native fixture must actually call production code. Retaining
+only the old probe's private decoder or close tracker in a shared executable
+would preserve the defect in ownership of the assertion. Share the useful
+Unicode/root/link setup with ordinary opens and directory enumeration, check
+known names and cursor behavior through the real output format, and verify
+the ordinary outcome/handle credit on failures. The old missing-file check
+accepts any mapped error other than success or an unmappable status; it must
+not be described as an exact `NotFound` assertion.
+
+**The layout reduction has a concrete equivalence criterion.** Both folds
+write each node's output field without reading its preceding value; widths,
+heights and the word table are unchanged across repetitions. The caller
+overwrites the two result variables and prints only the final pair. Each
+800-iteration batch starts the seed at 16 and increments by exactly
+representable 0.0625, so the final pass uses 65.9375. A short correctness
+invocation can exercise that final seed and both full and caller-bounded
+folds without traversing all preceding benchmark repetitions. Before
+retiring those repetitions from correctness callers, verify the receiving
+case's complete result against the established program oracle and preserve
+the distinct permission/frame/actual-worker observations in their proper
+groups. Repetition remains a benchmark parameter rather than a claim of
+800 independent correctness cases. The benchmark script contains fixed
+expected result bytes; this Windows CI step currently checks only equality
+between compiled runs, so their provenance and use must remain explicit.
+No reduced case or equivalence experiment has been executed here.
+
+The namespace C test can join the selected common native executable; tests
+that change cwd or terminate still need process isolation. WF scenarios can
+share the existing programs orchestration while producing the native images
+their distinct sources/options require. This does not imply that all WF
+programs can become a single native `main`, require a new Rust test
+executable, or preserve a separate shell implementation of each oracle.
+
+B04h's strict-Windows-source obligation has a concrete existing receiver:
+the later observed layout link strict-compiles all twelve runtime C units,
+including `wf_floor_windows.c`, plus the observer. Preserve that full-unit
+coverage in shared construction even if the observed program changes.
+Likewise, the retired namespace executable's cross-build collection and the
+component source's automatic benchmark collection are affected callers,
+not files to leave dangling.
+
+**Complete current caller map.**
+
+- Namespace build/run steps: B04j/k; its explicit cross construction was
+  identified in B04h and follows the selected replacement fixture.
+- `Compile and run a real Whitefoot program through IOCP`: B04l/r.
+- `Compile and run the TCP routes on both engines`: B04m/r.
+- `Run the Windows HostString raw-code-unit boundary`: B04n.
+- `Open target-native Windows components from compiler-emitted buffers`:
+  B04o/n/r; also the IO bench `PROGRAMS`/`CHECKED` wildcard.
+- `Require native workers for a real --par program`: B04p/r, including its
+  invalid-setting run and failure-only control/ASan/debugger branch.
+- `Require the floor to classify an overflow on an ordinary compute thread`:
+  B04q/r, including its inline source and two-by-five execution matrix.
+
+B04's selected inventory is now source-reviewed across its two parts;
+B04j-r await the owner. B05's maintained research models and independent
+oracles are next. Corpus-wide case migration still follows the baseline;
+this platform audit does not certify every program case or the remaining
+research, benchmark and repository-tooling scopes.
+
+Only the B04a-i owner ruling and this pending B04j-r proposal are added in
 this discussion revision. No test implementation, caller, specification,
 conformance evidence, amendment text or live-tree decision changes. No
 build, execution, timing campaign or new completion/DCR checkpoint is claimed.
