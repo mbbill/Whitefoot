@@ -349,16 +349,6 @@ fn build_executable(llvm: &str, directory: &Path) -> PathBuf {
     build_linked_executable(llvm, None, &[], directory)
 }
 
-/// Stages the same ordinary library and its private engine as the build driver.
-/// Source effect rows never choose a separate runtime or callable class.
-pub(super) fn append_runtime_units(
-    command: &mut Command,
-    _llvm: &str,
-    directory: &Path,
-) -> Option<Vec<&'static str>> {
-    append_runtime_units_with_library_defines(command, directory, &[])
-}
-
 fn append_runtime_units_with_library_defines(
     command: &mut Command,
     directory: &Path,

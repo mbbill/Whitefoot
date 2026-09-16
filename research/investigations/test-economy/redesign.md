@@ -3339,6 +3339,64 @@ an already parallel recipe. This preserves one build/run and removes the
 duplicate writer. These corrections still need confirmation on the affected
 hosts; previous passed steps are not a claim that the whole workflow passed.
 
+### Implementation evidence: parallel compiler and program responsibilities
+
+B03f-m now separates the external tree/spine/window results from compiler
+observations. The three formerly embedded sources live under
+`tests/programs/parallel/`; the compiler reads the same tree/window fixtures
+for its frame, clone and outlined-call assertions. Their programs receiver
+uses an independent Rust tree fold and a reverse accumulation of the
+4,000-level floating spine, checking exact eight-byte results, status and
+stderr for both lowerings and widths 1/2/4/8. The pinned-budget-two tree
+retains widths 1/4. The window starts every node's stored seed at zero, so its
+interposed read has the same independently derived result. Repeated identical
+process settings are retired; actual worker/path assertions retain their
+separate controlled compiler owner. These moves add no extra full-program
+copy under the previous owner. The sources leave this home when those
+distinct program/ABI regressions no longer need them.
+
+The repeated immutable tree emission is shared within the compiler fixture;
+each assertion still inspects the current constructed module. The two machine
+frame cases now use one ordinary and one parallel assembly/stack report for
+both exact clone-frame equality and the 48-byte offer-state bound. The native
+"no runtime" smoke is retired because its builder always linked the ordinary
+runtime; denied/default emission checks retain the meaningful no-offer
+assertion. The Windows assertion now says it checks emitted external symbols,
+not an actual Windows link.
+
+Counted observers use the shared ordinary native-object builder. One tree
+image checks explicit opt-out, default startup, malformed settings before
+output and controlled real-worker execution with matching bytes, replacing
+the duplicate counted construction. The worker-to-linked-I/O fixture retains
+its exact publish/entry/completion/other-thread ledger and byte `X`; its
+test-only entry wait now has a five-second failed-premise bound.
+
+The Heap failure matrix still executes both lowerings at all nine selected
+allocation refusal positions, with exact allocation/free ordering and final
+result. Refusal is now a process parameter: two native images replace eighteen
+builds. The recursive scalar/destination and self/mutual matrix still emits
+all nine policy spellings. Complete module equality confirms the two
+implicit/explicit default pairs before sharing each image. Only runtime-derived
+forms vary the runtime budget, producing 28 native images and 72 executions
+instead of 36/144. The three equal nonrecursive policy modules run one common
+native image after all equality assertions.
+
+The probabilistic missing-join tree control is retired. The existing owned
+pair observer delays publication until join; a single join-removed image
+must reach the observed release-before-join branch, emit its exact diagnostic
+and exit 86. Intact refusal, ordinary acquisition and deferred-publication
+runs still check result and exact frame/resource ledgers. This detects the
+injected missing join without twelve crash attempts, a sleep-based success
+criterion or a new language rejection.
+
+Focused local evidence during this increment: all 26 parallel compiler cases
+passed (15.30 s execution; 91.45 s including the optimized Rust test rebuild).
+The migrated programs receiver passed in 3.24 s execution, 47.35 s including
+construction of the ordinary compiler/corpus harness. Both canonical checks
+passed in 0.86 s with that harness already built. The subsequent bounded-wait
+and dead-helper cleanup is included in the upcoming full validation; these
+figures do not certify the complete redesign or current root gate.
+
 ## Affected material and evidence
 
 - Specification identity: `compiler/build.rs`, `compiler/src/spec.rs`,

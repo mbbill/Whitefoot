@@ -507,3 +507,81 @@ fn function_body<'module>(module: &'module str, symbol: &str) -> &'module str {
         .expect("a function definition must close");
     &module[start..end]
 }
+
+/// The migrated tree/window/spine family has independent semantic results;
+/// sequential/parallel agreement alone would permit two identical mistakes.
+/// Each source constructs one ordinary and one parallel image, then executes
+/// one process per selected width. Scheduling-path evidence lives in compiler
+/// observers, so these cases do not retry until a steal happens by chance.
+#[test]
+fn tree_window_and_deep_spine_preserve_their_independent_results() {
+    fn mix(left: u64, right: u64) -> u64 {
+        left.rotate_left(13) ^ right ^ ((u128::from(right) * 2_654_435_761) >> 64) as u64
+    }
+    fn fold(values: &[u64]) -> u64 {
+        if values.len() == 1 {
+            return values[0];
+        }
+        let middle = values.len() / 2;
+        mix(fold(&values[..middle]), fold(&values[middle..]))
+    }
+    let leaves: Vec<_> = (1..=32).collect();
+    let tree = fold(&leaves).to_le_bytes();
+    let mut spine_values = vec![1.0009765625_f64];
+    for index in 0..4_000 {
+        spine_values.push(spine_values[index] * 1.0009765625);
+    }
+    let mut spine = spine_values[4_000];
+    for &value in spine_values[..4_000].iter().rev() {
+        spine += value * 0.5;
+    }
+    let spine = spine.to_bits().to_le_bytes();
+    for (name, expected) in [
+        ("parallel/tree.wf", tree),
+        ("parallel/window.wf", tree),
+        ("parallel/spine.wf", spine),
+    ] {
+        let plain = build_program(&compile_program(name));
+        let output = plain.run_with_workers(Some("1"));
+        assert_eq!(output.status.code(), Some(0), "{name}: {output:?}");
+        assert_eq!(output.stdout, expected, "{name}");
+        assert!(output.stderr.is_empty(), "{name}: {output:?}");
+        let parallel = build_program(&compile_program_with_overlap(name));
+        for workers in ["1", "2", "4", "8"] {
+            let output = parallel.run_with_workers(Some(workers));
+            assert_eq!(
+                output.status.code(),
+                Some(0),
+                "{name}/{workers}: {output:?}"
+            );
+            assert_eq!(output.stdout, expected, "{name}/{workers}");
+            assert!(output.stderr.is_empty(), "{name}/{workers}: {output:?}");
+        }
+        if name == "parallel/tree.wf" {
+            let source = super::support::read_program(name);
+            let module = whitefoot::compile_with_overlap(
+                &[whitefoot::SourceInput::new(name, &source)],
+                whitefoot::CompilerLimits::default(),
+                whitefoot::OverlapLowering::OnWithRecursionBudget {
+                    budget: whitefoot::RecursionBudget::Pinned(
+                        std::num::NonZeroU8::new(2).unwrap(),
+                    ),
+                    maximum_scalar_leaf_operations: None,
+                    sequential_refusal: false,
+                },
+            )
+            .expect("pinned-budget tree must compile");
+            let pinned = build_program(&module);
+            for workers in ["1", "4"] {
+                let output = pinned.run_with_workers(Some(workers));
+                assert_eq!(
+                    output.status.code(),
+                    Some(0),
+                    "pinned/{workers}: {output:?}"
+                );
+                assert_eq!(output.stdout, expected);
+                assert!(output.stderr.is_empty());
+            }
+        }
+    }
+}

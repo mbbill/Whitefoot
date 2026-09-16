@@ -673,7 +673,7 @@ fn emitted_function_selects_exact_definitions_across_ordinary_linkages() {
     }
 }
 
-fn read_program(name: &str) -> Vec<u8> {
+pub(super) fn read_program(name: &str) -> Vec<u8> {
     let path = corpus_directory().join(name);
     std::fs::read(&path).unwrap_or_else(|error| {
         panic!(

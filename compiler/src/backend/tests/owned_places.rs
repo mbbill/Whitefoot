@@ -1798,6 +1798,26 @@ fn main() -> status: own ExitStatus pure {
 /// A duplicate or unknown release aborts instead of allowing a use-after-free
 /// to appear successful because its bytes happened to remain unchanged.
 pub(super) fn allocation_observer(limit: usize, refused: usize) -> String {
+    allocation_observer_body(limit, &refused.to_string())
+}
+
+pub(super) fn allocation_observer_by_process(limit: usize) -> String {
+    let body = allocation_observer_body(limit, "wf_test_refusal()");
+    format!(
+        r#"#include <stdlib.h>
+static unsigned long wf_test_refusal(void) {{
+    const char *text = getenv("WF_TEST_REFUSE_ALLOCATION");
+    char *end = NULL;
+    if (text == NULL || *text == '\0') abort();
+    unsigned long value = strtoul(text, &end, 10);
+    if (*end != '\0' || value > {limit}) abort();
+    return value;
+}}
+{body}"#
+    )
+}
+
+fn allocation_observer_body(limit: usize, refused: &str) -> String {
     let slots = limit + 1;
     format!(
         r#"#include <stddef.h>
