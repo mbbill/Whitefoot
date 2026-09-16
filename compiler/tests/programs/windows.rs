@@ -28,7 +28,7 @@ fn relative_paths_cross_the_cli_and_required_iocp_boundary() {
     assert!(!refused.status.success());
     assert_eq!(refused.stdout, b"AB");
     assert_eq!(refused.stderr,
-        b"whitefoot completion: WF_REQUIRE_WINDOWS_IOCP was set but native IOCP was unavailable, unused, or incomplete\n");
+        b"whitefoot completion: WF_REQUIRE_WINDOWS_IOCP was set but native IOCP was unavailable, unused, or incomplete\r\n");
 }
 
 #[test]

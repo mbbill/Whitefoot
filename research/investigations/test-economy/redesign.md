@@ -3682,3 +3682,15 @@ repository-wide gate or real Windows execution. The preceding published
 revision `a49abe17` passed both hosted io-hosts jobs; its general gate still has
 the known automatic-research dependency violation while the remaining
 extractions are in progress.
+
+
+Real Windows execution at `6dccf699` passed the production namespace group and
+six of seven shared corpus cases, including both native stack geometries on
+entry/workers, separate production provisioning, both observed layout folds,
+native component bytes and both TCP routes. The sole failure was the fallback
+requirement's `fprintf` diagnostic: the new exact Rust assertion expected LF,
+while the native Windows C text stream emitted CRLF. Its expected bytes now
+name CRLF, preserving the complete message, the non-success status and exact AB
+result. The old PowerShell caller stripped carriage returns; no production
+runtime behavior is changed to satisfy the new assertion. That hosted run took
+24.18 s to execute the seven cases. Hosted Linux io-hosts passed at this revision.
