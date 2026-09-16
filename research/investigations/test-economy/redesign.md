@@ -3,9 +3,34 @@
 This investigation records the selected changes and remaining questions for
 replacing redundant verification machinery. The [inventory](test-inventory.md)
 and its [Chinese translation](test-inventory.zh-CN.md) describe the existing
-system; this document describes subsequent work, not implemented behavior.
+system; this document records the selected redesign and its implementation.
 Keep it current during that work and retire it when the replacement system's
 guidance and design decisions cover these choices and no questions remain.
+
+## Execution resumed on 2026-09-16
+
+The owner authorized implementing all previously selected changes and asked
+the agent to resolve the remaining review using the same admission principles,
+without waiting for further batch-by-batch decisions. Earlier statements that
+execution is deferred describe the discussion phase and are superseded by this
+authorization. B06's recommendations below are implementation directions;
+B07 still requires a source audit before changes. Record actual migration and
+validation results as work proceeds; authorization is not evidence of completion.
+
+The owner also clarified the performance boundary: **routine correctness CI
+and local `make check` must not construct and time baseline/candidate WF
+pairs**. Performance regression belongs in a separate workflow. Small tests of
+that workflow's result logic may run as ordinary tooling correctness tests;
+they consume synthetic rows and do not build or time WF. Local validation
+does not require reproducing the paired performance job.
+
+Keep the existing host-wide verification owner, bounded concurrency, phase
+reporting and cancellable process groups throughout implementation. Validate
+correctness with those controls; do not restart a full timing campaign while
+the test responsibilities and callers are being replaced. Exact design-tree
+amendments remain beside the live tree pending the owner's ruling. Publish
+coherent work to PR #66 and obtain the required independent review before
+reporting completion; do not merge into main.
 
 ## Selected direction
 
@@ -198,6 +223,9 @@ already stopped reaching research.
 **Preventing new dependencies.** After agreeing to B05h-o, the owner requested
 an automatic mechanism to prevent future research dependencies. Formally
 owned reference implementations and independent oracles remain permitted.
+The owner subsequently selected the simplified direction below: ordinary
+complete checkouts, a lightweight reference check and review of unresolved
+dependencies. Exact checker wiring remains in B07; implementation is deferred.
 
 Extend the existing `repository-invariants` check, reached by `make static`,
 `make check` and the CI static job, with a lightweight compiler-independent
@@ -350,7 +378,9 @@ control in research needs no further audit of its manual measurement protocol.
 The inventory uses the stable batch IDs below. The owner agreed to all eight
 B05h-o enabled research entry groups and requested prevention of future
 research dependencies as described above. Their implementation remains
-deferred. B06 and B07 remain to be reviewed, and B08 is excluded. These
+covered by the execution authorization above. B06's three groups are
+source-reviewed below and authorized for implementation; B07 remains unreviewed,
+and B08 is excluded. These
 are discussion scopes, not test counts, new targets or a promise that each
 fits one conversation. Individual compiler/corpus migration audits still
 apply under the accepted baseline.
@@ -362,7 +392,7 @@ apply under the accepted baseline.
 | B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/`, the related Rust backend sampling modules and adjacent stack-ledger tests | All five reviewed parts agreed; implementation deferred |
 | B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Both reviewed parts agreed; implementation deferred |
 | B05 | Extract useful observations from currently enabled research models, compiler witnesses, oracles and indirect formal-test inputs | Authority/foundation screened; all eight B05h-o recommendations agreed; implementation deferred |
-| B06 | Enabled IO/compute benchmark construction and correctness, and automatic paired performance regression | Three remaining responsibility groups below; manual-only timing protocols excluded |
+| B06 | Enabled IO/compute benchmark construction and correctness, and automatic paired performance regression | All three groups source-reviewed below; implementation authorized with performance separate from correctness CI/local checks |
 | B07 | Repository/specification checks, formatting/lint/docs, test collection, runner/process-guard and design-tool self-tests | Not yet reviewed, except the already selected spec/grammar simplifications |
 | B08 | Historical or explicit experiment/instrument runners outside automatic CI and the default gate | Excluded by the owner's scope clarification; no case review or cleanup required |
 
@@ -374,7 +404,7 @@ their callers; the groups do not prescribe separate binaries or review turns.
 | Scope | Groups and current entry points |
 |---|---|
 | B05: eight entry groups, reviewed below | (1) `proof-use-cost`; (2)-(5) container `lifecycle`, `dense`, `costs`, `families`; (6) ripgrep runner self-tests; (7) raw-DEFLATE oracle self-tests; (8) research inputs already imported by formal lowering, semantic slice/loop-permission and backend slice tests. Groups 1-7 are reached from root `research-tests`; group 8 is reached through compiler tests. Authority/foundation were already screened in B05a-g and are excluded from this count. Recommendations are agreed, not implemented. |
-| B06: three responsibility groups | (1) IO `programs-check` reached from root `bench-programs`; (2) compute construction/verification and support reached from root `bench-programs` and automatic `compute-bench.yml` pushes; (3) the paired `compute-regression.yml` comparison/verdict, including `verdict-test` reached from root `research-tests`. Review only the timing needed by the actual automatic regression check, not full manual scoreboard or IO timing matrices. B04o already covers the enabled Windows component-source receiver. |
+| B06: three responsibility groups, reviewed below | (1) IO `programs-check` reached from root `bench-programs`; (2) compute construction/verification and support reached from root `bench-programs` and automatic `compute-bench.yml` pushes; (3) the paired `compute-regression.yml` comparison/verdict, including `verdict-test` reached from root `research-tests`. Review only the timing needed by the actual automatic regression check, not full manual scoreboard or IO timing matrices. B04o already covers the enabled Windows component-source receiver. Recommendations await owner ruling. |
 | B07: ten check types from inventory section 10 | Rust formatting, Clippy, rustdoc, process-guard self-tests, remaining repository invariants, released-spec archive immutability, specification-prose checks, design-linter/self-tests, conformance structure/runner self-tests, and test collection/partition checks. The spec scanner and grammar generator already have selected simplifications; do not reopen them as additional undecided items. |
 
 `historical-tool-tests` and manual-only `io-bench.yml` are not reached by the
@@ -382,8 +412,9 @@ automatic gate. The manual comparison arms of `compute-bench.yml` are likewise
 outside this review; its push-triggered build/verify arm remains in B06. Follow
 helpers used by an enabled arm even when the same helper also serves a manual
 experiment. Do not open unrelated research cases merely because they share a
-directory. B06 and B07 are the remaining unreviewed scopes; the selected B05
-extraction and previously selected migrations are not implemented work.
+directory. B06's source review follows below; B07 is the remaining unreviewed
+scope. B06 implementation is authorized. The selected B05 extraction,
+dependency-guard direction and earlier migrations still require implementation.
 
 **Selected C runner organization.** The owner agreed to consolidate compatible
 C cases into one main runtime test executable, with logical case groups rather
@@ -2643,15 +2674,13 @@ is admitted by changing its directory, and no new crate, script or executable
 is selected merely to package these groups. Construction sharing preserves
 different compiler modes, interposition and real host/runtime requirements.
 
-B06 still needs three enabled responsibility groups reviewed: IO program
+B06's three enabled responsibility groups are reviewed next: IO program
 construction/correctness, compute construction/verification, and the paired
-performance comparison/verdict. Root `bench-programs` and automatic
-`compute-bench.yml`/`compute-regression.yml` callers remain in that review;
-B04o already selected a formal receiver for the Windows component-open source.
-B07 still needs its ten repository/tooling check types. B08 and other unwired
-or manual-only cases remain excluded. B05's agreed extraction and the proposed
-automatic boundary enforcement remain deferred implementation, separate from
-those two unreviewed scopes.
+performance comparison/verdict. B04o already selected a formal receiver for
+the Windows component-open source. B07 still needs its ten repository/tooling
+check types. B08 and other unwired or manual-only cases remain excluded.
+B05's agreed extraction and the selected automatic boundary direction remain
+deferred implementation, separate from B06's pending ruling and B07's review.
 
 The B05 source review initially changed only this discussion record. The
 owner's follow-up agrees to its eight recommendations and requests an
@@ -2661,6 +2690,246 @@ and the build-input amendment are unchanged. The live tree, specification,
 conformance evidence, test code and Make/CI callers remain unchanged. No
 implemented enforcement, executable test result, performance result, new DCR
 or completion review is claimed.
+
+### B06 — enabled benchmark support and paired performance regression
+
+This source audit covers the three enabled caller groups at `68fd1bd4`.
+No compiler, executable test, timing protocol or new experimental control was
+run. Counts below describe source inputs, calls or construction products as
+labeled; they are not elapsed-time measurements. Manual-only IO protocols and
+compute scoreboards remain outside scope. The owner subsequently authorized
+implementation of these recommendations and independent resolution of remaining
+checks. The performance separation above applies to every receiver.
+
+| Item | Current automatic caller and inputs | Proposed responsibility and stage |
+|---|---|---|
+| B06a | Root `bench-programs` calls IO `programs-check`: twelve WF sources, ordinary C/LLVM callers and Linux research io_uring self-checks | Retire the research-source build obligation. Merge useful production ABI/IO observations into the selected common C runtime runner; use B04's formal Windows program receiver once. Keep comparator-only checks in research. |
+| B06b | Root compute `programs-check`, and the automatic Linux/macOS push arm of `compute-bench.yml`: WF modules, C/LLVM adapters, oracles and parallel comparison frameworks | Formal programs own missing complete-result observations; compiler/runtime tests own implementation assertions. Share compatible construction and rerun assertions. Remove comparison-framework maintenance and unused timed-data preparation from routine correctness. |
+| B06c | `compute-regression.yml` pairs the current WF with a merge-base WF; root `research-tests` runs its verdict self-tests | Retain a separate automatic performance job using formally owned WF-versus-WF inputs/support. Keep deterministic verdict tests in the ordinary gate. Extract neither external framework scoreboards nor research-only controls. |
+
+#### B06a: IO construction and native correctness
+
+Current owner: `research/experiments/io-completion-bench/Makefile`.
+`programs-check` refreshes `whitefootc` with Cargo's optimized, assertion-retaining
+`gate` profile, then compiles the twelve `programs/*.wf` sources to native
+images. **It does not execute those twelve images.** Their inputs are:
+
+| Research WF family | Source count | What the current gate establishes |
+|---|---:|---|
+| `many_files_loop`, `many_files_narrow`, `many_files_wide`, `many_files_wide8` | 4 | Acceptance, native construction and linking of alternative many-file shapes; no checksum/byte-count result is observed. |
+| `read_heavy_narrow`, `read_heavy_narrow_4k`, `read_heavy_wide8`, `read_heavy_wide8_4k` | 4 | Construction of positioned-read benchmark variants; no read result or long workload is executed by this target. |
+| `pipe_relay`, `tcp_echo_server` | 2 | Construction of benchmark pipe/server callers; no pipe or TCP interaction is exercised here. |
+| `windows_component_open`, `windows_runtime_mixed` | 2 | Construction only here. B04o separately accounts for the real Windows component-open execution and its formal receiver. The mixed source performs compute/positioned-read work when run, but this gate does not run it. |
+
+Keeping every research source compilable is not a missing correctness
+observation under the selected boundary. Existing formal stream/network,
+wfgrep and directory-traversal cases already execute relevant real host
+interactions. Do not replace this wildcard with twelve new formal cases.
+Retain a source only for an identified missing observation, checked against its
+formal receiver; this audit does not claim full behavioral equivalence merely
+from similar file names. The Windows component case is received once under
+B04, not duplicated here.
+
+Two additional native checks really execute:
+
+- **`ordinary-check`: production runtime ABI and file behavior.** Clang builds
+  `ordinary-caller.c` twice, selecting public/body calls by a macro, and links
+  `ordinary-caller.ll` and the actual runtime. The LLVM shim preserves the
+  public aggregate-view ABI and the private descriptor-pointer ABI. Both
+  images check empty-factory refusal, successful open and credit consumption,
+  exact positioned-read bytes/window, EOF, close/credit restoration, missing
+  files and invalid names without credit loss. The recipe constructs `gen.c`
+  and generates four files although the check reads one; it also builds
+  `runner.c`, a timing tool it never executes in this target. The runtime
+  objects currently come through the container research `native.mk`.
+- **`uring-check`: a private research comparator.** On Linux, two C images
+  compile `uring_echo_check.c`, which includes the research server
+  `uring_echo.c`, with inline-send off/on. Seven scripted traces per image
+  exercise buffer return before/after exhaustion, no-return/no-spin,
+  retry-credit consumption, EOF/cancel and short-send retirement. They simulate
+  kernel operations; this is not a production runtime or real-network test.
+
+Keep the ordinary caller's useful public/body ABI boundary and exact IO
+observations in the already selected common C runner, sharing its minimal
+fixture and production runtime objects. Compare with
+`compiler/src/backend/ordinary_values_probe.c::file_probe` and R05's selected
+strengthening: private-body quota, credit, EOF and window coverage overlaps,
+while the public LLVM calling convention is distinct. Both conventions can
+be exercised in a compatible image without two macro-selected copies of the
+whole caller. Do not replace an LLVM aggregate call with a guessed C ABI.
+The four-file generator and unused timing runner need no formal replacement.
+
+Remove the research io_uring self-check from daily invocation; leave it with
+its explicitly invoked comparator. It checks that comparator's implementation,
+not a missing production WF/runtime obligation. Existing formal Linux/runtime
+receivers in B01-B04 remain. This deliberately retires an earlier CI addition
+under the newly selected research boundary; it is not deletion to obtain a
+green run or a claim that the comparator's checks are worthless for research.
+
+#### B06b: compute construction, correctness and support
+
+Current owners are `research/experiments/compute-bench/Makefile`, its C/LLVM/awk
+support, and `.github/workflows/compute-bench.yml`.
+
+Root `programs-check` covers ten module kernels: mandelbrot, quadrature,
+records, FIR, stencil, prefix, histogram, merge sort, BFS and radix scatter.
+For each it builds parallel/sequential modules, checks publication IR and
+links a tiny C main with both modules and the real runtime. It checks strong
+symbols but **does not run a kernel against its output oracle**. An eleventh
+source, `range_split.wf`, is emitted for IR inspection in both modes and then
+compiled again into two executable programs which do run. These assertions
+and range executions are inside timestamped `checked_*` recipes: an up-to-date
+stamp skips them as well as construction.
+
+The automatic push workflow additionally builds five kernel images on Linux
+and macOS, including C serial/static, oneTBB, Parlay when available, and Rayon
+comparison forms. It verifies their outputs across widths 1, 2, 4, 8, 16 and
+32 up to the first width above the host's CPU count. Its push arm does not
+time these forms, but still fetches/builds and checks the research competitors.
+Independent expected results remain valuable without these parallel frameworks.
+
+| WF program and current C oracle | Actual WF input matrix per form/width | Useful formal receiving observation |
+|---|---|---|
+| `mandelbrot.wf`, `mandelbrot_bench.c` | Seven shapes x seven sizes x four iteration limits: 196 cases, plus a split-floor case when applicable | Every output count/length and input preservation across empty/tail/escape shapes. Extend the existing Mandelbrot program coverage; retain evidence of the actual parallel path. The extra 11 x 11 x four special-float sweep currently compares C leaves only, not WF. |
+| `quadrature.wf`, `quadrature_bench.c` | Ten named fixtures and 64 integrations from the timed batch | Per-integral bitwise reference results, analytic controls and depth/empty/reversed/peak distinctions. Existing formal adaptive quadrature compares an aggregate with an analytic result and across lowering policies; it does not replace all these per-input observations. A timed-batch size alone does not justify 64 routine cases. |
+| `records.wf`, `records_bench.c` | Five shapes x thirteen counts x four grains: 260 calls, but only 65 distinct WF datasets; ten additional range/boundary cases | Complete record results and unchanged bytes/offsets, including malformed ranges and adjacent truncated UTF-8. The four grains configure the C comparator, not the WF interface: remove these exact WF repeats. Existing text decoding does not by itself cover the offset-array contract. |
+| `fir.wf`, `fir_bench.c` | Eleven tap counts x nine output lengths x three grains: 297 calls over 99 WF datasets, plus a split-floor case | All output bits, input/tap preservation, empty/tail and rounding/history cases. Extend the formal FIR program beyond its fixed example. The three grains affect only C dispatch; generated WF outputs do not carry the C buffer canaries. |
+| `stencil.wf`, `stencil_bench.c` | Eight dimension pairs x six step counts: 48 cases | This is the same oracle matrix already covered by B05o; extract it once, including B05o's missing 5-by-5 WF smoke observation. |
+
+These are runtime data inputs in constructed images, not separately compiled
+WF files per row or per case. Do not retain all current cases solely for their
+count or delete meaningful boundaries merely for speed. Share source/adapters
+with formally owned program fixtures, preserving implementation assertions
+in the compiler/runtime group. B05o already covers the other imported
+compute kernels and recursive range behavior.
+
+Two specific sources of avoidable execution work are visible without timing:
+
+1. `harness.c::do_verify` calls the timed workload's `prepare` before `verify`.
+   Mandelbrot prepares 98,304 points; records prepares 131,072 records; FIR
+   prepares 524,288 outputs with 64 taps; stencil computes a reference over
+   a 1,024-by-4,096 grid for sixteen steps. **None of these four verify
+   functions consumes that prepared timed fixture**; each creates its own
+   matrix. Quadrature does consume its prepared 64-input batch. Separate
+   correctness preparation from timing preparation rather than paying this
+   unrelated work once per form/width process.
+2. The records serial form also exhaustively compares the private C decoder
+   with a C reference over byte pairs, Unicode scalars/truncations and 10,000
+   random buffers. That sweep never invokes WF. Retain necessary known-result
+   controls for a formally extracted independent oracle; the entire competing
+   C implementation and its exhaustive self-test are not thereby admitted.
+
+Move required publish/strong-runtime-link observations onto actual formal
+artifacts, consistent with the live parallel-lowering decision that a silently
+sequential link must not masquerade as parallel execution. Reuse compatible
+construction; rerun assertions even when construction is current. The separate
+empty-link images and range's emit-then-recompile sequence need no independent
+place once their observations use the retained products. B03's controlled
+worker-path receiving conditions still apply; an optimization flag or an
+unobserved large input is not evidence that the path executed.
+
+Two supporting self-tests have conditional value:
+
+- `module-symbols-test.sh` exercises `module-symbols.awk` on LLVM
+  strong/weak/quoted/imported names, constructs native objects and checks a
+  linked result and missing-adapter failure. Retain the relevant small checks
+  only with an extracted helper that the formal module receiver actually uses.
+- `baseline-entry-test.sh` checks `baseline-entry.sh`'s exact ordinary/command
+  main-header adaptation and rejection of unknown, missing or duplicate
+  entries, as well as incomplete baseline runtime inputs. Retain only needed
+  baseline compatibility in the formal performance runner; remove the adapter
+  when no supported comparison needs it. The current profile detector reads a
+  baseline file under research, which must also be replaced, not hidden behind
+  a formal wrapper.
+
+#### B06c: the actual automatic performance verdict
+
+Current owners are `.github/workflows/compute-regression.yml`, compute
+`harness.c`, `Makefile`, `reduce.awk`, `verdict.awk` and `verdict-test.sh`.
+This is a separate pull-request job; only the deterministic verdict self-tests
+are in root `make check`. Keep that distinction: neither ordinary correctness
+CI nor local `make check` builds a baseline or performs paired measurements.
+
+| Phase | Current operation and evidence |
+|---|---|
+| Construct | Build gate-profile candidate and merge-base compilers. Compile common current WF sources with each compiler and its own runtime; adapt only the known entry-header interface when necessary. Build five kernel images per arm. The current bundle also builds/links comparison frameworks and sequential modules. |
+| Verify | Run correctness before timing, including the candidate comparison forms and both WF arms. Strong-symbol checks distinguish the actual scheduler/floor from weak sequential stubs. |
+| Measure | Five passes, with form/width order rotated and reversed; candidate and baseline are separate processes within the same passes on the same host. Each process has one unrecorded warmup and five timed calls, checking output after every call. Data/reference preparation and result checking/release are outside the interval; the call's output construction and work are inside. Process CPU includes all threads during that interval. Shutdown is reported separately. |
+| Reduce | Take each process's median of five timed calls, pair baseline/candidate by pass and take the median of those five ratios. Retain raw rows and identities/flags/workload metadata. It is not the ratio of two unrelated jobs' medians. |
+| Decide | Read only the WF-baseline/WF-candidate wall ratios at non-oversubscribed widths 1, 2 and 4. A width is adverse when that ratio is below 0.97 and the baseline is faster in at least four of five pairs. A kernel fails on two adverse widths; one is a non-failing suspect. CPU ratios below 0.90 are reported only, using the wall-pair count. |
+
+oneTBB/Parlay/Rayon rankings and widths outside the recorded set do not select
+this verdict. Retain only candidate/baseline WF and necessary independent
+output oracles in the formal performance job; framework rankings and
+exploratory controls stay in research. At five kernels, two arms, three
+eligible widths and five passes this would be 150 timed processes, each with
+one warmup and five samples. This is a proposed protocol count on a suitable
+host, not a measurement or predicted speedup. Required sample capacity must
+be explicit; insufficient host capacity is not a passing regression check.
+
+The formal receiver should use `tests/programs/` fixtures where they share
+the same program behavior, and a small performance-support home under the
+existing `tests/` directory for the paired runner, data reduction and verdict.
+Its owner is the automatic regression job; remove support when no maintained
+job consumes it. Do not copy the complete research bundle. Both arms' input
+discovery, runtime support and any temporary baseline adapter must satisfy the
+research boundary. Baseline compatibility is not an exception for importing
+`baseline/research/experiments/compute-bench/programs/quadrature.wf`.
+
+Retain the fourteen crafted-table verdict tests with that formal runner and
+run them in the ordinary gate. They check pass/fail/suspect/refusal, pair
+counts, width/oversubscription selection and CPU-report-only behavior. They
+need shell/awk and small text inputs, not Rust or WF compilation. Add focused
+controls for the following actual source-level gaps during implementation:
+
+- **Expected matrix:** the reducer validates cells it sees, but has no complete
+  expected kernel/arm/width matrix. The verdict only requires that some kernel
+  has two readable rows, and counts rows rather than unique widths. Missing
+  complete kernels and duplicate width rows must not satisfy a complete run.
+  Declare the expected cells/passes, and refuse missing, duplicate or unusable
+  values. This is necessary result integrity, not a generic parser-hardening
+  project.
+- **Decision precision and failures:** the verdict currently consumes a wall
+  ratio rounded to three decimals for display. Decide with unrounded values
+  and round only presentation. Make's reducer-to-`tee` pipe lacks an inner
+  pipe-failure guarantee; preserve the reducer's exit status. The later verdict
+  refuses an empty table, so this is not a claim that every reducer failure
+  currently passes the whole workflow.
+- **Change selection:** the workflow's internal filter names backend,
+  lowering, driver and CLI sources but omits semantic code. Lowering explicitly
+  consumes `checked.data.permission` produced by semantic analysis; a semantic
+  change can alter the parallel program. Select compiler/build inputs that
+  can affect the measured artifact, including that path and formal fixtures/
+  support. Retain a clear successful skip for changes established irrelevant,
+  not the assumption that everything outside the emitter is irrelevant.
+
+Do not overstate the present performance guarantee. A true regression may
+affect one width only; the two-width rule trades detection for reduced noise,
+and cannot establish that every such suspect is merely code placement. CPU
+regressions are not blocking. Keep those limitations visible; this source
+audit supplies no new statistical threshold or universal optimal strategy.
+
+The current research harness adds `-falign-functions=64 -falign-loops=32` on
+x86 to both WF arms, beyond the ordinary compiler's native flags. Thus its
+numbers do not directly measure the normal CLI-built artifact. The live
+`design/compiler/parallel-lowering.md` already rejects adding those flags to
+normal compilation. The formal regression receiver should use the real
+compiler's native construction policy, without importing this special control
+as a default. Removing framework objects also changes link layout. During the
+later measurement phase, check an identical-source pair and a known slowdown
+before trusting the extracted runner's blocking rule; establish acceptable
+false alarms and detection criteria before choosing revised thresholds. Do
+not run that calibration now or declare the old thresholds revalidated by
+moving code. Preserve raw failures rather than retrying until a pass.
+
+**Review status.** The owner authorized executing the selected redesign and
+resolving the remaining checks without further batch approval. B06a-c are the
+resulting directions, subject to the explicit performance separation above;
+this source audit is not implementation evidence. B07's ten repository/tooling
+check types are the remaining unreviewed batch. The simplified dependency guard
+is owner-selected, with its exact implementation still in B07. This source
+audit changes neither pending amendment and claims no live-tree/specification/
+conformance/build/workflow change, measurement, DCR or completion review.
 
 ## Affected material and evidence
 
