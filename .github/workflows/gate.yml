@@ -5,7 +5,7 @@
 # Linux half of the compiler — the io_uring adapter, the `__linux__` bodies of
 # every compiler-owned C unit, the ELF link path — was covered by a container
 # on that same machine or by nothing at all. These jobs run the identical
-# entry point on a GitHub-hosted Linux runner and on a GitHub-hosted macOS
+# group inventory and recipes on GitHub-hosted Linux and macOS
 # runner, so a Linux result is a real x86-64 Linux kernel rather than a
 # virtualized aarch64 guest.
 #

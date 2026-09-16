@@ -143,7 +143,7 @@ assertions. This is diagnostic coverage of those helpers, not every custom
 subprocess. Nested or parallel rows are not additive suite wall time. See the
 [measured build/test investigation](research/investigations/test-economy/build-and-test.md).
 
-The [gate workflow](.github/workflows/gate.yml) runs those stages on Linux and
+The [gate workflow](.github/workflows/gate.yml) runs those groups on Linux and
 macOS. Additional [I/O host checks](.github/workflows/io-hosts.yml) and
 [benchmarks](.github/workflows/io-bench.yml) own their platform-specific
 evidence. Automatic CI checks correctness and performance regressions under
