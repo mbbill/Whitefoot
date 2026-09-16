@@ -156,7 +156,15 @@ and to indirect dependencies: a Rust test importing a research WF source,
 LLVM adapter or C oracle is still dependent on research. Calling the current
 compiler or printing timing data does not admit an experiment to the gate.
 
-Review research content only for observations worth extracting. Give each
+The extraction audit follows current automatic CI and `make check` callers,
+including their transitive inputs. Do not inspect research test cases that
+neither entry point enables. Historical targets and manual-only experiments
+are outside this cleanup; their presence in the inventory is not work to do.
+For enabled research, identify useful observations and their formal receivers,
+then remove every research dependency from those daily entry points. An enabled
+experiment with no useful missing observation needs no replacement test.
+
+Review that enabled content only for observations worth extracting. Give each
 retained case a formal compiler/runtime, programs, conformance or performance
 test home, with the minimal inputs, oracle and support it actually needs.
 Research may then reuse those formal fixtures. Do not move an entire bundle,
@@ -278,13 +286,14 @@ For each item, show the following in the conversation in Chinese:
    Do not treat grouping as approval of its recommendations or implement
    changes while the owner's execution deferral remains in force.
 
-Use the inventory's remaining runtime probes, platform/sanitizer checks,
-research models/oracles, benchmark construction/correctness checks,
-repository/tooling checks, performance protocols and historical/explicit
-experiment runners as the traversal scope. Previously selected changes
-remain selected; only a newly discovered conflict or changed premise reopens
-one. Audit individual compiler/corpus cases under the baseline as needed
-during their migration, rather than assuming their current classification is correct.
+Use actual automatic CI and canonical-gate reachability as the traversal
+boundary. The remaining enabled research models/oracles, benchmark checks,
+performance-regression protocol and repository/tooling checks are in scope;
+unwired or manual-only research is not. Previously selected runtime/platform
+changes remain selected; only a newly discovered conflict or changed premise
+reopens one. Audit individual compiler/corpus cases under the baseline as
+needed during their migration, rather than assuming their current
+classification is correct.
 
 The owner agreed to R01 through R07, B01 and B02, and selected the common C
 runner direction described below. B04a's completed current-consumer audit
@@ -295,11 +304,14 @@ adjacent stack-ledger tests. Both parts of B04 (a-r), covering native adapters,
 platform wiring and Windows namespace/compiled programs, are also agreed.
 Implementation remains deferred. B05a-g have been screened under the owner's
 research-extraction boundary: the models/controls stay outside daily checks,
-and the useful WF behavior has a proposed formal receiving home;
-the timing loop retains its explicit B06 review home.
-The remaining inventory is grouped below; these are review scopes, not eight
-new test targets or a promise that every scope fits one conversation. Individual
-compiler/corpus migration audits still apply under the accepted baseline.
+and the useful WF behavior has a proposed formal receiving home. The C
+control's unconditional timing was already identified in B05f; leaving that
+control in research needs no further audit of its manual measurement protocol.
+The inventory uses the stable batch IDs below. B08 is now excluded from the
+remaining review, leaving three open scopes: B05 (partly screened), B06 and
+B07. These are discussion scopes, not test counts, new targets or a promise
+that each fits one conversation. Individual compiler/corpus migration audits
+still apply under the accepted baseline.
 
 | Batch | Related checks and existing homes | Status |
 |---|---|---|
@@ -307,10 +319,29 @@ compiler/corpus migration audits still apply under the accepted baseline.
 | B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Agreed; B04a's consumer audit and orphaned-operation retirement also agreed; implementation deferred |
 | B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/`, the related Rust backend sampling modules and adjacent stack-ledger tests | All five reviewed parts agreed; implementation deferred |
 | B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Both reviewed parts agreed; implementation deferred |
-| B05 | Extract useful observations from research models, compiler witnesses and oracles into formal tests; leave the remaining research outside daily checks | Authority/foundation screened under the owner boundary; remaining case-level extraction review continues |
-| B06 | IO/compute benchmark construction, output correctness, regression decisions and explicit timing protocols | Not yet reviewed |
+| B05 | Extract useful observations from currently enabled research models, compiler witnesses, oracles and indirect formal-test inputs | Authority/foundation screened; eight remaining entry groups below |
+| B06 | Enabled IO/compute benchmark construction and correctness, and automatic paired performance regression | Three remaining responsibility groups below; manual-only timing protocols excluded |
 | B07 | Repository/specification checks, formatting/lint/docs, test collection, runner/process-guard and design-tool self-tests | Not yet reviewed, except the already selected spec/grammar simplifications |
-| B08 | Historical or explicit experiment/instrument runners outside the default gate | Not yet reviewed |
+| B08 | Historical or explicit experiment/instrument runners outside automatic CI and the default gate | Excluded by the owner's scope clarification; no case review or cleanup required |
+
+**Remaining enabled review.** The following is a source-level caller count at
+the documentation base `39d2b6b0`, not a test-case or executable count. No build
+or test was run to obtain it. Shared dependencies are reviewed once with all
+their callers; the groups do not prescribe separate binaries or review turns.
+
+| Scope | Remaining groups and current entry points |
+|---|---|
+| B05: eight entry groups | (1) `proof-use-cost`; (2)-(5) container `lifecycle`, `dense`, `costs`, `families`; (6) ripgrep runner self-tests; (7) raw-DEFLATE oracle self-tests; (8) research inputs already imported by formal lowering, semantic slice/loop-permission and backend slice tests. Groups 1-7 are reached from root `research-tests`; group 8 is reached through compiler tests. Authority/foundation were already screened in B05a-g and are excluded from this remaining count. |
+| B06: three responsibility groups | (1) IO `programs-check` reached from root `bench-programs`; (2) compute construction/verification and support reached from root `bench-programs` and automatic `compute-bench.yml` pushes; (3) the paired `compute-regression.yml` comparison/verdict, including `verdict-test` reached from root `research-tests`. Review only the timing needed by the actual automatic regression check, not full manual scoreboard or IO timing matrices. B04o already covers the enabled Windows component-source receiver. |
+| B07: ten check types from inventory section 10 | Rust formatting, Clippy, rustdoc, process-guard self-tests, remaining repository invariants, released-spec archive immutability, specification-prose checks, design-linter/self-tests, conformance structure/runner self-tests, and test collection/partition checks. The spec scanner and grammar generator already have selected simplifications; do not reopen them as additional undecided items. |
+
+`historical-tool-tests` and manual-only `io-bench.yml` are not reached by the
+automatic gate. The manual comparison arms of `compute-bench.yml` are likewise
+outside this review; its push-triggered build/verify arm remains in B06. Follow
+helpers used by an enabled arm even when the same helper also serves a manual
+experiment. Do not open unrelated research cases merely because they share a
+directory. These are the remaining discussion items, not a claim that the
+already selected migrations or the full redesign have been implemented.
 
 **Selected C runner organization.** The owner agreed to consolidate compatible
 C cases into one main runtime test executable, with logical case groups rather
@@ -2311,12 +2342,13 @@ are bounded model executions, not scheduler schedules. Model counts and
 copy-loop counts above describe source work, not elapsed-time measurements or
 implemented savings. This audit does not implement any retirement.
 
-The remaining B05 review selects individual useful observations from
-proof-use-cost, lifecycle/dense/families, native map controls and external
-oracles. B06's performance-regression work follows the same extraction
-boundary; B07/B08 retain their repository-tooling and explicit-instrument
-scopes. Selection of a formal owner does not require a new executable or an
-entire experimental bundle's migration.
+The remaining B05 review selects individual useful observations only from
+currently enabled proof-use-cost, lifecycle/dense/families, native map controls,
+external oracles and indirect formal-test imports. B06's enabled construction
+and performance-regression work follows the same extraction boundary; B07
+retains its repository-tooling scope. B08's unwired/manual-only instruments
+are excluded. Selection of a formal owner does not require a new executable
+or an entire experimental bundle's migration.
 
 **Additional current dependency map.** These source-level findings define
 extraction work, not completed migrations or an audit of every assertion:
@@ -2325,7 +2357,7 @@ extraction work, not completed migrations or an audit of every assertion:
 |---|---|
 | Root `research-tests`: proof-use-cost and container checks | The proof-use runner invokes the compiler for seven accepted fixtures and two PRF-1 negative controls; its check has no native WF execution or performance verdict. Formal PRF-1 conformance and source-proof cases already exist, so compare properties before extracting any additional ceiling/context case. Container lifecycle currently compiles/runs seven accepted programs and checks eight rejected inputs. Normative expectations require the active specification, not the recipe's current-outcome labels; extract missing conformance/program/implementation observations, not both directories wholesale. |
 | Root `research-tests`: ripgrep and raw-DEFLATE Python self-tests | The 22 ripgrep tests check a research runner, output normalization, frozen workload selection and statistics. The 19 DEFLATE tests check the research decoder oracle. Existing formal `programs/wfgrep.rs` uses its own Rust reference/system grep, and `programs/raw_deflate.rs` contains wire-byte fixtures and expected payloads; a research citation in a comment is not a runtime import. Do not promote these complete research self-test suites without a demonstrated missing formal consumer. Any useful additional wire vector or output property must first be compared with formal coverage. |
-| `compiler/src/lowering/tests.rs`, `semantic/tests/slices.rs`, `backend/tests/slices.rs` | Formal Rust tests already import research WF sources, LLVM host adapters, C oracles and invoke `compute-bench/host-adapter.awk`. Their observations include runtime-extent work estimates, range rejection/loan use, complete compute outputs, wrong-output/missing-observation controls and native path evidence. Retain the useful observations while extracting the necessary inputs and helper logic to formal test ownership. Review redundant builds, benchmark-only code and probabilistic repeats under the previously selected rules rather than copying the entire compute bundle. |
+| `compiler/src/lowering/tests.rs`, `semantic/tests/slices.rs`, `semantic/tests/loop_permission.rs`, `backend/tests/slices.rs` | Formal Rust tests already import research WF sources, LLVM host adapters, C oracles and invoke `compute-bench/host-adapter.awk`. Their observations include runtime-extent work estimates, range rejection/loan use, loop-permission metadata, complete compute outputs, wrong-output/missing-observation controls and native path evidence. Retain the useful observations while extracting the necessary inputs and helper logic to formal test ownership. Review redundant builds, benchmark-only code and probabilistic repeats under the previously selected rules rather than copying the entire compute bundle. |
 | Root `bench-programs`, Windows IO-host component step | Root checks reach both IO and compute research Makefiles. The Windows step reads `io-completion-bench/programs/windows_component_open.wf`. B04o already selects a programs receiver for its real argument/component observations. Apply the same property-based extraction to other useful inputs and remove experimental construction/measurement machinery from daily callers. |
 | Automatic `compute-bench.yml` pushes and `compute-regression.yml` PRs | The first constructs/verifies the research scoreboard; the second decides paired performance regressions using research programs, harnesses and verdict machinery. Its rule self-test is also called from root research-tests. Preserve required performance detection in a formal performance-test owner after extracting the minimal same-workload comparison and its verdict tests; leave exploratory comparators/scoreboards and explicit measurement workflows in research. B06 still owns the detailed comparison/coverage review. |
 
@@ -2335,12 +2367,12 @@ the prohibited dependency is on executable research machinery and test inputs.
 A complete migration audit must follow remaining generated and transitive
 inputs too. No broad textual ban or new gate script is added by this discussion.
 
-This revision corrects the research boundary in standing guidance and adds
-completion-checklist T4-T6. The fourth pending verification decision is updated;
-its five other decisions, the build-input amendment and the live tree remain
-unchanged. Existing test code, Make/CI callers, specification and conformance
-evidence are unchanged. No build, executable test, timing campaign or new
-completion/DCR result is claimed.
+The research-boundary update corrected standing guidance and added
+completion-checklist T4-T6. It updated the fourth pending verification decision;
+the enabled-only scope clarification changes no further amendment or guidance.
+The build-input amendment and live tree remain unchanged. Existing test code,
+Make/CI callers, specification and conformance evidence are unchanged. No build,
+executable test, timing campaign or new completion/DCR result is claimed.
 
 ## Affected material and evidence
 
