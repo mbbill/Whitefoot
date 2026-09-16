@@ -307,11 +307,12 @@ research-extraction boundary: the models/controls stay outside daily checks,
 and the useful WF behavior has a proposed formal receiving home. The C
 control's unconditional timing was already identified in B05f; leaving that
 control in research needs no further audit of its manual measurement protocol.
-The inventory uses the stable batch IDs below. B08 is now excluded from the
-remaining review, leaving three open scopes: B05 (partly screened), B06 and
-B07. These are discussion scopes, not test counts, new targets or a promise
-that each fits one conversation. Individual compiler/corpus migration audits
-still apply under the accepted baseline.
+The inventory uses the stable batch IDs below. B05h-o now cover all eight
+remaining enabled research entry groups; their recommendations await the
+owner's ruling. B06 and B07 remain to be reviewed, and B08 is excluded. These
+are discussion scopes, not test counts, new targets or a promise that each
+fits one conversation. Individual compiler/corpus migration audits still
+apply under the accepted baseline.
 
 | Batch | Related checks and existing homes | Status |
 |---|---|---|
@@ -319,19 +320,19 @@ still apply under the accepted baseline.
 | B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Agreed; B04a's consumer audit and orphaned-operation retirement also agreed; implementation deferred |
 | B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/`, the related Rust backend sampling modules and adjacent stack-ledger tests | All five reviewed parts agreed; implementation deferred |
 | B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Both reviewed parts agreed; implementation deferred |
-| B05 | Extract useful observations from currently enabled research models, compiler witnesses, oracles and indirect formal-test inputs | Authority/foundation screened; eight remaining entry groups below |
+| B05 | Extract useful observations from currently enabled research models, compiler witnesses, oracles and indirect formal-test inputs | Authority/foundation screened; all eight other entry groups reviewed in B05h-o below, recommendations awaiting owner ruling |
 | B06 | Enabled IO/compute benchmark construction and correctness, and automatic paired performance regression | Three remaining responsibility groups below; manual-only timing protocols excluded |
 | B07 | Repository/specification checks, formatting/lint/docs, test collection, runner/process-guard and design-tool self-tests | Not yet reviewed, except the already selected spec/grammar simplifications |
 | B08 | Historical or explicit experiment/instrument runners outside automatic CI and the default gate | Excluded by the owner's scope clarification; no case review or cleanup required |
 
-**Remaining enabled review.** The following is a source-level caller count at
+**Enabled review coverage.** The following is a source-level caller count at
 the documentation base `39d2b6b0`, not a test-case or executable count. No build
 or test was run to obtain it. Shared dependencies are reviewed once with all
 their callers; the groups do not prescribe separate binaries or review turns.
 
-| Scope | Remaining groups and current entry points |
+| Scope | Groups and current entry points |
 |---|---|
-| B05: eight entry groups | (1) `proof-use-cost`; (2)-(5) container `lifecycle`, `dense`, `costs`, `families`; (6) ripgrep runner self-tests; (7) raw-DEFLATE oracle self-tests; (8) research inputs already imported by formal lowering, semantic slice/loop-permission and backend slice tests. Groups 1-7 are reached from root `research-tests`; group 8 is reached through compiler tests. Authority/foundation were already screened in B05a-g and are excluded from this remaining count. |
+| B05: eight entry groups, reviewed below | (1) `proof-use-cost`; (2)-(5) container `lifecycle`, `dense`, `costs`, `families`; (6) ripgrep runner self-tests; (7) raw-DEFLATE oracle self-tests; (8) research inputs already imported by formal lowering, semantic slice/loop-permission and backend slice tests. Groups 1-7 are reached from root `research-tests`; group 8 is reached through compiler tests. Authority/foundation were already screened in B05a-g and are excluded from this count. Recommendations are pending, not implemented. |
 | B06: three responsibility groups | (1) IO `programs-check` reached from root `bench-programs`; (2) compute construction/verification and support reached from root `bench-programs` and automatic `compute-bench.yml` pushes; (3) the paired `compute-regression.yml` comparison/verdict, including `verdict-test` reached from root `research-tests`. Review only the timing needed by the actual automatic regression check, not full manual scoreboard or IO timing matrices. B04o already covers the enabled Windows component-source receiver. |
 | B07: ten check types from inventory section 10 | Rust formatting, Clippy, rustdoc, process-guard self-tests, remaining repository invariants, released-spec archive immutability, specification-prose checks, design-linter/self-tests, conformance structure/runner self-tests, and test collection/partition checks. The spec scanner and grammar generator already have selected simplifications; do not reopen them as additional undecided items. |
 
@@ -340,8 +341,8 @@ automatic gate. The manual comparison arms of `compute-bench.yml` are likewise
 outside this review; its push-triggered build/verify arm remains in B06. Follow
 helpers used by an enabled arm even when the same helper also serves a manual
 experiment. Do not open unrelated research cases merely because they share a
-directory. These are the remaining discussion items, not a claim that the
-already selected migrations or the full redesign have been implemented.
+directory. B06 and B07 are the remaining unreviewed scopes; pending B05
+recommendations and previously selected migrations are not implemented work.
 
 **Selected C runner organization.** The owner agreed to consolidate compatible
 C cases into one main runtime test executable, with logical case groups rather
@@ -2342,37 +2343,280 @@ are bounded model executions, not scheduler schedules. Model counts and
 copy-loop counts above describe source work, not elapsed-time measurements or
 implemented savings. This audit does not implement any retirement.
 
-The remaining B05 review selects individual useful observations only from
-currently enabled proof-use-cost, lifecycle/dense/families, native map controls,
-external oracles and indirect formal-test imports. B06's enabled construction
-and performance-regression work follows the same extraction boundary; B07
-retains its repository-tooling scope. B08's unwired/manual-only instruments
-are excluded. Selection of a formal owner does not require a new executable
-or an entire experimental bundle's migration.
+### B05 — Eight enabled research entry groups
 
-**Additional current dependency map.** These source-level findings define
-extraction work, not completed migrations or an audit of every assertion:
+**Status: source review presented; recommendations await the owner's ruling.**
+This covers all eight remaining B05 groups, using the unchanged executable
+sources at `5e8dba3d`. Groups B05h-n are reached through root `research-tests`;
+B05o is reached through formal compiler tests. There are no builds, executed
+tests or new timings in this audit. Counts below describe construction paths,
+test definitions or inputs as explicitly labeled, not measured costs.
 
-| Current path into research | Observation and next disposition |
+The experiment paths in B05h-n are under `research/experiments/`.
+Container rows share `container-representation/native.mk`, which constructs
+the compiler's native runtime support for their C/WF images. Extracted tests
+must use the formal suite's compatible native construction support instead;
+moving a WF file while retaining this research Make include is insufficient.
+
+| Row and current entry | What is actually built and executed | Proposed formal disposition |
+|---|---|---|
+| B05h: `proof-use-cost/Makefile` and `runner.rs` | An optimized standalone Rust runner, the gate `whitefootc`, and nine CLI WF compilations to LLVM: seven expected accepts and two expected PRF-1 rejects. No WF native execution. Elapsed time is printed, with no performance verdict. | Keep one valid proof at the 4,096-use admission ceiling in conformance; reuse existing negative and internal-diagnostic coverage. Leave the scaling runner and timing output in research. |
+| B05i: `container-representation/lifecycle/` | Seven accepted WF sources compiled and executed with `--no-overlap`; eight negative inputs compiled to require exit 1, no LLVM output and a named diagnostic. Three helper WF files and a generated negative source support those inputs. The phony check currently repeats compilation. | Put missing language obligations in conformance; fold real pool/boxed storage behavior into existing programs or compiler cases. Do not migrate all fifteen scenarios as native programs. |
+| B05j: `container-representation/dense/` | An optimized Rust generator/adapter creates four WF forms: scalar extents 16/256/4,096 and a four-word record at extent 16. It builds four native C/WF comparisons, four additional WF smoke images, one retained-boundary comparison and an inline-view image. It also emits inspection products. | Keep scalar and wide-record update/result observations in programs, sharing the needed reference and construction. Retire redundant smoke/control variants and unasserted inspection products from daily callers. |
+| B05k: `container-representation/costs/` | Two C executables and one optimized Rust executable exercise private map implementations. No WF source, compiler call or Rust `#[test]` harness is involved. | Leave the three standalone controls in research. Extract only the necessary independent map/ownership oracle support actually consumed by B05l's retained WF tests. |
+| B05l: `container-representation/families/` | Fifteen WF sources have default, `--par` and `--no-overlap` native images: 45 ordinary images/runs, plus allocation observers, C comparisons and adapted LLVM variants. Four normal Rust adapter tools and two standalone Rust test executables support these checks; the latter contain four `#[test]` definitions in total. | Keep missing container behavior, allocation/refusal observations and justified code-generation assertions in their formal owners. Remove proven duplicates, experiment-only controls and unsupported variant products. Detailed receiving conditions follow below. |
+| B05m: `ripgrep/test_runner.py` | Twenty-two Python tests exercise the research runner's normalization, schedule/statistics, input guards and frozen manifest. This target runs neither WF nor native ripgrep. | Remove this self-test invocation from daily verification. Existing formal wfgrep tests have their own reference; no missing formal observation requiring this runner was identified. |
+| B05n: `raw-deflate-default-shape/test_oracle.py` | Nineteen Python test methods exercise the research decoder, with generated wire inputs, known payloads and zlib comparisons. They never execute the WF decoder. | Extract useful missing wire vectors and expected results into the existing formal raw-DEFLATE program tests. Leave the Python decoder and its self-tests in research. |
+| B05o: formal lowering, semantic and backend slice tests | Fourteen Rust `#[test]` functions import research inputs: one lowering, two semantic slice, three loop-permission and eight backend slice tests. Backend cases compile WF through the compiler library, then use LLVM/C adapters, Clang and the real native runtime. | Retain useful output, diagnostic, permission, work-estimate and runtime-path observations under the appropriate formal owners, extracting all required inputs/support. Consolidate overlapping construction and replace probabilistic path discovery only with equivalent controlled observations. |
+
+**B05h: proof acceptance, not a timing gate.** The runner generates fixed,
+growing and control contexts at sizes 3 and 6, plus a fixed-context proof with
+4,096 uses. At size 3 the three generated sources are byte-identical: seven
+accepted compiler invocations represent only five distinct source texts.
+The generated proof-bearing helper is checked but never called by `main`.
+The two negative variants invert a premise or repeat an existing premise.
+Their status/PRF-1 checks are weaker than the existing formal corpus adapter.
+
+`tests/conformance/cases/prf1-pos-explicit-affine-proof.wf`,
+`prf1-neg-unproved-premise.wf` and `prf1-neg-duplicate-use.wf` already exercise
+the basic properties. `compiler/src/semantic/tests/source_proofs.rs` adds
+source-order and proof-record assertions. Its
+`use_capacity_cites_the_first_entry_beyond_the_admitted_prefix` uses 4,097
+entries and inspects the first overflowing node and certificate bookkeeping;
+it does not establish acceptance of a valid 4,096-entry proof. Keep that
+additional compiler observation and add the valid upper-bound case to
+conformance without native execution. PRF-1 specifies a structural ceiling,
+not a machine-speed or elapsed-work limit. The small scaling matrix earns no
+permanent additional compilation by printing time.
+
+**B05i: lifecycle receiving map.** The source names below are in the lifecycle
+directory; `pool_helpers.wf`, `linear_helpers.wf` and `ring_helpers.wf` supply
+the shared definitions. Normative expectations follow active FN-9, MSR-5,
+CALL-6, PRF-1, PROV-6 and BLK-0 requirements as applicable; an experiment's
+current-outcome label does not establish a language rule.
+
+| Current scenarios and observation | Existing coverage and recommendation |
 |---|---|
-| Root `research-tests`: proof-use-cost and container checks | The proof-use runner invokes the compiler for seven accepted fixtures and two PRF-1 negative controls; its check has no native WF execution or performance verdict. Formal PRF-1 conformance and source-proof cases already exist, so compare properties before extracting any additional ceiling/context case. Container lifecycle currently compiles/runs seven accepted programs and checks eight rejected inputs. Normative expectations require the active specification, not the recipe's current-outcome labels; extract missing conformance/program/implementation observations, not both directories wholesale. |
-| Root `research-tests`: ripgrep and raw-DEFLATE Python self-tests | The 22 ripgrep tests check a research runner, output normalization, frozen workload selection and statistics. The 19 DEFLATE tests check the research decoder oracle. Existing formal `programs/wfgrep.rs` uses its own Rust reference/system grep, and `programs/raw_deflate.rs` contains wire-byte fixtures and expected payloads; a research citation in a comment is not a runtime import. Do not promote these complete research self-test suites without a demonstrated missing formal consumer. Any useful additional wire vector or output property must first be compared with formal coverage. |
-| `compiler/src/lowering/tests.rs`, `semantic/tests/slices.rs`, `semantic/tests/loop_permission.rs`, `backend/tests/slices.rs` | Formal Rust tests already import research WF sources, LLVM host adapters, C oracles and invoke `compute-bench/host-adapter.awk`. Their observations include runtime-extent work estimates, range rejection/loan use, loop-permission metadata, complete compute outputs, wrong-output/missing-observation controls and native path evidence. Retain the useful observations while extracting the necessary inputs and helper logic to formal test ownership. Review redundant builds, benchmark-only code and probabilistic repeats under the previously selected rules rather than copying the entire compute bundle. |
-| Root `bench-programs`, Windows IO-host component step | Root checks reach both IO and compute research Makefiles. The Windows step reads `io-completion-bench/programs/windows_component_open.wf`. B04o already selects a programs receiver for its real argument/component observations. Apply the same property-based extraction to other useful inputs and remove experimental construction/measurement machinery from daily callers. |
-| Automatic `compute-bench.yml` pushes and `compute-regression.yml` PRs | The first constructs/verifies the research scoreboard; the second decides paired performance regressions using research programs, harnesses and verdict machinery. Its rule self-test is also called from root research-tests. Preserve required performance detection in a formal performance-test owner after extracting the minimal same-workload comparison and its verdict tests; leave exploratory comparators/scoreboards and explicit measurement workflows in research. B06 still owns the detailed comparison/coverage review. |
+| `pool_known_capacity`: capacity/length facts survive replace, a measured helper, a nominal field/destructure and `Some`; append/read observes 23. `pool_boundary_capacity`: an unsummarized helper return does not establish capacity at least four. | Preserve the missing fact-propagation and absent-summary observations in focused conformance cases. Existing run/program cases already exercise append/read; do not repeat native construction just for the value 23. |
+| `pool_conservation`: take/return summaries prove free-count and room restoration; the executable otherwise just exits successfully. `pool_false_conservation`: an unchanged-length postcondition contradicts an actual take. | Fold the valid count/room postconditions into the existing `tests/programs/block_pool.wf` observation, which already checks actual counts and linear leases. Preserve the false FN-9 postcondition as conformance coverage, not as a research negative-driver dependency. |
+| `pool_static_capacity`, generated `pool_static_length`, `pool_boxed_helper`, `pool_boxed_capacity`: fixed capacity follows the type across checkout/helper calls; initialized length does not. Mutable round trips return the expected sum 14; a boxed generic helper also supplies a compilation regression. | Conformance owns capacity-versus-length. Reuse the existing runs/heap fixtures for the actual pool round trip and retain a compact generic/boxed compiler regression if still distinct. `ent2-pos-a-run-capacity-survives-a-root-replace` and the backend boxed fixed-vector/holder cases overlap but do not establish that every pool composition is covered. Do not retire the distinct trigger merely because both cases contain a Box. |
+| `pool_field_result`: an aggregate field is used as an unsupported FN-9 result selector. | Merge with the same missing conformance property from B05l's `rejected-wrapper.wf`; one representative is sufficient. Check the active selector rule, not the old diagnostic text as a second authority. |
+| `linear_failure_cleanup`, `linear_failure_leak`: a prior linear ticket is consumed on both successful acquisition and refusal, or leaked on refusal. `linear_pop_empty`, `linear_failure_run`: draining elements does not discharge a statically linear run's own obligation, including on a failure branch. | Conformance owns these PROV-6 requirements. Fold branch-specific consumption into a good/bad pair; retain one representative drained-run negative. Existing simple unused-linear and zero-extent full-array cases are related but do not cover the same runtime-drained run. The two near-duplicate drained-run experiments need not become two full programs. |
+| `ring_indexed` and `ring_contiguous_view`: a helper returns a wrapped run; indexed sum is 14, but a contiguous view cannot be justified. | Existing `tests/programs/run_queue.wf` observes ordered wrapped elements and `blk0-neg-a-view-over-a-wrapped-run.wf` covers the view rejection. Fold a distinct helper-return observation into that program if needed; retire the separate weaker sum-only and duplicate rejection paths. |
 
-The dependency map includes indirect compiler imports, not just root Make or
-workflow names. Source/document citations to dated evidence remain legitimate;
-the prohibited dependency is on executable research machinery and test inputs.
-A complete migration audit must follow remaining generated and transitive
-inputs too. No broad textual ban or new gate script is added by this discussion.
+The receiving conformance cases compile for acceptance/rejection unless a
+runtime observation is itself necessary. A proof-only source currently
+ending in `main -> 0` does not automatically need a native image. No exact
+post-migration case count is selected before the receiving cases are written
+and checked against these properties.
 
-The research-boundary update corrected standing guidance and added
-completion-checklist T4-T6. It updated the fourth pending verification decision;
-the enabled-only scope clarification changes no further amendment or guidance.
-The build-input amendment and live tree remain unchanged. Existing test code,
-Make/CI callers, specification and conformance evidence are unchanged. No build,
-executable test, timing campaign or new completion/DCR result is claimed.
+**B05j: dense results and experiment controls.** Each of the four C/WF
+comparison images checks five round counts (0, 1, 3, 4, 8) and twelve seeds:
+60 input pairs. A rolling all-element digest is compared with an independently
+computed reference and several C construction strategies. The scalar path
+fills and updates a run; the wide path reads/replaces four-word records.
+The extra WF smoke images each check one generated expected digest, while the
+boundary image repeats the scalar 256-element workload with retained C
+helpers. The separate inline-view source checks a mutation is visible through
+the original run; formal run-view/backend tests already observe this property.
+
+Promote only missing scalar and aggregate result/update properties into
+`compiler/tests/programs/runs.rs` or `numerics.rs`, owning their WF data and
+necessary independent expectation under formal tests. Compare the actual
+all-element and record-transfer observations with B05g and existing owned-place
+cases; they are not interchangeable merely because all mention wide values.
+Choose representation/ABI boundary representatives, not the complete
+size-by-C-strategy benchmark product. A justified retained-call/code-generation
+property belongs with compiler tests. Do not preserve the comparison's several
+private C implementations as separate production targets.
+
+The WF assembly used to construct the executed object is necessary in the
+current recipe. Other `shape` outputs (optimized WF LLVM, native reference
+LLVM/assembly and boundary LLVM) have no assertions in this check. Producing
+them is not performance regression coverage. They remain explicit experiment
+outputs instead of daily prerequisites.
+
+**B05k: private map controls and their one real consumer.** `map-layout.c`
+checks four C lookup/layout strategies over seven powers-of-two capacities
+from 1 through 64: insertion/full refusal, replacement, deletion, tombstone
+reuse, membership and malformed payload extents. `rust-map.rs` checks Rust
+HashMap with a fixed hasher over the same capacities. Neither compares WF
+output. `sparse-owned.c` exercises two private C owning-map layouts, including
+allocation refusal, exact ownership/drop conservation, collision/delete/reuse,
+growth and pause/resume migration; it also prints structural/control costs.
+None needs a standalone formal test merely to preserve its current invocation.
+
+However, B05l's `owning-growth-observer.c` and `owning-growth-costs.c` include
+`../costs/sparse-owned.c`. Useful WF differential/ownership checks therefore
+require extracting the necessary C oracle and resource accounting into their
+formal receiver. Removing only the three `costs` commands would leave an
+indirect research dependency. Do not copy the control's unrelated main,
+layout experiments and reports along with the required oracle.
+
+**B05l: fifteen source programs, several different obligations.** All sources
+in this table are in `container-representation/families/`. The current CLI
+maps default and `--no-overlap` to the same Off lowering mode; `--par` selects
+On. Forty-five named images are not forty-five distinct lowering contracts.
+Retain an On variant only for a relevant distinct observation; passing the
+flag alone does not prove a worker executed any work.
+
+| Source group | What its WF code checks and proposed receiver |
+|---|---|
+| `hashmap.wf`, `owning-map.wf` | Collision chains, replacement, deletion/missing keys, tombstone reuse, full-table refusal and return of the original owning value. Keep missing map behavior in programs. Preserve the additional allocation/identity observations described below in compiler tests. Existing formal owning-map insertion cases do not cover all deletion/full-table trajectories. |
+| `owning-growth.wf`, `owning-behavior.wf` | Owning rehash plus five scenario families: collision/replace/delete; pauses at each work budget 0-14; zero budget and repeated one-unit resumes; a full target with blocked retry/retained owner; and full insertion refusal. The generic version also demonstrates stateful, branded owning and hostile equality/hash behaviors. Keep missing migration/refusal behavior and actual compiler ownership observations; reuse formal generic-behavior fixtures where equivalent. |
+| `ordered.wf`, `packed-page.wf` | A leaf-split primitive checks both children, separator and duplicate insertion; it is not a complete ordered-map implementation. The packed page checks record parsing, remove/shift, prepend and unchanged state on malformed/oversized/full input. These distinct program behaviors can join the existing programs collection; neither requires a new integration executable. |
+| `priority.wf`, `priority-borrowed.wf`, `priority-behavior.wf`, `priority-behavior-direct.wf` | Heap push/pop covers duplicate values, sorted extraction and reuse, using owning run, borrowed-array and generic/direct experiment representations. `priority-behavior.wf` is byte-identical to formal `run-generic-priority-behavior.wf`: retain the formal source once. Do not promote every private representation merely as another queue smoke test. Preserve genuinely distinct output or retained-helper transfer observations in the receiving program/compiler case. |
+| `growth.wf`, `boxed-migration.wf` | Growth checks preservation across copying/storage replacement and refusal; boxed migration checks displaced owner values, vacated-slot reuse, rebucketing and final key/payload identities. Existing `tests/programs/growable_vec.wf` and `option_slots.wf` cover related operations, but not every migration composition. Extend those receivers with missing observations instead of keeping parallel whole programs. |
+| `ordered-runtime-gap.wf`, `boxed-helper-gap.wf`, `shared-option-view.wf` | Compact regressions for recursive owning-node replacement, boxed generic/nominal helper replacement, and borrowed `Some`/`None` field views. Preserve their actual trigger in existing compiler/program owners until a concrete receiving case reproduces it; related recursive-tree or Box coverage is not sufficient evidence to delete them. |
+
+`run-generic-owning-map-behavior.wf` already contains the three generic
+behavior demos. Twenty of its 21 functions shared with the research source
+have identical bodies; the differing `main` in research also reaches the
+migration experiment. This establishes duplicate demo coverage, not that the
+entire 1,119-line research program is redundant. The formal
+`run-exclusive-owning-map-put.wf` and its backend allocation observer already
+check success and four allocation refusals in both lowering modes with retained
+calls. They do not cover every migration budget, tombstone or full target above.
+
+The negative `rejected-wrapper.wf` performs one more WF compilation, requiring
+FN-9 `InvalidPostconditionSelector`, exit 1 and no LLVM output. It has the same
+aggregate-result-selector responsibility as B05i's `pool_field_result`; merge
+the property into conformance rather than preserve two research wrappers.
+
+| Additional native construction/check | Actual observation and recommendation |
+|---|---|
+| `owning-map-observer.c` linked with instrumented WF | One successful invocation of the WF entry plus refusal at each of 192 allocation positions: 16 seeds times twelve allocation requests, exercised inside one observer process. It checks status, refusal prefix, resource/payload identity and exactly-once cleanup, including the full-table returned owner. Retain structurally distinct failure points and collision/probe positions. Before reducing repeated seeds, map which bucket/wrap paths they distinguish; do not discard failure observations just to shrink 193 scenario executions. |
+| `owning-growth-observer.c` plus the C oracle, for direct/generic WF and three CLI modes | Six observer images compare five scenario families, sixteen seeds, fifteen stopping budgets where applicable, and each reached allocation refusal. They check value/state digests, work progress, request extents and ownership identities, including no live allocation on completion. The generic images also observe the three behavior demos. Preserve useful WF/C differential and lifetime properties, sharing formal fixtures/support and eliminating the duplicate Off construction. The release ledger records released payload identity by allocation slot; do not describe it as proof of complete global release-event order. |
+| `priority-costs.c` variants | Each uses 64 seeds and five round counts: 320 WF traces, checked against an independent sorted expectation and private C trace. Retained-call, borrowed and generic/direct arms also support the representation experiment. Keep the required WF ordering/duplicate/reuse observations once and justified ABI cases separately. `priority-borrowed-retained-costs check` is currently called twice through `check-interface` and the parent check. |
+| `growth-costs.c` | Four capacities, sixteen seeds, two growth amounts, three limits and three refusal positions produce 1,152 input combinations, each checked across WF and three C strategies: 4,608 variant checks. Digests, allocation requests, live bytes and peak bytes are observed. Retain missing boundary/refusal/ownership observations, not the entire size/seed/private-strategy product. A fake unused heap-provider argument is valid only while the corresponding IR assertion proves it unused. |
+| `owning-growth-costs.c` for direct/generic WF, normal/retained/inlined helpers | Six images each check three capacities (256/4,096/16,384), three operations, four samples and three implementations, plus refusal controls. Even `check` reads the clock and performs long lookup loops; elapsed values do not select pass/fail. Keep necessary checksum, work-count, refusal-state and ownership observations in focused formal cases. The large-capacity timing foundation and C competitor products stay in research. |
+| `priority-interface.rs`, `owning-growth-abi.rs` and shared `linkage.rs` tests | Inspectors check retained calls, aggregate copying/descriptor writeback, allocations and helper LLVM assumptions. The two test executables contain one priority inspector test, two owning-growth inspector tests and one included linkage test. Keep reusable inspector self-tests only for helpers actually retained in formal verification, in the existing compiler test executable. |
+
+Retained priority helpers motivated the production storage-placement decision
+in `design/compiler/storage-placement.md`; checking unwanted aggregate copies
+can protect a current compiler performance property without timing every call.
+Preserve such an assertion with its precise valid input and retained boundary.
+By contrast, an experiment assertion pinning one 24-byte `memset`, selected
+forced-inlining patterns or every control-layout variant does not automatically
+become a permanent compiler obligation. Separate ABI validity needed by a
+formal observer from experiment-specific LLVM shape. Check actual receiver
+coverage before retiring a related assertion; the count of binaries is not
+the selection criterion.
+
+**B05m: ripgrep tool tests.** The 22 Python definitions break down into eight
+output-fingerprint tests (line endings, file-block order, duplicate/order
+preservation, discontinuous blocks and NUL records), four schedule/statistics
+tests, three guard tests and seven manifest/protocol tests. They validate
+research workload selection, bootstrap ratios and normalization, not the WF
+grep program. `compiler/tests/programs/wfgrep.rs` already uses a Rust byte
+reference and system grep for its actual file/host cases; it does not import
+this runner. Remove the automatic Python invocation, leave the research tool
+available explicitly, and create no replacement formal suite for it.
+
+**B05n: decoder vectors rather than a second decoder suite.** The nineteen
+Python methods cover stored/fixed/dynamic streams; all literal bytes; all 29
+length-code and 30 distance-code endpoint ranges; the 65,535-byte stored limit;
+degenerate/invalid Huffman trees; overlapping matches and bounded output;
+mixed blocks, padding/trailing input, reserved encodings, truncation and
+malformed/capacity precedence; and Python argument types. zlib is an additional
+reference for supported streams, not an invocation of the WF implementation.
+
+The existing `compiler/tests/programs/raw_deflate.rs` uses owned wire bytes and
+expected payloads, with eighteen WF check functions in
+`tests/programs/raw_deflate_vectors.wf`. It already checks representative good,
+malformed, truncated and full-output cases and compiles a reusable boundary
+driver. Its compiler assertions also inspect allocation/proof-trap absence.
+Extract missing endpoint, degenerate-tree, overlap/output-boundary, padding
+and truncation vectors into that formal program collection, with expected
+bytes and the WF decoder's actual error contract. Reuse one constructed
+decoder for a batch of data inputs; do not generate a WF compilation/native
+image per bitstream.
+
+The existing command-line driver caps input at 4,096 bytes. It cannot directly
+receive a maximum stored block or the seed data for the maximum distance:
+those observations need the existing decoder function with suitable formal
+buffer/test support, while the CLI limit remains separately checked. The
+Python oracle's `MALFORMED`, consumed-bit/atomic-unit metadata and Python type
+errors are not the WF API. WF distinguishes `Truncated`, stored/tree/code/
+distance/block errors and `OutputFull`; do not copy Python verdict precedence
+or bookkeeping as a new WF requirement. Keep independent wire/expected-output
+evidence, not a research-decoder dependency or a second historical standard.
+
+**B05o: fourteen formal tests with indirect research dependencies.** The
+current files and responsibilities are:
+
+| Formal source and number of `#[test]` functions | Research input and actual observation | Receiving owner/stage |
+|---|---|---|
+| `compiler/src/lowering/tests.rs`: 1 | Prefix/stencil/histogram WF sources; outer split-work estimates include runtime helper extents, comparing extent 17 with 1,024. No native execution. | Compiler lowering tests retain the work-estimate assertion with formally owned source inputs. |
+| `compiler/src/semantic/tests/slices.rs`: 2 | `research/investigations/compute-model/direct-scatter.wf` and compute `range_split.wf`; bounds rejection, overlapping-child rejection, and parent read/write conflicts while loans remain live. | Conformance owns source accept/reject rules; keep additional diagnostic/residual detail in compiler tests where it adds an observation. Own the minimal shared inputs formally. |
+| `compiler/src/semantic/tests/loop_permission.rs`: 3 | BFS, stencil, prefix and histogram sources; specific loops/helpers are permitted, denied or classified independent according to actual compiler metadata. | Compiler semantic tests. These are implementation observations beyond successful compilation and should not be reduced to programs output alone. |
+| `compiler/src/backend/tests/slices.rs`: 8 | Runtime work pricing; wrong-result and missing-observation negative controls; prefix/histogram, scatter, stencil and sort/BFS independent output comparisons; direct stencil and recursive-range programs; compiler/native parallel-path assertions. | Whole-program outputs in programs; IR/runtime scheduling/ABI assertions in compiler tests. Share formally owned fixtures and compatible construction without duplicating the complete matrix for every internal property. |
+
+The imported computation inputs are seven WF sources under
+`research/experiments/compute-bench/programs/`: `prefix.wf`, `histogram.wf`,
+`radix_scatter.wf`, `stencil.wf`, `range_split.wf`, `merge_sort.wf` and `bfs.wf`,
+plus the investigation's direct-scatter negative. The native paths also use
+six LLVM host adapters, five C oracle files and `compute-bench/host-adapter.awk`.
+The enabled oracle branches use libc and the actual WF runtime; they do not
+need the benchmark's oneTBB/Parlay/Rayon comparison dependencies.
+
+The awk helper selects actual parallel/sequential function worlds and rewrites
+adapter calls, not merely symbol visibility. Extract this necessary behavior
+into the formal test support when retained; a copied WF file that still calls
+the research awk script does not satisfy the boundary. References in comments
+to dated research reasoning can remain: a citation is not an executable input.
+
+| Independent output oracle | Current inputs per matrix pass and coverage |
+|---|---|
+| Prefix and histogram (`blocked_bench.c`) | Fourteen count/block-width shapes times four distributions: 56 prefix inputs. Histogram additionally uses four bucket counts: 224 inputs. All outputs and input preservation are checked. The largest shape has 1,048,593 elements expressly to make steals likely. |
+| Stable scatter (`radix_scatter_bench.c`) | Nine sizes times four distributions times three bit positions, plus one large case: 109 inputs. Two independent ordered scans check stable partition, complete output and input preservation. A small known-result control checks the reference. Native instrumentation distinguishes actual nonempty output-copy work from a steal in an earlier stage or an empty task. |
+| Stencil (`stencil_bench.c`) | Eight dimension pairs times six step counts: 48 inputs. A separate column-major reference preserves floating-point grouping and compares all result bits. A hand-computed 5-by-5, two-step reference control and the separate WF smoke main share four known cells. Before removing the smoke build, put that actual WF observation into the combined matrix; its current 48 inputs do not contain that exact 5-by-5 case. |
+| Merge sort (`merge_sort_bench.c`) | Ten sizes, including 0/1 and 63/64/65 boundaries, times six distributions: 60 inputs. qsort and multiset/input checks validate the complete result. Parallel IR checks observe work publication by both sort and merge helpers. |
+| BFS (`bfs_bench.c`) | Seven small vertex counts times six graph shapes times pull/sparse strategies, plus both strategies on a 65,535-vertex tree: 86 inputs. A FIFO reference checks every distance and unchanged input across chains, trees, disconnected graphs, cycles, grids and duplicate edges. |
+
+These are data cases, not separately compiled WF executables. The backend
+runner invokes a constructed image with one, two and four workers. For active
+parallel runs with two/four workers it can repeat the complete oracle matrix
+up to 32 times when only the steal observation is absent; wrong results or
+inactive-pool failures are not retried. The deliberately missing-observation
+negative control disables scheduler statistics and can itself traverse all
+32 attempts. This is a concrete source of repeated work, but no elapsed
+contribution is claimed without the later measurement phase.
+
+Apply the already selected B03 direction: retain the independent correctness
+matrices' meaningful branch/size/tail/graph distinctions, and give required
+worker paths controlled, bounded observations. Large inputs whose only reason
+is making a steal likely and whole-matrix retries can retire only after the
+receiver establishes that actual path. Preserve the real wrong-output negative
+control and a focused missing-observation control; do not substitute mocks for
+all end-to-end failure evidence. The runtime block-price case still needs its
+work-dependent prices, correct output/input preservation, and inactive-versus-
+active pool distinction. The recursive-range program's parent restoration
+after child scopes and its empty input remain distinct useful observations.
+
+**Batch conclusion and remaining scope.** All eight B05 entry groups have
+source-level recommendations above. The proposed removals apply to automatic
+callers after useful coverage has a formal receiver; they do not request
+deleting or modernizing the remaining research experiments. No complete bundle
+is admitted by changing its directory, and no new crate, script or executable
+is selected merely to package these groups. Construction sharing preserves
+different compiler modes, interposition and real host/runtime requirements.
+
+B06 still needs three enabled responsibility groups reviewed: IO program
+construction/correctness, compute construction/verification, and the paired
+performance comparison/verdict. Root `bench-programs` and automatic
+`compute-bench.yml`/`compute-regression.yml` callers remain in that review;
+B04o already selected a formal receiver for the Windows component-open source.
+B07 still needs its ten repository/tooling check types. B08 and other unwired
+or manual-only cases remain excluded. B05's pending owner ruling and the
+deferred implementation are separate from those two unreviewed scopes.
+
+This update changes only the discussion record. The earlier research-boundary
+update corrected standing guidance, added checklist T4-T6 and revised the
+fourth pending verification decision. Neither pending amendment changes here;
+the live tree, specification, conformance evidence, test code and Make/CI
+callers are unchanged. No executable check, performance result, new DCR or
+completion review is claimed.
 
 ## Affected material and evidence
 
