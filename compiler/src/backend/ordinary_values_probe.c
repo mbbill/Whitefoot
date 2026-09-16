@@ -158,7 +158,12 @@ static void text_probe(void) {
     assert(value.tag == 1 && value.error == 0);
 }
 
-static void file_probe(wf_inputs *inputs) {
+typedef void (*wf_probe_open)(wf_open_result *, wf_value *, const wf_value *, const wf_view *, uint64_t, uint64_t);
+typedef void (*wf_probe_read)(wf_read_result *, wf_value *, wf_value *, wf_view *, uint64_t, uint64_t, uint64_t);
+extern void wf_test_public_open(wf_open_result *, wf_value *, const wf_value *, const wf_view *, uint64_t, uint64_t);
+extern void wf_test_public_read(wf_read_result *, wf_value *, wf_value *, wf_view *, uint64_t, uint64_t, uint64_t);
+
+static void file_probe(wf_inputs *inputs, wf_probe_open open_file, wf_probe_read read_at) {
     static const char filename[] = "ordinary-values.data";
 #if defined(_WIN32)
     static const uint16_t component[] = { 'o','r','d','i','n','a','r','y','-','v','a','l','u','e','s','.','d','a','t','a' };
@@ -208,35 +213,47 @@ static void file_probe(wf_inputs *inputs) {
     assert(listing.error.detail[3].code == ENOTDIR && listing.error.detail[3].origin == 1);
 #endif
     assert(limited_factory.words[0] == 1);
-    wf__body_open_file(&opened, &limited_factory, &inputs->cwd, &name, 0, name.length);
+    open_file(&opened, &limited_factory, &inputs->cwd, &name, 0, name.length);
     assert(opened.tag == 0 && limited_factory.words[0] == 0);
     wf_close_read(&closed, &limited_factory, &opened.value);
     check_close(&closed);
     assert(limited_factory.words[0] == 1);
     inputs->handles.words[0] = 0;
-    wf__body_open_file(&opened, &inputs->handles, &inputs->cwd, &name, 0, name.length);
+    open_file(&opened, &inputs->handles, &inputs->cwd, &name, 0, name.length);
     assert(opened.tag == 1 && opened.error.tag == 21 && inputs->handles.words[0] == 0);
     assert(opened.error.detail[21].code == 0 && opened.error.detail[21].origin == 0);
     inputs->handles.words[0] = saved;
-    wf__body_open_file(&opened, &inputs->handles, &inputs->cwd, &name, 0, name.length);
+    open_file(&opened, &inputs->handles, &inputs->cwd, &name, 0, name.length);
     assert(opened.tag == 0 && inputs->handles.words[0] == saved - 1);
     memset(bytes, 7, sizeof(bytes));
-    wf__body_read_at(&read, &inputs->handles, &opened.value, &window, 0, 2, 9);
+    read_at(&read, &inputs->handles, &opened.value, &window, 0, 2, 9);
     memset(unchanged, 7, sizeof(unchanged));
     memcpy(unchanged + 2, "hello", 5);
     assert(read.tag == 0 && read.value == 7);
     assert(memcmp(bytes, unchanged, sizeof(bytes)) == 0);
     memcpy(unchanged, bytes, sizeof(bytes));
-    wf__body_read_at(&read, &inputs->handles, &opened.value, &window, 5, 2, 9);
+    read_at(&read, &inputs->handles, &opened.value, &window, 5, 2, 9);
     assert(read.tag == 1 && read.error.tag == 0);
     assert(memcmp(bytes, unchanged, sizeof(bytes)) == 0);
-    wf__body_read_at(&read, &inputs->handles, &opened.value, &window, 0, 9, 9);
+    read_at(&read, &inputs->handles, &opened.value, &window, 0, 9, 9);
     assert(read.tag == 0 && read.value == 9);
     assert(memcmp(bytes, unchanged, sizeof(bytes)) == 0);
     wf_close_read(&closed, &receiving_factory, &opened.value);
     check_close(&closed);
     assert(inputs->handles.words[0] == saved - 1 && receiving_factory.words[0] == 1);
     assert(remove(filename) == 0);
+    open_file(&opened, &inputs->handles, &inputs->cwd, &name, 0, name.length);
+    assert(opened.tag == 1 && opened.error.tag == 0);
+    assert(inputs->handles.words[0] == saved - 1);
+#if defined(_WIN32)
+    static const uint16_t invalid[] = { 'b','a','d','/','n','a','m','e' };
+#else
+    static const unsigned char invalid[] = { 'b','a','d','/','n','a','m','e' };
+#endif
+    wf_view invalid_name = {(void *)invalid, sizeof(invalid)};
+    open_file(&opened, &inputs->handles, &inputs->cwd, &invalid_name, 0, invalid_name.length);
+    assert(opened.tag == 1 && opened.error.tag == 9);
+    assert(inputs->handles.words[0] == saved - 1);
     /* Transfer the received credit back by actually opening and closing an
      * owner, without comparing the close's factory to its creator. */
     wf_open_directory_source(&listing, &receiving_factory, &inputs->cwd);
@@ -605,7 +622,7 @@ int wf_ordinary_values_tests(const char *scratch, const char *group) {
     wf_close_result closed;
     assert(wf__ordinary_inputs(&inputs, 0, NULL));
     assert(inputs.handles.words[0] >= 8);
-    if (files) { wf_test_guard_phase("ordinary file/credits"); file_probe(&inputs); puts("ordinary file/credits: PASS"); }
+    if (files) { wf_test_guard_phase("ordinary file/credits"); file_probe(&inputs, wf__body_open_file, wf__body_read_at); file_probe(&inputs, wf_test_public_open, wf_test_public_read); puts("ordinary file/credits public+body: PASS"); }
     if (directory) { wf_test_guard_phase("ordinary directory/cursors"); directory_probe(&inputs); puts("ordinary directory/cursors: PASS"); }
 #if defined(_WIN32)
     if (directory) {

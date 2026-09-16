@@ -244,6 +244,18 @@ fn decoder_wire_boundaries_run_as_one_batch_through_the_actual_wf_decoder() {
         llvm = llvm.replacen(&definition, &format!("define i32 @fixture_{name}("), 1);
     }
     llvm.push_str("\ndeclare i32 @wf__main_body(i32, ptr)\n");
+    // Load WF's exact view aggregates in LLVM; C passes descriptor pointers
+    // and makes no assumption about the platform's aggregate coercions.
+    llvm.push_str(
+        r#"
+define i64 @wf_test_decode(ptr %source, ptr %destination) {
+  %input = load { ptr, i64 }, ptr %source
+  %output = load { ptr, i64 }, ptr %destination
+  %result = call i64 @wf_decode_case({ ptr, i64 } %input, { ptr, i64 } %output)
+  ret i64 %result
+}
+"#,
+    );
     let program = build_program_with_driver(&llvm, Some(include_str!("raw_deflate_probe.c")));
     let cases = cases();
     let mut input = Vec::new();

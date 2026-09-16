@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 typedef struct { void *data; uint64_t length; } View;
-extern uint64_t wf_decode_case(View input, View output);
+extern uint64_t wf_test_decode(const View *input, const View *output);
 extern int wf__floor_run(int, char **);
 static unsigned char input[70000], output[70002];
 static uint32_t word(const unsigned char *p) {
@@ -22,7 +22,8 @@ int wf__main_body(int argc, char **argv) {
         if (length > sizeof input || capacity > sizeof output - 2) return 82;
         if (fread(input, 1, length, stdin) != length) return 83;
         memset(output, 0xa5, sizeof output);
-        uint64_t result = wf_decode_case((View){input, length}, (View){output + 1, capacity});
+        View source = {input, length}, destination = {output + 1, capacity};
+        uint64_t result = wf_test_decode(&source, &destination);
         if (output[0] != 0xa5 || output[capacity + 1] != 0xa5) return 84;
         if (result > capacity && result < UINT64_MAX - 6) return 85;
         unsigned char record[8];

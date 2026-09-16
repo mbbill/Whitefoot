@@ -91,6 +91,7 @@ COMPLETION_RUNTIME_SOURCES := \
 	$(COMPLETION_DIR)/linux_io_uring.c
 COMPLETION_SOURCES := $(COMPLETION_RUNTIME_SOURCES) \
 	src/backend/ordinary_values.c src/backend/ordinary_values_probe.c \
+	src/backend/ordinary_values.ll src/backend/ordinary_values_probe.ll \
 	$(COMPLETION_DIR)/harness.c
 # The same runtime the harness links, with the probe in place of the harness.
 # It is deliberately built without COMPLETION_DEFINES: the route this probe is
@@ -185,12 +186,15 @@ $(COMPLETION_CONFIG): completion-configuration-force
 	@rm -f "$@.new"
 
 define completion-image
-$(COMPLETION_TMP)/$(1): $(patsubst src/backend/%.c,$(COMPLETION_TMP)/objects/$(1)/%.o,$(2))
+$(COMPLETION_TMP)/$(1): $(patsubst src/backend/%.ll,$(COMPLETION_TMP)/objects/$(1)/%_ir.o,$(patsubst src/backend/%.c,$(COMPLETION_TMP)/objects/$(1)/%.o,$(2)))
 	$$(CC) $(3) $$^ -o "$$@"
 $(COMPLETION_TMP)/objects/$(1)/%.o: src/backend/%.c $(COMPLETION_HEADERS) Makefile $(COMPLETION_CONFIG)
 	@mkdir -p "$$(dir $$@)"
 	$$(CC) $(3) -c "$$<" -o "$$@"
-.SECONDARY: $(patsubst src/backend/%.c,$(COMPLETION_TMP)/objects/$(1)/%.o,$(2))
+$(COMPLETION_TMP)/objects/$(1)/%_ir.o: src/backend/%.ll Makefile $(COMPLETION_CONFIG)
+	@mkdir -p "$$(dir $$@)"
+	$$(CC) $(filter-out -std=c11 -pthread -D%,$(3)) -Wno-override-module -Wno-unused-command-line-argument -x ir -c "$$<" -o "$$@"
+.SECONDARY: $(patsubst src/backend/%.ll,$(COMPLETION_TMP)/objects/$(1)/%_ir.o,$(patsubst src/backend/%.c,$(COMPLETION_TMP)/objects/$(1)/%.o,$(2)))
 endef
 
 COMPLETION_SANITIZE_FLAGS := -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread -fsanitize=address,undefined -fno-sanitize-recover=undefined
@@ -480,6 +484,10 @@ $(WINDOWS_OBJECT_DIR)/%.o: src/backend/%.c $(COMPLETION_HEADERS) Makefile $(WIND
 	@mkdir -p "$(dir $@)"
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -c "$<" -o "$@"
 
+$(WINDOWS_OBJECT_DIR)/%_ir.o: src/backend/%.ll Makefile $(WINDOWS_CONFIG)
+	@mkdir -p "$(dir $@)"
+	$(WINDOWS_CC) $(filter-out -std=c11 -D%,$(WINDOWS_CFLAGS)) -Wno-override-module -Wno-unused-command-line-argument -x ir -c "$<" -o "$@"
+
 $(WINDOWS_OBJECT_DIR)/file-windows-observed.o: $(COMPLETION_DIR)/file_windows.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_COMPLETION_SHUTDOWN=wf_ordinary_test_shutdown -c "$<" -o "$@"
 
@@ -496,7 +504,7 @@ $(COMPLETION_TMP)/windows-default-route-probe.exe: $(WINDOWS_OBJECTS) $(WINDOWS_
 $(COMPLETION_TMP)/windows-adapter-probe.exe: $(WINDOWS_NATIVE_OBJECTS) $(WINDOWS_OBJECT_DIR)/completion/native_adapter_probe.o
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
 
-$(COMPLETION_TMP)/windows-ordinary-values-probe.exe: $(filter-out $(WINDOWS_OBJECT_DIR)/completion/file_windows.o,$(WINDOWS_OBJECTS)) $(WINDOWS_OBJECT_DIR)/file-windows-observed.o $(WINDOWS_OBJECT_DIR)/ordinary_values.o $(WINDOWS_OBJECT_DIR)/ordinary_values_probe.o
+$(COMPLETION_TMP)/windows-ordinary-values-probe.exe: $(filter-out $(WINDOWS_OBJECT_DIR)/completion/file_windows.o,$(WINDOWS_OBJECTS)) $(WINDOWS_OBJECT_DIR)/file-windows-observed.o $(WINDOWS_OBJECT_DIR)/ordinary_values.o $(WINDOWS_OBJECT_DIR)/ordinary_values_probe.o $(WINDOWS_OBJECT_DIR)/ordinary_values_ir.o $(WINDOWS_OBJECT_DIR)/ordinary_values_probe_ir.o
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
 
 $(COMPLETION_TMP)/windows-bridge-init-fail-stop-probe.exe: $(filter-out $(WINDOWS_OBJECT_DIR)/completion/bridge.o,$(WINDOWS_OBJECTS)) $(WINDOWS_OBJECT_DIR)/bridge-init-fault.o $(WINDOWS_OBJECT_DIR)/completion/windows_bridge_init_fail_stop_probe.o

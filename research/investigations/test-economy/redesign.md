@@ -3847,3 +3847,27 @@ Receiver validation on the local two-job/two-thread gate profile:
 These are focused results, not a full gate or performance verdict. Final
 research caller removal, snapshot disposition and the independent completion
 review remain pending. No final DCR has been repeated for this increment.
+
+### B06a receiver: public ordinary IO boundary
+
+The common native ordinary-value image now links the shipped LLVM definitions
+as well as their C bodies. A small pointer-based LLVM bridge calls public
+`wf_open_file` and `wf_read_at` with their exact aggregate types; C does not guess
+how the host lowers those aggregates. The existing file/credit observations run
+through both boundaries in the same image: refusal preserves credits, successful
+reads return exact bytes, EOF and zero-sized windows preserve their contracts,
+and transferring a credit between factories conserves the recorded ownership.
+Missing and invalid-component opens additionally assert exact result tags and
+unchanged credits. The shared Windows image links the same bridge.
+
+This replaces the research ordinary-open/read probe with a stronger formal
+receiver, rather than retaining a second native harness. Directory and TCP
+coverage remains in the already shared ordinary-value group. The decoder API
+driver likewise uses an exact LLVM pointer bridge for its Slice/MutSlice call,
+avoiding a platform-dependent C aggregate calling convention.
+
+The ordinary group passes in 0.86 s total locally. The full shared AddressSanitizer
+and fatal UndefinedBehaviorSanitizer image passes all 30 cases in 2.59 s total.
+The decoder's 52 input/capacity rows pass in one image and process, 7.07 s test
+execution / 11.48 s including incremental Rust construction. Windows execution
+of this newly linked boundary remains a hosted check, not a local claim.
