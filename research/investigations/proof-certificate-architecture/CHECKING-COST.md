@@ -422,6 +422,98 @@ make -C research/experiments/proof-use-cost compare \
   REAL_SOURCES="$context_cost_checkout/research/experiments/compute-bench/programs/prefix.wf $context_cost_checkout/research/experiments/compute-bench/programs/histogram.wf $context_cost_checkout/research/experiments/compute-bench/programs/radix_scatter.wf $context_cost_checkout/tests/programs/wfgrep.wf"
 ```
 
+## Flow-analysis closure follow-up
+
+The follow-up asks why ordinary real programs, rather than generated
+certificate fixtures, spend tens of seconds in entailment checking. The
+[verification-cost investigation](../test-economy/build-and-test.md#a-compiler-hotspot-not-native-execution)
+found the largest compiler-test costs in single source compilations. It
+leaves the pre-kill closure cost in [TODO](../../../docs/todo.md) unresolved.
+The ENT-4 rules, ENT-5 materialization points, selected derivations and
+diagnostics stay fixed. As before, no budget, cache across flow states, or
+changed witness selection is a candidate.
+
+### Flow baseline, 2026-09-16
+
+The compiler source is main `ab93c8e9`, built with the gate profile on the same
+M1 Pro, 8-CPU, 32-GiB macOS 26.6.2 (25G83) host and Rust 1.98.1. Each
+command is one standalone `whitefootc --emit-llvm` invocation, run with no
+other compiler or test job on the host.
+
+| Source | Lines | Wall | Peak RSS |
+|---|---:|---:|---:|
+| `tests/programs/fixed_run_library.wf` | 375 | 82.39 s | 1.71 GiB |
+| `tests/programs/wfgrep.wf` | 1757 | 42.80 s | 1.26 GiB |
+
+Native samples put all of fixed-run semantic work under `entailment::flow::run`.
+About 74% of it is inside the complete closure (`close_with_excluded_term`):
+roughly 55% through pre-kill materialization, 16% through join and 16%
+through `prove`. SipHash of term-pair keys takes about 10%. A wfgrep sample
+of the whole run puts 68% of samples in that closure, 7% in
+`contradiction_without_proofs` and 7% in SipHash. These are sampling
+percentages, not an additive time decomposition.
+
+The retained [probe patch](../../experiments/proof-use-cost/flow-closure-probe.patch)
+temporarily fingerprints each closure input: sorted bounds, disequalities and
+signed goals with their proof identities, the excluded term, term count and
+goal revision. It also counts transitive-product work. It is attribution
+instrumentation, not a candidate:
+
+- Fixed-run runs 995 closures totalling 62.0 s. Of those, 678 closures
+  (31.5 s) repeat an earlier input exactly. They are not scattered repeats:
+  the complete closure sequence of `main` (calls 462–546) recurs as calls
+  910–994. Symbolic generic validation analyzes every function of its scratch
+  inventory, including the nongeneric `main`. Only canonical generic instances
+  are judged, and the concrete phase then analyzes `main` again.
+- The largest fixed-run closures have 337 terms, whose 107,591 input bounds
+  nearly fill the 113,569-cell matrix. They take up to 0.76 s each over
+  eight rounds.
+- wfgrep has no generic declaration and only 1.7 s of repeated inputs. Its
+  1316 closures total 28.7–30.6 s across the two probe builds, with 27.4 s in
+  the fixed point. The product loop visits 8.67 billion (left, middle, right)
+  triples. Of those, 6.24 billion pass the freshness test and 29.9 million
+  (0.48%) pass the numeric comparison and build a candidate node.
+
+### Flow candidates and selection criteria
+
+These criteria are recorded before any candidate is timed. Each candidate
+changes implementation work only and must keep derivability, dispositions,
+diagnostics, selected derivations and LLVM output unchanged:
+
+1. **Validation scope.** Symbolic schema validation analyzes the bodies of
+   canonical generic instances and of every function their call graph reaches.
+   It skips the other bodies, whose results no judgment reads. Postcondition
+   summaries come only from callees, so every published summary a judged
+   instance can use is still computed. Predicted: fixed-run about 2x faster;
+   no change for sources without generic declarations.
+2. **Contiguous transitive product.** The fixed point keeps its rounds, middle
+   order, left/right order, freshness rule, row pruning and candidate
+   acceptance. The inner loop scans contiguous bound and stamp rows, with no
+   per-probe index assertions or boxed optional cells. Every product that
+   reaches the numeric acceptance test still goes through the existing
+   depth/tie selection. Predicted: at least 1.5x less fixed-point time and a
+   visible improvement on wfgrep.
+3. **Deterministic term-pair hashing.** Term-pair, goal and binding maps use a
+   fixed non-cryptographic hasher. Every order-sensitive consumer already sorts
+   its keys, so the process-random iteration order the current SipHash maps
+   have cannot select a result. Predicted: a single-digit percentage.
+
+For selection, compare each cumulative revision with its predecessor using
+already built gate compilers. Warm both once, then run five alternating
+pairs on fixed-run, wfgrep, the prefix, histogram and radix-scatter programs,
+and the generated fixed/growing/control fixtures at 16, 64 and 256 plus the
+fixed 4096 fixture. Select a candidate only when all of these hold:
+
+- the median time of a source it predicts to improve drops by at least 1.2x
+  (validation scope: at least 1.5x on fixed-run);
+- no protected source regresses by both more than 10% and more than 1 ms;
+- every emitted LLVM file is byte-identical to baseline output;
+- the focused semantic, program and full-gate tests pass.
+
+The product rewrite also needs a direct test that compares its complete
+closed facts, selected proofs and derivation ledger with the original
+traversal. Timing alone cannot establish unchanged witnesses.
+
 ## Reproduction and correctness boundary
 
 The native driver is
