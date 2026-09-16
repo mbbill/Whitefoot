@@ -24,7 +24,8 @@ counterexamples. Neither a language decision nor a complete soundness result
 follows from that experiment.
 
 The [incremental case catalog](CASES.md) preserves the subsequent code-led
-discussion, starting with known local objects and then branch correlations.
+discussion, starting with known local objects, then branch correlations and
+fixed-object loops.
 It records expected behavior, distinguishing rejected variants and open policy
 choices before further features are introduced. These discussion cases are
 not additional executable results or changes to WF acceptance.

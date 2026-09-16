@@ -1,8 +1,8 @@
 # Incremental ownership design cases
 
-These cases preserve the local ownership discussion through branch joins and
-conditional cleanup on 2026-09-15. They are hand-derived expectations under
-candidate semantics, not WF source, compiler tests, measured results, or an
+These cases preserve the local ownership discussion through branch joins,
+conditional cleanup, and fixed-object loops on 2026-09-15. They are hand-derived
+expectations under candidate semantics, not WF source, compiler tests, measured results, or an
 adopted language decision. The consumer is the [ownership investigation](RESEARCH.md).
 Keep this catalog current while it guides discussion and later experiments;
 supersede individual cases with linked executable witnesses when those preserve
@@ -19,8 +19,11 @@ a concrete failure or excessive complexity gives them a purpose.
 The current scope is one sequential procedure with finitely many independent,
 fixed objects of known origin. Their contents are ordinary copy integers. Local
 locators can be copied and rebound. The branch layer adds Boolean conditions,
-Boolean assignment/negation, and `if`/`else`. There are no loops, calls,
-callbacks, fields, containers, later allocations, storage reuse, or concurrency.
+Boolean assignment/negation, and `if`/`else`. The loop layer adds the explanatory
+form `repeat n times`, where n is a finite nonnegative runtime count evaluated
+at loop entry. Objects are created before the loop; ordinary scalar and locator
+temporaries inside its body do not create abstract allocations. There are no
+calls, callbacks, fields, containers, later allocations, storage reuse, or concurrency.
 Conditions may be unknown at compile time. No unknown incoming reference is
 introduced as a counterexample to known local origins.
 
@@ -56,7 +59,7 @@ explicit release at exit.
 
 The [earlier executable probe](../../experiments/access-state/RESULTS.md#local-baseline-results)
 has two objects/two locator slots, owner-only release and explicit linear cleanup.
-It does not implement these branch cases or the permissive locator-release
+It does not implement these branch/loop cases or the permissive locator-release
 variant. Its `Store` covers scalar write/initialization rather than a distinct
 empty-only `put`. Its successful run is evidence only for its stated rules.
 
@@ -393,6 +396,84 @@ model does not establish that cleanup needs a runtime flag or a machine action.
 Any future generated cleanup must implement the selected cleanup semantics;
 it must not repair an unproved access with a runtime safety test.
 
+## Fixed-object loop cases
+
+### L01: Take and restoration preserve the next iteration's entry condition
+
+```text
+a = object(10)
+p = ref(a)
+q = p
+repeat n times {
+    v = take(p)
+    put(q, move v)
+}
+read(p)                   // ACCEPT: 10, including when n is zero
+```
+
+At the loop head A is live and initialized, p and q designate A, and A's
+disposal obligation remains. Take temporarily empties A; put restores it before
+the backedge. Entry establishes these relations and one body execution preserves
+them. The hole inside the body is allowed. No concrete value of n or unrolling
+of all iterations is needed for this argument.
+
+### L02: An empty exit state becomes the next iteration's input
+
+```text
+a = object(10)
+p = ref(a)
+repeat n times {
+    v = take(p)
+}
+```
+
+For unrestricted n, reject: n can be at least two, and the second take accesses
+an empty slot. Reusing the pre-loop initialized state independently for each
+iteration is unsound. If n is known to be at most one, there is no repeated-take
+error, but a post-loop read is not justified for both possible counts: zero
+leaves A full and one leaves it empty. Storage remains live in both cases and
+its disposal obligation remains. This is an expected semantic distinction, not
+a claim that a particular numeric loop analysis has been implemented.
+
+### L03: Relative initialization can be invariant while physical roles alternate
+
+```text
+a = object(10)
+b = object(20)
+old_b = take(b)
+p = ref(a)
+q = ref(b)
+repeat n times {
+    v = take(p)
+    put(q, move v)
+    tmp = p
+    p = q
+    q = tmp
+}
+read(p)                   // ACCEPT: 10
+```
+
+The reference/initialization component of the state at the loop head has two
+possibilities, without enumerating counter values or complete execution histories:
+
+| Head state | p | q | A | B |
+|---|---|---|---|---|
+| First | A | B | Full | Empty |
+| Second | B | A | Empty | Full |
+
+Both slots are live and both disposal obligations remain in either state.
+Every iteration takes the full p target, fills the empty q target, and exchanges
+the locators. It maps the first head state to the second and the second to the
+first. The zero-iteration path also satisfies the same relation.
+
+The invariant is relative: p and q designate distinct live slots, p's target
+is full, and q's target is empty. It is not a requirement that A always be full,
+that B always be empty, or that each object's entry state be restored each round.
+A post-loop `read(q)` rejects; unconditional `read(a)` or `read(b)` also cannot
+be justified for arbitrary n. `release(p); release(q)` accepts and consumes both
+obligations, including the empty slot's obligation. The copied integer old_b is
+independent of B's later contents.
+
 ## Working conclusions and unresolved boundaries
 
 - In the known-origin straight-line fragment, target/state propagation can be
@@ -403,8 +484,8 @@ it must not repair an unproved access with a runtime safety test.
   versus initialization/liveness, and target versus unconsumed obligation.
   Stored current-value facts depend on state; obligations cannot be discarded
   simply because they differ between predecessors.
-- Exact finite path states are a semantic reference for these examples, not a
-  selected compiler representation, a general cost bound, or permission to use
+- Exact finite sets of resource states are a semantic reference for these
+  examples, not a selected compiler representation, a general cost bound, or permission to use
   an SMT solver for WF acceptance. Compact representations and supported
   deterministic derivations remain research questions.
 - Read/write access modes are not needed for alias exclusion in this sequential
@@ -414,7 +495,13 @@ it must not repair an unproved access with a runtime safety test.
   release, explicit versus automatic cleanup, and general affine/linear value
   handling are not settled. The earlier executable probe's stricter choices
   must not silently become language requirements.
-- Fixed-object loops are the next feature to examine. Calls, dynamic allocation,
-  relocation/reuse, structs, arrays, invariants, callbacks and concurrency remain
-  outside these cases. Later features must replay the applicable cases and name
-  any premise or expected result they change.
+- A loop-head relation must hold initially, justify each operation in the body,
+  and hold again on every reachable backedge. Intermediate states may contain
+  holes. L03 preserves a relation while changing each named object's state.
+  These hand-derived invariants are not yet a selected inference algorithm or
+  writer-facing invariant syntax.
+- Conditional release and early loop exits are the next boundary to examine.
+  Calls, dynamic allocation, relocation/reuse, structs, arrays, general object
+  invariants, callbacks and concurrency remain outside these cases. Later
+  features must replay the applicable cases and name any premise or expected
+  result they change.

@@ -10,7 +10,7 @@ Notation in this document is explanatory, not final source grammar.
 
 The [incremental case catalog](CASES.md) records the continuing local design
 discussion and its expected positive/negative examples. Its permissive
-locator-release and branch cases extend beyond the earlier executable probe;
+locator-release, branch, and loop cases extend beyond the earlier executable probe;
 they are not implemented or measured results. Use those cases to challenge the
 whole-language hypotheses one feature at a time.
 
