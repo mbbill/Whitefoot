@@ -1,0 +1,9 @@
+fn dispose_unproved<T: linear>['s](run: own Vector<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(run, store) {
+  doc "PROV-6: a symbolic linear element blocks the full release graph. Selecting the empty-run graph submits len_of(run) <= 0_u64 at this exact statement; a type argument or an unused capacity does not establish that current-state fact.";
+  dispose run;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

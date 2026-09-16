@@ -1,0 +1,12 @@
+struct Carrier['s] {
+  must_have_provider: Vector<'s, u8>;
+  returned: buffer<u8>;
+}
+
+fn take_returned['s](carrier: own Carrier<'s>) -> result: own buffer<u8> pure {
+  return move carrier.returned;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -957,7 +957,7 @@ struct Owner['s] {
   suffix: Vector<'s, u8>;
 }
 
-fn take['s](owner: own Owner<'s>) -> result: own Vector<'s, u8> pure {
+fn take['s](heap: &uniq Heap<'s>, owner: own Owner<'s>) -> result: own Vector<'s, u8> writes(heap) {
   doc "Takes one field out; the three residual siblings are released here, on the store whose provider this scope holds.";
   return move owner.pair.first;
 }
@@ -991,7 +991,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
                   Some(value: suffix) => {
                     let owner = Owner(prefix: move prefix, pair: move pair, suffix: move suffix);
                     region {
-                      let retained = take(owner: move owner);
+                      let retained = take(heap: &uniq heap, owner: move owner);
                     }
                     return exit_status(code: 0_u8);
                   }

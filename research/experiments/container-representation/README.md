@@ -37,6 +37,10 @@ Its parts answer different questions:
   groups, branded keys and hostile equality. Their retained-helper measurements
   separate behavior binding from owning exchange and value/result ABI costs;
   `families/RESULTS.md` states coverage, attribution and remaining limits.
+- `vector-library/`: the reusable source `GrowVector` operation chain against
+  matched-shape and direct-swap C controls. It checks identical results and
+  allocation counts with ordinary and retained helpers, then records the
+  language-shape and lowering portions of the remaining cost separately.
 
 These small programs test specific capabilities and costs. They are not a
 representative corpus of real applications and supply no workload-frequency data.

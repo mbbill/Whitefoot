@@ -702,6 +702,10 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// Empty everywhere else: `check_commit` installs it around exactly that
     /// one expression and removes it before any rejection leaves.
     commit_read_outs: RefCell<Vec<control::CommitReadOut>>,
+    /// Complete target-ordinal pairs whose distinctness is deferred to the
+    /// statement's index-separation entailment obligation. Candidate index
+    /// pairs are never facts in the RHS ownership check.
+    commit_separation_targets: RefCell<std::collections::HashSet<(usize, usize)>>,
     /// Explicit argument loans survive their call until the enclosing statement
     /// or non-escaping control header ends [OWN-6]. Nested checking retains
     /// loans created before its own evaluation boundary.
@@ -1171,6 +1175,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             elided_store_brand: std::cell::Cell::new(None),
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
+            commit_separation_targets: RefCell::new(std::collections::HashSet::new()),
             statement_loans: RefCell::new(Vec::new()),
             range_conflicts: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
@@ -3184,10 +3189,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     Self::Obligation(outcome) => match outcome.family {
                         super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
+                        super::entailment::ObligationFamily::EmptyRunRelease => SemanticRule::Prov6,
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::ViewRange => SemanticRule::View2,
                         super::entailment::ObligationFamily::RangeSeparation => SemanticRule::Own5,
+                        super::entailment::ObligationFamily::IndexSeparation => SemanticRule::Liv2,
                         super::entailment::ObligationFamily::KernelRequirement => {
                             SemanticRule::Blk0
                         }
@@ -3481,6 +3488,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
                             },
                         },
+                        super::entailment::ObligationFamily::EmptyRunRelease => SemanticIssue {
+                            rule: SemanticRule::Prov6,
+                            location,
+                            kind: SemanticIssueKind::UndischargedEmptyRunRelease {
+                                residual,
+                                mechanical_fix: "empty the run and establish its zero length at this release point; otherwise consume or release every live element before releasing the backing",
+                            },
+                        },
                         super::entailment::ObligationFamily::IntegerDomain => SemanticIssue {
                             rule: SemanticRule::Op2,
                             location,
@@ -3510,6 +3525,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix: "prove the captured ranges disjoint, or end the conflicting child loan before this access",
                             },
                         },
+                        super::entailment::ObligationFamily::IndexSeparation => {
+                            let (first, second) = outcome
+                                .overlap_targets
+                                .clone()
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                            SemanticIssue {
+                                rule: SemanticRule::Liv2,
+                                location,
+                                kind: SemanticIssueKind::OverlappingCommitTargets {
+                                    first,
+                                    second,
+                                    mechanical_fix: "prove that a corresponding pair of target indices differs before this statement, or write the overlapping target in a statement of its own",
+                                },
+                            }
+                        }
                         super::entailment::ObligationFamily::ViewRange => SemanticIssue {
                             rule: SemanticRule::View2,
                             location,

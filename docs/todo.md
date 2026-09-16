@@ -3,6 +3,16 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
+- **A field projected after dereferencing a runtime-indexed composite element
+  stops as unsupported.** The specification admits ordinary chained element,
+  dereference, and field selection, but
+  `deref(owners.storage[index]).id` stops in semantic checking as
+  `Unsupported(CompositeValues)` with no rule or source diagnostic. The
+  growable-vector executable currently borrows `owners.storage[index]` into a
+  helper and performs `deref(deref(item)).id` there. Complete the general
+  checked-place and lowering path for a subscript followed by dereference and
+  field projection, add owning and copy-element tests, then remove that helper.
+
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
@@ -44,13 +54,15 @@ of them is a decision. Remove an item when its fix and test land.
   item is removed with `buffer_new` and `buffer_vacant`, not repaired
   separately.
 - **Large entering proof contexts still have substantial checking cost.**
-  In the [pinned source-certificate experiment](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#paired-selection-2026-09-14),
-  128 independent inequality pairs with 128 uses take a median 1.15 s;
-  the same context with only three uses takes 0.55 s. This is not a cost of
-  certificate length alone: a fixed three-pair context admits all 4096 uses
-  in 286 ms. Reusing repeated closure and interval preparation reduced the
-  128-use case from 21.48 s, but larger contexts remain unmeasured and the
-  remaining closure/index/candidate work is not yet separately attributed.
+  In the [pinned row-summary comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#row-summary-selection-2026-09-15),
+  256 independent inequality pairs with 256 uses still take a median 5.50 s;
+  the same context with only three uses takes 0.626 s. Query-preparation reuse
+  and conservative closure-product pruning remove repeated and non-improving
+  work, but complete matrix/index construction and long-target AUTO traversal
+  remain. This is not certificate-length cost alone: a fixed three-pair
+  context admits all 4096 uses in 295 ms. Larger growing contexts remain
+  unmeasured; these results establish neither linear total cost nor a
+  universal cost for the full use ceiling.
   Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
 - **Pre-kill L0 closure has an unresolved compilation cost.** Before an
   [ENT-5] invalidation batch, `materialize_before_event_kill` in
@@ -104,6 +116,19 @@ of them is a decision. Remove an item when its fix and test land.
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
+- **Sparse containers over must-consume linear elements need ownership-visible
+  slot state.** The behavior-map growth witness previously wrote
+  `formal Key<K: linear, ...>` while replacing `progress.held` and disposing
+  the returned `Slot<K>`. That depended on a compiler defect which failed to
+  apply PROV-6 to a symbolic linear bound. The current checker correctly
+  rejects `dispose previous_held`: a numeric phase does not prove that the
+  returned enum is `Vacant`, and an `Occupied` value contains a `K` that must
+  be consumed. The maintained witness is narrowed to `K: affine`, which still
+  covers its scalar and store-branded owning instances. Investigate a state
+  encoding or checked variant-state relation that lets rehash move every
+  must-consume key without an impossible cleanup branch; do not add a discard
+  behavior merely to satisfy the checker.
+
 - **Local region introduction and explicit region blocks.** Revisit whether
   an ordinary function body should introduce a local region, and which
   borrows need a writer-spelled `region` block. In the
@@ -121,6 +146,18 @@ each is resolved by a discussion and a tree change.
   Defer bulk cleanup of the repeated per-call region wrappers in migrated
   tests until this question is settled, preserving each case's intended
   behavior or rejection reason when the selected spelling is applied.
+- **Last-use endpoints for ordinary borrow holders.** Investigate ending a
+  `let`-bound shared or unique borrow after its last required use instead of
+  retaining it to region-block exit under [OWN-4]. Keep loan liveness separate
+  from region selection and type validity: this need not introduce inference
+  of region arguments from expected result types or later uses. Shared
+  `Slice` values already have last-use endpoints under [OWN-5]/[VIEW-1] in the
+  [current specification](../spec/kernel-spec.md). Cover reference copies,
+  returned borrows, surviving child loans and unique-parent suspension,
+  branches, loops, and statement-scoped temporaries. Compare the current
+  lexical endpoints with deterministic, terminating last-use analysis while
+  preserving storage validity, exclusivity, and signature-only call checking.
+  No change to the ordinary borrow rules is selected.
 - **A view-valued match or if.** [OWN-5] rejects a `match` or `if` expression
   whose value is a view, rather than joining the arms' origin sets, which the
   origin machinery could represent. If the join can be admitted it should be;

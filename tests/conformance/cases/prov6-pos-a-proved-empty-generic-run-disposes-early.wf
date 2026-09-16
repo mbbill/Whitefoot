@@ -1,0 +1,23 @@
+fn dispose_empty<T: linear>['s](run: own Vector<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(run, store) contract {
+  requires len_of(run) <= 0_u64;
+} {
+  doc "PROV-6: a direct store-backed run proved empty omits its element edge at this explicit release. The backing and its provider write remain, while the symbolic linear element contributes no hypothetical release obligation.";
+  dispose run;
+  return unit;
+}
+
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_vector::<u64>(store: &uniq heap, count: 1_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: empty) => {
+        region {
+          let done = dispose_empty::<u64>(run: move empty, store: &uniq heap);
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

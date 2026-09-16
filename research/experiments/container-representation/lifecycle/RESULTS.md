@@ -1,12 +1,12 @@
 # Container lifecycle source probes
 
-The current compiler executes seven complete positive traces and rejects eight
-nearby programs at the recorded boundaries. All eight rejections follow the
+The current compiler executes nine complete positive traces and rejects six
+nearby programs at the recorded boundaries. All six rejections follow the
 specified source/proof rules. No explicit
 unsupported-capability diagnostic, compiler crash, or incorrect accept was
 observed. The important distinction is between missing language relationships
-and compiler bugs: the dynamic capacity, result-field, and empty-linear-owner
-limitations below are stated by the active specification.
+and compiler bugs: the remaining dynamic-capacity and result-field limitations
+below are stated by the active specification.
 
 Measured on 2026-09-06 at `0f537c77` (documentation-only successor to the
 `eff095c7` integration baseline), with the gate-profile compiler, active v0.51,
@@ -19,6 +19,9 @@ The owned-Box place repair likewise makes the unchanged `pool_boxed_capacity`
 source compile and execute. Its expected outcome now requires native success.
 The content-measure expectation follows TYPE-7 and MSR-1; the helper's region
 substitution follows FN-2 and FORM-8. No language rule was relaxed.
+The `linear_pop_empty` and `linear_failure_run` outcomes were re-derived under
+v0.58: PROV-6 now selects the element-free release graph after their written
+zero-length proofs, while `linear_failure_leak` remains the unchanged control.
 
 ## Reproduction and ownership
 
@@ -56,8 +59,8 @@ fully supersedes its design question; do not keep redundant parallel suites.
 | `pool_boxed_capacity` | Compiles, links, exits 0 | Measures and indexes the checked-out box's actual run, mutates four elements, returns the box, and checks their values after checkout again. |
 | `pool_boxed_helper` | Compiles, links, exits 0 | A user helper infers its input run's nested boxed-element store region, returns the same box, and preserves the free-count contract. |
 | `linear_failure_cleanup` | Compiles, links, exits 0 | Two actual `linear Ticket` values are consumed on success; the one acquired before a later error is consumed on failure. Both executions run. |
-| `linear_pop_empty` | `PROV-6`, `LinearValueNotConsumed`, binding `drained` | Both linear elements have been popped and consumed, and length zero proved; the empty run still cannot leave scope. |
-| `linear_failure_run` | Same `PROV-6` detail at the error return | A partial construction is drained after acquisition failure, but its proved-empty run cannot leave scope. The diagnostic identifies the empty run, not the discharged ticket. |
+| `linear_pop_empty` | Compiles, links, exits 0 | Both linear elements are popped and consumed; the proved-empty fixed run then receives the v0.58 empty-run release. |
+| `linear_failure_run` | Compiles, links, exits 7 on its selected refusal route | Partial construction drains and consumes its initialized ticket before the proved-empty fixed run is released on the error return. |
 | `linear_failure_leak` | `PROV-6`, `LinearValueNotConsumed`, binding `first` | Omitting discharge of the first ticket on the error edge is an actual linear leak and is rejected. |
 | `ring_indexed` | Compiles, links, exits 0 | A four-slot ring containing logical bytes 2, 3, 4, 5 is consumed by logical indexing and produces checksum 14. |
 | `ring_contiguous_view` | `BLK-0`, requirement `head_of(run) <= room_of(run)` unproved | The same actually wrapped storage is not one contiguous view. Rejecting this substitution is correct. |
@@ -160,16 +163,16 @@ substitute. Its consumer destructures the ticket whole. The negative leak
 omits exactly that discharge on the failure edge.
 
 The two run traces perform all required element consumes and use one
-`len_of(drained) <= 0` invariant to expose emptiness. PROV-6 still rejects
-the scope exit because BLK-1 propagates element linearity to the run's type;
-PROV-6 offers whole-value transfer or nominal destructuring, neither of
-which completes this command for an empty run. This agrees with the
-[existing design's recorded open problem](../../../investigations/containers-and-resources/CONTAINERS.md).
+`len_of(drained) <= 0` invariant to expose emptiness. Under v0.58 PROV-6 omits
+the element subtree from the release graph of that direct, proved-empty run.
+The fixed run owns no backing, so its release is empty; no `Ticket` consumer is
+forged. The nearby leak still fails because its live `Ticket` is a separate
+binding and is not covered by the empty-run proof.
 
-An empty-owner consume justified by a checked empty state, or an equivalent
-representation-independent discharge rule, would address a real lifecycle
-gap. Reclassifying the element as affine or returning an empty owner forever
-would not complete the trace. These probes do not decide the final spelling.
+This closes the lifecycle gap that the earlier revision recorded. The rule is
+proof-directed rather than type-directed: without the empty-length proof the
+ordinary element release graph remains required, and an empty run does not
+make any live element or separate owner affine.
 
 ### Wrapping is not itself a missing representation
 

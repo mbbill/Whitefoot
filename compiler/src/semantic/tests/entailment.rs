@@ -1768,7 +1768,8 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert_eq!(contradiction, root.node);
                 assert_eq!(conclusion, &DerivationConclusion::Contradiction);
             }
-            DerivationRootKind::BoundsObligation(ordinal) => {
+            DerivationRootKind::BoundsObligation(ordinal)
+            | DerivationRootKind::EmptyRunRelease(ordinal) => {
                 let ordinal = ordinal as usize;
                 let outcome = summary
                     .obligations
@@ -1779,8 +1780,10 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert!(outcome.discharged);
                 match outcome.family {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
+                    ObligationFamily::EmptyRunRelease => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::RangeSeparation => assert_eq!(outcome.conjunct, 0),
+                    ObligationFamily::IndexSeparation => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::ViewRange => {
                         assert!(outcome.conjunct <= 1)
                     }

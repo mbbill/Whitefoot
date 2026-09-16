@@ -188,7 +188,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
         for drop in drops {
-            for path in self.resolved_provider_writes(function, drop.ty)? {
+            for path in self.resolved_provider_writes_for(function, drop.ty, drop.release)? {
                 effects.add_write(path);
             }
         }
@@ -204,7 +204,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         match expression {
             CheckedExpression::Project { residual_drops, .. } => {
                 for drop in residual_drops {
-                    for path in self.resolved_provider_writes(function, drop.ty)? {
+                    for path in
+                        self.resolved_provider_writes_for(function, drop.ty, drop.release)?
+                    {
                         effects.add_write(path);
                     }
                 }
