@@ -1,0 +1,16 @@
+fn scan(data: own array<u8, 12>) -> result: own u8 reads(data) {
+  let total = 0_u8;
+  for (row in 0_u64..3_u64) {
+    for (col in 0_u64..5_u64) {
+      let base = row * 4_u64;
+      let flat = base + col;
+      let byte = data[flat];
+      set total = total +wrap byte;
+    }
+  }
+  return total;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,42 @@
+fn main() -> status: own ExitStatus pure {
+  let ring = fixed_vector::<u32, 4>();
+  region {
+    place_back(vector: &uniq ring, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq ring, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq ring, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq ring, value: 0_u32);
+  }
+  let cursor = 0_u64;
+  let total = 0_u32;
+  let value = 0_u32;
+  for (
+    i in 0_u64..10_u64,
+    invariant cursor_in_ring: cursor < 4_u64
+  ) {
+    set ring[cursor] = value;
+    set total = total +wrap value;
+    let can_advance = cursor < 3_u64;
+    if can_advance {
+      set cursor = cursor + 1_u64;
+    } else {
+      set cursor = 0_u64;
+    }
+    set value = value +wrap 1_u32;
+  }
+  if total == 45_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let last_written = ring[1_u64];
+  if last_written == 9_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

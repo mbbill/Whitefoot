@@ -1,0 +1,30 @@
+fn sum_paced(limit: own u64) -> total: own u64 pure {
+  let fast = 0_u64;
+  let n = 0_u64;
+  let total = 0_u64;
+  loop (
+    invariant paced: fast <= limit
+  ) {
+    let spare = fast < limit;
+    if spare {
+      set total = total +wrap fast;
+      set fast = fast + 1_u64;
+    }
+    let room_again = fast < limit;
+    if room_again {
+      set total = total +wrap fast;
+      set fast = fast + 1_u64;
+    }
+    let more = n < 4_u64;
+    if more {
+      set n = n + 1_u64;
+    } else {
+      break;
+    }
+  }
+  return total;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

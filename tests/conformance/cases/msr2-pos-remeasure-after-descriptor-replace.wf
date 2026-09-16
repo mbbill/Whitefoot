@@ -1,0 +1,68 @@
+fn main() -> status: own ExitStatus pure {
+  let line = fixed_vector::<u8, 10>();
+  region {
+    place_back(vector: &uniq line, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq line, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq line, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq line, value: 0_u8);
+  }
+  let spare = len_of(line);
+  let first_end = 4_u64;
+  let first_fits = first_end <= spare;
+  if first_fits {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let grown = fixed_vector::<u8, 10>();
+  region {
+    place_back(vector: &uniq grown, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq grown, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq grown, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq grown, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq grown, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq grown, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq grown, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq grown, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq grown, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq grown, value: 7_u8);
+  }
+  let old = replace line = move grown;
+  let room2 = len_of(line);
+  let second_end = 10_u64;
+  let second_fits = second_end <= room2;
+  if second_fits {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let sample = line[9_u64];
+  let correct = sample == 7_u8;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

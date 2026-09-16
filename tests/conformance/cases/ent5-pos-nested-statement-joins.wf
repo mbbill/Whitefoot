@@ -1,0 +1,69 @@
+enum InnerKind {
+  Head();
+  Tail();
+}
+
+fn fetch_from_if(b: own Slice<u8>, i: own u64, wide: own Bool, kind: own InnerKind) -> result: own u8 reads(b) {
+  let spare = len_of(b);
+  if wide {
+    match kind {
+      Head() => {
+        let direct = i < spare;
+        if direct {
+        } else {
+          return 0_u8;
+        }
+      }
+      Tail() => {
+        let far = i >= spare;
+        if far {
+          return 0_u8;
+        }
+      }
+    }
+  } else {
+    let narrow_bound = i < spare;
+    if narrow_bound {
+    } else {
+      return 0_u8;
+    }
+  }
+  return b[i];
+}
+
+enum OuterKind {
+  Exact();
+  Margin();
+}
+
+fn fetch_from_match(b: own Slice<u8>, i: own u64, kind: own OuterKind, safe: own Bool) -> result: own u8 reads(b) {
+  let spare = len_of(b);
+  match kind {
+    Exact() => {
+      let inside = i < spare;
+      if inside {
+      } else {
+        return 0_u8;
+      }
+    }
+    Margin() => {
+      if safe {
+        let direct = i < spare;
+        if direct {
+        } else {
+          return 0_u8;
+        }
+      } else {
+        let far = i >= spare;
+        if far {
+          return 0_u8;
+        }
+      }
+    }
+  }
+  return b[i];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

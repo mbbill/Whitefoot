@@ -4067,3 +4067,37 @@ All 39 new cases pass through the existing CLI's ordinary WF-to-LLVM path in
 0.92 s (1.06 s wrapper total), after canonical rendering. No Rust target build,
 native WF image build, baseline compiler or native execution is included in
 that measurement. Full corpus validation remains a later gate requirement.
+
+### Snapshot disposition: joins, replacement, cursors and arithmetic
+
+The per-source disposition now covers 331/484 inputs. The 200 additional
+join, kill, cursor and arithmetic sources become 50 more normative cases
+(89 total migrated cases), with compatible positive source judgments batched
+in one source where useful. Ordinary and counted headers, pre-kill closure,
+field/element replacement, scoped breaks, affine indices and exact arithmetic
+retain their distinguishing positive and negative observations. No migration
+adds a native build or execution. All 89 CLI-to-LLVM checks and canonical
+renders pass in 2.01 s (2.16 s including the bounded wrapper).
+
+Several finder comments were wrong about the observed property. In particular,
+a changing chain middle does not erase a previously closed conclusion whose
+own support survives; wrapping results do not inherit exact affine images;
+an unsafe slow-cursor read was mislabeled as fast-cursor overshoot; and a
+15-step u32 product of three never reaches the claimed overflow. Those cases
+name their actual receiver and reason instead of freezing accidental failures.
+A copied narrowing Result is still not its scalar payload, and a quotient's
+floor bound is not an exact equality. The source-specific record identifies
+the specification boundary for each removal. The remaining 153 sources stay
+in the old runner until reviewed.
+
+### Later hosted performance result at 2bd74ae0
+
+[Run 35116060304](https://github.com/mbbill/Whitefoot/actions/runs/35116060304)
+passed its identical-source and explicit-slowdown controls but **failed** the
+actual comparison: records baseline/candidate wall ratios were 0.697672,
+0.953299 and 0.974828 at W=1/2/4, each lower in 5/5 pairs. The first two widths
+therefore fail the unchanged rule; CPU ratios were 0.697705, 0.933396 and
+0.973345. The other four kernels passed. The actual comparison took 29.75 s.
+This newer failure supersedes any claim of an all-green performance result;
+the earlier passing run remains dated evidence, not a selected final verdict.
+The cause is not yet isolated and no threshold or retry policy was changed.
