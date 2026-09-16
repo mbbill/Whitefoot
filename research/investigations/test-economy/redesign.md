@@ -251,11 +251,11 @@ during their migration, rather than assuming their current classification is cor
 The owner agreed to R01 through R07, B01 and B02, and selected the common C
 runner direction described below. B02b retains its conditional retirement
 pending the current-consumer audit; agreement does not resolve that premise.
-The owner also agreed to B03a-e, the five scheduler C-probe groups and their
-Rust-wrapper simplification. Implementation remains deferred. The current
-proposal is B03f-m: all 34 Rust parallel-lowering tests, grouped into eight
-rows. Loop splitting and exhaustion remain the following parts of B03. The
-platform inventory and timing loop retain their explicit B04/B06 review homes.
+The owner also agreed to B03a-m: the five scheduler C-probe groups and the
+eight Rust parallel-lowering groups. Implementation remains deferred. The
+current proposal is B03n-u: all 17 loop-splitting tests, grouped into eight
+rows. Exhaustion is the remaining part of B03. The platform inventory and
+timing loop retain their explicit B04/B06 review homes.
 The remaining inventory is grouped below; these are review scopes, not eight
 new test targets or a promise that every scope fits one conversation. Individual
 compiler/corpus migration audits still apply under the accepted baseline.
@@ -264,7 +264,7 @@ compiler/corpus migration audits still apply under the accepted baseline.
 |---|---|---|
 | B01 | Completion publication, wake and lifetime: selected `completion/harness.c` functions and `ordinary_values_probe.c::concurrent_half_close_probe` | Agreed; implementation deferred |
 | B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Agreed, including conditional consumer audit; implementation deferred |
-| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/` and the related Rust backend sampling modules | C probes agreed; Rust parallel-lowering recommendations pending; loop/exhaustion groups next |
+| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/` and the related Rust backend sampling modules | C probes and Rust parallel lowering agreed; loop-splitting recommendations pending; exhaustion next |
 | B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Organization and remaining assertions not yet reviewed; preserve earlier selected host distinctions |
 | B05 | Standalone research models, compiler witnesses and their oracles under `research/experiments/`, including proof-use-cost and container representation | Not yet reviewed |
 | B06 | IO/compute benchmark construction, output correctness, regression decisions and explicit timing protocols | Not yet reviewed |
@@ -1349,8 +1349,8 @@ performance-regression/explicit-measurement protocol.
 **Following parts.** `compiler/src/backend/tests/{parallel,loop_split,exhaustion}.rs`
 contain 34, 17 and 23 `#[test]` cases respectively, all in the same compiler
 library test executable. Their current `test-sampling` filter does not
-establish that each case samples a schedule. The next section audits the
-parallel module; loop splitting and exhaustion remain later review groups.
+establish that each case samples a schedule. The following sections audit
+parallel lowering and loop splitting; exhaustion remains the next group.
 `sched/grant_observer.c` is linked into some generated-program tests to observe
 real grants/threads; it is not a sixth standalone probe with its own main.
 
@@ -1390,14 +1390,14 @@ through the established helper with the same inputs/options and an explicit
 observer, retaining fresh executions/assertions. Do not describe existing
 runtime-object reuse as caching WF results or eliminating every native build.
 
-**Recommendations below are pending the owner's ruling.** These are
+**The owner agreed to B03f-m, with implementation deferred.** These are
 property/fixture groups, not eight proposed executables. Where only external
 program results remain, the receiving owner is the existing
 `compiler/tests/programs/parallel.rs` group; direct implementation
 observations remain compiler tests. Reuse a fixture and its valid construction
 rather than duplicating it merely to split assertions across categories.
 
-| Row and current count | Actual operations and observations | Recommendation and home |
+| Row and current count | Actual operations and observations | Selected disposition and home |
 |---|---|---|
 | B03f: IR, layout and offer selection (11) | Inspect the outlined thunk, stores only after acquisition, offer/inline/join/value order, sequential clone set and bodies, one bootstrap world selection, no extra caller stack slot, denied/borrowed-call handling and scalar-leaf suppression. Layout tests distinguish exactly fitting/too-wide frames, budget-field overhead and an unrepresentable target domain; a source check compares Rust/C slot constants. The Windows case inspects external declarations and absence of weak fallbacks, without performing a Windows link. | Keep focused compiler implementation tests. Share repeated emission of the same `OVERLAPPING_FOLD`/lowering configuration within the fixture group while retaining named assertions. These are not schedule-sampling cases and need no native execution just because their input is WF. Keep the cross-language layout agreement until its duplicate constants are actually removed; generation was not selected here. Name the Windows assertion as emitted linkage obligations, leaving actual host-link evidence to B04. |
 | B03g: generated-code boundaries and distinct call shapes (7) | Host builds exercise source/runtime symbol coexistence, exact/too-wide lane frames, a call in an if condition, three siblings feeding loop phis, linked/source ordinary calls, and mixed small/large scalar offers. Checks include concrete exit values/bytes and LLVM offer/join counts/order. Several use workers 0/1/4, but successful runs alone do not prove every granted/refused edge ran. One case claims a module links without runtime while using the always-linked common helper. | Keep the six useful compiler-output/ABI/control-flow cases; share construction for unchanged modules and keep meaningful granted/refused observations where the claim needs them. Retire the misleading no-runtime native smoke: merge its no-offer predicate into the existing denied/default IR group and remove the obsolete link claim. Do not add a new no-runtime build path to perpetuate it: the current driver and design link the ordinary runtime for every program. Mere absence of compute offers still is a useful emission property. |
@@ -1445,7 +1445,8 @@ current `design/compiler.md` ordinary ABI/runtime decision,
 budget-family and lane-owned-frame decisions. Required compiler-output
 checks survive; a pure Rust sampling-module label, an old test title or an
 incidental assertion does not justify an extra end-to-end construction.
-The next B03 part is loop splitting (17 cases), followed by exhaustion (23).
+The following section reviews loop splitting (17 cases); exhaustion (23)
+remains next.
 
 **Complete function mapping.** Names below are all the current tests in
 `compiler/src/backend/tests/parallel.rs`; each appears exactly once. A row
@@ -1510,10 +1511,154 @@ current function is already in its proposed home.
 - `the_repeat_comparison_reports_an_injected_difference`
 - `the_repeat_reports_a_lowering_whose_joins_were_removed`
 
-Only the B03a-e owner ruling and this pending B03f-m proposal are added in this
-discussion revision. No test implementation, caller, specification, amendment
-text or live-tree decision changes. No build, execution, timing campaign or
-new completion/DCR checkpoint is claimed.
+The owner subsequently accepted B03f-m. No implementation is claimed.
+
+### B03 — Loop splitting, third part
+
+**Scope and construction.** All 17 `#[test]` cases in
+`compiler/src/backend/tests/loop_split.rs` belong to the same Rust compiler
+library test executable as the preceding module. Five inspect compiler
+IR/ledger or embedded slot constants without native construction; twelve
+build and execute compiler output. They currently all run under the
+module-wide `test-sampling` selector, locally through `make check` and on
+Linux/macOS sampling CI. This is not 17 independently built Rust targets.
+
+Fixtures are embedded WF strings or small generators in that Rust source:
+`PERMITTED_FOLD`, `EDGE_RANGES`, `WIDE_FRAME`, `CAPTURED_XOR_FOLD`,
+`INDEPENDENT_MAP`, two map-source edits and `admitted_combine_source`.
+The Rust process calls the compiler library to obtain LLVM/permission
+evidence. Native cases then use the existing Clang builder, shipped ordinary
+library/runtime/floor and sometimes `CountedProgram` or another C observer.
+Their extra resources are executable scratch storage, worker threads and
+captured stdout/stderr; the alleged stack-limit case also starts a shell.
+No corpus, test source, specification or caller is changed in this audit.
+
+The basic fold and map use 400,000 source iterations, with a 24-round integer
+mix per element; the captured fold uses three values (salt, round count and
+stride) asymmetrically. These workloads were made substantial enough for the
+runtime's work threshold to allow splitting. This is a source-level
+description, not an instruction count or a new duration measurement: native
+optimization can remove or simplify work. The combine table already packs
+its rows into one WF program; it is not seventeen WF executables.
+
+**Recommendations below are pending the owner's ruling.** Apply the already
+agreed B03 shared construction and controlled-worker observation. In
+particular, a retained positive grant execution must also check its output;
+the current shared retry helper does not do that. Preserve real default
+runtime integration separately from controlled compiler-path coverage.
+
+| Row and current count | Actual operations and observations | Recommendation and home |
+|---|---|---|
+| B03n: emitted shape, capture frame and defaults (5) | Check that a split emits a chunk which remains a loop, plus a splitter using ordinary acquire/publish/join/release; budget is queried once at entry. Check ordinary compilation and the sequential clone avoid splitting, while chunk/clone bodies agree. A wide-scope source must remain permitted but decline actualization with a frame-size diagnostic. A separate Rust/C frame-limit check repeats the same header-number assertion in B03f. | Keep focused compiler tests and share basic-fold emission. Merge the duplicate slot-limit check into B03f's stronger capacity/alignment check. Make the wide-frame fixture depend on captures the loop actually uses: it currently declares 32 locals but reads only `a0`, and relies on the present whole-scope capture implementation. Do not require retaining unused captures just to keep this test declining after a legitimate compiler improvement. Keep permission, target fit and optional lowering refusal distinct. |
+| B03o: ordinary fold and sequential reference (2) | The same 400,000-element `+wrap` fold is built/run first at workers 0/1/2/3/4/5/8/10/16 and unset, then separately at 1/2/4/8 against a separately emitted unsplit build. An additional counted image searches for a steal at 4/8 (up to four attempts when the host heuristic enables it), plus an opt-out run. | Consolidate one program family with one ordinary reference and one parallel module, retaining required observed-build variants rather than regenerating the same inputs per assertion. External output behavior belongs in the existing programs parallel group; internal split/clone evidence stays with the compiler. Retain default and disabled behavior and meaningful division/scheduling boundaries, with a justified result oracle. Select worker cases by what they distinguish: for a work-sufficient range, 2/3 workers can yield the same budget, as can 4/5 and 8/10. More worker settings do not automatically mean different split trees, although worker scheduling can still differ. |
+| B03p: split-work policy and ordinary reporting (2) | A C exit observer directly asks `wf__par_split_budget` for spans 0, 4,096, 65,536 and maximum unsigned, using weight 219 or maximum. Seven absent/empty/valid `WF_SPLIT_WORK` settings check exact budget tuples; four malformed/out-of-range settings must stop before WF output. Separately, the ordinary unobserved image runs workers 1/4 with report modes 0/1/2, checking silence versus one compute report, worker-start counts and unchanged bytes; mode 3 is refused. | Move the budget arithmetic/environment-parser matrix to the common C runtime policy group. It does not need to execute a 400,000-element WF fold to read four C return values. Queries can run before pool creation; even the maximum configured-width arithmetic boundary need not launch that many workers. Retain generated-program integration for disabled/enabled splitting and refusal before the body, sharing B03o's images. Preserve the ordinary unhooked report path and its output/diagnostic assertions; an observer that prints counters itself is not a substitute for shipped reporting. This is configuration correctness, not a timing benchmark. |
+| B03q: captures and nonzero reduction seed (1) | Inspect the chunk's six i64 parameters: incoming seed, two endpoints and three captures. Compare captured XOR fold bytes with unsplit code at workers 1/2/4/8; optionally build a counted image for actual worker evidence. Capture values are used asymmetrically, and the source accumulator starts at a nonzero value. | Keep as a compiler capture/parameter-passing and seed-preservation regression, sharing observers/building helpers with the other cases. Observe the actual split/callback path and its result. Correct the comments claiming XOR and wrapping addition have different identity elements: both are zero. The distinct combine operation, incoming nonzero seed and capture order are the real reasons for this fixture; the 17-row table does not establish all of those ABI observations. |
+| B03r: owned map, borrowed read-modify-write and map plus reduction (3) | The owned map writes a 400,000-byte buffer; IR checks Unit-returning chunks, descriptor capture, joins and exactly one outer release on each return path. The borrowed variant updates the same-index element through `&uniq`, but initializes every old element to zero. The mixed variant returns a real u64 reduction through the splitter and captures the output descriptor, but exposes only the checksum's low byte by overwriting element zero. All compare native output with separately emitted ordinary code. | Keep the three compiler mapping/capture/ownership distinctions, with common fixture generation and construction, not three new executables merely for categorization. Use nonzero initial data for the read-modify-write case so omitting the old-value read changes the result. Publish/check the full reduction value alongside all map bytes instead of checking eight bits and discarding the original first mapped byte. Preserve the owned-map release/join assertions and observe the intended path for each claimed variant. These changes improve the existing oracles without adding a new WF compilation family. |
+| B03s: all admitted combines, one table case (1) | Ten operations are represented by 17 rows: seven integer combines at u64/u8 and three Bool combines. Each row folds 200,000 source elements; the program emits 136 bytes. Check a split-ledger entry naming each row/operator, run ordinary and parallel builds at eight named worker settings plus unset, compare per-row bytes, then optionally look for a positive aggregate steal count at eight workers. Calls are deliberately dependent so counted compute work comes from range splitting, not sibling-call overlap. | Keep the combined table as compiler native-lowering evidence, with row-specific diagnostics. Establish an executed split/join and correct result for each row using a small controlled budget/observer configuration; one aggregate positive steal proves at most that some row supplied work. Separate this from a representative run with the real default policy. The large spans currently compensate for the work threshold, so use smaller discriminating data once controlled path coverage is established, preserving meaningful seed, width, overflow and uneven-boundary cases. Do not create seventeen binaries or blindly multiply the native table across all widths. Keep the existing independent Rust identity table: it covers signed/unsigned 8/16/32/64-bit cases that this native table does not. |
+| B03t: empty, inverted and singleton ranges (1) | A single WF source starts its accumulator at 7; empty and inverted ranges must leave it at 7, and a one-element range must add that element exactly once. The source is compiled with splitting enabled and run at workers 0/1/2/4/8. The check observes exact program results and presence of a splitter, not that a short range received a positive runtime allowance. | Keep these focused compiler-lowering boundaries and integrate their construction with the controlled split cases. Observe that empty/inverted ranges contribute no work and do not send a wrapped span into budget/recursion; distinguish budget-zero leaf behavior from a positive-budget range too thin to divide. A controlled allowance can exercise the latter without a large workload. Do not claim five worker values establish five boundary paths or substitute a permission-only conformance case for the generated splitter checks. |
+| B03u: misleading optional-runtime and stack claims (2) | The first checks a weak split-budget definition, then runs the fully linked basic fold at workers 1/8; it never performs a runtime-free link. The second runs that same program at workers 8 after `ulimit -s 512`, claiming bounded split stack use. The ordinary floor instead creates the WF entry stack with its own 1 GiB reservation, and workers use that runtime size; the case does not observe which stack was used or its consumption. | Retire both redundant native wrappers with their obsolete claims. Merge the useful weak-definition assertion into B03n and the 1/8 output observations into B03o. Replace the alleged stack proof with focused generated-split control observations (empty/thin/zero-budget termination and decreasing recursive budget) plus the runtime budget cap in B03p. Those establish the logical split bound, not measured whole-thread stack bytes; any machine-byte claim belongs to an actual stack-ledger/floor observation. Do not keep a 512 KiB claim whose execution is normally on a different stack. |
+
+**Why the combine table and identity unit are distinct.**
+`lowering/builder/split.rs::the_identity_of_every_admitted_combine_is_two_sided`
+uses the production identity/operation selection with an independent Rust
+evaluator over both signs and four widths, plus Bool. It cannot replace
+compiled chunks, capture transport and result recombination; conversely,
+the native table's u8/u64/Bool representatives do not cover every signed or
+intermediate-width table entry. This existing unit test is an adjacent
+dependency, not an eighteenth case in the current loop module.
+
+The native-table comment about a wrong XOR identity always cancelling over
+an even number of chunks is also inconsistent with the current builder:
+the incoming accumulator goes left and only the right child gets the
+identity. Already at one bisection there is one new identity seed, not two.
+Correct the explanation and check actual seed placement in the controlled
+table; do not discard a useful row on that cancellation claim. This is
+separate from the captured-XOR comments' simpler error that addition's
+identity differs from XOR's.
+
+**Meaning of the stack and policy observations.** Normal POSIX entry setup
+in `backend/wf_floor.c::wf__floor_run` requests
+`WF_FLOOR_STACK_BYTES`, and `sched/prim_host.c` sets explicit worker stack
+sizes. If entry thread setup fails, the floor can fall back to the original
+thread; the alleged bound test neither requires that fallback nor measures
+its stack. An inherited shell limit therefore does not establish a fixed
+bound for this test's intended execution. Keep the logical recurrence
+observation and real machine-resource evidence correctly named, rather than
+launching a large recursion merely to replace this wrapper.
+
+`wf__par_split_budget` combines a work-derived chunk allowance with the
+per-lane cap and returns its base-two logarithm. Direct C tests should retain
+zero/disabled, threshold, saturation and cap behavior; generated-code tests
+should establish that the right values reach the query and that subdivision
+preserves results. A controlled test budget does not replace the real
+policy's test, and neither chooses WF source acceptance.
+
+**Authority and affected evidence.** Active `PAR-2` enumerates the ten
+combines and requires unchanged values/iteration membership, while allowing
+an implementation to overlap nothing. Therefore seeing source acceptance or
+a ledger entry does not prove a generated parallel path executed. The
+current compiler grounds are the loop-leaf decision in
+`design/compiler/parallel-lowering.md`, clone/budget/frame decisions in
+`two-worlds.md`, and runtime-owned-stack and work-cap decisions in
+`parallel-runtime.md`/`resource-exhaustion-floor.md`. Keep normative
+conformance and implementation actualization observations distinct.
+
+The `PAR-2` coverage declaration in `tests/conformance/manifest.jsonl`
+currently describes ten worker settings and the compiler's identity/output
+checks. Bring that declaration into agreement with the eventual receiving
+checks/matrix in the implementation change; do not leave obsolete counts or
+claim per-row execution from one global counter. No manifest/verdict or
+specification changes accompany this discussion. Exhaustion's 23 cases are
+the next B03 review group.
+
+**Complete function mapping.** All 17 current tests in
+`compiler/src/backend/tests/loop_split.rs` appear once below.
+
+**B03n (5 current tests)**
+
+- `a_permitted_loop_is_outlined_split_and_joined`
+- `the_default_compilation_of_a_permitted_loop_splits_nothing`
+- `the_sequential_world_of_a_split_loop_is_the_loop`
+- `a_loop_whose_frame_is_too_wide_declines_and_says_so`
+- `the_compile_time_frame_bound_is_the_runtimes`
+
+**B03o (2 current tests)**
+
+- `a_split_loop_publishes_one_byte_sequence_at_every_worker_count`
+- `a_split_loop_agrees_with_the_lowering_that_splits_nothing`
+
+**B03p (2 current tests)**
+
+- `split_work_setting_changes_budget_without_changing_the_fold`
+- `ordinary_shared_runtime_can_report_without_an_observer`
+
+**B03q (1 current tests)**
+
+- `a_split_loop_carries_its_captures_and_a_second_combine`
+
+**B03r (3 current tests)**
+
+- `an_independent_map_joins_and_preserves_its_outer_buffer`
+- `a_borrowed_read_modify_map_preserves_the_sequential_bytes`
+- `a_map_and_reduction_preserves_both_results`
+
+**B03s (1 current tests)**
+
+- `every_admitted_combine_splits_and_publishes_the_unsplit_bytes`
+
+**B03t (1 current tests)**
+
+- `a_degenerate_range_folds_to_the_accumulator_it_arrived_with`
+
+**B03u (2 current tests)**
+
+- `a_module_with_a_split_loop_and_no_runtime_still_runs`
+- `a_split_loop_costs_a_bounded_stack`
+
+Only the B03f-m owner ruling and this pending B03n-u proposal are added in
+this discussion revision. No test implementation, caller, specification,
+conformance evidence, amendment text or live-tree decision changes. No
+build, execution, timing campaign or new completion/DCR checkpoint is claimed.
 
 ## Affected material and evidence
 
