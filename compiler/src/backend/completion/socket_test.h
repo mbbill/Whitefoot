@@ -1,0 +1,140 @@
+#ifndef WHITEFOOT_COMPLETION_SOCKET_TEST_H
+#define WHITEFOOT_COMPLETION_SOCKET_TEST_H
+
+/* Shared bridge lifecycle case for scripted-policy and shipped-policy tests.
+ * Retire this test support if those two callers no longer need the same host
+ * and result observations. No production source includes it. */
+#include "bridge.h"
+#include "contract.h"
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include "../windows_runtime.h"
+#else
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#endif
+
+static inline int wf_test_socket_open(int descriptor) {
+#if defined(_WIN32)
+    return wf__windows_socket_handle(descriptor) != (uintptr_t)INVALID_SOCKET;
+#else
+    return fcntl(descriptor, F_GETFD) >= 0;
+#endif
+}
+
+static inline unsigned wf_test_socket_port(int descriptor) {
+    struct sockaddr_in address;
+    memset(&address, 0, sizeof(address));
+#if defined(_WIN32)
+    int length = sizeof(address);
+    SOCKET socket = (SOCKET)wf__windows_socket_handle(descriptor);
+#else
+    socklen_t length = sizeof(address);
+    int socket = descriptor;
+#endif
+    if (getsockname(socket, (struct sockaddr *)&address, &length)) return 0;
+    return (unsigned)ntohs(address.sin_port);
+}
+
+static inline int wf_test_socket_lifecycle(unsigned *chosen_port) {
+    _Alignas(WF_COMPLETION_RECORD_ALIGN) unsigned char record[WF_COMPLETION_RECORD_BYTES];
+    const unsigned char sent[] = {3, 1, 4, 1, 5, 9, 2, 6};
+    unsigned char received[sizeof(sent)] = {0};
+    int listener = -1, endpoints[2] = {-1, -1};
+    unsigned released[2] = {0, 0};
+    int64_t value = -1;
+    int error = 0, failed = 1;
+    uint64_t low = 0, high = 0;
+    uint32_t tag = 0;
+    const char *phase = "listen";
+#define SOCKET_REQUIRE(condition) do { if (!(condition)) goto cleanup; } while (0)
+#define SOCKET_JOIN() wf__completion_file_join(record, &value, &error)
+    *chosen_port = 0;
+    wf__completion_socket_listen_submit(UINT64_C(0x0100007f), 0, 0, record);
+    SOCKET_JOIN();
+    SOCKET_REQUIRE(value >= 0 && error == 0);
+    listener = (int)value;
+    *chosen_port = wf_test_socket_port(listener);
+    SOCKET_REQUIRE(*chosen_port != 0);
+    phase = "connect";
+    wf__completion_socket_connect_submit(UINT64_C(0x0100007f), 0, *chosen_port, record);
+    SOCKET_JOIN();
+    SOCKET_REQUIRE(value >= 0 && error == 0);
+    endpoints[0] = (int)value;
+    phase = "accept/peer";
+    wf__completion_socket_accept_submit(listener, record);
+    wf__completion_socket_accept_join(record, &value, &error, &low, &high, &tag);
+    SOCKET_REQUIRE(value >= 0 && error == 0);
+    endpoints[1] = (int)value;
+    SOCKET_REQUIRE(low == UINT64_C(0x0100007f) && high == 0);
+    SOCKET_REQUIRE(!(tag & WF_SOCKET_FAMILY_V6) && (tag & WF_SOCKET_PORT_MASK));
+    phase = "send";
+    for (size_t at = 0; at < sizeof(sent); at += (size_t)value) {
+        wf__completion_socket_send_submit(endpoints[0], sent + at, sizeof(sent) - at, record);
+        SOCKET_JOIN();
+        SOCKET_REQUIRE(value > 0 && (uint64_t)value <= sizeof(sent) - at && error == 0);
+    }
+    phase = "receive";
+    for (size_t at = 0; at < sizeof(received); at += (size_t)value) {
+        wf__completion_socket_receive_submit(endpoints[1], received + at,
+                                            sizeof(received) - at, record);
+        SOCKET_JOIN();
+        SOCKET_REQUIRE(value > 0 && (uint64_t)value <= sizeof(received) - at && error == 0);
+    }
+    SOCKET_REQUIRE(memcmp(received, sent, sizeof(sent)) == 0);
+    phase = "empty receive";
+    wf__completion_socket_receive_submit(endpoints[1], received, 0, record);
+    SOCKET_JOIN();
+    SOCKET_REQUIRE(value == 0 && error == 0);
+    SOCKET_REQUIRE(memcmp(received, sent, sizeof(sent)) == 0);
+    phase = "directional close/credit";
+    for (unsigned endpoint = 0; endpoint < 2; ++endpoint) {
+        /* Both direction orders protect the private first/last-close values. */
+        for (unsigned order = 0; order < 2; ++order) {
+            unsigned direction = endpoint ^ order;
+            wf__completion_socket_shutdown_submit(endpoints[endpoint], direction, record);
+            SOCKET_JOIN();
+            SOCKET_REQUIRE(value == (int64_t)order && error == 0);
+            released[endpoint] |= 1u << direction;
+            SOCKET_REQUIRE(wf_test_socket_open(endpoints[endpoint]) == (order == 0));
+        }
+        endpoints[endpoint] = -1;
+    }
+    phase = "listener close";
+    wf__completion_file_close_submit(listener, record);
+    SOCKET_JOIN();
+    SOCKET_REQUIRE(value == 0 && error == 0);
+    listener = -1;
+#if !defined(_WIN32)
+    phase = "refused connect";
+    wf__completion_socket_connect_submit(UINT64_C(0x0100007f), 0, *chosen_port, record);
+    SOCKET_JOIN();
+    SOCKET_REQUIRE(value < 0 && error == ECONNREFUSED);
+#endif
+    failed = 0;
+cleanup:
+    if (failed) fprintf(stderr, "bridge socket lifecycle: %s failed (value=%lld error=%d)\n",
+                        phase, (long long)value, error);
+    for (unsigned endpoint = 0; endpoint < 2; ++endpoint) {
+        if (endpoints[endpoint] < 0) continue;
+        for (unsigned direction = 0; direction < 2; ++direction) {
+            if (released[endpoint] & (1u << direction)) continue;
+            wf__completion_socket_shutdown_submit(endpoints[endpoint], direction, record);
+            SOCKET_JOIN();
+        }
+    }
+    if (listener >= 0) {
+        wf__completion_file_close_submit(listener, record);
+        SOCKET_JOIN();
+    }
+#undef SOCKET_JOIN
+#undef SOCKET_REQUIRE
+    return failed;
+}
+#endif

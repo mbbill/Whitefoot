@@ -7,6 +7,7 @@
 
 #include "contract.h"
 #include "bridge.h"
+#include "socket_test.h"
 #include "file_adapter.h"
 #include "file_posix.h"
 #include "native_contract.h"
@@ -56,6 +57,7 @@ typedef struct wf_harness_record {
     } while (0)
 
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
+static _Atomic int wf_directory_scripted;
 static unsigned wf_directory_host_calls;
 static unsigned wf_directory_poll_calls;
 static int wf_directory_poll_descriptor;
@@ -98,7 +100,10 @@ ssize_t wf_completion_test_getdirentries64(
     int64_t *position
 ) {
     ssize_t reported;
-    (void)descriptor;
+    if (!atomic_load(&wf_directory_scripted)) {
+        extern ssize_t __getdirentries64(int, void *, size_t, int64_t *);
+        return __getdirentries64(descriptor, buffer, count, position);
+    }
     if (position == NULL) {
         wf_directory_host_calls += 1;
         errno = EINVAL;
@@ -112,7 +117,10 @@ ssize_t wf_completion_test_getdirentries64(
 }
 #else
 ssize_t wf_completion_test_getdents64(int descriptor, void *buffer, size_t count) {
-    (void)descriptor;
+    if (!atomic_load(&wf_directory_scripted)) {
+        extern ssize_t getdents64(int, void *, size_t);
+        return getdents64(descriptor, buffer, count);
+    }
     return wf_completion_test_directory_batch(buffer, count);
 }
 #endif
@@ -143,7 +151,7 @@ int wf_completion_test_poll(
     int timeout
 ) {
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
-    if (wf_directory_host_calls != 0) {
+    if (atomic_load(&wf_directory_scripted)) {
         wf_directory_poll_calls += 1;
         wf_directory_poll_descriptor = count == 1 ? descriptors[0].fd : -1;
         wf_directory_poll_events = count == 1 ? descriptors[0].events : 0;
@@ -2669,137 +2677,8 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
  * so this frame asks the host directly. That is the same thing the program
  * corpus does from the other side, where the harness picks the port. */
 static int test_socket_lifecycle_and_the_pair_two_count(void) {
-    wf_harness_record record;
-    int64_t value = -1;
-    int error_code = -1;
-    uint64_t peer_low = 0;
-    uint64_t peer_high = 0;
-    uint32_t peer_tag = 0;
-    struct sockaddr_in local;
-    socklen_t local_length = (socklen_t)sizeof(local);
-    const unsigned char message[6] = {'s', 'o', 'c', 'k', 'e', 't'};
-    unsigned char received[6] = {0};
     unsigned port;
-    int listener;
-    int connected;
-    int taken;
-
-    /* 127.0.0.1, port zero: the address value the emitted constructors build,
-     * in the three scalars the submit ABI carries (`contract.h`). */
-    wf__completion_socket_listen_submit(0x0100007fu, 0, 0, record.bytes);
-    wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value >= 0 && error_code == 0);
-    listener = (int)value;
-    CHECK(
-        getsockname(listener, (struct sockaddr *)&local, &local_length) == 0
-    );
-    port = (unsigned)ntohs(local.sin_port);
-    CHECK(port != 0u);
-
-    wf__completion_socket_connect_submit(0x0100007fu, 0, port, record.bytes);
-    wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value >= 0 && error_code == 0);
-    connected = (int)value;
-
-    wf__completion_socket_accept_submit(listener, record.bytes);
-    wf__completion_socket_accept_join(
-        record.bytes,
-        &value,
-        &error_code,
-        &peer_low,
-        &peer_high,
-        &peer_tag
-    );
-    CHECK(value >= 0 && error_code == 0);
-    taken = (int)value;
-    /* The peer of a loopback connection is 127.0.0.1 on an ephemeral port,
-     * reported in the same portable form an emitted `SocketAddress` carries. */
-    CHECK(peer_low == 0x0100007fu && peer_high == 0);
-    CHECK((peer_tag & WF_SOCKET_FAMILY_V6) == 0u);
-    CHECK((peer_tag & WF_SOCKET_PORT_MASK) != 0u);
-
-    wf__completion_socket_send_submit(
-        connected,
-        message,
-        sizeof(message),
-        record.bytes
-    );
-    wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value == (int64_t)sizeof(message) && error_code == 0);
-
-    wf__completion_socket_receive_submit(
-        taken,
-        received,
-        sizeof(received),
-        record.bytes
-    );
-    wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value == (int64_t)sizeof(message) && error_code == 0);
-    CHECK(memcmp(received, message, sizeof(message)) == 0);
-
-    /* An empty receive has no external action at all and answers zero without
-     * a host call, exactly as an empty read does (ordinary native library). */
-    wf__completion_socket_receive_submit(taken, received, 0, record.bytes);
-    wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-
-    /* The first release of a direction half-closes it and leaves the
-     * descriptor this program's. */
-    wf__completion_socket_shutdown_submit(
-        taken,
-        WF_SOCKET_DIRECTION_RECEIVE,
-        record.bytes
-    );
-    wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-    CHECK(fcntl(taken, F_GETFD) >= 0);
-
-    /* The second releases the descriptor. The private joined value records
-     * that one credit can be returned to the ordinary close's passed factory. */
-    wf__completion_socket_shutdown_submit(
-        taken,
-        WF_SOCKET_DIRECTION_SEND,
-        record.bytes
-    );
-    wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value == 1 && error_code == 0);
-    errno = 0;
-    CHECK(fcntl(taken, F_GETFD) < 0 && errno == EBADF);
-
-    /* The other connection takes exactly the same two releases, in the other
-     * order, because which direction is released first is the program's own
-     * ordinary release order and changes no outcome (ordinary native library). */
-    wf__completion_socket_shutdown_submit(
-        connected,
-        WF_SOCKET_DIRECTION_SEND,
-        record.bytes
-    );
-    wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-    CHECK(fcntl(connected, F_GETFD) >= 0);
-    wf__completion_socket_shutdown_submit(
-        connected,
-        WF_SOCKET_DIRECTION_RECEIVE,
-        record.bytes
-    );
-    wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value == 1 && error_code == 0);
-    errno = 0;
-    CHECK(fcntl(connected, F_GETFD) < 0 && errno == EBADF);
-
-    /* A listener is one owner and one credit, so its explicit close is the
-     * ordinary one every other descriptor-shaped resource takes. */
-    wf__completion_file_close_submit(listener, record.bytes);
-    wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
-
-    /* A connect nobody is listening for returns no descriptor: the host
-     * refuses it and the runtime disposes of the socket it made. The ordinary
-     * library can therefore return failure and restore the factory's credit. */
-    wf__completion_socket_connect_submit(0x0100007fu, 0, port, record.bytes);
-    wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value < 0 && error_code == ECONNREFUSED);
-    return 0;
+    return wf_test_socket_lifecycle(&port);
 }
 
 /* Opens one listening socket on the loopback and reports the port the host
@@ -3037,6 +2916,7 @@ static int test_directory_progress_is_internal(void) {
     int64_t position = 4242;
     int64_t value = -1;
     int error_code = -1;
+    atomic_store(&wf_directory_scripted, 1);
     wf_directory_host_calls = 0;
     wf_directory_poll_calls = 0;
     wf_directory_poll_descriptor = -1;
@@ -3064,46 +2944,13 @@ static int test_directory_progress_is_internal(void) {
     CHECK(wf_directory_poll_timeout == -1);
     CHECK(byte == 'd');
     CHECK(position == wf_expected_position());
+    atomic_store(&wf_directory_scripted, 0);
     CHECK(close(descriptors[0]) == 0);
     CHECK(close(descriptors[1]) == 0);
 #endif
     return 0;
 }
 
-
-static uint64_t monotonic_nanoseconds(void) {
-    struct timespec now;
-    CHECK(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
-    return (uint64_t)now.tv_sec * UINT64_C(1000000000)
-        + (uint64_t)now.tv_nsec;
-}
-
-/* What one submission-to-join round trip costs when the operation itself
- * costs nothing.
- *
- * It is the record protocol and nothing else: initialise the record, store a
- * result head, publish through `wf_completion_record_complete`, read DONE.  The claim,
- * the drain and the consume it used to include are deleted with the pool. */
-static int benchmark_record_roundtrip(uint64_t *nanoseconds_per_operation) {
-    enum { ITERATIONS = 100000 };
-    wf_completion_record record;
-    uint64_t start;
-    uint64_t elapsed;
-    int iteration;
-
-    start = monotonic_nanoseconds();
-    for (iteration = 0; iteration < ITERATIONS; ++iteration) {
-        harness_record_init(&record, WF_FILE_PREAD);
-        record.result.kind = WF_FILE_PREAD;
-        record.result.value = iteration;
-        wf_completion_record_complete(&record);
-        CHECK(harness_record_done(&record));
-        CHECK(record.result.value == iteration);
-    }
-    elapsed = monotonic_nanoseconds() - start;
-    *nanoseconds_per_operation = elapsed / ITERATIONS;
-    return 0;
-}
 
 /* The name of the test now running, for the watchdog below.  Written by the
  * main thread and read by a signal handler, which is why it is a plain
@@ -3130,8 +2977,10 @@ static void wf_harness_watchdog(int signal_number) {
     _exit(9);
 }
 
+int wf_ordinary_values_tests(const char *scratch, const char *group);
+
 int main(int argc, char **argv) {
-    uint64_t roundtrip_ns = 0;
+    unsigned cases = 0;
     int trace = getenv("WF_COMPLETION_TRACE") != NULL;
     struct sigaction watchdog;
     memset(&watchdog, 0, sizeof(watchdog));
@@ -3147,6 +2996,7 @@ int main(int argc, char **argv) {
         if (trace) {                                                          \
             fprintf(stderr, "completion harness: begin %s\n", #__VA_ARGS__); \
         }                                                                     \
+        ++cases;                                                            \
         if ((__VA_ARGS__) != 0) {                                             \
             return 1;                                                         \
         }                                                                     \
@@ -3154,8 +3004,20 @@ int main(int argc, char **argv) {
             fprintf(stderr, "completion harness: end %s\n", #__VA_ARGS__);   \
         }                                                                     \
     } while (0)
-    if (argc != 2) {
-        fprintf(stderr, "usage: %s SCRATCH_DIRECTORY\n", argv[0]);
+    if (argc != 2 && argc != 3) {
+        fprintf(stderr, "usage: %s SCRATCH_DIRECTORY [all|core|bridge|policy|cache|ordinary-text|ordinary-io]\n", argv[0]);
+        return 2;
+    }
+    const char *group = argc == 3 ? argv[2] : "all";
+    int all = strcmp(group, "all") == 0;
+    int core = all || strcmp(group, "core") == 0;
+    int bridge = all || strcmp(group, "bridge") == 0;
+    int policy = all || strcmp(group, "policy") == 0;
+    int cache = all || strcmp(group, "cache") == 0;
+    int text = all || strcmp(group, "ordinary-text") == 0;
+    int ordinary = all || bridge || strcmp(group, "ordinary-io") == 0;
+    if (!(core || bridge || policy || cache || text || ordinary)) {
+        fprintf(stderr, "unknown runtime test group: %s\n", group);
         return 2;
     }
     /* The bridge cases below assert which route an operation took, and under
@@ -3176,46 +3038,52 @@ int main(int argc, char **argv) {
     if (getenv("WF_IO_HELPERS") == NULL) {
         (void)setenv("WF_IO_HELPERS", "1", 0);
     }
-    RUN_TEST(test_exactly_one_completion_per_submission_under_race(argv[1]));
-    RUN_TEST(test_a_completion_publishes_results());
-    RUN_TEST(test_unified_wake_epoch());
-    RUN_TEST(test_equal_epoch_notification_rearms_before_resleep());
-    RUN_TEST(test_one_epoch_wakes_every_announced_thread());
-    RUN_TEST(test_condition_notifications_coalesce_without_suppressing_external_wakes());
-    RUN_TEST(test_linux_independent_operations_use_available_target(argv[1]));
-    RUN_TEST(test_single_thread_file_progress(argv[1]));
-    RUN_TEST(test_bridge_independent_positioned_reads(argv[1]));
-    RUN_TEST(test_bridge_open_status_and_close_are_typed_operations(argv[1]));
-    RUN_TEST(test_submitted_open_resolves_the_submitters_bytes(argv[1]));
-    RUN_TEST(
-        test_a_name_no_pool_record_could_hold_takes_the_completion_path(argv[1])
-    );
-    RUN_TEST(test_more_operations_outstanding_than_the_old_capacity(argv[1]));
-    RUN_TEST(test_checked_open_rejects_and_closes_nonregular_descriptors(argv[1]));
-    RUN_TEST(test_open_failure_classes_are_typed_outcomes(argv[1]));
-    RUN_TEST(test_open_results_reach_every_independent_owner(argv[1]));
-    RUN_TEST(test_uncached_reads_are_target_policy_only(argv[1]));
-    RUN_TEST(test_process_wide_target_helper_budget());
-    RUN_TEST(test_pool_stays_empty_when_operations_do_not_wait(argv[1]));
-    RUN_TEST(test_pool_grows_when_operations_wait());
-    RUN_TEST(test_helper_growth_stops_at_the_declared_bound());
-    RUN_TEST(test_helper_count_above_its_bound_is_refused());
-    RUN_TEST(test_shutdown_refuses_every_later_entry());
-    RUN_TEST(test_a_helper_completion_wakes_a_waiting_join());
-    RUN_TEST(test_an_io_join_waits_on_the_current_stack());
-    RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
-    RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
-    RUN_TEST(test_socket_lifecycle_and_the_pair_two_count());
-    RUN_TEST(test_a_peer_bound_request_is_left_to_a_helper());
-    RUN_TEST(test_native_contract_inventory());
-    RUN_TEST(test_directory_progress_is_internal());
-    RUN_TEST(benchmark_record_roundtrip(&roundtrip_ns));
+    if (core) {
+        RUN_TEST(test_exactly_one_completion_per_submission_under_race(argv[1]));
+        RUN_TEST(test_a_completion_publishes_results());
+        RUN_TEST(test_unified_wake_epoch());
+        RUN_TEST(test_equal_epoch_notification_rearms_before_resleep());
+        RUN_TEST(test_one_epoch_wakes_every_announced_thread());
+        RUN_TEST(test_condition_notifications_coalesce_without_suppressing_external_wakes());
+        RUN_TEST(test_shutdown_refuses_every_later_entry());
+    }
+    if (bridge) {
+        RUN_TEST(test_linux_independent_operations_use_available_target(argv[1]));
+        RUN_TEST(test_single_thread_file_progress(argv[1]));
+        RUN_TEST(test_bridge_independent_positioned_reads(argv[1]));
+        RUN_TEST(test_bridge_open_status_and_close_are_typed_operations(argv[1]));
+        RUN_TEST(test_submitted_open_resolves_the_submitters_bytes(argv[1]));
+        RUN_TEST(test_a_name_no_pool_record_could_hold_takes_the_completion_path(argv[1]));
+        RUN_TEST(test_more_operations_outstanding_than_the_old_capacity(argv[1]));
+        RUN_TEST(test_checked_open_rejects_and_closes_nonregular_descriptors(argv[1]));
+        RUN_TEST(test_open_failure_classes_are_typed_outcomes(argv[1]));
+        RUN_TEST(test_open_results_reach_every_independent_owner(argv[1]));
+        RUN_TEST(test_a_helper_completion_wakes_a_waiting_join());
+        RUN_TEST(test_an_io_join_waits_on_the_current_stack());
+        RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
+        RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
+        RUN_TEST(test_socket_lifecycle_and_the_pair_two_count());
+        RUN_TEST(test_a_peer_bound_request_is_left_to_a_helper());
+        RUN_TEST(test_directory_progress_is_internal());
+    }
+    if (policy) {
+        RUN_TEST(test_process_wide_target_helper_budget());
+        RUN_TEST(test_pool_stays_empty_when_operations_do_not_wait(argv[1]));
+        RUN_TEST(test_pool_grows_when_operations_wait());
+        RUN_TEST(test_helper_growth_stops_at_the_declared_bound());
+        RUN_TEST(test_helper_count_above_its_bound_is_refused());
+        RUN_TEST(test_native_contract_inventory());
+    }
+    if (cache) RUN_TEST(test_uncached_reads_are_target_policy_only(argv[1]));
+    if (text) RUN_TEST(wf_ordinary_values_tests(argv[1], "text"));
+    if (ordinary) {
+        RUN_TEST(wf_ordinary_values_tests(argv[1], "file"));
+        RUN_TEST(wf_ordinary_values_tests(argv[1], "directory"));
+        RUN_TEST(wf_ordinary_values_tests(argv[1], "tcp"));
+    }
 #undef RUN_TEST
-    printf(
-        "completion-core-harness: PASS core_roundtrip_ns=%" PRIu64
-        " racers=%d\n",
-        roundtrip_ns,
-        WF_HARNESS_RACERS
-    );
+    (void)alarm(0);
+    printf("completion-core-harness: PASS group=%s cases=%u racers=%d\n",
+           group, cases, WF_HARNESS_RACERS);
     return 0;
 }

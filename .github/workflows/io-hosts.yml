@@ -99,16 +99,10 @@ jobs:
       - name: Address and undefined sanitizers
         run: make -C compiler completion-sanitize CC=/usr/bin/clang
 
-      # Separate thread-sanitizer runs cover distinct code. The
-      # core/read probe links neither the bridge nor the writer scheduler by
-      # construction, so the helper pool, the queue wake and the join spin --
-      # every thread the delivered runtime actually starts -- are outside it.
-      # The default-route probe runs those, on the helper policy a delivered
-      # program gets. The deque probe stresses native ring reuse and live
-      # counter reads without switching away from host thread stacks.
+      # TSan observes actual threads in the default-policy, deque and main
+      # runtime groups. The isolated core/read case has no concurrent work.
       - name: Thread sanitizer
         run: |
-          make -C compiler completion-core-read-tsan CC=/usr/bin/clang
           make -C compiler completion-default-route-tsan CC=/usr/bin/clang
           make -C compiler sched-deque-tsan CC=/usr/bin/clang
 

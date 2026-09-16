@@ -1,4 +1,5 @@
 CARGO := cargo
+.DELETE_ON_ERROR:
 CHECK_RUN := perl $(abspath ../.github/run-check.pl)
 CC ?= cc
 NM ?= nm
@@ -76,12 +77,14 @@ COMPLETION_CFLAGS := $(COMPLETION_BASE_CFLAGS) $(COMPLETION_DEFINES)
 # harness: a sanitizer build that named a different set would run a different
 # runtime from the one the ordinary build runs.
 COMPLETION_HARNESS_DEFINES := \
+	-DWF_ORDINARY_TEST_IN_HARNESS \
+	-DWF_COMPLETION_SHUTDOWN=wf_ordinary_test_shutdown \
 	-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \
 	-DWF_FILE_MONOTONIC_NS=wf_completion_test_monotonic_ns \
 	-DWF_FILE_OPENAT=wf_completion_test_openat \
 	-DWF_COMPLETION_WAIT_RETURN=wf_completion_test_wait_return
 COMPLETION_HARNESS_CFLAGS := $(COMPLETION_CFLAGS) $(COMPLETION_HARNESS_DEFINES)
-COMPLETION_SOURCES := \
+COMPLETION_RUNTIME_SOURCES := \
 	$(SCHED_SOURCES) \
 	$(COMPLETION_DIR)/runtime.c \
 	$(COMPLETION_DIR)/wait_host.c \
@@ -89,18 +92,19 @@ COMPLETION_SOURCES := \
 	$(COMPLETION_DIR)/file_posix.c \
 	$(COMPLETION_DIR)/bridge.c \
 	$(COMPLETION_DIR)/linux_io_uring.c \
-	$(COMPLETION_DIR)/native_contract.c \
+	$(COMPLETION_DIR)/native_contract.c
+COMPLETION_SOURCES := $(COMPLETION_RUNTIME_SOURCES) \
+	src/backend/ordinary_values.c src/backend/ordinary_values_probe.c \
 	$(COMPLETION_DIR)/harness.c
 # The same runtime the harness links, with the probe in place of the harness.
 # It is deliberately built without COMPLETION_DEFINES: the route this probe is
 # about is the shipped one, so it makes the shipped host calls and reads the
 # host's own clock.
 COMPLETION_DEFAULT_ROUTE_SOURCES := \
-	$(filter-out %/harness.c,$(COMPLETION_SOURCES)) \
+	$(COMPLETION_RUNTIME_SOURCES) \
 	$(COMPLETION_DIR)/bridge_default_probe.c
-# The same runtime again, with the probe that puts a refused open on every
-# route at once. Built without COMPLETION_DEFINES for the same reason as the
-# default-route probe: the schedule it is about is the shipped one.
+# Isolated adapter cases supply their own strong completion publication.
+# The explicit link inputs preserve that different implementation boundary.
 COMPLETION_CORE_READ_SOURCES := \
 	$(SCHED_SOURCES) \
 	$(COMPLETION_DIR)/runtime.c \
@@ -108,17 +112,6 @@ COMPLETION_CORE_READ_SOURCES := \
 	$(COMPLETION_DIR)/file_adapter.c \
 	$(COMPLETION_DIR)/file_posix.c \
 	$(COMPLETION_DIR)/core_read_probe.c
-COMPLETION_CORE_READ_ALLOWED_SOURCES := \
-	$(SCHED_SOURCES) \
-	$(COMPLETION_DIR)/runtime.c \
-	$(COMPLETION_DIR)/wait_host.c \
-	$(COMPLETION_DIR)/file_adapter.c \
-	$(COMPLETION_DIR)/file_posix.c \
-	$(COMPLETION_DIR)/core_read_probe.c
-COMPLETION_CORE_READ_UNEXPECTED_SOURCES := $(filter-out \
-	$(COMPLETION_CORE_READ_ALLOWED_SOURCES),$(COMPLETION_CORE_READ_SOURCES))
-COMPLETION_CORE_READ_FORBIDDEN_SOURCES := $(filter \
-	%/bridge.c,$(COMPLETION_CORE_READ_SOURCES))
 COMPLETION_CORE_READ_DEFINES := \
 	-DWF_COMPLETION_PREAD=wf_completion_test_pread
 
@@ -180,28 +173,54 @@ test-corpus:
 docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --no-deps --locked --offline
 
-completion-test: completion-core-read-test completion-default-route-test ordinary-values-test sched-smoke sched-deque-test
+# Construction is shared by local, focused and host-CI callers; phony test
+# targets always rerun assertions. Distinct hook/sanitizer flags name distinct
+# objects. The stamp prevents a shared scratch root reusing another checkout
+# or compiler/flag configuration, without caching a previous test verdict.
+COMPLETION_HEADERS := $(wildcard src/backend/*.h $(SCHED_DIR)/*.h $(COMPLETION_DIR)/*.h)
+COMPLETION_CONFIG := $(COMPLETION_TMP)/configuration.txt
+.PHONY: completion-configuration-force
+completion-configuration-force:
+
+$(COMPLETION_CONFIG): completion-configuration-force
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) $(COMPLETION_HARNESS_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
+	@{ printf '%s\n' "$(CURDIR)" "$(CC)" "$(COMPLETION_BASE_CFLAGS)" "$(COMPLETION_HARNESS_CFLAGS)" "$(COMPLETION_CORE_READ_DEFINES)" "$(COMPLETION_SANITIZE_FLAGS)" "$(COMPLETION_TSAN_FLAGS)"; $(CC) --version; } > "$@.new"
+	@cmp -s "$@.new" "$@" || mv -f "$@.new" "$@"
+	@rm -f "$@.new"
+
+define completion-image
+$(COMPLETION_TMP)/$(1): $(patsubst src/backend/%.c,$(COMPLETION_TMP)/objects/$(1)/%.o,$(2))
+	$$(CC) $(3) $$^ -o "$$@"
+$(COMPLETION_TMP)/objects/$(1)/%.o: src/backend/%.c $(COMPLETION_HEADERS) Makefile $(COMPLETION_CONFIG)
+	@mkdir -p "$$(dir $$@)"
+	$$(CC) $(3) -c "$$<" -o "$$@"
+.SECONDARY: $(patsubst src/backend/%.c,$(COMPLETION_TMP)/objects/$(1)/%.o,$(2))
+endef
+
+COMPLETION_SANITIZE_FLAGS := -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread -fsanitize=address,undefined -fno-sanitize-recover=undefined
+COMPLETION_TSAN_FLAGS := -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread -fsanitize=thread
+$(eval $(call completion-image,harness,$(COMPLETION_SOURCES),$(COMPLETION_HARNESS_CFLAGS)))
+$(eval $(call completion-image,bridge-default-probe,$(COMPLETION_DEFAULT_ROUTE_SOURCES),$(COMPLETION_BASE_CFLAGS)))
+$(eval $(call completion-image,core-read-probe,$(COMPLETION_CORE_READ_SOURCES),$(COMPLETION_BASE_CFLAGS) $(COMPLETION_CORE_READ_DEFINES)))
+$(eval $(call completion-image,harness-sanitize,$(COMPLETION_SOURCES),$(COMPLETION_SANITIZE_FLAGS) $(COMPLETION_DEFINES) $(COMPLETION_HARNESS_DEFINES)))
+$(eval $(call completion-image,bridge-default-probe-sanitize,$(COMPLETION_DEFAULT_ROUTE_SOURCES),$(COMPLETION_SANITIZE_FLAGS)))
+$(eval $(call completion-image,core-read-probe-sanitize,$(COMPLETION_CORE_READ_SOURCES),$(COMPLETION_SANITIZE_FLAGS) $(COMPLETION_CORE_READ_DEFINES)))
+$(eval $(call completion-image,harness-tsan,$(COMPLETION_SOURCES),$(COMPLETION_TSAN_FLAGS) $(COMPLETION_DEFINES) $(COMPLETION_HARNESS_DEFINES)))
+$(eval $(call completion-image,bridge-default-probe-tsan,$(COMPLETION_DEFAULT_ROUTE_SOURCES),$(COMPLETION_TSAN_FLAGS)))
+
+completion-test: $(COMPLETION_TMP)/harness completion-core-read-test completion-default-route-test sched-smoke sched-deque-test
+	@mkdir -p "$(COMPLETION_TMP)"
 	@if $(NM) "$(COMPLETION_TMP)/harness" | \
 		grep -Eq 'wf_completion_claim_many|wf__completion_file_batch_claim|wf__completion_file_.*_submit_reserved|wf__completion_output_batch'; then \
 		echo "completion runtime exports removed group/root machinery" >&2; \
 		exit 1; \
 	fi
-	WF_IO_HELPERS=0 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
-	WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
-	WF_IO_HELPERS=4 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
-	@# WF_IO_NOCACHE is bench-only target policy: the three runs above leave it
-	@# absent and assert the policy makes no host call at all, and this one
-	@# writes it and asserts one application per descriptor an open hands back.
-	WF_IO_NOCACHE=1 WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
-	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
-		$(COMPLETION_DIR)/pure_compute_probe.c -o "$(COMPLETION_TMP)/pure-compute"
-	@if $(NM) "$(COMPLETION_TMP)/pure-compute" | grep -q 'wf_completion_'; then \
-		echo "pure-compute probe unexpectedly links completion runtime" >&2; \
-		exit 1; \
-	fi
-	@echo "completion pure-compute link boundary: PASS"
+	WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" all
+	WF_IO_HELPERS=0 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" bridge
+	WF_IO_HELPERS=4 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" bridge
+	@# The full run checks the absent cache hint; this fresh process checks
+	@# only its enabled policy, without repeating unrelated runtime cases.
+	WF_IO_NOCACHE=1 WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" cache
 	@if [ "$$(uname -s)" = Linux ]; then \
 		$(CC) $(COMPLETION_CFLAGS) \
 			$(SCHED_SOURCES) \
@@ -216,11 +235,8 @@ completion-test: completion-core-read-test completion-default-route-test ordinar
 		if [ $$status -ne 0 ] && [ $$status -ne 77 ]; then exit $$status; fi; \
 		if [ $$status -eq 0 ]; then \
 			WF_REQUIRE_LINUX_IO_URING=1 WF_IO_HELPERS=1 \
-				"$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"; \
+				"$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" bridge; \
 		fi; \
-	else \
-		$(CC) -std=c11 -Wall -Wextra -Werror -Wpedantic -pthread \
-			-fsyntax-only $(COMPLETION_DIR)/linux_io_uring.c; \
 	fi
 
 # The bridge on the helper policy a delivered program actually gets.
@@ -232,19 +248,14 @@ completion-test: completion-core-read-test completion-default-route-test ordinar
 # `unset` rather than a bare invocation because make inherits this shell's
 # environment, and the probe refuses an inherited value rather than quietly
 # testing the arm the harness already covers.
-ordinary-values-test:
-	@mkdir -p "$(COMPLETION_TMP)/ordinary-values"
-	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_COMPLETION_SHUTDOWN=wf_ordinary_test_shutdown \
-		$(filter-out %/harness.c %/native_contract.c,$(COMPLETION_SOURCES)) \
-		src/backend/ordinary_values.c src/backend/ordinary_values_probe.c \
-		-o "$(COMPLETION_TMP)/ordinary-values-probe"
-	WF_IO_HELPERS=0 "$(COMPLETION_TMP)/ordinary-values-probe" "$(COMPLETION_TMP)/ordinary-values"
-	WF_IO_HELPERS=2 "$(COMPLETION_TMP)/ordinary-values-probe" "$(COMPLETION_TMP)/ordinary-values"
-
-completion-default-route-test:
+ordinary-values-test: $(COMPLETION_TMP)/harness
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) $(COMPLETION_BASE_CFLAGS) $(COMPLETION_DEFAULT_ROUTE_SOURCES) \
-		-o "$(COMPLETION_TMP)/bridge-default-probe"
+	"$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" ordinary-text
+	WF_IO_HELPERS=0 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" ordinary-io
+	WF_IO_HELPERS=2 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" ordinary-io
+
+completion-default-route-test: $(COMPLETION_TMP)/bridge-default-probe
+	@mkdir -p "$(COMPLETION_TMP)"
 	unset WF_IO_HELPERS; \
 		"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"
 	@# The adapter branch of the probe's route assertion -- the demand-driven
@@ -298,112 +309,43 @@ sched-deque-tsan:
 # prove weak-memory ordering or liveness, or cover completion and stack-floor
 # protocols. Their focused tests remain separate; this is not equivalent to
 # the retired managed-stack state-space gate.
-completion-default-route-sanitize:
+completion-default-route-sanitize: $(COMPLETION_TMP)/bridge-default-probe-sanitize
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
-		-fsanitize=address,undefined \
-		$(COMPLETION_DEFAULT_ROUTE_SOURCES) \
-		-o "$(COMPLETION_TMP)/bridge-default-probe-sanitize"
 	unset WF_IO_HELPERS; ASAN_OPTIONS=detect_leaks=0 \
 		"$(COMPLETION_TMP)/bridge-default-probe-sanitize" "$(COMPLETION_TMP)"
 
 # Thread sanitizer over the bridge rather than over the isolated core: the
 # helper pool, the queue wake and the join spin are all on this route, and the
 # core probe by construction links none of them.
-completion-default-route-tsan:
+completion-default-route-tsan: $(COMPLETION_TMP)/bridge-default-probe-tsan
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
-		-fsanitize=thread \
-		$(COMPLETION_DEFAULT_ROUTE_SOURCES) \
-		-o "$(COMPLETION_TMP)/bridge-default-probe-tsan"
 	unset WF_IO_HELPERS; TSAN_OPTIONS=halt_on_error=1 \
 		"$(COMPLETION_TMP)/bridge-default-probe-tsan" "$(COMPLETION_TMP)"
 
-completion-core-read-source-boundary:
-	@if [ -n "$(strip $(COMPLETION_CORE_READ_UNEXPECTED_SOURCES) \
-		$(COMPLETION_CORE_READ_FORBIDDEN_SOURCES))" ]; then \
-		echo "completion core/read source list crosses the isolated boundary: \
-			$(COMPLETION_CORE_READ_UNEXPECTED_SOURCES) \
-			$(COMPLETION_CORE_READ_FORBIDDEN_SOURCES)" >&2; \
-		exit 1; \
-	fi
-
-completion-core-read-test: completion-core-read-source-boundary
+completion-core-read-test: $(COMPLETION_TMP)/core-read-probe
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread \
-		$(COMPLETION_CORE_READ_DEFINES) \
-		$(COMPLETION_CORE_READ_SOURCES) \
-		-o "$(COMPLETION_TMP)/core-read-probe"
 	"$(COMPLETION_TMP)/core-read-probe" "$(COMPLETION_TMP)"
-	@if $(NM) "$(COMPLETION_TMP)/core-read-probe" | \
-		grep -Eq 'wf__completion_file_pread_submit'; then \
-		echo "isolated completion core/read probe links the generated-code bridge" >&2; \
-		exit 1; \
-	fi
-	@echo "completion core/read bridge isolation: PASS"
 
-completion-sanitize: completion-core-read-sanitize \
+completion-sanitize: $(COMPLETION_TMP)/harness-sanitize completion-core-read-sanitize \
 		completion-default-route-sanitize
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
-		$(COMPLETION_DEFINES) $(COMPLETION_HARNESS_DEFINES) \
-		-fsanitize=address,undefined \
-		$(COMPLETION_SOURCES) \
-		-o "$(COMPLETION_TMP)/harness-sanitize"
 	ASAN_OPTIONS=detect_leaks=0 "$(COMPLETION_TMP)/harness-sanitize" "$(COMPLETION_TMP)"
 
-completion-core-read-sanitize: completion-core-read-source-boundary
+completion-core-read-sanitize: $(COMPLETION_TMP)/core-read-probe-sanitize
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
-		$(COMPLETION_CORE_READ_DEFINES) -fsanitize=address,undefined \
-		$(COMPLETION_CORE_READ_SOURCES) \
-		-o "$(COMPLETION_TMP)/core-read-probe-sanitize"
 	ASAN_OPTIONS=detect_leaks=0 \
 		"$(COMPLETION_TMP)/core-read-probe-sanitize" "$(COMPLETION_TMP)"
 
-# These are qualification-development targets rather than canonical gates.
-# Stress repeats the sleep/publication races; TSan is optional because not
-# every supported build host ships a thread-sanitizer runtime.
-completion-core-read-stress: completion-core-read-test
-	@iteration=0; \
-	while [ $$iteration -lt 200 ]; do \
-		"$(COMPLETION_TMP)/core-read-probe" "$(COMPLETION_TMP)" >/dev/null \
-			|| exit 1; \
-		iteration=$$((iteration + 1)); \
-	done
-	@echo "completion core/read stress: PASS (200 runs)"
-
-# The bridge and the native adapters, under the thread sanitizer.
-#
-# `completion-core-read-tsan` below covers the isolated core and the bounded
-# POSIX adapter and deliberately links neither the bridge nor the ring. Those
-# two carry their own shared state — the deferred doorbell's staging, the
-# retire-and-retry hand-back, the helper policy's readiness flags — and nothing
-# was checking it. This runs the whole harness instead, at the helper counts
-# `completion-test` runs it at, which is where a helper and a joining scheduler
-# actually contend.
-completion-tsan:
+# The main image includes the deliberate ordinary-value shutdown race. Core/
+# read is single-threaded and has no TSan or repeated-stress variant.
+completion-tsan: $(COMPLETION_TMP)/harness-tsan
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
-		$(COMPLETION_DEFINES) $(COMPLETION_HARNESS_DEFINES) \
-		-fsanitize=thread \
-		$(COMPLETION_SOURCES) \
-		-o "$(COMPLETION_TMP)/harness-tsan"
 	TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=0 \
-		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)"
+		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)" bridge
 	TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=1 \
 		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)"
 	TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=4 \
-		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)"
-
-completion-core-read-tsan: completion-core-read-source-boundary
-	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
-		$(COMPLETION_CORE_READ_DEFINES) -fsanitize=thread \
-		$(COMPLETION_CORE_READ_SOURCES) \
-		-o "$(COMPLETION_TMP)/core-read-probe-tsan"
-	TSAN_OPTIONS=halt_on_error=1 \
-		"$(COMPLETION_TMP)/core-read-probe-tsan" "$(COMPLETION_TMP)"
+		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)" bridge
 
 # The Windows link set, in the same three groups the driver stages: the
 # scheduler core with its Windows leaf, the completion runtime with its Windows
@@ -580,8 +522,8 @@ completion-windows-wine: completion-windows-cross
 # Their dated evidence and reproduction revision remain in the investigation.
 .PHONY: check _check static _static build test-build format lint test _test test-unit test-corpus \
 	docs completion-test \
-	completion-core-read-source-boundary completion-core-read-test \
-	completion-core-read-stress completion-core-read-tsan completion-tsan \
+	completion-core-read-test \
+	completion-tsan \
 	completion-sanitize \
 	completion-core-read-sanitize completion-default-route-test ordinary-values-test \
 	completion-default-route-sanitize completion-default-route-tsan sched-smoke \

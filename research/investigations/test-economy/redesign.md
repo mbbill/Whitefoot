@@ -1078,8 +1078,10 @@ implementation remains deferred.
   arbitrary stress count. Use the common test-process deadline for a blocked
   host/join, with phase-specific failure reporting and fixture cleanup. Do
   not let a success status alone keep a no-progress loop alive indefinitely.
-- Check the entire buffer after the empty call and after EOF. Check both
-  endpoint bounds on every call and reserve guard bytes outside the supplied
+- Check the entire buffer after the empty call. At EOF, verify the host's
+  documented writable result, including Darwin's four-byte EOF trailer, and
+  preserve all other bytes (the implementation finding below corrects the
+  earlier whole-buffer-unchanged assumption). Check both endpoint bounds on every call and reserve guard bytes outside the supplied
   success window in the existing buffer. Do not assert that its compacted
   tail `[next,end)` is unchanged: the current in-place native-record conversion
   legitimately uses that space.
@@ -3075,6 +3077,83 @@ The promoted scatter input was also compiled directly through the gate CLI and
 rejected under OP-4 with the expected residual. No language expectation was
 selected from a changed snapshot or updated to accommodate a compiler failure.
 No full-gate, platform, paired timing or completion-review result is claimed.
+
+### Implementation evidence: shared C runtime cases
+
+Compatible completion and ordinary-value assertions now share the main C
+runtime executable. Its groups select core publication/wake, bridge, policy,
+cache hints, text and ordinary IO. One complete process runs 35 case/group
+entries; helper-zero and helper-four processes run only their 20 bridge/IO
+entries; the enabled-cache process runs its one relevant case. Text does not
+initialize ordinary inputs, filesystem fixtures or the close-race observer.
+The main harness's 300-second named-case guard now covers ordinary IO too;
+standalone Windows ordinary/default drivers use a shared 180-second monotonic
+process guard. The default probe keeps that guard active through TCP.
+
+Directory interposition now forwards real host calls unless its one scripted
+progress case is selected. Clock/open/close hooks likewise forward outside
+those observations. The default-policy image remains uninstrumented, and the
+isolated core/read image retains its incompatible strong publication owner.
+Make builds dependency-tracked objects once per actual hook/sanitizer
+configuration and includes compiler/version/checkout/flags in construction
+identity. Local and focused callers share the same images and rerun assertions.
+
+The selected R01-R07 assertions are implemented without adding WF cases:
+
+- Text checks exact error tags, the full refusal/success destination and the
+  four UTF-8 bytes of U+1F600, preserving POSIX/Windows input forms.
+- File checks exact quota and wrong-kind results, receiving-factory credits,
+  and every byte outside successful short reads and after empty/EOF calls.
+- Directory checks use an isolated fixed fixture, decode record bounds/counts
+  and exact names, reject duplicates/no-progress/unexpected entries, compare
+  both independent cursors, and retain guard bytes outside the supplied window.
+- Crossed TCP halves transfer through both surviving directions after the
+  first crossed pair closes; every acquisition/release checks its own factory
+  delta. The deliberate concurrent close observes the still-live socket before
+  resuming its paused host call, then preserves same-slot reuse and both data
+  directions. The descriptor-allocation premise is explicit at that point.
+- Default-policy queue disturbances use separate synchronous streams with
+  exact one-byte/cursor expectations, not success-or-any-error on the same
+  positioned handle. A native positioned-read observation checks zero helpers
+  before stream disturbances can legitimately grow the adapter pool.
+- One shared bridge TCP lifecycle replaces duplicated logic. It binds port
+  zero, queries the assigned endpoint, handles valid short transfers, checks
+  the complete payload, peer address, empty receive and exact first/last close
+  values, and cleans up acquired endpoints on ordinary assertion failures.
+
+The first strengthened directory run failed on the new whole-buffer EOF
+assertion. Inspection of Apple's [XNU getdirentries64 implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/vfs/vfs_syscalls.c#L10397)
+shows that sufficiently large buffers receive a four-byte EOF trailer inside
+the supplied window even when the returned byte count is zero. The active
+PRE-1 declaration does not promise an unchanged writable buffer on EOF. The
+case now checks the exact trailer and unchanged remaining/guard bytes on
+Darwin, and unchanged bytes on the other supported hosts. This corrects the
+audit's host-contract premise; no production workaround or normative verdict
+change was made. The previously reused buffer had concealed this distinction.
+
+Retired checks have concrete grounds: core/read's 200 identical nonconcurrent
+repetitions and TSan image observe no additional schedule; copied source lists
+and an nm guard duplicate its actual strong-symbol link boundary; the pure-C
+zero-runtime link probe never invokes the WF compiler; the non-Linux io_uring
+syntax pass sees only a guarded stub already in ordinary construction; and the
+100,000-publication timing loop has no performance-regression verdict and
+adds no property beyond the retained publication/result tests. ASan/UBSan now
+makes undefined-behavior findings fatal. Remaining platform, native-engine,
+B01/B02 deterministic-state and sanitizer-route consolidation work is still
+outstanding; the shared layout alone does not complete those selected rows.
+
+Focused native validation on macOS used guarded commands and two build jobs.
+The strengthened standalone ordinary cases passed at helpers 0/2 in 1.07 s;
+the default-policy file/TCP case passed in 0.97 s with 16,000 positioned reads,
+252 exact stream disturbances and the POSIX adapter route. The combined
+ordinary groups passed in 1.28 s, and construction plus the complete current
+C correctness target passed in 3.36 s after the final assertion/stamp edits (35 + 20 + 20 + 1 main entries, isolated
+core/read, default policy, scheduler smoke and both deque-stat variants).
+The shared main/default/isolated-core images also passed AddressSanitizer and
+fatal UndefinedBehaviorSanitizer in 2.90 s. Leak detection remained disabled,
+so this does not claim leak coverage. These are incremental local results, not
+Linux io_uring or Windows evidence, not a paired performance measurement, and
+not a complete redesigned root gate.
 
 ## Affected material and evidence
 
