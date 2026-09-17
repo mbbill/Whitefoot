@@ -2103,7 +2103,9 @@ impl ClosureRecord {
         matches!(self, Self::Closed { terms } if *terms as usize == term_count)
     }
 
-    fn into_core(&mut self) -> Option<(&mut Vec<TermId>, &mut Vec<(TermId, TermId)>)> {
+    /// Turns a closed record into an empty core; returns whether the record
+    /// is now a core that can take fresh marks.
+    fn ensure_core(&mut self) -> bool {
         if let Self::Closed { terms } = *self {
             *self = Self::Core {
                 terms,
@@ -2112,30 +2114,27 @@ impl ClosureRecord {
                 weakened_cells: Vec::new(),
             };
         }
-        match self {
-            Self::Core {
-                fresh_terms,
-                fresh_cells,
-                ..
-            } => Some((fresh_terms, fresh_cells)),
-            Self::Unknown | Self::Closed { .. } => None,
-        }
+        matches!(self, Self::Core { .. })
     }
 
     fn mark_fresh_cell(&mut self, cell: (TermId, TermId)) {
-        if let Some((_, cells)) = self.into_core() {
-            cells.push(cell);
+        if self.ensure_core()
+            && let Self::Core { fresh_cells, .. } = self
+        {
+            fresh_cells.push(cell);
         }
     }
 
     fn mark_fresh_term(&mut self, term: TermId) {
-        if let Some((terms, _)) = self.into_core() {
-            terms.push(term);
+        if self.ensure_core()
+            && let Self::Core { fresh_terms, .. } = self
+        {
+            fresh_terms.push(term);
         }
     }
 
     fn mark_weakened_cell(&mut self, cell: (TermId, TermId)) {
-        if self.into_core().is_some()
+        if self.ensure_core()
             && let Self::Core { weakened_cells, .. } = self
         {
             weakened_cells.push(cell);
@@ -5037,12 +5036,10 @@ fn join_at_once(
         if held {
             // A proof every predecessor already selected holds on every
             // incoming path, so it is itself a derivation of the joined fact.
-            if contributing.len() == closed.len() {
-                if same_proof {
-                    bounds.insert(pair, bound);
-                    bound_proofs.insert(pair, shared);
-                    continue;
-                }
+            if contributing.len() == closed.len() && same_proof {
+                bounds.insert(pair, bound);
+                bound_proofs.insert(pair, shared);
+                continue;
             }
             let mut parents = Vec::with_capacity(states.len());
             for (ordinal, state) in closed.iter().enumerate() {
