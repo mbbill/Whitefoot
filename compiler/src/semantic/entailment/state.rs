@@ -2657,11 +2657,21 @@ impl FactState {
     /// whole rows and columns keeps the surviving cells closed among
     /// themselves, so a closed state keeps that core and marks the killed
     /// terms fresh for the next closure to rebuild.
-    pub(crate) fn kill(&mut self, mut killed: impl FnMut(TermId) -> bool) {
+    pub(crate) fn kill(&mut self, mut predicate: impl FnMut(TermId) -> bool) {
         if self.all_derivable {
             return;
         }
         self.closed_view.take();
+        // The predicate depends only on the term, and matrix-sized key scans
+        // would otherwise call it twice per cell.
+        let mut verdicts: Vec<Option<bool>> = Vec::new();
+        let mut killed = |term: TermId| {
+            let index = term.0 as usize;
+            if index >= verdicts.len() {
+                verdicts.resize(index + 1, None);
+            }
+            *verdicts[index].get_or_insert_with(|| predicate(term))
+        };
         let dead: Vec<(TermId, TermId)> = self
             .bounds
             .keys()
