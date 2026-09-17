@@ -2063,15 +2063,77 @@ pub(crate) struct OutcomeFact {
 }
 
 /// One live fact state on the structural flow [ENT-3].
+/// How much of a fact state's bound matrix is already its own [ENT-4] closure.
+#[derive(Clone, Debug, Default)]
+enum ClosureRecord {
+    /// Nothing is known; the next closure starts from every live fact.
+    #[default]
+    Unknown,
+    /// `bounds` and `distinct` are the complete closure over the first
+    /// `terms` registered terms. S11 snapshots, pre-kill materialization and
+    /// ENT-5 joins produce such states.
+    Closed { terms: u32 },
+    /// The closure over the first `terms` terms, except for the listed cells
+    /// and every cell in a listed term's row or column. The remaining cells
+    /// are closed among themselves: every transitive, strengthening and
+    /// disequality consequence of two of them is already present and no
+    /// weaker, and their terms' implicit bounds are already reflected.
+    Core {
+        terms: u32,
+        fresh_terms: Vec<TermId>,
+        fresh_cells: Vec<(TermId, TermId)>,
+    },
+}
+
+impl ClosureRecord {
+    fn closed(term_count: usize) -> Self {
+        Self::Closed {
+            terms: u32::try_from(term_count)
+                .expect("ENT term inventory exceeds the u32 identity space"),
+        }
+    }
+
+    fn is_closed_over(&self, term_count: usize) -> bool {
+        matches!(self, Self::Closed { terms } if *terms as usize == term_count)
+    }
+
+    fn into_core(&mut self) -> Option<(&mut Vec<TermId>, &mut Vec<(TermId, TermId)>)> {
+        if let Self::Closed { terms } = *self {
+            *self = Self::Core {
+                terms,
+                fresh_terms: Vec::new(),
+                fresh_cells: Vec::new(),
+            };
+        }
+        match self {
+            Self::Core {
+                fresh_terms,
+                fresh_cells,
+                ..
+            } => Some((fresh_terms, fresh_cells)),
+            Self::Unknown | Self::Closed { .. } => None,
+        }
+    }
+
+    fn mark_fresh_cell(&mut self, cell: (TermId, TermId)) {
+        if let Some((_, cells)) = self.into_core() {
+            cells.push(cell);
+        }
+    }
+
+    fn mark_fresh_term(&mut self, term: TermId) {
+        if let Some((terms, _)) = self.into_core() {
+            terms.push(term);
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct FactState {
-    /// Term-universe size for which `bounds` and `distinct` already contain
-    /// the complete ENT-4 relation closure. S11 snapshots, pre-kill
-    /// materialization, and ENT-5 joins produce such states. Every operation
-    /// that adds a source relation, removes a fact or a proof candidate, or
-    /// interns a new term invalidates the marker: only a state that is its own
-    /// closure may answer a query without closing again.
-    closed_term_count: Option<u32>,
+    /// What part of the bound matrix is already closed. Only a state closed
+    /// over the current term universe may answer a query without closing
+    /// again; a closed core lets the next closure start from its fresh part.
+    closure: ClosureRecord,
     /// The loop rule's empty join: the contradictory all-derivable state, in
     /// which every relation is derivable and every fact is present. Z has
     /// empty support, so `Z - Z <= -1` never dies and the flag is absorbing
@@ -2120,7 +2182,7 @@ impl Default for FactState {
 impl FactState {
     pub(crate) fn new() -> Self {
         Self {
-            closed_term_count: None,
+            closure: ClosureRecord::Unknown,
             all_derivable: false,
             contradiction: None,
             bounds: HashMap::default(),
@@ -2375,7 +2437,7 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
-        self.closed_term_count = None;
+        self.closure.mark_fresh_cell((left, right));
         let pair = (left, right);
         let candidates = self.bound_candidates.entry(pair).or_default();
         if !candidates.contains(&(bound, proof)) {
@@ -2390,7 +2452,8 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
-        self.closed_term_count = None;
+        self.closure.mark_fresh_cell(pair);
+        self.closure.mark_fresh_cell((pair.1, pair.0));
         let candidates = self.distinct_candidates.entry(pair).or_default();
         if !candidates.contains(&proof) {
             candidates.push(proof);
@@ -2449,19 +2512,35 @@ impl FactState {
     /// facts of a killed term are a function of the term table and the place's
     /// type alone, so they hold again the instant the kill is done and can
     /// carry survivors to conclusions the projected map no longer lists. The
-    /// state therefore stops being a witness of its own closure here, and the
-    /// next query closes it again.
+    /// state therefore stops being a witness of its own closure here. Removing
+    /// whole rows and columns keeps the surviving cells closed among
+    /// themselves, so a closed state keeps that core and marks the killed
+    /// terms fresh for the next closure to rebuild.
     pub(crate) fn kill(&mut self, mut killed: impl FnMut(TermId) -> bool) {
         if self.all_derivable {
             return;
         }
-        self.closed_term_count = None;
         let dead: Vec<(TermId, TermId)> = self
             .bounds
             .keys()
             .filter(|(left, right)| killed(*left) || killed(*right))
             .copied()
             .collect();
+        let mut dead_terms = dead
+            .iter()
+            .flat_map(|(left, right)| [*left, *right])
+            .chain(
+                self.distinct
+                    .iter()
+                    .flat_map(|(left, right)| [*left, *right]),
+            )
+            .filter(|term| killed(*term))
+            .collect::<Vec<_>>();
+        dead_terms.sort_unstable();
+        dead_terms.dedup();
+        for term in dead_terms {
+            self.closure.mark_fresh_term(term);
+        }
         for pair in dead {
             self.bounds.remove(&pair);
             self.bound_proofs.remove(&pair);
@@ -2492,6 +2571,7 @@ impl FactState {
             return false;
         }
         let mut changed = false;
+        let mut weakened = Vec::new();
         let mut bound_pairs = self.bound_candidates.keys().copied().collect::<Vec<_>>();
         bound_pairs.sort_unstable();
         for pair in bound_pairs {
@@ -2501,8 +2581,14 @@ impl FactState {
                 .expect("candidate key came from the same map");
             let before = candidates.len();
             candidates.retain(|(_, proof)| !killed(pair.0, pair.1, *proof));
-            changed |= candidates.len() != before;
-            self.select_bound_candidate(pair, ledger);
+            if candidates.len() != before {
+                changed = true;
+                let held = self.bounds.get(&pair).copied();
+                self.select_bound_candidate(pair, ledger);
+                if self.bounds.get(&pair).copied() != held {
+                    weakened.push(pair);
+                }
+            }
         }
         let mut distinct_pairs = self.distinct_candidates.keys().copied().collect::<Vec<_>>();
         distinct_pairs.sort_unstable();
@@ -2513,15 +2599,25 @@ impl FactState {
                 .expect("candidate key came from the same map");
             let before = candidates.len();
             candidates.retain(|proof| !killed(pair.0, pair.1, *proof));
-            changed |= candidates.len() != before;
-            self.select_distinct_candidate(pair, ledger);
+            if candidates.len() != before {
+                changed = true;
+                self.select_distinct_candidate(pair, ledger);
+                if !self.distinct.contains(&pair) {
+                    weakened.push(pair);
+                }
+            }
         }
-        if changed {
-            // Candidate removal is not an endpoint projection. A surviving
-            // ordinary and S12 candidate can rederive a relation whose one
-            // retained materialized proof was just removed, so the next
-            // query must close the surviving set again.
-            self.closed_term_count = None;
+        // Candidate removal is not an endpoint projection. A surviving
+        // ordinary and S12 candidate can rederive a relation whose one
+        // retained materialized proof was just removed, and a weaker or
+        // missing selection can leave neighbouring cells stronger than its
+        // pair. Every transitive or strengthening step that concludes or
+        // starts from such a pair uses a cell in one of its endpoints' rows or
+        // columns, so marking both endpoints fresh restores the closed core;
+        // a selection that only changed its proof keeps every bound.
+        for (left, right) in weakened {
+            self.closure.mark_fresh_term(left);
+            self.closure.mark_fresh_term(right);
         }
         changed
     }
@@ -2554,14 +2650,13 @@ impl FactState {
     }
 
     /// Removes signed facts and ordinary-let origin expansions whose exact
-    /// goal support is invalidated by one ENT-5 event. Like the term-endpoint
-    /// filter, removing signed facts leaves a state that is no longer a
-    /// witness of its own closure.
+    /// goal support is invalidated by one ENT-5 event. The L0 matrix and its
+    /// closure record are unchanged: goal contradictions are recomputed by
+    /// every closure.
     pub(crate) fn kill_goals(&mut self, mut killed: impl FnMut(GoalId) -> bool) {
         if self.all_derivable {
             return;
         }
-        self.closed_term_count = None;
         self.opaque.retain(|(goal, _)| !killed(*goal));
         self.opaque_proofs.retain(|(goal, _), _| !killed(*goal));
         self.goal_origins.retain(|_, goal| !killed(*goal));
@@ -3393,9 +3488,7 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
         };
     }
     let term_count = terms.ids().count();
-    let term_count_id =
-        u32::try_from(term_count).expect("ENT term inventory exceeds the u32 identity space");
-    if excluded.is_none() && state.closed_term_count == Some(term_count_id) {
+    if excluded.is_none() && state.closure.is_closed_over(term_count) {
         let mut closed = ClosedState {
             all_derivable: false,
             contradiction: None,
@@ -3426,6 +3519,11 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
     // `tests/programs/wfgrep.wf` accepts eighteen million.
     let mut dense_bounds =
         DenseClosureBounds::from_maps(term_count, &state.bounds, &state.bound_proofs, ledger);
+    // A closed core seeds the fixed point: its cells start stale, so the first
+    // round visits only triples through a fresh cell, and a candidate must
+    // strictly lower a bound. Equal-bound candidates would replace the core's
+    // retained proofs throughout the matrix for no change in any bound.
+    let seeded = excluded.is_none() && dense_bounds.seed_from(&state.closure);
     let ids = terms
         .ids()
         .filter(|id| Some(*id) != excluded)
@@ -3451,6 +3549,7 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
                     bound,
                     node,
                 },
+                seeded,
                 ledger,
             );
         };
@@ -3511,10 +3610,19 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
                     *middle,
                     &incoming,
                     &outgoing,
+                    seeded,
+                    ledger,
+                )
+            } else if seeded {
+                middle_products::<PRUNE_ROWS, true>(
+                    &mut dense_bounds,
+                    *middle,
+                    &incoming,
+                    &outgoing,
                     ledger,
                 )
             } else {
-                middle_products::<PRUNE_ROWS>(
+                middle_products::<PRUNE_ROWS, false>(
                     &mut dense_bounds,
                     *middle,
                     &incoming,
@@ -3547,7 +3655,7 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
                 };
                 let accepted = distinct_proofs
                     .get(&pair)
-                    .is_none_or(|current| ledger.candidate_better(&node, *current));
+                    .is_none_or(|current| !seeded && ledger.candidate_better(&node, *current));
                 if accepted {
                     let proof = ledger.intern(node);
                     distinct.insert(pair);
@@ -3576,6 +3684,7 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
                             bound: -1,
                             node,
                         },
+                        seeded,
                         ledger,
                     );
                 }
@@ -3608,7 +3717,12 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
         opaque: state.opaque.clone(),
         opaque_proofs: state.opaque_proofs.clone(),
     };
-    close_goal_contradictions(closed, goals, ledger)
+    let closed = close_goal_contradictions(closed, goals, ledger);
+    #[cfg(test)]
+    if seeded && tests::VERIFY_SEEDED_CLOSURE.load(std::sync::atomic::Ordering::Relaxed) {
+        tests::assert_seeded_closure_matches_complete(state, terms, goals, ledger, &closed);
+    }
+    closed
 }
 
 fn close_goal_contradictions(
@@ -3856,6 +3970,58 @@ impl DenseClosureBounds {
         self.round += 1;
     }
 
+    /// Marks a closed core's cells stale and every other cell fresh for the
+    /// first round, or returns `false` when the record claims no closed part.
+    /// A core recorded over fewer terms treats every later term as fresh: its
+    /// implicit bounds are the only facts it can carry.
+    fn seed_from(&mut self, record: &ClosureRecord) -> bool {
+        let (core_terms, fresh_terms, fresh_cells): (u32, &[TermId], &[(TermId, TermId)]) =
+            match record {
+                ClosureRecord::Unknown => return false,
+                ClosureRecord::Closed { terms } => (*terms, &[], &[]),
+                ClosureRecord::Core {
+                    terms,
+                    fresh_terms,
+                    fresh_cells,
+                } => (*terms, fresh_terms, fresh_cells),
+            };
+        // Loaded cells carry stamp 1. Starting the rounds one later makes
+        // them stale, while anything set before the first round — a fresh
+        // mark or an implicit bound — carries stamp 2 and stays fresh.
+        self.round = 1;
+        let width = self.dimension;
+        let refresh = |dense: &mut Self, index: usize| {
+            if dense.stamps[index] != 0 {
+                dense.stamps[index] = 2;
+            }
+        };
+        let mut fresh_rows = vec![false; width];
+        for term in fresh_terms {
+            if let Some(row) = fresh_rows.get_mut(term.0 as usize) {
+                *row = true;
+            }
+        }
+        for row in fresh_rows.iter_mut().skip(core_terms as usize) {
+            *row = true;
+        }
+        for (term, fresh) in fresh_rows.iter().enumerate() {
+            if !*fresh {
+                continue;
+            }
+            for other in 0..width {
+                refresh(self, term * width + other);
+                refresh(self, other * width + term);
+            }
+        }
+        for (left, right) in fresh_cells {
+            let (left, right) = (left.0 as usize, right.0 as usize);
+            if left < width && right < width {
+                refresh(self, left * width + right);
+            }
+        }
+        true
+    }
+
     /// Whether this cell changed during the previous fixed-point round or
     /// later. Every cell reports fresh in round 1, so the first pass over the
     /// transitivity cube is the complete one.
@@ -3950,7 +4116,7 @@ impl DenseClosureBounds {
 /// earlier round already offered against a conclusion that has only improved
 /// since, and is rejected without a ledger change; reading the freshness once
 /// skips exactly those triples.
-fn middle_products<const PRUNE_ROWS: bool>(
+fn middle_products<const PRUNE_ROWS: bool, const STRICT: bool>(
     dense: &mut DenseClosureBounds,
     middle: TermId,
     incoming: &[TermId],
@@ -4001,6 +4167,9 @@ fn middle_products<const PRUNE_ROWS: bool>(
             }
             let second_proof = dense.proofs[second_cell];
             if via == current_bound && dense.stamps[current_cell] != 0 {
+                if STRICT {
+                    continue;
+                }
                 let candidate_depth = first_depth
                     .max(ledger.depth(second_proof))
                     .saturating_add(1);
@@ -4024,6 +4193,7 @@ fn middle_products<const PRUNE_ROWS: bool>(
                     bound: via,
                     node,
                 },
+                STRICT,
                 ledger,
             );
         }
@@ -4041,6 +4211,7 @@ fn reference_middle_products<const PRUNE_ROWS: bool>(
     middle: TermId,
     incoming: &[TermId],
     outgoing: &[TermId],
+    strict: bool,
     ledger: &mut DerivationLedger,
 ) -> bool {
     let mut changed = false;
@@ -4070,6 +4241,9 @@ fn reference_middle_products<const PRUNE_ROWS: bool>(
                     continue;
                 }
                 if via == current_bound {
+                    if strict {
+                        continue;
+                    }
                     let candidate_depth = ledger
                         .depth(first_proof)
                         .max(ledger.depth(second_proof))
@@ -4095,6 +4269,7 @@ fn reference_middle_products<const PRUNE_ROWS: bool>(
                     bound: via,
                     node,
                 },
+                strict,
                 ledger,
             );
         }
@@ -4102,9 +4277,13 @@ fn reference_middle_products<const PRUNE_ROWS: bool>(
     changed
 }
 
+/// Offers one candidate to its cell. A strict insertion accepts only an absent
+/// cell or a smaller bound; otherwise an equal bound is accepted when its
+/// proof is shallower or wins the deterministic node tie order.
 fn insert_closed_candidate(
     dense: &mut DenseClosureBounds,
     candidate: ClosedBoundCandidate,
+    strict: bool,
     ledger: &mut DerivationLedger,
 ) -> bool {
     let ClosedBoundCandidate {
@@ -4116,7 +4295,9 @@ fn insert_closed_candidate(
     let accepted = match dense.get(left, right) {
         None => true,
         Some((current, _)) if bound < current => true,
-        Some((current, proof)) if bound == current => ledger.candidate_better(&node, proof),
+        Some((current, proof)) if bound == current => {
+            !strict && ledger.candidate_better(&node, proof)
+        }
         Some(_) => false,
     };
     if !accepted {
@@ -4142,9 +4323,7 @@ pub(crate) fn materialize_closure_before_kill(
     goals: &GoalTable,
     ledger: &mut DerivationLedger,
 ) {
-    let term_count = u32::try_from(terms.ids().count())
-        .expect("ENT term inventory exceeds the u32 identity space");
-    if state.all_derivable || state.closed_term_count == Some(term_count) {
+    if state.all_derivable || state.closure.is_closed_over(terms.ids().count()) {
         return;
     }
     // With no explicit relation or signed goal, closing can add only the
@@ -4157,6 +4336,12 @@ pub(crate) fn materialize_closure_before_kill(
     }
     let event = ledger.event(FlowEventKind::Snapshot, None);
     *state = materialize_closure_at(state, terms, goals, ledger, event);
+}
+
+/// Whether a closure of this state can start from a closed core rather than
+/// from every live fact.
+pub(crate) fn closure_is_seeded(state: &FactState) -> bool {
+    !matches!(state.closure, ClosureRecord::Unknown)
 }
 
 /// The proof one snapshot files for one closed bound.
@@ -4255,10 +4440,7 @@ pub(crate) fn materialize_closure_at(
         .map(|(pair, proof)| (*pair, vec![*proof]))
         .collect();
     let mut materialized = FactState {
-        closed_term_count: Some(
-            u32::try_from(terms.ids().count())
-                .expect("ENT term inventory exceeds the u32 identity space"),
-        ),
+        closure: ClosureRecord::closed(terms.ids().count()),
         all_derivable: false,
         contradiction: None,
         bounds: closed.bounds,
@@ -4307,10 +4489,7 @@ pub(crate) fn materialize_closure_at(
             materialized.add_distinct_candidate((left, right), proof, ledger);
         }
     }
-    materialized.closed_term_count = Some(
-        u32::try_from(terms.ids().count())
-            .expect("ENT term inventory exceeds the u32 identity space"),
-    );
+    materialized.closure = ClosureRecord::closed(terms.ids().count());
     materialized
 }
 
@@ -4356,10 +4535,7 @@ pub(crate) fn join_at(
     if !ordinary.all_derivable {
         joined.merge_relation_candidates_from(&ordinary, ledger);
     }
-    joined.closed_term_count = Some(
-        u32::try_from(terms.ids().count())
-            .expect("ENT term inventory exceeds the u32 identity space"),
-    );
+    joined.closure = ClosureRecord::closed(terms.ids().count());
     joined
 }
 
@@ -4546,10 +4722,7 @@ fn join_at_once(
         .map(|(pair, proof)| (*pair, vec![*proof]))
         .collect();
     FactState {
-        closed_term_count: Some(
-            u32::try_from(terms.ids().count())
-                .expect("ENT term inventory exceeds the u32 identity space"),
-        ),
+        closure: ClosureRecord::closed(terms.ids().count()),
         all_derivable: false,
         contradiction: None,
         bounds,
@@ -4568,8 +4741,89 @@ fn join_at_once(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    /// When set, every seeded closure is recomputed from all live facts on a
+    /// cloned state and ledger, and the two results must agree on every bound
+    /// value, disequality and contradiction. Only the retained proofs may
+    /// differ. A process-wide switch: tests that do not set it merely run
+    /// slower while another test holds it.
+    pub(crate) static VERIFY_SEEDED_CLOSURE: AtomicBool = AtomicBool::new(false);
+
+    pub(super) fn assert_seeded_closure_matches_complete(
+        state: &FactState,
+        terms: &TermTable,
+        goals: &GoalTable,
+        ledger: &DerivationLedger,
+        seeded: &ClosedState,
+    ) {
+        let mut unseeded = state.clone();
+        unseeded.closure = ClosureRecord::Unknown;
+        let mut complete_ledger = ledger.clone();
+        let complete = close(&unseeded, terms, goals, &mut complete_ledger);
+        assert_eq!(
+            seeded.all_derivable, complete.all_derivable,
+            "seeded closure contradiction differs from the complete closure"
+        );
+        if complete.all_derivable {
+            return;
+        }
+        assert_eq!(
+            seeded.bounds, complete.bounds,
+            "seeded closure bounds differ from the complete closure"
+        );
+        assert_eq!(
+            seeded.distinct, complete.distinct,
+            "seeded closure disequalities differ from the complete closure"
+        );
+    }
+
+    /// Compiles real programs with every seeded closure checked against the
+    /// complete closure of the same state. This covers the kill, join,
+    /// strengthening and term-growth paths as the flow walk reaches them.
+    #[test]
+    fn seeded_closures_match_complete_closures_on_real_programs() {
+        let bundles: [&[(&str, &[u8])]; 3] = [
+            &[(
+                "utf8parse.wf",
+                include_bytes!("../../../../tests/programs/utf8parse.wf"),
+            )],
+            &[
+                (
+                    "raw_deflate.wf",
+                    include_bytes!("../../../../tests/programs/raw_deflate.wf"),
+                ),
+                (
+                    "raw_deflate_dynamic.wf",
+                    include_bytes!("../../../../tests/programs/raw_deflate_dynamic.wf"),
+                ),
+                (
+                    "raw_deflate_dynamic_decode.wf",
+                    include_bytes!("../../../../tests/programs/raw_deflate_dynamic_decode.wf"),
+                ),
+                (
+                    "raw_deflate_boundary.wf",
+                    include_bytes!("../../../../tests/programs/raw_deflate_boundary.wf"),
+                ),
+            ],
+            &[(
+                "fixed_run_library.wf",
+                include_bytes!("../../../../tests/programs/fixed_run_library.wf"),
+            )],
+        ];
+        VERIFY_SEEDED_CLOSURE.store(true, std::sync::atomic::Ordering::Relaxed);
+        for bundle in bundles {
+            let inputs = bundle
+                .iter()
+                .map(|(name, source)| crate::SourceInput::new(name, source))
+                .collect::<Vec<_>>();
+            crate::compile(&inputs, crate::CompilerLimits::default())
+                .expect("a verified real program still compiles");
+        }
+        VERIFY_SEEDED_CLOSURE.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
     use crate::DeclarationId;
     use crate::semantic::entailment::VerifiedPostconditionSummary;
     use crate::semantic::model::FunctionId;

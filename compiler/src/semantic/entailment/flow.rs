@@ -57,8 +57,8 @@ use super::state::{
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
     PostconditionCallSubstitution, Relation, SourceAffineFactRef, SourceLoopInvariantRef,
-    WordHashMap, close, close_excluding_term, contradiction_without_proofs, join_at,
-    materialize_closure_at, materialize_closure_before_kill,
+    WordHashMap, close, close_excluding_term, closure_is_seeded, contradiction_without_proofs,
+    join_at, materialize_closure_at, materialize_closure_before_kill,
 };
 use super::term::{
     CallDatumProjection, CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceProjection,
@@ -4318,12 +4318,21 @@ impl Analyzer<'_, '_> {
     /// before every kill entry so a write cannot erase one premise and make
     /// an unreachable point reachable again.
     fn promote_contradiction(&mut self, state: &mut FactState) {
-        if !state.all_derivable && contradiction_without_proofs(state, &self.terms, &self.goals) {
-            let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
-            if closed.contradictory() {
-                state.all_derivable = true;
-                state.contradiction = closed.contradiction_proof();
-            }
+        if state.all_derivable {
+            return;
+        }
+        // A seeded closure costs about what the proof-free probe does over a
+        // closed core and answers the same question directly; the probe stays
+        // the cheaper test for a state with no closed part.
+        if !closure_is_seeded(state)
+            && !contradiction_without_proofs(state, &self.terms, &self.goals)
+        {
+            return;
+        }
+        let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
+        if closed.contradictory() {
+            state.all_derivable = true;
+            state.contradiction = closed.contradiction_proof();
         }
     }
 
