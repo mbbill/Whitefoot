@@ -936,35 +936,44 @@ pub(crate) struct DerivationLedger {
 /// finalization discards it because no later semantic query may intern nodes.
 #[derive(Clone, Debug, Default)]
 struct InternIndex {
-    entries: HashMap<u64, DerivationId, InternHashBuilder>,
+    entries: WordHashMap<u64, DerivationId>,
 }
 
-/// Hash builder for [`InternIndex`].
+/// Hash builder for [`InternIndex`] and the relation maps of a fact state.
 ///
-/// The index is private to this module and is never iterated, so its hash
-/// function reaches no compiler output and no traversal order. The [ENT-4] closure interns one
-/// candidate proof step for every accepted matrix cell, which made hashing
-/// whole [`DerivationNode`] values with the default `SipHash` the largest
-/// single remaining cost of checking `tests/programs/wfgrep.wf`.
+/// The [ENT-4] closure interns one candidate proof step for every accepted
+/// matrix cell, which made hashing whole [`DerivationNode`] values with the
+/// default `SipHash` the largest single remaining cost of checking
+/// `tests/programs/wfgrep.wf`; rebuilding the term-pair relation maps of every
+/// closed state was the next. The intern index is never iterated. Every
+/// consumer that turns a relation map's iteration into ledger identities,
+/// candidate order or diagnostics sorts its keys first, as it already had to
+/// under `SipHash`'s per-process random order, so this fixed function reaches
+/// no compiler output.
 #[derive(Clone, Copy, Debug, Default)]
-struct InternHashBuilder;
+pub(crate) struct WordHashBuilder;
 
-impl std::hash::BuildHasher for InternHashBuilder {
-    type Hasher = InternHasher;
+/// A relation map keyed by small dense identities.
+pub(crate) type WordHashMap<K, V> = HashMap<K, V, WordHashBuilder>;
+/// A relation set keyed by small dense identities.
+pub(crate) type WordHashSet<K> = HashSet<K, WordHashBuilder>;
+
+impl std::hash::BuildHasher for WordHashBuilder {
+    type Hasher = WordHasher;
 
     fn build_hasher(&self) -> Self::Hasher {
-        InternHasher::default()
+        WordHasher::default()
     }
 }
 
 /// Deterministic multiply-rotate word hasher, seeded by the fractional bits of
 /// the golden ratio.
 #[derive(Clone, Copy, Debug, Default)]
-struct InternHasher {
+pub(crate) struct WordHasher {
     state: u64,
 }
 
-impl InternHasher {
+impl WordHasher {
     const SEED: u64 = 0x517c_c1b7_2722_0a95;
 
     fn mix(&mut self, word: u64) {
@@ -972,7 +981,7 @@ impl InternHasher {
     }
 }
 
-impl std::hash::Hasher for InternHasher {
+impl std::hash::Hasher for WordHasher {
     fn write(&mut self, bytes: &[u8]) {
         let (words, tail) = bytes.as_chunks::<8>();
         for word in words {
@@ -1100,7 +1109,7 @@ impl DerivationLedger {
     /// The key one interned identity is filed under.
     fn intern_key(node: &DerivationNode) -> u64 {
         use std::hash::BuildHasher;
-        InternHashBuilder.hash_one(node)
+        WordHashBuilder.hash_one(node)
     }
 
     /// The identity already filed for this exact node, or the free key it
@@ -2073,18 +2082,18 @@ pub(crate) struct FactState {
     /// the flag sets this handle at the same time.
     pub(crate) contradiction: Option<DerivationId>,
     /// Live difference bounds `left - right <= bound`, smallest bound kept.
-    pub(crate) bounds: HashMap<(TermId, TermId), i128>,
-    pub(crate) bound_proofs: HashMap<(TermId, TermId), DerivationId>,
+    pub(crate) bounds: WordHashMap<(TermId, TermId), i128>,
+    pub(crate) bound_proofs: WordHashMap<(TermId, TermId), DerivationId>,
     /// Every independently live proof of a directed bound. `bounds` and
     /// `bound_proofs` remain the canonical query cache; retaining the other
     /// candidates lets an S12-only holder invalidation expose an ordinary
     /// fallback instead of deleting the relation wholesale.
-    bound_candidates: HashMap<(TermId, TermId), Vec<(i128, DerivationId)>>,
+    bound_candidates: WordHashMap<(TermId, TermId), Vec<(i128, DerivationId)>>,
     /// Live disequalities, stored with ordered term pair.
-    pub(crate) distinct: HashSet<(TermId, TermId)>,
-    pub(crate) distinct_proofs: HashMap<(TermId, TermId), DerivationId>,
+    pub(crate) distinct: WordHashSet<(TermId, TermId)>,
+    pub(crate) distinct_proofs: WordHashMap<(TermId, TermId), DerivationId>,
     /// Independently live disequality proofs, parallel to `bound_candidates`.
-    distinct_candidates: HashMap<(TermId, TermId), Vec<DerivationId>>,
+    distinct_candidates: WordHashMap<(TermId, TermId), Vec<DerivationId>>,
     /// [ENT-3] comparison origins (b): `own Bool` bindings whose initializer
     /// comparison is still valid on every path from initializer to here.
     pub(crate) origins: HashMap<BindingId, Relation>,
@@ -2093,8 +2102,8 @@ pub(crate) struct FactState {
     /// no-`set` path discipline the comparison origins carry.
     pub(crate) outcomes: HashMap<BindingId, OutcomeFact>,
     /// Live exact signed whole-goal facts [ENT-2..ENT-4].
-    pub(crate) opaque: HashSet<(GoalId, GoalSign)>,
-    pub(crate) opaque_proofs: HashMap<(GoalId, GoalSign), DerivationId>,
+    pub(crate) opaque: WordHashSet<(GoalId, GoalSign)>,
+    pub(crate) opaque_proofs: WordHashMap<(GoalId, GoalSign), DerivationId>,
     /// Complete still-valid pure/total origin expansion of an ordinary let.
     /// The binding's own direct value goal is intentionally separate.
     pub(crate) goal_origins: HashMap<BindingId, GoalId>,
@@ -2115,18 +2124,18 @@ impl FactState {
             closed_term_count: None,
             all_derivable: false,
             contradiction: None,
-            bounds: HashMap::new(),
-            bound_proofs: HashMap::new(),
-            bound_candidates: HashMap::new(),
-            distinct: HashSet::new(),
-            distinct_proofs: HashMap::new(),
-            distinct_candidates: HashMap::new(),
-            origins: HashMap::new(),
-            outcomes: HashMap::new(),
-            opaque: HashSet::new(),
-            opaque_proofs: HashMap::new(),
-            goal_origins: HashMap::new(),
-            ambiguous_goal_origins: HashSet::new(),
+            bounds: HashMap::default(),
+            bound_proofs: HashMap::default(),
+            bound_candidates: HashMap::default(),
+            distinct: HashSet::default(),
+            distinct_proofs: HashMap::default(),
+            distinct_candidates: HashMap::default(),
+            origins: HashMap::default(),
+            outcomes: HashMap::default(),
+            opaque: HashSet::default(),
+            opaque_proofs: HashMap::default(),
+            goal_origins: HashMap::default(),
+            ambiguous_goal_origins: HashSet::default(),
         }
     }
 
@@ -2582,12 +2591,12 @@ fn compose_transitive_bounds(first: i128, second: i128) -> i128 {
 pub(crate) struct ClosedState {
     all_derivable: bool,
     contradiction: Option<DerivationId>,
-    bounds: HashMap<(TermId, TermId), i128>,
-    bound_proofs: HashMap<(TermId, TermId), DerivationId>,
-    distinct: HashSet<(TermId, TermId)>,
-    distinct_proofs: HashMap<(TermId, TermId), DerivationId>,
-    opaque: HashSet<(GoalId, GoalSign)>,
-    opaque_proofs: HashMap<(GoalId, GoalSign), DerivationId>,
+    bounds: WordHashMap<(TermId, TermId), i128>,
+    bound_proofs: WordHashMap<(TermId, TermId), DerivationId>,
+    distinct: WordHashSet<(TermId, TermId)>,
+    distinct_proofs: WordHashMap<(TermId, TermId), DerivationId>,
+    opaque: WordHashSet<(GoalId, GoalSign)>,
+    opaque_proofs: WordHashMap<(GoalId, GoalSign), DerivationId>,
 }
 
 impl ClosedState {
@@ -2734,7 +2743,7 @@ impl ClosedState {
     /// comparison-root projection, its family's fixed normalization, a Bool
     /// literal, or finite truth-table introduction for an interned parent.
     pub(crate) fn derives_goal(&self, goal: GoalId, sign: GoalSign, goals: &GoalTable) -> bool {
-        self.derives_goal_inner(goal, sign, goals, &mut HashSet::new())
+        self.derives_goal_inner(goal, sign, goals, &mut HashSet::default())
     }
 
     fn derives_goal_inner(
@@ -2742,7 +2751,7 @@ impl ClosedState {
         goal: GoalId,
         sign: GoalSign,
         goals: &GoalTable,
-        visiting: &mut HashSet<(GoalId, GoalSign)>,
+        visiting: &mut WordHashSet<(GoalId, GoalSign)>,
     ) -> bool {
         if self.all_derivable || self.opaque.contains(&(goal, sign)) {
             return true;
@@ -2769,7 +2778,7 @@ impl ClosedState {
                 let child =
                     |argument: &GoalExpression,
                      child_sign: GoalSign,
-                     visiting: &mut HashSet<(GoalId, GoalSign)>| {
+                     visiting: &mut WordHashSet<(GoalId, GoalSign)>| {
                         goals.id(argument).is_some_and(|child| {
                             self.derives_goal_inner(child, child_sign, goals, visiting)
                         })
@@ -2967,7 +2976,7 @@ impl ClosedState {
         goals: &GoalTable,
         ledger: &mut DerivationLedger,
     ) -> Option<DerivationId> {
-        self.goal_proof_inner(goal, sign, goals, ledger, &mut HashSet::new())
+        self.goal_proof_inner(goal, sign, goals, ledger, &mut HashSet::default())
     }
 
     fn goal_proof_inner(
@@ -2976,7 +2985,7 @@ impl ClosedState {
         sign: GoalSign,
         goals: &GoalTable,
         ledger: &mut DerivationLedger,
-        visiting: &mut HashSet<(GoalId, GoalSign)>,
+        visiting: &mut WordHashSet<(GoalId, GoalSign)>,
     ) -> Option<DerivationId> {
         if self.all_derivable {
             return self.contradiction;
@@ -3003,13 +3012,13 @@ impl ClosedState {
                 let child_proof =
                     |argument: &GoalExpression,
                      child_sign: GoalSign,
-                     visiting: &mut HashSet<(GoalId, GoalSign)>,
+                     visiting: &mut WordHashSet<(GoalId, GoalSign)>,
                      ledger: &mut DerivationLedger| {
                         let child = goals.id(argument)?;
                         self.goal_proof_inner(child, child_sign, goals, ledger, visiting)
                     };
                 let all = |child_sign: GoalSign,
-                           visiting: &mut HashSet<(GoalId, GoalSign)>,
+                           visiting: &mut WordHashSet<(GoalId, GoalSign)>,
                            ledger: &mut DerivationLedger| {
                     arguments
                         .iter()
@@ -3017,7 +3026,7 @@ impl ClosedState {
                         .collect::<Option<Vec<_>>>()
                 };
                 let any = |child_sign: GoalSign,
-                           visiting: &mut HashSet<(GoalId, GoalSign)>,
+                           visiting: &mut WordHashSet<(GoalId, GoalSign)>,
                            ledger: &mut DerivationLedger| {
                     let mut best = None;
                     for argument in arguments {
@@ -3307,7 +3316,8 @@ pub(crate) fn contradiction_without_proofs(
 
     // Reuse the ordinary goal truth table over proof-free relation maps.
     // `derives_goal` consults no proof identity.
-    let mut closed_bounds = HashMap::with_capacity(bounds.iter().flatten().count());
+    let mut closed_bounds =
+        HashMap::with_capacity_and_hasher(bounds.iter().flatten().count(), WordHashBuilder);
     for left in 0..dimension {
         for right in 0..dimension {
             if let Some(bound) = bounds[left * dimension + right] {
@@ -3325,11 +3335,11 @@ pub(crate) fn contradiction_without_proofs(
         all_derivable: false,
         contradiction: None,
         bounds: closed_bounds,
-        bound_proofs: HashMap::new(),
+        bound_proofs: HashMap::default(),
         distinct,
-        distinct_proofs: HashMap::new(),
+        distinct_proofs: HashMap::default(),
         opaque: state.opaque.clone(),
-        opaque_proofs: HashMap::new(),
+        opaque_proofs: HashMap::default(),
     };
     goals.ids().any(|goal| {
         closed.derives_goal(goal, GoalSign::Positive, goals)
@@ -3375,12 +3385,12 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
         return ClosedState {
             all_derivable: true,
             contradiction: state.contradiction,
-            bounds: HashMap::new(),
-            bound_proofs: HashMap::new(),
-            distinct: HashSet::new(),
-            distinct_proofs: HashMap::new(),
-            opaque: HashSet::new(),
-            opaque_proofs: HashMap::new(),
+            bounds: HashMap::default(),
+            bound_proofs: HashMap::default(),
+            distinct: HashSet::default(),
+            distinct_proofs: HashMap::default(),
+            opaque: HashSet::default(),
+            opaque_proofs: HashMap::default(),
         };
     }
     let term_count = terms.ids().count();
@@ -3810,15 +3820,15 @@ impl ClosureRowSummary {
 
 /// The closed state's live bound and proof maps, in that order.
 type ClosedBoundMaps = (
-    HashMap<(TermId, TermId), i128>,
-    HashMap<(TermId, TermId), DerivationId>,
+    WordHashMap<(TermId, TermId), i128>,
+    WordHashMap<(TermId, TermId), DerivationId>,
 );
 
 impl DenseClosureBounds {
     fn from_maps(
         dimension: usize,
-        bounds: &HashMap<(TermId, TermId), i128>,
-        proofs: &HashMap<(TermId, TermId), DerivationId>,
+        bounds: &WordHashMap<(TermId, TermId), i128>,
+        proofs: &WordHashMap<(TermId, TermId), DerivationId>,
         ledger: &DerivationLedger,
     ) -> Self {
         let count = dimension
@@ -3903,8 +3913,8 @@ impl DenseClosureBounds {
     /// [`Self::from_maps`] and nothing removes a cell, so this returns exactly
     /// the incoming pairs together with the ones the fixed point derived.
     fn into_maps(self) -> ClosedBoundMaps {
-        let mut bounds = HashMap::with_capacity(self.live);
-        let mut proofs = HashMap::with_capacity(self.live);
+        let mut bounds = HashMap::with_capacity_and_hasher(self.live, WordHashBuilder);
+        let mut proofs = HashMap::with_capacity_and_hasher(self.live, WordHashBuilder);
         for (index, stamp) in self.stamps.iter().enumerate() {
             if *stamp == 0 {
                 continue;
@@ -4185,7 +4195,7 @@ pub(crate) fn materialize_closure_at(
         };
     }
     let needs_ordinary_fallback = closed.selected_relations_depend_on_postcondition_call(ledger);
-    let mut bound_proofs = HashMap::new();
+    let mut bound_proofs = HashMap::default();
     let mut bound_keys: Vec<_> = closed.bounds.keys().copied().collect();
     bound_keys.sort_unstable();
     for (left, right) in bound_keys {
@@ -4194,7 +4204,7 @@ pub(crate) fn materialize_closure_at(
         let proof = materialized_bound_proof(ledger, left, right, bound, event, parent);
         bound_proofs.insert((left, right), proof);
     }
-    let mut distinct_proofs = HashMap::new();
+    let mut distinct_proofs = HashMap::default();
     let mut distinct_keys: Vec<_> = closed.distinct.iter().copied().collect();
     distinct_keys.sort_unstable();
     for (left, right) in distinct_keys {
@@ -4206,7 +4216,7 @@ pub(crate) fn materialize_closure_at(
         });
         distinct_proofs.insert((left, right), proof);
     }
-    let mut opaque_proofs = HashMap::new();
+    let mut opaque_proofs = HashMap::default();
     let mut opaque_keys: Vec<_> = closed.opaque.iter().copied().collect();
     opaque_keys.sort_unstable();
     for (goal, sign) in opaque_keys {
@@ -4374,8 +4384,8 @@ fn join_at_once(
         };
     };
     let first = &closed[first_index];
-    let mut bounds = HashMap::new();
-    let mut bound_proofs = HashMap::new();
+    let mut bounds = HashMap::default();
+    let mut bound_proofs = HashMap::default();
     let mut first_bound_keys: Vec<_> = first.bounds.keys().copied().collect();
     first_bound_keys.sort_unstable();
     for pair in first_bound_keys {
@@ -4422,7 +4432,7 @@ fn join_at_once(
     for index in rest_indices {
         distinct.retain(|pair| closed[*index].distinct.contains(pair));
     }
-    let mut distinct_proofs = HashMap::new();
+    let mut distinct_proofs = HashMap::default();
     let mut distinct_keys: Vec<_> = distinct.iter().copied().collect();
     distinct_keys.sort_unstable();
     for pair in distinct_keys {
@@ -4455,7 +4465,7 @@ fn join_at_once(
     for index in rest_indices {
         opaque.retain(|fact| closed[*index].opaque.contains(fact));
     }
-    let mut opaque_proofs = HashMap::new();
+    let mut opaque_proofs = HashMap::default();
     let mut opaque_keys: Vec<_> = opaque.iter().copied().collect();
     opaque_keys.sort_unstable();
     for (goal, sign) in opaque_keys {
