@@ -5066,34 +5066,31 @@ fn main() -> status: own ExitStatus pure {
         vec![true],
         "the ordinary write projects i < 4 before killing the mutable middle upper"
     );
+    // The survivor consequence must be derived through the killed middle
+    // `upper`. Which closed endpoint the step reaches — the constant four or Z
+    // through that constant's implicit bound — is an equal-bound derivation
+    // choice [ENT-4] leaves open, and a seeded closure retains whichever it
+    // reaches first.
     assert_root_contains(
         &ordinary,
         obligation_root(&ordinary, 0),
         |node| match node {
-            DerivationNode::TransitiveBound {
-                left,
-                middle,
-                right,
-                bound: -1,
-                ..
-            } => {
+            DerivationNode::TransitiveBound { left, middle, .. } => {
                 matches!(
                     (
                         retained_term(&ordinary, *left),
                         retained_term(&ordinary, *middle),
-                        retained_term(&ordinary, *right),
                     ),
                     (
                         TermKind::Place(i, IntegerType::U64),
                         TermKind::Place(upper, IntegerType::U64),
-                        TermKind::Constant(4),
                     ) if i.root == PlaceRoot::Binding(BindingId(0))
                         && upper.root == PlaceRoot::Binding(BindingId(1))
                 )
             }
             _ => false,
         },
-        "the exact i - upper <= -1 plus upper - 4 <= 0 projection",
+        "a projection of i - upper <= -1 through the killed middle upper",
     );
 }
 
