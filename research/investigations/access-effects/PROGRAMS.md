@@ -125,3 +125,107 @@ before and after acquire; whether determinism is promised.
 wfgrep, zlib-core-kernels, compute-bench, the accumulators snapshot cases:
 whatever the current design permits to overlap under PAR-1 and PAR-2 must
 remain permitted or the loss must be stated.
+
+## Pending programs named by VERDICT-D0
+
+Rows whose acceptance test names only one of these are provisional until the
+program is written out and derived against.
+
+### P11 Write-once-then-frozen cache
+
+```text
+cache: slot per key, initially empty
+get(k): if cache[k] empty { cache[k] = compute(k) }; return read(cache[k])    // many readers, one lazy writer per slot
+```
+Required: state the pass or fail under R1 alone (a slot goes Uninit to Init
+once and never changes); whether a reader may hold a pointer to a slot across
+another slot's fill; why-whitefoot section 5's stance that the absence of such
+cells is a performance argument is recorded, so admission is a capability
+question.
+
+### P12 DMA escrow
+
+```text
+buf = alloc(n); map_for_device(buf)         // device may write buf; the program may not touch it
+wait_completion()                           // a program-observed event
+unmap(buf); read(buf)                       // legal only after the completion
+```
+Required: the loan to a non-program agent is an R2 obligation discharged by
+the observed completion; which contents facts survive between map and unmap
+(R14(iv)).
+
+### P13 Relocation by a compacting third party
+
+```text
+h = handle into a compacting pool; p = pointer_of(h)
+pool.compact()                              // may move the object
+read(p)                                     // refused unless a fixup form exists
+read(pool[h])                               // legal: the handle survives compaction
+```
+Required: interior pointers and third-party relocation are mutually exclusive
+without a contract-visible fixup form (R8a).
+
+### P14 A descriptor as three identities
+
+```text
+f1 = open(path); f2 = dup(f1)               // two wrappers, one open-file description, one foreign contents
+n = read(f1, buf, 100)                      // may return a short read: a typed outcome
+seek(f2, 0)                                 // moves the shared cursor
+close(f1); read(f2, ...)                    // still legal; close(f2) discharges the second obligation
+```
+Required: the wrapper carries the close obligation, the description the
+cursor, the contents are foreign; the short-read arm discharges every
+obligation (R10, R12, R2).
+
+### P15 Reductions under a law and under a level
+
+```text
+s = 0; for i in 0..n { s = s +wrap a[i] }               // associative and commutative: any tree
+x = 0.0; for i in 0..n { x = x fadd a[i] }              // no law: named weaker level or sequential
+```
+Required: ground (ii) admits the first under a fixed-table law; the second is
+admitted only under a named level from R14(ii) or stays sequential.
+
+### P16 Abstraction over identities
+
+```text
+fn map_nodes<T>(g: pool of Node<T>, f: fn(&T) -> T)     // P3 generic over the node type
+fn kernel<E>(c: Cols<E>)                                // P5 over the column type
+let h = |slice| helper(slice, input); P6 with h         // P6's helper as a closure
+fn pick<N: Nominal>(c: Bool, x: N, y: N) -> N           // P9 through a nominal
+```
+Required: identity, state and effect facts cross the abstraction boundary;
+parameters per interface bounded by the storages the callee touches (R15).
+
+### P17 Partial operations
+
+```text
+q = a / d                                   // d a runtime value: proof d != 0 or a written outcome
+b: u8 = narrow(x)                           // proof x < 256 or a written outcome
+y = v[i]                                    // proof i < len(v) or a written outcome
+```
+Required: each accepted only with a proof or an outcome arm; the diagnostic
+names the missing fact (R11, M7).
+
+### P18 Allocation failure and a byte budget
+
+```text
+arena A with budget B bytes
+b1 = alloc(A, 64)?; b2 = alloc(A, 64)?     // each may fail: the arm must free nothing twice and leave earlier blocks owned
+b4 = alloc(A, 32)?                          // fits within B or the program is refused
+```
+Required: R2 holds on every failure arm; the declared budget is proved or
+refused (R12, R13; owner decision 5).
+
+### P19 A declared depth bound
+
+```text
+fn walk(n: Node, depth: u64) requires depth <= 64 { ... walk(child, depth + 1) ... }
+```
+Required: the declared count is proved on every recursive call; a termination
+measure is supplied by the writer (R13).
+
+### P10 trigger
+
+P10 is derived only once a thread construct and R14(i)'s ordering vocabulary
+exist; until then it is a pending program.
