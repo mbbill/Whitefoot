@@ -46,6 +46,9 @@ is not approval of a specific revision.
 
 ## Mechanism
 
+This is the mechanism as first proposed; [Implementation](#implementation)
+records what replaced parts of it, including weakened cells and edge insertion.
+
 A fact state records how much of its bound matrix is known closed:
 
 - **unknown**: no claim;
