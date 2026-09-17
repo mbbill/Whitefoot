@@ -2079,14 +2079,15 @@ enum ClosureRecord {
     /// disequality consequence of two of them is already present and no
     /// weaker, and their terms' implicit bounds are already reflected.
     ///
-    /// A fresh term has lost every explicit fact — it was killed or is newly
-    /// registered — unless the record is `weakened`, when a removed proof
-    /// candidate may have left any of its cells weaker than the core implies.
+    /// A fresh term has lost every explicit fact: it was killed or is newly
+    /// registered. A weakened cell lost its selected proof candidate and now
+    /// holds a weaker surviving selection, or none, so it may be weaker than
+    /// the closure of the facts that remain.
     Core {
         terms: u32,
         fresh_terms: Vec<TermId>,
         fresh_cells: Vec<(TermId, TermId)>,
-        weakened: bool,
+        weakened_cells: Vec<(TermId, TermId)>,
     },
 }
 
@@ -2108,7 +2109,7 @@ impl ClosureRecord {
                 terms,
                 fresh_terms: Vec::new(),
                 fresh_cells: Vec::new(),
-                weakened: false,
+                weakened_cells: Vec::new(),
             };
         }
         match self {
@@ -2133,10 +2134,11 @@ impl ClosureRecord {
         }
     }
 
-    fn mark_weakened_term(&mut self, term: TermId) {
-        self.mark_fresh_term(term);
-        if let Self::Core { weakened, .. } = self {
-            *weakened = true;
+    fn mark_weakened_cell(&mut self, cell: (TermId, TermId)) {
+        if self.into_core().is_some()
+            && let Self::Core { weakened_cells, .. } = self
+        {
+            weakened_cells.push(cell);
         }
     }
 }
@@ -2622,15 +2624,13 @@ impl FactState {
         }
         // Candidate removal is not an endpoint projection. A surviving
         // ordinary and S12 candidate can rederive a relation whose one
-        // retained materialized proof was just removed, and a weaker or
-        // missing selection can leave neighbouring cells stronger than its
-        // pair. Every transitive or strengthening step that concludes or
-        // starts from such a pair uses a cell in one of its endpoints' rows or
-        // columns, so marking both endpoints fresh restores the closed core;
-        // a selection that only changed its proof keeps every bound.
+        // retained materialized proof was just removed. A selection that only
+        // changed its proof keeps every bound; a weaker or missing one is
+        // recorded so the next closure can rederive the cell from its
+        // neighbours. A removed disequality weakens both orientations.
         for (left, right) in weakened {
-            self.closure.mark_weakened_term(left);
-            self.closure.mark_weakened_term(right);
+            self.closure.mark_weakened_cell((left, right));
+            self.closure.mark_weakened_cell((right, left));
         }
         changed
     }
@@ -3783,9 +3783,16 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
 }
 
 /// Closes a state whose record is a closed core with only unprocessed edges:
-/// fresh cells, and the implicit bounds of terms that carry no other fact.
-/// Returns `None` for any other record, including a closed state that needs no
-/// work and a core whose removed candidates may have weakened a cell.
+/// fresh cells, the implicit bounds of terms that carry no other fact, and
+/// weakened cells. Returns `None` for an unknown record and for a closed state
+/// that needs no work.
+///
+/// A weakened cell is first rederived through every middle term until no
+/// weakened cell improves. Every other cell is unchanged and still holds an
+/// independently live proof, so no weakening can make it stronger than the
+/// closure of the remaining facts; and a repaired cell satisfies every
+/// triangle through it. The repaired cells then enter as edges, which settles
+/// their disequality and strengthening consequences.
 ///
 /// Each edge `a - b <= w` is inserted once: every `i - b` first improves
 /// through `i - a`, then every row whose `i - b` is now at most `i - a + w`
@@ -3803,19 +3810,28 @@ fn insert_fresh_edges<P: ClosureProofs>(
     ledger: &mut P,
 ) -> Option<EdgeClosure> {
     let term_count = terms.ids().count();
-    let (core_terms, fresh_terms, fresh_cells): (usize, &[TermId], &[(TermId, TermId)]) =
+    type Cells<'a> = &'a [(TermId, TermId)];
+    let (core_terms, fresh_terms, fresh_cells, weakened_cells): (usize, &[TermId], Cells, Cells) =
         match &state.closure {
             ClosureRecord::Closed { terms } if (*terms as usize) < term_count => {
-                (*terms as usize, &[], &[])
+                (*terms as usize, &[], &[], &[])
             }
             ClosureRecord::Core {
                 terms,
                 fresh_terms,
                 fresh_cells,
-                weakened: false,
-            } => (*terms as usize, fresh_terms, fresh_cells),
+                weakened_cells,
+            } => (*terms as usize, fresh_terms, fresh_cells, weakened_cells),
             _ => return None,
         };
+    // Repairing a weakened cell scans one row and column per pass. When a
+    // removal weakens more cells than there are terms — an ordinary-fallback
+    // view drops every postcondition-dependent selection at once — the seeded
+    // fixed point, which revisits only the weakened endpoints' rows and
+    // columns, is the cheaper route to the same bounds.
+    if weakened_cells.len() > term_count {
+        return None;
+    }
     let width = term_count;
     let mut dense =
         DenseClosureBounds::from_maps(width, &state.bounds, &state.bound_proofs, ledger);
@@ -3853,7 +3869,49 @@ fn insert_fresh_edges<P: ClosureProofs>(
             }
         });
     }
+    let mut weakened = weakened_cells.to_vec();
+    weakened.sort_unstable();
+    weakened.dedup();
+    loop {
+        let mut repaired = false;
+        for &(left, right) in &weakened {
+            let (row, column) = (left.0 as usize, right.0 as usize);
+            if row == column || row >= width || column >= width {
+                continue;
+            }
+            for middle in 0..width {
+                if middle == row || middle == column {
+                    continue;
+                }
+                let (first, second) = (row * width + middle, middle * width + column);
+                if dense.stamps[first] == 0 || dense.stamps[second] == 0 {
+                    continue;
+                }
+                let via = compose_transitive_bounds(dense.bounds[first], dense.bounds[second]);
+                let target = row * width + column;
+                if dense.stamps[target] != 0 && via >= dense.bounds[target] {
+                    continue;
+                }
+                let node = ledger.intern(DerivationNode::TransitiveBound {
+                    left,
+                    middle: TermId(
+                        u32::try_from(middle).expect("term index fits the u32 identity"),
+                    ),
+                    right,
+                    bound: via,
+                    first: dense.proofs[first],
+                    second: dense.proofs[second],
+                });
+                dense.set(left, right, via, node, ledger.depth(node));
+                repaired = true;
+            }
+        }
+        if !repaired {
+            break;
+        }
+    }
     let mut cells = fresh_cells.to_vec();
+    cells.extend(weakened);
     cells.sort_unstable();
     cells.dedup();
     for (left, right) in cells {
@@ -4360,6 +4418,7 @@ impl DenseClosureBounds {
     /// A core recorded over fewer terms treats every later term as fresh: its
     /// implicit bounds are the only facts it can carry.
     fn seed_from(&mut self, record: &ClosureRecord) -> bool {
+        let mut fresh_rows_seed: Option<Vec<TermId>> = None;
         let (core_terms, fresh_terms, fresh_cells): (u32, &[TermId], &[(TermId, TermId)]) =
             match record {
                 ClosureRecord::Unknown => return false,
@@ -4368,8 +4427,24 @@ impl DenseClosureBounds {
                     terms,
                     fresh_terms,
                     fresh_cells,
-                    ..
-                } => (*terms, fresh_terms, fresh_cells),
+                    weakened_cells,
+                } => {
+                    // A weakened cell can leave any triangle through it open,
+                    // and each such triangle has a premise in one of its
+                    // endpoints' rows or columns.
+                    let mut rows = fresh_rows_seed.take().unwrap_or_default();
+                    for (left, right) in weakened_cells {
+                        rows.push(*left);
+                        rows.push(*right);
+                    }
+                    rows.extend(fresh_terms.iter().copied());
+                    fresh_rows_seed = Some(rows);
+                    (
+                        *terms,
+                        fresh_rows_seed.as_deref().unwrap_or_default(),
+                        fresh_cells,
+                    )
+                }
             };
         // Loaded cells carry stamp 1. Starting the rounds one later makes
         // them stale, while anything set before the first round — a fresh
