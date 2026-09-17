@@ -2207,6 +2207,184 @@ impl<'a, T: Copy + PartialEq> IntoIterator for &'a Candidates<T> {
     }
 }
 
+/// The selected difference bounds of a fact state, dense over term identities.
+///
+/// Row-major cells are in sorted `(left, right)` order. The stride leaves room
+/// for terms registered later, so a new term rarely re-lays the store out.
+/// A relation's selected candidate is its cell; any further independently live
+/// candidates of the same pair are kept, in order, in `extra`.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct BoundStore {
+    stride: usize,
+    bounds: Vec<i128>,
+    proofs: Vec<DerivationId>,
+    present: Vec<bool>,
+    live: usize,
+    extra: WordHashMap<(TermId, TermId), Vec<(i128, DerivationId)>>,
+}
+
+impl BoundStore {
+    fn with_terms(terms: usize) -> Self {
+        let mut store = Self::default();
+        store.reserve(terms);
+        store
+    }
+
+    fn index(&self, left: TermId, right: TermId) -> Option<usize> {
+        let (left, right) = (left.0 as usize, right.0 as usize);
+        (left < self.stride && right < self.stride).then_some(left * self.stride + right)
+    }
+
+    /// The selected bound and proof of `left - right`, if any.
+    pub(crate) fn get(&self, left: TermId, right: TermId) -> Option<(i128, DerivationId)> {
+        let index = self.index(left, right)?;
+        self.present[index].then(|| (self.bounds[index], self.proofs[index]))
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.live == 0
+    }
+
+    /// Every selected bound in sorted `(left, right)` order.
+    pub(crate) fn cells(&self) -> impl Iterator<Item = (TermId, TermId, i128, DerivationId)> + '_ {
+        let stride = self.stride.max(1);
+        self.present
+            .iter()
+            .enumerate()
+            .filter(|(_, present)| **present)
+            .map(move |(index, _)| {
+                (
+                    TermId(
+                        u32::try_from(index / stride).expect("term index fits the u32 identity"),
+                    ),
+                    TermId(
+                        u32::try_from(index % stride).expect("term index fits the u32 identity"),
+                    ),
+                    self.bounds[index],
+                    self.proofs[index],
+                )
+            })
+    }
+
+    fn reserve(&mut self, terms: usize) {
+        if terms <= self.stride {
+            return;
+        }
+        let stride = (terms + terms / 2).max(16);
+        let count = stride
+            .checked_mul(stride)
+            .expect("ENT bound store exceeds the address space");
+        let mut bounds = vec![0; count];
+        let mut proofs = vec![DerivationId(0); count];
+        let mut present = vec![false; count];
+        for (left, right, bound, proof) in self.cells() {
+            let index = left.0 as usize * stride + right.0 as usize;
+            bounds[index] = bound;
+            proofs[index] = proof;
+            present[index] = true;
+        }
+        self.stride = stride;
+        self.bounds = bounds;
+        self.proofs = proofs;
+        self.present = present;
+    }
+
+    /// Every independently live candidate of one pair, the selected one first.
+    fn candidates(&self, pair: (TermId, TermId)) -> Vec<(i128, DerivationId)> {
+        let mut candidates = self.get(pair.0, pair.1).into_iter().collect::<Vec<_>>();
+        if let Some(extra) = self.extra.get(&pair) {
+            candidates.extend(extra.iter().copied());
+        }
+        candidates
+    }
+
+    /// Whether any candidate of `pair` satisfies `test`.
+    fn any_candidate(
+        &self,
+        pair: (TermId, TermId),
+        mut test: impl FnMut((i128, DerivationId)) -> bool,
+    ) -> bool {
+        self.get(pair.0, pair.1).is_some_and(&mut test)
+            || self
+                .extra
+                .get(&pair)
+                .is_some_and(|extra| extra.iter().copied().any(test))
+    }
+
+    /// Replaces a pair's candidates, selecting the smallest bound and then the
+    /// better proof in candidate order; an empty list removes the pair.
+    fn store_candidates(
+        &mut self,
+        pair: (TermId, TermId),
+        candidates: Vec<(i128, DerivationId)>,
+        ledger: &DerivationLedger,
+    ) {
+        let selected = candidates
+            .iter()
+            .copied()
+            .enumerate()
+            .reduce(|current, candidate| {
+                if candidate.1.0 < current.1.0
+                    || (candidate.1.0 == current.1.0 && ledger.better(candidate.1.1, current.1.1))
+                {
+                    candidate
+                } else {
+                    current
+                }
+            });
+        let Some((position, (bound, proof))) = selected else {
+            self.clear(pair);
+            return;
+        };
+        self.reserve(pair.0.0.max(pair.1.0) as usize + 1);
+        let index = self
+            .index(pair.0, pair.1)
+            .expect("store reserved for the pair");
+        if !self.present[index] {
+            self.live += 1;
+        }
+        self.bounds[index] = bound;
+        self.proofs[index] = proof;
+        self.present[index] = true;
+        let rest = candidates
+            .into_iter()
+            .enumerate()
+            .filter(|(index, _)| *index != position)
+            .map(|(_, candidate)| candidate)
+            .collect::<Vec<_>>();
+        if rest.is_empty() {
+            self.extra.remove(&pair);
+        } else {
+            self.extra.insert(pair, rest);
+        }
+    }
+
+    /// Selects a pair's only candidate.
+    fn store_single(&mut self, left: TermId, right: TermId, bound: i128, proof: DerivationId) {
+        self.reserve(left.0.max(right.0) as usize + 1);
+        let index = self
+            .index(left, right)
+            .expect("store reserved for the pair");
+        if !self.present[index] {
+            self.live += 1;
+        }
+        self.bounds[index] = bound;
+        self.proofs[index] = proof;
+        self.present[index] = true;
+        self.extra.remove(&(left, right));
+    }
+
+    fn clear(&mut self, pair: (TermId, TermId)) {
+        if let Some(index) = self.index(pair.0, pair.1)
+            && self.present[index]
+        {
+            self.present[index] = false;
+            self.live -= 1;
+        }
+        self.extra.remove(&pair);
+    }
+}
+
 /// A remembered closure of one fact state.
 #[derive(Clone)]
 struct ClosedView {
@@ -2261,13 +2439,7 @@ pub(crate) struct FactState {
     /// the flag sets this handle at the same time.
     pub(crate) contradiction: Option<DerivationId>,
     /// Live difference bounds `left - right <= bound`, smallest bound kept.
-    pub(crate) bounds: Rc<WordHashMap<(TermId, TermId), i128>>,
-    pub(crate) bound_proofs: Rc<WordHashMap<(TermId, TermId), DerivationId>>,
-    /// Every independently live proof of a directed bound. `bounds` and
-    /// `bound_proofs` remain the canonical query cache; retaining the other
-    /// candidates lets an S12-only holder invalidation expose an ordinary
-    /// fallback instead of deleting the relation wholesale.
-    bound_candidates: Rc<WordHashMap<(TermId, TermId), Candidates<(i128, DerivationId)>>>,
+    pub(crate) bounds: Rc<BoundStore>,
     /// Live disequalities, stored with ordered term pair.
     pub(crate) distinct: Rc<WordHashSet<(TermId, TermId)>>,
     pub(crate) distinct_proofs: Rc<WordHashMap<(TermId, TermId), DerivationId>>,
@@ -2306,8 +2478,6 @@ impl FactState {
             all_derivable: false,
             contradiction: None,
             bounds: Rc::default(),
-            bound_proofs: Rc::default(),
-            bound_candidates: Rc::default(),
             distinct: Rc::default(),
             distinct_proofs: Rc::default(),
             distinct_candidates: Rc::default(),
@@ -2376,9 +2546,9 @@ impl FactState {
             return self.contradiction;
         }
         self.bounds
-            .get(&(left, right))
-            .is_some_and(|held| *held <= requested)
-            .then(|| self.bound_proofs[&(left, right)])
+            .get(left, right)
+            .filter(|(held, _)| *held <= requested)
+            .map(|(_, proof)| proof)
     }
 
     pub(crate) fn establish(
@@ -2473,20 +2643,10 @@ impl FactState {
         if self.all_derivable {
             return Vec::new();
         }
-        let mut bounds = self.bounds.keys().copied().collect::<Vec<_>>();
-        bounds.sort_unstable();
-        let mut relations = bounds
-            .into_iter()
-            .map(|(left, right)| {
-                (
-                    Relation::Bound {
-                        left,
-                        right,
-                        bound: self.bounds[&(left, right)],
-                    },
-                    self.bound_proofs[&(left, right)],
-                )
-            })
+        let mut relations = self
+            .bounds
+            .cells()
+            .map(|(left, right, bound, proof)| (Relation::Bound { left, right, bound }, proof))
             .collect::<Vec<_>>();
         let mut distinct = self.distinct.iter().copied().collect::<Vec<_>>();
         distinct.sort_unstable();
@@ -2551,10 +2711,11 @@ impl FactState {
     }
 
     fn selected_relations_depend_on_postcondition_call(&self, ledger: &DerivationLedger) -> bool {
-        self.bound_proofs
-            .values()
-            .chain(self.distinct_proofs.values())
-            .any(|proof| ledger.depends_on_postcondition_call(*proof))
+        self.bounds
+            .cells()
+            .map(|(_, _, _, proof)| proof)
+            .chain(self.distinct_proofs.values().copied())
+            .any(|proof| ledger.depends_on_postcondition_call(proof))
     }
 
     fn add_bound(
@@ -2571,13 +2732,11 @@ impl FactState {
             self.ordinary_closure.mark_fresh_cell((left, right));
         }
         let pair = (left, right);
-        let candidates = Rc::make_mut(&mut self.bound_candidates)
-            .entry(pair)
-            .or_default();
+        let mut candidates = self.bounds.candidates(pair);
         if !candidates.contains(&(bound, proof)) {
             candidates.push((bound, proof));
         }
-        self.select_bound_candidate(pair, ledger);
+        Rc::make_mut(&mut self.bounds).store_candidates(pair, candidates, ledger);
     }
 
     fn add_distinct_candidate(
@@ -2600,28 +2759,6 @@ impl FactState {
             candidates.push(proof);
         }
         self.select_distinct_candidate(pair, ledger);
-    }
-
-    fn select_bound_candidate(&mut self, pair: (TermId, TermId), ledger: &DerivationLedger) {
-        let selected = self.bound_candidates.get(&pair).and_then(|candidates| {
-            candidates.iter().copied().reduce(|current, candidate| {
-                if candidate.0 < current.0
-                    || (candidate.0 == current.0 && ledger.better(candidate.1, current.1))
-                {
-                    candidate
-                } else {
-                    current
-                }
-            })
-        });
-        if let Some((bound, proof)) = selected {
-            Rc::make_mut(&mut self.bounds).insert(pair, bound);
-            Rc::make_mut(&mut self.bound_proofs).insert(pair, proof);
-        } else {
-            Rc::make_mut(&mut self.bounds).remove(&pair);
-            Rc::make_mut(&mut self.bound_proofs).remove(&pair);
-            Rc::make_mut(&mut self.bound_candidates).remove(&pair);
-        }
     }
 
     fn select_distinct_candidate(&mut self, pair: (TermId, TermId), ledger: &DerivationLedger) {
@@ -2674,9 +2811,9 @@ impl FactState {
         };
         let dead: Vec<(TermId, TermId)> = self
             .bounds
-            .keys()
-            .filter(|(left, right)| killed(*left) || killed(*right))
-            .copied()
+            .cells()
+            .filter(|(left, right, _, _)| killed(*left) || killed(*right))
+            .map(|(left, right, _, _)| (left, right))
             .collect();
         let mut dead_terms = dead
             .iter()
@@ -2694,10 +2831,11 @@ impl FactState {
             self.closure.mark_fresh_term(term);
             self.ordinary_closure.mark_fresh_term(term);
         }
-        for pair in dead {
-            Rc::make_mut(&mut self.bounds).remove(&pair);
-            Rc::make_mut(&mut self.bound_proofs).remove(&pair);
-            Rc::make_mut(&mut self.bound_candidates).remove(&pair);
+        if !dead.is_empty() {
+            let bounds = Rc::make_mut(&mut self.bounds);
+            for pair in dead {
+                bounds.clear(pair);
+            }
         }
         // Shared relation maps are copied only when this kill changes them.
         if self
@@ -2740,16 +2878,15 @@ impl FactState {
         // Only pairs with a removed candidate are touched, so shared relation
         // maps are copied only when a candidate actually dies.
         let bound_pairs = self
-            .bound_candidates
-            .iter()
-            .filter(|(pair, candidates)| {
-                candidates
-                    .iter()
-                    .any(|(_, proof)| killed(pair.0, pair.1, *proof))
+            .bounds
+            .cells()
+            .map(|(left, right, _, _)| (left, right))
+            .filter(|pair| {
+                self.bounds
+                    .any_candidate(*pair, |(_, proof)| killed(pair.0, pair.1, proof))
             })
-            .map(|(pair, _)| *pair)
             .collect::<Vec<_>>();
-        let ordinary_bound = |candidates: &Candidates<(i128, DerivationId)>| {
+        let ordinary_bound = |candidates: &[(i128, DerivationId)]| {
             candidates
                 .iter()
                 .filter(|(_, proof)| !ledger.depends_on_postcondition_call(*proof))
@@ -2758,22 +2895,17 @@ impl FactState {
         };
         let mut ordinary_weakened = Vec::new();
         for pair in bound_pairs {
-            let candidates = Rc::make_mut(&mut self.bound_candidates)
-                .get_mut(&pair)
-                .expect("candidate key came from the same map");
-            let ordinary_before = ordinary_bound(candidates);
-            let before = candidates.len();
+            let mut candidates = self.bounds.candidates(pair);
+            let ordinary_before = ordinary_bound(&candidates);
+            let held = self.bounds.get(pair.0, pair.1).map(|(bound, _)| bound);
             candidates.retain(|(_, proof)| !killed(pair.0, pair.1, *proof));
-            if ordinary_bound(candidates) != ordinary_before {
+            if ordinary_bound(&candidates) != ordinary_before {
                 ordinary_weakened.push(pair);
             }
-            if candidates.len() != before {
-                changed = true;
-                let held = self.bounds.get(&pair).copied();
-                self.select_bound_candidate(pair, ledger);
-                if self.bounds.get(&pair).copied() != held {
-                    weakened.push(pair);
-                }
+            changed = true;
+            Rc::make_mut(&mut self.bounds).store_candidates(pair, candidates, ledger);
+            if self.bounds.get(pair.0, pair.1).map(|(bound, _)| bound) != held {
+                weakened.push(pair);
             }
         }
         let distinct_pairs = self
@@ -2842,16 +2974,22 @@ impl FactState {
         let needs_fallback = |proof: Option<&DerivationId>| {
             proof.is_none_or(|proof| ledger.depends_on_postcondition_call(*proof))
         };
-        let mut bound_pairs = other
-            .bound_candidates
-            .keys()
-            .copied()
-            .filter(|pair| needs_fallback(self.bound_proofs.get(pair)))
+        let bound_pairs = other
+            .bounds
+            .cells()
+            .map(|(left, right, _, _)| (left, right))
+            .filter(|pair| {
+                needs_fallback(
+                    self.bounds
+                        .get(pair.0, pair.1)
+                        .map(|(_, proof)| proof)
+                        .as_ref(),
+                )
+            })
             .collect::<Vec<_>>();
-        bound_pairs.sort_unstable();
         for pair in bound_pairs {
-            for (bound, proof) in &other.bound_candidates[&pair] {
-                self.add_bound(pair.0, pair.1, *bound, *proof, ledger);
+            for (bound, proof) in other.bounds.candidates(pair) {
+                self.add_bound(pair.0, pair.1, bound, proof, ledger);
             }
         }
         let mut distinct_pairs = other
@@ -3596,7 +3734,7 @@ pub(crate) fn contradiction_without_proofs(
             *cell = Some(bound);
         }
     };
-    for (&(left, right), &bound) in state.bounds.iter() {
+    for (left, right, bound, _) in state.bounds.cells() {
         insert(&mut bounds, left, right, bound);
     }
     for id in terms.ids() {
@@ -3765,12 +3903,7 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
         let mut closed = ClosedState {
             all_derivable: false,
             contradiction: None,
-            matrix: DenseClosureBounds::from_maps(
-                term_count,
-                &state.bounds,
-                &state.bound_proofs,
-                ledger,
-            ),
+            matrix: DenseClosureBounds::from_store(term_count, &state.bounds, ledger),
             distinct: (*state.distinct).clone(),
             distinct_proofs: (*state.distinct_proofs).clone(),
             opaque: state.opaque.clone(),
@@ -3794,8 +3927,7 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
     // maps once from the settled matrix keeps their exact content while
     // dropping one hashed pair insert per accepted candidate, of which
     // `tests/programs/wfgrep.wf` accepts eighteen million.
-    let mut dense_bounds =
-        DenseClosureBounds::from_maps(term_count, &state.bounds, &state.bound_proofs, ledger);
+    let mut dense_bounds = DenseClosureBounds::from_store(term_count, &state.bounds, ledger);
     // A closed core seeds the fixed point: its cells start stale, so the first
     // round visits only triples through a fresh cell, and a candidate must
     // strictly lower a bound. Equal-bound candidates would replace the core's
@@ -4051,8 +4183,7 @@ fn insert_fresh_edges<P: ClosureProofs>(
         return None;
     }
     let width = term_count;
-    let mut dense =
-        DenseClosureBounds::from_maps(width, &state.bounds, &state.bound_proofs, ledger);
+    let mut dense = DenseClosureBounds::from_store(width, &state.bounds, ledger);
     let mut distinct = (*state.distinct).clone();
     let mut distinct_proofs = (*state.distinct_proofs).clone();
 
@@ -4472,7 +4603,7 @@ fn closure_middle_terms(
         }
     };
     admit(ZERO, &mut active);
-    for &(left, right) in state.bounds.keys() {
+    for (left, right, _, _) in state.bounds.cells() {
         admit(left, &mut active);
         admit(right, &mut active);
     }
@@ -4615,18 +4746,9 @@ impl ClosureRowSummary {
 }
 
 impl DenseClosureBounds {
-    fn from_maps(
-        dimension: usize,
-        bounds: &WordHashMap<(TermId, TermId), i128>,
-        proofs: &WordHashMap<(TermId, TermId), DerivationId>,
-        ledger: &impl ClosureProofs,
-    ) -> Self {
+    fn from_store(dimension: usize, store: &BoundStore, ledger: &impl ClosureProofs) -> Self {
         let mut dense = Self::new(dimension);
-        for (&(left, right), &bound) in bounds {
-            let proof = proofs
-                .get(&(left, right))
-                .copied()
-                .expect("every live ENT bound has a proof");
+        for (left, right, bound, proof) in store.cells() {
             dense.set(left, right, bound, proof, ledger.depth(proof));
         }
         dense
@@ -5101,15 +5223,10 @@ pub(crate) fn materialize_closure_at(
         };
     }
     let needs_ordinary_fallback = closed.selected_relations_depend_on_postcondition_call(ledger);
-    let capacity = closed.matrix.live;
-    let mut bounds = HashMap::with_capacity_and_hasher(capacity, WordHashBuilder);
-    let mut bound_proofs = HashMap::with_capacity_and_hasher(capacity, WordHashBuilder);
-    let mut bound_candidates = HashMap::with_capacity_and_hasher(capacity, WordHashBuilder);
+    let mut bounds = BoundStore::with_terms(terms.ids().count());
     for (left, right, bound, parent) in closed.matrix.cells() {
         let proof = materialized_bound_proof(ledger, left, right, bound, event, parent);
-        bounds.insert((left, right), bound);
-        bound_proofs.insert((left, right), proof);
-        bound_candidates.insert((left, right), Candidates::One((bound, proof)));
+        bounds.store_single(left, right, bound, proof);
     }
     let mut distinct_proofs = HashMap::default();
     let mut distinct_keys: Vec<_> = closed.distinct.iter().copied().collect();
@@ -5146,8 +5263,6 @@ pub(crate) fn materialize_closure_at(
         all_derivable: false,
         contradiction: None,
         bounds: Rc::new(bounds),
-        bound_proofs: Rc::new(bound_proofs),
-        bound_candidates: Rc::new(bound_candidates),
         distinct: Rc::new(closed.distinct.clone()),
         distinct_proofs: Rc::new(distinct_proofs),
         distinct_candidates: Rc::new(distinct_candidates),
@@ -5176,7 +5291,11 @@ pub(crate) fn materialize_closure_at(
         // without such calls, so it already equals the ordinary closure, which
         // has fewer facts and cannot be stronger.
         for (left, right, bound, parent) in ordinary_closed.matrix.cells() {
-            if !ledger.depends_on_postcondition_call(materialized.bound_proofs[&(left, right)]) {
+            let (_, selected) = materialized
+                .bounds
+                .get(left, right)
+                .expect("the ordinary closure is no stronger than the canonical one");
+            if !ledger.depends_on_postcondition_call(selected) {
                 continue;
             }
             let proof = materialized_bound_proof(ledger, left, right, bound, event, parent);
@@ -5299,8 +5418,7 @@ fn join_at_once(
         };
     };
     let first = &closed[first_index];
-    let mut bounds = HashMap::default();
-    let mut bound_proofs = HashMap::default();
+    let mut bounds = BoundStore::with_terms(terms.ids().count());
     for (left, right, bound, shared) in first.matrix.cells() {
         let pair = (left, right);
         let mut weakest = bound;
@@ -5321,8 +5439,7 @@ fn join_at_once(
             // A proof every predecessor already selected holds on every
             // incoming path, so it is itself a derivation of the joined fact.
             if contributing.len() == closed.len() && same_proof {
-                bounds.insert(pair, bound);
-                bound_proofs.insert(pair, shared);
+                bounds.store_single(left, right, bound, shared);
                 continue;
             }
             let mut parents = Vec::with_capacity(states.len());
@@ -5349,8 +5466,7 @@ fn join_at_once(
                 event,
                 parents,
             });
-            bounds.insert(pair, weakest);
-            bound_proofs.insert(pair, proof);
+            bounds.store_single(pair.0, pair.1, weakest, proof);
         }
     }
     let mut distinct = first.distinct.clone();
@@ -5464,10 +5580,6 @@ fn join_at_once(
         });
         ambiguous_goal_origins.retain(|binding| state.ambiguous_goal_origins.contains(binding));
     }
-    let bound_candidates = bound_proofs
-        .iter()
-        .map(|(pair, proof)| (*pair, Candidates::One((bounds[pair], *proof))))
-        .collect();
     let distinct_candidates = distinct_proofs
         .iter()
         .map(|(pair, proof)| (*pair, Candidates::One(*proof)))
@@ -5479,8 +5591,6 @@ fn join_at_once(
         all_derivable: false,
         contradiction: None,
         bounds: Rc::new(bounds),
-        bound_proofs: Rc::new(bound_proofs),
-        bound_candidates: Rc::new(bound_candidates),
         distinct: Rc::new(distinct),
         distinct_proofs: Rc::new(distinct_proofs),
         distinct_candidates: Rc::new(distinct_candidates),
@@ -5891,8 +6001,11 @@ pub(crate) mod tests {
         materialize_closure_before_kill(&mut state, &terms, &GoalTable::default(), &mut ledger);
         state.kill(|term| term == middle);
 
-        assert_eq!(state.bounds.get(&(x, ceiling)), Some(&0));
-        let proof = state.bound_proofs[&(x, ceiling)];
+        assert_eq!(
+            state.bounds.get(x, ceiling).map(|(bound, _)| bound),
+            Some(0)
+        );
+        let proof = state.bounds.get(x, ceiling).expect("bound present").1;
         assert!(matches!(
             ledger.nodes[proof.0 as usize],
             DerivationNode::MaterializedBound {
@@ -5905,8 +6018,8 @@ pub(crate) mod tests {
         assert!(
             state
                 .bounds
-                .keys()
-                .all(|(left, right)| *left != middle && *right != middle),
+                .cells()
+                .all(|(left, right, _, _)| left != middle && right != middle),
             "the killed endpoint itself must not survive pre-kill closure"
         );
     }
@@ -5952,11 +6065,11 @@ pub(crate) mod tests {
         let second = ledger.event(FlowEventKind::Snapshot, None);
         let twice = materialize_closure_at(&once, &terms, &goals, &mut ledger, second);
 
-        assert_eq!(once.bounds[&(left, right)], 0);
-        assert_eq!(twice.bounds[&(left, right)], 0);
+        assert_eq!(once.bounds.get(left, right).expect("bound present").0, 0);
+        assert_eq!(twice.bounds.get(left, right).expect("bound present").0, 0);
         assert_eq!(
-            once.bound_proofs[&(left, right)],
-            twice.bound_proofs[&(left, right)],
+            once.bounds.get(left, right).expect("bound present").1,
+            twice.bounds.get(left, right).expect("bound present").1,
             "an unchanged bound keeps the materialization it already had"
         );
         assert_eq!(
@@ -6003,12 +6116,10 @@ pub(crate) mod tests {
         materialize_closure_before_kill(&mut state, &terms, &GoalTable::default(), &mut ledger);
         state.kill(|term| term == x || term == middle);
 
-        assert!(!state.bounds.contains_key(&(x, ceiling)));
-        assert!(
-            state.bounds.keys().all(|(left, right)| {
-                ![x, middle].contains(left) && ![x, middle].contains(right)
-            })
-        );
+        assert!(state.bounds.get(x, ceiling).is_none());
+        assert!(state.bounds.cells().all(|(left, right, _, _)| {
+            ![x, middle].contains(&left) && ![x, middle].contains(&right)
+        }));
     }
 
     #[test]
@@ -6052,8 +6163,8 @@ pub(crate) mod tests {
         materialize_closure_before_kill(&mut state, &terms, &GoalTable::default(), &mut ledger);
         state.kill(|term| term == middle);
 
-        assert_eq!(state.bounds.get(&(x, ZERO)), Some(&2));
-        let proof = state.bound_proofs[&(x, ZERO)];
+        assert_eq!(state.bounds.get(x, ZERO).map(|(bound, _)| bound), Some(2));
+        let proof = state.bounds.get(x, ZERO).expect("bound present").1;
         assert!(matches!(
             ledger.nodes[proof.0 as usize],
             DerivationNode::MaterializedBound {
@@ -6099,7 +6210,7 @@ pub(crate) mod tests {
         let source_event = ledger.event(FlowEventKind::S5, None);
         let mut state = FactState::new();
         state.establish(&ordinary, &mut ledger, source_event);
-        let ordinary_proof = state.bound_proofs[&pair];
+        let ordinary_proof = state.bounds.get(pair.0, pair.1).expect("bound present").1;
         assert!(!ledger.depends_on_postcondition_call(ordinary_proof));
         let call = ledger.intern(DerivationNode::PostconditionCall {
             detail: Box::new(PostconditionCallDetail {
@@ -6126,7 +6237,10 @@ pub(crate) mod tests {
         });
         assert!(ledger.depends_on_postcondition_call(call));
         state.establish_from_proof(&s12, call, &ledger);
-        assert_eq!(state.bounds[&pair], -1);
+        assert_eq!(
+            state.bounds.get(pair.0, pair.1).expect("bound present").0,
+            -1
+        );
 
         let snapshot_event = ledger.event(FlowEventKind::Snapshot, None);
         let mut materialized = materialize_closure_at(
@@ -6137,7 +6251,14 @@ pub(crate) mod tests {
             snapshot_event,
         );
         materialized.retain_non_postcondition_candidates(&ledger);
-        assert_eq!(materialized.bounds[&pair], 0);
+        assert_eq!(
+            materialized
+                .bounds
+                .get(pair.0, pair.1)
+                .expect("bound present")
+                .0,
+            0
+        );
 
         let join_event = ledger.event(FlowEventKind::Join, None);
         let mut joined = join_at(
@@ -6148,7 +6269,10 @@ pub(crate) mod tests {
             join_event,
         );
         joined.retain_non_postcondition_candidates(&ledger);
-        assert_eq!(joined.bounds[&pair], 0);
+        assert_eq!(
+            joined.bounds.get(pair.0, pair.1).expect("bound present").0,
+            0
+        );
 
         ledger.add_root(DerivationRootKind::BoundsObligation(0), ordinary_proof);
         ledger.add_root(DerivationRootKind::BoundsObligation(1), call);

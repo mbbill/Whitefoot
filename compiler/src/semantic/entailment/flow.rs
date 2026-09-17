@@ -11132,18 +11132,24 @@ impl Analyzer<'_, '_> {
             return;
         };
         let first = &images[first_index];
-        let mut bound_pairs = first.bounds.keys().copied().collect::<Vec<_>>();
-        bound_pairs.sort_unstable();
-        for pair in bound_pairs {
+        let bound_pairs = first
+            .bounds
+            .cells()
+            .map(|(left, right, bound, _)| ((left, right), bound))
+            .collect::<Vec<_>>();
+        for (pair, first_bound) in bound_pairs {
             if pair.0 != context.receiver && pair.1 != context.receiver {
                 continue;
             }
-            let mut weakest = first.bounds[&pair];
+            let mut weakest = first_bound;
             if !rest.iter().all(|index| {
-                images[*index].bounds.get(&pair).is_some_and(|bound| {
-                    weakest = weakest.max(*bound);
-                    true
-                })
+                images[*index]
+                    .bounds
+                    .get(pair.0, pair.1)
+                    .is_some_and(|(bound, _)| {
+                        weakest = weakest.max(bound);
+                        true
+                    })
             }) {
                 continue;
             }
@@ -11158,7 +11164,11 @@ impl Analyzer<'_, '_> {
                             .contradiction
                             .expect("contradictory delivery image has one proof")
                     } else {
-                        image.bound_proofs[&pair]
+                        image
+                            .bounds
+                            .get(pair.0, pair.1)
+                            .map(|(_, proof)| proof)
+                            .expect("every contributing delivery image holds the pair")
                     },
                 })
                 .collect::<Vec<_>>();
