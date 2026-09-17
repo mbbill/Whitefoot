@@ -2213,6 +2213,11 @@ pub(crate) struct FactState {
     /// over the current term universe may answer a query without closing
     /// again; a closed core lets the next closure start from its fresh part.
     closure: ClosureRecord,
+    /// The same record for the ordinary layer: the selection each pair would
+    /// have without any proof that depends on a postcondition call. Removing
+    /// every such candidate leaves exactly that layer, so the removal can
+    /// take this record instead of rederiving the weakened cells.
+    ordinary_closure: ClosureRecord,
     /// The loop rule's empty join: the contradictory all-derivable state, in
     /// which every relation is derivable and every fact is present. Z has
     /// empty support, so `Z - Z <= -1` never dies and the flag is absorbing
@@ -2262,6 +2267,7 @@ impl FactState {
     pub(crate) fn new() -> Self {
         Self {
             closure: ClosureRecord::Unknown,
+            ordinary_closure: ClosureRecord::Unknown,
             all_derivable: false,
             contradiction: None,
             bounds: Rc::default(),
@@ -2517,6 +2523,9 @@ impl FactState {
         ledger: &DerivationLedger,
     ) {
         self.closure.mark_fresh_cell((left, right));
+        if !ledger.depends_on_postcondition_call(proof) {
+            self.ordinary_closure.mark_fresh_cell((left, right));
+        }
         let pair = (left, right);
         let candidates = Rc::make_mut(&mut self.bound_candidates)
             .entry(pair)
@@ -2535,6 +2544,10 @@ impl FactState {
     ) {
         self.closure.mark_fresh_cell(pair);
         self.closure.mark_fresh_cell((pair.1, pair.0));
+        if !ledger.depends_on_postcondition_call(proof) {
+            self.ordinary_closure.mark_fresh_cell(pair);
+            self.ordinary_closure.mark_fresh_cell((pair.1, pair.0));
+        }
         let candidates = Rc::make_mut(&mut self.distinct_candidates)
             .entry(pair)
             .or_default();
@@ -2623,6 +2636,7 @@ impl FactState {
         dead_terms.dedup();
         for term in dead_terms {
             self.closure.mark_fresh_term(term);
+            self.ordinary_closure.mark_fresh_term(term);
         }
         for pair in dead {
             Rc::make_mut(&mut self.bounds).remove(&pair);
@@ -2678,12 +2692,24 @@ impl FactState {
             })
             .map(|(pair, _)| *pair)
             .collect::<Vec<_>>();
+        let ordinary_bound = |candidates: &Candidates<(i128, DerivationId)>| {
+            candidates
+                .iter()
+                .filter(|(_, proof)| !ledger.depends_on_postcondition_call(*proof))
+                .map(|(bound, _)| *bound)
+                .min()
+        };
+        let mut ordinary_weakened = Vec::new();
         for pair in bound_pairs {
             let candidates = Rc::make_mut(&mut self.bound_candidates)
                 .get_mut(&pair)
                 .expect("candidate key came from the same map");
+            let ordinary_before = ordinary_bound(candidates);
             let before = candidates.len();
             candidates.retain(|(_, proof)| !killed(pair.0, pair.1, *proof));
+            if ordinary_bound(candidates) != ordinary_before {
+                ordinary_weakened.push(pair);
+            }
             if candidates.len() != before {
                 changed = true;
                 let held = self.bounds.get(&pair).copied();
@@ -2707,8 +2733,17 @@ impl FactState {
             let candidates = Rc::make_mut(&mut self.distinct_candidates)
                 .get_mut(&pair)
                 .expect("candidate key came from the same map");
+            let ordinary = |candidates: &Candidates<DerivationId>| {
+                candidates
+                    .iter()
+                    .any(|proof| !ledger.depends_on_postcondition_call(*proof))
+            };
+            let ordinary_before = ordinary(candidates);
             let before = candidates.len();
             candidates.retain(|proof| !killed(pair.0, pair.1, *proof));
+            if ordinary(candidates) != ordinary_before {
+                ordinary_weakened.push(pair);
+            }
             if candidates.len() != before {
                 changed = true;
                 self.select_distinct_candidate(pair, ledger);
@@ -2727,13 +2762,20 @@ impl FactState {
             self.closure.mark_weakened_cell((left, right));
             self.closure.mark_weakened_cell((right, left));
         }
+        for (left, right) in ordinary_weakened {
+            self.ordinary_closure.mark_weakened_cell((left, right));
+            self.ordinary_closure.mark_weakened_cell((right, left));
+        }
         changed
     }
 
     fn retain_non_postcondition_candidates(&mut self, ledger: &DerivationLedger) -> bool {
-        self.kill_proof_candidates(ledger, |_, _, proof| {
+        let changed = self.kill_proof_candidates(ledger, |_, _, proof| {
             ledger.depends_on_postcondition_call(proof)
-        })
+        });
+        // Every remaining selection is now its ordinary selection.
+        self.closure = self.ordinary_closure.clone();
+        changed
     }
 
     fn merge_relation_candidates_from(&mut self, other: &Self, ledger: &DerivationLedger) {
@@ -4978,6 +5020,7 @@ pub(crate) fn materialize_closure_at(
         .collect();
     let mut materialized = FactState {
         closure: ClosureRecord::closed(terms.ids().count()),
+        ordinary_closure: ClosureRecord::closed(terms.ids().count()),
         all_derivable: false,
         contradiction: None,
         bounds: Rc::new(bounds),
@@ -5023,6 +5066,11 @@ pub(crate) fn materialize_closure_at(
         }
     }
     materialized.closure = ClosureRecord::closed(terms.ids().count());
+    materialized.ordinary_closure = if ordinary_closed.all_derivable {
+        ClosureRecord::Unknown
+    } else {
+        ClosureRecord::closed(terms.ids().count())
+    };
     materialized
 }
 
@@ -5062,12 +5110,18 @@ pub(crate) fn join_at(
         removed_postcondition_candidate |= state.retain_non_postcondition_candidates(ledger);
     }
     if !removed_postcondition_candidate {
+        // A postcondition-dependent selection with no removable candidate
+        // gives the ordinary layer no closed selection to claim.
+        joined.ordinary_closure = ClosureRecord::Unknown;
         return joined;
     }
     let ordinary = join_at_once(&ordinary_states, terms, goals, ledger, event);
-    if !ordinary.all_derivable {
+    joined.ordinary_closure = if ordinary.all_derivable {
+        ClosureRecord::Unknown
+    } else {
         joined.merge_relation_candidates_from(&ordinary, ledger);
-    }
+        ClosureRecord::closed(terms.ids().count())
+    };
     joined.closure = ClosureRecord::closed(terms.ids().count());
     joined
 }
@@ -5286,6 +5340,7 @@ fn join_at_once(
         .collect();
     FactState {
         closure: ClosureRecord::closed(terms.ids().count()),
+        ordinary_closure: ClosureRecord::closed(terms.ids().count()),
         all_derivable: false,
         contradiction: None,
         bounds: Rc::new(bounds),
