@@ -3358,12 +3358,13 @@ fn close_with_excluded_term(
     ledger: &mut DerivationLedger,
     excluded: Option<TermId>,
 ) -> ClosedState {
-    close_with_row_pruning::<true>(state, terms, goals, ledger, excluded)
+    close_with_row_pruning::<true, false>(state, terms, goals, ledger, excluded)
 }
 
-/// One closure implementation; tests instantiate the unpruned traversal to
-/// compare its complete facts and selected derivations with row pruning.
-fn close_with_row_pruning<const PRUNE_ROWS: bool>(
+/// One closure implementation; tests instantiate the unpruned traversal and
+/// the reference product loop to compare their complete facts and selected
+/// derivations with the ordinary pruned, contiguous traversal.
+fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>(
     state: &FactState,
     terms: &TermTable,
     goals: &GoalTable,
@@ -3495,66 +3496,23 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool>(
             {
                 continue;
             }
-            for left in incoming {
-                let (first, first_proof) = dense_bounds
-                    .get(left, *middle)
-                    .expect("incoming closure key collected above");
-                // These summaries can only prove that every scalar candidate
-                // below would fail its existing numeric/depth comparison. A
-                // missing destination cell or an equal-depth tie keeps the
-                // original traversal, including its diagnostic selection.
-                if PRUNE_ROWS
-                    && dense_bounds.product_cannot_improve(
-                        left,
-                        *middle,
-                        first,
-                        ledger.depth(first_proof),
-                    )
-                {
-                    continue;
-                }
-                for right in &outgoing {
-                    if !dense_bounds.fresh(left, *middle) && !dense_bounds.fresh(*middle, *right) {
-                        continue;
-                    }
-                    let (second, second_proof) = dense_bounds
-                        .get(*middle, *right)
-                        .expect("outgoing closure key collected above");
-                    let via = first.saturating_add(second);
-                    if let Some((current_bound, current_proof)) = dense_bounds.get(left, *right) {
-                        if via > current_bound {
-                            continue;
-                        }
-                        if via == current_bound {
-                            let candidate_depth = ledger
-                                .depth(first_proof)
-                                .max(ledger.depth(second_proof))
-                                .saturating_add(1);
-                            if candidate_depth > ledger.depth(current_proof) {
-                                continue;
-                            }
-                        }
-                    }
-                    let node = DerivationNode::TransitiveBound {
-                        left,
-                        middle: *middle,
-                        right: *right,
-                        bound: via,
-                        first: first_proof,
-                        second: second_proof,
-                    };
-                    changed |= insert_closed_candidate(
-                        &mut dense_bounds,
-                        ClosedBoundCandidate {
-                            left,
-                            right: *right,
-                            bound: via,
-                            node,
-                        },
-                        ledger,
-                    );
-                }
-            }
+            changed |= if REFERENCE_PRODUCT {
+                reference_middle_products::<PRUNE_ROWS>(
+                    &mut dense_bounds,
+                    *middle,
+                    &incoming,
+                    &outgoing,
+                    ledger,
+                )
+            } else {
+                middle_products::<PRUNE_ROWS>(
+                    &mut dense_bounds,
+                    *middle,
+                    &incoming,
+                    &outgoing,
+                    ledger,
+                )
+            };
         }
         // ENT-4 makes every strict bound a disequality in either
         // orientation. Retain that derived fact in this same fixed point so
@@ -3788,7 +3746,16 @@ struct ClosedBoundCandidate {
 /// facts or proofs.
 struct DenseClosureBounds {
     dimension: usize,
-    cells: Vec<Option<ClosedCell>>,
+    /// Row-major cells. A bound or proof is meaningful only where `stamps`
+    /// marks the cell live; the transitivity cube reads the three columns of
+    /// each probed cell from contiguous rows.
+    bounds: Vec<i128>,
+    proofs: Vec<DerivationId>,
+    /// Zero for an absent cell, otherwise one more than the fixed-point round
+    /// in which the cell last changed. Round zero covers both a cell carried
+    /// in from the state and one an implicit fact established before the
+    /// first round, which is what makes round 1 complete.
+    stamps: Vec<u32>,
     rows: Vec<ClosureRowSummary>,
     live: usize,
     round: u32,
@@ -3847,18 +3814,6 @@ type ClosedBoundMaps = (
     HashMap<(TermId, TermId), DerivationId>,
 );
 
-/// One live cell of the closure matrix. Bound, proof and freshness stamp sit
-/// together because the transitivity cube reads all three of a cell at once.
-#[derive(Clone, Copy)]
-struct ClosedCell {
-    bound: i128,
-    proof: DerivationId,
-    /// Fixed-point round in which the cell last changed. Zero covers both a
-    /// cell carried in from the state and one an implicit fact established
-    /// before the first round, which is what makes round 1 complete.
-    changed_in: u32,
-}
-
 impl DenseClosureBounds {
     fn from_maps(
         dimension: usize,
@@ -3871,7 +3826,9 @@ impl DenseClosureBounds {
             .expect("ENT closure matrix exceeds the address space");
         let mut dense = Self {
             dimension,
-            cells: vec![None; count],
+            bounds: vec![0; count],
+            proofs: vec![DerivationId(0); count],
+            stamps: vec![0; count],
             rows: vec![ClosureRowSummary::default(); dimension],
             live: 0,
             round: 0,
@@ -3894,7 +3851,8 @@ impl DenseClosureBounds {
     /// later. Every cell reports fresh in round 1, so the first pass over the
     /// transitivity cube is the complete one.
     fn fresh(&self, left: TermId, right: TermId) -> bool {
-        self.cells[self.index(left, right)].is_none_or(|cell| cell.changed_in + 1 >= self.round)
+        let stamp = self.stamps[self.index(left, right)];
+        stamp == 0 || stamp >= self.round
     }
 
     fn index(&self, left: TermId, right: TermId) -> usize {
@@ -3905,7 +3863,8 @@ impl DenseClosureBounds {
     }
 
     fn get(&self, left: TermId, right: TermId) -> Option<(i128, DerivationId)> {
-        self.cells[self.index(left, right)].map(|cell| (cell.bound, cell.proof))
+        let index = self.index(left, right);
+        (self.stamps[index] != 0).then(|| (self.bounds[index], self.proofs[index]))
     }
 
     fn product_cannot_improve(
@@ -3925,16 +3884,17 @@ impl DenseClosureBounds {
 
     fn set(&mut self, left: TermId, right: TermId, bound: i128, proof: DerivationId, depth: u32) {
         let index = self.index(left, right);
-        let new_cell = self.cells[index].is_none();
+        let new_cell = self.stamps[index] == 0;
         if new_cell {
             self.live += 1;
         }
         self.rows[left.0 as usize].observe(bound, depth, new_cell);
-        self.cells[index] = Some(ClosedCell {
-            bound,
-            proof,
-            changed_in: self.round,
-        });
+        self.bounds[index] = bound;
+        self.proofs[index] = proof;
+        self.stamps[index] = self
+            .round
+            .checked_add(1)
+            .expect("ENT closure rounds fit the u32 stamp space");
     }
 
     /// The settled matrix as the closed state's live bound and proof maps.
@@ -3945,21 +3905,173 @@ impl DenseClosureBounds {
     fn into_maps(self) -> ClosedBoundMaps {
         let mut bounds = HashMap::with_capacity(self.live);
         let mut proofs = HashMap::with_capacity(self.live);
-        for (index, cell) in self.cells.iter().enumerate() {
-            let Some(cell) = cell else {
+        for (index, stamp) in self.stamps.iter().enumerate() {
+            if *stamp == 0 {
                 continue;
-            };
+            }
             let left = TermId(
                 u32::try_from(index / self.dimension).expect("term index fits the u32 identity"),
             );
             let right = TermId(
                 u32::try_from(index % self.dimension).expect("term index fits the u32 identity"),
             );
-            bounds.insert((left, right), cell.bound);
-            proofs.insert((left, right), cell.proof);
+            bounds.insert((left, right), self.bounds[index]);
+            proofs.insert((left, right), self.proofs[index]);
         }
         (bounds, proofs)
     }
+}
+
+/// Offers every transitive candidate through one middle term, left rows in
+/// `incoming` order and right columns in `outgoing` order.
+///
+/// This is [`reference_middle_products`] over the matrix's contiguous rows:
+/// the same triples reach the same numeric and depth comparisons in the same
+/// order, and every one that survives them goes through
+/// `insert_closed_candidate`. Two facts let it read raw rows. The only cell
+/// of the middle row this loop can change is the one it has just visited, so
+/// each second premise and its freshness are current when read. And a left
+/// row's first premise is taken once, as the reference takes it; the
+/// reference re-reads only that premise's freshness, which changes within the
+/// row only when a negative middle diagonal improves the premise itself. The
+/// triples the reference then additionally visits pair the row's stale first
+/// premise with an unchanged second one, so each rebuilds a candidate an
+/// earlier round already offered against a conclusion that has only improved
+/// since, and is rejected without a ledger change; reading the freshness once
+/// skips exactly those triples.
+fn middle_products<const PRUNE_ROWS: bool>(
+    dense: &mut DenseClosureBounds,
+    middle: TermId,
+    incoming: &[TermId],
+    outgoing: &[TermId],
+    ledger: &mut DerivationLedger,
+) -> bool {
+    let width = dense.dimension;
+    let round = dense.round;
+    let middle_row = middle.0 as usize * width;
+    let mut changed = false;
+    for &left in incoming {
+        let left_row = left.0 as usize * width;
+        let first_cell = left_row + middle.0 as usize;
+        let first = dense.bounds[first_cell];
+        let first_proof = dense.proofs[first_cell];
+        let first_depth = ledger.depth(first_proof);
+        if PRUNE_ROWS && dense.product_cannot_improve(left, middle, first, first_depth) {
+            continue;
+        }
+        let first_fresh = dense.stamps[first_cell] >= round;
+        for &right in outgoing {
+            let column = right.0 as usize;
+            let second_cell = middle_row + column;
+            if !first_fresh && dense.stamps[second_cell] < round {
+                continue;
+            }
+            let via = first.saturating_add(dense.bounds[second_cell]);
+            let second_proof = dense.proofs[second_cell];
+            let current_cell = left_row + column;
+            if dense.stamps[current_cell] != 0 {
+                let current_bound = dense.bounds[current_cell];
+                if via > current_bound {
+                    continue;
+                }
+                if via == current_bound {
+                    let candidate_depth = first_depth
+                        .max(ledger.depth(second_proof))
+                        .saturating_add(1);
+                    if candidate_depth > ledger.depth(dense.proofs[current_cell]) {
+                        continue;
+                    }
+                }
+            }
+            let node = DerivationNode::TransitiveBound {
+                left,
+                middle,
+                right,
+                bound: via,
+                first: first_proof,
+                second: second_proof,
+            };
+            changed |= insert_closed_candidate(
+                dense,
+                ClosedBoundCandidate {
+                    left,
+                    right,
+                    bound: via,
+                    node,
+                },
+                ledger,
+            );
+        }
+    }
+    changed
+}
+
+/// The transitive product through one middle term, stated cell by cell.
+/// Tests compare its complete result with [`middle_products`].
+fn reference_middle_products<const PRUNE_ROWS: bool>(
+    dense: &mut DenseClosureBounds,
+    middle: TermId,
+    incoming: &[TermId],
+    outgoing: &[TermId],
+    ledger: &mut DerivationLedger,
+) -> bool {
+    let mut changed = false;
+    for &left in incoming {
+        let (first, first_proof) = dense
+            .get(left, middle)
+            .expect("incoming closure key collected above");
+        // These summaries can only prove that every scalar candidate
+        // below would fail its existing numeric/depth comparison. A
+        // missing destination cell or an equal-depth tie keeps the
+        // original traversal, including its diagnostic selection.
+        if PRUNE_ROWS
+            && dense.product_cannot_improve(left, middle, first, ledger.depth(first_proof))
+        {
+            continue;
+        }
+        for &right in outgoing {
+            if !dense.fresh(left, middle) && !dense.fresh(middle, right) {
+                continue;
+            }
+            let (second, second_proof) = dense
+                .get(middle, right)
+                .expect("outgoing closure key collected above");
+            let via = first.saturating_add(second);
+            if let Some((current_bound, current_proof)) = dense.get(left, right) {
+                if via > current_bound {
+                    continue;
+                }
+                if via == current_bound {
+                    let candidate_depth = ledger
+                        .depth(first_proof)
+                        .max(ledger.depth(second_proof))
+                        .saturating_add(1);
+                    if candidate_depth > ledger.depth(current_proof) {
+                        continue;
+                    }
+                }
+            }
+            let node = DerivationNode::TransitiveBound {
+                left,
+                middle,
+                right,
+                bound: via,
+                first: first_proof,
+                second: second_proof,
+            };
+            changed |= insert_closed_candidate(
+                dense,
+                ClosedBoundCandidate {
+                    left,
+                    right,
+                    bound: via,
+                    node,
+                },
+                ledger,
+            );
+        }
+    }
+    changed
 }
 
 fn insert_closed_candidate(
@@ -4493,7 +4605,7 @@ mod tests {
     }
 
     #[test]
-    fn row_pruning_preserves_complete_facts_and_selected_derivations() {
+    fn row_pruning_and_contiguous_products_preserve_complete_facts_and_selected_derivations() {
         let mut terms = TermTable::new();
         let places = [0, 1, 2, 3].map(|binding| {
             terms.intern(TermKind::Place(
@@ -4516,7 +4628,7 @@ mod tests {
             (1, 3),
             (3, 1),
         ];
-        for mask in 0_u32..256 {
+        for (mask, satisfiable) in (0_u32..256).flat_map(|mask| [(mask, true), (mask, false)]) {
             let mut ledger = DerivationLedger::default();
             let event = ledger.event(FlowEventKind::S1, None);
             let mut state = FactState::new();
@@ -4533,7 +4645,10 @@ mod tests {
                 // Each graph has this concrete model. Varied slack gives
                 // numeric improvements, equal paths and weak bounds that a
                 // disequality can strengthen in a subsequent round.
-                let slack = i128::from((mask + index as u32) % 3);
+                // The unsatisfiable variant lowers some slack below zero, so
+                // negative cycles and contradictory diagonals arise mid-traversal.
+                let slack = i128::from((mask + index as u32) % 3)
+                    - if satisfiable { 0 } else { i128::from(mask % 4) };
                 state.establish_bound_with_proof(
                     places[left],
                     places[right],
@@ -4545,37 +4660,49 @@ mod tests {
             state.establish_distinct_with_proof(places[0], places[1], &mut ledger, event);
             for excluded in [None, Some(places[2])] {
                 let mut original_ledger = ledger.clone();
-                let mut pruned_ledger = ledger.clone();
-                let original = close_with_row_pruning::<false>(
+                let original = close_with_row_pruning::<false, true>(
                     &state,
                     &terms,
                     &GoalTable::default(),
                     &mut original_ledger,
                     excluded,
                 );
-                let pruned = close_with_row_pruning::<true>(
-                    &state,
-                    &terms,
-                    &GoalTable::default(),
-                    &mut pruned_ledger,
-                    excluded,
-                );
-                assert!(
-                    !original.all_derivable,
-                    "generated graph {mask} has a model"
-                );
-                assert_eq!(pruned.all_derivable, original.all_derivable);
-                assert_eq!(pruned.contradiction, original.contradiction);
-                assert_eq!(pruned.bounds, original.bounds);
-                assert_eq!(pruned.bound_proofs, original.bound_proofs);
-                assert_eq!(pruned.distinct, original.distinct);
-                assert_eq!(pruned.distinct_proofs, original.distinct_proofs);
-                assert_eq!(pruned.opaque, original.opaque);
-                assert_eq!(pruned.opaque_proofs, original.opaque_proofs);
-                assert_eq!(
-                    pruned_ledger, original_ledger,
-                    "graph {mask}, excluded {excluded:?}"
-                );
+                if satisfiable {
+                    assert!(
+                        !original.all_derivable,
+                        "generated graph {mask} has a model"
+                    );
+                }
+                for (prune, reference) in [(false, false), (true, true), (true, false)] {
+                    let mut candidate_ledger = ledger.clone();
+                    let close = match (prune, reference) {
+                        (false, false) => close_with_row_pruning::<false, false>,
+                        (true, true) => close_with_row_pruning::<true, true>,
+                        _ => close_with_row_pruning::<true, false>,
+                    };
+                    let candidate = close(
+                        &state,
+                        &terms,
+                        &GoalTable::default(),
+                        &mut candidate_ledger,
+                        excluded,
+                    );
+                    let label = format!(
+                        "graph {mask}/{satisfiable}, excluded {excluded:?}, pruned {prune}, reference {reference}"
+                    );
+                    assert_eq!(candidate.all_derivable, original.all_derivable, "{label}");
+                    assert_eq!(candidate.contradiction, original.contradiction, "{label}");
+                    assert_eq!(candidate.bounds, original.bounds, "{label}");
+                    assert_eq!(candidate.bound_proofs, original.bound_proofs, "{label}");
+                    assert_eq!(candidate.distinct, original.distinct, "{label}");
+                    assert_eq!(
+                        candidate.distinct_proofs, original.distinct_proofs,
+                        "{label}"
+                    );
+                    assert_eq!(candidate.opaque, original.opaque, "{label}");
+                    assert_eq!(candidate.opaque_proofs, original.opaque_proofs, "{label}");
+                    assert_eq!(candidate_ledger, original_ledger, "{label}");
+                }
             }
         }
     }
