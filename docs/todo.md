@@ -75,21 +75,22 @@ of them is a decision. Remove an item when its fix and test land.
   unmeasured; these results establish neither linear total cost nor a
   universal cost for the full use ceiling.
   Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
-- **Pre-kill L0 closure has an unresolved compilation cost.** Before an
-  [ENT-5] invalidation batch, `materialize_before_event_kill` in
-  [`semantic/entailment/flow.rs`](../compiler/src/semantic/entailment/flow.rs)
-  calls `materialize_closure_before_kill` in
-  [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs).
-  A non-closed state with explicit relations takes the complete closure;
-  already-closed, contradictory, and empty-relation states have fast paths.
-  The [build/test investigation](../research/investigations/test-economy/build-and-test.md#a-compiler-hotspot-not-native-execution)
-  measures 58.29 s for one optimized read-heavy LLVM-only compilation; a
-  three-second semantic-checking sample puts 61.2% of leaf samples in
-  `close_with_excluded_term`. Whole-run attribution and a controlled algorithm
-  comparison remain necessary. A narrower projection must preserve every
-  surviving consequence,
-  including implicit type edges and disequality strengthening; filtering
-  explicit edges alone is insufficient. No speedup is established.
+- **Complete L0 closure recomputation dominates real-program checking.**
+  Before an [ENT-5] kill batch, at every join predecessor, and for queries,
+  [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs)
+  recomputes the complete cubic closure over the function's term universe,
+  and a postcondition-dependent selection closes a second time for its
+  ordinary fallback. Materialization leaves nearly full matrices, so almost
+  every term becomes a middle. In the
+  [flow selection](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#flow-selection-2026-09-16),
+  exact-output validation scope, product scans and hashing reduce
+  `fixed_run_library.wf` from 80.5 s to 24.9 s and `wfgrep.wf` from 40.5 s
+  to 24.7 s, but most of the remaining time is still closure recomputation.
+  A narrower projection must preserve every surviving consequence, including
+  implicit type edges and disequality strengthening. An incremental
+  persistent closure would also change which equal-bound, equal-depth
+  derivation is retained, so it needs a design decision before
+  implementation.
 - **Connection-level concurrency is not supplied by ordinary source order.**
   A loop that accepts and serves connections in source order
   completes the current handler before entering the next, so a handler waiting

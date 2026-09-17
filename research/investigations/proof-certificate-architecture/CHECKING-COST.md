@@ -616,6 +616,44 @@ value and re-interns a place term through the term table's SipHash-keyed
    regression beyond the protected-control clause. It must also keep LLVM
    output and tests unchanged.
 
+The same raw file carries the second comparison set: `c5r`, the promotion
+revert `d0ca0a86`, against `c6`, term hashing `3c4782a2`, followed by base
+against c6. Their binaries are:
+
+```text
+c5r 0367bd966e33536b2b4ccbb082d17ccfdd7a651879e2b26f3a0c64eca76bd800
+c6  4b929ae75412901c2589c63c788baf81631ea8a4f73ad2a3fc3d602e68c7764f
+```
+
+| Source | c5r→c6 | base→c6 |
+|---|---:|---:|
+| fixed-run | 24.54→24.41 s, 1.01x | 80.48→24.94 s, **3.23x** |
+| wfgrep | 24.22→24.15 s, 1.00x | 40.45→24.68 s, **1.64x** |
+| prefix | 1.00x | 178.3→121.8 ms, 1.46x |
+| histogram | 1.00x | 182.5→124.1 ms, 1.47x |
+| radix scatter | 1.01x | 1014.4→637.3 ms, 1.59x |
+| growing-64 | 111.9→80.3 ms, **1.39x** | 118.4→78.8 ms, 1.50x |
+| growing-256 | 5.24→3.18 s, **1.65x** | 5.37→3.19 s, 1.68x |
+| control-64 | 1.06x | 1.19x |
+| control-256 | 1.09x | 1.29x |
+
+Fixed-context cells and every 16-size cell stay within 4% in both
+comparisons. Term hashing meets its prediction and is selected. Reverting
+the promotion closure moved fixed-run and wfgrep from about 23.3 s to about
+24.2 s, which is its measured 1.04x.
+
+The base and c6 compilers emit byte-identical LLVM for all 22 measured
+sources: the five real programs, the generated fixtures and the warm-up
+sources. The final branch keeps validation scope, the contiguous and
+stale-column products, and both hashing changes. It removes neither a
+candidate family nor an acceptance rule. The remaining cost is still
+complete-closure recomputation, about 24 s for each of the two largest
+programs. A persistent closed representation, maintained incrementally
+across kills, joins and queries, would remove the dominant cubic
+recomputation. It would, however, change which equal-bound, equal-depth
+derivation is retained, so it is outside this follow-up's fixed-witness
+boundary and needs its own design decision.
+
 ## Reproduction and correctness boundary
 
 The native driver is
