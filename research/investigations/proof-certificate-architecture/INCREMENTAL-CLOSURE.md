@@ -233,12 +233,12 @@ one joined ordinary view retained `t <= 0` while the other retained only its
 type bound. A focused case now checks both ordinary and S12-derived
 contradictions, their retained parents, and the surviving ordinary bound.
 
-The original generated flows were temporarily instrumented to reach edge
-insertion with and without proofs, weakened-cell repair, the pass bound, the
-fallback for too many weakened cells, the seeded fixed point and the closed
-fast path. Separate mutants of the repair, column pass, row pass and zero-bound
-settle rule failed that test. These are historical checks, not retained
-per-route coverage assertions for the expanded generator.
+The expanded generator counts and requires every named route: remembered and
+already-closed views, unseeded and seeded fixed points, insertion with and
+without proofs, weakened-cell repair, and its size/pass-limit fallbacks.
+These counters exist only in test builds. Separate mutants of the repair,
+column pass, row pass and zero-bound settle rule failed the original generator;
+those mutation runs remain historical evidence.
 
 The raw DEFLATE chain (about 9 s), fixed_run_library (about 27 s) and wfgrep (about 30 s) were verified by temporary inclusion at every change, not in the committed tests.
 
@@ -293,3 +293,63 @@ In a full `make check` of `3edaf0ba`, the `WHITEFOOT_TEST_TIMINGS` phase log sum
 - per-event kill scans.
 
 Fixed-run spends most of that in fallback views; wfgrep in joins and edge insertion.
+
+### Retained-proof follow-up results
+
+The [follow-up pairs](../../experiments/proof-use-cost/incremental-refinement-pairs-2026-09-17.tsv)
+compare `3f205ff6` with `e598a887`, the production proof-preservation repairs.
+Both are Cargo `gate` compilers built with rustc 1.98.1 on the same macOS
+26.6.2 host. The host guard admitted one experiment, with no other Whitefoot
+build or test running. Five alternating warmed pairs cover the same 15-source
+inventory as the historical TSV; this is compiler execution through LLVM
+emission, with no clang invocation or native program execution.
+
+| Source | Before repairs | After repairs | Median change |
+|---|---:|---:|---:|
+| fixed-run | 1.181531 s | 1.207622 s | +2.21% |
+| wfgrep | 0.886768 s | 0.943300 s | +6.38% |
+| prefix | 24.107 ms | 23.966 ms | -0.58% |
+| histogram | 28.736 ms | 28.659 ms | -0.27% |
+| radix scatter | 70.939 ms | 71.189 ms | +0.35% |
+| growing-256 | 3.062684 s | 3.057336 s | -0.17% |
+| control-256 | 296.309 ms | 298.692 ms | +0.80% |
+
+No source exceeds the follow-up's 10% and 1 ms reporting threshold. The other
+eight fixtures range from -2.14% to +0.78%. All 150 rows accepted, and all
+15 LLVM byte sequences and per-arm SHA-256 digests agree across both compilers
+and all five pairs. The complete experiment, including building the small
+Rust runner and hashing outside the timed intervals, took 64.21 s. This does
+not repeat the historical PR #68 comparison or isolate each repair's cost.
+
+Compiler SHA-256:
+
+```text
+3f205ff6 bb758e599adb4b166db4e9010cba199148f0873474129746b9af696f003dea5a
+e598a887 7af36d04920150f72e173fd3444123b383bd4bba38b726358c8d265507ce196f
+```
+
+The three new proof-record tests and expanded generated-flow comparison all
+fail on the `3f205ff6` production implementation when given the new tests.
+They fail respectively at the missing join boundary, removable dependency
+through a neutral contradiction, missing ordinary delivery bound, and the
+ordinary-layer mismatch in generated case 262. A deliberately modified LLVM
+output also makes the comparison runner fail at pair zero rather than publish
+a timing-only success.
+
+One pre-existing defect remains separate: S12 holder kills lose field
+precision. The [normative acceptance case](../../../tests/conformance/cases/ent5-pos-postcondition-sibling-field-write.wf)
+keeps `observed == deref(pair).left` across a write to `pair.right`.
+The postcondition route fails at FN-8 in both compilers above, while its
+ordinary-read twin accepts. It is tracked in `docs/todo.md` and the conformance
+manifest as `xfail`, not recast as a language rejection. The follow-up does
+not claim universal acceptance equivalence in the presence of this older
+support-classification defect, nor a formal proof of the incremental engine.
+
+To reproduce, build the two pinned revisions with `--profile gate`, then run
+the existing `compare` target with `SIZES=16,64,256,4096` and `REAL_SOURCES`
+listing `tests/programs/compute/{prefix,histogram,radix_scatter}.wf`,
+`tests/programs/wfgrep.wf`, and `tests/programs/fixed_run_library.wf` as absolute
+paths. Set `BASELINE`, `CANDIDATE` and `WORK_ROOT` explicitly and run under
+`.github/run-check.pl`. The runner requires `shasum` for retained SHA-256
+evidence. Later test-only route counters and conformance evidence do not alter
+the measured production mechanisms.

@@ -75,10 +75,22 @@ of them is a decision. Remove an item when its fix and test land.
   unmeasured; these results establish neither linear total cost nor a
   universal cost for the full use ceiling.
   Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
+- **S12 holder kills are too broad at sibling-field writes.**
+  [The conformance case](../tests/conformance/cases/ent5-pos-postcondition-sibling-field-write.wf)
+  expects acceptance under ENT-5: `observed == deref(pair).left` has the same
+  support after a verified postcondition as after an ordinary read, and
+  writing `deref(pair).right` kills neither conclusion. Both `3f205ff6` and
+  the incremental-closure follow-up reject the postcondition route at FN-8
+  while accepting the ordinary twin. `s12_candidate_term_killed` checks each
+  holder's whole root against the write rather than its precise support.
+  The manifest retains the normative accept verdict as an `xfail`; repair
+  the holder-support classification and remove that status together.
 - **Ordinary-fallback views still copy a fact state per materialization.**
   After [incremental closure](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#selection),
-  `tests/programs/fixed_run_library.wf` checks in 1.16 s and `tests/programs/wfgrep.wf`
-  in 0.88 s. The largest remaining fixed-run cost is `materialize_closure_at` in
+  the [retained-proof follow-up](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#retained-proof-follow-up-results)
+  checks `tests/programs/fixed_run_library.wf` in 1.21 s and
+  `tests/programs/wfgrep.wf` in 0.94 s. The previously attributed largest
+  fixed-run cost is `materialize_closure_at` in
   [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs):
   whenever a selected proof depends on a postcondition call, it clones the
   state, removes the call-dependent candidates and closes that view again.

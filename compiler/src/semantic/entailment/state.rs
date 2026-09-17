@@ -3641,6 +3641,8 @@ pub(crate) fn close(
         && view.key == key
     {
         #[cfg(test)]
+        tests::record_route(tests::ClosureRoute::Remembered);
+        #[cfg(test)]
         if tests::verifying_seeded_closures() {
             tests::assert_seeded_closure_matches_complete(
                 state,
@@ -3785,6 +3787,8 @@ pub(crate) fn contradiction_without_proofs(
         dense, distinct, ..
     }) = insert_fresh_edges(state, terms, &mut NoProofs)
     {
+        #[cfg(test)]
+        tests::record_route(tests::ClosureRoute::InsertionWithoutProofs);
         let contradictory = terms
             .ids()
             .any(|id| dense.get(id, id).is_some_and(|(bound, _)| bound < 0))
@@ -3986,6 +3990,8 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
         return closed;
     }
     if excluded.is_none() && state.closure.is_closed_over(term_count) {
+        #[cfg(test)]
+        tests::record_route(tests::ClosureRoute::Closed);
         let mut closed = ClosedState {
             all_derivable: false,
             contradiction: None,
@@ -4004,7 +4010,12 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
                 restore_implicit_bound(&mut closed, left, right, bound, kind, ledger);
             });
         }
-        return close_goal_contradictions(closed, goals, ledger);
+        let closed = close_goal_contradictions(closed, goals, ledger);
+        #[cfg(test)]
+        if tests::verifying_seeded_closures() {
+            tests::assert_seeded_closure_matches_complete(state, terms, goals, ledger, &closed);
+        }
+        return closed;
     }
     let mut distinct = (*state.distinct).clone();
     let mut distinct_proofs = (*state.distinct_proofs).clone();
@@ -4019,6 +4030,12 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
     // strictly lower a bound. Equal-bound candidates would replace the core's
     // retained proofs throughout the matrix for no change in any bound.
     let seeded = excluded.is_none() && dense_bounds.seed_from(&state.closure);
+    #[cfg(test)]
+    tests::record_route(if seeded {
+        tests::ClosureRoute::Seeded
+    } else {
+        tests::ClosureRoute::Unseeded
+    });
     let ids = terms
         .ids()
         .filter(|id| Some(*id) != excluded)
@@ -4265,6 +4282,8 @@ fn insert_fresh_edges<P: ClosureProofs>(
     // point, which revisits only the weakened endpoints' rows and columns, is
     // the cheaper route to the same bounds.
     if weakened_cells.len() > term_count {
+        #[cfg(test)]
+        tests::record_route(tests::ClosureRoute::LargeFallback);
         return None;
     }
     let width = term_count;
@@ -4306,6 +4325,10 @@ fn insert_fresh_edges<P: ClosureProofs>(
     let mut weakened = weakened_cells.to_vec();
     weakened.sort_unstable();
     weakened.dedup();
+    #[cfg(test)]
+    if !weakened.is_empty() {
+        tests::record_route(tests::ClosureRoute::Repair);
+    }
     // Each pass extends every repaired path by at least one more weakened
     // cell, so a satisfiable state settles within one pass per weakened cell.
     // A repair after that is a negative cycle through raw cells, which would
@@ -4314,6 +4337,8 @@ fn insert_fresh_edges<P: ClosureProofs>(
     let mut passes = 0;
     loop {
         if passes > weakened.len() {
+            #[cfg(test)]
+            tests::record_route(tests::ClosureRoute::RepairFallback);
             return None;
         }
         passes += 1;
@@ -4600,6 +4625,8 @@ fn close_by_edge_insertion(
         distinct,
         distinct_proofs,
     } = insert_fresh_edges(state, terms, ledger)?;
+    #[cfg(test)]
+    tests::record_route(tests::ClosureRoute::InsertionWithProofs);
     let mut contradiction = None;
     for id in terms.ids() {
         if let Some((bound, parent)) = dense.get(id, id) {
@@ -5751,6 +5778,31 @@ pub(crate) mod tests {
     use super::*;
     use std::cell::Cell;
 
+    #[derive(Clone, Copy, Debug)]
+    pub(super) enum ClosureRoute {
+        Remembered,
+        Closed,
+        Unseeded,
+        Seeded,
+        InsertionWithProofs,
+        InsertionWithoutProofs,
+        Repair,
+        LargeFallback,
+        RepairFallback,
+    }
+
+    const CLOSURE_ROUTES: [ClosureRoute; 9] = [
+        ClosureRoute::Remembered,
+        ClosureRoute::Closed,
+        ClosureRoute::Unseeded,
+        ClosureRoute::Seeded,
+        ClosureRoute::InsertionWithProofs,
+        ClosureRoute::InsertionWithoutProofs,
+        ClosureRoute::Repair,
+        ClosureRoute::LargeFallback,
+        ClosureRoute::RepairFallback,
+    ];
+
     thread_local! {
         /// When set, every seeded, inserted or remembered closure on this
         /// thread is recomputed from all live facts on a cloned state and
@@ -5759,6 +5811,17 @@ pub(crate) mod tests {
         static VERIFY_SEEDED_CLOSURE: Cell<bool> = const { Cell::new(false) };
         /// How many closures the switch has compared on this thread.
         static VERIFIED_CLOSURES: Cell<usize> = const { Cell::new(0) };
+        static ROUTE_COUNTS: Cell<[usize; CLOSURE_ROUTES.len()]> = const { Cell::new([0; CLOSURE_ROUTES.len()]) };
+    }
+
+    pub(super) fn record_route(route: ClosureRoute) {
+        if VERIFY_SEEDED_CLOSURE.with(Cell::get) {
+            ROUTE_COUNTS.with(|counts| {
+                let mut values = counts.get();
+                values[route as usize] += 1;
+                counts.set(values);
+            });
+        }
     }
 
     pub(super) fn verifying_seeded_closures() -> bool {
@@ -7106,6 +7169,7 @@ pub(crate) mod tests {
     fn generated_flows_close_incrementally_like_the_complete_closure() {
         VERIFY_SEEDED_CLOSURE.with(|verify| verify.set(true));
         VERIFIED_CLOSURES.with(|count| count.set(0));
+        ROUTE_COUNTS.with(|counts| counts.set([0; CLOSURE_ROUTES.len()]));
         let mut actions = [0_usize; 13];
         for case in 0..400_u64 {
             let mut seed = case.wrapping_mul(0x9e37_79b9_7f4a_7c15).wrapping_add(1);
@@ -7202,7 +7266,12 @@ pub(crate) mod tests {
                             if index == 0 {
                                 materialize_closure_before_kill(state, &terms, &goals, ledger);
                             } else {
-                                *state = reference_join(&[state.clone()], &terms, &goals, ledger);
+                                *state = reference_join(
+                                    std::slice::from_ref(state),
+                                    &terms,
+                                    &goals,
+                                    ledger,
+                                );
                             }
                             state.kill(|term| term == left);
                         }
@@ -7241,6 +7310,11 @@ pub(crate) mod tests {
                         12 => state.kill_goals(|held| held == goal),
                         _ => {}
                     }
+                    if index == 0 {
+                        // Keep the view on the actual optimized state so the
+                        // comparison of its clone also checks memo reuse.
+                        let _ = close(state, &terms, &goals, ledger);
+                    }
                     let _ = contradiction_without_proofs(state, &terms, &goals);
                 }
                 if action == 9 {
@@ -7262,5 +7336,8 @@ pub(crate) mod tests {
         VERIFY_SEEDED_CLOSURE.with(|verify| verify.set(false));
         assert!(VERIFIED_CLOSURES.with(Cell::get) > 0);
         assert!(actions.into_iter().all(|count| count > 0));
+        for (route, count) in CLOSURE_ROUTES.into_iter().zip(ROUTE_COUNTS.with(Cell::get)) {
+            assert!(count > 0, "generated flows never exercised {route:?}");
+        }
     }
 }
