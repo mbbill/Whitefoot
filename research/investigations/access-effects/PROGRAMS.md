@@ -16,8 +16,10 @@ The full preservation of existing programs and their overlap permissions has
 not been evaluated under any candidate.
 
 The [x0 draft](DESIGN.md#candidate-x0-current-state-access-with-separate-resource-accounting)
-now gives a concrete 24-axis choice vector and shared pseudocode. Its matrix
-has no verdicts yet; these tasks remain its comparison surface, not its results.
+now gives a concrete 24-axis choice vector and shared pseudocode. The
+[interaction matrix](MATRIX-X0.md) records hand derivations against it; these
+engineering tasks remain the broader comparison surface, not automatically
+established capabilities just because pairwise cells are filled.
 
 ## Current capability floor
 

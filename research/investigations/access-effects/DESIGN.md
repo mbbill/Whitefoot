@@ -243,8 +243,11 @@ checked introduction/elimination rules; writing an invariant does not establish
 its implementability. A missing rule produces an unresolved cell or a proposed
 coordinated candidate revision, not an ad hoc local acceptance.
 
-The first matrix has no populated verdicts yet. Existing CASES expectations and
-the old bounded executable model are evidence to revisit, not x0 validation.
+The [first matrix](MATRIX-X0.md) uses a frozen shared rule sheet and GPT-5.6 Sol
+derivations as requested by the owner. Its statuses and limitations live with
+the cell records; coverage is not a correctness theorem. Existing CASES
+expectations and the old bounded executable model are evidence to revisit,
+not x0 validation.
 The full task/capability table remains in scope, including copy/affine/linear,
 stored relations, generic calls, dynamic storage and parallel computation.
 
