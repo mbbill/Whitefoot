@@ -4105,6 +4105,7 @@ fn insert_fresh_edges<P: ClosureProofs>(
         };
 
     let mut tight_rows = Vec::new();
+    let mut improving_columns = Vec::new();
     while let Some((a, b, weight, proof)) = pending.pop_front() {
         let edge_cell = a.0 as usize * width + b.0 as usize;
         if dense.stamps[edge_cell] != 0 && dense.bounds[edge_cell] < weight {
@@ -4164,8 +4165,24 @@ fn insert_fresh_edges<P: ClosureProofs>(
             );
             tight_rows.push(left);
         }
-        // Row pass: i - b <= y and b - j <= z give i - j <= y + z.
+        // Row pass: i - b <= y and b - j <= z give i - j <= y + z. A tight row
+        // has i - b equal to i - a + w, so a column where w + (b - j) exceeds
+        // a - j is already dominated by i - a and a - j, a triangle composed
+        // when its later-set premise was set; only the other columns are
+        // scanned. A fresh term's implicit edge thus fills one column.
         let b_row = b.0 as usize * width;
+        let a_row = a.0 as usize * width;
+        improving_columns.clear();
+        for j in 0..width {
+            let out_of_b = b_row + j;
+            if j == b.0 as usize || dense.stamps[out_of_b] == 0 {
+                continue;
+            }
+            let through_b = compose_transitive_bounds(weight, dense.bounds[out_of_b]);
+            if dense.stamps[a_row + j] == 0 || through_b <= dense.bounds[a_row + j] {
+                improving_columns.push(j);
+            }
+        }
         for &left in &tight_rows {
             let left_row = left.0 as usize * width;
             let into_b = left_row + b.0 as usize;
@@ -4173,11 +4190,8 @@ fn insert_fresh_edges<P: ClosureProofs>(
                 continue;
             }
             let (first, first_proof) = (dense.bounds[into_b], dense.proofs[into_b]);
-            for j in 0..width {
+            for &j in &improving_columns {
                 let out_of_b = b_row + j;
-                if j == b.0 as usize || dense.stamps[out_of_b] == 0 {
-                    continue;
-                }
                 let via = compose_transitive_bounds(first, dense.bounds[out_of_b]);
                 let target = left_row + j;
                 if dense.stamps[target] != 0 && via >= dense.bounds[target] {
