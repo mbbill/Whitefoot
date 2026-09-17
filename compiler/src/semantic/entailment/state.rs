@@ -2207,6 +2207,35 @@ impl<'a, T: Copy + PartialEq> IntoIterator for &'a Candidates<T> {
     }
 }
 
+/// A remembered closure of one fact state.
+#[derive(Clone)]
+struct ClosedView {
+    key: ClosedViewKey,
+    closed: Rc<ClosedState>,
+}
+
+impl std::fmt::Debug for ClosedView {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ClosedView")
+            .field("key", &self.key)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The tables a closure read, by identity and revision. Derivation ledgers
+/// only grow while an analysis runs, so proofs a view names stay valid in the
+/// same ledger.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ClosedViewKey {
+    terms: usize,
+    term_revision: usize,
+    term_count: usize,
+    goals: usize,
+    goal_revision: usize,
+    ledger: usize,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct FactState {
     /// What part of the bound matrix is already closed. Only a state closed
@@ -2218,6 +2247,11 @@ pub(crate) struct FactState {
     /// every such candidate leaves exactly that layer, so the removal can
     /// take this record instead of rederiving the weakened cells.
     ordinary_closure: ClosureRecord,
+    /// The closed view most recently taken of exactly this content, shared by
+    /// clones. Every method that changes a relation, a signed goal or the
+    /// contradiction clears it; its key names the term, goal and derivation
+    /// tables and their revisions, so a registered term or goal also misses.
+    closed_view: std::cell::RefCell<Option<ClosedView>>,
     /// The loop rule's empty join: the contradictory all-derivable state, in
     /// which every relation is derivable and every fact is present. Z has
     /// empty support, so `Z - Z <= -1` never dies and the flag is absorbing
@@ -2268,6 +2302,7 @@ impl FactState {
         Self {
             closure: ClosureRecord::Unknown,
             ordinary_closure: ClosureRecord::Unknown,
+            closed_view: std::cell::RefCell::new(None),
             all_derivable: false,
             contradiction: None,
             bounds: Rc::default(),
@@ -2283,6 +2318,13 @@ impl FactState {
             goal_origins: HashMap::default(),
             ambiguous_goal_origins: HashSet::default(),
         }
+    }
+
+    /// Makes the state the absorbing contradiction proved by `contradiction`.
+    pub(crate) fn promote_to_contradiction(&mut self, contradiction: Option<DerivationId>) {
+        self.closed_view.take();
+        self.all_derivable = true;
+        self.contradiction = contradiction;
     }
 
     pub(crate) fn contradictory(contradiction: DerivationId) -> Self {
@@ -2479,6 +2521,7 @@ impl FactState {
         event: FlowEventId,
     ) -> DerivationId {
         let fact = (goal, sign);
+        self.closed_view.take();
         let proof = ledger.intern(DerivationNode::SourceGoal { goal, sign, event });
         if !self.all_derivable
             && (self.opaque.insert(fact) || ledger.better(proof, self.opaque_proofs[&fact]))
@@ -2522,6 +2565,7 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
+        self.closed_view.take();
         self.closure.mark_fresh_cell((left, right));
         if !ledger.depends_on_postcondition_call(proof) {
             self.ordinary_closure.mark_fresh_cell((left, right));
@@ -2542,6 +2586,7 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
+        self.closed_view.take();
         self.closure.mark_fresh_cell(pair);
         self.closure.mark_fresh_cell((pair.1, pair.0));
         if !ledger.depends_on_postcondition_call(proof) {
@@ -2616,6 +2661,7 @@ impl FactState {
         if self.all_derivable {
             return;
         }
+        self.closed_view.take();
         let dead: Vec<(TermId, TermId)> = self
             .bounds
             .keys()
@@ -2675,6 +2721,7 @@ impl FactState {
         if self.all_derivable {
             return false;
         }
+        self.closed_view.take();
         let mut changed = false;
         let mut weakened = Vec::new();
         // Each pair's selection depends only on its own candidates, and the
@@ -2807,6 +2854,7 @@ impl FactState {
         if self.all_derivable {
             return;
         }
+        self.closed_view.take();
         self.opaque.retain(|(goal, _)| !killed(*goal));
         self.opaque_proofs.retain(|(goal, _), _| !killed(*goal));
         self.goal_origins.retain(|_, goal| !killed(*goal));
@@ -3334,8 +3382,36 @@ pub(crate) fn close(
     terms: &TermTable,
     goals: &GoalTable,
     ledger: &mut DerivationLedger,
-) -> ClosedState {
-    close_with_excluded_term(state, terms, goals, ledger, None)
+) -> Rc<ClosedState> {
+    let key = ClosedViewKey {
+        terms: std::ptr::from_ref(terms) as usize,
+        term_revision: terms.revision(),
+        term_count: terms.ids().count(),
+        goals: std::ptr::from_ref(goals) as usize,
+        goal_revision: goals.revision(),
+        ledger: std::ptr::from_ref(ledger) as usize,
+    };
+    if let Some(view) = state.closed_view.borrow().as_ref()
+        && view.key == key
+    {
+        #[cfg(test)]
+        if tests::VERIFY_SEEDED_CLOSURE.load(std::sync::atomic::Ordering::Relaxed) {
+            tests::assert_seeded_closure_matches_complete(
+                state,
+                terms,
+                goals,
+                ledger,
+                &view.closed,
+            );
+        }
+        return Rc::clone(&view.closed);
+    }
+    let closed = Rc::new(close_with_excluded_term(state, terms, goals, ledger, None));
+    *state.closed_view.borrow_mut() = Some(ClosedView {
+        key,
+        closed: Rc::clone(&closed),
+    });
+    closed
 }
 
 /// Emits every [ENT-2] implicit bound carried by one term: the reflexive
@@ -5035,17 +5111,18 @@ pub(crate) fn materialize_closure_at(
     let mut materialized = FactState {
         closure: ClosureRecord::closed(terms.ids().count()),
         ordinary_closure: ClosureRecord::closed(terms.ids().count()),
+        closed_view: std::cell::RefCell::new(None),
         all_derivable: false,
         contradiction: None,
         bounds: Rc::new(bounds),
         bound_proofs: Rc::new(bound_proofs),
         bound_candidates: Rc::new(bound_candidates),
-        distinct: Rc::new(closed.distinct),
+        distinct: Rc::new(closed.distinct.clone()),
         distinct_proofs: Rc::new(distinct_proofs),
         distinct_candidates: Rc::new(distinct_candidates),
         origins: state.origins.clone(),
         outcomes: state.outcomes.clone(),
-        opaque: closed.opaque,
+        opaque: closed.opaque.clone(),
         opaque_proofs,
         goal_origins: state.goal_origins.clone(),
         ambiguous_goal_origins: state.ambiguous_goal_origins.clone(),
@@ -5150,7 +5227,7 @@ fn join_at_once(
     // Close before filtering: a contradiction established immediately before
     // an edge is already the absorbing all-derivable state even when no kill
     // had occasion to materialize its flag.
-    let closed: Vec<ClosedState> = states
+    let closed: Vec<Rc<ClosedState>> = states
         .iter()
         .map(|state| close(state, terms, goals, ledger))
         .collect();
@@ -5355,6 +5432,7 @@ fn join_at_once(
     FactState {
         closure: ClosureRecord::closed(terms.ids().count()),
         ordinary_closure: ClosureRecord::closed(terms.ids().count()),
+        closed_view: std::cell::RefCell::new(None),
         all_derivable: false,
         contradiction: None,
         bounds: Rc::new(bounds),
@@ -5402,7 +5480,8 @@ pub(crate) mod tests {
         let mut unseeded = state.clone();
         unseeded.closure = ClosureRecord::Unknown;
         let mut complete_ledger = ledger.clone();
-        let complete = close(&unseeded, terms, goals, &mut complete_ledger);
+        let complete =
+            close_with_excluded_term(&unseeded, terms, goals, &mut complete_ledger, None);
         assert_eq!(
             seeded.all_derivable, complete.all_derivable,
             "seeded closure contradiction differs from the complete closure"

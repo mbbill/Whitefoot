@@ -18,9 +18,9 @@ mod sources;
 
 use super::super::postcondition::PostconditionPlace;
 use sources::{MeasureCarry, ValueImage};
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use super::super::goal::{
     CheckedRequirement, ConcreteGoal, EvaluatedValueOccurrence, GoalDatum, GoalExpression,
@@ -282,11 +282,11 @@ impl<'a> ProofContext<'a> {
         terms: &TermTable,
         goals: &GoalTable,
         ledger: &mut DerivationLedger,
-    ) -> Cow<'a, ClosedState> {
+    ) -> Rc<ClosedState> {
         if let Some(closed) = self.closed.filter(|closed| closed.matches(terms, goals)) {
-            Cow::Borrowed(&closed.state)
+            Rc::clone(&closed.state)
         } else {
-            Cow::Owned(close(self.facts, terms, goals, ledger))
+            close(self.facts, terms, goals, ledger)
         }
     }
 }
@@ -296,7 +296,7 @@ impl<'a> ProofContext<'a> {
 struct ProofClosure {
     term_revision: usize,
     goal_revision: usize,
-    state: ClosedState,
+    state: Rc<ClosedState>,
 }
 
 impl ProofClosure {
@@ -4331,8 +4331,7 @@ impl Analyzer<'_, '_> {
         }
         let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
         if closed.contradictory() {
-            state.all_derivable = true;
-            state.contradiction = closed.contradiction_proof();
+            state.promote_to_contradiction(closed.contradiction_proof());
         }
     }
 
@@ -16192,8 +16191,7 @@ mod proof_closure_tests {
         };
         for _ in 0..3 {
             let view = context.close(&terms, &goals, &mut ledger);
-            assert!(matches!(view, Cow::Borrowed(_)));
-            assert!(std::ptr::eq(view.as_ref(), &closed.state));
+            assert!(Rc::ptr_eq(&view, &closed.state));
             assert!(view.derives_bound(ZERO, ZERO, 0));
         }
     }
@@ -16219,9 +16217,9 @@ mod proof_closure_tests {
             affine: &affine,
             closed: Some(&closed),
         };
-        assert!(matches!(
-            context.close(&terms, &goals, &mut ledger),
-            Cow::Owned(_)
+        assert!(!Rc::ptr_eq(
+            &context.close(&terms, &goals, &mut ledger),
+            &closed.state
         ));
 
         let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
@@ -16234,7 +16232,7 @@ mod proof_closure_tests {
             closed: Some(&closed),
         };
         let view = context.close(&terms, &goals, &mut ledger);
-        assert!(matches!(view, Cow::Owned(_)));
+        assert!(!Rc::ptr_eq(&view, &closed.state));
         assert!(view.derives_bound(term, ZERO, 7));
         assert!(view.derives_bound(ZERO, term, -7));
     }
@@ -16267,9 +16265,9 @@ mod proof_closure_tests {
             affine: &affine,
             closed: Some(&closed),
         };
-        assert!(matches!(
-            context.close(&terms, &goals, &mut ledger),
-            Cow::Owned(_)
+        assert!(!Rc::ptr_eq(
+            &context.close(&terms, &goals, &mut ledger),
+            &closed.state
         ));
     }
 }
