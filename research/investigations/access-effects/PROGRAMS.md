@@ -15,6 +15,10 @@ the investigation.
 The full preservation of existing programs and their overlap permissions has
 not been evaluated under any candidate.
 
+The [x0 draft](DESIGN.md#candidate-x0-current-state-access-with-separate-resource-accounting)
+now gives a concrete 24-axis choice vector and shared pseudocode. Its matrix
+has no verdicts yet; these tasks remain its comparison surface, not its results.
+
 ## Current capability floor
 
 On 2026-09-17 the owner required a candidate covering the critical capabilities

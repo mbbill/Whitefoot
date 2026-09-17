@@ -101,6 +101,153 @@ Before choosing the next vector, use the choice table above together with
 [the engineering-task table](PROGRAMS.md#representative-engineering-tasks).
 This establishes the questions and comparison surface, not a selected vector.
 
+## Candidate x0: current-state access with separate resource accounting
+
+Status: proposed concrete choice vector, 2026-09-17. This defines a starting
+candidate, not an adopted language or a completed consistency result. It is
+chosen because the local cases already discriminate its rules and because it
+connects sequential aliases, resource state and existing parallel computation
+through the same target information. No evidence establishes it as the best
+combination. The earlier A/B sections are background hypotheses, not implicit
+permission for a matrix worker to fill a gap with a different rule.
+
+The matrix is evaluated at fixed x0. Its axes below have fixed values; cells
+do not enumerate alternate designs. Include the diagonal and one triangle:
+24 axes give 300 cells. A cell respects all of x0, not only its two named axes.
+Alternative choices belong to a new candidate revision. Additional axes require
+a recorded interaction witness and a coordinated inventory revision.
+
+Ordinary scalar/arithmetic domain checks, typed outcome semantics, target layout
+qualification and allocation-exhaustion scope start from the v0.59 baseline
+linked in PROGRAMS.md. IO/FFI and general thread constructs are outside this
+round. Existing call/iteration overlap and reductions are inside it. The changes
+below concern ownership, storage and the contracts and proofs needed to connect
+them; an omitted ordinary language rule is not silently removed.
+
+### Fixed choices and matrix axes
+
+| Axis | x0 choice |
+|---|---|
+| 1. Storage identity | Each allocation or suballocation has a fresh logical identity. A locator captures one target, possibly described by conditional or symbolic relations. Different symbols alone do not prove disjointness. Reusing bytes never revives an ended identity. |
+| 2. Owned storage representation | Scalars, ordinary fields and fixed arrays are inline; separately allocated cells/runs have owning descriptors. Owning and merely locating an allocation are distinct even if each uses a pointer at runtime. Store identity and target identity are separate proof parameters. |
+| 3. Value and ownership transfer | `move(x)` transfers x's value and contained obligations to a destination, leaving its source slot empty. Moving a heap-owning descriptor preserves its backing allocation. Physically transferring an inline aggregate does not retarget old locators to its new location. |
+| 4. Copy, affine and linear | Copy duplicates no resource obligation; affine values may use verified automatic cleanup; linear obligations require explicit discharge or transfer. Composite classes follow their owned contents, with explicit linear strengthening permitted. Repeated ownership handoff is allowed; duplicate handoff is not. |
+| 5. Holes | `take` may empty a live slot through its name or a locator, including a selected field/element. `put` fills an empty live slot. No compiler-inserted occupancy tag. Unknown concrete target is not itself a rejection if the required relational proof is available. |
+| 6. Reading and replacement | Copy reads duplicate content; observing non-copy content returns copy observations or accesses it under a contract, not a duplicate owner. Scalar copy writes may fill/overwrite. Replacing non-copy content exchanges old and new values without losing obligations. |
+| 7. Locator copying and aliasing | A locator is copyable, does not own its target and does not grant a lifetime-long exclusion. Sequential aliased reads/writes are allowed when each operation's premises hold. No address-to-locator fabrication. |
+| 8. Stored locators | Locators may be fields, elements, arguments and results. Loading one captures that stored target; updating the field later does not retarget an earlier copy. Hidden target identities may be packaged with checked relations; packaging creates no liveness or disposal right. |
+| 9. Validity and scope | Access requires live enclosing storage, current layout and sufficient initialization at the operation. A locator may remain after its target ends but cannot access it. Lexical local storage ends on scope exit; ownership transfer does not extend an inline local's storage lifetime. |
+| 10. Disposal authority | `release(p)` may identify storage through an owner or locator but must consume that target's single available disposal obligation. A locator does not supply the obligation. Content obligations must be dealt with first or by verified cleanup. Allocation and contained-value duties are distinct. |
+| 11. Automatic cleanup | Affine cleanup is derived only where a definite valid cleanup sequence is proved for that source exit. No hidden conditional drop flags or inserted state-testing branches. Otherwise the writer must express the cleanup control flow. Linear duties cannot be silently dropped. No new unchecked user finalizer. |
+| 12. Fields and active layout | Fields have separate locations beneath a containing allocation; whole-object operations account for affected parts. Partially initialized aggregates cannot be read or transferred as full values. Switching enum variants ends the old payload's identity; returning to that variant does not revive its old locators. |
+| 13. Arrays and ranges | Elements use captured index values and views use captured ranges over a particular backing allocation. Bounds and separation need proofs. Hole facts may describe selected elements or ranges. Reallocation changes backing identity; copying a view never makes new element storage. |
+| 14. Providers and shared management | Blocks may share a locator for provider metadata while owning disjoint payloads. Allocation/release declare actual metadata and payload effects. A provider cannot end while dependent allocations remain. No hidden synchronization is introduced to make conflicting operations overlap. |
+| 15. Containers and library invariants | Containers use ordinary owned storage, locators and checked representation invariants over the established allocation primitives. Opening/closing an invariant requires resource/fact evidence. No container-specific exemption and no writer assertion accepted as an unproved invariant. |
+| 16. Branch joins | Preserve joint conditional target/state/obligation descriptions tied to captured condition values. A use must work in all represented alternatives, or in the subset established by a source guard/proof. Binding reassignment does not rewrite the captured condition. |
+| 17. Loops and exits | Resource relations at a loop head are written invariants, proved initially and on every backedge. Break/return/error exits carry their actual state and duties. Dynamic allocation instances use symbolic families with explicit finite proof steps, not one identity reused for all iterations. |
+| 18. Function contracts | Definitions are checked against declared entry/exit relations, resource transfers and whole-call accesses. Calls substitute actual associations and use the verified signature. Equal actual targets are allowed unless the contract requires separation; access demands may combine, consumable obligations may not duplicate. |
+| 19. Generics, recursion and function arguments | Preserve WF type/const/function abstraction and recursion. Passed functions carry checked contracts, including effects and transfers; recursive calls use the declared contract. No automatic whole-call-tree expansion for ownership checking. |
+| 20. Proof mechanism | Extend the checked fact/resource context, retaining existing numeric derivations. Automatic work is structural propagation, direct target equality/separation, guarded case checking and the fixed numeric families. Loop summaries, general resource families and invariant steps are explicit finite certificates. No SMT, timeout-dependent acceptance or unbounded inferred heap invariant. |
+| 21. Access and state effects | Contracts separately describe access during execution and exit state. Reads, writes, initialization changes, allocation and storage ending identify their actual targets and management state. Changing or ending a target invalidates affected state facts before new facts are published. |
+| 22. Call overlap | Retain source-order observables. Prove independence of full accesses, argument evaluation, consumed resources and retained storage; read/read aliasing is allowed. Restoring a value at return does not remove an intermediate write/hole from conflict checking. No proof, no overlap permission. |
+| 23. Loop overlap and reductions | Retain the current admitted element maps, adjacent-range helper calls and fixed reduction operations. Use proven cross-iteration separation and resource accounting; do not introduce overlap through runtime alias guards or silently generalize numeric laws. |
+| 24. Lowering and optimization facts | Erase proof identities and resource bookkeeping. Locators do not receive unconditional uniqueness/noalias attributes. Emit access-scoped facts only from established proofs. Any extra runtime descriptor field, map, flag, allocation or copy must be stated and costed; it cannot be hidden as proof metadata. |
+
+### Shared pseudocode for x0
+
+This is explanatory syntax with fixed meanings, not a new WF grammar. `slot`
+creates addressable local storage; `alloc` creates a separate initialized
+allocation and returns its owner. `loc(place)` captures an addressable place;
+`loc(*owner)` captures its referent, not the owner's descriptor slot. Forming a
+locator requires live storage and current layout, but does not promise full
+content or future validity. Ordinary type and domain premises still apply.
+
+```text
+slot a: Int = 10
+let p = loc(a)
+let q = p
+let v = take(p)               // a remains live, empty; q still locates a
+put(q, v)                    // a is full again
+let old = replace(p, 20)      // same slot; old receives 10
+```
+
+`read(p)` returns a copy value and is not a generic copy of an affine/linear
+payload. `write(p, v)` in these examples is copy-scalar initialization/overwrite.
+For non-copy payloads use transfer, `put`, or `replace`. `put` requires empty;
+`replace` requires full. `take` transfers any contained obligations to its result.
+
+```text
+let a = alloc(10)             // owns allocation A
+let p = loc(*a)
+let b = move(a)               // descriptor transfer; A stays in place
+let n = read(p)
+release(b)                   // consumes A's duty; A ends
+read(p)                      // invalid: A ended
+```
+
+Replacing `release(b)` by `release(p)` requires the same available A duty;
+it retires b's ownership authority as well. It does not leave b entitled to a
+second cleanup. A separately taken linear value retains its own obligation
+after the empty container allocation is released. A locator without access to
+the disposal obligation cannot perform that release.
+
+Physical content relocation is spelled as a transfer between slots, for
+example `put(dst, take(src))`; neither the locators for src nor those for dst
+change their target. Expression evaluation is in source order. `replace` is
+one checked exchange after its operands have been evaluated, not a claim of
+hardware atomicity. Calls overlapping it still need the ordinary effect check.
+
+Types may use erased target parameters, for example `Loc<P, T>`, and a separate
+provider parameter S. P denotes a captured target, not a duration or a runtime
+address known at compilation. A symbolic target may have several possible
+origins. Storing hidden identities requires packaging the relations needed by
+the abstraction; a type parameter alone is not a proof that a target exists.
+
+```text
+struct Cursor<P> { at: Loc<P, Int> }
+
+fn observe<P>(p: Loc<P, Int>) -> Int
+    requires Live(P), Full(P)
+    accesses reads(P)
+    ensures Live(P), Full(P)
+{
+    return read(p)
+}
+```
+
+`requires`, `ensures` and `accesses` are checked contract clauses, not trusted
+assumptions about an unverified body. Resource transfers are separately named
+in the contract; ordinary Boolean conjunction does not copy a resource. Generic
+P and Q may alias. A caller cannot infer separation from their different names.
+Contract effects name the abstract state actually accessed through a stored
+association, not just the containing descriptor. Private representations need
+checked abstraction relations connecting those names to their implementation.
+
+Branches use `if/else`; matches and typed outcomes use ordinary tagged values.
+Loops use `while` or counted `for`, with `invariant { ... }` for carried resource
+relations. `use` denotes an explicit checked proof step, never a runtime test.
+For a matrix case, `request_overlap(call1, call2)` is a test-harness request to
+judge whether the two source-ordered calls may overlap, not a proposed thread
+construct. Baseline source evaluation order remains the reference behavior.
+
+### Definition readiness and matrix discipline
+
+This draft fixes choices but is not yet a complete formal acceptance calculus.
+Before independent workers may mark cells derived, supply one shared rule
+sheet for primitive state/resource transitions, conditional joins, scope cleanup,
+contract substitution, explicit invariant/family proof steps and parallel
+composition. In particular, "guarded case checking" is not a license to invent
+a different Boolean solver per cell; its traversal/rewrite rules must be fixed,
+and branching cost remains an open performance question. Predicates need
+checked introduction/elimination rules; writing an invariant does not establish
+its implementability. A missing rule produces an unresolved cell or a proposed
+coordinated candidate revision, not an ad hoc local acceptance.
+
+The first matrix has no populated verdicts yet. Existing CASES expectations and
+the old bounded executable model are evidence to revisit, not x0 validation.
+The full task/capability table remains in scope, including copy/affine/linear,
+stored relations, generic calls, dynamic storage and parallel computation.
+
 ## Earlier working candidates: A and B
 
 The earlier proposal developed **A: access and current-state checking**, with
