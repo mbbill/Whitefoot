@@ -514,6 +514,24 @@ The product rewrite also needs a direct test that compares its complete
 closed facts, selected proofs and derivation ledger with the original
 traversal. Timing alone cannot establish unchanged witnesses.
 
+Single exploratory runs of the first three candidates led to two more,
+recorded here before any paired timing of either:
+
+4. **Shared promotion closure.** A kill batch runs a proof-free contradiction
+   probe and then closes the same unchanged state to materialize it. The
+   candidate closes once and consults the probe only when that closure is
+   contradictory, the one case where the probe chooses between promoting and
+   materializing. Predicted: a small effect, because a sample places most
+   remaining probe cost in joins. Joins keep their probe: sharing their
+   closures would reorder derivation interning.
+5. **Stale-column products.** A left row whose first premise is not fresh
+   scans only the fresh middle-row columns. An absent cell reads as the
+   maximal bound, so the common numeric rejection needs no stamp or proof
+   read. Predicted: at least 1.2x on wfgrep over candidate 4.
+
+Candidates 4 and 5 use the same pairing, protected controls, and LLVM,
+test, and ledger-equivalence requirements as above.
+
 ## Reproduction and correctness boundary
 
 The native driver is
