@@ -56,9 +56,9 @@ use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
-    PostconditionCallSubstitution, Relation, SourceAffineFactRef, SourceLoopInvariantRef, close,
-    close_excluding_term, contradiction_without_proofs, join_at, materialize_closure_at,
-    materialize_closure_before_kill,
+    PostconditionCallSubstitution, Relation, SourceAffineFactRef, SourceLoopInvariantRef,
+    WordHashMap, close, close_excluding_term, contradiction_without_proofs, join_at,
+    materialize_closure_at, materialize_closure_before_kill,
 };
 use super::term::{
     CallDatumProjection, CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceProjection,
@@ -217,11 +217,11 @@ struct ProofFlowState {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct AffineFlowState {
-    values: HashMap<BindingId, AffineForm>,
+    values: WordHashMap<BindingId, AffineForm>,
     /// Current measure images belong to this control-flow edge. Queries mint
     /// images lazily, but cloning a predecessor isolates its later kills.
-    measure_atoms: RefCell<HashMap<TermId, AffineForm>>,
-    ranges: HashMap<RangeId, CapturedRange>,
+    measure_atoms: RefCell<WordHashMap<TermId, AffineForm>>,
+    ranges: WordHashMap<RangeId, CapturedRange>,
     /// One atom standing for the whole value of a binding whose image is not
     /// already a single atom, minted on first demand.
     ///
@@ -234,7 +234,7 @@ struct AffineFlowState {
     /// the transparent reading available to everything else. Keyed and killed
     /// exactly as `values` is, so a write mints a fresh handle for a fresh
     /// value.
-    opaque_values: HashMap<BindingId, AffineForm>,
+    opaque_values: WordHashMap<BindingId, AffineForm>,
     /// Every published affine conclusion at this control-flow point. Fact
     /// identity is only the canonical inequality over immutable value images;
     /// evidence is retained solely to explain a selected derivation.
@@ -546,8 +546,8 @@ struct AffineDirectQuery<'a> {
     l0: &'a AffineL0Index,
     values: &'a AffineFlowState,
     closed: &'a ClosedState,
-    intervals: HashMap<AffineTermId, AffineAtomInterval>,
-    measures: Option<HashMap<AffineTermId, Vec<TermId>>>,
+    intervals: WordHashMap<AffineTermId, AffineAtomInterval>,
+    measures: Option<WordHashMap<AffineTermId, Vec<TermId>>>,
 }
 
 impl<'a> AffineDirectQuery<'a> {
@@ -556,7 +556,7 @@ impl<'a> AffineDirectQuery<'a> {
             l0,
             values,
             closed,
-            intervals: HashMap::new(),
+            intervals: WordHashMap::default(),
             measures: None,
         }
     }
@@ -10746,7 +10746,7 @@ impl Analyzer<'_, '_> {
         };
         let mut bindings = first.affine.values.keys().copied().collect::<Vec<_>>();
         bindings.sort_by_key(|binding| binding.0);
-        let mut values = HashMap::new();
+        let mut values = WordHashMap::default();
         for binding in bindings {
             let Some(first_value) = first.affine.values.get(&binding) else {
                 continue;
@@ -10820,7 +10820,7 @@ impl Analyzer<'_, '_> {
         // An opaque handle is a convenience for one certificate, not a fact,
         // so a join keeps none: the next demand re-mints against whatever the
         // joined image is.
-        let opaque_values: HashMap<BindingId, AffineForm> = HashMap::new();
+        let opaque_values = WordHashMap::default();
 
         // A measure keeps its current image only when every predecessor
         // carries that exact image. Otherwise a later query mints a fresh
@@ -12660,8 +12660,8 @@ impl Analyzer<'_, '_> {
     fn measure_terms_by_atom(
         &mut self,
         state: &AffineFlowState,
-    ) -> HashMap<AffineTermId, Vec<TermId>> {
-        let mut grouped: HashMap<AffineTermId, Vec<TermId>> = HashMap::new();
+    ) -> WordHashMap<AffineTermId, Vec<TermId>> {
+        let mut grouped: WordHashMap<AffineTermId, Vec<TermId>> = WordHashMap::default();
         for term in self.measure_terms() {
             if let Some(atom) = self.measure_atom(term, state).unit_term() {
                 grouped.entry(atom).or_default().push(term);
