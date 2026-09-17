@@ -1,12 +1,16 @@
 # Requirements and mechanisms: a map for the ownership redesign
 
-Research date: 2026-09-16. This is a language-design investigation, not an
-amendment to the active specification (v0.57) and not a claim of compiler
-support. It belongs to the access-effects investigation beside
-[RESEARCH.md](RESEARCH.md) (literature and hypothesis), [DESIGN.md](DESIGN.md)
-(two candidate systems) and [CASES.md](CASES.md) (incremental cases). It is the
-frame in which those candidates are evaluated; it selects nothing. Supersede it
-in place when the analysis moves on.
+Research date: 2026-09-16; revised on 2026-09-16 after the D0 verdict
+([VERDICT-D0.md](VERDICT-D0.md)) settled the requirement list of section 2,
+the owner taking the interim position on every owner decision. This is a
+language-design investigation, not an amendment to the active specification
+(v0.57) and not a claim of compiler support. It belongs to the access-effects
+investigation beside [RESEARCH.md](RESEARCH.md) (literature and hypothesis),
+[DESIGN.md](DESIGN.md) (two candidate systems), [CASES.md](CASES.md)
+(incremental cases), [PROGRAMS.md](PROGRAMS.md) (the discriminating programs)
+and [VERDICT-D0.md](VERDICT-D0.md) (the settled list with its dispositions).
+It is the frame in which those candidates are evaluated; it selects nothing.
+Supersede it in place when the analysis moves on.
 
 ## 1. Purpose
 
@@ -23,130 +27,823 @@ information each one needs, maps every current mechanism to the requirements
 it serves, lists the mechanism families known to serve each requirement, and
 records the couplings a candidate design must respect.
 
-## 2. Requirements, stated independently
+## 2. Requirements, settled by the D0 verdict
 
-Each requirement gives (a) what must hold, (b) the least a checker must know,
-(c) where the check happens, (d) what is not its job. The constitution's
-meta-constraints apply to every mechanism and are listed once at the end.
+This list was settled by the D0 debate on 2026-09-16 (three drafts, six
+critiques, three judges, one synthesizer), with the owner taking the interim
+position on every one of the sixteen owner decisions; each row below carries
+that settlement. [VERDICT-D0.md](VERDICT-D0.md) is the record of the
+dispositions, the refused alternatives and the owner-decision table, and
+[EVIDENCE-debate-d0-2026-09-16.md](EVIDENCE-debate-d0-2026-09-16.md) is the
+full debate record. The rows are copied from the verdict's section 2; a
+"Disputed" note keeps the minority positions for the record, the majority
+position in the row being the settled one. Nothing here amends the live design
+tree.
 
-### R1 Sequential memory safety
+### Row form and authoring rules
 
-- (a) No read of storage holding no value; no access to storage that has ended
-  (freed, reallocated, released at scope exit, vacated by a relocating move);
-  no access under a stale layout.
+- Each row: (a) what must hold; (b) the least a checker must know; (c) where
+  checked; (d) not its job; (e) acceptance test over P1–P10 and the pending
+  programs P11–P19 of [PROGRAMS.md](PROGRAMS.md). A row whose (e) names only a
+  pending program is **provisional** and marked so (AI-D0-21 without its
+  deletion clause).
+- **Price**: what the row forbids the compiler from doing. A restriction on
+  the compiler with no named ground is a defect of the row (B's rule, kept as
+  an authoring rule, not as an M row).
+- **Cost**: provisional spec-token / program-token / repair-round estimate.
+  Every threshold has a grounded provisional value now (K = 48k tokens from
+  why-whitefoot §1; the proof-use-cost `growing` series pinned to a bundle;
+  1.65x/1.10x from default-floor as retired-compiler evidence) and is reset
+  only through an amendment recorded under M11, never "by the first
+  measurement".
+- **Status** against the current compiler and spec v0.57: green, red,
+  unmeasurable, provisional.
+- Writer-model trials are evidence with model and protocol pinned, never an
+  acceptance criterion (`design/language.md` decision 5).
+- Admission: hazard-owner rows, writer-cost rows and abstraction enter now;
+  capability rows enter on a blocking program; corpus frequency is never a
+  veto (HIS-D0-12, HIS-D0-13 stay refused).
+- Status marks, in each row heading, against the pre-verdict list this
+  section replaced (git history before 2026-09-16): KEPT, RESTATED, SPLIT,
+  MERGED, RECLASSIFIED, RESTORED, ADDED.
+
+### Hazard and duty owners (constitution → rows)
+
+| Constitution hazard or duty | Owner rows |
+|---|---|
+| undefined behavior | M6, composed from R1, R4 (a false licensed fact), R5, R11, R14, M6(iii) |
+| memory corruption | R1, R2, R3, R4 (soundness clause), R8a, M6(iii) |
+| data races | R5 under R14's model and access classes |
+| uninitialized reads | R1(i) |
+| silent overflow; any other unproved partial operation | R11 |
+| machine-verifiable resource bounds where budgets are explicit | R13 |
+| execution model and external conditions defined | R14 |
+| expected input and environment failures have defined behavior | R12; exhaustions outside the model: R14(v) excluded set with a defined stop |
+| external interaction through ordinary objects | R10; adapter obligation in M3, THE-REQ-14 settled by the owner on 2026-09-16 (VERDICT-D0 decision 15) |
+| machine verification before acceptance; no writer escape | M1, M2, M3 |
+| practical iteration at scale; termination alone insufficient | M10 |
+| compatibility and evolution | M11 |
+| delegation with retained control; less repeated human inspection | R7 (interface sufficiency, provisional), M7, M8; contract authority settled by the owner on 2026-09-16 (VERDICT-D0 decision 14) |
+
+### Requirement rows R1..R15
+
+#### R1 Sequential memory safety (RESTATED)
+
+- (a) (i) No read of storage holding no value; (ii) no program access to
+  storage that has ended by any event the model admits (free, reallocation,
+  scope release, relocating move, an R14-admitted non-program actor); (iii) no
+  access under a stale layout. Ended storage is inaccessible to the program,
+  not inert: an R14-admitted actor (allocator, foreign agent) may write it;
+  address reuse never revives an ended identity.
 - (b) For the storage an access names: live, initialized in the selected part,
-  layout current. These are properties of storage, not of the pointer used to
-  reach it.
-- (c) At each access, against the state of the named storage at that point.
-- (d) Not its job: preventing two pointers to one storage; preventing
-  sequential aliased writes; deciding parallel overlap.
+  layout current; the complete storage-ending event set (R8a).
+- (c) Each access, against the named storage's state at that point.
+- (d) Two pointers to one storage; sequential aliased writes; overlap (R5);
+  who releases (R2); what a non-program actor may do (R14); layout definition
+  (R8b).
+- (e) P4 (second `c.read()` legal iff the candidate carries validity across
+  `push`; read after `free(v)` refused); P7 (a hole left through `p` is
+  visible through `q`; free is permanent); P2 (pointer into `b2` refused after
+  `b4` reuses its bytes); P3 (removal invalidates every path to `m`). The
+  diagnostic names which of (i)(ii)(iii) failed. M6's small-model check is
+  stated over memory events, not the checker's state vocabulary. Pending P11
+  (write-once cache) as a capability program with a stated pass/fail under R1
+  alone.
+- Price: none on the backend. The compiler may reuse ended storage the program
+  cannot reach (stack coloring, spill reuse); it may not assume ended storage
+  is unwritten by others (R14(iii)).
+- Cost: ~2k / one proof step per interior pointer held across a relocating
+  call / 1, local. Status: green for P7 shapes; red for stored pointers (P4)
+  under OWN-3/OWN-4.
+- Note: "a property of the storage, never of the pointer" is the section 6
+  decomposition; it lives in the P7 test, not in (a), so a borrow-duration
+  candidate is refused by the program, not by the row. "Write-once
+  transitions" removed from (b) (a state mechanism).
 
-### R2 Resource lifecycle accounting
+#### R2 Resource lifecycle accounting (RESTATED)
 
-- (a) Every allocation and external resource is released exactly once; linear
-  obligations are discharged; where bounded memory is promised, the bound is
-  provable.
-- (b) Which binding holds the release obligation of which storage, and whether
-  it is definitely discharged on every path.
-- (c) At consuming operations, at every scope exit and at every join. Release
-  decisions are static, never runtime flags (LIV-1).
-- (d) Not its job: who may read or write the storage.
+- (a) Every allocation and external resource is released exactly once on every
+  path, including every typed-outcome arm (R12); linear obligations are
+  discharged; a buffer loaned to a non-program agent (DMA, io_uring) is an
+  obligation whose discharge is a program-observed completion event (a
+  completion token is a candidate mechanism, not the requirement).
+- (b) Which binding holds which release obligation; definiteness on every
+  path including outcome arms; the join rule, stated once here and reused by
+  R3; for a loaned buffer, the observed completion event.
+- (c) Consuming operations, scope exits, joins, each outcome arm's exit.
+  Release decisions are static by M2(ii) (no bookkeeping state the source did
+  not bind), not by a "failure edge" argument.
+- (d) Read/write permission; how much is held (R13); value multiplicity (R3).
+- (e) P2 (four frees, no double; `A` never held exclusively between
+  operations); P8 (no drop flag; the rejection names the path whose state
+  differs); pending P18 (P2 with a failing `alloc` arm, under the
+  allocation-failure form settled by the owner on 2026-09-16, VERDICT-D0
+  decision 5); pending P12 (DMA escrow completion). Metric: no runtime value
+  not bound in source selects a release, tested by source-to-IR provenance,
+  never by an IR bit count.
+- Price: no release inserted or removed; no release whose execution depends on
+  runtime state the source did not branch on; a release may move only where
+  R4/R7 facts make the move unobservable.
+- Cost: ~1.5k / one release op per resource / 1, local. Status: green (LIV-1,
+  PROV-6). Outcome arms multiply the paths this row discharges on; charged to
+  M10.
 
-### R3 Value classes and transfer
+#### R3 Value classes and transfer (KEPT)
 
-- (a) Copy values duplicate freely and carry no obligation; affine values move
-  at most once and may take a compiler-derived release; linear values are
+- (a) Copy values duplicate freely with no obligation; affine values move at
+  most once and may take a compiler-derived release; linear values are
   consumed exactly once. A move transfers a value with its obligations; a take
   leaves a hole; a put fills one; a replace exchanges.
-- (b) Each value's class; for each transfer, its source and destination
-  storage.
+- (b) Each value's class; each transfer's source and destination storage.
 - (c) At the transfer.
-- (d) Not its job: pointer validity. A value leaving storage `'a` is an event
-  on `'a`'s state, a hole or an end, which R1 consumes.
+- (d) Pointer validity (a value leaving `'a` is an event on `'a`'s state that
+  R1 consumes); the calling convention (B's per-class bytes-or-handle price
+  refused: the fact needed is address stability, which is R8a's).
+- (e) P7 (take through `p` leaves a hole visible through `q`; put through `q`
+  restores `p`; replace reads new). The diagnostic distinguishes "used twice"
+  (R3) from "never released" (R2). The multiplicity lemma quantifies over
+  transfers, separately from R1's state lemma; M6 composes them.
+- Price: none.
+- Cost: ~1k / one keyword per transfer / 1, local. Status: green.
 
-### R4 Aliasing facts for the optimizer
+#### R4 Licensed facts for the backend (RESTATED)
 
-- (a) The backend receives facts it may use without guards: two accesses never
-  overlap; a storage is not written during a span; a loaded value is invariant
-  over a span.
-- (b) Distinctness of storages, by identity, field, proved index or proved
-  range; write footprints over spans.
-- (c) At lowering, from retained checked facts; never re-derived by analysis.
-- (d) Not its job: safety. A missing fact costs speed, never correctness.
+- (a) Soundness: every fact the lowering uses without a guard (two accesses
+  disjoint; a storage unwritten over a span; a loaded value invariant over a
+  span; a call removable or reorderable) is true in every execution R14's
+  model admits for the accepted program; a fact licensing call removal or
+  reordering carries the callee's termination (RAD-D0-22). A missing fact
+  costs speed, never correctness.
+- (b) Distinctness by identity, field, proved index or proved range, as a
+  proved disjointness relation over a containment structure of identities,
+  never inequality of identity names (P2: the arena `S` and the live block
+  `b1` overlap); write footprints over spans; for a removable call, a
+  termination witness. This is the relation R5 reads; R4 tolerates a missing
+  "distinct", R5 does not (coupling C2).
+- (c) At lowering, from checked facts of the accepted program.
+- (d) Safety of the source (R1, R5, R11); profitability and channel
+  granularity (M9); whether the backend may add facts from its own sound
+  analysis (RAD-D0-25), a `design/compiler` decision settled by the owner on
+  2026-09-16 (VERDICT-D0 decision 3); which IR attributes carry a fact
+  (`design/compiler`).
+- (e) P5: the source carries a checkable distinctness fact for every pair of
+  column accesses, and nothing in the language forbids its retention to
+  lowering; P1: the two taken parts are distinct; P2 negative: no distinctness
+  between `S` and `b1`. Theorem shape Facts(P) ⊆ Truths(⟦P⟧), exercised by
+  M6(i). Emitted-attribute counts are compiler tests under `design/compiler`,
+  not this row's test: the emitter emits no alias promises today.
+- Price: forbids emitting a fact the source did not check and requiring
+  re-derivation to reach a stated fact; says nothing about extra analysis, a
+  `design/compiler` decision settled by the owner on 2026-09-16 (VERDICT-D0
+  decision 3).
+- Cost: 0 spec beyond R5's footprint vocabulary / 0 / 0. Status:
+  unmeasurable (no channel; section 8 Q15).
+- Disputed: standing as a language requirement touches `design/log.md:168`,
+  settled by the owner on 2026-09-16 as a requirement with a soundness clause
+  whose channel stays compiler detail (VERDICT-D0 decision 1); B reverses
+  that ruling and tests on IR attributes (recorded as a pending amendment,
+  not adopted; superseded by decision 1); C merges R4 into R5 on M5's
+  erasability, which fails at spawn/join, two rows settled by the owner on
+  2026-09-16 (VERDICT-D0 decision 2). Majority (A, B; all three judges):
+  separate rows, soundness clause kept, the per-load sufficiency clause moved
+  to M9 as a measured property.
 
-### R5 Data-race freedom and parallel permission
+#### R5 Data-race freedom and permitted overlap (RESTATED)
 
-- (a) Two statements or two iterations may overlap only when their footprints
-  do not interfere; a data race is unrepresentable.
-- (b) Read and write footprints of each statement over storages; distinctness
-  between footprints; data dependencies.
-- (c) PAR-1 windows and PAR-2 loops today; a future thread construct at spawn
-  and join.
-- (d) Not its job: sequential safety. Permission never changes acceptance
-  (design/language/parallelism.md).
+- (a) A data race is unrepresentable on every access outside R14(iv)'s
+  declared foreign access class. Two statements, iterations or threads may
+  overlap only on one of three grounds: (i) their footprints are proved
+  non-interfering; (ii) they interfere only on a recombinable accumulator
+  whose operator law is a fixed-table fact or a written finite proof
+  (associative for a fixed combine tree; associative and commutative for
+  unspecified order); (iii) the construct carries a named weaker level from
+  R14(ii)'s closed set, under which no law is claimed (float reductions).
+  "Declared" appears nowhere: an undischarged law refuses the overlap, never
+  the program. At an erasable construct (PAR-1, PAR-2) a missing fact leaves
+  the program sequential (M5); at a non-erasable construct (spawn/join) a
+  missing fact rejects.
+- (b) Read and write footprints per statement over storages; the R4
+  distinctness relation, read exactly; data dependencies; for (ii) the law and
+  its discharge; for (iii) the level; when threads exist, the sync edges
+  (R14(i)).
+- (c) PAR-1 windows and PAR-2 loops today; spawn/join, acquire/release and a
+  reduction's combine point when those constructs exist.
+- (d) Sequential safety (R1); defining the level set (R14); acceptance (M5);
+  schedule, tile and worker count (Price).
+- (e) P1 (two writes overlap); P3 (parallel map by node distinctness); P5
+  (PAR-2 overlap); P6 (overlap from range arithmetic and the helper's
+  interface alone); compute-bench accumulator snapshot cases under ground
+  (ii). Corpus: every PAR-1/PAR-2 overlap accepted today stays accepted or
+  the loss is listed. P10 deferred to the thread trigger. Pending P15: one
+  reduction under a checked law, one under a named float level.
+- Price: forbids reordering across a stated sync edge and picking a level
+  weaker than the one written; a fixed-tree level fixes the combine order;
+  nothing else about scheduling.
+- Cost: ~3k / one footprint clause per interface, one index proof where two
+  footprints share a container / 1–2, local. Status: green for (i) on the
+  corpus; red for (ii) (checked-law channel is an experiment) and (iii)
+  (CAP-1 fixes one guarantee; the closed level set of R14(ii) settled by the
+  owner on 2026-09-16, VERDICT-D0 decision 8).
+- Disputed: B's closed three-level menu inside R5, with its middle level a
+  schedule commitment; C's merge with R4. Majority: the grounds here, the
+  level set in R14.
 
-### R6 Frame: proof-fact retention
+#### R6 Frame: proof-fact retention (RESTORED as a measured precision row)
 
-- (a) After a write or a call, exactly the facts whose support may have changed
-  are dropped; every other fact survives.
+- (a) Precision: after a write or a call, no fact is dropped whose support the
+  operation's stated footprint does not name, and the writer can compute from
+  the footprint which facts survive. Soundness (no fact survives an operation
+  that may have falsified its support) is M6(ii), not this row.
 - (b) The written footprint of each operation, keyed as facts are keyed.
-- (c) ENT-5 kill events at commits and call boundaries.
-- (d) Not its job: safety or permission; it decides proof precision.
+- (c) At commits and call boundaries.
+- (d) Safety (M6(ii)); permission (R5); choosing identity granularity
+  (coupling C1).
+- (e) P3 (the invariant "next/prev point to live nodes" stated once and reused
+  across four link writes and a removal); a P9 `reserve`/`drain` variant: a
+  call whose interface writes elements of `v` leaves `len(v)` facts standing.
+  Metric: facts killed whose support the stated footprint does not name = 0
+  over P1–P9. A killed fact's diagnostic names the killing operation. Current
+  red value: 34 of 41 `len()` rebinds in the blind-writer corpus exist only
+  because ENT-5 kills at a whole-parameter footprint.
+- Price: none on the backend.
+- Cost: ~1k / 0 when precise, one round per imprecision / 0–1. Status: red.
+- Disputed: A and judge 2 retire the row (soundness to M6(ii), precision to
+  P1/P4); judges 1 and 3 restore it as the owner of the largest measured
+  writer tax. Majority: restored; settled by the owner on 2026-09-16
+  (VERDICT-D0 decision 13).
 
-### R7 Modular, signature-only checking
+#### R7 Compositional call judgement (RESTATED; FN-1 reclassified)
 
-- (a) A call is judged by the callee's signature alone (FN-1). A signature can
-  say what the callee needs of each storage on entry and leaves on exit: a
-  hole, an ended storage, a replaced backing, a returned pointer into an
-  argument, a fresh allocation.
-- (b) Storage identities nameable in signatures; entry and exit states per
-  identity; effect footprints per identity.
-- (c) At the call for the caller; once at the returns for the callee body.
-- (d) Not its job: inferring anything from bodies.
+- (a) A call is judged from a stated interface of the callee; every accepted
+  callee body satisfies its interface; the vocabulary can state, per storage:
+  entry and exit states (hole, ended, replaced backing), a returned interior
+  pointer, a fresh allocation, read/write/end footprints, outcomes (R12),
+  resource effects (R13), ordering edges (R14 when threads exist). A
+  declaration whose entry condition is syntactically unsatisfiable, or whose
+  result names an origin no caller can name (the provenance case, HIS-REQ-06),
+  is rejected at the declaration. Provisional clause (THE-REQ-05): the stated
+  interface is sufficient for a reader who never sees the body.
+- (b) Storage identities nameable at the interface; entry and exit states per
+  identity; footprints per identity; existential or fresh results.
+- (c) Caller at the call; callee once at its exits; declaration at the
+  declaration.
+- (d) Whether the interface is written or inferred-and-pinned (FN-1 is one
+  mechanism); recheck cost (M10); trusted imports (M3); inferring anything
+  from bodies.
+- (e) P9 (`drain`, `reserve`, `pick` each visible in the interface; caller
+  judged from it; body checked once); P6 (the helper's interface alone tells
+  the caller what it writes). Mechanism-neutral metric: the caller's verdict
+  is a function of the call site plus a bounded artifact whose token count is
+  stated. Compositionality theorem shape under M6. Provisional test for the
+  auditability clause: diff size per change on the corpus with no body opened.
+- Price: caller acceptance never depends on a callee body beyond the
+  interface; nothing about inlining or LTO.
+- Cost: ~2.5k / one clause per state-changing effect per interface / 1, local
+  at the interface. Status: green for today's rows; red for state clauses
+  (section 8 Q5).
 
-### R8 Storage placement and relocation
+#### R8a Storage-ending and relocation events (SPLIT from R8)
 
-- (a) A value lives somewhere: frame, heap store, arena, inline in a container.
-  Some operations relocate storage, such as a relocating move or a reallocating
-  push, and interior pointers name the storage before relocation.
-- (b) Which operations end or replace which storage; whether aggregates travel
-  as bytes or as handles.
-- (c) At the relocating operation, as a state event on the source storage (R1)
-  and a contract clause (R7).
-- (d) Not its job: who may access; only when a storage stops existing.
+- (a) Every value lives in a stated placement (frame, heap, arena, slab,
+  inline in a container). Every operation that ends, moves or replaces
+  storage (relocating move, reallocating push, arena reset, scope exit,
+  `own` parameter passing, container insertion, enum payload move, return,
+  and relocation by an R14-admitted non-program actor) is a storage-ending
+  event R1 consumes and R7 can state; the set is complete and
+  contract-visible (section 8 Q1). Interior pointers name the storage that
+  existed before the event; an interior pointer into storage a non-program
+  actor may relocate is refused unless the candidate supplies a
+  contract-visible fixup form.
+- (b) Which operations end or replace which storage; whether aggregates
+  travel as bytes or handles (coupling C4, not a mandate); a container's
+  backing identity.
+- (c) At the relocating operation, as an R1 state event and an R7 interface
+  clause.
+- (d) Who may access; layout, alignment, address space (R8b); ordering (R14).
+- (e) P4 (`push` may reallocate; the second read is decided by state and
+  proof, not by a borrow that blocks `push`); P3 (pool slot reuse invalidates
+  every path to `m`); P2 (arena bytes reused by `b4`); P9 `reserve`. Test: the
+  storage-ending set enumerated against P2/P3/P4/P9. Pending P13: storage
+  relocated by a compacting third party.
+- Price: the compiler relocates no storage while an interior pointer names it
+  (no moving collector, no address-changing copy) unless the fixup form is
+  used; free otherwise.
+- Cost: ~1.5k / one interface clause per relocating op / 1, local. Status:
+  green for explicit moves; red for conditional reallocation contracts.
 
-### R9 Shared mutation among several holders
+#### R8b Placement and physical demands (SPLIT from R8; provisional)
 
-- (a) Several long-lived pointers to one storage, each writing occasionally.
-  Sequentially this is safe; across threads a write needs synchronization.
-- (b) Sequentially: nothing beyond R1 and R6. Concurrently: which
-  synchronization primitive holds the storage's state facts while no thread
-  holds them.
-- (c) Sequentially at each access; concurrently at acquire and release.
-- (d) Not its job: forbidding aliasing to strengthen R4. That trade belongs to
-  R4 and is local to the storages whose identities coincide.
+- (a) A writer may demand of a placement: alignment; layout (field order,
+  padding, SoA/AoS, cache-line placement); the representation a foreign
+  boundary sees; an address space (the LLVM cross-space non-aliasing claim is
+  unverified and carried as a flag); and that a marked store executes even
+  when its value is never read. Every accepted lowering honors a stated
+  demand. Constant time and register-level erasure are out of scope until
+  R14(vi) carries an observation model.
+- (b) The demand vocabulary; which demands are portable and which
+  target-conditional; target-conditional demands are backend facts that never
+  touch acceptance (M1).
+- (c) At the placement declaration; at lowering, as a conformance check on
+  the IR.
+- (d) Aliasing (R4); ordering (R14); any layout nobody stated.
+- (e) P5 with a demanded column alignment: the alignment is present in the
+  lowered IR after optimization; zlib-core-kernels `align(64)` on the hot
+  table reaches the IR; pending: a key-buffer erasing store before `free` in
+  P2's shape is present after optimization. A foreign layout is compared
+  against an enumerated M3 entry, never assumed.
+- Price: forbids reordering fields or choosing padding only where a layout is
+  stated; forbids dead-store elimination of a marked store; forbids assuming
+  cross-space non-aliasing; nothing where no demand is stated.
+- Cost: ~1.5k when used, 0 otherwise / one demand per placement / 1. Status:
+  provisional (no demand in P1–P10); admission as a merged row with pending
+  programs settled by the owner on 2026-09-16 (VERDICT-D0 decision 7).
 
-### R10 External resources as ordinary objects
+#### R9 Shared mutation among several holders (RESTATED as shape admission)
 
-- (a) Files, sockets, mappings and devices obey the same state, effect and
-  proof rules as memory (constitution).
+- (a) Several long-lived pointers to one storage, each writing occasionally,
+  is a writable shape. Sequentially the hazard is R1's alone; licensed facts
+  weaken under R4 where holders coincide. Across threads the shape is
+  admitted only once a thread construct and R14(i)'s ordering vocabulary
+  exist (trigger); what the checker knows before and after acquire is then
+  R14's to state. Whether a global writable storage is a holder is not
+  decided here: the live ban (`design/language/ownership.md:5`, grounded on
+  parallel permission itself) stands, settled by the owner on 2026-09-16
+  (VERDICT-D0 decision 10).
+- (b) Sequentially: nothing beyond R1 and R6's precision (the identity
+  model's estimate, not a rule). Concurrently: which primitive holds the
+  storage's state facts while no thread holds them.
+- (c) Sequentially each access; concurrently acquire and release.
+- (d) Forbidding aliasing to strengthen R4 (that trade is R4's and local to
+  coinciding identities; R9 is the negation of R4's exclusivity on exactly
+  those storages); synchronization cost placement (M9, measured on P10);
+  global-state policy.
+- (e) P3 (four link writes through several paths accepted sequentially); P7
+  (two aliases to one slot). Negative test: a design that rejects P3's
+  sequential link updates fails R9. P10 deferred with its trigger; "sync cost
+  only at the write" is an M9 measurement, not a clause.
+- Price: forbids inserting a lock, fence or generational check on a hold or a
+  read the source did not synchronize (an M2(ii) instance).
+- Cost: ~0.5k / 0 sequentially / 1. The cost C's "0 sequentially" hid is
+  named: loss of the R4 distinctness fact and widened R6 kills for the
+  coinciding storages; P3/P7 report the retained-fact count under the shape.
+  Status: red (OWN-5 rejects the shape; HIS-REQ-01, HIS-REQ-12).
+
+#### R10 External resources as ordinary objects (KEPT)
+
+- (a) Files, sockets, mappings, devices and descriptors obey the same state,
+  effect and proof rules as memory; no rule of the acceptance relation is
+  conditioned on whether an implementation crosses the host boundary; what an
+  external actor may change between operations is an ordinary contract clause
+  (the interference qualifier of R14(iv)).
 - (b) One identity per external resource; its states; which operations
   transition them; what an external actor may change between operations.
-- (c) At each operation, through ordinary contracts.
-- (d) Not its job: host mechanisms or scheduling (effects.md rejects mechanism
-  categories).
+- (c) Each operation, through ordinary contracts (R7).
+- (d) Host mechanisms or scheduling categories (effects.md); where the trusted
+  adapter lives (M3).
+- (e) Theorem shape: the acceptance relation has no premise mentioning host
+  crossing; metric: trusted declarations are counted under M3, not found by
+  grepping "host boundary". Pending P14: a descriptor as three identities
+  (close-obligation wrapper, open-file description with cursor, foreign
+  contents) with two wrappers sharing one description and a short-read
+  outcome (R12) on the same path.
+- Price: forbids a compiler-special path for I/O values.
+- Cost: 0 extra spec beyond one interference qualifier / contract clauses as
+  for memory / 1. Status: provisional (P14 pending); THE-REQ-14 settled by
+  the owner on 2026-09-16 (VERDICT-D0 decision 15): the adapter is an
+  ordinary M3 entry.
 
-### Meta-constraints
+#### R11 Partial operations and overflow (ADDED)
 
-- M1 Checking is deterministic and budget-free: fixed terminating families plus
-  explicit certificates; no solver, timeout or work budget selects acceptance.
-- M2 No runtime safety check or trap in accepted programs; a condition that can
-  be false is a typed outcome with real control flow.
-- M3 No writer-accessible unsafe escape.
-- M4 The writer is an AI: verbosity is cheap; irregularity, special cases and
-  non-local diagnostics are expensive; the specification stays small.
-- M5 The accepted shapes are the fast shapes; a failed parallel permission
-  leaves a program sequential rather than rejected.
+- (a) Every operation with a domain (index, division, narrowing, arithmetic
+  under an overflow behavior explicitly selected per operation site, cast,
+  hardware operation with preconditions) executes only inside its domain;
+  silent overflow is unrepresentable; outside the domain the source either
+  wrote a typed outcome (R12) or the program is rejected, never repaired with
+  an executable fallback.
+- (b) The domain of each partial operation; a discharge for it (a fixed
+  automatic family or explicit steps).
+- (c) Each partial operation.
+- (d) Memory state (R1); the discharge family (a mechanism under M1); the
+  global progress lemma (M6).
+- (e) Pending P17: a division by a runtime divisor, a narrowing cast, an index
+  against a runtime length, each accepted only with a proof or a written
+  outcome, the diagnostic naming the missing fact. P5: `f` and `g` overflow
+  behavior selected per site. (P1's `v[k]` is an R1 hole-read precision case,
+  not this row's.)
+- Price: none.
+- Cost: 0 extra spec (live OP rules) / one proof or arm per partial site / 1,
+  local. Status: green.
+
+#### R12 Failure paths and typed outcomes (ADDED; scoped)
+
+- (a) Every operation the specification classifies as fallible (expected
+  input and environment failure: short read or write, interruption, device
+  error; allocation failure settled by the owner on 2026-09-16 as an R14(v)
+  exhaustion with a defined stop, VERDICT-D0 decision 5, so this row's
+  allocation clause stays red) yields a typed outcome on a source-visible
+  path; every R2 obligation discharges on each arm; a context may forbid a
+  failure outcome (no-allocate as "the allocation-failure outcome is
+  unreachable here") and the checker enforces it. An unproved domain is a
+  rejection (R11): this row is not global prove-or-handle (HIS-D0-04,
+  HIS-D0-05, HIS-D0-07, HIS-D0-10 stay refused). Blocking and latency are not
+  failures (R10(d): host mechanism categories refused).
+- (b) The outcome type of each fallible operation; the failure edges each arm
+  adds to R2's join; the context's failure prohibitions.
+- (c) At the fallible operation; at every join the outcome creates; at the
+  context boundary.
+- (d) The outcome's spelling or routing (CALL-6 is one mechanism; HIS-REQ-08
+  is a live decision not re-selected here); exhaustions R14(v) excludes;
+  preventing the failure.
+- (e) P8 (obligations on every loop exit); pending P18 (P2 with a failing
+  `alloc` arm frees nothing twice and leaves `b1`, `b3` owned); pending P14
+  short-read arm. Metric: fallible operations in accepted programs with
+  neither a proof nor an outcome arm = 0.
+- Price: forbids eliding a written outcome arm or inserting one; forbids an
+  allocation the source did not write in a no-allocate context.
+- Cost: ~1.5k / one arm per fallible op / 1, local. Status: green for the
+  outcome model; red on allocation failure (SCOPE-3 leaves heap exhaustion
+  outside the outcome model with an abort record; the arm doubles every
+  construction site, a corpus rewrite no draft priced).
+
+#### R13 Resource bounds where demanded (ADDED; opt-in)
+
+- (a) Where a use declares a budget or a promise, the checker proves it:
+  allocation bytes per tangible resource (heap, arena extent, descriptors),
+  a declared recursion depth as a count, and termination. Deadlock freedom
+  (lock order) enters with the thread trigger; deadlines and machine-stack
+  bytes are refused at this decision point (decided after erasure; R14 has no
+  timing model). Unpromised programs pay nothing; unintended nontermination
+  may remain (constitution).
+- (b) A cost semantics per promised resource; a deterministic bound
+  derivation; a termination measure supplied by the writer.
+- (c) At the promising declaration; per call through R7 interfaces.
+- (d) Making every program bounded (the constitution's clause is conditional:
+  "for uses with explicit resource budgets"); the accounting mechanism
+  (envelope, extent items: HIS-REQ-05, not selected); termination-for-removal
+  (R4); performance (M9).
+- (e) Pending P18: P2 with a declared byte budget for `A`, `b4` fits or the
+  program is refused; pending P19: a declared depth count with a termination
+  promise. Metric: the measured peak never exceeds the derived bound, slack
+  ratio stated.
+- Price: forbids introducing allocation or stack growth where a bound is
+  promised (no compiler heap temporaries).
+- Cost: ~2k when used, 0 otherwise / budget clause plus proof steps / 2–3.
+  Status: provisional; stack exhaustion's owner is R14(v), settled by the
+  owner on 2026-09-16 (VERDICT-D0 decision 6).
+
+#### R14 Stated execution model and external conditions (ADDED)
+
+- (a) The specification states the enumerated assumption set every safety
+  theorem rests on, and nothing else: (i) the memory model and
+  synchronization semantics, stated before any thread construct is accepted
+  (trigger); (ii) a closed determinism-level set per overlap construct:
+  source-order equality; proved-law reordering (fixed tree or unspecified
+  order); a named weaker level with no law. The reference behavior of a
+  construct at a weaker level is the set its level admits ("one specified
+  behavior set", the restated HIS-D0-16); (iii) what non-program actors
+  (allocator, OS, DMA device, another thread, a debugger) may do to which
+  storage and when, including the runtime's rights over ended storage; (iv)
+  foreign-writable identities carry a declared access class with defined,
+  unordered, non-UB semantics, excluded from R5's race theorem; no contents
+  fact about them survives an operation the agent could have interleaved;
+  (v) the excluded exhaustion set (heap exhaustion, stack exhaustion, OS
+  quotas), each with a defined stop matching SCOPE-3 today, so no accepted
+  program has an undefined path at exhaustion; (vi) the observation model
+  under which erasure and timing demands are judged (deferred; R8b's
+  constant-time clause waits on it). Anything outside is excluded, never
+  undefined.
+- (b) The enumerated assumptions; a per-storage interference qualifier (its
+  spelling is open question A); the level per construct; the access class per
+  foreign identity.
+- (c) In the specification; M6's theorem takes exactly these assumptions.
+- (d) Selecting the model or a level; host mechanism categories (R10); a
+  debugger's admission and what it may observe (open question B).
+- (e) M6's statement lists no assumption absent from R14; every P-program's
+  external actors are named; P2: allocator metadata written inside freed `b2`
+  is admitted under (iii); P10 (deferred): the level is named; the emitter's
+  abort edges on enum discriminants and allocation refusal are listed under
+  (v) or removed.
+- Price: forbids weakening a stated happens-before; the backend may implement
+  it with any target primitive (the fence set is free; strengthening on TSO
+  is legal).
+- Cost: charged to M8; the ordering text is LKMM-scale and is the largest
+  single item this list adds / 0 / 0. Status: red (no model stated; CAP-1
+  fixes one level); (v)'s stack-exhaustion entry and (ii)'s closed level set
+  settled by the owner on 2026-09-16 (VERDICT-D0 decisions 6 and 8).
+
+#### R15 Abstraction (ADDED; scoped)
+
+- (a) R1–R14 hold for generic, closure-carrying and nominal-parameterized
+  code, the forms the language admits (dynamic dispatch and separately
+  compiled modules are not in the language and are not quantified over);
+  identity, state and effect facts cross abstraction boundaries; generic and
+  higher-order definitions are checked once for all instances and
+  instantiation is decidable by a fixed rule (HIS-REQ-07's cycle check is the
+  current mechanism).
+- (b) Identity and effect parameters on abstractions; the bound vocabulary;
+  the decidability rule.
+- (c) At instantiation and at every abstraction boundary.
+- (d) Monomorphization versus dictionaries; signature size (M8 measures it).
+- (e) Pending P16: P3 generic over the node type, P5 over the column type,
+  P6's helper as a closure, P9 `pick` through a nominal. Metric: parameters
+  per interface over generic P3/P5 ≤ a stated function of the storages the
+  callee touches (not a linear-in-parameters tautology).
+- Price: forbids losing a stated fact at an abstraction boundary; permits
+  specialization.
+- Cost: ~2k / one parameter per abstracted identity or effect / 1–2. Status:
+  provisional (P16 pending); admitted now because a candidate scored on the
+  first-order fragment may be unwritable under generics.
+
+### Meta requirements M1..M11
+
+#### M1 Specified deterministic acceptance (RESTATED)
+
+- (a) Acceptance is a total function of the source bytes and the
+  specification, computed by a specified terminating procedure; no order,
+  budget, machine speed, solver state or state outside the specification
+  selects it; a fixpoint terminates by lattice height, never by an iteration
+  cap; every admitted automatic family runs to its specified completion
+  under its M10 bound.
+- (b) Each family as a decision procedure with a stated bound; the
+  certificate form (written finite steps the checker verifies without
+  rediscovery). A certificate-producing search may exist as a writer-side
+  tool; the checker verifies only written steps and fixed families.
+- (c) Every acceptance decision; the conformance corpus.
+- (d) Latency (M10); repairability (M7). "No SMT" (HIS-D0-02, adopted) is
+  the mechanism serving this row and M8.
+- (e) The corpus on two machines and under a 10x CPU throttle yields
+  byte-identical verdicts and diagnostics; no acceptance-affecting knob
+  exists in the compiler.
+- Price: forbids budget-selected acceptance; nothing of the backend.
+- Cost: 0 / 0 / 0. Status: green (test to be wired).
+
+#### M2 No unstated failure edge, no unchosen cost (RESTATED; two clauses)
+
+- (a) (i) An accepted program has no executable failure edge (trap, abort,
+  unwind, UB, silent wraparound) absent from source and interface; every
+  runtime condition that can be false is a typed outcome with source-visible
+  control flow (R12) or lies in R14(v)'s excluded exhaustion set with a
+  defined stop. (ii) No rule of acceptance is satisfied by the presence of a
+  runtime comparison: no check is required to reach safety, no bookkeeping
+  state exists that the source did not bind, and no lowered branch selects
+  between source-visible behaviors on a path the source does not name.
+  Backend control flow that preserves the one specified behavior set (loop
+  versioning, remainder loops, select lowering) is unconstrained by this row.
+  Drop flags, reference counts, generational or epoch checks that safety
+  depends on, and a Vale-style check wrapped as a library outcome are refused
+  by (ii): the check's condition is a safety predicate the checker did not
+  discharge. A writer-written retry loop whose reads are in R14(iv)'s access
+  class is ordinary code.
+- (b) The failure edges of the lowering and their mapping to source
+  outcomes; the safety predicates each rule discharges.
+- (c) At the WF→IR boundary (edges and safety predicates), never by counting
+  IR branches; at the interface.
+- (d) Pricing a written check (M9); which exhaustions are outside the model
+  (R14(v)).
+- (e) P1: the only branch at the `v[k]` read is the writer's; P4: `free(v);
+  c.read()` refused, not trapped; P8: no drop flag, by (ii). Theorem shape:
+  abort edges of the lowered program ⊆ image of source outcomes ∪ R14(v)'s
+  defined stops. HIS-D0-03 stands; HIS-D0-04, HIS-D0-05, HIS-D0-07, HIS-D0-10 stay refused by (ii).
+- Price: forbids inserting any check, trap or bookkeeping the source did not
+  write; the floor's precondition.
+- Cost: 0 / branches the writer writes / 1. Status: red until R14(v) lists
+  the emitter's defensive abort edges.
+- Disputed: B keeps the literal "no compiler-inserted check or branch" as the
+  enforceable form, which fails every `-O2` lowering (B-cost F1); the
+  two-clause form of this text, under which cheap writer-visible dynamic
+  checks stay excluded by rule rather than moving to a floor argument, was
+  settled by the owner on 2026-09-16 (VERDICT-D0 decision 4).
+
+#### M3 Enumerated, writer-closed trusted base (RESTATED)
+
+- (a) Every assumption the checker does not establish (linked adapters and
+  definitions, host declarations, the backend, runtime, loader and OS as
+  named axioms, R14's conditions) is derivable from the source tree as a
+  list; each entry carries a machine-checked boundary obligation or the named
+  evidence obligation standing in for it (M6(iv) for the backend); the
+  obligation attaches to every entry regardless of origin, so R10's theorem
+  holds, settled by the owner on 2026-09-16 (VERDICT-D0 decision 15); axioms
+  enter only through the specification or an enumerated declaration, never a
+  writer-reachable form; no discharge is a bare assume (HIS-D0-06 refused).
+  "No `unsafe` keyword" is the mechanism.
+- (b) The list and each entry's obligation; which emitted facts trace to a
+  proof and which to a base entry; backend-derived facts, whose admission
+  the owner settled on 2026-09-16 as a `design/compiler` decision (VERDICT-D0
+  decision 3), belong to the backend entry if admitted.
+- (c) At the boundary declaration; per amendment.
+- (d) Semantic non-vacuity in general (a weak `requires` or a defaulted
+  result is a logic error the constitution leaves to the requirement author);
+  the owner-fixed-interface half (a contract the owner fixed cannot be
+  weakened by writer edits) is a provisional clause, settled by the owner on
+  2026-09-16 (VERDICT-D0 decision 14).
+- (e) The tool prints the base; for the corpus it holds adapters, the
+  backend/runtime axioms and R14 conditions only; P9 and P10 add no entry;
+  the blind-writer `byte_at` returning `0` outside its range is refused as a
+  discharge under the provisional interface clause (VERDICT-D0 decision 14).
+- Price: forbids trusting any source-level assertion; every checker-emitted
+  fact traces to a proof or a listed entry.
+- Cost: ~0.3k / 0 / 0. Status: red (no generated list).
+
+#### M4 Writer regularity (SPLIT; budget → M8, repair → M7)
+
+- (a) One spelling per construct to the byte: the grammar admits one
+  production per construct name in a stated inventory; no rule text contains
+  a cross-rule exception; every rule is stated once. Adopted mechanisms
+  serving this row: one spelling per construct (AI-D0-20) and the closed
+  pattern catalog (HIS-D0-14). HIS-D0-21 stays refused.
+- (b) The construct inventory; the rule cross-reference.
+- (c) Specification lint in `make check`.
+- (d) Token budget (M8); repairability (M7); semantic duplicates (two
+  constructs with one meaning), which the grammar lint cannot see and which
+  is stated as its limit.
+- (e) Spelling lint: alternative spellings = 0; cross-rule exception clauses =
+  0.
+- Price: none.
+- Cost: 0 / 0 / 0. Status: red (no lint).
+
+#### M5 Acceptance independent of permission (RESTATED)
+
+- (a) No permission judgment is an input to any acceptance verdict (the
+  parallelism tree's wording). For an erasable construct (PAR-1, PAR-2) a
+  refused permission yields the sequential program, whose result lies inside
+  the construct's promised level (R14(ii)); a non-erasable construct
+  (spawn/join) rejects on a missing fact (R5). "Sequential rather than
+  rejected" is a chosen degradation policy, named as such.
+- (b) Nothing new: the acceptance relation must not mention the permission
+  judgment.
+- (c) Specification; the checker's dependency graph.
+- (d) Performance (M9); the level set (R14); schedules (Price rule).
+- (e) Dependency-graph test: no acceptance verdict depends on a PAR judgment
+  node; corpus: every program stays accepted with the PAR judgment disabled.
+- Price: none.
+- Cost: 0 / 0 / 0. Status: green (`design/language/parallelism.md`).
+
+#### M6 Soundness evidence (ADDED)
+
+- (a) (i) A bounded small-model check per discriminating program with stated
+  depth and prior criteria (the access-state experiment's form), run before a
+  candidate is selected; the operational semantics and the adequacy theorem
+  (accepted programs reach no UB, corruption, race, uninitialized read,
+  overflow or unproved partial state under exactly R14's assumptions; global
+  progress) are a stated later obligation, settled by the owner on 2026-09-16
+  (VERDICT-D0 decision 9). (ii) Frame soundness: a fact retained across an
+  operation is true after it; a design whose frame under-kills fails P7/P2,
+  not merely R6's count. (iii) Erasure: the meaning of an accepted program is
+  independent of its proofs and permissions; lowering ignores proof terms
+  except through R4's licensed facts; observable behavior lies in R14(ii)'s
+  specified behavior set. (iv) A checker-defect evidence channel outside the
+  accepted program, never a build mode (HIS-D0-16 restated; HIS-D0-17 stays
+  superseded): the facts-withheld differential covers retained-fact
+  unsoundness only; acceptance unsoundness needs the small-model check;
+  measured as a seeded-defect detection rate.
+- (b) The bounded model; R14's assumption list; which facts are retained.
+- (c) `research/experiments` per candidate; the compiler's own tests for (iv).
+- (d) Freedom from logic errors; a debug build; what a foreign reader may
+  observe (open question B).
+- (e) Every P1–P9 program under the bounded check; a seeded defect on P5's
+  distinctness facts is detected by (iv) at a stated rate. Lemmas composed
+  here: R1's state lemma, R3's multiplicity lemma, R4's fact licensing, R5's
+  DRF guarantee, R7's compositionality, R11's partial-operation clause.
+- Price: none.
+- Cost: 0 spec / 0 / 0; a second corpus build per `make check` once a fact
+  channel exists. Status: partial (access-state check exists for a fragment).
+
+#### M7 Repairable rejection (ADDED; split from M4)
+
+- (a) Every rejection cites one rule, one tree location and the missing fact
+  or the restructuring it demands (for rejections under stated precision
+  rules such as reject-when-unsure); its `mechanical_fix` or missing-fact
+  payload is non-empty and names a tree location where a local fix exists;
+  diagnostics are deterministic, byte-stable and parseable under one grammar;
+  no restriction leaves the writer without a taught route (HIS-D0-15 stays
+  refused); a repair applied as named does not reintroduce the same rejection
+  at the same location.
+- (b) Per rule, its repair form.
+- (c) Every diagnostic.
+- (d) Acceptance; bounding rounds by a writer model (evidence only, model and
+  protocol pinned; `design/language.md` decision 5, settled by the owner on
+  2026-09-16 as VERDICT-D0 decision 12).
+- (e) P1 `v[k]` names `k≠i ∧ k≠j`; P8 names the differing path; R1 names the
+  failed sub-property; R3 and R2 are distinguishable; R6 names the killer.
+  Metric: payload non-empty for 100% of corpus rejections. Evidence: the
+  blind-writer repair-from-diagnostic rate (OWN-6 fails today: three
+  coordinate-only diagnostics).
+- Price: forbids a rule whose only fix is non-local and unnamed.
+- Cost: ~0.5k / 0 / sets the local-fix bound for every row. Status: red.
+
+#### M8 Teaching and retrieval budget (ADDED; split from M4, prelude and retrieval merged)
+
+- (a) The taught surface (specification, pattern cards, any prelude a file
+  must re-declare) fits K tokens under a named tokenizer; every rule is
+  addressable by ID so one card is retrievable in one lookup (AI-D0-17:
+  retrieval, not the window, is the scarce resource); each card is at most a
+  stated per-rule size; the fixed per-file cost is at most a fraction f of a
+  file; a new row's vocabulary fits within K or displaces an existing row,
+  decided per amendment; R14's model text, M6's semantics and R11–R15 are
+  charged here.
+- (b) Token counts per revision (META-5 practice); the rule-ID index; the
+  prelude fraction.
+- (c) `make check`, per amendment.
+- (d) The checker; how the prelude is delivered (mechanism).
+- (e) Tokens ≤ K with provisional K = 48k (why-whitefoot §1); today ≈130k
+  (533,492 bytes): red. Rule-ID index exists. Prelude fraction ≤ f,
+  re-measured against PRE-1 before the 30–60% figure is cited. Sum of row
+  Cost estimates ≤ the ownership subsystem's stated share of K (≈18.5k
+  today against an unstated share).
+- Price: may forbid a fact vocabulary that breaks K; nothing of the backend.
+- Cost: this row prices every other row. Status: red; K, the tokenizer, f and
+  the share stay provisional at the values named here, with M11 governing
+  every reset, settled by the owner on 2026-09-16 (VERDICT-D0 decision 16).
+
+#### M9 Measured performance floor (ADDED; M5's fast-shape clause made testable)
+
+- (a) On a locked corpus with a named public reference implementation and
+  workload per program, the first checker-green artifact with no hints meets
+  a stated ratio with all checks in place; the obvious shape of P5/P6 and of
+  each corpus program is accepted and within a stated factor of the
+  restructured shape (HIS-D0-19 adopted as a measured property, never as a
+  rule); the source can license per-access and per-span facts (R4's former
+  sufficiency clause), measured as P5 per-load facts; P10's "synchronization
+  cost only at the write" is measured here when threads exist.
+- (b) Corpus, references, ratio, factor, protocol.
+- (c) `research/experiments`, per candidate and per release.
+- (d) Acceptance (M5); promising speedup from permission (HIS-D0-20 stays
+  refused); schedule languages and cost-model exposure (RAD-D0-12, RAD-D0-24:
+  mechanisms).
+- (e) Two measurements, named separately: (1) default-floor 1.65x
+  (percent-encoding) and 1.10x (utf8parse), retired-compiler evidence whose
+  own boundary disclaims that the fact channels caused the win, to be
+  re-measured on the current compiler; (2) the obvious-shape factor
+  (why-whitefoot §3's 1.6x, open per HIS-REQ-04). The P5 per-load half is
+  unmeasurable until an alias channel exists (SYS-REQ-13; section 8 Q15).
+- Price: forbids a design whose default-accepted shape is off the floor;
+  nothing of the backend.
+- Cost: 0 / 0 / 0. Status: unmeasurable on the current compiler.
+
+#### M10 Checking cost, scaling and edit stability (ADDED)
+
+- (a) Each admitted automatic family has a stated worst-case bound as a degree
+  in operation counts over spec-defined quantities (premises, entries,
+  identities, written steps), under a provisional ceiling: no family above
+  cubic in its measure, total work per declaration at most quadratic in
+  written proof steps; a family needing more is a recorded amendment naming
+  why. Whole-project criterion: a pinned bundle at a stated project size with
+  a fitted exponent, never a wall-clock gate in `make check` (M1). Edit
+  stability: the set of declarations whose verdict can change under a
+  one-token edit is bounded by a stated function of the edit's syntactic
+  reach, measured on the checker without assuming certificates or caching.
+  The bound is in program size including instantiations, so PROG-1 stays
+  (SYS-D0-15). Termination alone is insufficient; never exponential
+  (HIS-D0-11).
+- (b) The bound per family; the reach function.
+- (c) Specification (the bound); measurement against the pinned bundle.
+- (d) Budget-selected acceptance (M1); "more annotations make checking
+  cheaper" (HIS-D0-21 refused); the incremental architecture.
+- (e) proof-use-cost `growing` pinned bundle N = 16…128: baseline 31→164→1690
+  ms (N^2.5–3.4); current branch growing-64 ≈ 120–173 ms, growing-128 ≈
+  734–1158 ms (exponent ≈ 2.6): red against the ceiling. A one-token edit in
+  P9's caller changes the verdict set of a bounded declaration set. Outcome
+  arms: path count per arm bounded by the arm count.
+- Price: forbids a family whose worst case exceeds its stated degree;
+  nothing of the backend.
+- Cost: 0 / 0 / 0; a violation is a compiler defect. Status: red.
+
+#### M11 Evolution with stated loss (ADDED; conditional)
+
+- (a) A specification, interface-vocabulary or proof-form revision states the
+  verdict diff over the retained corpus and either a migration or the loss; a
+  mechanical migration tool is required only once a project declares a
+  compatibility need (the constitution's clause is conditional); explicit
+  steps survive a revision that does not change their rule; META-5 token and
+  spelling deltas are counted per amendment; every threshold in this list (K,
+  f, ratio, factor, degree) is reset only through an amendment recorded here.
+- (b) The conformance-corpus verdict diff; the deltas.
+- (c) Per amendment.
+- (d) Backward compatibility as a hard rule.
+- (e) Verdict diff present; META-5 counts present; where a tool ships, manual
+  edits ≤ a stated count relative to corpus size (never "or the count is in
+  the PR").
+- Price: none.
+- Cost: ~0 / 0 / migration rounds counted per revision. Status: green.
+
+Row count: 16 R rows (R1–R7, R8a, R8b, R9–R15) + 11 M rows = 27.
+
+## 2a. Premises
+
+Premises the pre-verdict list carried as meta-constraints or as unstated
+assumptions, reclassified by the verdict (its section 5). Six were
+reclassified: FN-1 and PROG-1 wholly to mechanism; M1, M2, M3 keep a
+requirement with the mechanism clause split out and named; M5 split into
+requirement, goal and policy.
+
+| Premise | Classification | Serves | Reason; what changes if dropped |
+|---|---|---|---|
+| FN-1 signature-only checking | Mechanism (HIS-D0-08 remains an adopted decision, now placed) | R7 (one way to realize a stated interface), M10 (edit locality: the reach function stops at the interface), M7 (local diagnostics) | The backend and the caller need an interface, not its authorship. Dropped: whole-program inference becomes admissible under PROG-1; R7 still requires a pinned, printed interface for compositionality; M10's reach function is restated without the interface as its boundary. |
+| PROG-1 closed world | Mechanism, spent (majority A and B; C's "unspent" is refuted by C's own R7 clause). Two-consumer reading: the checker spends it in M3 (the base is enumerable from the tree), M6 (closed quantification), R5's exact transitive footprint closure (spec line 1902), R7's declaration-side check and R15 instantiation; the backend spends it in devirtualization, cross-declaration facts and monomorphization (M9). HIS-D0-09 remains adopted. | M3, M6, R5, R7, R15, M9 | Dropped: separately compiled interfaces become M3 entries with obligations; M6 gains an "imported interfaces are honored" assumption; R7's interface becomes the only cross-unit fact channel; FN-1's annotation cost would then buy separate compilation, which today it does not (SYS-D0-16's double cost is a mechanism cost, not a requirement conflict). Spent, settled by the owner on 2026-09-16 (VERDICT-D0 decision 11). |
+| M1 deterministic, budget-free checking | Requirement (restated as specified total deterministic acceptance). "No SMT" is the adopted mechanism (HIS-D0-02). | M6 (the acceptance relation is a function the theorem quantifies over), M7, M8 | A specification-fixed fixpoint bounded by lattice height qualifies; a writer-side certificate search qualifies; an in-checker portfolio does not. Dropped: acceptance becomes implementation-defined and the theorem loses its object. |
+| M2 no runtime safety check | Requirement (restated as two clauses). "No runtime check or trap" is the adopted mechanism reading (HIS-D0-03); clause (ii) is what keeps HIS-D0-04, HIS-D0-05, HIS-D0-07, HIS-D0-10 refused. | M3 (a trap is an unenumerated failure edge), M6(iii), R12, M9's precondition | Dropped: Vale/Mezzo/CHERI-shaped designs re-enter; every interface gains an implicit failure edge; every R4 fact becomes guard-conditional. The two-clause form settled by the owner on 2026-09-16 (VERDICT-D0 decision 4). |
+| M3 no unsafe | Requirement (restated as enumerated, writer-closed trusted base). "No `unsafe` keyword" is the mechanism. | M6 (assumptions are exactly M3's list plus R14), R4's facts being non-defeasible, the why-whitefoot floor argument | Dropped: a stuck writer uses the escape; M6's theorem acquires per-site assumptions no tool enumerates; R4 facts become trust-dependent as Rust's `noalias` is under `unsafe`. |
+| M5 fast shapes only | Split. Acceptance-independence is the requirement (M5); "accepted shapes are the fast shapes" is a goal measured under M9 (HIS-D0-18, HIS-D0-19); "sequential rather than rejected" is a chosen degradation policy for erasable constructs, named as such. | M5 serves M6 (the theorem is schedule-free); M9 serves the constitution's performance objective | Dropped: acceptance depends on the cost model and the theorem quantifies over schedules; without M9 the floor claim is unmeasured and why-whitefoot §1 unsupported. |
 
 ## 3. The hazard ladder
 
@@ -223,6 +920,15 @@ are replaced. No loans are needed.
 The read/write conflict table appears here and only here: two overlapping
 statements may not write a storage the other reads or writes.
 
+Settled R5 (section 2) admits overlap on three grounds; the conflict table
+above is ground (i), and the ladder is otherwise unchanged.
+
+| Ground | Overlap admitted when | Row |
+|---|---|---|
+| (i) | the footprints are proved non-interfering (the conflict table above) | R5(a)(i) |
+| (ii) | the statements interfere only on a recombinable accumulator whose operator law is a fixed-table fact or a written finite proof | R5(a)(ii) |
+| (iii) | the construct carries a named weaker level from R14(ii)'s closed set, under which no law is claimed | R5(a)(iii) |
+
 ### What each mechanism is for, by the ladder
 
 | Mechanism | Hazard or goal it serves | First needed |
@@ -243,6 +949,11 @@ identities can carry, and the default clean shape of M5, which section 7
 records as an open coupling.
 
 ## 4. Today's mechanisms mapped to the requirements
+
+The columns keep the map's original R1..R10 numbering from before the D0
+verdict: the R8 column now covers R8a and R8b, and R11..R15 have no column.
+The matrix was not rebuilt; it remains the reading of today's mechanisms
+against the original rows.
 
 P marks the requirement a rule primarily serves, S a secondary one. The
 bucket column says which of the ladder's roles the mechanism plays:
@@ -304,6 +1015,11 @@ Two readings of the table:
 
 
 ## 5. Mechanism families per requirement
+
+Numbering note: this section and section 6 were written against the
+pre-verdict list and keep its names and numbers (R1..R10, M1..M5); read R8 as
+R8a and R8b, and the meta-constraints as their successors M1..M11 in section
+2. The families themselves are unchanged by the verdict.
 
 For each requirement, the families known to serve it, the information each
 needs, and its fit with M1 to M5. Representative works are named for
@@ -516,6 +1232,10 @@ is a language decision the map records; it selects nothing.
 
 ## 6. A decomposition that keeps the requirements separate
 
+Numbering note: as for section 5, this section keeps the pre-verdict row
+names; the decomposition is one candidate and is being debated per decision
+point.
+
 The ladder and the table suggest one decomposition. It is [DESIGN.md](DESIGN.md)'s
 Candidate A stated requirement by requirement, with two refinements from
 [CASES.md](CASES.md): storage state at a join is a term over the captured
@@ -548,24 +1268,31 @@ What this retires, what it keeps, what it adds:
 
 ## 7. Couplings and change impact
 
-These are the places where one choice reaches several requirements. A
-candidate that changes a row's choice must re-check every requirement the row
-names.
+These are the places where one choice reaches several requirements, re-keyed
+to the settled rows of section 2 by the D0 verdict (its section 4). A
+candidate that changes a coupling's choice must re-check every row the
+coupling names.
 
-| Choice | Reaches | Why |
-|---|---|---|
-| Identity granularity: per allocation, per field, per element, per proved range | R1 precision with holes, R4, R5, R6, M4 spec size | one refinement vocabulary serves state, distinctness, footprints and kills |
-| Distinct identity parameters distinct by default, aliasing declared | R4, R5, M5 floor, M4 call-site proof burden, soundness | keeps Rust's clean-shape default without a mode on pointers; sound only if every call site discharges distinctness for every pair, sub-identities of one storage included, which inverts OWN-7's current default; costs a proof where two arguments come from one container |
-| Sequential aliased writes allowed | R4 where identities coincide, R6 kill precision, M5 | safety stays with state; facts weaken only for storages the writer let coincide |
-| `own` aggregates passed as handles | R8, R7 contracts must say whether the callee ends the storage, backend calling convention | identity survives the call only if storage does not move |
-| Storage state as a term over captured conditions | M1 cost in condition atoms, R1 and R2 definiteness at scope exit and loop heads | replaces path-sensitive analysis with fact discharge; definiteness rule replaces drop flags |
-| The set of storage-ending operations | R1 completeness, R7 contract vocabulary | every member must be contract-visible: free, dispose, scope exit, reallocation, relocating move |
-| Effect roots become identities | EFF-1 grammar, R5, R6, R7, generics: nominals carry identity parameters | struct-held pointers can be named in rows only through the struct's identity parameters |
-| Backing identity for containers | R7 push and reserve contracts, R8, interior pointer types | an existential backing that a contract may replace |
-| Read-only interface on pointers | R4 readonly facts, API design | a type flag, never a loan or a duration |
-| Locks holding identity state | R5 threads, R9, M2 | synchronization cost lands on the write, not on the hold |
-| Per-storage state as the primary mechanism rather than an add-on | R1, R2, R3, M1 | affine-replacement.md rejected a bare take because a hole open across statements "needs per-place vacancy flow, prohibition or repair of every scope-leaving edge in the window, and a meaning for an exclusive borrow over a vacant referent"; the decomposition pays the first two deliberately, as state facts and the definiteness rule, and the third disappears because pointers carry no permission |
-| Modes retired instead of refined | R4, R9, M4 | LEX-1 defers a two-axis mode vocabulary "exclusivity x write-permission, adding frozen/exclusive-read and an explicitly bounded shared-write form"; identity plus footprints answers the same questions without a second axis on pointers |
+| # | Choice | Reaches | Why |
+|---|---|---|---|
+| C1 | Identity granularity: per allocation, field, element, proved range | R1 precision with holes, R4, R5, R6, M8 | one refinement vocabulary serves state, distinctness, footprints and kills |
+| C2 | One distinctness relation, two exactness directions: R4(b) = R5(b), R6 keyed the same way | R4, R5, R6, M6 | R4 tolerates a missing "distinct" (speed); R5 rejects at a non-erasable construct; R6 needs a may-write over-approximation; a mechanism change for one silently retunes the others, so the relation is stated once |
+| C3 | Distinct-by-default identity parameters with call-site discharge | R4, R5, M9, M8, M6 soundness | sound only if every call site discharges distinctness for every pair, sub-identities included; never inequality of identity names (P2 `S` vs `b1`); a proof where two arguments come from one container |
+| C4 | `own` aggregates passed as handles | R8a, R7, backend convention | identity survives a call only if storage does not move; the convention itself is not priced (R3) |
+| C5 | Sequential aliased writes allowed | R4 where identities coincide, R6 kill precision, R9, M9 | safety stays with state; facts weaken only for storages the writer let coincide |
+| C6 | Storage state as a term over captured conditions | M10 cost in condition atoms, R1/R2 definiteness at scope exit and loop heads, M1 | replaces path-sensitive analysis with fact discharge; the definiteness rule replaces drop flags |
+| C7 | The storage-ending set | R1 completeness, R7 vocabulary, R8a, R14(iii) | every member contract-visible, non-program actors included |
+| C8 | Effect roots become identities | R5, R6, R7, R15 | struct-held pointers are nameable in rows only through identity parameters |
+| C9 | Backing identity for containers | R7 push/reserve contracts, R8a, interior pointer types | an existential backing a contract may replace |
+| C10 | Read-only interface on pointers | R4 readonly facts, API design | a type flag, never a loan or a duration |
+| C11 | Locks holding identity state | R5, R9, M2, R14(i) | cost lands on the write; two calls on one lock deny each other under PAR-1 (section 8 Q11) unless a weaker level exists |
+| C12 | Per-storage state as the primary mechanism | R1, R2, R3, M1 | affine-replacement.md's three costs: vacancy flow and definiteness paid deliberately, the third vanishes because pointers carry no permission |
+| C13 | Modes retired instead of refined | R4, R9, M4 | identity plus footprints answers LEX-1's two-axis questions without a second axis on pointers |
+| C14 | The loan channel (section 8 Q14) | R5, R7, M5 | whether a call may claim exclusivity beyond its row; PAR-1's source-equivalence ground is what changes |
+| C15 | Outcome arms multiply R2's join paths | R2, R12, M10 | path count per arm bounded by the arm count |
+| C16 | Level set ↔ sequential fallback ↔ erasure | R14(ii), M5, M6(iii), R5 | the sequential result is one member of a weaker level's admitted set |
+| C17 | Foreign access class ↔ race theorem ↔ retry loops | R14(iv), R5, M2, R10 | seqlock-shaped reads are legal only in the declared class; outside it a plain load racing a foreign write is a race |
+| C18 | Trusted base ↔ host boundary ↔ backend-derived facts | M3, R10, R4, M6(iv) | the obligation attaches regardless of origin; backend-derived facts, if admitted, belong to the backend's entry and are marked apart from checker facts |
 
 ## 8. Open questions before a candidate can be selected
 
@@ -585,30 +1312,53 @@ names.
    and lifecycle events; the ladder says only writes and events.
 7. Threads, locks, atomics and external identities: the minimal additions
    (section 5, R9 and R10).
-8. A soundness plan: an exhaustive small-model check like
-   [access-state](../../experiments/access-state/RESULTS.md) first, a formal
-   model later.
+8. A soundness plan, settled as M6(i)'s runnable form: a bounded small-model
+   check per discriminating program with stated depth and prior criteria, in
+   the [access-state](../../experiments/access-state/RESULTS.md) form, run
+   before a candidate is selected; the operational semantics and the adequacy
+   theorem are a stated later obligation, settled by the owner on 2026-09-16
+   (VERDICT-D0 decision 9). Open: running the check for each candidate over
+   P1..P9.
 9. Migration: `&` and `&uniq` as sugar over pointer plus state clause; region
    syntax retirement; pattern cards.
 10. Conditional states at a fork or join: the collapse rule for `ite` states whose
     condition the other side cannot name is sound but untested for precision.
 11. A lock over identities no caller owns fits the decomposition, but two calls
-    on one lock deny each other under PAR-1; letting them overlap is a second
-    permission level without source-order equality, which CAP-1 excludes today.
-    This is a decision to record, not to derive.
-12. Externally writable storage needs one qualifier, foreign, spelled over
-    interference rather than origin; whether an internal object shared with
-    another thread carries the same qualifier decides its constitutionality.
+    on one lock deny each other under PAR-1 (coupling C11); letting them
+    overlap is a weaker determinism level. R14(ii) now carries a closed level
+    set per overlap construct, settled by the owner on 2026-09-16 (VERDICT-D0
+    decision 8), which reopens CAP-1's single guarantee. Open: the level a
+    lock-bearing overlap names and how it is spelled.
+12. Externally writable storage is owned by R14(iv): a foreign-writable
+    identity carries a declared access class with defined, unordered, non-UB
+    semantics, excluded from R5's race theorem and spelled over interference
+    rather than origin (coupling C17). The class's spelling is open question
+    A; whether an internal object shared with another thread carries the same
+    class waits on the thread trigger.
 13. A spawned child that is never joined holds obligations its parent cannot
     discharge; CAP-1 says nothing about obligation leaks across a thread
     boundary.
-14. The loan channel: whether a call may claim exclusivity on an identity beyond
-    its row, as a `&uniq` actual does today, or whether the row is the complete
-    interference contract. Execution is safe either way; PAR-1's recorded
-    source-equivalence ground is what changes.
-15. R4 has no current mechanism: the emitter states no alias promises, so the
-    alias-fact channel must be built under either model; the identity model
-    makes the prototype's per-field re-derivation a first-class fact.
+14. The loan channel is carried as coupling C14 (R5, R7, M5): whether a call
+    may claim exclusivity on an identity beyond its row, as a `&uniq` actual
+    does today, or whether the row is the complete interference contract.
+    Execution is safe either way; PAR-1's recorded source-equivalence ground
+    is what changes.
+15. R4 has no current mechanism: the emitter states no alias promises, so R4's
+    status is unmeasurable and M9's P5 per-load half is unmeasurable until an
+    alias-fact channel exists, under either model; the identity model makes
+    the prototype's per-field re-derivation a first-class fact. Whether the
+    backend may add facts of its own on top of stated facts is a
+    `design/compiler` decision (VERDICT-D0 decision 3).
+
+Open questions the verdict added:
+
+| # | Question | Rows | Settled ground and what remains open |
+|---|---|---|---|
+| A | The spelling of the per-storage interference qualifier: the declared access class of R14(iv), which R10's contracts and coupling C17 read | R14(b), R10, R5 | Spelled over interference, never origin (section 5, foreign identity row); the surface form and its interaction with contents facts are open |
+| B | What a non-interfering reader (a debugger, a foreign agent) may observe of an accepted program, and the observation model R14(vi) under which erasure and timing demands are judged | R14(vi), M6(iii), R8b | Deferred by R14(vi); R8b's constant-time and register-level erasure clauses wait on it; a debugger's admission and what it may observe belong here (R14(d), M6(d)) |
+| C | The allocation-failure form | R12, R14(v), R2, C15 | Settled by the owner on 2026-09-16 (VERDICT-D0 decision 5): abort with a resource record under R14(v), outside the outcome model, which leaves R12's allocation clause red; open is whether kernels and `GFP_ATOMIC`-shaped contexts ever get an opt-in fallible allocation form, a second spelling priced under M4 |
+| D | Stack exhaustion | R14(v), R13 | Settled by the owner on 2026-09-16 (VERDICT-D0 decision 6): an excluded exhaustion with a defined stop matching SCOPE-3; no bound by default, so embedded targets get nothing unless they promise one; open is whether R13's opt-in depth count (P19) is enough for them |
+| E | Global holders | R9, `design/language/ownership.md:5` | Settled by the owner on 2026-09-16 (VERDICT-D0 decision 10): the global mutable state ban stands; R9 does not say whether a global writable storage is a holder, which stays open until the thread trigger |
 
 ## 9. Relationship to the other files
 
@@ -618,3 +1368,9 @@ names.
 adds the requirement-level frame and the hazard ladder that justifies the
 minimal information. CASES.md case B08 is refined here into the
 state-as-term rule of section 6; nothing else in those files changes.
+Section 2 cites [VERDICT-D0.md](VERDICT-D0.md) as the record of the
+dispositions and refused alternatives behind the settled list; its
+owner-decision table, on which the owner took the interim position on
+2026-09-16, is carried as pending amendments beside the design tree until
+entered under `design/skill/SKILL.md`, and [PROGRAMS.md](PROGRAMS.md) holds
+the pending programs P11..P19 the rows cite.
