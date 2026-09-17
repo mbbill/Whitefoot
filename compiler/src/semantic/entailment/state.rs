@@ -2311,51 +2311,106 @@ impl BoundStore {
                 .is_some_and(|extra| extra.iter().copied().any(test))
     }
 
-    /// Replaces a pair's candidates, selecting the smallest bound and then the
-    /// better proof in candidate order; an empty list removes the pair.
-    fn store_candidates(
+    /// Adds one candidate. The selection is the least candidate by bound and
+    /// then proof, so only the new candidate and the current selection
+    /// compete; the loser is kept among the other candidates.
+    fn add_candidate(
         &mut self,
         pair: (TermId, TermId),
-        candidates: Vec<(i128, DerivationId)>,
+        candidate: (i128, DerivationId),
         ledger: &DerivationLedger,
     ) {
-        let selected = candidates
-            .iter()
-            .copied()
-            .enumerate()
-            .reduce(|current, candidate| {
-                if candidate.1.0 < current.1.0
-                    || (candidate.1.0 == current.1.0 && ledger.better(candidate.1.1, current.1.1))
-                {
-                    candidate
-                } else {
-                    current
-                }
-            });
-        let Some((position, (bound, proof))) = selected else {
-            self.clear(pair);
+        let Some(selected) = self.get(pair.0, pair.1) else {
+            self.store_single(pair.0, pair.1, candidate.0, candidate.1);
             return;
         };
-        self.reserve(pair.0.0.max(pair.1.0) as usize + 1);
-        let index = self
-            .index(pair.0, pair.1)
-            .expect("store reserved for the pair");
-        if !self.present[index] {
-            self.live += 1;
+        if selected == candidate
+            || self
+                .extra
+                .get(&pair)
+                .is_some_and(|extra| extra.contains(&candidate))
+        {
+            return;
         }
-        self.bounds[index] = bound;
-        self.proofs[index] = proof;
-        self.present[index] = true;
-        let rest = candidates
-            .into_iter()
-            .enumerate()
-            .filter(|(index, _)| *index != position)
-            .map(|(_, candidate)| candidate)
-            .collect::<Vec<_>>();
-        if rest.is_empty() {
-            self.extra.remove(&pair);
+        let preferred = candidate.0 < selected.0
+            || (candidate.0 == selected.0 && ledger.better(candidate.1, selected.1));
+        let displaced = if preferred {
+            let index = self
+                .index(pair.0, pair.1)
+                .expect("a selected pair is in range");
+            self.bounds[index] = candidate.0;
+            self.proofs[index] = candidate.1;
+            selected
         } else {
-            self.extra.insert(pair, rest);
+            candidate
+        };
+        self.extra.entry(pair).or_default().push(displaced);
+    }
+
+    /// The smallest bound among a pair's candidates whose proof passes `test`.
+    fn candidate_minimum(
+        &self,
+        pair: (TermId, TermId),
+        mut test: impl FnMut(DerivationId) -> bool,
+    ) -> Option<i128> {
+        let selected = self
+            .get(pair.0, pair.1)
+            .filter(|(_, proof)| test(*proof))
+            .map(|(bound, _)| bound);
+        let extra = self.extra.get(&pair).and_then(|extra| {
+            extra
+                .iter()
+                .filter(|(_, proof)| test(*proof))
+                .map(|(bound, _)| *bound)
+                .min()
+        });
+        selected.into_iter().chain(extra).min()
+    }
+
+    /// Keeps a pair's candidates that pass `keep`, in place. A surviving
+    /// selection stays selected: no other candidate was preferred to it.
+    /// Otherwise the best surviving candidate, in candidate order, is selected.
+    fn retain_candidates(
+        &mut self,
+        pair: (TermId, TermId),
+        mut keep: impl FnMut((i128, DerivationId)) -> bool,
+        ledger: &DerivationLedger,
+    ) {
+        let selected_kept = self.get(pair.0, pair.1).is_some_and(&mut keep);
+        let mut extra = self.extra.remove(&pair).unwrap_or_default();
+        extra.retain(|candidate| keep(*candidate));
+        if !selected_kept {
+            let best = extra
+                .iter()
+                .copied()
+                .enumerate()
+                .reduce(|current, candidate| {
+                    if candidate.1.0 < current.1.0
+                        || (candidate.1.0 == current.1.0
+                            && ledger.better(candidate.1.1, current.1.1))
+                    {
+                        candidate
+                    } else {
+                        current
+                    }
+                });
+            match best {
+                Some((position, (bound, proof))) => {
+                    extra.remove(position);
+                    let index = self
+                        .index(pair.0, pair.1)
+                        .expect("a selected pair is in range");
+                    self.bounds[index] = bound;
+                    self.proofs[index] = proof;
+                }
+                None => {
+                    self.clear(pair);
+                    return;
+                }
+            }
+        }
+        if !extra.is_empty() {
+            self.extra.insert(pair, extra);
         }
     }
 
@@ -2738,12 +2793,7 @@ impl FactState {
         } else {
             self.ordinary_closure.mark_fresh_cell((left, right));
         }
-        let pair = (left, right);
-        let mut candidates = self.bounds.candidates(pair);
-        if !candidates.contains(&(bound, proof)) {
-            candidates.push((bound, proof));
-        }
-        Rc::make_mut(&mut self.bounds).store_candidates(pair, candidates, ledger);
+        Rc::make_mut(&mut self.bounds).add_candidate((left, right), (bound, proof), ledger);
     }
 
     fn add_distinct_candidate(
@@ -2895,24 +2945,20 @@ impl FactState {
                     .any_candidate(*pair, |(_, proof)| killed(pair.0, pair.1, proof))
             })
             .collect::<Vec<_>>();
-        let ordinary_bound = |candidates: &[(i128, DerivationId)]| {
-            candidates
-                .iter()
-                .filter(|(_, proof)| !ledger.depends_on_postcondition_call(*proof))
-                .map(|(bound, _)| *bound)
-                .min()
-        };
+        let ordinary = |proof: DerivationId| !ledger.depends_on_postcondition_call(proof);
         let mut ordinary_weakened = Vec::new();
         for pair in bound_pairs {
-            let mut candidates = self.bounds.candidates(pair);
-            let ordinary_before = ordinary_bound(&candidates);
+            let ordinary_before = self.bounds.candidate_minimum(pair, ordinary);
             let held = self.bounds.get(pair.0, pair.1).map(|(bound, _)| bound);
-            candidates.retain(|(_, proof)| !killed(pair.0, pair.1, *proof));
-            if ordinary_bound(&candidates) != ordinary_before {
+            changed = true;
+            Rc::make_mut(&mut self.bounds).retain_candidates(
+                pair,
+                |(_, proof)| !killed(pair.0, pair.1, proof),
+                ledger,
+            );
+            if self.bounds.candidate_minimum(pair, ordinary) != ordinary_before {
                 ordinary_weakened.push(pair);
             }
-            changed = true;
-            Rc::make_mut(&mut self.bounds).store_candidates(pair, candidates, ledger);
             if self.bounds.get(pair.0, pair.1).map(|(bound, _)| bound) != held {
                 weakened.push(pair);
             }
