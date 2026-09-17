@@ -127,3 +127,59 @@ is reached.
 
 If the seed misses 3x, attribute the remainder before choosing a persistent
 dense representation.
+
+## Implementation
+
+The implemented closure record is richer than the proposed seed.
+
+**The closure record.** Besides fresh cells and fresh terms, it keeps weakened cells: cells whose selected candidate was removed while their terms survive. It is kept for both the full and the ordinary proof layers.
+
+**Closing a core.** A closure of a core does not use the seeded fixed point.
+- Each fresh edge enters with one column pass, then one row pass over the rows tight through the edge and the columns the edge can improve.
+- The implicit bounds of fresh terms enter as such edges.
+- Up to one weakened cell per term is rederived in place, within one repair pass per weakened cell. A negative cycle behind those cells can otherwise lower them forever.
+- A larger weakened set keeps the seeded fixed point over the weakened endpoints.
+- The proof-free contradiction probe uses the same insertion.
+
+**Representation.** Closed states are dense matrices, and fact-state bounds live in a dense, reference-counted store. A single proof candidate is held inline. The closed view of an unchanged state is remembered.
+
+**Joins, fallback views and kills.**
+- A join reuses a proof every predecessor selected.
+- Ordinary fallback candidates are merged only where a selection depends on a postcondition call.
+- Kill predicates are evaluated once per term.
+
+An independent adversarial review found the unbounded repair loop, which is now bounded and has a regression test that hangs without the bound. The review also compared a value-only model of edge insertion with the complete closure over about 170,000 random states without a mismatch.
+
+The verification switch now runs on the test thread only and asserts that it compared closures. The committed test verifies utf8parse, the raw DEFLATE chain and fixed_run_library, in about 41 s under the gate profile. wfgrep adds about 30 s, so it was verified by temporary inclusion at every change, not in the committed test.
+
+Six compiler tests pinned derivation shape; no verdict, rule or location changed:
+- One accepted any projection through the killed middle.
+- Five counted one-parent join wrappers that a single-predecessor join no longer creates.
+
+## Selection
+
+The [raw pairs](../../experiments/proof-use-cost/incremental-pairs-2026-09-17.tsv) compare the PR #68 head `902ae791` (gate binary SHA-256 `476a03de5d2f7bf356c75ec2043522b476f3fad683f67e4ad4244cbf511f85ba`) with `9f5e2616` (`7f32f6128ddda36c4522d30ebf1752ce2bdf4838f5842ebc18739e2a9d0e71c2`). They were run on the flow-baseline M1 Pro host with no other compiler or test job running: five alternating warmed pairs.
+
+| Source | PR #68 median | Candidate median | Speedup |
+|---|---:|---:|---:|
+| fixed-run | 24.966 s | 1.162 s | **21.49x** |
+| wfgrep | 24.959 s | 0.878 s | **28.41x** |
+| prefix | 121.7 ms | 25.3 ms | 4.81x |
+| histogram | 123.4 ms | 28.2 ms | 4.37x |
+| radix scatter | 639.8 ms | 72.7 ms | 8.80x |
+| growing-256 | 3.234 s | 3.065 s | 1.05x |
+| control-256 | 482.8 ms | 291.3 ms | 1.66x |
+
+The fixed-context cells and every 16-size cell stay within 2%; the largest relative increase is growing-16 at 2.3%, about 0.4 ms. Both compilers emit byte-identical LLVM for all 22 measured sources.
+
+The candidate meets both 3x criteria and regresses no protected source. wfgrep checks in under one second.
+
+Against main `ab93c8e9`, the two programs went from 80.5 s and 40.5 s to 1.16 s and 0.88 s. These are checking-cost results for these sources, not runtime speedups or a universal bound.
+
+**What remains** is distributed rather than cubic:
+- the ordinary-fallback view that materialization builds by removing postcondition candidates from a clone;
+- the row and column passes of edges after kills;
+- the interning of derivations for recreated cells;
+- per-event kill scans.
+
+Fixed-run spends most of that in fallback views; wfgrep in joins and edge insertion.
