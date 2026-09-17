@@ -924,8 +924,9 @@ pub(crate) struct DerivationLedger {
     pub(crate) nodes: Vec<DerivationNode>,
     pub(crate) roots: Vec<DerivationRoot>,
     depths: Vec<u32>,
-    /// Parallel to `nodes`: whether the parent ancestry reaches an
-    /// S12 call relation. Parent IDs precede children, so this is computed
+    /// Parallel to `nodes`: whether a live value dependency reaches an
+    /// S12 call relation without crossing an absorbing contradiction.
+    /// Parent IDs precede children, so this is computed
     /// once at interning rather than rediscovered by every kill/join query.
     postcondition_call_ancestry: Vec<bool>,
     interned: InternIndex,
@@ -1091,19 +1092,40 @@ impl DerivationLedger {
         let depth = node
             .maximum_parent_depth(&self.depths)
             .map_or(0, |maximum| maximum.saturating_add(1));
-        let mut postcondition_call_ancestry =
-            matches!(node, DerivationNode::PostconditionCall { .. });
-        if !postcondition_call_ancestry {
-            node.for_each_parent(|parent| {
-                postcondition_call_ancestry |= self.postcondition_call_ancestry[parent.0 as usize];
-            });
-        }
+        let postcondition_call_ancestry =
+            self.node_has_postcondition_dependency(&node, &self.postcondition_call_ancestry);
         self.nodes.push(node);
         self.depths.push(depth);
         self.postcondition_call_ancestry
             .push(postcondition_call_ancestry);
         self.interned.entries.insert(key, id);
         id
+    }
+
+    fn node_has_postcondition_dependency(
+        &self,
+        node: &DerivationNode,
+        dependencies: &[bool],
+    ) -> bool {
+        let mut depends = matches!(node, DerivationNode::PostconditionCall { .. });
+        if !depends {
+            node.for_each_parent(|parent| {
+                // An absorbing contradictory predecessor is neutral at a
+                // join under ENT-5. Its proof is retained, but its former
+                // value support cannot make a surviving path's conclusion
+                // removable by a later S12 holder kill.
+                if !matches!(
+                    self.nodes[parent.0 as usize],
+                    DerivationNode::L0Contradiction { .. }
+                        | DerivationNode::GoalContradiction { .. }
+                        | DerivationNode::JoinContradiction { .. }
+                        | DerivationNode::MaterializedContradiction { .. }
+                ) {
+                    depends |= dependencies[parent.0 as usize];
+                }
+            });
+        }
+        depends
     }
 
     /// The key one interned identity is filed under.
@@ -1140,9 +1162,10 @@ impl DerivationLedger {
         node_event(&self.nodes[id.0 as usize])
     }
 
-    /// Whether this proof's derivation ancestry consumes an S12 call
-    /// relation. A0 references are execution premises, not
-    /// live value support, and therefore are deliberately not traversed.
+    /// Whether this proof consumes a still-removable S12 value relation.
+    /// Contradiction parents are absorbing grounds rather than live value
+    /// support, and A0 references are execution premises; neither propagates
+    /// the candidate-removal dependency. All parents remain in the ledger.
     pub(crate) fn depends_on_postcondition_call(&self, id: DerivationId) -> bool {
         self.postcondition_call_ancestry[id.0 as usize]
     }
@@ -1289,13 +1312,8 @@ impl DerivationLedger {
                 .maximum_parent_depth(&depths)
                 .map_or(0, |maximum| maximum.saturating_add(1));
             depths.push(depth);
-            let mut depends = matches!(node, DerivationNode::PostconditionCall { .. });
-            if !depends {
-                node.for_each_parent(|parent| {
-                    depends |= postcondition_call_ancestry[parent.0 as usize];
-                });
-            }
-            postcondition_call_ancestry.push(depends);
+            postcondition_call_ancestry
+                .push(self.node_has_postcondition_dependency(node, &postcondition_call_ancestry));
         }
         self.depths = depths;
         self.postcondition_call_ancestry = postcondition_call_ancestry;
@@ -3017,7 +3035,10 @@ impl FactState {
         self.postcondition_candidates
     }
 
-    fn retain_non_postcondition_candidates(&mut self, ledger: &DerivationLedger) -> bool {
+    pub(crate) fn retain_non_postcondition_candidates(
+        &mut self,
+        ledger: &DerivationLedger,
+    ) -> bool {
         let changed = self.postcondition_candidates
             && self.kill_proof_candidates(ledger, |_, _, proof| {
                 ledger.depends_on_postcondition_call(proof)
@@ -3031,7 +3052,11 @@ impl FactState {
     /// Adds `other`'s candidates where this state's selection depends on a
     /// postcondition call. Any other selection is derivable without such
     /// calls and so already equals the ordinary view `other` holds.
-    fn merge_relation_candidates_from(&mut self, other: &Self, ledger: &DerivationLedger) {
+    pub(crate) fn merge_relation_candidates_from(
+        &mut self,
+        other: &Self,
+        ledger: &DerivationLedger,
+    ) {
         let needs_fallback = |proof: Option<&DerivationId>| {
             proof.is_none_or(|proof| ledger.depends_on_postcondition_call(*proof))
         };
@@ -5519,9 +5544,20 @@ fn join_at_once(
                 })
         });
         if held {
-            // A proof every predecessor already selected holds on every
-            // incoming path, so it is itself a derivation of the joined fact.
-            if contributing.len() == closed.len() && same_proof {
+            // A temporary transitive/strengthened proof may still mention a
+            // middle that the next kill removes. Even when all incoming
+            // closures select it, the join must record when its conclusion
+            // became independently live. Reuse only existing live facts or
+            // implicit bounds, which hold at every program point.
+            let independently_live = matches!(
+                ledger.nodes[shared.0 as usize],
+                DerivationNode::SourceBound { left: l, right: r, bound: b, .. }
+                    | DerivationNode::ImplicitBound { left: l, right: r, bound: b, .. }
+                    | DerivationNode::JoinBound { left: l, right: r, bound: b, .. }
+                    | DerivationNode::MaterializedBound { left: l, right: r, bound: b, .. }
+                    if (l, r, b) == (left, right, bound)
+            );
+            if contributing.len() == closed.len() && same_proof && independently_live {
                 bounds.store_single(left, right, bound, shared);
                 continue;
             }
@@ -5562,9 +5598,17 @@ fn join_at_once(
     for pair in distinct_keys {
         if contributing.len() == closed.len() {
             let shared = first.distinct_proofs[&pair];
-            if rest_indices
-                .iter()
-                .all(|index| closed[*index].distinct_proofs[&pair] == shared)
+            let independently_live = matches!(
+                ledger.nodes[shared.0 as usize],
+                DerivationNode::SourceDistinct { left, right, .. }
+                    | DerivationNode::JoinDistinct { left, right, .. }
+                    | DerivationNode::MaterializedDistinct { left, right, .. }
+                    if ordered(left, right) == pair
+            );
+            if independently_live
+                && rest_indices
+                    .iter()
+                    .all(|index| closed[*index].distinct_proofs[&pair] == shared)
             {
                 distinct_proofs.insert(pair, shared);
                 continue;
@@ -5605,9 +5649,18 @@ fn join_at_once(
     for (goal, sign) in opaque_keys {
         if contributing.len() == closed.len() {
             let shared = first.opaque_proofs[&(goal, sign)];
-            if rest_indices
-                .iter()
-                .all(|index| closed[*index].opaque_proofs[&(goal, sign)] == shared)
+            let independently_live = matches!(
+                ledger.nodes[shared.0 as usize],
+                DerivationNode::SourceGoal { goal: g, sign: s, .. }
+                    | DerivationNode::BooleanLiteral { goal: g, sign: s }
+                    | DerivationNode::JoinGoal { goal: g, sign: s, .. }
+                    | DerivationNode::MaterializedGoal { goal: g, sign: s, .. }
+                    if (g, s) == (goal, sign)
+            );
+            if independently_live
+                && rest_indices
+                    .iter()
+                    .all(|index| closed[*index].opaque_proofs[&(goal, sign)] == shared)
             {
                 opaque_proofs.insert((goal, sign), shared);
                 continue;
@@ -5752,6 +5805,16 @@ pub(crate) mod tests {
             seeded.distinct, complete.distinct,
             "seeded closure disequalities differ from the complete closure"
         );
+        assert_eq!(seeded.opaque, complete.opaque);
+        for goal in goals.ids() {
+            for sign in [GoalSign::Positive, GoalSign::Negative] {
+                assert_eq!(
+                    seeded.derives_goal(goal, sign, goals),
+                    complete.derives_goal(goal, sign, goals),
+                    "seeded closure goal answer differs from the complete closure"
+                );
+            }
+        }
     }
 
     /// Compiles a real program with every seeded, inserted or remembered
@@ -6246,6 +6309,122 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_shared_temporary_join_proof_becomes_live_before_its_middle_dies() {
+        let mut terms = TermTable::new();
+        let [left, middle, right] = [0, 1, 2].map(|binding| {
+            terms.intern(TermKind::Place(
+                super::super::term::PlaceTerm {
+                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+                IntegerType::I32,
+            ))
+        });
+        let goals = GoalTable::default();
+        let mut ledger = DerivationLedger::default();
+        let source = ledger.event(FlowEventKind::S1, None);
+        let mut state = FactState::new();
+        for (left, right, bound) in [(left, middle, 0), (middle, right, -1)] {
+            state.establish(&Relation::Bound { left, right, bound }, &mut ledger, source);
+        }
+        let event = ledger.event(FlowEventKind::Join, None);
+        let mut joined = join_at(&[state.clone(), state], &terms, &goals, &mut ledger, event);
+        let (bound, proof) = joined.bounds.get(left, right).expect("joined consequence");
+        assert_eq!(bound, -1);
+        assert!(matches!(
+            ledger.nodes[proof.0 as usize],
+            DerivationNode::JoinBound { event: held, .. } if held == event
+        ));
+        let distinct = joined.distinct_proofs[&ordered(left, right)];
+        assert!(matches!(
+            ledger.nodes[distinct.0 as usize],
+            DerivationNode::JoinDistinct { event: held, .. } if held == event
+        ));
+        // The next join may reuse those independently live conclusions.
+        let next = ledger.event(FlowEventKind::Join, None);
+        let again = join_at(
+            &[joined.clone(), joined.clone()],
+            &terms,
+            &goals,
+            &mut ledger,
+            next,
+        );
+        assert_eq!(again.bounds.get(left, right), Some((bound, proof)));
+        assert_eq!(again.distinct_proofs[&ordered(left, right)], distinct);
+
+        materialize_closure_before_kill(&mut joined, &terms, &goals, &mut ledger);
+        joined.kill(|term| term == middle);
+        assert_eq!(joined.bounds.get(left, right), Some((bound, proof)));
+        assert_eq!(joined.distinct_proofs[&ordered(left, right)], distinct);
+        // Independence does not let a conclusion outlive its own support.
+        joined.kill(|term| term == right);
+        assert!(joined.bounds.get(left, right).is_none());
+        assert!(!joined.distinct.contains(&ordered(left, right)));
+    }
+
+    #[test]
+    fn a_neutral_contradiction_does_not_make_an_ordinary_join_fact_call_dependent() {
+        let mut terms = TermTable::new();
+        let left = terms.intern(TermKind::Place(
+            super::super::term::PlaceTerm {
+                root: super::super::term::PlaceRoot::Binding(BindingId(0)),
+                deref: false,
+                fields: Vec::new(),
+            },
+            IntegerType::I32,
+        ));
+        let goals = GoalTable::default();
+        for call_dependent in [false, true] {
+            let mut ledger = DerivationLedger::default();
+            let source = ledger.event(FlowEventKind::S1, None);
+            let mut live = FactState::new();
+            live.establish(
+                &Relation::Bound {
+                    left,
+                    right: ZERO,
+                    bound: 0,
+                },
+                &mut ledger,
+                source,
+            );
+            let impossible = Relation::Bound {
+                left: ZERO,
+                right: ZERO,
+                bound: -1,
+            };
+            let mut dead = FactState::new();
+            if call_dependent {
+                let proof = postcondition_call_proof(&mut ledger, impossible.clone());
+                dead.establish_from_proof(&impossible, proof, &ledger);
+            } else {
+                dead.establish(&impossible, &mut ledger, source);
+            }
+            let event = ledger.event(FlowEventKind::Join, None);
+            let mut joined = join_at(&[live, dead], &terms, &goals, &mut ledger, event);
+            let (_, proof) = joined.bounds.get(left, ZERO).unwrap();
+            let DerivationNode::JoinBound { parents, .. } = &ledger.nodes[proof.0 as usize] else {
+                panic!("join boundary");
+            };
+            assert_eq!(
+                parents.len(),
+                2,
+                "the neutral predecessor's proof is retained"
+            );
+            assert!(!ledger.depends_on_postcondition_call(proof));
+            joined.retain_non_postcondition_candidates(&ledger);
+            assert!(close(&joined, &terms, &goals, &mut ledger).derives_bound(left, ZERO, 0));
+            ledger.add_root(DerivationRootKind::BoundsObligation(0), proof);
+            let remap = ledger.finish();
+            let proof = remap[proof.0 as usize].expect("join root retained");
+            assert!(
+                !ledger.depends_on_postcondition_call(proof),
+                "finalization preserves the dependency boundary"
+            );
+        }
+    }
+
+    #[test]
     fn ordinary_fallback_candidates_survive_join_and_materialization() {
         let mut terms = TermTable::new();
         let left = terms.intern(TermKind::Place(
@@ -6720,15 +6899,214 @@ pub(crate) mod tests {
         (*seed >> 33) as usize
     }
 
+    /// An eager test reference: close each predecessor from all of its own
+    /// live facts, intersect values, and always give the result a new join
+    /// boundary. It does not read the optimized state's closure record or
+    /// reuse its materialized/joined output. A one-edge join is a snapshot.
+    fn reference_join_layer(
+        states: &[FactState],
+        terms: &TermTable,
+        goals: &GoalTable,
+        ledger: &mut DerivationLedger,
+        event: FlowEventId,
+    ) -> FactState {
+        let closed = states
+            .iter()
+            .map(|state| {
+                let mut state = state.clone();
+                state.closure = ClosureRecord::Unknown;
+                close_with_excluded_term(&state, terms, goals, ledger, None)
+            })
+            .collect::<Vec<_>>();
+        let parents = |proofs: Vec<DerivationId>| {
+            proofs
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, parent)| JoinParent {
+                    ordinal: u32::try_from(ordinal).unwrap(),
+                    parent,
+                })
+                .collect::<Vec<_>>()
+        };
+        let Some(first) = closed.iter().find(|state| !state.all_derivable) else {
+            let proof = ledger.intern(DerivationNode::JoinContradiction {
+                event,
+                parents: parents(
+                    closed
+                        .iter()
+                        .map(|state| state.contradiction.unwrap())
+                        .collect(),
+                ),
+            });
+            return FactState::contradictory(proof);
+        };
+        let mut result = FactState::new();
+        for (left, right, bound, _) in first.matrix.cells() {
+            let weakest = closed.iter().filter(|state| !state.all_derivable).try_fold(
+                bound,
+                |bound, state| {
+                    state
+                        .matrix
+                        .lookup(left, right)
+                        .map(|(held, _)| bound.max(held))
+                },
+            );
+            let Some(bound) = weakest else {
+                continue;
+            };
+            let proofs = closed
+                .iter()
+                .map(|state| {
+                    state
+                        .contradiction
+                        .unwrap_or_else(|| state.bound_proof(left, right, bound, ledger).unwrap())
+                })
+                .collect();
+            let proof = ledger.intern(DerivationNode::JoinBound {
+                left,
+                right,
+                bound,
+                event,
+                parents: parents(proofs),
+            });
+            result.add_bound(left, right, bound, proof, ledger);
+        }
+        let mut distinct = first.distinct.iter().copied().collect::<Vec<_>>();
+        distinct.sort_unstable();
+        for (left, right) in distinct {
+            let proofs = closed
+                .iter()
+                .map(|state| {
+                    state
+                        .contradiction
+                        .or_else(|| state.distinct_proofs.get(&(left, right)).copied())
+                })
+                .collect::<Option<Vec<_>>>();
+            if let Some(proofs) = proofs {
+                let proof = ledger.intern(DerivationNode::JoinDistinct {
+                    left,
+                    right,
+                    event,
+                    parents: parents(proofs),
+                });
+                result.add_distinct_candidate((left, right), proof, ledger);
+            }
+        }
+        let mut opaque = first.opaque.iter().copied().collect::<Vec<_>>();
+        opaque.sort_unstable();
+        for (goal, sign) in opaque {
+            let proofs = closed
+                .iter()
+                .map(|state| {
+                    state
+                        .contradiction
+                        .or_else(|| state.opaque_proofs.get(&(goal, sign)).copied())
+                })
+                .collect::<Option<Vec<_>>>();
+            if let Some(proofs) = proofs {
+                let proof = ledger.intern(DerivationNode::JoinGoal {
+                    goal,
+                    sign,
+                    event,
+                    parents: parents(proofs),
+                });
+                result.opaque.insert((goal, sign));
+                result.opaque_proofs.insert((goal, sign), proof);
+            }
+        }
+        result
+    }
+
+    fn reference_join(
+        states: &[FactState],
+        terms: &TermTable,
+        goals: &GoalTable,
+        ledger: &mut DerivationLedger,
+    ) -> FactState {
+        let event = ledger.event(FlowEventKind::Join, None);
+        let mut full = reference_join_layer(states, terms, goals, ledger, event);
+        if full.all_derivable {
+            return full;
+        }
+        let mut ordinary = states.to_vec();
+        for state in &mut ordinary {
+            // Do not trust the optimized candidate-presence flag or record.
+            state.kill_proof_candidates(ledger, |_, _, proof| {
+                ledger.depends_on_postcondition_call(proof)
+            });
+        }
+        let ordinary = reference_join_layer(&ordinary, terms, goals, ledger, event);
+        assert!(!ordinary.all_derivable);
+        // Keep every ordinary candidate, even when full selected an ordinary
+        // proof already. This reference deliberately does not share the
+        // optimized fallback omission rule.
+        for (left, right, bound, proof) in ordinary.bounds.cells() {
+            full.add_bound(left, right, bound, proof, ledger);
+        }
+        for (&pair, &proof) in ordinary.distinct_proofs.iter() {
+            full.add_distinct_candidate(pair, proof, ledger);
+        }
+        full
+    }
+
+    fn assert_flow_states_agree(
+        states: &[FactState; 2],
+        terms: &TermTable,
+        goals: &GoalTable,
+        ledgers: &mut [DerivationLedger; 2],
+    ) {
+        // Compare both layers, so loss of an unselected ordinary candidate
+        // cannot hide behind an unchanged selected bound.
+        for ordinary in [false, true] {
+            let mut views = states.clone();
+            if ordinary {
+                for (state, ledger) in views.iter_mut().zip(ledgers.iter()) {
+                    state.kill_proof_candidates(ledger, |_, _, proof| {
+                        ledger.depends_on_postcondition_call(proof)
+                    });
+                }
+            }
+            views[1].closure = ClosureRecord::Unknown;
+            views[1].closed_view.take();
+            let fast = close(&views[0], terms, goals, &mut ledgers[0]);
+            let reference = close(&views[1], terms, goals, &mut ledgers[1]);
+            assert_eq!(
+                fast.all_derivable, reference.all_derivable,
+                "ordinary={ordinary}"
+            );
+            if fast.all_derivable {
+                continue;
+            }
+            let actual = bound_values(&fast);
+            let expected = bound_values(&reference);
+            assert_eq!(actual.len(), expected.len(), "ordinary={ordinary}");
+            for (actual, expected) in actual.iter().zip(&expected) {
+                assert_eq!(actual, expected, "ordinary={ordinary}");
+            }
+            assert_eq!(fast.distinct, reference.distinct, "ordinary={ordinary}");
+            assert_eq!(fast.opaque, reference.opaque, "ordinary={ordinary}");
+            for goal in goals.ids() {
+                for sign in [GoalSign::Positive, GoalSign::Negative] {
+                    assert_eq!(
+                        fast.derives_goal(goal, sign, goals),
+                        reference.derives_goal(goal, sign, goals)
+                    );
+                }
+            }
+        }
+    }
+
     /// Random flows over a few terms interleave source and postcondition
     /// relations, disequalities, materialized kills, holder kills that weaken
     /// selections, ordinary views, joins with an earlier copy and newly
     /// registered terms. After every step each closure and contradiction probe
-    /// of the live states is compared with the complete closure.
+    /// of the live states is compared with the complete closure. Independently
+    /// advanced reference states also check what each transition preserved.
     #[test]
     fn generated_flows_close_incrementally_like_the_complete_closure() {
         VERIFY_SEEDED_CLOSURE.with(|verify| verify.set(true));
         VERIFIED_CLOSURES.with(|count| count.set(0));
+        let mut actions = [0_usize; 13];
         for case in 0..400_u64 {
             let mut seed = case.wrapping_mul(0x9e37_79b9_7f4a_7c15).wrapping_add(1);
             let mut terms = TermTable::new();
@@ -6753,73 +7131,136 @@ pub(crate) mod tests {
             for _ in 0..4 {
                 register(&mut terms, &mut places);
             }
-            let goals = GoalTable::default();
-            let mut ledger = DerivationLedger::default();
-            let event = ledger.event(FlowEventKind::S1, None);
-            let mut state = FactState::new();
-            let mut earlier: Option<FactState> = None;
+            places.push(terms.intern(TermKind::Constant(3)));
+            let measure = terms.intern(TermKind::Measure(
+                CheckedMeasure::Length,
+                super::super::term::PlaceTerm {
+                    root: super::super::term::PlaceRoot::Binding(BindingId(100)),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+            ));
+            terms.set_measure_bound(measure, MeasureBound::Constant(7));
+            places.push(measure);
+            let mut goals = GoalTable::default();
+            let goal = goals.intern(
+                GoalExpression::Datum(super::super::super::goal::GoalDatum::Place {
+                    root: BindingId(101),
+                    projections: Vec::new(),
+                    ty: super::super::super::model::CheckedType::Bool,
+                }),
+                None,
+                None,
+                vec![GoalSupport {
+                    root: BindingId(101),
+                    projections: Vec::new(),
+                    measure: None,
+                }],
+            );
+            let mut ledgers = [DerivationLedger::default(), DerivationLedger::default()];
+            let events = ledgers
+                .each_mut()
+                .map(|ledger| ledger.event(FlowEventKind::S1, None));
+            let mut states = [FactState::new(), FactState::new()];
+            let mut earlier: Option<[FactState; 2]> = None;
+            let mut trace = Vec::new();
             for _ in 0..24 {
                 let left = places[next_step(&mut seed) % places.len()];
                 let right = places[next_step(&mut seed) % places.len()];
                 let bound = i128::try_from(next_step(&mut seed) % 7).expect("small") - 3;
-                match next_step(&mut seed) % 11 {
-                    0..=2 if left != right => {
-                        state.establish(
-                            &Relation::Bound { left, right, bound },
-                            &mut ledger,
-                            event,
-                        );
-                    }
-                    3 if left != right => {
-                        state.establish(
-                            &Relation::Distinct {
-                                left,
-                                right,
-                                difference: 0,
-                            },
-                            &mut ledger,
-                            event,
-                        );
-                    }
-                    4 | 5 if left != right => {
-                        let relation = Relation::Bound { left, right, bound };
-                        let call = postcondition_call_proof(&mut ledger, relation.clone());
-                        state.establish_from_proof(&relation, call, &ledger);
-                    }
-                    6 => {
-                        materialize_closure_before_kill(&mut state, &terms, &goals, &mut ledger);
-                        state.kill(|term| term == left);
-                    }
-                    7 => {
-                        state.kill_proof_candidates(&ledger, |from, to, proof| {
-                            ledger.depends_on_postcondition_call(proof)
-                                && (from == left || to == left)
-                        });
-                    }
-                    8 => {
-                        let mut ordinary = state.clone();
-                        ordinary.retain_non_postcondition_candidates(&ledger);
-                        let _ = close(&ordinary, &terms, &goals, &mut ledger);
-                    }
-                    9 => match earlier.take() {
-                        None => earlier = Some(state.clone()),
-                        Some(copy) => {
-                            let join = ledger.event(FlowEventKind::Join, None);
-                            state =
-                                join_at(&[state.clone(), copy], &terms, &goals, &mut ledger, join);
-                        }
-                    },
-                    10 => register(&mut terms, &mut places),
-                    _ => {}
+                let action = next_step(&mut seed) % actions.len();
+                trace.push((action, left, right, bound));
+                actions[action] += 1;
+                if action == 10 {
+                    register(&mut terms, &mut places);
                 }
-                let _ = close(&state, &terms, &goals, &mut ledger);
-                let _ = contradiction_without_proofs(&state, &terms, &goals);
+                for index in 0..2 {
+                    let state = &mut states[index];
+                    let ledger = &mut ledgers[index];
+                    let event = events[index];
+                    match action {
+                        0..=2 if left != right => {
+                            state.establish(&Relation::Bound { left, right, bound }, ledger, event);
+                        }
+                        3 if left != right => {
+                            state.establish(
+                                &Relation::Distinct {
+                                    left,
+                                    right,
+                                    difference: 0,
+                                },
+                                ledger,
+                                event,
+                            );
+                        }
+                        4 | 5 if left != right => {
+                            let relation = Relation::Bound { left, right, bound };
+                            let call = postcondition_call_proof(ledger, relation.clone());
+                            state.establish_from_proof(&relation, call, ledger);
+                        }
+                        6 => {
+                            if index == 0 {
+                                materialize_closure_before_kill(state, &terms, &goals, ledger);
+                            } else {
+                                *state = reference_join(&[state.clone()], &terms, &goals, ledger);
+                            }
+                            state.kill(|term| term == left);
+                        }
+                        7 => {
+                            state.kill_proof_candidates(ledger, |from, to, proof| {
+                                ledger.depends_on_postcondition_call(proof)
+                                    && (from == left || to == left)
+                            });
+                        }
+                        8 => {
+                            let mut ordinary = state.clone();
+                            ordinary.retain_non_postcondition_candidates(ledger);
+                            let _ = close(&ordinary, &terms, &goals, ledger);
+                        }
+                        9 => {
+                            if let Some(copy) = &earlier {
+                                let incoming = [state.clone(), copy[index].clone()];
+                                *state = if index == 0 {
+                                    let join = ledger.event(FlowEventKind::Join, None);
+                                    join_at(&incoming, &terms, &goals, ledger, join)
+                                } else {
+                                    reference_join(&incoming, &terms, &goals, ledger)
+                                };
+                            }
+                        }
+                        11 => state.establish_goal(
+                            goal,
+                            if bound < 0 {
+                                GoalSign::Negative
+                            } else {
+                                GoalSign::Positive
+                            },
+                            ledger,
+                            event,
+                        ),
+                        12 => state.kill_goals(|held| held == goal),
+                        _ => {}
+                    }
+                    let _ = contradiction_without_proofs(state, &terms, &goals);
+                }
+                if action == 9 {
+                    earlier = if earlier.is_none() {
+                        Some(states.clone())
+                    } else {
+                        None
+                    };
+                }
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    assert_flow_states_agree(&states, &terms, &goals, &mut ledgers);
+                }));
+                assert!(result.is_ok(), "case {case}: {trace:?}");
                 if let Some(copy) = &earlier {
-                    let _ = close(copy, &terms, &goals, &mut ledger);
+                    assert_flow_states_agree(copy, &terms, &goals, &mut ledgers);
                 }
             }
         }
         VERIFY_SEEDED_CLOSURE.with(|verify| verify.set(false));
         assert!(VERIFIED_CLOSURES.with(Cell::get) > 0);
+        assert!(actions.into_iter().all(|count| count > 0));
     }
 }

@@ -3366,15 +3366,15 @@ fn main() -> status: own ExitStatus pure {
     assert!(outcomes[2].evidence.is_empty());
     let mut counts = DistinctGroundCounts::default();
     collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
-    // A single-predecessor join keeps its predecessor's proof instead of a
-    // one-parent wrapper, so only merging joins appear among the grounds.
+    // Each strict-derived disequality first becomes independently live at
+    // its one-edge join; the merging join retains both of those boundaries.
     assert_eq!(
         counts,
         DistinctGroundCounts {
             strict: 2,
-            joins: 1,
-            join_edges: 2,
-            join_parent_counts: vec![2],
+            joins: 3,
+            join_edges: 4,
+            join_parent_counts: vec![2, 1, 1],
             ..DistinctGroundCounts::default()
         },
         "the normalized joined disequality names both opposite strict parents"
@@ -3440,10 +3440,10 @@ fn main() -> status: own ExitStatus pure {
     let mut counts = DistinctGroundCounts::default();
     collect_distinct_grounds(&summary, distinct, &mut counts);
     assert_eq!(counts.strict, 2);
-    // A single-predecessor join keeps its predecessor's proof instead of a
-    // one-parent wrapper, so only merging joins appear among the grounds.
-    assert_eq!(counts.joins, 1);
-    assert_eq!(counts.join_edges, 2);
+    // Keep the two strict-derived facts' independence boundaries as well as
+    // the join that combines their paths.
+    assert_eq!(counts.joins, 3);
+    assert_eq!(counts.join_edges, 4);
 }
 
 #[test]
@@ -3501,9 +3501,8 @@ fn main() -> status: own ExitStatus pure {
         &mut kept_counts,
     );
     assert_eq!(kept_counts.strict, 2);
-    // A single-predecessor join keeps its predecessor's proof instead of a
-    // one-parent wrapper, so only merging joins appear among the grounds.
-    assert_eq!(kept_counts.join_edges, 2);
+    // The derived facts retain their one-edge independence boundaries.
+    assert_eq!(kept_counts.join_edges, 4);
 
     let killed_summary = entailment(source, "killed");
     validate_derivations(&killed_summary);
@@ -3591,14 +3590,14 @@ fn main() -> status: own ExitStatus pure {
             collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
             assert_eq!(
                 counts,
-                // Only the merging join remains: a single-predecessor join
-                // keeps its predecessor's proof.
+                // The source fact is already live; only the strict-derived
+                // fact needs its one-edge independence boundary.
                 DistinctGroundCounts {
                     source: 1,
                     strict: 1,
-                    joins: 1,
-                    join_edges: 2,
-                    join_parent_counts: vec![2],
+                    joins: 2,
+                    join_edges: 3,
+                    join_parent_counts: vec![2, 1],
                     ..DistinctGroundCounts::default()
                 },
                 "the mixed join names its explicit and strict-derived predecessor roots"
@@ -3657,13 +3656,13 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(counts.source, 1);
     assert_eq!(counts.strict, 2);
     assert_eq!(counts.contradiction, 1);
-    // A single-predecessor join keeps its predecessor's proof instead of a
-    // one-parent wrapper, so only merging joins appear among the grounds.
-    assert_eq!(counts.joins, 3);
+    // The two strict-derived inputs need independence boundaries; the
+    // explicit source input can be reused directly.
+    assert_eq!(counts.joins, 5);
     counts.join_parent_counts.sort_unstable();
-    assert_eq!(counts.join_parent_counts, vec![2, 2, 2]);
+    assert_eq!(counts.join_parent_counts, vec![1, 1, 2, 2, 2]);
     assert_eq!(
-        counts.join_edges, 6,
+        counts.join_edges, 8,
         "the guarded inputs retain all four reaching grounds through the nested joins"
     );
 }
@@ -4196,6 +4195,93 @@ fn main() -> status: own ExitStatus pure {
             _ => true,
         }),
         "the fresh receiver contributes no reflexive source fact"
+    );
+}
+
+#[test]
+fn value_if_delivery_retains_the_ordinary_fallback_and_shared_give_root() {
+    // Acceptance alone does not observe the fallback. Inspect both retained
+    // derivations: a later candidate kill must be able to expose the ordinary
+    // bound even when the selected full bound came from an S12 call.
+    let source = br#"fn limit(value: own i32) -> result: own i32 pure contract {
+  requires value < 8_i32;
+  ensures result < 8_i32;
+} {
+  return value;
+}
+
+fn guard(value: own i32) -> result: own unit pure contract {
+  requires value < 32_i32;
+} {
+  return unit;
+}
+
+fn choose(value: own i32, narrow: own Bool) -> result: own unit pure contract {
+  requires value < 8_i32;
+} {
+  let picked = if narrow {
+    let bounded = limit(value: value);
+    if bounded < 16_i32 {
+      give bounded;
+    } else {
+      return unit;
+    }
+  } else if value < 32_i32 {
+    give value;
+  } else {
+    return unit;
+  }
+  guard(value: picked);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "choose");
+    validate_derivations(&summary);
+    let mut call_dependent = Vec::new();
+    for node in &summary.derivations.nodes {
+        call_dependent.push(
+            matches!(node, DerivationNode::PostconditionCall { .. })
+                || node
+                    .parent_ids()
+                    .iter()
+                    .any(|parent| call_dependent[parent.0 as usize]),
+        );
+    }
+    let joins = summary
+        .derivations
+        .nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, node)| {
+            let DerivationNode::PostconditionDeliveryJoin { detail } = node else {
+                return None;
+            };
+            let Relation::Bound {
+                right: ZERO, bound, ..
+            } = detail.relation
+            else {
+                return None;
+            };
+            Some((bound, call_dependent[index], &detail.parents))
+        })
+        .collect::<Vec<_>>();
+    let full = joins
+        .iter()
+        .find(|(bound, call, _)| *bound == 7 && *call)
+        .expect("delivery keeps the strongest call-dependent bound");
+    let ordinary = joins
+        .iter()
+        .find(|(bound, call, _)| *bound == 15 && !*call)
+        .expect("delivery keeps the weaker ordinary fallback");
+    assert_eq!(full.2.len(), 2);
+    assert_eq!(ordinary.2.len(), 2);
+    assert_eq!(
+        full.2[1].parent, ordinary.2[1].parent,
+        "both layers reuse the ordinary second edge, with one required Give root"
     );
 }
 

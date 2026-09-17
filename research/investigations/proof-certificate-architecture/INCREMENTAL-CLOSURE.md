@@ -36,7 +36,11 @@ It must not change:
 - any opaque-goal answer or obligation disposition;
 - acceptance, diagnostics' rules and locations, or emitted LLVM.
 
-Every retained derivation must still pass the existing derivation validation.
+Every retained derivation must remain valid. Production ledger validation
+checks parent ordering and ancestry-table integrity, not every semantic
+inference. The compiler tests' `validate_derivations` additionally reconstructs
+the relations and checks rule-specific parents for the summaries they inspect;
+it is not a universal independent checker of all accepted programs.
 
 The live [closure-row-dominance](../../../design/compiler/closure-row-dominance.md)
 decision promises unchanged selected derivations. A selected implementation
@@ -157,8 +161,9 @@ Per-edge insertion replaces those rounds. It carries its own settling of the
 strict-bound disequality and zero-bound strengthening rules, and its own
 contradiction scan. It does not carry kill rules: term kills still only
 remove cells and mark terms fresh, and a candidate removal only marks the
-cells it weakens for the rederivation above. Because those two rules are now written twice,
-beside the fixed point, the verification switch compares every insertion
+cells it weakens for the rederivation above. Because transitivity,
+strict-bound/disequality strengthening and contradiction detection now also
+have incremental implementations, the verification switch compares every insertion
 with the complete closure, and the proof-free probe is checked the same way.
 
 **Attribution of the representation changes.** After edge insertion
@@ -184,15 +189,22 @@ proof's ancestry rather than its value.
 
 - *Postcondition-call ancestry.* It selects which candidates an ordinary view
   or holder kill removes. A selection that does not depend on a call is still
-  derivable without calls, so its bound already equals the ordinary closure's.
+  derivable from surviving ordinary facts. A contradictory predecessor is
+  absorbing and neutral at a join under ENT-5: its proof remains a parent,
+  but its former call-dependent value support must not make another path's
+  ordinary conclusion removable. Candidate dependency therefore stops at a
+  contradiction parent; it is not a literal traversal of every retained
+  provenance edge.
 - *Delivery.* `depends_on_explicit_relation` delivers a relation only when its
   proof uses an explicit fact. A cell whose closed value is implied by
   implicit bounds alone holds the same value at a same-typed receiver through
   that receiver's own implicit bounds, so which of two equal-bound proofs is
   retained does not change a delivered bound.
 - *Retained derivations.* The checked program retains them, including the
-  PAR permission derivations of [DIAG-2]. Their shape may change, and the
-  existing derivation validation checks each one.
+  PAR permission derivations of [DIAG-2]. Their shape may change, but an
+  independently live conclusion needs its source, snapshot or join boundary.
+  Sharing a temporary closure proof across all predecessors does not give it
+  that boundary. Focused compiler tests check these retained records.
 
 These are arguments, not proofs. The byte-identical LLVM for the measured
 sources and the unchanged verdicts of the compiler, program and conformance
@@ -205,25 +217,54 @@ and live states can pin a remembered closed matrix. Both are included in
 these peaks.
 
 **Joins, fallback views and kills.**
-- A join reuses a proof every predecessor selected.
-- Ordinary fallback candidates are merged only where a selection depends on a postcondition call.
+- A join reuses an already independently live or implicit proof every predecessor selected; temporary consequences still receive a join node.
+- Ordinary fallback candidates are merged where a selection depends on a postcondition call. Delivery preserves those candidates through both substitution and the separate delivery join, and shared Give parents receive exactly one retained root.
 - Kill predicates are evaluated once per term.
 
 An independent adversarial review found the unbounded repair loop, which is now bounded and has a regression test that hangs without the bound. Two independent reviews also reported value-level models of edge insertion agreeing with a complete closure on randomized small states. Those models are review aids outside the repository, not retained evidence.
 
 The verification switch now runs on the test thread only and asserts that it compared closures. Two committed tests use it:
 - One compiles utf8parse, in about 2 s under the gate profile.
-- One runs 400 generated flows of 24 steps over growing sets of places. The steps mix source and postcondition bounds, disequalities, materialized kills, holder kills, ordinary views, joins and new terms. It takes under 1 s.
+- One runs 400 generated flows of 24 steps over places, a constant, a fixed-length measure and a signed opaque goal. The steps mix source and postcondition bounds, disequalities, materialized kills, candidate kills, ordinary views, joins, goal establishment/removal and new terms. Each flow also advances a separate eager reference state that takes unseeded closures, always records join boundaries, and retains every ordinary candidate. Both full and ordinary layers are compared after transitions. This adds transition preservation to the same-state closure check; it still shares term, candidate-storage and kill primitives and is not an independent language implementation.
 
-Temporary instrumentation showed the generated flows reach every insertion route: edge insertion with and without proofs, weakened-cell repair, the pass bound, the fallback for too many weakened cells, the seeded fixed point and the closed fast path. Separate mutants of the repair, the column pass, the row pass and the zero-bound settle rule each fail the test.
+The separate-state comparison exposed a dependency leak through a neutral
+contradictory predecessor. With two different valid contradiction witnesses,
+one joined ordinary view retained `t <= 0` while the other retained only its
+type bound. A focused case now checks both ordinary and S12-derived
+contradictions, their retained parents, and the surviving ordinary bound.
+
+The original generated flows were temporarily instrumented to reach edge
+insertion with and without proofs, weakened-cell repair, the pass bound, the
+fallback for too many weakened cells, the seeded fixed point and the closed
+fast path. Separate mutants of the repair, column pass, row pass and zero-bound
+settle rule failed that test. These are historical checks, not retained
+per-route coverage assertions for the expanded generator.
 
 The raw DEFLATE chain (about 9 s), fixed_run_library (about 27 s) and wfgrep (about 30 s) were verified by temporary inclusion at every change, not in the committed tests.
 
-Six compiler tests pinned derivation shape; no verdict, rule or location changed:
-- One accepted any projection through the killed middle.
-- Five counted one-parent join wrappers that a single-predecessor join no longer creates.
+Six existing compiler tests pin derivation shape; no verdict, rule or location changes:
+- One permits either constant-four or zero as the transitive endpoint through the killed middle. Both must retain the middle's actual transitive derivation.
+- Five count join grounds. The follow-up restores one-edge boundaries for strict-derived disequalities; an explicit source fact already has its own boundary and needs no wrapper. The bound/disequality join regression checks that a consequence survives a middle-only kill with that boundary, but dies with its own endpoint.
 
 ## Selection
+
+### Retained-proof follow-up criteria
+
+Before timing the follow-up to `3f205ff6`, preserve the following boundaries:
+join reuse must retain an independently live conclusion, and delivery must
+preserve ordinary fallback candidates through both substitution and the
+delivery join. Compare separate optimized and eager-reference flow states
+after transitions, including after removing call-dependent candidates;
+reclosing the same optimized state alone cannot detect a dropped candidate.
+Keep these checks in compiler tests because they inspect internal proof
+state, without a native build or a research dependency in the gate.
+
+Compare the saved `3f205ff6` compiler with the follow-up on the same 15-source
+inventory as the recorded pairs below, using five alternating warmed pairs.
+The runner must compare both LLVM outputs and record their SHA-256 digests
+outside the measured interval. Report any median increase exceeding both
+10% and 1 ms; correctness repairs are not abandoned to satisfy a speed target.
+The historical 3x comparison with PR #68 remains a separate measurement.
 
 The [raw pairs](../../experiments/proof-use-cost/incremental-pairs-2026-09-17.tsv) compare the PR #68 head `902ae791` (gate binary SHA-256 `476a03de5d2f7bf356c75ec2043522b476f3fad683f67e4ad4244cbf511f85ba`) with `9f5e2616` (`7f32f6128ddda36c4522d30ebf1752ce2bdf4838f5842ebc18739e2a9d0e71c2`). They were run on the flow-baseline M1 Pro host with no other compiler or test job running: five alternating warmed pairs.
 
@@ -237,7 +278,7 @@ The [raw pairs](../../experiments/proof-use-cost/incremental-pairs-2026-09-17.ts
 | growing-256 | 3.234 s | 3.065 s | 1.05x |
 | control-256 | 482.8 ms | 291.3 ms | 1.66x |
 
-Fixed-context cells and 16-size cells change by at most 2.3% (growing-16, +0.37 ms; fixed-256, +0.54 ms), far inside the 10% and 1 ms clause. Both compilers emit byte-identical LLVM for all 22 measured sources.
+Fixed-context cells and 16-size cells change by at most 2.3% (growing-16, +0.37 ms; fixed-256, +0.54 ms), far inside the 10% and 1 ms clause. The retained TSV contains 15 sources and 150 timing rows. It records no LLVM digests, so it does not substantiate the earlier claim of byte-identical LLVM for 22 measured sources. The follow-up runner checks byte equality and records per-arm digests for its explicit inventory.
 
 The candidate meets both 3x criteria and regresses no protected source. wfgrep checks in under one second. Fixed-run, at 1.16 s, does not reach the owner's sub-second target.
 

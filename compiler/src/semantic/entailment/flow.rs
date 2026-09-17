@@ -986,7 +986,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         encountered_counted: 0,
         completed_counted_roots: 0,
         s12_roots: 0,
-        delivery_give_roots: 0,
+        delivery_give_roots: HashSet::new(),
         delivery_join_roots: 0,
         scopes: Vec::new(),
         loops: Vec::new(),
@@ -1283,7 +1283,7 @@ struct Analyzer<'check, 'unit> {
     encountered_counted: u32,
     completed_counted_roots: u32,
     s12_roots: u32,
-    delivery_give_roots: u32,
+    delivery_give_roots: HashSet<DerivationId>,
     delivery_join_roots: u32,
     /// Lexical scope stack: the bindings declared in each open block.
     scopes: Vec<Vec<BindingId>>,
@@ -11051,11 +11051,13 @@ impl Analyzer<'_, '_> {
             ) {
                 continue;
             }
-            let occurrence = self.delivery_give_roots;
-            self.delivery_give_roots = self
-                .delivery_give_roots
-                .checked_add(1)
+            let occurrence = u32::try_from(self.delivery_give_roots.len())
                 .expect("value-if give roots exceed the u32 identity space");
+            // A full and an ordinary delivery join can share an edge parent.
+            // The ledger retains one required root per Give node.
+            if !self.delivery_give_roots.insert(parent.parent) {
+                continue;
+            }
             self.derivations.add_root(
                 DerivationRootKind::PostconditionGive { occurrence },
                 parent.parent,
@@ -11101,8 +11103,22 @@ impl Analyzer<'_, '_> {
             receiver,
             event,
         };
+        let mut delivered = self.delivery_edge_state(facts, &edge);
+        if delivered.may_hold_postcondition_candidates() {
+            let mut ordinary = source.facts.clone();
+            ordinary.retain_non_postcondition_candidates(&self.derivations);
+            let ordinary = close_excluding_term(
+                &ordinary,
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+                receiver,
+            );
+            let fallback = self.delivery_edge_state(ordinary, &edge);
+            delivered.merge_relation_candidates_from(&fallback, &self.derivations);
+        }
         let mut image = ProofFlowState {
-            facts: self.delivery_edge_state(facts, &edge),
+            facts: delivered,
             entry_images: Vec::new(),
             // Delivery-image construction currently exists only to retain
             // postcondition relations.  Withholding an affine image is
@@ -11122,6 +11138,30 @@ impl Analyzer<'_, '_> {
         images: &[FactState],
         context: &DeliveryJoinContext<'_>,
         target: &mut FactState,
+    ) {
+        self.establish_delivery_join_once(images, context, target, false);
+        if !images
+            .iter()
+            .any(FactState::may_hold_postcondition_candidates)
+        {
+            return;
+        }
+        // Substitution preserves both proof layers. The join must do so too:
+        // selecting only the strongest edge proof here would lose an ordinary
+        // fallback when a later holder event removes call-dependent proofs.
+        let mut ordinary = images.to_vec();
+        for image in &mut ordinary {
+            image.retain_non_postcondition_candidates(&self.derivations);
+        }
+        self.establish_delivery_join_once(&ordinary, context, target, true);
+    }
+
+    fn establish_delivery_join_once(
+        &mut self,
+        images: &[FactState],
+        context: &DeliveryJoinContext<'_>,
+        target: &mut FactState,
+        ordinary_only: bool,
     ) {
         assert!(images.iter().all(|image| {
             image.all_derivable
@@ -11160,6 +11200,16 @@ impl Analyzer<'_, '_> {
                         true
                     })
             }) {
+                continue;
+            }
+            if ordinary_only
+                && target
+                    .bounds
+                    .get(pair.0, pair.1)
+                    .is_some_and(|(bound, proof)| {
+                        bound <= weakest && !self.derivations.depends_on_postcondition_call(proof)
+                    })
+            {
                 continue;
             }
             let parents = images
@@ -11223,6 +11273,14 @@ impl Analyzer<'_, '_> {
                 || !rest
                     .iter()
                     .all(|index| images[*index].distinct.contains(&pair))
+            {
+                continue;
+            }
+            if ordinary_only
+                && target
+                    .distinct_proofs
+                    .get(&pair)
+                    .is_some_and(|proof| !self.derivations.depends_on_postcondition_call(*proof))
             {
                 continue;
             }
