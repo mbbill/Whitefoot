@@ -2,7 +2,8 @@
 
 These cases preserve the local ownership discussion through branch joins,
 conditional cleanup, and fixed-object loops with early exits, recorded on
-2026-09-15 and 2026-09-16. They are hand-derived expectations under candidate
+2026-09-15 and 2026-09-16, with source-form and decomposition notes added on
+2026-09-17. They are hand-derived expectations under candidate
 semantics, not WF source, compiler tests, measured results, or an
 adopted language decision. The consumer is the [ownership investigation](RESEARCH.md).
 Keep this catalog current while it guides discussion and later experiments;
@@ -559,6 +560,104 @@ exit is empty. There is no obligation to fill the hole merely to execute break.
 The taken value v is a discardable integer in this layer; non-copy value cleanup
 would require its own accounting and is not established by this example.
 
+## Source-form exploration (2026-09-17)
+
+This records the discussion following L06. It adds no operation or accepted
+WF syntax, and does not change the 26 numbered cases above. The question is
+whether the writer and checker can use the same visible state transitions.
+
+Three forms remain open: ordinary source with a checker-derived state view;
+explicit branch results and loop-carried values with entry contracts; or fully
+named control-flow blocks with explicit state transitions. The second is a
+candidate for the next source-form comparison, not an adopted requirement.
+
+Joint branch results make the correlation in B05 visible:
+
+```text
+(p, q) = if cond {
+    yield ref(a), ref(b)
+} else {
+    yield ref(b), ref(a)
+}
+```
+
+Both results come from the same arm. The checker must still retain that
+relationship; tuple-like syntax alone does not prove disjointness.
+
+L03 can expose the roles carried between iterations:
+
+```text
+a = object(10)
+b = object(20)
+old_b = take(b)
+(p_end, q_end) = repeat n carrying (p = ref(a), q = ref(b))
+    state { Full(p); Empty(q); Different(p, q) }
+{
+    v = take(p)
+    put(q, move v)
+    next(q, p)
+}
+read(p_end)
+release(p_end)
+release(q_end)
+```
+
+The state clause is a checked entry contract, not a permanent property of a
+copied reference. Entry must establish it; each `next` simultaneously assigns
+the next iteration's roles and must reestablish it. `next(p, q)` instead fails:
+the proposed full role is empty and the proposed empty role is full. Zero
+iterations return the initial roles. Existing disposal obligations are retained
+even though the abbreviated state clause does not spell them out.
+
+Named control-flow exits could similarly distinguish an initialized live result
+from an already released path. Such continuation labels do not by themselves
+require a runtime enum. Storing a choice as an ordinary first-class value is a
+separate representation question. A state view should display the facts used
+by acceptance, not a second independent approximation. No improvement in
+checking complexity or measured speed has been established by these spellings.
+
+## Decomposition frontier (2026-09-17)
+
+The subsequent external conversation and the gap review appended to
+[the candidate comparison](COMPARISON-CORE2.md) motivate smaller experiments,
+not a winner among the full candidates. In particular, that review reports
+missing rules and identifies the comparison's timing figures as inherited
+measurements of the existing proof engine, not measurements of the candidate
+checkers. Candidate-specific cost claims are not lower bounds on every possible
+ownership analysis.
+
+Separate the questions an operation needs answered:
+
+- Which storage instance does this expression select?
+- Does that instance still exist, and does the selected part contain a value?
+- Who carries the outstanding responsibility to dispose of it?
+- Does an operation transfer content, transfer that responsibility, or end
+  storage? These need not be the same event.
+
+Apply the distinction between directly known, provable, and unresolved facts
+to each question, not to an entire pointer or language feature. B04 already
+shows that an unknown concrete target does not preclude proving safe take/put
+through that same captured target. Uncertain state does not itself force a
+runtime tag: B07's scalar overwrite and L06's release have premises true for
+every remaining state. This does not establish support for arbitrary stored
+pointers or arbitrary predicates.
+
+The next small boundary is a single scalar allocation. First distinguish an
+owner binding, its separately allocated storage, and a locator for that storage.
+Compare transferring ownership with relocating the content and ending storage.
+Then add scope exit, conditional ending, and address reuse one at a time.
+Allocation failure, variable numbers of allocations, reference fields, containers,
+and concurrency remain separate extensions. No heap surface type or lowering
+has been chosen.
+
+A large fixed backing array is a useful allocator thought experiment, provided
+the contract also represents the start/end of each logical allocation inside it.
+The continued existence of backing bytes alone does not establish access through
+an old allocation reference. Conversely, direct access to still-initialized
+array cells is not automatically a dangling-pointer error: the exposed interface
+and the claimed equivalence must be stated. The experiment must distinguish
+physical storage, initialized contents, and logical allocation validity.
+
 ## Working conclusions and unresolved boundaries
 
 - In the known-origin straight-line fragment, target/state propagation can be
@@ -589,8 +688,9 @@ would require its own accounting and is not established by this example.
   their actual state to the continuation instead. Subsequent operations must
   cover all reachable exits, including zero iterations; there need not be one
   common initialization or liveness state for every exit.
-- The next discussion compares source forms that expose these states and
-  transitions, before adding more semantic features. Calls, dynamic allocation,
+- Source forms exposing states and transitions are recorded above as alternatives.
+  The next semantic boundary separates storage lifetime, content transfer, and
+  ownership transfer for one scalar allocation. Calls, general dynamic allocation,
   relocation/reuse, structs, arrays, general object
   invariants, callbacks and concurrency remain outside these cases. Later
   features must replay the applicable cases and name any premise or expected
