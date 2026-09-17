@@ -4068,7 +4068,16 @@ fn insert_fresh_edges<P: ClosureProofs>(
     let mut weakened = weakened_cells.to_vec();
     weakened.sort_unstable();
     weakened.dedup();
+    // Each pass extends every repaired path by at least one more weakened
+    // cell, so a satisfiable state settles within one pass per weakened cell.
+    // A repair after that is a negative cycle through raw cells, which would
+    // lower the cells forever: the unseeded fixed point decides that state.
+    let mut passes = 0;
     loop {
+        if passes > weakened.len() {
+            return None;
+        }
+        passes += 1;
         let mut repaired = false;
         for &(left, right) in &weakened {
             let (row, column) = (left.0 as usize, right.0 as usize);
@@ -6238,5 +6247,89 @@ pub(crate) mod tests {
         assert!(!closed.all_derivable);
         assert!(closed.derives_bound(a, b, -1));
         assert!(closed.derives_bound(a, c, -1));
+    }
+
+    /// Weakened cells that share an endpoint with a negative cycle among raw
+    /// cells used to be repaired forever, each pass lowering them by the cycle
+    /// weight. The repair now yields to the unseeded fixed point, which
+    /// reports the contradiction.
+    #[test]
+    fn a_negative_cycle_behind_weakened_cells_is_reported_not_repaired_forever() {
+        let mut terms = TermTable::new();
+        let place = |terms: &mut TermTable, binding| {
+            terms.intern(TermKind::Place(
+                super::super::term::PlaceTerm {
+                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+                IntegerType::U8,
+            ))
+        };
+        let a = place(&mut terms, 0);
+        let c = place(&mut terms, 1);
+        let b = place(&mut terms, 2);
+        let goals = GoalTable::default();
+        let mut ledger = DerivationLedger::default();
+        let call = ledger.intern(DerivationNode::PostconditionCall {
+            detail: Box::new(PostconditionCallDetail {
+                call: NodePath {
+                    components: vec![0],
+                },
+                relation: Relation::Bound {
+                    left: b,
+                    right: a,
+                    bound: 0,
+                },
+                summary: VerifiedPostconditionSummaryRef {
+                    summary: crate::semantic::entailment::RelationProvenance::Verified(
+                        VerifiedPostconditionSummary {
+                            function: FunctionId(0),
+                            block: NodePath {
+                                components: vec![0, 0],
+                            },
+                            relation_ordinal: 0,
+                            component: 0,
+                        },
+                    ),
+                },
+                substitutions: Vec::new(),
+                transfer_events: Vec::new(),
+                parents: Vec::new(),
+            }),
+        });
+        let mut state = FactState::new();
+        for middle in [a, c] {
+            state.establish_from_proof(
+                &Relation::Bound {
+                    left: b,
+                    right: middle,
+                    bound: 0,
+                },
+                call,
+                &ledger,
+            );
+        }
+        let snapshot = ledger.event(FlowEventKind::Snapshot, None);
+        let mut state = materialize_closure_at(&state, &terms, &goals, &mut ledger, snapshot);
+        // An S12 holder kill removes the call-derived candidates while their
+        // terms survive, leaving weakened cells in the closure record.
+        state.kill_proof_candidates(&ledger, |_, _, proof| {
+            ledger.depends_on_postcondition_call(proof)
+        });
+        let event = ledger.event(FlowEventKind::S5, None);
+        for (left, right) in [(a, c), (c, a)] {
+            state.establish(
+                &Relation::Bound {
+                    left,
+                    right,
+                    bound: -1,
+                },
+                &mut ledger,
+                event,
+            );
+        }
+        assert!(contradiction_without_proofs(&state, &terms, &goals));
+        assert!(close(&state, &terms, &goals, &mut ledger).contradictory());
     }
 }
