@@ -442,8 +442,8 @@ other compiler or test job on the host.
 
 | Source | Lines | Wall | Peak RSS |
 |---|---:|---:|---:|
-| `tests/programs/fixed_run_library.wf` | 375 | 82.39 s | 1.71 GiB |
-| `tests/programs/wfgrep.wf` | 1757 | 42.80 s | 1.26 GiB |
+| `tests/programs/fixed_run_library.wf` | 375 | 82.39 s | 1.71 GB |
+| `tests/programs/wfgrep.wf` | 1757 | 42.80 s | 1.32 GB |
 
 Native samples put all of fixed-run semantic work under `entailment::flow::run`.
 About 74% of it is inside the complete closure (`close_with_excluded_term`):

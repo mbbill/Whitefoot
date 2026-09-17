@@ -292,7 +292,10 @@ impl<'a> ProofContext<'a> {
 }
 
 /// A query-only view of one immutable entering fact state. It never becomes
-/// live facts or escapes the premise loop that owns that state borrow.
+/// live facts or escapes the premise loop that owns that state borrow. The
+/// fact state's remembered view would also serve the loop's repeated
+/// closures; this explicit view keeps the premise loop's reuse independent of
+/// how that memo is keyed.
 struct ProofClosure {
     term_revision: usize,
     goal_revision: usize,

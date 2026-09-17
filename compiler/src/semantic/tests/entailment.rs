@@ -5085,15 +5085,22 @@ fn main() -> status: own ExitStatus pure {
         &ordinary,
         obligation_root(&ordinary, 0),
         |node| match node {
-            DerivationNode::TransitiveBound { left, middle, .. } => {
+            DerivationNode::TransitiveBound {
+                left,
+                middle,
+                right,
+                ..
+            } => {
                 matches!(
                     (
                         retained_term(&ordinary, *left),
                         retained_term(&ordinary, *middle),
+                        retained_term(&ordinary, *right),
                     ),
                     (
                         TermKind::Place(i, IntegerType::U64),
                         TermKind::Place(upper, IntegerType::U64),
+                        TermKind::Constant(4) | TermKind::Zero,
                     ) if i.root == PlaceRoot::Binding(BindingId(0))
                         && upper.root == PlaceRoot::Binding(BindingId(1))
                 )

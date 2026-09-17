@@ -146,12 +146,69 @@ The implemented closure record is richer than the proposed seed.
 
 **Representation.** Closed states are dense matrices, and fact-state bounds live in a dense, reference-counted store. A single proof candidate is held inline. The closed view of an unchanged state is remembered.
 
+This reverses the first alternative refused above. The seeded fixed point
+alone reached 9.65 s on wfgrep and 7.62 s on fixed-run: 2.6x and 3.3x
+against PR #68, which misses the 3x criterion for wfgrep. So, as pre-registered,
+the remainder was attributed first. Samples of the seeded build put the
+remaining closure time in fixed-point rounds after small changes: up to 14
+rounds, each visiting every middle term.
+
+Per-edge insertion replaces those rounds. It carries its own settling of the
+strict-bound disequality and zero-bound strengthening rules, and its own
+contradiction scan. It does not carry kill rules: kills still only remove
+cells and mark terms fresh. Because those two rules are now written twice,
+beside the fixed point, the verification switch compares every insertion
+with the complete closure, and the proof-free probe is checked the same way.
+
+**Attribution of the representation changes.** After edge insertion
+(wfgrep 6.84 s), a native sample of about 1,100 semantic samples put:
+
+- 136 in rebuilding the dense matrix from hashed relation maps at each
+  closure;
+- about 220 in hash inserts while building materialized and joined maps;
+- about 250 in sorting term-pair keys and in allocating and freeing
+  per-cell candidate lists.
+
+That measured result is what the pre-registered "persistent dense
+representation" step asked for before choosing it. The dense closed matrix,
+inline candidates, reference-counted maps, the dense bound store and the
+in-place candidate updates each removed their attributed samples; single
+exploratory runs moved wfgrep through 4.87, 4.34, 3.42, 3.29 and 1.68 s.
+
+The remembered view came from samples showing the same unchanged state closed
+by contradiction promotion and then by materialization or a join.
+
+**Consumers of retained derivations.** Three consumers read a retained
+proof's ancestry rather than its value.
+
+- *Postcondition-call ancestry.* It selects which candidates an ordinary view
+  or holder kill removes. A selection that does not depend on a call is still
+  derivable without calls, so its bound already equals the ordinary closure's.
+- *Delivery.* `depends_on_explicit_relation` delivers a relation only when its
+  proof uses an explicit fact. A cell whose closed value is implied by
+  implicit bounds alone holds the same value at a same-typed receiver through
+  that receiver's own implicit bounds, so which of two equal-bound proofs is
+  retained does not change a delivered bound.
+- *Retained derivations.* The checked program retains them, including the
+  PAR permission derivations of [DIAG-2]. Their shape may change, and the
+  existing derivation validation checks each one.
+
+These are arguments, not proofs. The byte-identical LLVM for the measured
+sources and the unchanged verdicts of the compiler, program and conformance
+suites are the observed evidence.
+
+**Memory.** Peak resident memory for one standalone compile, measured with
+`/usr/bin/time -l`, fell from 1.32 GB (1,317,896,192 bytes, main) to 281 MB on
+wfgrep, and from 1.71 GB (1,714,683,904 bytes) to 375 MB on fixed-run. The bound store keeps a stride 1.5 times the term count,
+and live states can pin a remembered closed matrix. Both are included in
+these peaks.
+
 **Joins, fallback views and kills.**
 - A join reuses a proof every predecessor selected.
 - Ordinary fallback candidates are merged only where a selection depends on a postcondition call.
 - Kill predicates are evaluated once per term.
 
-An independent adversarial review found the unbounded repair loop, which is now bounded and has a regression test that hangs without the bound. The review also compared a value-only model of edge insertion with the complete closure over about 170,000 random states without a mismatch.
+An independent adversarial review found the unbounded repair loop, which is now bounded and has a regression test that hangs without the bound. Two independent reviews also reported value-level models of edge insertion agreeing with a complete closure on randomized small states. Those models are review aids outside the repository, not retained evidence.
 
 The verification switch now runs on the test thread only and asserts that it compared closures. The committed test verifies utf8parse, the raw DEFLATE chain and fixed_run_library, in about 41 s under the gate profile. wfgrep adds about 30 s, so it was verified by temporary inclusion at every change, not in the committed test.
 
@@ -173,11 +230,13 @@ The [raw pairs](../../experiments/proof-use-cost/incremental-pairs-2026-09-17.ts
 | growing-256 | 3.234 s | 3.065 s | 1.05x |
 | control-256 | 482.8 ms | 291.3 ms | 1.66x |
 
-The fixed-context cells and every 16-size cell stay within 2%; the largest relative increase is growing-16 at 2.3%, about 0.4 ms. Both compilers emit byte-identical LLVM for all 22 measured sources.
+Fixed-context cells and 16-size cells change by at most 2.3% (growing-16, +0.37 ms; fixed-256, +0.54 ms), far inside the 10% and 1 ms clause. Both compilers emit byte-identical LLVM for all 22 measured sources.
 
-The candidate meets both 3x criteria and regresses no protected source. wfgrep checks in under one second.
+The candidate meets both 3x criteria and regresses no protected source. wfgrep checks in under one second. Fixed-run, at 1.16 s, does not reach the owner's sub-second target.
 
 Against main `ab93c8e9`, the two programs went from 80.5 s and 40.5 s to 1.16 s and 0.88 s. These are checking-cost results for these sources, not runtime speedups or a universal bound.
+
+In a full `make check` of `3edaf0ba`, the `WHITEFOOT_TEST_TIMINGS` phase log sums 9.0 s of WF compilation across 195 test compiles. The #66 gate log summed 259.6 s. These are CPU-summed phase times, not suite wall time.
 
 **What remains** is distributed rather than cubic:
 - the ordinary-fallback view that materialization builds by removing postcondition candidates from a clone;

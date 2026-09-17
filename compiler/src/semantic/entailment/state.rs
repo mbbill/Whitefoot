@@ -2467,8 +2467,9 @@ pub(crate) struct FactState {
     /// every such candidate leaves exactly that layer, so the removal can
     /// take this record instead of rederiving the weakened cells.
     ordinary_closure: ClosureRecord,
-    /// The closed view most recently taken of exactly this content, shared by
-    /// clones. Every method that changes a relation, a signed goal or the
+    /// The closed view most recently taken of exactly this content. A clone
+    /// copies the cell and shares the view, so either copy's later change
+    /// clears only its own. Every method that changes a relation, a signed goal or the
     /// contradiction clears it; its key names the term, goal and derivation
     /// tables and their revisions, so a registered term or goal also misses.
     closed_view: std::cell::RefCell<Option<ClosedView>>,
@@ -4235,10 +4236,9 @@ fn insert_fresh_edges<P: ClosureProofs>(
             _ => return None,
         };
     // Repairing a weakened cell scans one row and column per pass. When a
-    // removal weakens more cells than there are terms — an ordinary-fallback
-    // view drops every postcondition-dependent selection at once — the seeded
-    // fixed point, which revisits only the weakened endpoints' rows and
-    // columns, is the cheaper route to the same bounds.
+    // removal weakens more cells than there are terms, the seeded fixed
+    // point, which revisits only the weakened endpoints' rows and columns, is
+    // the cheaper route to the same bounds.
     if weakened_cells.len() > term_count {
         return None;
     }
@@ -4284,7 +4284,8 @@ fn insert_fresh_edges<P: ClosureProofs>(
     // Each pass extends every repaired path by at least one more weakened
     // cell, so a satisfiable state settles within one pass per weakened cell.
     // A repair after that is a negative cycle through raw cells, which would
-    // lower the cells forever: the unseeded fixed point decides that state.
+    // lower the cells forever: the seeded fixed point over the weakened
+    // endpoints decides that state instead.
     let mut passes = 0;
     loop {
         if passes > weakened.len() {
@@ -6513,8 +6514,8 @@ pub(crate) mod tests {
 
     /// Weakened cells that share an endpoint with a negative cycle among raw
     /// cells used to be repaired forever, each pass lowering them by the cycle
-    /// weight. The repair now yields to the unseeded fixed point, which
-    /// reports the contradiction.
+    /// weight. The repair now yields to the seeded fixed point, and the
+    /// proof-free probe to its complete pass, which report the contradiction.
     #[test]
     fn a_negative_cycle_behind_weakened_cells_is_reported_not_repaired_forever() {
         let mut terms = TermTable::new();
@@ -6593,5 +6594,115 @@ pub(crate) mod tests {
         }
         assert!(contradiction_without_proofs(&state, &terms, &goals));
         assert!(close(&state, &terms, &goals, &mut ledger).contradictory());
+    }
+
+    fn bound_store_proof(
+        ledger: &mut DerivationLedger,
+        event: FlowEventId,
+        bound: i128,
+    ) -> DerivationId {
+        ledger.intern(DerivationNode::SourceBound {
+            relation: Relation::Bound {
+                left: TermId(1),
+                right: TermId(2),
+                bound,
+            },
+            left: TermId(1),
+            right: TermId(2),
+            bound,
+            event,
+        })
+    }
+
+    /// A pair keeps its least candidate selected and every other candidate
+    /// in reserve: removing the selection promotes the best survivor, removing
+    /// a reserve keeps the selection, and removing all clears the pair.
+    #[test]
+    fn a_bound_store_selects_the_least_candidate_and_promotes_survivors() {
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S1, None);
+        let (weak, middle, strong) = (
+            bound_store_proof(&mut ledger, event, 5),
+            bound_store_proof(&mut ledger, event, 3),
+            bound_store_proof(&mut ledger, event, 1),
+        );
+        let pair = (TermId(1), TermId(2));
+        let mut store = BoundStore::default();
+        store.add_candidate(pair, (5, weak), &ledger);
+        store.add_candidate(pair, (1, strong), &ledger);
+        store.add_candidate(pair, (3, middle), &ledger);
+        store.add_candidate(pair, (3, middle), &ledger);
+        assert_eq!(store.get(pair.0, pair.1), Some((1, strong)));
+        assert_eq!(store.candidates(pair).len(), 3);
+        assert_eq!(
+            store.candidate_minimum(pair, |proof| proof != strong),
+            Some(3)
+        );
+
+        store.retain_candidates(pair, |(_, proof)| proof != weak, &ledger);
+        assert_eq!(store.get(pair.0, pair.1), Some((1, strong)));
+        store.retain_candidates(pair, |(_, proof)| proof != strong, &ledger);
+        assert_eq!(store.get(pair.0, pair.1), Some((3, middle)));
+        assert_eq!(store.candidates(pair), vec![(3, middle)]);
+        store.retain_candidates(pair, |_| false, &ledger);
+        assert_eq!(store.get(pair.0, pair.1), None);
+        assert!(store.is_empty());
+
+        // A later, larger term re-lays the store out without losing a cell.
+        store.store_single(pair.0, pair.1, 3, middle);
+        store.store_single(TermId(90), TermId(0), -7, strong);
+        assert_eq!(
+            store.cells().collect::<Vec<_>>(),
+            vec![
+                (TermId(1), TermId(2), 3, middle),
+                (TermId(90), TermId(0), -7, strong)
+            ]
+        );
+    }
+
+    /// A remembered closed view is reused only for unchanged content: a new
+    /// relation clears it, and the next closure sees the relation.
+    #[test]
+    fn a_remembered_closed_view_is_cleared_by_a_new_relation() {
+        let mut terms = TermTable::new();
+        let place = |terms: &mut TermTable, binding| {
+            terms.intern(TermKind::Place(
+                super::super::term::PlaceTerm {
+                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+                IntegerType::U8,
+            ))
+        };
+        let (left, right) = (place(&mut terms, 0), place(&mut terms, 1));
+        let goals = GoalTable::default();
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S1, None);
+        let mut state = FactState::new();
+        let first = close(&state, &terms, &goals, &mut ledger);
+        assert!(Rc::ptr_eq(
+            &first,
+            &close(&state, &terms, &goals, &mut ledger)
+        ));
+        assert!(!first.derives_bound(left, right, 0));
+
+        let copy = state.clone();
+        state.establish(
+            &Relation::Bound {
+                left,
+                right,
+                bound: 0,
+            },
+            &mut ledger,
+            event,
+        );
+        let second = close(&state, &terms, &goals, &mut ledger);
+        assert!(!Rc::ptr_eq(&first, &second));
+        assert!(second.derives_bound(left, right, 0));
+        assert!(Rc::ptr_eq(
+            &first,
+            &close(&copy, &terms, &goals, &mut ledger)
+        ));
     }
 }
