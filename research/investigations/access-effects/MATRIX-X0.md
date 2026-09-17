@@ -226,6 +226,15 @@ and local navigation. They do not prove the verdicts. Remaining rule gaps stay
 U; ordinary unsafe boundary variants stay rejected examples, not X. No current
 specification or compiler rule is changed by this record.
 
+## Follow-up refinement
+
+The [gap map](GAPS.md) covers all 67 U and 12 C cells, with code discriminators,
+secondary dependencies and witness-precision corrections to investigate. The
+[E1 target-package note](TARGET-PACKAGES.md) is the next bounded rule experiment;
+it leaves this frozen rule sheet, cell verdicts and totals unchanged. Its local
+results must not be read as a completed new 300-cell matrix or a capability-floor
+audit.
+
 ## Complete upper triangle
 
 These verdicts are not a language-wide pass rate. D is derived only within the shown premises; C records a restriction/cost; U records a missing rule or derivation; X records a contradiction. The mirrored half is omitted.

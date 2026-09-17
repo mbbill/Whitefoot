@@ -251,6 +251,36 @@ not x0 validation.
 The full task/capability table remains in scope, including copy/affine/linear,
 stored relations, generic calls, dynamic storage and parallel computation.
 
+## Current refinement: E1 target packages
+
+The [gap map](GAPS.md) assigns every first-round U/C cell to one primary
+missing rule or known restriction. Its witness-precision follow-ups qualify the
+frozen results; they do not silently rewrite them. The original matrix is still
+the x0 baseline.
+
+The next bounded experiment is [E1 target packages](TARGET-PACKAGES.md): hide a
+captured target in an ordinary stored value while keeping current validity and
+noncopyable duties separate from copyable target information. Select this seam
+first because snapshot identity, invalidation and call-boundary effects can be
+challenged without also supplying a general container or quantified-resource
+calculus. Before judging it, require copied packages not to resurrect state or
+duplicate duties, changed fields not to retarget old loads, exact signature
+projection to work for unknown targets, and both safe reads and conflict denial
+to survive across calls without runtime proof metadata.
+
+Range-indexed resource families are the other concrete next experiment in the
+gap map. They exercise dynamic resource containers and existing parallel range
+helpers more directly, but need additional projection/split/join and exact-duty
+rules. Choosing E1 for isolation does not establish its greater overall value.
+The complete candidate retains all 24 axes, including current parallel
+computation; the narrower experiment is not a reduced language scope.
+
+E1 remains a proposed rule refinement, not an adopted specification or a
+self-consistent successor candidate. Its rule choices, code challenges and local
+rerun results live in one maintained note. Do not count an old U as closed merely
+because one package operation now has a rule; its predicate, family, provider
+and lowering dependencies must still be discharged.
+
 ## Earlier working candidates: A and B
 
 The earlier proposal developed **A: access and current-state checking**, with
