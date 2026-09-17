@@ -3366,6 +3366,8 @@ fn main() -> status: own ExitStatus pure {
     assert!(outcomes[2].evidence.is_empty());
     let mut counts = DistinctGroundCounts::default();
     collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
+    // Each strict-derived disequality first becomes independently live at
+    // its one-edge join; the merging join retains both of those boundaries.
     assert_eq!(
         counts,
         DistinctGroundCounts {
@@ -3438,6 +3440,8 @@ fn main() -> status: own ExitStatus pure {
     let mut counts = DistinctGroundCounts::default();
     collect_distinct_grounds(&summary, distinct, &mut counts);
     assert_eq!(counts.strict, 2);
+    // Keep the two strict-derived facts' independence boundaries as well as
+    // the join that combines their paths.
     assert_eq!(counts.joins, 3);
     assert_eq!(counts.join_edges, 4);
 }
@@ -3497,6 +3501,7 @@ fn main() -> status: own ExitStatus pure {
         &mut kept_counts,
     );
     assert_eq!(kept_counts.strict, 2);
+    // The derived facts retain their one-edge independence boundaries.
     assert_eq!(kept_counts.join_edges, 4);
 
     let killed_summary = entailment(source, "killed");
@@ -3585,12 +3590,14 @@ fn main() -> status: own ExitStatus pure {
             collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
             assert_eq!(
                 counts,
+                // The source fact is already live; only the strict-derived
+                // fact needs its one-edge independence boundary.
                 DistinctGroundCounts {
                     source: 1,
                     strict: 1,
-                    joins: 3,
-                    join_edges: 4,
-                    join_parent_counts: vec![2, 1, 1],
+                    joins: 2,
+                    join_edges: 3,
+                    join_parent_counts: vec![2, 1],
                     ..DistinctGroundCounts::default()
                 },
                 "the mixed join names its explicit and strict-derived predecessor roots"
@@ -3649,11 +3656,13 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(counts.source, 1);
     assert_eq!(counts.strict, 2);
     assert_eq!(counts.contradiction, 1);
-    assert_eq!(counts.joins, 6);
+    // The two strict-derived inputs need independence boundaries; the
+    // explicit source input can be reused directly.
+    assert_eq!(counts.joins, 5);
     counts.join_parent_counts.sort_unstable();
-    assert_eq!(counts.join_parent_counts, vec![1, 1, 1, 2, 2, 2]);
+    assert_eq!(counts.join_parent_counts, vec![1, 1, 2, 2, 2]);
     assert_eq!(
-        counts.join_edges, 9,
+        counts.join_edges, 8,
         "the guarded inputs retain all four reaching grounds through the nested joins"
     );
 }
@@ -4186,6 +4195,93 @@ fn main() -> status: own ExitStatus pure {
             _ => true,
         }),
         "the fresh receiver contributes no reflexive source fact"
+    );
+}
+
+#[test]
+fn value_if_delivery_retains_the_ordinary_fallback_and_shared_give_root() {
+    // Acceptance alone does not observe the fallback. Inspect both retained
+    // derivations: a later candidate kill must be able to expose the ordinary
+    // bound even when the selected full bound came from an S12 call.
+    let source = br#"fn limit(value: own i32) -> result: own i32 pure contract {
+  requires value < 8_i32;
+  ensures result < 8_i32;
+} {
+  return value;
+}
+
+fn guard(value: own i32) -> result: own unit pure contract {
+  requires value < 32_i32;
+} {
+  return unit;
+}
+
+fn choose(value: own i32, narrow: own Bool) -> result: own unit pure contract {
+  requires value < 8_i32;
+} {
+  let picked = if narrow {
+    let bounded = limit(value: value);
+    if bounded < 16_i32 {
+      give bounded;
+    } else {
+      return unit;
+    }
+  } else if value < 32_i32 {
+    give value;
+  } else {
+    return unit;
+  }
+  guard(value: picked);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "choose");
+    validate_derivations(&summary);
+    let mut call_dependent = Vec::new();
+    for node in &summary.derivations.nodes {
+        call_dependent.push(
+            matches!(node, DerivationNode::PostconditionCall { .. })
+                || node
+                    .parent_ids()
+                    .iter()
+                    .any(|parent| call_dependent[parent.0 as usize]),
+        );
+    }
+    let joins = summary
+        .derivations
+        .nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, node)| {
+            let DerivationNode::PostconditionDeliveryJoin { detail } = node else {
+                return None;
+            };
+            let Relation::Bound {
+                right: ZERO, bound, ..
+            } = detail.relation
+            else {
+                return None;
+            };
+            Some((bound, call_dependent[index], &detail.parents))
+        })
+        .collect::<Vec<_>>();
+    let full = joins
+        .iter()
+        .find(|(bound, call, _)| *bound == 7 && *call)
+        .expect("delivery keeps the strongest call-dependent bound");
+    let ordinary = joins
+        .iter()
+        .find(|(bound, call, _)| *bound == 15 && !*call)
+        .expect("delivery keeps the weaker ordinary fallback");
+    assert_eq!(full.2.len(), 2);
+    assert_eq!(ordinary.2.len(), 2);
+    assert_eq!(
+        full.2[1].parent, ordinary.2[1].parent,
+        "both layers reuse the ordinary second edge, with one required Give root"
     );
 }
 
@@ -5066,6 +5162,11 @@ fn main() -> status: own ExitStatus pure {
         vec![true],
         "the ordinary write projects i < 4 before killing the mutable middle upper"
     );
+    // The survivor consequence must be derived through the killed middle
+    // `upper`. Which closed endpoint the step reaches — the constant four or Z
+    // through that constant's implicit bound — is an equal-bound derivation
+    // choice [ENT-4] leaves open, and a seeded closure retains whichever it
+    // reaches first.
     assert_root_contains(
         &ordinary,
         obligation_root(&ordinary, 0),
@@ -5074,7 +5175,6 @@ fn main() -> status: own ExitStatus pure {
                 left,
                 middle,
                 right,
-                bound: -1,
                 ..
             } => {
                 matches!(
@@ -5086,14 +5186,14 @@ fn main() -> status: own ExitStatus pure {
                     (
                         TermKind::Place(i, IntegerType::U64),
                         TermKind::Place(upper, IntegerType::U64),
-                        TermKind::Constant(4),
+                        TermKind::Constant(4) | TermKind::Zero,
                     ) if i.root == PlaceRoot::Binding(BindingId(0))
                         && upper.root == PlaceRoot::Binding(BindingId(1))
                 )
             }
             _ => false,
         },
-        "the exact i - upper <= -1 plus upper - 4 <= 0 projection",
+        "a projection of i - upper <= -1 through the killed middle upper",
     );
 }
 

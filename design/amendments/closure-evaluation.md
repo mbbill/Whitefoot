@@ -1,7 +1,0 @@
-Node: compiler/closure-evaluation
-
-Decision: Evaluate each transitive product of the [ENT-4] fixed point over contiguous bound, proof and freshness-stamp rows, scanning only the fresh middle-row columns for a left row whose first premise is stale and reading an absent cell as the maximal bound, while keeping the round structure, middle/left/right order, freshness rule, row pruning and depth/tie acceptance, because the [flow-analysis follow-up](../../research/investigations/proof-certificate-architecture/CHECKING-COST.md#flow-analysis-closure-follow-up) attributes real-program checking cost to billions of rejected triple visits, derives about 1.4x from the separately paired contiguous-row and stale-column comparisons, and checks unchanged accepted updates against a reference cell-by-cell traversal on satisfiable and contradictory graphs, instead of optional cells behind an asserted index or a traversal order that would change which equal-depth derivation is selected.
-
-Rejected:
-- Sharing one closure between a kill batch's contradiction promotion and its pre-kill materialization: rejected because its paired comparison measured only a 1.04x median improvement on the real programs while adding a separate promotion path.
-- Sharing predecessor closures between join promotion and the join itself: rejected because promotion closes contradictory predecessors before the join closes any, so a shared pass would reorder derivation interning.

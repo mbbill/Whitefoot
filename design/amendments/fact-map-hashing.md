@@ -1,3 +1,0 @@
-Node: compiler/fact-map-hashing
-
-Decision: Hash the relation maps of fact and closed states, the term interning index and the affine flow and query maps with the fixed word hasher of the derivation intern index, because their iteration order was already random per process under SipHash, so deterministic compiler output cannot depend on it, and the [flow-analysis follow-up](../../research/investigations/proof-certificate-architecture/CHECKING-COST.md#flow-analysis-closure-follow-up) measures SipHash of these small keys as a leading cost of real programs and growing proof contexts, instead of process-randomized SipHash or a new hashing crate dependency.

@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-17 Adopt incremental closure and retained-proof boundaries
+
+Nodes: compiler/incremental-closure, compiler/closure-row-dominance, compiler/closure-evaluation, compiler/fact-map-hashing, compiler/proof-query-context, compiler/generic-validation-scope
+
+Owner-approved: The owner explicitly accepted all five closure revisions after their individual explanations and DCR result in the PR #69 conversation. The inherited generic-validation-scope node retains the separate PR #68 approval recorded below.
+
+Summary: Apply the five amendments unchanged, including incremental repair and complete fallbacks, dense remembered views, and different valid equal-bound witnesses subject to independently live join conclusions, ordinary delivery fallbacks and neutral contradiction dependencies. The [incremental closure study](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md) records the measured benefit, retained-proof repairs, alternatives and bounded evidence; the dependent traversal, hashing and query decisions now state the same choices. Remove the accepted amendments. The unchanged generic-validation-scope node is named here to cover the branch's inherited tree change relative to main; this ruling changes no language rule or authorization to merge.
+
 ## 2026-09-17 Scope symbolic generic validation to judged instances
 
 Nodes: compiler/generic-validation-scope
