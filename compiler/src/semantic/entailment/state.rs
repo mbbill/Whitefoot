@@ -5754,39 +5754,18 @@ pub(crate) mod tests {
         );
     }
 
-    /// Compiles real programs with every seeded closure checked against the
-    /// complete closure of the same state. This covers the kill, join,
-    /// strengthening and term-growth paths as the flow walk reaches them.
+    /// Compiles a real program with every seeded, inserted or remembered
+    /// closure checked against the complete closure of the same state, as the
+    /// flow walk reaches its kill, join, strengthening and term-growth paths.
     #[test]
     fn seeded_closures_match_complete_closures_on_real_programs() {
-        let bundles: [&[(&str, &[u8])]; 3] = [
-            &[(
-                "utf8parse.wf",
-                include_bytes!("../../../../tests/programs/utf8parse.wf"),
-            )],
-            &[
-                (
-                    "raw_deflate.wf",
-                    include_bytes!("../../../../tests/programs/raw_deflate.wf"),
-                ),
-                (
-                    "raw_deflate_dynamic.wf",
-                    include_bytes!("../../../../tests/programs/raw_deflate_dynamic.wf"),
-                ),
-                (
-                    "raw_deflate_dynamic_decode.wf",
-                    include_bytes!("../../../../tests/programs/raw_deflate_dynamic_decode.wf"),
-                ),
-                (
-                    "raw_deflate_boundary.wf",
-                    include_bytes!("../../../../tests/programs/raw_deflate_boundary.wf"),
-                ),
-            ],
-            &[(
-                "fixed_run_library.wf",
-                include_bytes!("../../../../tests/programs/fixed_run_library.wf"),
-            )],
-        ];
+        // The smallest real program keeps this gate test cheap; the generated
+        // flows below cover postcondition candidates, holder kills, joins and
+        // new terms. Larger programs were verified by temporary inclusion.
+        let bundles: [&[(&str, &[u8])]; 1] = [&[(
+            "utf8parse.wf",
+            include_bytes!("../../../../tests/programs/utf8parse.wf"),
+        )]];
         VERIFY_SEEDED_CLOSURE.with(|verify| verify.set(true));
         VERIFIED_CLOSURES.with(|count| count.set(0));
         for bundle in bundles {
@@ -6704,5 +6683,143 @@ pub(crate) mod tests {
             &first,
             &close(&copy, &terms, &goals, &mut ledger)
         ));
+    }
+
+    fn postcondition_call_proof(ledger: &mut DerivationLedger, relation: Relation) -> DerivationId {
+        ledger.intern(DerivationNode::PostconditionCall {
+            detail: Box::new(PostconditionCallDetail {
+                call: NodePath {
+                    components: vec![0],
+                },
+                relation,
+                summary: VerifiedPostconditionSummaryRef {
+                    summary: crate::semantic::entailment::RelationProvenance::Verified(
+                        VerifiedPostconditionSummary {
+                            function: FunctionId(0),
+                            block: NodePath {
+                                components: vec![0, 0],
+                            },
+                            relation_ordinal: 0,
+                            component: 0,
+                        },
+                    ),
+                },
+                substitutions: Vec::new(),
+                transfer_events: Vec::new(),
+                parents: Vec::new(),
+            }),
+        })
+    }
+
+    /// A fixed linear congruential sequence: generated cases are reproducible
+    /// without a random-number dependency.
+    fn next_step(seed: &mut u64) -> usize {
+        *seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (*seed >> 33) as usize
+    }
+
+    /// Random flows over a few terms interleave source and postcondition
+    /// relations, disequalities, materialized kills, holder kills that weaken
+    /// selections, ordinary views, joins with an earlier copy and newly
+    /// registered terms. After every step each closure and contradiction probe
+    /// of the live states is compared with the complete closure.
+    #[test]
+    fn generated_flows_close_incrementally_like_the_complete_closure() {
+        VERIFY_SEEDED_CLOSURE.with(|verify| verify.set(true));
+        VERIFIED_CLOSURES.with(|count| count.set(0));
+        for case in 0..400_u64 {
+            let mut seed = case.wrapping_mul(0x9e37_79b9_7f4a_7c15).wrapping_add(1);
+            let mut terms = TermTable::new();
+            let mut binding = 0;
+            let mut places = Vec::new();
+            let mut register = |terms: &mut TermTable, places: &mut Vec<TermId>| {
+                let ty = if binding % 2 == 0 {
+                    IntegerType::U8
+                } else {
+                    IntegerType::I32
+                };
+                places.push(terms.intern(TermKind::Place(
+                    super::super::term::PlaceTerm {
+                        root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                        deref: false,
+                        fields: Vec::new(),
+                    },
+                    ty,
+                )));
+                binding += 1;
+            };
+            for _ in 0..4 {
+                register(&mut terms, &mut places);
+            }
+            let goals = GoalTable::default();
+            let mut ledger = DerivationLedger::default();
+            let event = ledger.event(FlowEventKind::S1, None);
+            let mut state = FactState::new();
+            let mut earlier: Option<FactState> = None;
+            for _ in 0..24 {
+                let left = places[next_step(&mut seed) % places.len()];
+                let right = places[next_step(&mut seed) % places.len()];
+                let bound = i128::try_from(next_step(&mut seed) % 7).expect("small") - 3;
+                match next_step(&mut seed) % 11 {
+                    0..=2 if left != right => {
+                        state.establish(
+                            &Relation::Bound { left, right, bound },
+                            &mut ledger,
+                            event,
+                        );
+                    }
+                    3 if left != right => {
+                        state.establish(
+                            &Relation::Distinct {
+                                left,
+                                right,
+                                difference: 0,
+                            },
+                            &mut ledger,
+                            event,
+                        );
+                    }
+                    4 | 5 if left != right => {
+                        let relation = Relation::Bound { left, right, bound };
+                        let call = postcondition_call_proof(&mut ledger, relation.clone());
+                        state.establish_from_proof(&relation, call, &ledger);
+                    }
+                    6 => {
+                        materialize_closure_before_kill(&mut state, &terms, &goals, &mut ledger);
+                        state.kill(|term| term == left);
+                    }
+                    7 => {
+                        state.kill_proof_candidates(&ledger, |from, to, proof| {
+                            ledger.depends_on_postcondition_call(proof)
+                                && (from == left || to == left)
+                        });
+                    }
+                    8 => {
+                        let mut ordinary = state.clone();
+                        ordinary.retain_non_postcondition_candidates(&ledger);
+                        let _ = close(&ordinary, &terms, &goals, &mut ledger);
+                    }
+                    9 => match earlier.take() {
+                        None => earlier = Some(state.clone()),
+                        Some(copy) => {
+                            let join = ledger.event(FlowEventKind::Join, None);
+                            state =
+                                join_at(&[state.clone(), copy], &terms, &goals, &mut ledger, join);
+                        }
+                    },
+                    10 => register(&mut terms, &mut places),
+                    _ => {}
+                }
+                let _ = close(&state, &terms, &goals, &mut ledger);
+                let _ = contradiction_without_proofs(&state, &terms, &goals);
+                if let Some(copy) = &earlier {
+                    let _ = close(copy, &terms, &goals, &mut ledger);
+                }
+            }
+        }
+        VERIFY_SEEDED_CLOSURE.with(|verify| verify.set(false));
+        assert!(VERIFIED_CLOSURES.with(Cell::get) > 0);
     }
 }

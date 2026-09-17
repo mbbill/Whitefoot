@@ -210,7 +210,13 @@ these peaks.
 
 An independent adversarial review found the unbounded repair loop, which is now bounded and has a regression test that hangs without the bound. Two independent reviews also reported value-level models of edge insertion agreeing with a complete closure on randomized small states. Those models are review aids outside the repository, not retained evidence.
 
-The verification switch now runs on the test thread only and asserts that it compared closures. The committed test verifies utf8parse, the raw DEFLATE chain and fixed_run_library, in about 41 s under the gate profile. wfgrep adds about 30 s, so it was verified by temporary inclusion at every change, not in the committed test.
+The verification switch now runs on the test thread only and asserts that it compared closures. Two committed tests use it:
+- One compiles utf8parse, in about 2 s under the gate profile.
+- One runs 400 generated flows of 24 steps over growing sets of places. The steps mix source and postcondition bounds, disequalities, materialized kills, holder kills, ordinary views, joins and new terms. It takes under 1 s.
+
+Temporary instrumentation showed the generated flows reach every insertion route: edge insertion with and without proofs, weakened-cell repair, the pass bound, the fallback for too many weakened cells, the seeded fixed point and the closed fast path. Separate mutants of the repair, the column pass, the row pass and the zero-bound settle rule each fail the test.
+
+The raw DEFLATE chain (about 9 s), fixed_run_library (about 27 s) and wfgrep (about 30 s) were verified by temporary inclusion at every change, not in the committed tests.
 
 Six compiler tests pinned derivation shape; no verdict, rule or location changed:
 - One accepted any projection through the killed middle.
