@@ -532,6 +532,90 @@ recorded here before any paired timing of either:
 Candidates 4 and 5 use the same pairing, protected controls, and LLVM,
 test, and ledger-equivalence requirements as above.
 
+### Flow selection, 2026-09-16
+
+The [raw pairs](../../experiments/proof-use-cost/flow-pairs-2026-09-16.tsv)
+were taken on the flow-baseline host with no other compiler or test job
+running, after warming both compilers once. Each compiler was built from its
+own detached worktree with the gate profile. The comparisons are:
+
+- `base`: `ab93c8e9`
+- `c1`: validation scope, `fbc38cf2`
+- `c2`: contiguous product, `8b10f9e5`
+- `c3`: word hashing, `173ce2a9`
+- `c4`: shared promotion closure, `62f7beaa`
+- `c5`: stale-column products, `0a3ce47a`
+
+Their SHA-256 identities are:
+
+```text
+base f66e1187ae971a590d1157461ab1f19ca05c8601c705a7fab5c32cbf7619b922
+c1   d409883582308aa847ee15338456da38f8885f3f7a5cd938348fc22d846a72b0
+c2   37181fab9d7da1f28db74110ef3a15d05409a3793159b3844bd1699ccf990a6e
+c3   d166ff04bd13a893d1dac79931d7ef6489001ecd25df6e99a107765f47224c42
+c4   83e2f156fb957dbaf581b9b44d73796d19b648d72e37da33b7298da9541a8efe
+c5   2d3b9b1f5ab47e342bc6b963332ce850a33d97942ab8ed4a4ba58ded23ebe974
+```
+
+Medians of five alternating pairs, and the speedup of each comparison's
+later compiler over its earlier one:
+
+| Source | base→c1 | c1→c2 | c2→c3 | c3→c4 | c4→c5 | base→c5 |
+|---|---:|---:|---:|---:|---:|---:|
+| fixed-run | 80.05→39.91 s, 2.01x | 1.16x | 1.13x | 1.04x | 1.25x | 78.73→23.52 s, **3.35x** |
+| wfgrep | 40.22→40.40 s, 1.00x | 1.12x | 1.22x | 1.04x | 1.21x | 39.61→23.29 s, **1.70x** |
+| prefix | 1.00x | 1.12x | 1.20x | 0.98x | 1.11x | 171.8→116.9 ms, 1.47x |
+| histogram | 1.00x | 1.10x | 1.20x | 0.99x | 1.12x | 176.2→120.6 ms, 1.46x |
+| radix scatter | 1.00x | 1.13x | 1.17x | 1.01x | 1.20x | 990.0→617.0 ms, 1.60x |
+| growing-64 | 119.5→185.8 ms, 0.64x | 1.01x | 1.62x | 1.00x | 1.00x | 1.05x |
+| growing-256 | 5.44→9.72 s, 0.56x | 1.00x | 1.82x | 1.01x | 1.00x | 5.34→5.25 s, 1.02x |
+| control-256 | 0.88x | 0.97x | 1.34x | 1.06x | 0.98x | 1.20x |
+
+Fixed-context cells at every size, and the 16-size cells, stay within 5%
+in every comparison. No base→c5 cell regresses.
+
+Validation scope meets its 2x prediction on fixed-run. It also slows the
+generated growing and control fixtures, which contain no generic
+declaration and so never reach the changed code. Repeating growing-256 gives
+5.37/5.38 s on base, 9.59/9.62 s on c1, 9.62/9.54 s on c2 and 5.29/5.23 s
+on c3, with identical LLVM. Native samples of base and c1 on that source
+show the same affine interval-proof path in both. SipHash `write` rises from
+458 to 2278 samples, while the interval-proof function itself falls from
+948 to 243 samples, which suggests the hash call was inlined differently.
+Those lookups go through a closed state's term-pair map. The hasher change in
+c3 removes the difference. This is attributed to code generation of
+unchanged hashing code, not to the scope change, but the comparison as run
+fails the protected-control clause. Validation scope is selected on the
+cumulative base→c5 result, which has no regression, and this exception is
+recorded rather than hidden.
+
+The contiguous product reaches 1.12–1.16x on the real programs, below its
+1.2x selection line and well short of its fixed-point prediction. Stale-column
+products meet theirs, at 1.21–1.25x. That candidate reads the contiguous
+representation, so the two are one mechanism. Their chained factors
+(1.16×1.25 on fixed-run, 1.12×1.21 on wfgrep) exceed the line, but no single
+paired run compared them together, so that is a derived result. Word
+hashing meets its line on wfgrep (1.22x) and also recovers the fixture cost
+above. The shared promotion closure gives 1.04x, as predicted small, and
+does not meet the line. It is reverted.
+
+Every final-branch correctness check stated in the criteria still applies
+after the revert.
+
+A c5 sample of growing-256 still finds about 40% of its samples in SipHash
+and generic `Hasher::write`. The costs come from the affine interval
+proof, which, for every atom not yet cached, scans every current binding
+value and re-interns a place term through the term table's SipHash-keyed
+`TermKind` index. They also come from the affine query maps.
+
+6. **Deterministic term and affine-query hashing.** The term interning index,
+   measure-bound table and affine flow/query maps use the same fixed word
+   hasher. Every order-sensitive consumer of those maps sorts first or keys a
+   dense identity. Predicted: at least 1.2x on growing-64 and growing-256
+   against c5 without the promotion closure, and no real-program or control
+   regression beyond the protected-control clause. It must also keep LLVM
+   output and tests unchanged.
+
 ## Reproduction and correctness boundary
 
 The native driver is
