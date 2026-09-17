@@ -2078,10 +2078,15 @@ enum ClosureRecord {
     /// are closed among themselves: every transitive, strengthening and
     /// disequality consequence of two of them is already present and no
     /// weaker, and their terms' implicit bounds are already reflected.
+    ///
+    /// A fresh term has lost every explicit fact — it was killed or is newly
+    /// registered — unless the record is `weakened`, when a removed proof
+    /// candidate may have left any of its cells weaker than the core implies.
     Core {
         terms: u32,
         fresh_terms: Vec<TermId>,
         fresh_cells: Vec<(TermId, TermId)>,
+        weakened: bool,
     },
 }
 
@@ -2103,6 +2108,7 @@ impl ClosureRecord {
                 terms,
                 fresh_terms: Vec::new(),
                 fresh_cells: Vec::new(),
+                weakened: false,
             };
         }
         match self {
@@ -2124,6 +2130,13 @@ impl ClosureRecord {
     fn mark_fresh_term(&mut self, term: TermId) {
         if let Some((terms, _)) = self.into_core() {
             terms.push(term);
+        }
+    }
+
+    fn mark_weakened_term(&mut self, term: TermId) {
+        self.mark_fresh_term(term);
+        if let Self::Core { weakened, .. } = self {
+            *weakened = true;
         }
     }
 }
@@ -2616,8 +2629,8 @@ impl FactState {
         // columns, so marking both endpoints fresh restores the closed core;
         // a selection that only changed its proof keeps every bound.
         for (left, right) in weakened {
-            self.closure.mark_fresh_term(left);
-            self.closure.mark_fresh_term(right);
+            self.closure.mark_weakened_term(left);
+            self.closure.mark_weakened_term(right);
         }
         changed
     }
@@ -3488,6 +3501,16 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
         };
     }
     let term_count = terms.ids().count();
+    if excluded.is_none()
+        && !REFERENCE_PRODUCT
+        && let Some(closed) = close_by_edge_insertion(state, terms, goals, ledger)
+    {
+        #[cfg(test)]
+        if tests::VERIFY_SEEDED_CLOSURE.load(std::sync::atomic::Ordering::Relaxed) {
+            tests::assert_seeded_closure_matches_complete(state, terms, goals, ledger, &closed);
+        }
+        return closed;
+    }
     if excluded.is_none() && state.closure.is_closed_over(term_count) {
         let mut closed = ClosedState {
             all_derivable: false,
@@ -3723,6 +3746,271 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
         tests::assert_seeded_closure_matches_complete(state, terms, goals, ledger, &closed);
     }
     closed
+}
+
+/// Closes a state whose record is a closed core with only unprocessed edges:
+/// fresh cells, and the implicit bounds of terms that carry no other fact.
+/// Returns `None` for any other record, including a closed state that needs no
+/// work and a core whose removed candidates may have weakened a cell.
+///
+/// Each edge `a - b <= w` is inserted once: every `i - b` first improves
+/// through `i - a`, then every `i - j` through `i - b` and `b - j`. After the
+/// two passes every such composition holds at current values. A triple
+/// `i - m`, `m - j` whose later-set premise was set by some edge's passes is
+/// therefore composed at that time, and a triple of two core cells was already
+/// closed, so the matrix is closed when no edge remains. Every row is
+/// recomposed, not only improved ones: an unprocessed fresh cell can already
+/// have been used at its raw value by an earlier edge. An improved bound that becomes strict adds its disequality;
+/// a zero bound over a disequality is strengthened as a further edge.
+/// Only strictly smaller bounds replace a cell, so core proofs are retained.
+fn close_by_edge_insertion(
+    state: &FactState,
+    terms: &TermTable,
+    goals: &GoalTable,
+    ledger: &mut DerivationLedger,
+) -> Option<ClosedState> {
+    let term_count = terms.ids().count();
+    let (core_terms, fresh_terms, fresh_cells): (usize, &[TermId], &[(TermId, TermId)]) =
+        match &state.closure {
+            ClosureRecord::Closed { terms } if (*terms as usize) < term_count => {
+                (*terms as usize, &[], &[])
+            }
+            ClosureRecord::Core {
+                terms,
+                fresh_terms,
+                fresh_cells,
+                weakened: false,
+            } => (*terms as usize, fresh_terms, fresh_cells),
+            _ => return None,
+        };
+    let width = term_count;
+    let mut dense =
+        DenseClosureBounds::from_maps(width, &state.bounds, &state.bound_proofs, ledger);
+    let mut distinct = state.distinct.clone();
+    let mut distinct_proofs = state.distinct_proofs.clone();
+
+    let mut fresh = vec![false; width];
+    for term in fresh_terms {
+        if let Some(slot) = fresh.get_mut(term.0 as usize) {
+            *slot = true;
+        }
+    }
+    for slot in fresh.iter_mut().skip(core_terms) {
+        *slot = true;
+    }
+    // Pending edges, first the implicit bounds touching a fresh term (whose
+    // other facts are gone) or stronger than their cell — a measure's
+    // standing bound can be registered after the core closed — then every
+    // fresh cell at its current value.
+    let mut pending: std::collections::VecDeque<(TermId, TermId, i128, DerivationId)> =
+        std::collections::VecDeque::new();
+    for id in terms.ids() {
+        for_each_implicit_bound(terms, id, |left, right, bound, kind| {
+            if fresh[left.0 as usize]
+                || fresh[right.0 as usize]
+                || dense.get(left, right).is_none_or(|(held, _)| bound < held)
+            {
+                let proof = ledger.intern(DerivationNode::ImplicitBound {
+                    left,
+                    right,
+                    bound,
+                    kind,
+                });
+                pending.push_back((left, right, bound, proof));
+            }
+        });
+    }
+    let mut cells = fresh_cells.to_vec();
+    cells.sort_unstable();
+    cells.dedup();
+    for (left, right) in cells {
+        if let Some((bound, proof)) = dense.get(left, right) {
+            pending.push_back((left, right, bound, proof));
+        }
+        let pair = ordered(left, right);
+        if let Some(parent) = distinct_proofs.get(&pair).copied()
+            && let Some((0, weak)) = dense.get(left, right)
+        {
+            let proof = ledger.intern(DerivationNode::StrengthenedBound {
+                left,
+                right,
+                bound: -1,
+                weak,
+                distinct: parent,
+            });
+            pending.push_back((left, right, -1, proof));
+        }
+    }
+
+    // A cell improved by insertion: record its disequality or strengthening
+    // consequence, exactly the (2) rule and the strict-bound disequality the
+    // fixed point applies.
+    let settle =
+        |dense: &DenseClosureBounds,
+         distinct: &mut WordHashSet<(TermId, TermId)>,
+         distinct_proofs: &mut WordHashMap<(TermId, TermId), DerivationId>,
+         pending: &mut std::collections::VecDeque<(TermId, TermId, i128, DerivationId)>,
+         ledger: &mut DerivationLedger,
+         left: TermId,
+         right: TermId| {
+            if left == right {
+                return;
+            }
+            let Some((bound, proof)) = dense.get(left, right) else {
+                return;
+            };
+            let pair = ordered(left, right);
+            if bound <= -1 && !distinct.contains(&pair) {
+                let node = ledger.intern(DerivationNode::DisequalityFromStrictBound {
+                    left: pair.0,
+                    right: pair.1,
+                    parent: proof,
+                });
+                distinct.insert(pair);
+                distinct_proofs.insert(pair, node);
+                if let Some((0, weak)) = dense.get(right, left) {
+                    let strengthened = ledger.intern(DerivationNode::StrengthenedBound {
+                        left: right,
+                        right: left,
+                        bound: -1,
+                        weak,
+                        distinct: node,
+                    });
+                    pending.push_back((right, left, -1, strengthened));
+                }
+            }
+            if bound == 0
+                && let Some(parent) = distinct_proofs.get(&pair).copied()
+            {
+                let strengthened = ledger.intern(DerivationNode::StrengthenedBound {
+                    left,
+                    right,
+                    bound: -1,
+                    weak: proof,
+                    distinct: parent,
+                });
+                pending.push_back((left, right, -1, strengthened));
+            }
+        };
+
+    while let Some((a, b, weight, proof)) = pending.pop_front() {
+        let edge_cell = a.0 as usize * width + b.0 as usize;
+        if dense.stamps[edge_cell] != 0 && dense.bounds[edge_cell] < weight {
+            continue;
+        }
+        if dense.stamps[edge_cell] == 0 || weight < dense.bounds[edge_cell] {
+            dense.set(a, b, weight, proof, ledger.depth(proof));
+        }
+        // A fresh cell enters at its current value without being set, so its
+        // own disequality or strengthening consequence is settled here.
+        settle(
+            &dense,
+            &mut distinct,
+            &mut distinct_proofs,
+            &mut pending,
+            ledger,
+            a,
+            b,
+        );
+        let (weight, proof) = (dense.bounds[edge_cell], dense.proofs[edge_cell]);
+        // Column pass: i - a <= x and a - b <= w give i - b <= x + w.
+        for i in 0..width {
+            let into_a = i * width + a.0 as usize;
+            if i == a.0 as usize || dense.stamps[into_a] == 0 {
+                continue;
+            }
+            let via = compose_transitive_bounds(dense.bounds[into_a], weight);
+            let target = i * width + b.0 as usize;
+            if dense.stamps[target] != 0 && via >= dense.bounds[target] {
+                continue;
+            }
+            let left = TermId(u32::try_from(i).expect("term index fits the u32 identity"));
+            let node = ledger.intern(DerivationNode::TransitiveBound {
+                left,
+                middle: a,
+                right: b,
+                bound: via,
+                first: dense.proofs[into_a],
+                second: proof,
+            });
+            dense.set(left, b, via, node, ledger.depth(node));
+            settle(
+                &dense,
+                &mut distinct,
+                &mut distinct_proofs,
+                &mut pending,
+                ledger,
+                left,
+                b,
+            );
+        }
+        // Row pass: i - b <= y and b - j <= z give i - j <= y + z.
+        let b_row = b.0 as usize * width;
+        for row in 0..width {
+            let left = TermId(u32::try_from(row).expect("term index fits the u32 identity"));
+            let left_row = row * width;
+            let into_b = left_row + b.0 as usize;
+            if dense.stamps[into_b] == 0 {
+                continue;
+            }
+            let (first, first_proof) = (dense.bounds[into_b], dense.proofs[into_b]);
+            for j in 0..width {
+                let out_of_b = b_row + j;
+                if j == b.0 as usize || dense.stamps[out_of_b] == 0 {
+                    continue;
+                }
+                let via = compose_transitive_bounds(first, dense.bounds[out_of_b]);
+                let target = left_row + j;
+                if dense.stamps[target] != 0 && via >= dense.bounds[target] {
+                    continue;
+                }
+                let right = TermId(u32::try_from(j).expect("term index fits the u32 identity"));
+                let node = ledger.intern(DerivationNode::TransitiveBound {
+                    left,
+                    middle: b,
+                    right,
+                    bound: via,
+                    first: first_proof,
+                    second: dense.proofs[out_of_b],
+                });
+                dense.set(left, right, via, node, ledger.depth(node));
+                settle(
+                    &dense,
+                    &mut distinct,
+                    &mut distinct_proofs,
+                    &mut pending,
+                    ledger,
+                    left,
+                    right,
+                );
+            }
+        }
+    }
+
+    let mut contradiction = None;
+    for id in terms.ids() {
+        if let Some((bound, parent)) = dense.get(id, id) {
+            if bound >= 0 {
+                continue;
+            }
+            let candidate = ledger.intern(DerivationNode::L0Contradiction { term: id, parent });
+            if contradiction.is_none_or(|current| ledger.better(candidate, current)) {
+                contradiction = Some(candidate);
+            }
+        }
+    }
+    let (bounds, bound_proofs) = dense.into_maps();
+    let closed = ClosedState {
+        all_derivable: contradiction.is_some(),
+        contradiction,
+        bounds,
+        bound_proofs,
+        distinct,
+        distinct_proofs,
+        opaque: state.opaque.clone(),
+        opaque_proofs: state.opaque_proofs.clone(),
+    };
+    Some(close_goal_contradictions(closed, goals, ledger))
 }
 
 fn close_goal_contradictions(
@@ -3983,6 +4271,7 @@ impl DenseClosureBounds {
                     terms,
                     fresh_terms,
                     fresh_cells,
+                    ..
                 } => (*terms, fresh_terms, fresh_cells),
             };
         // Loaded cells carry stamp 1. Starting the rounds one later makes
