@@ -3335,6 +3335,29 @@ pub(crate) fn contradiction_without_proofs(
     if state.all_derivable {
         return true;
     }
+    if let Some(EdgeClosure {
+        dense, distinct, ..
+    }) = insert_fresh_edges(state, terms, &mut NoProofs)
+    {
+        let contradictory = terms
+            .ids()
+            .any(|id| dense.get(id, id).is_some_and(|(bound, _)| bound < 0))
+            || {
+                let (bounds, _) = dense.into_maps();
+                goal_contradiction_without_proofs(state, bounds, distinct, goals)
+            };
+        #[cfg(test)]
+        if tests::VERIFY_SEEDED_CLOSURE.load(std::sync::atomic::Ordering::Relaxed) {
+            let mut unseeded = state.clone();
+            unseeded.closure = ClosureRecord::Unknown;
+            assert_eq!(
+                contradictory,
+                contradiction_without_proofs(&unseeded, terms, goals),
+                "the proof-free edge insertion disagrees with the complete probe"
+            );
+        }
+        return contradictory;
+    }
     let dimension = terms.ids().count();
     let ids = terms.ids().collect::<Vec<_>>();
     let active_middles = closure_middle_terms(state, terms, goals, &ids);
@@ -3438,10 +3461,21 @@ pub(crate) fn contradiction_without_proofs(
             }
         }
     }
+    goal_contradiction_without_proofs(state, closed_bounds, distinct, goals)
+}
+
+/// Whether both signs of one goal are derivable over closed proof-free
+/// relation maps. `derives_goal` consults no proof identity.
+fn goal_contradiction_without_proofs(
+    state: &FactState,
+    bounds: WordHashMap<(TermId, TermId), i128>,
+    distinct: WordHashSet<(TermId, TermId)>,
+    goals: &GoalTable,
+) -> bool {
     let closed = ClosedState {
         all_derivable: false,
         contradiction: None,
-        bounds: closed_bounds,
+        bounds,
         bound_proofs: HashMap::default(),
         distinct,
         distinct_proofs: HashMap::default(),
@@ -3763,12 +3797,11 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
 /// unprocessed fresh cell can already have been used at its raw value. An improved bound that becomes strict adds its disequality;
 /// a zero bound over a disequality is strengthened as a further edge.
 /// Only strictly smaller bounds replace a cell, so core proofs are retained.
-fn close_by_edge_insertion(
+fn insert_fresh_edges<P: ClosureProofs>(
     state: &FactState,
     terms: &TermTable,
-    goals: &GoalTable,
-    ledger: &mut DerivationLedger,
-) -> Option<ClosedState> {
+    ledger: &mut P,
+) -> Option<EdgeClosure> {
     let term_count = terms.ids().count();
     let (core_terms, fresh_terms, fresh_cells): (usize, &[TermId], &[(TermId, TermId)]) =
         match &state.closure {
@@ -3850,7 +3883,7 @@ fn close_by_edge_insertion(
          distinct: &mut WordHashSet<(TermId, TermId)>,
          distinct_proofs: &mut WordHashMap<(TermId, TermId), DerivationId>,
          pending: &mut std::collections::VecDeque<(TermId, TermId, i128, DerivationId)>,
-         ledger: &mut DerivationLedger,
+         ledger: &mut P,
          left: TermId,
          right: TermId| {
             if left == right {
@@ -3995,6 +4028,62 @@ fn close_by_edge_insertion(
         }
     }
 
+    Some(EdgeClosure {
+        dense,
+        distinct,
+        distinct_proofs,
+    })
+}
+
+/// The settled matrix and disequalities of [`insert_fresh_edges`].
+struct EdgeClosure {
+    dense: DenseClosureBounds,
+    distinct: WordHashSet<(TermId, TermId)>,
+    distinct_proofs: WordHashMap<(TermId, TermId), DerivationId>,
+}
+
+/// Where an edge-insertion closure files the proofs of the facts it derives.
+trait ClosureProofs {
+    fn intern(&mut self, node: DerivationNode) -> DerivationId;
+    fn depth(&self, proof: DerivationId) -> u32;
+}
+
+impl ClosureProofs for DerivationLedger {
+    fn intern(&mut self, node: DerivationNode) -> DerivationId {
+        DerivationLedger::intern(self, node)
+    }
+
+    fn depth(&self, proof: DerivationId) -> u32 {
+        DerivationLedger::depth(self, proof)
+    }
+}
+
+/// A proof-free closure: derived facts carry a placeholder identity that no
+/// caller reads, so the same insertion answers value questions alone.
+struct NoProofs;
+
+impl ClosureProofs for NoProofs {
+    fn intern(&mut self, _: DerivationNode) -> DerivationId {
+        DerivationId(0)
+    }
+
+    fn depth(&self, _: DerivationId) -> u32 {
+        0
+    }
+}
+
+/// [`insert_fresh_edges`] with proofs, completed as a closed state.
+fn close_by_edge_insertion(
+    state: &FactState,
+    terms: &TermTable,
+    goals: &GoalTable,
+    ledger: &mut DerivationLedger,
+) -> Option<ClosedState> {
+    let EdgeClosure {
+        dense,
+        distinct,
+        distinct_proofs,
+    } = insert_fresh_edges(state, terms, ledger)?;
     let mut contradiction = None;
     for id in terms.ids() {
         if let Some((bound, parent)) = dense.get(id, id) {
@@ -4238,7 +4327,7 @@ impl DenseClosureBounds {
         dimension: usize,
         bounds: &WordHashMap<(TermId, TermId), i128>,
         proofs: &WordHashMap<(TermId, TermId), DerivationId>,
-        ledger: &DerivationLedger,
+        ledger: &impl ClosureProofs,
     ) -> Self {
         let count = dimension
             .checked_mul(dimension)
@@ -4891,6 +4980,19 @@ fn join_at_once(
             })
         });
         if held {
+            // A proof every predecessor already selected holds on every
+            // incoming path, so it is itself a derivation of the joined fact.
+            if contributing.len() == closed.len() {
+                let shared = first.bound_proofs[&pair];
+                if rest_indices.iter().all(|index| {
+                    closed[*index].bounds[&pair] == bound
+                        && closed[*index].bound_proofs[&pair] == shared
+                }) {
+                    bounds.insert(pair, bound);
+                    bound_proofs.insert(pair, shared);
+                    continue;
+                }
+            }
             let mut parents = Vec::with_capacity(states.len());
             for (ordinal, state) in closed.iter().enumerate() {
                 let parent = if state.contradictory() {
@@ -4927,6 +5029,16 @@ fn join_at_once(
     let mut distinct_keys: Vec<_> = distinct.iter().copied().collect();
     distinct_keys.sort_unstable();
     for pair in distinct_keys {
+        if contributing.len() == closed.len() {
+            let shared = first.distinct_proofs[&pair];
+            if rest_indices
+                .iter()
+                .all(|index| closed[*index].distinct_proofs[&pair] == shared)
+            {
+                distinct_proofs.insert(pair, shared);
+                continue;
+            }
+        }
         let mut parents = Vec::with_capacity(states.len());
         for (ordinal, state) in closed.iter().enumerate() {
             let parent = if state.contradictory() {
@@ -4960,6 +5072,16 @@ fn join_at_once(
     let mut opaque_keys: Vec<_> = opaque.iter().copied().collect();
     opaque_keys.sort_unstable();
     for (goal, sign) in opaque_keys {
+        if contributing.len() == closed.len() {
+            let shared = first.opaque_proofs[&(goal, sign)];
+            if rest_indices
+                .iter()
+                .all(|index| closed[*index].opaque_proofs[&(goal, sign)] == shared)
+            {
+                opaque_proofs.insert((goal, sign), shared);
+                continue;
+            }
+        }
         let mut parents = Vec::with_capacity(states.len());
         for (ordinal, state) in closed.iter().enumerate() {
             let parent = if state.contradictory() {
