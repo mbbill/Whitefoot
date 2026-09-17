@@ -3366,13 +3366,15 @@ fn main() -> status: own ExitStatus pure {
     assert!(outcomes[2].evidence.is_empty());
     let mut counts = DistinctGroundCounts::default();
     collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
+    // A single-predecessor join keeps its predecessor's proof instead of a
+    // one-parent wrapper, so only merging joins appear among the grounds.
     assert_eq!(
         counts,
         DistinctGroundCounts {
             strict: 2,
-            joins: 3,
-            join_edges: 4,
-            join_parent_counts: vec![2, 1, 1],
+            joins: 1,
+            join_edges: 2,
+            join_parent_counts: vec![2],
             ..DistinctGroundCounts::default()
         },
         "the normalized joined disequality names both opposite strict parents"
@@ -3438,8 +3440,10 @@ fn main() -> status: own ExitStatus pure {
     let mut counts = DistinctGroundCounts::default();
     collect_distinct_grounds(&summary, distinct, &mut counts);
     assert_eq!(counts.strict, 2);
-    assert_eq!(counts.joins, 3);
-    assert_eq!(counts.join_edges, 4);
+    // A single-predecessor join keeps its predecessor's proof instead of a
+    // one-parent wrapper, so only merging joins appear among the grounds.
+    assert_eq!(counts.joins, 1);
+    assert_eq!(counts.join_edges, 2);
 }
 
 #[test]
@@ -3497,7 +3501,9 @@ fn main() -> status: own ExitStatus pure {
         &mut kept_counts,
     );
     assert_eq!(kept_counts.strict, 2);
-    assert_eq!(kept_counts.join_edges, 4);
+    // A single-predecessor join keeps its predecessor's proof instead of a
+    // one-parent wrapper, so only merging joins appear among the grounds.
+    assert_eq!(kept_counts.join_edges, 2);
 
     let killed_summary = entailment(source, "killed");
     validate_derivations(&killed_summary);
@@ -3585,12 +3591,14 @@ fn main() -> status: own ExitStatus pure {
             collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
             assert_eq!(
                 counts,
+                // Only the merging join remains: a single-predecessor join
+                // keeps its predecessor's proof.
                 DistinctGroundCounts {
                     source: 1,
                     strict: 1,
-                    joins: 3,
-                    join_edges: 4,
-                    join_parent_counts: vec![2, 1, 1],
+                    joins: 1,
+                    join_edges: 2,
+                    join_parent_counts: vec![2],
                     ..DistinctGroundCounts::default()
                 },
                 "the mixed join names its explicit and strict-derived predecessor roots"
@@ -3649,11 +3657,13 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(counts.source, 1);
     assert_eq!(counts.strict, 2);
     assert_eq!(counts.contradiction, 1);
-    assert_eq!(counts.joins, 6);
+    // A single-predecessor join keeps its predecessor's proof instead of a
+    // one-parent wrapper, so only merging joins appear among the grounds.
+    assert_eq!(counts.joins, 3);
     counts.join_parent_counts.sort_unstable();
-    assert_eq!(counts.join_parent_counts, vec![1, 1, 1, 2, 2, 2]);
+    assert_eq!(counts.join_parent_counts, vec![2, 2, 2]);
     assert_eq!(
-        counts.join_edges, 9,
+        counts.join_edges, 6,
         "the guarded inputs retain all four reaching grounds through the nested joins"
     );
 }
