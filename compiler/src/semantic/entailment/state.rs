@@ -9,6 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::mem::size_of;
+use std::rc::Rc;
 
 use super::super::goal::{GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
@@ -2221,18 +2222,18 @@ pub(crate) struct FactState {
     /// the flag sets this handle at the same time.
     pub(crate) contradiction: Option<DerivationId>,
     /// Live difference bounds `left - right <= bound`, smallest bound kept.
-    pub(crate) bounds: WordHashMap<(TermId, TermId), i128>,
-    pub(crate) bound_proofs: WordHashMap<(TermId, TermId), DerivationId>,
+    pub(crate) bounds: Rc<WordHashMap<(TermId, TermId), i128>>,
+    pub(crate) bound_proofs: Rc<WordHashMap<(TermId, TermId), DerivationId>>,
     /// Every independently live proof of a directed bound. `bounds` and
     /// `bound_proofs` remain the canonical query cache; retaining the other
     /// candidates lets an S12-only holder invalidation expose an ordinary
     /// fallback instead of deleting the relation wholesale.
-    bound_candidates: WordHashMap<(TermId, TermId), Candidates<(i128, DerivationId)>>,
+    bound_candidates: Rc<WordHashMap<(TermId, TermId), Candidates<(i128, DerivationId)>>>,
     /// Live disequalities, stored with ordered term pair.
-    pub(crate) distinct: WordHashSet<(TermId, TermId)>,
-    pub(crate) distinct_proofs: WordHashMap<(TermId, TermId), DerivationId>,
+    pub(crate) distinct: Rc<WordHashSet<(TermId, TermId)>>,
+    pub(crate) distinct_proofs: Rc<WordHashMap<(TermId, TermId), DerivationId>>,
     /// Independently live disequality proofs, parallel to `bound_candidates`.
-    distinct_candidates: WordHashMap<(TermId, TermId), Candidates<DerivationId>>,
+    distinct_candidates: Rc<WordHashMap<(TermId, TermId), Candidates<DerivationId>>>,
     /// [ENT-3] comparison origins (b): `own Bool` bindings whose initializer
     /// comparison is still valid on every path from initializer to here.
     pub(crate) origins: HashMap<BindingId, Relation>,
@@ -2263,12 +2264,12 @@ impl FactState {
             closure: ClosureRecord::Unknown,
             all_derivable: false,
             contradiction: None,
-            bounds: HashMap::default(),
-            bound_proofs: HashMap::default(),
-            bound_candidates: HashMap::default(),
-            distinct: HashSet::default(),
-            distinct_proofs: HashMap::default(),
-            distinct_candidates: HashMap::default(),
+            bounds: Rc::default(),
+            bound_proofs: Rc::default(),
+            bound_candidates: Rc::default(),
+            distinct: Rc::default(),
+            distinct_proofs: Rc::default(),
+            distinct_candidates: Rc::default(),
             origins: HashMap::default(),
             outcomes: HashMap::default(),
             opaque: HashSet::default(),
@@ -2517,7 +2518,9 @@ impl FactState {
     ) {
         self.closure.mark_fresh_cell((left, right));
         let pair = (left, right);
-        let candidates = self.bound_candidates.entry(pair).or_default();
+        let candidates = Rc::make_mut(&mut self.bound_candidates)
+            .entry(pair)
+            .or_default();
         if !candidates.contains(&(bound, proof)) {
             candidates.push((bound, proof));
         }
@@ -2532,7 +2535,9 @@ impl FactState {
     ) {
         self.closure.mark_fresh_cell(pair);
         self.closure.mark_fresh_cell((pair.1, pair.0));
-        let candidates = self.distinct_candidates.entry(pair).or_default();
+        let candidates = Rc::make_mut(&mut self.distinct_candidates)
+            .entry(pair)
+            .or_default();
         if !candidates.contains(&proof) {
             candidates.push(proof);
         }
@@ -2552,12 +2557,12 @@ impl FactState {
             })
         });
         if let Some((bound, proof)) = selected {
-            self.bounds.insert(pair, bound);
-            self.bound_proofs.insert(pair, proof);
+            Rc::make_mut(&mut self.bounds).insert(pair, bound);
+            Rc::make_mut(&mut self.bound_proofs).insert(pair, proof);
         } else {
-            self.bounds.remove(&pair);
-            self.bound_proofs.remove(&pair);
-            self.bound_candidates.remove(&pair);
+            Rc::make_mut(&mut self.bounds).remove(&pair);
+            Rc::make_mut(&mut self.bound_proofs).remove(&pair);
+            Rc::make_mut(&mut self.bound_candidates).remove(&pair);
         }
     }
 
@@ -2572,12 +2577,12 @@ impl FactState {
             })
         });
         if let Some(proof) = selected {
-            self.distinct.insert(pair);
-            self.distinct_proofs.insert(pair, proof);
+            Rc::make_mut(&mut self.distinct).insert(pair);
+            Rc::make_mut(&mut self.distinct_proofs).insert(pair, proof);
         } else {
-            self.distinct.remove(&pair);
-            self.distinct_proofs.remove(&pair);
-            self.distinct_candidates.remove(&pair);
+            Rc::make_mut(&mut self.distinct).remove(&pair);
+            Rc::make_mut(&mut self.distinct_proofs).remove(&pair);
+            Rc::make_mut(&mut self.distinct_candidates).remove(&pair);
         }
     }
 
@@ -2620,16 +2625,24 @@ impl FactState {
             self.closure.mark_fresh_term(term);
         }
         for pair in dead {
-            self.bounds.remove(&pair);
-            self.bound_proofs.remove(&pair);
-            self.bound_candidates.remove(&pair);
+            Rc::make_mut(&mut self.bounds).remove(&pair);
+            Rc::make_mut(&mut self.bound_proofs).remove(&pair);
+            Rc::make_mut(&mut self.bound_candidates).remove(&pair);
         }
-        self.distinct
-            .retain(|(left, right)| !killed(*left) && !killed(*right));
-        self.distinct_proofs
-            .retain(|(left, right), _| !killed(*left) && !killed(*right));
-        self.distinct_candidates
-            .retain(|(left, right), _| !killed(*left) && !killed(*right));
+        // Shared relation maps are copied only when this kill changes them.
+        if self
+            .distinct_candidates
+            .keys()
+            .chain(self.distinct.iter())
+            .any(|(left, right)| killed(*left) || killed(*right))
+        {
+            Rc::make_mut(&mut self.distinct)
+                .retain(|(left, right)| !killed(*left) && !killed(*right));
+            Rc::make_mut(&mut self.distinct_proofs)
+                .retain(|(left, right), _| !killed(*left) && !killed(*right));
+            Rc::make_mut(&mut self.distinct_candidates)
+                .retain(|(left, right), _| !killed(*left) && !killed(*right));
+        }
         self.origins.retain(|_, relation| {
             let [left, right] = relation.terms();
             !killed(left) && !killed(right)
@@ -2653,10 +2666,20 @@ impl FactState {
         // Each pair's selection depends only on its own candidates, and the
         // weakened record is sorted before use, so no iteration order is
         // observable here.
-        let bound_pairs = self.bound_candidates.keys().copied().collect::<Vec<_>>();
+        // Only pairs with a removed candidate are touched, so shared relation
+        // maps are copied only when a candidate actually dies.
+        let bound_pairs = self
+            .bound_candidates
+            .iter()
+            .filter(|(pair, candidates)| {
+                candidates
+                    .iter()
+                    .any(|(_, proof)| killed(pair.0, pair.1, *proof))
+            })
+            .map(|(pair, _)| *pair)
+            .collect::<Vec<_>>();
         for pair in bound_pairs {
-            let candidates = self
-                .bound_candidates
+            let candidates = Rc::make_mut(&mut self.bound_candidates)
                 .get_mut(&pair)
                 .expect("candidate key came from the same map");
             let before = candidates.len();
@@ -2670,10 +2693,18 @@ impl FactState {
                 }
             }
         }
-        let distinct_pairs = self.distinct_candidates.keys().copied().collect::<Vec<_>>();
+        let distinct_pairs = self
+            .distinct_candidates
+            .iter()
+            .filter(|(pair, candidates)| {
+                candidates
+                    .iter()
+                    .any(|proof| killed(pair.0, pair.1, *proof))
+            })
+            .map(|(pair, _)| *pair)
+            .collect::<Vec<_>>();
         for pair in distinct_pairs {
-            let candidates = self
-                .distinct_candidates
+            let candidates = Rc::make_mut(&mut self.distinct_candidates)
                 .get_mut(&pair)
                 .expect("candidate key came from the same map");
             let before = candidates.len();
@@ -3425,7 +3456,7 @@ pub(crate) fn contradiction_without_proofs(
             *cell = Some(bound);
         }
     };
-    for (&(left, right), &bound) in &state.bounds {
+    for (&(left, right), &bound) in state.bounds.iter() {
         insert(&mut bounds, left, right, bound);
     }
     for id in terms.ids() {
@@ -3434,7 +3465,7 @@ pub(crate) fn contradiction_without_proofs(
         });
     }
 
-    let mut distinct = state.distinct.clone();
+    let mut distinct = (*state.distinct).clone();
     loop {
         // Floyd-Warshall over the exact same saturating difference bounds.
         // One pass closes the current edge set; a second is needed only when
@@ -3600,8 +3631,8 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
                 &state.bound_proofs,
                 ledger,
             ),
-            distinct: state.distinct.clone(),
-            distinct_proofs: state.distinct_proofs.clone(),
+            distinct: (*state.distinct).clone(),
+            distinct_proofs: (*state.distinct_proofs).clone(),
             opaque: state.opaque.clone(),
             opaque_proofs: state.opaque_proofs.clone(),
         };
@@ -3616,8 +3647,8 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
         }
         return close_goal_contradictions(closed, goals, ledger);
     }
-    let mut distinct = state.distinct.clone();
-    let mut distinct_proofs = state.distinct_proofs.clone();
+    let mut distinct = (*state.distinct).clone();
+    let mut distinct_proofs = (*state.distinct_proofs).clone();
     // The dense matrix is the only live bound index while the fixed point
     // runs; every rule reads it and nothing reads the maps. Rebuilding the
     // maps once from the settled matrix keeps their exact content while
@@ -3882,8 +3913,8 @@ fn insert_fresh_edges<P: ClosureProofs>(
     let width = term_count;
     let mut dense =
         DenseClosureBounds::from_maps(width, &state.bounds, &state.bound_proofs, ledger);
-    let mut distinct = state.distinct.clone();
-    let mut distinct_proofs = state.distinct_proofs.clone();
+    let mut distinct = (*state.distinct).clone();
+    let mut distinct_proofs = (*state.distinct_proofs).clone();
 
     let mut fresh = vec![false; width];
     for term in fresh_terms {
@@ -4282,7 +4313,7 @@ fn closure_middle_terms(
         admit(left, &mut active);
         admit(right, &mut active);
     }
-    for &(left, right) in &state.distinct {
+    for &(left, right) in state.distinct.iter() {
         admit(left, &mut active);
         admit(right, &mut active);
     }
@@ -4949,12 +4980,12 @@ pub(crate) fn materialize_closure_at(
         closure: ClosureRecord::closed(terms.ids().count()),
         all_derivable: false,
         contradiction: None,
-        bounds,
-        bound_proofs,
-        bound_candidates,
-        distinct: closed.distinct,
-        distinct_proofs,
-        distinct_candidates,
+        bounds: Rc::new(bounds),
+        bound_proofs: Rc::new(bound_proofs),
+        bound_candidates: Rc::new(bound_candidates),
+        distinct: Rc::new(closed.distinct),
+        distinct_proofs: Rc::new(distinct_proofs),
+        distinct_candidates: Rc::new(distinct_candidates),
         origins: state.origins.clone(),
         outcomes: state.outcomes.clone(),
         opaque: closed.opaque,
@@ -5257,12 +5288,12 @@ fn join_at_once(
         closure: ClosureRecord::closed(terms.ids().count()),
         all_derivable: false,
         contradiction: None,
-        bounds,
-        bound_proofs,
-        bound_candidates,
-        distinct,
-        distinct_proofs,
-        distinct_candidates,
+        bounds: Rc::new(bounds),
+        bound_proofs: Rc::new(bound_proofs),
+        bound_candidates: Rc::new(bound_candidates),
+        distinct: Rc::new(distinct),
+        distinct_proofs: Rc::new(distinct_proofs),
+        distinct_candidates: Rc::new(distinct_candidates),
         origins,
         outcomes,
         opaque,
