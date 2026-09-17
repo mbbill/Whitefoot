@@ -583,9 +583,10 @@ show the same affine interval-proof path in both. SipHash `write` rises from
 458 to 2278 samples, while the interval-proof function itself falls from
 948 to 243 samples, which suggests the hash call was inlined differently.
 Those lookups go through a closed state's term-pair map. The hasher change in
-c3 removes the difference. This is attributed to code generation of
-unchanged hashing code, not to the scope change, but the comparison as run
-fails the protected-control clause. Validation scope is selected on the
+c3 removes the difference. The working hypothesis is code generation of
+unchanged hashing code rather than the scope change. The samples and the c3
+recovery suggest this without isolating it. Either way, the comparison as
+run fails the protected-control clause. Validation scope is selected on the
 cumulative base→c5 result, which has no regression, and this exception is
 recorded rather than hidden.
 
@@ -653,6 +654,25 @@ across kills, joins and queries, would remove the dominant cubic
 recomputation. It would, however, change which equal-bound, equal-depth
 derivation is retained, so it is outside this follow-up's fixed-witness
 boundary and needs its own design decision.
+
+To reproduce the flow comparisons, build each listed revision's gate
+compiler in a detached worktree as below, then run each pair in the order
+listed:
+
+```sh
+flow_checkout=$PWD
+make -C research/experiments/proof-use-cost compare \
+  WORK_ROOT="$flow_root/probe-$earlier-$later" \
+  BASELINE="$flow_root/$earlier/compiler/target/gate/whitefootc" \
+  CANDIDATE="$flow_root/$later/compiler/target/gate/whitefootc" \
+  SIZES=16,64,256,4096 \
+  REAL_SOURCES="$flow_checkout/tests/programs/fixed_run_library.wf $flow_checkout/tests/programs/wfgrep.wf $flow_checkout/tests/programs/compute/prefix.wf $flow_checkout/tests/programs/compute/histogram.wf $flow_checkout/tests/programs/compute/radix_scatter.wf"
+```
+
+`flow_root` holds one worktree per revision label. The pairs, in order, are
+base→c1, c1→c2, c2→c3, c3→c4, c4→c5, base→c5, c5r→c6 and base→c6. The
+harness warms both compilers, alternates their order for five pairs and
+requires every invocation to accept.
 
 ## Reproduction and correctness boundary
 
