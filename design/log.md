@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-17 Scope symbolic generic validation to judged instances
+
+Nodes: compiler/generic-validation-scope
+
+Owner-approved: The owner explicitly approved the generic-validation-scope amendment after its complete text, explanation and DCR result were presented in the PR #68 conversation.
+
+Summary: Apply the amendment unchanged as a new compiler node. Symbolic generic validation analyzes entailment only for canonical generic instances and the functions their calls reach, because judged bodies read other analyses only through callee postcondition summaries and the concrete phase repeats the analysis of every other body. The [flow-analysis follow-up](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#flow-analysis-closure-follow-up) records the halved fixed-run compilation and the fixture exception. The accepted amendment is removed; language rules and authorization to merge into main are unchanged.
+
 ## 2026-09-16 Consolidate build inputs and verification ownership
 
 Nodes: compiler/build-inputs, compiler/verification
