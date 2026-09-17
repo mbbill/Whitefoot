@@ -35,6 +35,9 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
 - [Source certificate checking cost](investigations/proof-certificate-architecture/CHECKING-COST.md):
   separate written-proof length from entering-context size and attribute the
   large `proof_use` cost without changing its accepted rules.
+- [Incremental L0 closure](investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md):
+  seed the closure fixed point from the already closed part of a fact state,
+  relaxing only which equal-bound L0 derivation is retained.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).
