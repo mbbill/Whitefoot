@@ -7,7 +7,68 @@ Pseudocode only; each program's required properties are fixed, the notation
 is whatever a candidate needs. Supersede in place; remove with the
 investigation.
 
-program is accepted, rejected, or made parallel has not been evaluated.
+The full preservation of existing programs and their overlap permissions has
+not been evaluated under any candidate.
+
+## Current capability floor
+
+On 2026-09-17 the owner required a candidate covering the critical capabilities
+from the outset, with at least WF's current level retained. Sequential fragments
+remain useful witnesses but are not an adequate candidate boundary. IO and FFI
+may be deferred in this discussion. Losing an existing capability is a failure
+of this floor, not merely a price that may be noted and ignored.
+
+The initial anchors below were checked against kernel specification v0.59 at
+[revision 3f205ff6](https://github.com/mbbill/Whitefoot/blob/3f205ff64b0d881ad9cdb69e8b29bcd86ea5d11c/spec/kernel-spec.md).
+The research worktree still carries v0.57; its older copy must not silently
+define the current floor. These are specification capabilities, not a new
+claim about measured compiler coverage, and the list is not exhaustive.
+
+| Capability anchor | Source ground | Required comparison |
+|---|---|---|
+| Independent declared calls, including recursive callees | PAR-1, EFF-2 | Preserve permitted overlap using caller-resolved access information, including argument evaluation and consumed resources; keep source-order observables. |
+| Element-wise loops with same-index read/modify/write | PAR-2's single-binder affine element family | Retain admitted maps and their already-checked bounds; arbitrary injectivity is not presumed. |
+| Runtime-width adjacent ranges passed to a helper | PAR-2's adjacent-range family, VIEW-2 | Preserve origin/range information across the signature and separate iterations; no descriptor-as-fresh-backing shortcut. |
+| Accumulator recombination | PAR-2's fixed operation table | Retain admitted wrap/bitwise/min/max/Boolean reductions; do not generalize the guarantee to ordinary checked addition or floating point. |
+| Owned composite values and storage | TYPE-2, SET-2, PROV-6 | Cover structs/enums, arrays, buffers, heap/store-backed cells and runs, ownership transfer and disposal obligations. |
+| Definition-side and call-side contracts | FN-1, CALL-6, ENT-5 | State access, result relations and invalidated facts across calls; retain the facts unrelated to the call's effects. |
+
+Current parallelism permits overlapping otherwise sequential computation; it is
+not a writer-visible thread facility (CAP-1). Denying an overlap need not reject
+a sequential program. Arbitrary threads are therefore a further question, not
+a reason to omit current parallel computation.
+
+P1-P19 also contain requested extensions, not just this floor. In particular,
+P7's locator-based holes and P4's stored cursor are exploration requirements;
+they are not assertions that v0.59 already admits those forms. A full
+current-program coverage mapping remains outstanding.
+
+One immediate cross-feature discriminator separates boundary state from access
+during a call. In the permissive candidate, consider these pseudocode contracts:
+
+```text
+fn inspect(p)
+    requires live(p), full(p)
+    accesses reads(target(p))
+    ensures live(p), full(p)
+
+fn extract_and_restore(p)
+    requires live(p), full(p)
+    accesses reads(target(p)), writes(target(p))
+    ensures live(p), full(p)
+{
+    v = take(p)
+    put(p, v)
+}
+```
+
+Two `inspect` calls may overlap on the same target, absent other effects or
+dependencies. `inspect(p)` and `extract_and_restore(q)` on the same target
+cannot overlap merely because both calls preserve the boundary state: the
+second exposes an intermediate hole. They can execute in source order; on
+proved-disjoint live initialized scalar targets their memory accesses can
+overlap. Accesses here summarize the whole call, not only the final state delta.
+The notation does not settle syntax or the general contract proof algorithm.
 
 ## P1 Container split with a runtime index
 

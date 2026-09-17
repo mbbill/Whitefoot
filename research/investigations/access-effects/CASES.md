@@ -642,13 +642,25 @@ runtime tag: B07's scalar overwrite and L06's release have premises true for
 every remaining state. This does not establish support for arbitrary stored
 pointers or arbitrary predicates.
 
-The next small boundary is a single scalar allocation. First distinguish an
-owner binding, its separately allocated storage, and a locator for that storage.
-Compare transferring ownership with relocating the content and ending storage.
-Then add scope exit, conditional ending, and address reuse one at a time.
-Allocation failure, variable numbers of allocations, reference fields, containers,
-and concurrency remain separate extensions. No heap surface type or lowering
-has been chosen.
+The owner subsequently corrected the proposed research scope: start with a
+candidate covering the critical capabilities, not a minimal single-threaded
+language. At least WF's existing capabilities must be retained, including
+parallel computation, functions, composite data and dynamic storage. IO and FFI
+may be deferred for this comparison. Small examples isolate reasoning work;
+they do not remove requirements from the candidate. The discussion agrees to
+this correction. A scalar allocation remains useful for distinguishing ownership
+transfer, content relocation and storage ending, but cannot establish the
+adequacy of a complete candidate. No heap surface type or lowering is chosen.
+
+The search method is a vector of design choices evaluated against a stable
+requirement set. Record capability, writer/checker/runtime costs, and unresolved
+obligations separately. Replacing a choice includes its necessary dependent
+changes. Pairwise coupling tables are indexes into examples, not a claim that
+all interactions are pairwise. Existing-capability losses fail the current
+floor; they cannot be repaired merely by silently deleting the requirement.
+See [the program catalog](PROGRAMS.md#current-capability-floor) for the starting
+coverage anchors. The 26 cases above remain scoped sequential witnesses, not
+the full candidate or a complete coverage suite.
 
 A large fixed backing array is a useful allocator thought experiment, provided
 the contract also represents the start/end of each logical allocation inside it.
@@ -689,9 +701,7 @@ physical storage, initialized contents, and logical allocation validity.
   cover all reachable exits, including zero iterations; there need not be one
   common initialization or liveness state for every exit.
 - Source forms exposing states and transitions are recorded above as alternatives.
-  The next semantic boundary separates storage lifetime, content transfer, and
-  ownership transfer for one scalar allocation. Calls, general dynamic allocation,
-  relocation/reuse, structs, arrays, general object
-  invariants, callbacks and concurrency remain outside these cases. Later
-  features must replay the applicable cases and name any premise or expected
-  result they change.
+  Whole-candidate evaluation includes the critical current capabilities from
+  the outset, including parallel computation. The numbered cases retain their
+  narrower premises. Cross-feature examples must replay the applicable cases
+  and name any premise or expected result they change.
