@@ -2298,19 +2298,6 @@ impl BoundStore {
         candidates
     }
 
-    /// Whether any candidate of `pair` satisfies `test`.
-    fn any_candidate(
-        &self,
-        pair: (TermId, TermId),
-        mut test: impl FnMut((i128, DerivationId)) -> bool,
-    ) -> bool {
-        self.get(pair.0, pair.1).is_some_and(&mut test)
-            || self
-                .extra
-                .get(&pair)
-                .is_some_and(|extra| extra.iter().copied().any(test))
-    }
-
     /// Adds one candidate. The selection is the least candidate by bound and
     /// then proof, so only the new candidate and the current selection
     /// compete; the loser is kept among the other candidates.
@@ -2936,15 +2923,25 @@ impl FactState {
         // observable here.
         // Only pairs with a removed candidate are touched, so shared relation
         // maps are copied only when a candidate actually dies.
-        let bound_pairs = self
+        let mut bound_pairs = self
             .bounds
             .cells()
+            .filter(|(left, right, _, proof)| killed(*left, *right, *proof))
             .map(|(left, right, _, _)| (left, right))
-            .filter(|pair| {
-                self.bounds
-                    .any_candidate(*pair, |(_, proof)| killed(pair.0, pair.1, proof))
-            })
             .collect::<Vec<_>>();
+        bound_pairs.extend(
+            self.bounds
+                .extra
+                .iter()
+                .filter(|(pair, extra)| {
+                    extra
+                        .iter()
+                        .any(|(_, proof)| killed(pair.0, pair.1, *proof))
+                })
+                .map(|(pair, _)| *pair),
+        );
+        bound_pairs.sort_unstable();
+        bound_pairs.dedup();
         let ordinary = |proof: DerivationId| !ledger.depends_on_postcondition_call(proof);
         let mut ordinary_weakened = Vec::new();
         for pair in bound_pairs {
@@ -3966,7 +3963,7 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
         let mut closed = ClosedState {
             all_derivable: false,
             contradiction: None,
-            matrix: DenseClosureBounds::from_store(term_count, &state.bounds, ledger),
+            matrix: DenseClosureBounds::values_from_store(term_count, &state.bounds),
             distinct: (*state.distinct).clone(),
             distinct_proofs: (*state.distinct_proofs).clone(),
             opaque: state.opaque.clone(),
@@ -4246,7 +4243,7 @@ fn insert_fresh_edges<P: ClosureProofs>(
         return None;
     }
     let width = term_count;
-    let mut dense = DenseClosureBounds::from_store(width, &state.bounds, ledger);
+    let mut dense = DenseClosureBounds::values_from_store(width, &state.bounds);
     let mut distinct = (*state.distinct).clone();
     let mut distinct_proofs = (*state.distinct_proofs).clone();
 
@@ -4813,6 +4810,26 @@ impl DenseClosureBounds {
         let mut dense = Self::new(dimension);
         for (left, right, bound, proof) in store.cells() {
             dense.set(left, right, bound, proof, ledger.depth(proof));
+        }
+        dense
+    }
+
+    /// The store's cells without the row summaries only the unseeded fixed
+    /// point's pruning reads; edge insertion and closed views never do.
+    fn values_from_store(dimension: usize, store: &BoundStore) -> Self {
+        let mut dense = Self::new(dimension);
+        let stride = store.stride;
+        for row in 0..dimension.min(stride) {
+            let source = row * stride;
+            let target = row * dimension;
+            for column in 0..dimension.min(stride) {
+                if store.present[source + column] {
+                    dense.bounds[target + column] = store.bounds[source + column];
+                    dense.proofs[target + column] = store.proofs[source + column];
+                    dense.stamps[target + column] = 1;
+                    dense.live += 1;
+                }
+            }
         }
         dense
     }
