@@ -4124,21 +4124,76 @@ pub(crate) fn materialize_closure_before_kill(
     goals: &GoalTable,
     ledger: &mut DerivationLedger,
 ) {
-    let term_count = u32::try_from(terms.ids().count())
-        .expect("ENT term inventory exceeds the u32 identity space");
-    if state.all_derivable || state.closed_term_count == Some(term_count) {
+    if !materializes_before_kill(state, terms) {
         return;
     }
+    let event = ledger.event(FlowEventKind::Snapshot, None);
+    *state = materialize_closure_at(state, terms, goals, ledger, event);
+}
+
+/// Whether [`materialize_closure_before_kill`] takes a closure of this state.
+fn materializes_before_kill(state: &FactState, terms: &TermTable) -> bool {
+    let term_count = u32::try_from(terms.ids().count())
+        .expect("ENT term inventory exceeds the u32 identity space");
     // With no explicit relation or signed goal, closing can add only the
     // specification's pointwise implicit bounds. Eliminating one endpoint
     // from those bounds cannot create a new survivor-to-survivor conclusion,
     // and every later query recreates the same implicit bounds. Origins are
     // transfer metadata rather than independently derivable facts.
-    if state.bounds.is_empty() && state.distinct.is_empty() && state.opaque.is_empty() {
+    !state.all_derivable
+        && state.closed_term_count != Some(term_count)
+        && !(state.bounds.is_empty() && state.distinct.is_empty() && state.opaque.is_empty())
+}
+
+/// Promotes a contradiction and then materializes the closure before one
+/// event-kill batch, as [`promote_contradiction`] followed by
+/// [`materialize_closure_before_kill`] would, closing the state at most once.
+///
+/// Both steps close the same unchanged state whenever the batch
+/// materializes. The promotion's proof-free probe is needed only to choose
+/// between its two outcomes when that single closure is contradictory: a
+/// promoted state keeps the closure's contradiction and creates no snapshot
+/// event, while a materialized one wraps it at a snapshot. Closing before
+/// allocating the snapshot event interns the same nodes and takes the same
+/// event identity, because events and nodes are numbered independently.
+///
+/// [`promote_contradiction`]: super::flow
+pub(crate) fn promote_and_materialize_before_kill(
+    state: &mut FactState,
+    terms: &TermTable,
+    goals: &GoalTable,
+    ledger: &mut DerivationLedger,
+) {
+    if !materializes_before_kill(state, terms) {
+        promote_contradiction(state, terms, goals, ledger);
+        return;
+    }
+    let closed = close(state, terms, goals, ledger);
+    if closed.contradictory() && contradiction_without_proofs(state, terms, goals) {
+        state.all_derivable = true;
+        state.contradiction = closed.contradiction_proof();
         return;
     }
     let event = ledger.event(FlowEventKind::Snapshot, None);
-    *state = materialize_closure_at(state, terms, goals, ledger, event);
+    *state = materialize_closed_state_at(state, closed, terms, goals, ledger, event);
+}
+
+/// Contradiction is absorbing. Promote the complete combined closure
+/// before every kill entry so a write cannot erase one premise and make an
+/// unreachable point reachable again.
+pub(crate) fn promote_contradiction(
+    state: &mut FactState,
+    terms: &TermTable,
+    goals: &GoalTable,
+    ledger: &mut DerivationLedger,
+) {
+    if !state.all_derivable && contradiction_without_proofs(state, terms, goals) {
+        let closed = close(state, terms, goals, ledger);
+        if closed.contradictory() {
+            state.all_derivable = true;
+            state.contradiction = closed.contradiction_proof();
+        }
+    }
 }
 
 /// The proof one snapshot files for one closed bound.
@@ -4185,6 +4240,19 @@ pub(crate) fn materialize_closure_at(
     event: FlowEventId,
 ) -> FactState {
     let closed = close(state, terms, goals, ledger);
+    materialize_closed_state_at(state, closed, terms, goals, ledger, event)
+}
+
+/// Materializes `closed`, which must be `close(state)` taken with no ledger
+/// change in between, as the live flow state at `event`.
+fn materialize_closed_state_at(
+    state: &FactState,
+    closed: ClosedState,
+    terms: &TermTable,
+    goals: &GoalTable,
+    ledger: &mut DerivationLedger,
+    event: FlowEventId,
+) -> FactState {
     if closed.all_derivable {
         let parent = closed.contradiction.expect("contradictory closure proof");
         let proof = ledger.intern(DerivationNode::MaterializedContradiction { event, parent });

@@ -57,8 +57,8 @@ use super::state::{
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
     PostconditionCallSubstitution, Relation, SourceAffineFactRef, SourceLoopInvariantRef, close,
-    close_excluding_term, contradiction_without_proofs, join_at, materialize_closure_at,
-    materialize_closure_before_kill,
+    close_excluding_term, join_at, materialize_closure_at, materialize_closure_before_kill,
+    promote_and_materialize_before_kill, promote_contradiction,
 };
 use super::term::{
     CallDatumProjection, CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceProjection,
@@ -4318,13 +4318,22 @@ impl Analyzer<'_, '_> {
     /// before every kill entry so a write cannot erase one premise and make
     /// an unreachable point reachable again.
     fn promote_contradiction(&mut self, state: &mut FactState) {
-        if !state.all_derivable && contradiction_without_proofs(state, &self.terms, &self.goals) {
-            let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
-            if closed.contradictory() {
-                state.all_derivable = true;
-                state.contradiction = closed.contradiction_proof();
-            }
+        promote_contradiction(state, &self.terms, &self.goals, &mut self.derivations);
+    }
+
+    /// [`Self::promote_contradiction`] followed by the pre-kill
+    /// materialization of [`Self::materialize_before_event_kill`], which
+    /// closes the same unchanged state, taken with a single closure.
+    fn promote_and_materialize_before_event_kill(
+        &mut self,
+        state: &mut FactState,
+        events: &[KillEvent],
+    ) {
+        if events.is_empty() {
+            self.promote_contradiction(state);
+            return;
         }
+        promote_and_materialize_before_kill(state, &self.terms, &self.goals, &mut self.derivations);
     }
 
     fn promote_flow_contradiction(&mut self, states: &mut ProofFlowState) {
@@ -4349,6 +4358,11 @@ impl Analyzer<'_, '_> {
             return;
         }
         self.materialize_before_event_kill(state, events);
+        self.kill_materialized(state, events);
+    }
+
+    /// The kills of [`Self::apply_kills_one`] after its materialization.
+    fn kill_materialized(&mut self, state: &mut FactState, events: &[KillEvent]) {
         state.kill(|term| {
             events
                 .iter()
@@ -4378,8 +4392,8 @@ impl Analyzer<'_, '_> {
         if events.is_empty() {
             return;
         }
-        self.promote_flow_contradiction(states);
-        self.apply_kills_one(&mut states.facts, events);
+        self.promote_and_materialize_before_event_kill(&mut states.facts, events);
+        self.kill_materialized(&mut states.facts, events);
         self.apply_affine_kills(&mut states.affine, events);
         self.invalidate_entry_images(states, events, None);
     }
@@ -13218,10 +13232,7 @@ impl Analyzer<'_, '_> {
         let mut events = Vec::new();
         self.collect_expression_kills(expression, &mut events);
         if let Some(prepared) = &mut judgment.prepared_call {
-            if !events.is_empty() {
-                self.promote_flow_contradiction(state);
-            }
-            for event in &events {
+            for (index, event) in events.iter().enumerate() {
                 let kind = match event {
                     KillEvent::Consume { .. } | KillEvent::EntryImageHolderConsume { .. } => {
                         FlowEventKind::PostconditionCallConsume
@@ -13231,7 +13242,18 @@ impl Analyzer<'_, '_> {
                     }
                 };
                 let proof_event = self.proof_event(kind, Some(event.source()));
-                self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
+                // The batch promotes once, before its first kill. Promotion
+                // allocates no flow event, so taking it after this proof
+                // event leaves the same ledger as taking it before.
+                if index == 0 {
+                    self.promote_and_materialize_before_event_kill(
+                        &mut state.facts,
+                        std::slice::from_ref(event),
+                    );
+                    self.kill_materialized(&mut state.facts, std::slice::from_ref(event));
+                } else {
+                    self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
+                }
                 self.apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
                 self.invalidate_entry_images(state, std::slice::from_ref(event), Some(proof_event));
                 prepared.transfer_events.push(proof_event);
@@ -13546,11 +13568,17 @@ impl Analyzer<'_, '_> {
         let target_event = establishes
             .then(|| self.proof_event(FlowEventKind::PostconditionReceiverWrite, Some(node_path)));
         if let Some(target_event) = target_event {
-            if !target_kills.is_empty() {
-                self.promote_flow_contradiction(state);
-            }
-            for event in &target_kills {
-                self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
+            for (index, event) in target_kills.iter().enumerate() {
+                // The batch promotes once, before its first kill.
+                if index == 0 {
+                    self.promote_and_materialize_before_event_kill(
+                        &mut state.facts,
+                        std::slice::from_ref(event),
+                    );
+                    self.kill_materialized(&mut state.facts, std::slice::from_ref(event));
+                } else {
+                    self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
+                }
                 self.apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
                 self.invalidate_entry_images(
                     state,
@@ -13701,11 +13729,17 @@ impl Analyzer<'_, '_> {
         let target_event = (force_target_event || !receivers.is_empty())
             .then(|| self.proof_event(FlowEventKind::PostconditionReceiverWrite, Some(node_path)));
         if let Some(target_event) = target_event {
-            if !target_kills.is_empty() {
-                self.promote_flow_contradiction(state);
-            }
-            for event in &target_kills {
-                self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
+            for (index, event) in target_kills.iter().enumerate() {
+                // The batch promotes once, before its first kill.
+                if index == 0 {
+                    self.promote_and_materialize_before_event_kill(
+                        &mut state.facts,
+                        std::slice::from_ref(event),
+                    );
+                    self.kill_materialized(&mut state.facts, std::slice::from_ref(event));
+                } else {
+                    self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
+                }
                 self.apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
                 self.invalidate_entry_images(
                     state,
@@ -15380,8 +15414,8 @@ impl Analyzer<'_, '_> {
         kills.push_event_group(std::mem::take(events));
     }
 
-    fn apply_loop_kills_one(&mut self, state: &mut FactState, kills: &LoopKills) {
-        self.materialize_before_event_kill(state, &kills.events);
+    /// A loop kill batch after its pre-kill materialization.
+    fn kill_loop_materialized(&mut self, state: &mut FactState, kills: &LoopKills) {
         state.kill(|term| {
             kills
                 .events
@@ -15423,8 +15457,8 @@ impl Analyzer<'_, '_> {
         kills: &LoopKills,
         event: Option<FlowEventId>,
     ) {
-        self.promote_flow_contradiction(states);
-        self.apply_loop_kills_one(&mut states.facts, kills);
+        self.promote_and_materialize_before_event_kill(&mut states.facts, &kills.events);
+        self.kill_loop_materialized(&mut states.facts, kills);
         self.apply_affine_kills(&mut states.affine, &kills.events);
         let mut groups = kills.entry_image_groups.iter().collect::<Vec<_>>();
         groups.sort_by(|left, right| left.owner.components().cmp(right.owner.components()));
