@@ -3754,13 +3754,13 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
 /// work and a core whose removed candidates may have weakened a cell.
 ///
 /// Each edge `a - b <= w` is inserted once: every `i - b` first improves
-/// through `i - a`, then every `i - j` through `i - b` and `b - j`. After the
-/// two passes every such composition holds at current values. A triple
-/// `i - m`, `m - j` whose later-set premise was set by some edge's passes is
-/// therefore composed at that time, and a triple of two core cells was already
-/// closed, so the matrix is closed when no edge remains. Every row is
-/// recomposed, not only improved ones: an unprocessed fresh cell can already
-/// have been used at its raw value by an earlier edge. An improved bound that becomes strict adds its disequality;
+/// through `i - a`, then every row whose `i - b` is now at most `i - a + w`
+/// recomposes `i - j` through `b - j`. A triple `i - m`, `m - j` is composed
+/// when its later-set premise is set, and a triple of two core cells was
+/// already closed, so the matrix is closed when no edge remains. A row whose
+/// `i - b` is strictly below `i - a + w` owes nothing to this edge; a row that
+/// merely equals it is recomposed as well as an improved one, because an
+/// unprocessed fresh cell can already have been used at its raw value. An improved bound that becomes strict adds its disequality;
 /// a zero bound over a disequality is strengthened as a further edge.
 /// Only strictly smaller bounds replace a cell, so core proofs are retained.
 fn close_by_edge_insertion(
@@ -3893,6 +3893,7 @@ fn close_by_edge_insertion(
             }
         };
 
+    let mut tight_rows = Vec::new();
     while let Some((a, b, weight, proof)) = pending.pop_front() {
         let edge_cell = a.0 as usize * width + b.0 as usize;
         if dense.stamps[edge_cell] != 0 && dense.bounds[edge_cell] < weight {
@@ -3913,6 +3914,8 @@ fn close_by_edge_insertion(
             b,
         );
         let (weight, proof) = (dense.bounds[edge_cell], dense.proofs[edge_cell]);
+        tight_rows.clear();
+        tight_rows.push(a);
         // Column pass: i - a <= x and a - b <= w give i - b <= x + w.
         for i in 0..width {
             let into_a = i * width + a.0 as usize;
@@ -3922,6 +3925,11 @@ fn close_by_edge_insertion(
             let via = compose_transitive_bounds(dense.bounds[into_a], weight);
             let target = i * width + b.0 as usize;
             if dense.stamps[target] != 0 && via >= dense.bounds[target] {
+                if via == dense.bounds[target] {
+                    tight_rows.push(TermId(
+                        u32::try_from(i).expect("term index fits the u32 identity"),
+                    ));
+                }
                 continue;
             }
             let left = TermId(u32::try_from(i).expect("term index fits the u32 identity"));
@@ -3943,12 +3951,12 @@ fn close_by_edge_insertion(
                 left,
                 b,
             );
+            tight_rows.push(left);
         }
         // Row pass: i - b <= y and b - j <= z give i - j <= y + z.
         let b_row = b.0 as usize * width;
-        for row in 0..width {
-            let left = TermId(u32::try_from(row).expect("term index fits the u32 identity"));
-            let left_row = row * width;
+        for &left in &tight_rows {
+            let left_row = left.0 as usize * width;
             let into_b = left_row + b.0 as usize;
             if dense.stamps[into_b] == 0 {
                 continue;
