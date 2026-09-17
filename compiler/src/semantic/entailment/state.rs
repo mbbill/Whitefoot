@@ -3836,7 +3836,7 @@ impl DenseClosureBounds {
             .expect("ENT closure matrix exceeds the address space");
         let mut dense = Self {
             dimension,
-            bounds: vec![0; count],
+            bounds: vec![i128::MAX; count],
             proofs: vec![DerivationId(0); count],
             stamps: vec![0; count],
             rows: vec![ClosureRowSummary::default(); dimension],
@@ -3938,9 +3938,11 @@ impl DenseClosureBounds {
 /// This is [`reference_middle_products`] over the matrix's contiguous rows:
 /// the same triples reach the same numeric and depth comparisons in the same
 /// order, and every one that survives them goes through
-/// `insert_closed_candidate`. Two facts let it read raw rows. The only cell
-/// of the middle row this loop can change is the one it has just visited, so
-/// each second premise and its freshness are current when read. And a left
+/// `insert_closed_candidate`. Two facts let it read raw rows. Only the
+/// middle's own left row can change a middle-row cell, and only the one it
+/// has just visited, so a second premise is current when read and the fresh
+/// middle-row columns need collecting only once before and once after that
+/// row. And a left
 /// row's first premise is taken once, as the reference takes it; the
 /// reference re-reads only that premise's freshness, which changes within the
 /// row only when a negative middle diagonal improves the premise itself. The
@@ -3960,6 +3962,17 @@ fn middle_products<const PRUNE_ROWS: bool>(
     let round = dense.round;
     let middle_row = middle.0 as usize * width;
     let mut changed = false;
+    // Columns whose second premise is fresh, for rows whose first premise is
+    // not: the other columns of such a row are skipped. Only the middle's own
+    // row can refresh a middle-row cell, so the list is rebuilt after it.
+    let fresh_columns = |dense: &DenseClosureBounds| {
+        outgoing
+            .iter()
+            .copied()
+            .filter(|right| dense.stamps[middle_row + right.0 as usize] >= round)
+            .collect::<Vec<_>>()
+    };
+    let mut fresh_outgoing = None;
     for &left in incoming {
         let left_row = left.0 as usize * width;
         let first_cell = left_row + middle.0 as usize;
@@ -3969,28 +3982,31 @@ fn middle_products<const PRUNE_ROWS: bool>(
         if PRUNE_ROWS && dense.product_cannot_improve(left, middle, first, first_depth) {
             continue;
         }
-        let first_fresh = dense.stamps[first_cell] >= round;
-        for &right in outgoing {
+        let columns = if dense.stamps[first_cell] >= round {
+            outgoing
+        } else {
+            fresh_outgoing
+                .get_or_insert_with(|| fresh_columns(dense))
+                .as_slice()
+        };
+        for &right in columns {
             let column = right.0 as usize;
             let second_cell = middle_row + column;
-            if !first_fresh && dense.stamps[second_cell] < round {
+            let via = first.saturating_add(dense.bounds[second_cell]);
+            let current_cell = left_row + column;
+            // An absent cell holds `i128::MAX`, which no composed bound
+            // exceeds, so only a present cell's stamp needs reading here.
+            let current_bound = dense.bounds[current_cell];
+            if via > current_bound {
                 continue;
             }
-            let via = first.saturating_add(dense.bounds[second_cell]);
             let second_proof = dense.proofs[second_cell];
-            let current_cell = left_row + column;
-            if dense.stamps[current_cell] != 0 {
-                let current_bound = dense.bounds[current_cell];
-                if via > current_bound {
+            if via == current_bound && dense.stamps[current_cell] != 0 {
+                let candidate_depth = first_depth
+                    .max(ledger.depth(second_proof))
+                    .saturating_add(1);
+                if candidate_depth > ledger.depth(dense.proofs[current_cell]) {
                     continue;
-                }
-                if via == current_bound {
-                    let candidate_depth = first_depth
-                        .max(ledger.depth(second_proof))
-                        .saturating_add(1);
-                    if candidate_depth > ledger.depth(dense.proofs[current_cell]) {
-                        continue;
-                    }
                 }
             }
             let node = DerivationNode::TransitiveBound {
@@ -4011,6 +4027,9 @@ fn middle_products<const PRUNE_ROWS: bool>(
                 },
                 ledger,
             );
+        }
+        if left == middle {
+            fresh_outgoing = None;
         }
     }
     changed
