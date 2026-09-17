@@ -3395,7 +3395,7 @@ pub(crate) fn close(
         && view.key == key
     {
         #[cfg(test)]
-        if tests::VERIFY_SEEDED_CLOSURE.load(std::sync::atomic::Ordering::Relaxed) {
+        if tests::verifying_seeded_closures() {
             tests::assert_seeded_closure_matches_complete(
                 state,
                 terms,
@@ -3544,7 +3544,7 @@ pub(crate) fn contradiction_without_proofs(
             .any(|id| dense.get(id, id).is_some_and(|(bound, _)| bound < 0))
             || goal_contradiction_without_proofs(state, dense, distinct, goals);
         #[cfg(test)]
-        if tests::VERIFY_SEEDED_CLOSURE.load(std::sync::atomic::Ordering::Relaxed) {
+        if tests::verifying_seeded_closures() {
             let mut unseeded = state.clone();
             unseeded.closure = ClosureRecord::Unknown;
             assert_eq!(
@@ -3734,7 +3734,7 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
         && let Some(closed) = close_by_edge_insertion(state, terms, goals, ledger)
     {
         #[cfg(test)]
-        if tests::VERIFY_SEEDED_CLOSURE.load(std::sync::atomic::Ordering::Relaxed) {
+        if tests::verifying_seeded_closures() {
             tests::assert_seeded_closure_matches_complete(state, terms, goals, ledger, &closed);
         }
         return closed;
@@ -3972,7 +3972,7 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool, const REFERENCE_PRODUCT: bool>
     };
     let closed = close_goal_contradictions(closed, goals, ledger);
     #[cfg(test)]
-    if seeded && tests::VERIFY_SEEDED_CLOSURE.load(std::sync::atomic::Ordering::Relaxed) {
+    if seeded && tests::verifying_seeded_closures() {
         tests::assert_seeded_closure_matches_complete(state, terms, goals, ledger, &closed);
     }
     closed
@@ -5462,14 +5462,25 @@ fn join_at_once(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use std::sync::atomic::AtomicBool;
+    use std::cell::Cell;
 
-    /// When set, every seeded closure is recomputed from all live facts on a
-    /// cloned state and ledger, and the two results must agree on every bound
-    /// value, disequality and contradiction. Only the retained proofs may
-    /// differ. A process-wide switch: tests that do not set it merely run
-    /// slower while another test holds it.
-    pub(crate) static VERIFY_SEEDED_CLOSURE: AtomicBool = AtomicBool::new(false);
+    thread_local! {
+        /// When set, every seeded, inserted or remembered closure on this
+        /// thread is recomputed from all live facts on a cloned state and
+        /// ledger, and the two results must agree on every bound value,
+        /// disequality and contradiction. Only the retained proofs may differ.
+        static VERIFY_SEEDED_CLOSURE: Cell<bool> = const { Cell::new(false) };
+        /// How many closures the switch has compared on this thread.
+        static VERIFIED_CLOSURES: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(super) fn verifying_seeded_closures() -> bool {
+        let verifying = VERIFY_SEEDED_CLOSURE.with(Cell::get);
+        if verifying {
+            VERIFIED_CLOSURES.with(|count| count.set(count.get() + 1));
+        }
+        verifying
+    }
 
     fn bound_values(closed: &ClosedState) -> Vec<(TermId, TermId, i128)> {
         closed
@@ -5542,7 +5553,8 @@ pub(crate) mod tests {
                 include_bytes!("../../../../tests/programs/fixed_run_library.wf"),
             )],
         ];
-        VERIFY_SEEDED_CLOSURE.store(true, std::sync::atomic::Ordering::Relaxed);
+        VERIFY_SEEDED_CLOSURE.with(|verify| verify.set(true));
+        VERIFIED_CLOSURES.with(|count| count.set(0));
         for bundle in bundles {
             let inputs = bundle
                 .iter()
@@ -5551,7 +5563,10 @@ pub(crate) mod tests {
             crate::compile(&inputs, crate::CompilerLimits::default())
                 .expect("a verified real program still compiles");
         }
-        VERIFY_SEEDED_CLOSURE.store(false, std::sync::atomic::Ordering::Relaxed);
+        VERIFY_SEEDED_CLOSURE.with(|verify| verify.set(false));
+        // The analysis runs on this thread, so the switch must have compared
+        // closures; a silent miss would make the test vacuous.
+        assert!(VERIFIED_CLOSURES.with(Cell::get) > 0);
     }
     use crate::DeclarationId;
     use crate::semantic::entailment::VerifiedPostconditionSummary;
