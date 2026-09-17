@@ -2142,6 +2142,70 @@ impl ClosureRecord {
     }
 }
 
+/// The independently live proofs of one relation. Nearly every relation has
+/// exactly one, held inline so cloning a fact state copies it without an
+/// allocation; an empty list selects nothing.
+#[derive(Clone, Debug)]
+enum Candidates<T> {
+    One(T),
+    Many(Vec<T>),
+}
+
+impl<T> Default for Candidates<T> {
+    fn default() -> Self {
+        Self::Many(Vec::new())
+    }
+}
+
+impl<T: Copy + PartialEq> Candidates<T> {
+    fn as_slice(&self) -> &[T] {
+        match self {
+            Self::One(value) => std::slice::from_ref(value),
+            Self::Many(values) => values,
+        }
+    }
+
+    fn contains(&self, value: &T) -> bool {
+        self.as_slice().contains(value)
+    }
+
+    fn iter(&self) -> std::slice::Iter<'_, T> {
+        self.as_slice().iter()
+    }
+
+    fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    fn push(&mut self, value: T) {
+        match self {
+            Self::Many(values) if values.is_empty() => *self = Self::One(value),
+            Self::Many(values) => values.push(value),
+            Self::One(first) => *self = Self::Many(vec![*first, value]),
+        }
+    }
+
+    fn retain(&mut self, mut keep: impl FnMut(&T) -> bool) {
+        match self {
+            Self::One(value) => {
+                if !keep(value) {
+                    *self = Self::Many(Vec::new());
+                }
+            }
+            Self::Many(values) => values.retain(keep),
+        }
+    }
+}
+
+impl<'a, T: Copy + PartialEq> IntoIterator for &'a Candidates<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct FactState {
     /// What part of the bound matrix is already closed. Only a state closed
@@ -2163,12 +2227,12 @@ pub(crate) struct FactState {
     /// `bound_proofs` remain the canonical query cache; retaining the other
     /// candidates lets an S12-only holder invalidation expose an ordinary
     /// fallback instead of deleting the relation wholesale.
-    bound_candidates: WordHashMap<(TermId, TermId), Vec<(i128, DerivationId)>>,
+    bound_candidates: WordHashMap<(TermId, TermId), Candidates<(i128, DerivationId)>>,
     /// Live disequalities, stored with ordered term pair.
     pub(crate) distinct: WordHashSet<(TermId, TermId)>,
     pub(crate) distinct_proofs: WordHashMap<(TermId, TermId), DerivationId>,
     /// Independently live disequality proofs, parallel to `bound_candidates`.
-    distinct_candidates: WordHashMap<(TermId, TermId), Vec<DerivationId>>,
+    distinct_candidates: WordHashMap<(TermId, TermId), Candidates<DerivationId>>,
     /// [ENT-3] comparison origins (b): `own Bool` bindings whose initializer
     /// comparison is still valid on every path from initializer to here.
     pub(crate) origins: HashMap<BindingId, Relation>,
@@ -4851,7 +4915,7 @@ pub(crate) fn materialize_closure_at(
         let proof = materialized_bound_proof(ledger, left, right, bound, event, parent);
         bounds.insert((left, right), bound);
         bound_proofs.insert((left, right), proof);
-        bound_candidates.insert((left, right), vec![(bound, proof)]);
+        bound_candidates.insert((left, right), Candidates::One((bound, proof)));
     }
     let mut distinct_proofs = HashMap::default();
     let mut distinct_keys: Vec<_> = closed.distinct.iter().copied().collect();
@@ -4879,7 +4943,7 @@ pub(crate) fn materialize_closure_at(
     }
     let distinct_candidates = distinct_proofs
         .iter()
-        .map(|(pair, proof)| (*pair, vec![*proof]))
+        .map(|(pair, proof)| (*pair, Candidates::One(*proof)))
         .collect();
     let mut materialized = FactState {
         closure: ClosureRecord::closed(terms.ids().count()),
@@ -5183,11 +5247,11 @@ fn join_at_once(
     }
     let bound_candidates = bound_proofs
         .iter()
-        .map(|(pair, proof)| (*pair, vec![(bounds[pair], *proof)]))
+        .map(|(pair, proof)| (*pair, Candidates::One((bounds[pair], *proof))))
         .collect();
     let distinct_candidates = distinct_proofs
         .iter()
-        .map(|(pair, proof)| (*pair, vec![*proof]))
+        .map(|(pair, proof)| (*pair, Candidates::One(*proof)))
         .collect();
     FactState {
         closure: ClosureRecord::closed(terms.ids().count()),
