@@ -155,8 +155,9 @@ rounds, each visiting every middle term.
 
 Per-edge insertion replaces those rounds. It carries its own settling of the
 strict-bound disequality and zero-bound strengthening rules, and its own
-contradiction scan. It does not carry kill rules: kills still only remove
-cells and mark terms fresh. Because those two rules are now written twice,
+contradiction scan. It does not carry kill rules: term kills still only
+remove cells and mark terms fresh, and a candidate removal only marks the
+cells it weakens for the rederivation above. Because those two rules are now written twice,
 beside the fixed point, the verification switch compares every insertion
 with the complete closure, and the proof-free probe is checked the same way.
 
