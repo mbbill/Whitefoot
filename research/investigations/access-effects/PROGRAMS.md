@@ -1,11 +1,16 @@
 # Discriminating programs for the ownership redesign
 
-Research date: 2026-09-16. These programs are the fixed test set every debate
-in the requirement-first ownership redesign derives its candidates against;
-verdicts in [OPTIONS.md](OPTIONS.md)'s successor files cite them as P1..P10.
-Pseudocode only; each program's required properties are fixed, the notation
-is whatever a candidate needs. Supersede in place; remove with the
-investigation.
+Research date: 2026-09-16, evaluation framing updated 2026-09-17. These programs
+are stable witnesses used by the earlier debates; verdicts in
+[OPTIONS.md](OPTIONS.md)'s successor files cite their IDs. They are pseudocode,
+not an adopted syntax or a requirement to preserve each candidate's mechanisms.
+Under the [current evaluation method](DESIGN.md#current-evaluation-method-owner-discussion-2026-09-17),
+compare the same engineering task under alternative forms, stating changes in
+capability, safety evidence and cost. Earlier `Required` paragraphs below retain
+their witness-specific expectations; requirements such as literal locator-based
+holes or a particular borrow discipline are candidate hypotheses, not additional
+goals overriding the three evaluation criteria. Supersede in place; remove with
+the investigation.
 
 The full preservation of existing programs and their overlap permissions has
 not been evaluated under any candidate.
@@ -39,7 +44,7 @@ a sequential program. Arbitrary threads are therefore a further question, not
 a reason to omit current parallel computation.
 
 P1-P19 also contain requested extensions, not just this floor. In particular,
-P7's locator-based holes and P4's stored cursor are exploration requirements;
+P7's locator-based holes and P4's stored cursor are exploration witnesses;
 they are not assertions that v0.59 already admits those forms. A full
 current-program coverage mapping remains outstanding.
 
@@ -69,6 +74,41 @@ second exposes an intermediate hole. They can execute in source order; on
 proved-disjoint live initialized scalar targets their memory accesses can
 overlap. Accesses here summarize the whole call, not only the final state delta.
 The notation does not settle syntax or the general contract proof algorithm.
+
+## Representative engineering tasks
+
+These tasks define the initial comparison surface approved for preparation on
+2026-09-17, not a completed capability audit or a fixed implementation strategy.
+The first row anchors existing computation forms. The remaining rows test the
+broader engineering objective; existing WF need not already support each one.
+IO, FFI and device interaction are excluded. Resource examples can use ordinary
+memory and explicitly linear program values. Each retained candidate needs a
+concrete rendering, safe and dangerous variants, and its own derivation.
+
+| Task | Observable behavior to preserve | Couplings to exercise | Costs to record |
+|---|---|---|---|
+| Array/column compute kernels | Same-index updates, independent columns, adjacent-range helpers and admitted reductions preserve source results and current overlap permissions. | Layout, bounds, function effects, alias relations, iterations and recombination. | Sequential instructions and memory traffic; available parallelism; guards, copies and temporary allocation. |
+| Growable container of resources | Insert, grow, replace, remove and transfer elements without duplicating or losing their obligations. | Storage relocation, copy/affine/linear, element access, branches and helper contracts. | Element movement, allocation, retained views/cursors under the chosen semantics, and proof work. |
+| Mutable compiler graph | Add/remove nodes and edges, traverse cycles and reclaim nodes with bounded reuse; a relation to a deleted node must not silently become a relation to a replacement node. | Stored associations, dynamic selection, identity/reuse, invariants and independent node-data work. | Per-node/edge metadata, traversal indirection, update work and parallel map opportunities. |
+| Allocator over reserved memory | Allocate several independently usable blocks, release one and reuse its bytes without invalidating the others. | Parent metadata, disjoint payloads, allocation/release effects, identities and storage obligations. | Metadata work, synchronization if chosen, block fill overlap and fragmentation policy costs. |
+| Recursive tree transformation | Visit and rewrite an owned tree, transfer subtrees across helpers and return a new root while disposing of removed resources. | Recursive layout/functions, ownership transfer, generics, replacement and cleanup. | Deep copies, temporary allocation, address stability and proof annotations. |
+| Shared object registry and indexes | Reach one logical object through several indexes, update it coherently, remove it and repair or invalidate those associations. | Multiple access paths, stored relations, abstraction and selective fact invalidation. | Duplicated state, lookup/update complexity, mandatory scans and index maintenance. |
+| Resource-processing pipeline | Transfer a non-copy resource between stages, finish or return it on every typed outcome and loop exit; independent work remains eligible to overlap. | Copy/affine/linear, returns, branches, loops, early exits and parallel consumption conflicts. | Cleanup data/branches, copies, per-stage allocation and usable overlap. |
+| Generic algorithm through helpers | Express representative container/tree/range tasks over user types and passed functions without inspecting callees at every call site. | Parametric contracts, target and ownership relations, callback effects and proofs. | Interface/proof size, required specialization, code duplication and lost optimization facts. |
+
+Safety is non-negotiable in every row. A "derived" result must explain how its
+facts are established and maintained, including those attributed to a library.
+Changing a representation is permitted but not free: state the same-task
+translation and its costs. During prose design, cost entries are predictions
+with explicit grounds, not runtime measurements. The task set does not yet
+establish whole-compiler/browser/kernel expressiveness; concrete workload sizes,
+baseline programs and further counterexamples refine it.
+
+The task matrix carries derived/refuted/unresolved status per candidate. A task
+rendering also keeps at least one unsafe variant and one cross-feature variant
+where applicable. Unchanged derivations are linked, not copied into every round.
+Existing P1-P19 and CASES.md provide useful source witnesses, but their original
+syntax or implementation-specific expectations do not override these task goals.
 
 ## P1 Container split with a runtime index
 

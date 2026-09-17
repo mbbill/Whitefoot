@@ -1,4 +1,4 @@
-# Two candidate ownership systems for Whitefoot
+# Ownership design combinations for Whitefoot
 
 This is a whole-language proposal, not a change to the active specification.
 The [research record](RESEARCH.md) owns the requirements, alternatives, source
@@ -12,11 +12,98 @@ The [incremental case catalog](CASES.md) records the continuing local design
 discussion and its expected positive/negative examples. Its permissive
 locator-release, branch, and loop cases extend beyond the earlier executable probe;
 they are not implemented or measured results. Use those cases to challenge the
-whole-language hypotheses one feature at a time.
+whole-language hypotheses with focused examples without narrowing the critical
+capabilities a complete candidate must cover.
 
-## Recommendation and the actual choice
+## Current evaluation method (owner discussion, 2026-09-17)
 
-Develop **A: access and current-state checking** as the main candidate, with
+The owner defined three evaluation criteria:
+
+1. Safety: types and checked proofs must preserve WF's current memory-safety
+   and absence-of-unproved-runtime-failure guarantees, under its existing scope
+   assumptions. A speed or capability benefit does not compensate for a safety
+   failure. Existing deterministic, terminating, SMT-free acceptance constraints
+   continue to apply.
+2. Performance: evaluate both sequential execution and parallel computation;
+   IO performance is outside this round. Parallel permission alone is not a
+   runtime measurement, and sequential executability does not preserve a lost
+   parallel capability.
+3. Expressiveness: support the structures and algorithms needed for substantial
+   compilers, browsers and OS kernels. Preserve at least current WF capabilities,
+   but do not use its currently limited corpus as the ceiling or sufficient
+   evidence of this criterion. IO and FFI remain deferred in this comparison.
+
+Holes, storable references, validity loans, implicit resource contexts and tokens
+are possible mechanisms, not independent ends. In particular, accepting the
+literal `take` spelling in an earlier candidate is not an evaluation requirement.
+Compare ways to implement the same task, including their representation,
+algorithm, proof and runtime costs; record any loss rather than silently changing
+the task. The three criteria do not have an invented numeric weighting.
+
+The capability/choice inventory to cover before selecting a complete combination
+is below. Alternatives are starting options, not an exhaustive enumeration;
+several may coexist. A row is a group of choices, not a single Boolean feature.
+
+| Area | Features to account for | Choices to make explicit |
+|---|---|---|
+| Values and composite types | Scalars, structs, enums, fixed arrays, nested and recursive data. | Inline versus indirect members; where ownership lives in recursive/shared representations; which properties compose from fields. |
+| Value use | Copy/affine/linear, transfer, assignment, replacement and cleanup. | Separate ownership transfer from content relocation or combine them in defined forms; allow holes, require exchange, or represent vacancy as data; implicit versus explicit disposal. |
+| Storage | Local/heap/store allocation, independent release, scope exit, reuse and stable locations. | Stable versus relocatable allocations; allocation ownership representation; individual versus grouped reclamation; old-reference behavior after end/reuse. |
+| Addressing and parts | Direct/indirect access, aliases, fields, dynamic indices, ranges, saving/reloading associations. | Scoped names, storable locators, container-plus-index forms, or combinations; copying/rebinding rules; target identity and validity guarantees. |
+| Control flow | Branches, matches, loops, nesting, normal/early exits and typed error propagation. | Structural state agreement, retained conditional relations, explicit state handoffs or a mixture; loop entry/backedge/exit obligations and cleanup. |
+| Functions and abstraction | Parameters/results, generics, recursion, function arguments and resource/target relations. | Written versus checked-derived summaries; vocabulary for access, ownership, lifetime and result relations; definition-side checking and call-side substitution. |
+| Contracts and proofs | Preconditions/postconditions, object/loop invariants, numeric facts and invalidation. | Fixed automatic fact families versus explicit finite steps; dependencies shared between numeric and resource facts; establishing and opening library invariants. |
+| Parallel computation | Calls, iterations, range tasks, reductions and lifetime-changing operations. | Exclusivity carried by values, operation-scoped access demands, separate permissions, or combinations; how conflicts and legal recombination are proved. |
+| Representation and execution | Contiguity, alignment/addressing, proof erasure and optimization facts. | Runtime components of each value; stable layout contracts; exact origin of backend assumptions; extra allocation, copying, tags and indirection. |
+
+The inventory distinguishes required capabilities from alternative mechanisms;
+it does not require every conceivable addressing form or general threads.
+[PROGRAMS.md](PROGRAMS.md#current-capability-floor) anchors the initial current
+floor; the broader coverage audit remains unfinished.
+
+Each iteration starts with explicit choices for this complete critical scope.
+Derive focused cases and their cross-feature interactions, repairing the
+combination until its core rules and interfaces can be implemented without
+inventing missing mechanisms. Then summarize the resulting combination's most
+important defects against the three criteria. Change one or several choices in
+response to those defects, include necessary dependent changes, and repeat the
+derivation to a coherent combination. A promising local fragment is not a
+completed iteration. Conversely, internal coherence does not establish adequate
+expressiveness or acceptable performance.
+
+An iteration record contains only: the complete compact choice/coverage table;
+changed rules and affected combinations; small positive/negative examples with
+their derivations; the safety/performance/expressiveness assessment; and the
+ranked concrete defects motivating the next change. Link unchanged derivations
+instead of repeating them. Keep this current proposal and the case catalogs as
+the reading path; a later iteration document earns a separate file only when it
+preserves a distinct coherent result and the evidence for changing it.
+
+Coherence in a discussion record means no unresolved core semantic rule is
+being used as if it were established. It is not a soundness theorem, a measured
+performance claim, or proof of implementability. Label hand derivations,
+mechanical checks and measurements separately. Implementation remains outside
+this design-discussion task; no DCR is requested for these records.
+
+The owner agreed to refine this method before executing a candidate iteration.
+Keep engineering tasks and allowed costs fixed while changing mechanisms. A
+retained candidate must close operation, boundary and control-flow rules, make
+them mutually consistent, provide derivable grounds for every used fact, and
+specify implementable acceptance. Do not hide a missing mechanism behind "the
+library proves it". Accumulate defects throughout; a decisive hard-constraint
+counterexample can eliminate a candidate before full elaboration. Preserve the
+best complete incumbent and allow coupled choices to change together. Where
+performance and expressiveness trade off, retain explicit alternatives rather
+than inventing a single score. Coverage statuses are derived, refuted, and
+unresolved; none means measured without measurement evidence.
+
+Before choosing the next vector, use the choice table above together with
+[the engineering-task table](PROGRAMS.md#representative-engineering-tasks).
+This establishes the questions and comparison surface, not a selected vector.
+
+## Earlier working candidates: A and B
+
+The earlier proposal developed **A: access and current-state checking**, with
 **B: validity loans and access effects** as a more restrictive
 alternative. Both replace persistent exclusive write loans. The difference is
 what a retained reference promises about future storage validity.
@@ -37,7 +124,8 @@ graphs. B makes more references usable by construction and rejects more
 programs at destruction rather than at subsequent access. This is an
 expressiveness and interface tradeoff, not an established performance ranking.
 
-The recommendation is a research conclusion. Neither candidate is adopted,
+That earlier preference is a hypothesis to reevaluate under the method above,
+not the selected starting vector or a requirement to retain holes. Neither candidate is adopted,
 implemented by the WF compiler, or proved sound as a complete language here.
 
 The main semantic questions now have explicit proposed answers rather than
