@@ -2586,8 +2586,10 @@ impl FactState {
         }
         let mut changed = false;
         let mut weakened = Vec::new();
-        let mut bound_pairs = self.bound_candidates.keys().copied().collect::<Vec<_>>();
-        bound_pairs.sort_unstable();
+        // Each pair's selection depends only on its own candidates, and the
+        // weakened record is sorted before use, so no iteration order is
+        // observable here.
+        let bound_pairs = self.bound_candidates.keys().copied().collect::<Vec<_>>();
         for pair in bound_pairs {
             let candidates = self
                 .bound_candidates
@@ -2604,8 +2606,7 @@ impl FactState {
                 }
             }
         }
-        let mut distinct_pairs = self.distinct_candidates.keys().copied().collect::<Vec<_>>();
-        distinct_pairs.sort_unstable();
+        let distinct_pairs = self.distinct_candidates.keys().copied().collect::<Vec<_>>();
         for pair in distinct_pairs {
             let candidates = self
                 .distinct_candidates
