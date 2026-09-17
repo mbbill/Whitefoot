@@ -945,11 +945,10 @@ struct InternIndex {
 /// matrix cell, which made hashing whole [`DerivationNode`] values with the
 /// default `SipHash` the largest single remaining cost of checking
 /// `tests/programs/wfgrep.wf`; rebuilding the term-pair relation maps of every
-/// closed state was the next. The intern index is never iterated. Every
-/// consumer that turns a relation map's iteration into ledger identities,
-/// candidate order or diagnostics sorts its keys first, as it already had to
-/// under `SipHash`'s per-process random order, so this fixed function reaches
-/// no compiler output.
+/// closed state was the next. The intern index is never iterated. The other
+/// maps' iteration order was already random per process under `SipHash`, so
+/// deterministic compiler output could not depend on it and cannot depend on
+/// this fixed function either.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct WordHashBuilder;
 
