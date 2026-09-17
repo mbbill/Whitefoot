@@ -2480,6 +2480,9 @@ impl Analyzer<'_, '_> {
     }
 
     fn kill_s12_candidates_for_event(&self, state: &mut FactState, event: &KillEvent) {
+        if !state.may_hold_postcondition_candidates() {
+            return;
+        }
         state.kill_proof_candidates(&self.derivations, |left, right, proof| {
             self.derivations.depends_on_postcondition_call(proof)
                 && (self.s12_candidate_term_killed(left, event)
@@ -2488,6 +2491,9 @@ impl Analyzer<'_, '_> {
     }
 
     fn kill_s12_candidates_for_scope(&self, state: &mut FactState, exited: &HashSet<BindingId>) {
+        if !state.may_hold_postcondition_candidates() {
+            return;
+        }
         state.kill_proof_candidates(&self.derivations, |left, right, proof| {
             self.derivations.depends_on_postcondition_call(proof)
                 && (self.s12_candidate_scope_kills_term(left, exited)
@@ -4091,7 +4097,7 @@ impl Analyzer<'_, '_> {
 
     /// Whether a kill event kills a fact supported by `term` [ENT-5].
     fn event_kills_term(&self, term: TermId, event: &KillEvent) -> bool {
-        match self.terms.kind(term).clone() {
+        match self.terms.kind(term) {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
             // Counted captures and commit values are immutable. A counted
             // capture dies with its construct-scope exit, handled separately
@@ -4105,7 +4111,7 @@ impl Analyzer<'_, '_> {
             TermKind::Place(place, _) => match event {
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
-                    self.places.overlaps(&self.resolve(&place), written)
+                    self.places.overlaps(&self.resolve(place), written)
                 }
                 KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
                 KillEvent::EntryImageHolderConsume { .. } => false,
@@ -4114,7 +4120,7 @@ impl Analyzer<'_, '_> {
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => self
                     .places
-                    .overlaps(&self.resolve_projected(&place), written),
+                    .overlaps(&self.resolve_projected(place), written),
                 KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
                 KillEvent::EntryImageHolderConsume { .. } => false,
             },
@@ -4122,12 +4128,12 @@ impl Analyzer<'_, '_> {
             // storage, which is the resolved place of P itself and not of
             // P's root: a write to a sibling field of P overlaps neither.
             TermKind::Measure(_, place) => {
-                let support = self.resolve(&place);
+                let support = self.resolve(place);
                 self.event_kills_measure(&support, place.root, event)
                     || Self::event_kills_offset_support(&support, event)
             }
             TermKind::ProjectedMeasure(_, place) => {
-                let support = self.resolve_projected(&place);
+                let support = self.resolve_projected(place);
                 self.event_kills_measure(&support, place.root, event)
                     || Self::event_kills_offset_support(&support, event)
             }

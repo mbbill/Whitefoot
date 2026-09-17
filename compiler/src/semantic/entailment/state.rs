@@ -2430,6 +2430,10 @@ pub(crate) struct FactState {
     /// contradiction clears it; its key names the term, goal and derivation
     /// tables and their revisions, so a registered term or goal also misses.
     closed_view: std::cell::RefCell<Option<ClosedView>>,
+    /// Whether some bound or disequality candidate may depend on a
+    /// postcondition call. A state without one has nothing for a
+    /// postcondition-candidate removal to remove.
+    postcondition_candidates: bool,
     /// The loop rule's empty join: the contradictory all-derivable state, in
     /// which every relation is derivable and every fact is present. Z has
     /// empty support, so `Z - Z <= -1` never dies and the flag is absorbing
@@ -2475,6 +2479,7 @@ impl FactState {
             closure: ClosureRecord::Unknown,
             ordinary_closure: ClosureRecord::Unknown,
             closed_view: std::cell::RefCell::new(None),
+            postcondition_candidates: false,
             all_derivable: false,
             contradiction: None,
             bounds: Rc::default(),
@@ -2728,7 +2733,9 @@ impl FactState {
     ) {
         self.closed_view.take();
         self.closure.mark_fresh_cell((left, right));
-        if !ledger.depends_on_postcondition_call(proof) {
+        if ledger.depends_on_postcondition_call(proof) {
+            self.postcondition_candidates = true;
+        } else {
             self.ordinary_closure.mark_fresh_cell((left, right));
         }
         let pair = (left, right);
@@ -2748,7 +2755,9 @@ impl FactState {
         self.closed_view.take();
         self.closure.mark_fresh_cell(pair);
         self.closure.mark_fresh_cell((pair.1, pair.0));
-        if !ledger.depends_on_postcondition_call(proof) {
+        if ledger.depends_on_postcondition_call(proof) {
+            self.postcondition_candidates = true;
+        } else {
             self.ordinary_closure.mark_fresh_cell(pair);
             self.ordinary_closure.mark_fresh_cell((pair.1, pair.0));
         }
@@ -2958,10 +2967,18 @@ impl FactState {
         changed
     }
 
+    /// Whether a removal of postcondition-dependent candidates can change
+    /// this state.
+    pub(crate) fn may_hold_postcondition_candidates(&self) -> bool {
+        self.postcondition_candidates
+    }
+
     fn retain_non_postcondition_candidates(&mut self, ledger: &DerivationLedger) -> bool {
-        let changed = self.kill_proof_candidates(ledger, |_, _, proof| {
-            ledger.depends_on_postcondition_call(proof)
-        });
+        let changed = self.postcondition_candidates
+            && self.kill_proof_candidates(ledger, |_, _, proof| {
+                ledger.depends_on_postcondition_call(proof)
+            });
+        self.postcondition_candidates = false;
         // Every remaining selection is now its ordinary selection.
         self.closure = self.ordinary_closure.clone();
         changed
@@ -5260,6 +5277,8 @@ pub(crate) fn materialize_closure_at(
         closure: ClosureRecord::closed(terms.ids().count()),
         ordinary_closure: ClosureRecord::closed(terms.ids().count()),
         closed_view: std::cell::RefCell::new(None),
+        // The wrapped closure proofs keep the ancestry they wrap.
+        postcondition_candidates: needs_ordinary_fallback,
         all_derivable: false,
         contradiction: None,
         bounds: Rc::new(bounds),
@@ -5584,10 +5603,17 @@ fn join_at_once(
         .iter()
         .map(|(pair, proof)| (*pair, Candidates::One(*proof)))
         .collect();
+    let postcondition_candidates = bounds
+        .cells()
+        .map(|(_, _, _, proof)| proof)
+        .chain(distinct_proofs.values().copied())
+        .any(|proof| ledger.depends_on_postcondition_call(proof));
     FactState {
         closure: ClosureRecord::closed(terms.ids().count()),
         ordinary_closure: ClosureRecord::closed(terms.ids().count()),
         closed_view: std::cell::RefCell::new(None),
+        // A merged ordinary candidate adds no postcondition ancestry.
+        postcondition_candidates,
         all_derivable: false,
         contradiction: None,
         bounds: Rc::new(bounds),
