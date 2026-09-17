@@ -2835,8 +2835,19 @@ impl FactState {
         changed
     }
 
+    /// Adds `other`'s candidates where this state's selection depends on a
+    /// postcondition call. Any other selection is derivable without such
+    /// calls and so already equals the ordinary view `other` holds.
     fn merge_relation_candidates_from(&mut self, other: &Self, ledger: &DerivationLedger) {
-        let mut bound_pairs = other.bound_candidates.keys().copied().collect::<Vec<_>>();
+        let needs_fallback = |proof: Option<&DerivationId>| {
+            proof.is_none_or(|proof| ledger.depends_on_postcondition_call(*proof))
+        };
+        let mut bound_pairs = other
+            .bound_candidates
+            .keys()
+            .copied()
+            .filter(|pair| needs_fallback(self.bound_proofs.get(pair)))
+            .collect::<Vec<_>>();
         bound_pairs.sort_unstable();
         for pair in bound_pairs {
             for (bound, proof) in &other.bound_candidates[&pair] {
@@ -2847,6 +2858,7 @@ impl FactState {
             .distinct_candidates
             .keys()
             .copied()
+            .filter(|pair| needs_fallback(self.distinct_proofs.get(pair)))
             .collect::<Vec<_>>();
         distinct_pairs.sort_unstable();
         for pair in distinct_pairs {
@@ -5159,11 +5171,23 @@ pub(crate) fn materialize_closure_at(
     ordinary.retain_non_postcondition_candidates(ledger);
     let ordinary_closed = close(&ordinary, terms, goals, ledger);
     if !ordinary_closed.all_derivable {
+        // Only a relation whose selected proof depends on a postcondition call
+        // needs an ordinary candidate. Any other selection is derivable
+        // without such calls, so it already equals the ordinary closure, which
+        // has fewer facts and cannot be stronger.
         for (left, right, bound, parent) in ordinary_closed.matrix.cells() {
+            if !ledger.depends_on_postcondition_call(materialized.bound_proofs[&(left, right)]) {
+                continue;
+            }
             let proof = materialized_bound_proof(ledger, left, right, bound, event, parent);
             materialized.add_bound(left, right, bound, proof, ledger);
         }
-        let mut keys = ordinary_closed.distinct.iter().copied().collect::<Vec<_>>();
+        let mut keys = ordinary_closed
+            .distinct
+            .iter()
+            .copied()
+            .filter(|pair| ledger.depends_on_postcondition_call(materialized.distinct_proofs[pair]))
+            .collect::<Vec<_>>();
         keys.sort_unstable();
         for (left, right) in keys {
             let proof = ledger.intern(DerivationNode::MaterializedDistinct {
