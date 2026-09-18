@@ -1,10 +1,10 @@
-# Candidate x1: frozen rule set (revision 3, 2026-09-18)
+# Candidate x1: frozen rule set (revision 4, 2026-09-18)
 
-Status: every rule below was confirmed by the owner in the 2026-09-17/18 sessions. Revision 3 folds in the owner's rulings on the round-one proposals (payload returned on failed allocation, consuming moves out of a field, the atomic update in full, `&[T]`, generic `swap`, four bulk window operations, the payload path step) and removes the `par` notation, which was never WF syntax. Items under "Proposed additions awaiting owner ruling" are not rules. The mechanisms under "Not in this candidate" must not be assumed by anyone deriving under it.
+Status: every rule below was confirmed by the owner in the 2026-09-17/18 sessions. Revision 4 adopts the owner's spelling decision: measures and window parts are members of the storage (`r.len`, `r.next`), measures being read-only pseudo-fields that only built-in operations change; this renames the existing `len_of` family mechanically. Revision 3 folded in the round-one rulings (payload returned on failed allocation, consuming moves out of a field, the atomic update in full, `&[T]`, generic `swap`, four bulk window operations, the payload path step) and removed the `par` notation. Nothing under "Proposed additions" remains open. The mechanisms under "Not in this candidate" must not be assumed by anyone deriving under it.
 
 Evaluation criteria, in the owner's words: safety through types and proofs at the current WF level (no runtime traps, no unsafe), runtime performance for single-thread and parallel computation, and enough expressiveness to build compilers, browsers, and kernels. Code is written by AI, so an ugly but equal-performance form is not a defect. A rejection counts as expressiveness loss only when no equal-performance rewrite exists.
 
-Notation: design pseudocode, not current WF syntax except where stated. `&path` forms a reference; `move x` consumes an owned value; `own T` is a by-value parameter; an effect row follows the signature; `contract { requires ...; ensures [when Variant:] ...; }` is the existing WF contract block; `len_of`, `cap_of`, `room_of`, `head_of` are measures; `entry(p)` denotes the pre-state of parameter `p` as in the existing specification; `Int` and `u64` are Copy. Indexing through a Box is written explicitly: `(*b)[i]`, `len_of(*b)`. Two adjacent statements "may overlap" means the implementation is permitted to execute them with overlapping execution, as the existing PAR-1 and PAR-2 rules permit; the program's meaning is always its sequential meaning.
+Notation: design pseudocode, not current WF syntax except where stated. `&path` forms a reference; `move x` consumes an owned value; `own T` is a by-value parameter; an effect row follows the signature; `contract { requires ...; ensures [when Variant:] ...; }` is the existing WF contract block; measures are read-only pseudo-fields of a storage (`r.len`, `r.cap`, `r.room`, `r.head`) that only built-in operations change, replacing the existing `len_of` family; `entry(p)` denotes the pre-state of parameter `p` as in the existing specification, so `entry(r).len` is the length at call entry; `Int` and `u64` are Copy. Indexing through a Box is written explicitly: `(*b)[i]`, `(*b).len`. Two adjacent statements "may overlap" means the implementation is permitted to execute them with overlapping execution, as the existing PAR-1 and PAR-2 rules permit; the program's meaning is always its sequential meaning.
 
 ## Rule 1. Values have value semantics; no aggregate ever contains a reference
 
@@ -82,7 +82,7 @@ A reference may be bound to a local, passed as a call argument, and used within 
 ```text
 fn find(v: &Slots<Entry, N>, key: Int) -> Option<u64>      // returns an index, never &Entry
     reads(v)
-    contract { ensures when Some: result < len_of(v); }
+    contract { ensures when Some: result < v.len; }
 
 match find(&v, k) { Some(i) => { p = &v[i]; ... }  None => ... }   // caller re-derives, one address computation
 ```
@@ -111,11 +111,11 @@ Three shapes, each with a constant-capacity form (may be inline) and a runtime-c
 
 ```text
 Array<T, N>   Box<Array<T>>    every slot always holds a value
-Slots<T, N>   Box<Slots<T>>    a window: slots [0, len_of) hold values, [len_of, cap_of) hold nothing
-Ring<T, N>    Box<Ring<T>>     a ring window: len_of slots starting at head_of, wrapping at cap_of
+Slots<T, N>   Box<Slots<T>>    a window: slots [0, len) hold values, [len, cap) hold nothing
+Ring<T, N>    Box<Ring<T>>     a ring window: len slots starting at head, wrapping at cap
 ```
 
-Measures: `len_of`, `cap_of`, `room_of` (equal to `cap_of - len_of`); `head_of` on rings only; for an `Array`, `len_of == cap_of`. The window boundary is a runtime number stored with the block, readable by the program, and changed only by the operations below. No slot ever carries a tag, and no program point can observe a slot inside the window as empty.
+Measures, spelled as read-only pseudo-fields: `r.len`, `r.cap`, `r.room` (equal to `r.cap - r.len`); `r.head` on rings only; for an `Array`, `a.len == a.cap`. A program reads them like fields and can never assign them; only the operations below change them. The window boundary `r.len` is a runtime number stored with the block. No slot ever carries a tag, and no program point can observe a slot inside the window as empty.
 
 Construction:
 
@@ -124,31 +124,41 @@ Array::new(v)                        // T Copy: every slot holds v; or a literal
 Box::new(Array::filled(n, v))?       // runtime length, T Copy, every slot holds v; zero-filled maps to calloc
 Slots::new<T, N>()                   // empty window
 Box::new(Slots::new<T>(cap))?        // empty window of runtime capacity
-Slots::from_array(move a)            // a full window; Slots::into_array(move r) requires len_of(r) == N
+Slots::from_array(move a)            // a full window; Slots::into_array(move r) requires r.len == N
 ```
 
-Window operations, shared by `Slots` and `Ring` (`r` stands for the storage, e.g. `*b`). Their rows are written here with the precision the language needs; the spelling of those rows in ordinary effect vocabulary is the one open proposal below.
+Window parts. Besides its slots, a window has four named parts that paths and effect rows may name, all interpreted at call entry: `r.next` (the append slot, at index `r.len`), `r.last` (the last filled slot, at index `r.len - 1`), `r.filled` (all slots below `r.len`), and `r.free` (all slots from `r.len` up). Overlap follows from the definitions: a live `r[i]` (which has `i < r.len`) never overlaps `r.next` or `r.free`, overlaps `r.last` unless `i != r.len - 1` is proved, and always overlaps `r.filled`. The measure `r.len` is itself a write target. This vocabulary is ordinary: the rows below use nothing a user function cannot write.
+
+Window operations, shared by `Slots` and `Ring` (`r` stands for the storage, e.g. `*b`):
 
 ```text
-place_back(&r, x)          writes the slot at len_of(r), writes len_of(r)
-    contract { requires room_of(r) > 0;  ensures len_of(r) == len_of(entry(r)) + 1; }
-take_back(&r) -> own T     writes the slot at len_of(r) - 1, writes len_of(r)
-    contract { requires len_of(r) > 0;   ensures len_of(r) == len_of(entry(r)) - 1; }
-insert_at(&r, k, x)        writes the slots at and after k, writes len_of(r)      // one memmove
-    contract { requires k <= len_of(r), room_of(r) > 0; ensures len_of(r) == len_of(entry(r)) + 1; }
-remove_at(&r, k) -> own T  writes the slots at and after k, writes len_of(r)      // one memmove
-    contract { requires k < len_of(r); ensures len_of(r) == len_of(entry(r)) - 1; }
-append(&dst, &src)         writes dst's free slots and len_of(dst); writes src's filled slots and len_of(src)
-    contract { requires room_of(dst) >= len_of(src); ensures len_of(dst) == len_of(entry(dst)) + len_of(entry(src)), len_of(src) == 0; }
-grow(&b, cap)              writes *b entirely                                     // Box<Slots<T>> only; may reallocate in place
-    contract { requires cap >= cap_of(*b); ensures cap_of(*b) == cap, len_of(*b) == len_of(entry(*b)); }
+place_back(&r, x)          writes(r.next), writes(r.len)
+    contract { requires r.room > 0;  ensures r.len == entry(r).len + 1; }
+take_back(&r) -> own T     writes(r.last), writes(r.len)
+    contract { requires r.len > 0;   ensures r.len == entry(r).len - 1; }
+insert_at(&r, k, x)        writes(r.filled), writes(r.next), writes(r.len)      // one memmove
+    contract { requires k <= r.len, r.room > 0; ensures r.len == entry(r).len + 1; }
+remove_at(&r, k) -> own T  writes(r.filled), writes(r.len)                      // one memmove
+    contract { requires k < r.len; ensures r.len == entry(r).len - 1; }
+append(&dst, &src)         writes(dst.free), writes(dst.len), writes(src.filled), writes(src.len)   // one memcpy
+    contract { requires dst.room >= src.len; ensures dst.len == entry(dst).len + entry(src).len, src.len == 0; }
+grow(&b, cap)              writes(*b)                                            // Box<Slots<T>> only; may reallocate in place
+    contract { requires cap >= (*b).cap; ensures (*b).cap == cap, (*b).len == entry(*b).len; }
 set(&r[k], x)              writes(r[k])      // old value: affine released, linear rejected
 replace(&r[k], x) -> own T writes(r[k])      // the old value is returned
-place_front(&r, x)         writes r entirely // Ring only; every logical index shifts, so all references into r die
-take_front(&r) -> own T    writes r entirely // Ring only
+place_front(&r, x)         writes(r)         // Ring only; every logical index shifts, so all references into r die
+take_front(&r) -> own T    writes(r)         // Ring only
 ```
 
-A reference `p = &r[i]` into a window is formed under the fact `i < len_of(r)` and stays valid while that fact holds: `place_back`'s `ensures` carries it across the call; `take_back`'s does not, so p dies at a `take_back`. Ring positions are logical indices; the wrap is the storage's business.
+A user function that only appends declares the same row as `place_back`:
+
+```text
+fn add_node(g: &Graph, n: own Node) -> u64   writes((*g.nodes).next), writes((*g.nodes).len)
+p = &(*g.nodes)[i]
+id = add_node(&g, node)                       // p survives: (*g.nodes)[i] with i < len never overlaps .next
+```
+
+A reference `p = &r[i]` into a window is formed under the fact `i < r.len` and stays valid while that fact holds: `place_back`'s `ensures` carries it across the call; `take_back`'s does not, so p dies at a `take_back`. Ring positions are logical indices; the wrap is the storage's business.
 
 Two operations apply to any owned place, not only to window slots:
 
@@ -174,21 +184,21 @@ x = move r[k]                       // rejected: use take_back, remove_at, repla
 
 Release: at scope exit the compiler releases the slots inside the window recursively and frees the block; `Array` releases every slot. No operation releases a linear element: a storage whose element type is linear is itself linear (Rule 8) and the program must take every element out and consume it. Assigning over any owned place releases the old value if it is affine and is rejected if it is linear.
 
-Library code, all zero-cost compositions of the above: `swap_remove` (swap with the last slot, then `take_back`), `truncate`, `clear`, `Vector<T>` (a `Box<Slots<T>>` plus a `push` that calls `grow` when `room_of` is zero), `Arena<T>` (`place_back` returning the index as allocation, `truncate(0)` as reset), `Pool<T>` (a `Vector` plus a free list as data), `Deque<T>` (`Box<Ring<T>>` plus growth), open-addressing tables (`Box<Array<u8>>` of tags plus `Box<Array<Entry>>` or `Box<Array<Option<Entry>>>` of slots, all fully initialized), `String` (`Box<Slots<u8>>` plus growth).
+Library code, all zero-cost compositions of the above: `swap_remove` (swap with the last slot, then `take_back`), `truncate`, `clear`, `Vector<T>` (a `Box<Slots<T>>` plus a `push` that calls `grow` when `room` is zero), `Arena<T>` (`place_back` returning the index as allocation, `truncate(0)` as reset), `Pool<T>` (a `Vector` plus a free list as data), `Deque<T>` (`Box<Ring<T>>` plus growth), open-addressing tables (`Box<Array<u8>>` of tags plus `Box<Array<Entry>>` or `Box<Array<Option<Entry>>>` of slots, all fully initialized), `String` (`Box<Slots<u8>>` plus growth).
 
 ## Rule 7. What can be indexed, and bounds are proved
 
 Indexable things: `Array`, `Slots`, and `Ring` in either form, a range reference into any of them, and a `const` table. `Box<Array<T, N>>` is indexed through the path `(*b)[i]` and is not a separate case. Every index must be proved in bounds; when the proof is unavailable the program tests the measure, which is ordinary data.
 
-A range reference `&x[lo..hi]` has the parameter type `&[T]`: a reference kind with measure `len_of`, formed only from an indexable or from another range reference, never a stored value.
+A range reference `&x[lo..hi]` has the parameter type `&[T]`: a reference kind with measure `len`, formed only from an indexable or from another range reference, never a stored value.
 
 ```text
 a: Array<Int, 8>;  a[i]                 // requires i < 8
-r: Slots<Int, N>;  r[i]                 // requires i < len_of(r)
-part = &r[lo..hi]                       // requires lo <= hi <= len_of(r); len_of(part) == hi - lo
-fn kernel(part: &[Int]) writes(part) { for k in 0..len_of(part) { part[k] += 1 } }
-sub = &part[a..b]                       // requires a <= b <= len_of(part)
-if i < len_of(r) { use(&r[i]) }         // the test establishes the fact; one compare, no trap
+r: Slots<Int, N>;  r[i]                 // requires i < r.len
+part = &r[lo..hi]                       // requires lo <= hi <= r.len; part.len == hi - lo
+fn kernel(part: &[Int]) writes(part) { for k in 0..part.len { part[k] += 1 } }
+sub = &part[a..b]                       // requires a <= b <= part.len
+if i < r.len { use(&r[i]) }         // the test establishes the fact; one compare, no trap
 ```
 
 ## Rule 8. Value classes: copy, affine, linear; no destructors
@@ -205,7 +215,7 @@ Slots<File, 4>                       // linear: every element must be taken out 
 
 ## Rule 9. Effects are declared only on reference parameters
 
-An effect row lists `reads(path)` and `writes(path)` where each path starts at a reference parameter and may continue through fields, `*`, payload steps, and whole-index or range positions supplied as arguments. `writes` covers writing, replacing, moving out of, and freeing the storage at the path. A by-value parameter has no effect entry: the call site records the consumption (for `move`) or the read (for a copy) of the argument's place. Signatures never contain index expressions; an index enters an effect only through an argument, evaluated once at the call. The rows of the built-in operations of Rule 6 use no vocabulary a user function cannot use (see the open proposal on window parts).
+An effect row lists `reads(path)` and `writes(path)` where each path starts at a reference parameter and may continue through fields, `*`, payload steps, and whole-index or range positions supplied as arguments. `writes` covers writing, replacing, moving out of, and freeing the storage at the path. A by-value parameter has no effect entry: the call site records the consumption (for `move`) or the read (for a copy) of the argument's place. Signatures never contain index expressions; an index enters an effect only through an argument, evaluated once at the call. The rows of the built-in operations of Rule 6 use only this vocabulary plus the window parts of Rule 6, which any user function may use too.
 
 ```text
 fn bump(p: &Int)  writes(p)
@@ -214,8 +224,8 @@ fn update(o: &Obj, c: Bool)  writes(o.a), writes(o.b)      // member paths are a
 fn put_at(slot: &Int, x: own Int)  writes(slot)              // x needs no entry
 
 bump(&a.x)                     // call effect: writes(a.x)
-put_at(&r[k], 3)               // the argument fixes the slot at the call; requires k < len_of(r)
-place_back(&r, 3)              // appending is the built-in; its row names the slot at len_of
+put_at(&r[k], 3)               // the argument fixes the slot at the call; requires k < r.len
+place_back(&r, 3)              // appending: writes(r.next), writes(r.len)
 ```
 
 A function body is checked against its own row: every statement's effect and every callee's substituted row must be covered by the declared row.
@@ -246,17 +256,17 @@ Function-typed parameters carry a full signature with its own row and contract, 
 
 ## Rule 11. Facts, contracts, and invalidation
 
-Facts are the existing WF forms: affine comparisons over measures and integer values, refinement facts from a dominating branch or a `match` arm, loop-header invariants `invariant name: affine_expr compare_op affine_expr`, explicit `use` steps inside an `invariant`, and callee contracts. A fact that mentions a path is invalidated when that path is written (by statement or call) unless the callee's `ensures` re-establishes it. Contracts use `requires`, `ensures`, and `ensures when Variant:` for result-routed relations; the pre-state of a parameter is written `entry(p)`. Across a call, a fact known before the call about a measure of an argument survives as a fact about `entry(p)` of that argument, which is how an `ensures` of the shape `len_of(r) == len_of(entry(r)) + 1` connects to what the caller knew.
+Facts are the existing WF forms: affine comparisons over measures and integer values, refinement facts from a dominating branch or a `match` arm, loop-header invariants `invariant name: affine_expr compare_op affine_expr`, explicit `use` steps inside an `invariant`, and callee contracts. A fact that mentions a path is invalidated when that path is written (by statement or call) unless the callee's `ensures` re-establishes it. Contracts use `requires`, `ensures`, and `ensures when Variant:` for result-routed relations; the pre-state of a parameter is written `entry(p)`. Across a call, a fact known before the call about a measure of an argument survives as a fact about `entry(p)` of that argument, which is how an `ensures` of the shape `r.len == entry(r).len + 1` connects to what the caller knew.
 
 ```text
-n = len_of(r)
+n = r.len
 if m <= n {
     for i in 0..m {
-        invariant h: len_of(r) == n - i;     // carried by the writer, checked at every iteration
-        take_back(&r)                        // requires len_of(r) > 0: from i < m and m <= n
+        invariant h: r.len == n - i;     // carried by the writer, checked at every iteration
+        take_back(&r)                        // requires r.len > 0: from i < m and m <= n
     }
 }
-while len_of(r) > 0 { take_back(&r) }        // no knowledge: the loop condition is the test
+while r.len > 0 { take_back(&r) }        // no knowledge: the loop condition is the test
 ```
 
 There are no quantified facts over array elements ("for all i ...") and no per-slot occupancy facts; occupancy that is determined by data is stored as data (Rule 6, Rule 12).
@@ -266,7 +276,7 @@ There are no quantified facts over array elements ("for all i ...") and no per-s
 At a join, facts are intersected (a fact survives only if it holds on every incoming edge); a reference's target set is the union of its targets (Rule 2); a local consumed on one incoming edge is consumed after the join. No place is ever partially moved: every path is either wholly present or the program cannot name it (Rule 6). Structures whose occupancy is decided by data keep that occupancy as data.
 
 ```text
-if cond { place_back(&r, x) }               // after the join: len_of(r) >= n, where n was len_of before
+if cond { place_back(&r, x) }               // after the join: r.len >= n, where n was r.len before
                                             // facts about indices below n survive
 if cond { x = move c.f }                    // c is consumed after the join on both edges
 
@@ -305,11 +315,11 @@ Confirmed by the owner on 2026-09-18, knowingly reversing the design tree's earl
 
 ```text
 struct Arena<T> { buf: Box<Slots<T>> }
-fn alloc<T>(a: &Arena<T>, x: own T) -> u64   // row: the append slot of *a.buf and len_of(*a.buf); see the open proposal
-    contract { requires room_of(*a.buf) > 0; ensures result == len_of(entry(*a.buf)); ensures len_of(*a.buf) == result + 1; }
+fn alloc<T>(a: &Arena<T>, x: own T) -> u64   // row: the append slot of *a.buf and (*a.buf).len; see the open proposal
+    contract { requires (*a.buf).room > 0; ensures result == entry(*a.buf).len; ensures (*a.buf).len == result + 1; }
 id = alloc(&a, node)
-p  = &(*a.buf)[id]                         // valid while id < len_of(*a.buf)
-truncate(&a.buf, 0)                        // reset: elements released; later reads of slot id need id < len_of again
+p  = &(*a.buf)[id]                         // valid while id < (*a.buf).len
+truncate(&a.buf, 0)                        // reset: elements released; later reads of slot id need id < len again
 ```
 
 ## Not in this candidate
@@ -318,7 +328,7 @@ truncate(&a.buf, 0)                        // reset: elements released; later re
 
 ## Proposed additions awaiting owner ruling
 
-1. Named window parts in the path vocabulary, so that the rows of the built-in window operations, and of any user function that appends or shrinks, are written in ordinary effect vocabulary with no index expression: `r.next` (the append slot), `r.last` (the last filled slot), `r.filled` (all filled slots), `r.free` (all empty slots), and the measure `len_of(r)` as a write target; all interpreted at call entry. Overlap is by definition: a live `r[i]` (which has `i < len_of(r)`) never overlaps `r.next` or `r.free`, overlaps `r.last` unless `i != len_of(r) - 1` is proved, and always overlaps `r.filled`. With this, `place_back` is `writes(r.next), writes(len_of(r))`, `take_back` is `writes(r.last), writes(len_of(r))`, `remove_at` is `writes(r.filled), writes(len_of(r))`, `append` is `writes(dst.free), writes(len_of(dst)), writes(src.filled), writes(len_of(src))`, and a user's `add_node(g: &Graph)` can declare `writes((*g.nodes).next), writes(len_of(*g.nodes))` so that references into the window survive the call. Reason: the owner's principle that built-in operations have no privileged contract vocabulary.
+None. The window-parts vocabulary was adopted into Rule 6 in revision 4.
 
 ## Deferred to a future concurrency and layout round
 
