@@ -487,51 +487,67 @@ access valid after its provider ends. Current-state/dependency evidence must
 handle that case. Define which provider state an operation actually touches
 instead of treating every metadata update as writing every live payload.
 
-The owner now asks whether expiring named stores are necessary at all, rather
-than assuming they must be retained and finding a more elaborate encoding.
-These alternatives are unselected:
+The owner clarified that multiple pools with different finite lifetimes are
+the point of the explicit-store question. An execution-long allocation service
+does not answer that requirement and is no longer the proposed next comparison.
+The lexical-confinement sketch also omitted an important boundary: a runtime
+choice can select one of two different stores. Confinement alone says nothing
+about the runtime information needed to reclaim the selected allocation.
 
-1. **Execution-long allocation service.** Ordinary Box and dynamic
-   buffers/vectors can own their allocations without a separately expiring
-   source owner. This removes that dependency, not allocation/free behavior,
-   failure, allocator interference or the need to keep each allocation live.
-   It is not a restriction to one-element Box alone. The tradeoff concerns
-   explicit bounded arenas, bulk reclamation and custom allocation control.
-   Runtime allocator implementation may use pools internally; that is not a
-   source-level guarantee of user-controlled arena layout or reclamation cost.
-2. **Strict lexical store confinement.** A store stays in one scope; its
-   derived owners cannot escape that scope, and no early reset/end is admitted
-   while the scope is active. Keep store association invariant, with no implicit
-   mixing or existential hiding of different store identities. Formation gives
-   one checked store identity; owner moves preserve it; types/positions confine
-   all derived contents. This is a bounded dependency discipline to compare,
-   not arbitrary stored-reference tracking and not proof of a complete rule
-   system. Nested-store escape, contained-resource cleanup and parallel accesses
-   still need explicit cases. Much of current WF already explores confinement.
-3. **One owned pool with value IDs/offsets.** The pool owns all payload storage;
-   links and external selections are plain IDs, and access needs the current
-   pool plus a validity proof or explicit total lookup. No independently
-   escaping child owner depends on a local provider. Index addressing can be
-   cheap, but deletion/reuse, heterogeneous layouts and lookup costs remain
-   concrete obligations. A naked ID cannot establish identity or access safety.
+```text
+chosen = condition             // retain this evaluated Boolean value
+block = if chosen { allocate_from(arena1, value) }
+        else      { allocate_from(arena2, value) }
+```
 
-Provider visibility and provider expiration are separate choices. An explicit
-Heap operand can name an execution-long service for effects without making its
-allocations depend on that operand binding's local lifetime. Conversely, an
-ambient heap does not make its shared metadata disappear. An effect system
-whose roots must be parameters still needs a declared way to account for
-allocation/reclamation access; choosing an immortal provider does not choose
-hidden global effects or automatic access to it. Multiple immortal allocators
-can still need release-origin matching even though none can expire early.
+Separate two obligations. Static checking can require every possible backing
+to remain valid, or retain guards that justify a smaller set on a later path.
+That does not statically determine which provider was chosen on this execution.
+If individual release needs that provider's state, executable code must obtain
+the selected provider somewhere. An erased possible-origin set cannot perform
+runtime release dispatch. The current v0.59 invariant brands do not directly
+unify `Box<'a,T>` and `Box<'b,T>` into one ordinary Box type; the example is a
+candidate boundary, not a program already admitted by that floor.
 
-A finite backing cannot end safely while independently usable child storage
-still relies on its bytes. The alternatives remove independent children,
-confine their validity, or make the provider non-expiring; merely removing a
-type parameter does none of these. Retaining a dependency does not by itself
-require retaining arbitrary pointers or unrestricted dependency graphs.
-Compare the same bulk-allocation, reclamation, graph and parallel tasks before
-choosing a direction; lifetime notation, runtime pointers and tokens are not
-selected merely because the current specification has a store brand.
+A per-block provider pointer is one representation, not the only possible one.
+The following alternatives are unselected and must be costed:
+
+| Origin recovery | Runtime information and cost |
+|---|---|
+| Block carries provider pointer or tag | Larger value or allocation header; initialization, loads and possible dispatch. |
+| Release takes an explicit matching provider | Information remains in caller/provider operands; contracts must check pairing; no automatic per-block pointer follows. |
+| Source retains the allocation choice | Written conditional release can reuse the same captured Boolean; arbitrary escaped/mixed collections cannot assume that source context remains available. |
+| Uniform-store container or batch | A common provider can be supplied once; does not handle arbitrary independently selected stores without further information. |
+| Recover from payload address/header/page metadata | Avoids a dedicated field in some layouts but introduces lookup, metadata or layout constraints; not a free proof-erasure operation. |
+| Bump-only bulk reclamation | No per-block backing release needs to rediscover the provider; contained-resource cleanup and scope validity remain. This differs from individually reusable blocks. |
+
+```text
+// If mixed-origin joins are admitted, this is a discriminator, not a solved rule:
+if chosen { release_to(arena1, move(block)) }
+else      { release_to(arena2, move(block)) }
+
+// Another discriminator keeps the selected provider as an existing local operand:
+provider = if condition { &arena1 } else { &arena2 }
+block = allocate_from(provider, value)
+release_to(provider, move(block))
+```
+
+No compiler-inserted drop flag or hidden branch is supplied by these examples.
+The second form retains one ordinary runtime provider locator locally; it does
+not copy one into every produced block. Whether its type/target relation can be
+maintained through the intended calls and aggregates remains to be derived.
+Scope-end cleanup can be implicit only when the chosen representation and
+available provider information justify it; affine classification does not
+manufacture a lost origin.
+
+The next decision is whether different-store owners may join into one uniform
+type, mix in a collection, and later be independently released without a
+matching provider operand. If yes, specify where the required runtime origin
+information lives. If no, record the lost task forms and test provider-paired
+or uniform-store rewrites. Strict lexical stores and pools owning contents by
+ID remain possible restricted alternatives, not selected solutions. Do not
+infer a per-object pointer cost solely from multiple stores, or infer zero cost
+solely from a static brand.
 
 ### Boundaries to settle before freezing x1
 
