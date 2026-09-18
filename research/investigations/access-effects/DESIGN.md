@@ -274,10 +274,14 @@ the others. The frozen x0 still has 221 D, 12 C, 67 U and 0 X cells.
   represent, update and expose in contracts. Neither unavoidable exponential
   cost for every representation nor a claimed percentage reduction has been
   established.
-- The owner now favors keeping non-owning references out of structs and arrays,
-  and not returning them from functions. Keep temporary local references and
-  direct call inputs so that library and parallel range operations need not
-  transfer or copy their payloads merely to access them. Return indices or
+- The owner requires the non-owning-reference storage restriction to apply
+  transitively: structs, enums, tuples, arrays, slice elements and generic
+  wrappers may not hide a reference. Allowing one wrapper would reopen struct
+  storage through that wrapper. A non-owning slice/view is itself reference-like,
+  not an exception that may be stored in another value. Keep temporary local
+  references and direct call inputs, and do not return references. This keeps
+  library and parallel range operations from needing to transfer or copy their
+  payloads merely to access them. Return indices or
   offsets where a caller can reconstruct a reference with the necessary proof;
   this is a possible rewrite, not a claim that every reference result has a
   free equivalent.
@@ -287,6 +291,13 @@ the others. The frozen x0 still has 221 D, 12 C, 67 U and 0 X cells.
   read/write or write/write demands require proved separation. This is the
   owner's chosen direction, replacing x0 R11's general admission of aliased
   formals whose ordered body happened to be safe.
+- The owner proposes whole-referent effect names for reference formals:
+  `writes(data)` rather than `writes(object.data)`, with the caller passing
+  `&object.data` directly. Non-reference parameters arrive as complete values
+  by copy or ownership transfer; member effect paths remain a possible form for
+  those parameters. This is a proposed signature restriction, not evidence that
+  every member-path interface has an equal-cost rewrite. Caller-side target
+  resolution must still retain field, backing and range identities.
 - Operations through one formal may both read and write; the callee checks
   their order and state transitions. A row records exhibited possible effects,
   including conditional operations, not only the effects taken on one runtime
@@ -301,9 +312,12 @@ the others. The frozen x0 still has 221 D, 12 C, 67 U and 0 X cells.
   checks. No new blanket ban on release through a reference has been
   selected when the corresponding duty is otherwise available.
 - A Box is an ordinary owning descriptor plus a relation to separately managed
-  storage and its nonduplicable disposal obligation. The owner proposed treating
-  it as linear. The precise explicit/automatic discharge policy remains to be
-  reconciled with the existing copy/affine/linear choices before a freeze.
+  storage and its nonduplicable disposal obligation. The owner reopened the
+  earlier mandatory-linear proposal in favor of considering affine cleanup for
+  convenience. Cleanup must still be valid for the contents and provider and
+  expose its accesses and storage ending. This does not authorize silently
+  discarding linear content. The exact release timing and partial-state rules
+  remain to be fixed before a freeze.
 - The earlier proposal that every Box move invalidates all payload references
   was reopened: the latest direction permits a temporary reference to continue
   naming unmoved backing after the descriptor moves, subject to current validity.
@@ -322,6 +336,8 @@ batch. `Ref`, `Box`, effects and transfer forms remain explanatory notation.
 ```text
 struct Saved { p: Ref<Int> }  // proposed rejection: stored non-owning reference
 refs: Array<Ref<Int>>         // proposed rejection for the same reason
+wrapped: Option<Ref<Int>>     // also rejected: enum wrapping is no exception
+pair: (Int, Ref<Int>)         // also rejected: tuple wrapping is no exception
 fn choose(c, p: Ref<Int>, q: Ref<Int>) -> Ref<Int> // proposed result restriction
 
 fn inspect(p: Ref<Int>) reads(p) { return read(p) }
@@ -379,14 +395,35 @@ NodeId/offset forms do not establish bounds, stable identity or permission by
 their spelling. Deletion, reuse and association with the correct owner remain
 proof obligations or explicit, costed program behavior.
 
+```text
+fn set_one(data: Ref<Int>) writes(data) { write(data, 1) }
+set_one(&object.data)        // resolve formal data to this actual field
+inspect(&object.other)      // different fields may still prove separate
+```
+
+Whole-formal spelling need not imply whole-owner conflict: the actual argument
+may already be a field, element or range projection. Forming the projection
+must itself be checked and included in argument-evaluation effects. For such
+directly available targets, replacing a member-path effect by a projected formal
+requires no payload copy. If a callee must first discover the selected member,
+an index/path-return rewrite can require reconstruction or a second traversal;
+whether it does is a concrete workload question. No inevitable slowdown or
+universal zero-cost translation is claimed. No function body is inspected by
+the caller merely to narrow an overly broad declared footprint.
+
 ### Boundaries to settle before freezing x1
 
-1. Specify reference-containing wrappers: enums, tuples, generic instantiations,
-   views/slices and captures. Define direct input/reborrow and forwarding rules
-   without creating a wrapper loophole or silently prohibiting a current range
-   helper. Local branch/loop references were not restricted to one statement.
-2. Fix effect projection and compatibility for owner payloads, nested fields,
-   dynamic ranges, argument evaluation, release and shared provider metadata.
+1. Formalize the now-transitive storage prohibition and direct input/reborrow
+   and forwarding rules. Non-owning views are temporary reference forms, not
+   storable wrapper exceptions. Captures must not reopen aggregate storage.
+   Preserve the current direct range-helper comparison; local branch/loop
+   references were not restricted to one statement.
+2. Decide the proposed root-only reference-formal spelling and define its exact
+   granularity before evaluating it. Fix effect projection for owner payloads,
+   nested fields, dynamic ranges, argument evaluation, release and shared
+   provider metadata. Whole-root effects may conservatively cover untouched
+   parts; specify how the existing exact-row check operates at that chosen
+   granularity rather than silently changing it to arbitrary upper bounds.
    A declaration must be verified, and no plain reference grants ambient
    authority. Same-formal and cross-formal access must remain distinguishable.
 3. Fix which storage survives owner moves/take/replacement, which references
