@@ -622,6 +622,24 @@ call-contract derivation. A helper that instead destroys the child must invalida
 q too. Nested transfer, conditional destruction and ordinary scope cleanup still
 need precise rules; no owner may contain a Ref merely because it is boxed.
 
+An even stronger transfer case uses only a local reference:
+
+```text
+b = box_new(Node { next: None })
+slot = &deref(b).next
+put(slot, Some(move(b)))        // attempts to store the owner in its own descendant
+```
+
+This would make the allocation contain its own owner and duty, with no owning
+root left in b. The current cross-formal read/write rule does not by itself
+cover a value formal that only transfers ownership, and the temporary-reference
+direction does not categorically invalidate payload references on Box moves.
+Therefore neither acceptance nor rejection is already derived. A proposed
+owning-tree model must preserve well-founded containment across transfers;
+rejecting transfer into one's own descendant is one possible rule, not a selected
+repair. A more permissive model would instead owe explicit duty and exit rules.
+Do not claim that absence of stored Ref fields alone excludes ownership cycles.
+
 Vector can share the heap-allocation ownership mechanism without boxing each
 element or separately allocating a boxed descriptor. The target is one contiguous
 run of inline T representations with `{data_pointer, length, capacity}`. A
