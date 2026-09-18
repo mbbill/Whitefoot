@@ -490,64 +490,84 @@ instead of treating every metadata update as writing every live payload.
 The owner clarified that multiple pools with different finite lifetimes are
 the point of the explicit-store question. An execution-long allocation service
 does not answer that requirement and is no longer the proposed next comparison.
-The lexical-confinement sketch also omitted an important boundary: a runtime
-choice can select one of two different stores. Confinement alone says nothing
-about the runtime information needed to reclaim the selected allocation.
+The general task must include arbitrary runtime source choices, owners mixed
+in one uniform collection, and independent release after the source-selection
+context has disappeared. Earlier examples retained a selected provider operand
+or replayed a captured Boolean. They did not test this task and are withdrawn
+as evidence against its runtime representation cost. Bump-only bulk reclamation
+also does not answer the independently reclaimable heap-pool requirement.
 
 ```text
-chosen = condition             // retain this evaluated Boolean value
-block = if chosen { allocate_from(arena1, value) }
-        else      { allocate_from(arena2, value) }
+// Design pseudocode, allocation-success paths only.
+// Both finite pools remain valid until every returned owner is released.
+fn make(p: Ref<Pool>, q: Ref<Pool>, bit: Bool) -> PoolBox<Int> {
+    if bit { return allocate_from(p, 0) }
+    else   { return allocate_from(q, 0) }
+}
+
+fn make_batch(p, q, choices, permutation) -> Vector<PoolBox<Int>> {
+    items = Vector<PoolBox<Int>>()
+    for bit in choices { items.push(make(p, q, bit)) }
+    return permute_and_forward(move(items), permutation)
+    // choices and permutation are not part of the returned interface.
+}
+
+fn destroy(item: own PoolBox<Int>) {
+    release(move(item))         // only item is supplied; exact pool required
+}
+
+p = finite_heap_pool(...)
+q = finite_heap_pool(...)
+items = make_batch(&p, &q, runtime_choices, runtime_permutation)
+for item in items { destroy(move(item)) }
+end_pool(move(p))
+end_pool(move(q))
 ```
 
-Separate two obligations. Static checking can require every possible backing
-to remain valid, or retain guards that justify a smaller set on a later path.
-That does not statically determine which provider was chosen on this execution.
-If individual release needs that provider's state, executable code must obtain
-the selected provider somewhere. An erased possible-origin set cannot perform
-runtime release dispatch. The current v0.59 invariant brands do not directly
-unify `Box<'a,T>` and `Box<'b,T>` into one ordinary Box type; the example is a
-candidate boundary, not a program already admitted by that floor.
+All payloads are equal, and the owner type is uniform across origins. Each
+element may be independently selected, moved, reordered and passed through
+opaque helpers; neither the selection history nor a matching provider operand
+is available to `destroy`. Releasing to the wrong pool is invalid. These are
+requirements on the proposed interface, not claims that this pseudocode is
+already accepted. The v0.59 invariant brands do not directly unify
+`Box<'a,T>` and `Box<'b,T>` into one ordinary Box type.
 
-A per-block provider pointer is one representation, not the only possible one.
-The following alternatives are unselected and must be costed:
+Static checking and runtime release have separate obligations. A static origin
+set `{p,q}` can require both providers to remain valid and conservatively
+describe possible effects. It cannot select the actual provider for this
+execution. The owner/allocation representation must make that origin
+recoverable at runtime for every element. Preserving a choice secretly in
+generated code would itself retain runtime information; it is not erasure of
+the relation. A summary or proof erased before execution cannot supply it.
 
-| Origin recovery | Runtime information and cost |
-|---|---|
-| Block carries provider pointer or tag | Larger value or allocation header; initialization, loads and possible dispatch. |
-| Release takes an explicit matching provider | Information remains in caller/provider operands; contracts must check pairing; no automatic per-block pointer follows. |
-| Source retains the allocation choice | Written conditional release can reuse the same captured Boolean; arbitrary escaped/mixed collections cannot assume that source context remains available. |
-| Uniform-store container or batch | A common provider can be supplied once; does not handle arbitrary independently selected stores without further information. |
-| Recover from payload address/header/page metadata | Avoids a dedicated field in some layouts but introduces lookup, metadata or layout constraints; not a free proof-erasure operation. |
-| Bump-only bulk reclamation | No per-block backing release needs to rediscover the provider; contained-resource cleanup and scope validity remain. This differs from individually reusable blocks. |
+For the direct uniform representation `{payload_pointer, pool_pointer}`, the
+extra pointer is a type-wide cost. Every value of this `PoolBox<T>` type has
+that field, including values whose origin is easy to infer at some call sites.
+Homogeneous array element size, ordinary move traffic and the representation
+crossing opaque interfaces must all account for it. Initialization and release
+also have to handle the provider information. This is a representation cost
+model, not a measured claim about elapsed allocation/free time. Do not assume
+whole-program specialization removes the field from selected instances of the
+same uniform representation.
 
-```text
-// If mixed-origin joins are admitted, this is a discriminator, not a solved rule:
-if chosen { release_to(arena1, move(block)) }
-else      { release_to(arena2, move(block)) }
+The necessary information need not physically be a second field: allocation
+headers, side metadata or an address-to-provider scheme can carry it instead.
+Those representations move the accounting to metadata, lookup or address-layout
+constraints. They are not a static-only solution. No particular layout is
+selected, but the general task cannot be credited with both arbitrary mixed
+origins and erased runtime provenance. Returning the provider explicitly,
+requiring source-condition replay, forbidding mixed collections or eliminating
+individual release changes the task and must be assessed as an expressiveness
+restriction, rather than offered as a counterexample to this requirement.
 
-// Another discriminator keeps the selected provider as an existing local operand:
-provider = if condition { &arena1 } else { &arena2 }
-block = allocate_from(provider, value)
-release_to(provider, move(block))
-```
-
-No compiler-inserted drop flag or hidden branch is supplied by these examples.
-The second form retains one ordinary runtime provider locator locally; it does
-not copy one into every produced block. Whether its type/target relation can be
-maintained through the intended calls and aggregates remains to be derived.
-Scope-end cleanup can be implicit only when the chosen representation and
-available provider information justify it; affine classification does not
-manufacture a lost origin.
-
-The next decision is whether different-store owners may join into one uniform
-type, mix in a collection, and later be independently released without a
-matching provider operand. If yes, specify where the required runtime origin
-information lives. If no, record the lost task forms and test provider-paired
-or uniform-store rewrites. Strict lexical stores and pools owning contents by
-ID remain possible restricted alternatives, not selected solutions. Do not
-infer a per-object pointer cost solely from multiple stores, or infer zero cost
-solely from a static brand.
+The hidden provider access must also remain visible in contracts: distinct
+payload owners can release through the same pool management state. Their
+payload separation alone does not establish release independence. A static
+possible-origin set can conservatively retain this conflict even when runtime
+dispatch knows which pool to use. This durable provider dependency is not
+removed merely by prohibiting stored source-level `Ref` values. Its precise
+contract representation and the lifetime proof remain open; no successor rule
+or repair mechanism is supplied by this witness.
 
 ### Boundaries to settle before freezing x1
 
