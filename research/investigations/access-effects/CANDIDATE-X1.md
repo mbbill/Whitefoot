@@ -123,7 +123,7 @@ Construction:
 Array::new(v)                        // T Copy: every slot holds v; or a literal [a, b, c]
 Box::new_array_filled(n, v)?         // runtime length, T Copy, every slot holds v; Result<Box<Array<T>>, Oom>, no payload; zero-filled maps to calloc
 Slots::new<T, N>()                   // empty window
-Box::new(Slots::new<T>(cap))?        // empty window of runtime capacity
+Box::new_slots<T>(cap)?              // empty window of runtime capacity; Result<Box<Slots<T>>, Oom>, no payload; Box::new_ring likewise
 Slots::from_array(move a)            // a full window; Slots::into_array(move r) requires r.len == N
 ```
 
