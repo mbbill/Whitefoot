@@ -440,6 +440,23 @@ bump extent and does not already provide arbitrary individual reclamation.
 The existing IO design likewise uses ordinary owners, explicit close and
 provider operands; its detailed interface is outside this round.
 
+The store inventory is broader than one cell type, but not every owned type
+needs a separate named store:
+
+| Current form | Store relationship |
+|---|---|
+| `Heap<'s>`, `Arena<'s, bytes, align>` | Providers of general-store or bump storage. |
+| `Box<'s,T>`, `Vector<'s,T>` | Direct consumers carrying their store brand. |
+| Structs/enums/arrays containing those owners | Carry the contained owners' confinement and release dependencies. |
+| Legacy `box<T>`, `buffer<T>` | Ambient heap; no writer-named provider lifetime. |
+| `FixedVector<T,n>`, ordinary inline fields/arrays | No store for their own inline storage; contained owners can still have one. |
+| Legacy `arena<'r,T>` | Region-bounded storage, even without the newer provider API. |
+
+Temporary slices depend on their source storage but do not own or create a
+store. An IO owner is not inherently store-branded; its ordinary contract may
+instead require a factory or name shared resource state. Do not generalize the
+memory-brand mechanism into a rule that every external resource needs it.
+
 ```text
 // Assume acquisition succeeded; operations below are semantic questions,
 // not claims that these APIs or a chosen type syntax already exist.
@@ -470,11 +487,51 @@ access valid after its provider ends. Current-state/dependency evidence must
 handle that case. Define which provider state an operation actually touches
 instead of treating every metadata update as writing every live payload.
 
-The next discussion should define what relationship a provider-created owning
-value carries, how a matching provider is supplied, and which evidence prevents
-backing from ending too soon. Lifetime notation, runtime provider pointers,
-linear tokens and resource families are alternatives to compare, not decisions
-supplied by this note.
+The owner now asks whether expiring named stores are necessary at all, rather
+than assuming they must be retained and finding a more elaborate encoding.
+These alternatives are unselected:
+
+1. **Execution-long allocation service.** Ordinary Box and dynamic
+   buffers/vectors can own their allocations without a separately expiring
+   source owner. This removes that dependency, not allocation/free behavior,
+   failure, allocator interference or the need to keep each allocation live.
+   It is not a restriction to one-element Box alone. The tradeoff concerns
+   explicit bounded arenas, bulk reclamation and custom allocation control.
+   Runtime allocator implementation may use pools internally; that is not a
+   source-level guarantee of user-controlled arena layout or reclamation cost.
+2. **Strict lexical store confinement.** A store stays in one scope; its
+   derived owners cannot escape that scope, and no early reset/end is admitted
+   while the scope is active. Keep store association invariant, with no implicit
+   mixing or existential hiding of different store identities. Formation gives
+   one checked store identity; owner moves preserve it; types/positions confine
+   all derived contents. This is a bounded dependency discipline to compare,
+   not arbitrary stored-reference tracking and not proof of a complete rule
+   system. Nested-store escape, contained-resource cleanup and parallel accesses
+   still need explicit cases. Much of current WF already explores confinement.
+3. **One owned pool with value IDs/offsets.** The pool owns all payload storage;
+   links and external selections are plain IDs, and access needs the current
+   pool plus a validity proof or explicit total lookup. No independently
+   escaping child owner depends on a local provider. Index addressing can be
+   cheap, but deletion/reuse, heterogeneous layouts and lookup costs remain
+   concrete obligations. A naked ID cannot establish identity or access safety.
+
+Provider visibility and provider expiration are separate choices. An explicit
+Heap operand can name an execution-long service for effects without making its
+allocations depend on that operand binding's local lifetime. Conversely, an
+ambient heap does not make its shared metadata disappear. An effect system
+whose roots must be parameters still needs a declared way to account for
+allocation/reclamation access; choosing an immortal provider does not choose
+hidden global effects or automatic access to it. Multiple immortal allocators
+can still need release-origin matching even though none can expire early.
+
+A finite backing cannot end safely while independently usable child storage
+still relies on its bytes. The alternatives remove independent children,
+confine their validity, or make the provider non-expiring; merely removing a
+type parameter does none of these. Retaining a dependency does not by itself
+require retaining arbitrary pointers or unrestricted dependency graphs.
+Compare the same bulk-allocation, reclamation, graph and parallel tasks before
+choosing a direction; lifetime notation, runtime pointers and tokens are not
+selected merely because the current specification has a store brand.
 
 ### Boundaries to settle before freezing x1
 
