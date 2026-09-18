@@ -643,9 +643,14 @@ comparisons. Term hashing meets its prediction and is selected. Reverting
 the promotion closure moved fixed-run and wfgrep from about 23.3 s to about
 24.2 s, which is its measured 1.04x.
 
-The base and c6 compilers emit byte-identical LLVM for all 22 measured
-sources: the five real programs, the generated fixtures and the warm-up
-sources. The final branch keeps validation scope, the contiguous and
+The retained [flow pairs](../../experiments/proof-use-cost/flow-pairs-2026-09-16.tsv)
+contain 1,200 accepted timing samples across eight comparisons of 15 sources.
+They contain no LLVM hashes or comparison inventory supporting the previously
+reported byte-identity result for 22 sources. That historical LLVM comparison
+remains unverified. The [later comparison with retained LLVM hashes](INCREMENTAL-CLOSURE.md#retained-proof-follow-up-results)
+covers `3f205ff6` against `e598a887`, not base against c6.
+
+The final branch at this stage keeps validation scope, the contiguous and
 stale-column products, and both hashing changes. It removes neither a
 candidate family nor an acceptance rule. The remaining cost is still
 complete-closure recomputation, about 24 s for each of the two largest

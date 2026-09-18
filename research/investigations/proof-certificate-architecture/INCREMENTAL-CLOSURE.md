@@ -43,10 +43,12 @@ the relations and checks rule-specific parents for the summaries they inspect;
 it is not a universal independent checker of all accepted programs.
 
 The live [closure-row-dominance](../../../design/compiler/closure-row-dominance.md)
-decision promises unchanged selected derivations. A selected implementation
-therefore needs an owner-approved revision of that promise before merge. The
-owner has stated the direction: relax it for a large speedup. That statement
-is not approval of a specific revision.
+decision now preserves selected derivations for the unseeded complete fixed
+point. Its owner-approved revision lets the seeded fixed point follow
+[incremental-closure](../../../design/compiler/incremental-closure.md)'s
+retained-witness policy: valid alternative L0 derivations are permitted,
+with independently live join reuse, preserved ordinary fallbacks and neutral
+contradictory predecessors. The language judgments above remain unchanged.
 
 ## Mechanism
 
