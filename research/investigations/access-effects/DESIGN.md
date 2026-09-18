@@ -72,6 +72,15 @@ sequence: a missing rule is not authorization to select a replacement mechanism.
 A promising local fragment is not a completed iteration. Internal coherence
 also does not establish adequate expressiveness or acceptable performance.
 
+Challenge each general capability with cases that exhaust its advertised
+freedom: runtime choices whose source conditions disappear, homogeneous mixed
+storage, nested transfers, opaque calls, invalidation and parallel execution.
+Do not establish a general conclusion from a convenient positive example that
+retains information the required interface may lose. A restricted replacement
+must name the capability it gives up and retain the original task as a coverage
+defect. Representation costs can motivate the owner's rejection without a
+benchmark, but must not be reported as measured slowdown.
+
 Keep engineering witnesses when a capability is prohibited. Record separately
 whether the rules correctly reject the old source form and whether the same
 task has a safe implementation at acceptable cost. A forbidden construct must
@@ -319,6 +328,13 @@ the others. The frozen x0 still has 221 D, 12 C, 67 U and 0 X cells.
   expose its accesses and storage ending. This does not authorize silently
   discarding linear content. The exact release timing and partial-state rules
   remain to be fixed before a freeze.
+- After the mixed-pool witness, the owner favors a single language-wide heap
+  for ordinary Box and rejects paying a per-owner finite-provider association
+  for that general type. Box then carries no finite-store parameter and may
+  compose freely with other reference-free owning types. This is the next
+  candidate direction, not a frozen successor or an amendment of the active
+  store-branded rules. Arena remains unresolved; ordinary Box must not silently
+  regain arbitrary finite-pool origins through an Arena conversion.
 - The earlier proposal that every Box move invalidates all payload references
   was reopened: the latest direction permits a temporary reference to continue
   naming unmoved backing after the descriptor moves, subject to current validity.
@@ -569,6 +585,114 @@ removed merely by prohibiting stored source-level `Ref` values. Its precise
 contract representation and the lifetime proof remain open; no successor rule
 or repair mechanism is supplied by this witness.
 
+### Global-heap owners: next candidate and remaining pressure cases
+
+The owner rejects the uniform general PoolBox cost for the ordinary ownership
+type and favors one program-wide heap service. This removes the choice of a
+finite provider from an ordinary Box's contract, rather than proving that choice
+erasable. It also gives up individually escaping owners from arbitrary finite
+pools under that same type. No timing result or general impossibility of custom
+allocation is claimed.
+
+A sized `Box<T>` can target a one-pointer descriptor, with the release entry
+fixed by the language-wide service and layout determined by T. A runtime may
+internally have allocator metadata or shards; absence of a per-Box source-pool
+field does not mean its allocator is metadata-free. As representation references,
+Rust documents [one pointer for sized Box](https://doc.rust-lang.org/std/boxed/index.html#memory-layout)
+and [a pointer/capacity/length triplet for default Vec](https://doc.rust-lang.org/std/vec/struct.Vec.html#guarantees),
+using [one default global allocation service](https://doc.rust-lang.org/std/alloc/index.html).
+The WF candidate retains its own allocation-domain and failure obligations;
+these representation references do not import unchecked Rust library operations.
+
+Moving an owner still differs from moving its inline contents. The following
+case keeps both references local and therefore survives the storage ban:
+
+```text
+outer = box_new(Outer { inline: LargeValue(...), child: box_new(Node(...)) })
+p = &deref(outer).inline
+q = &deref(deref(outer).child)
+moved = move(outer)             // outer allocation has not moved
+value = unbox(move(moved))      // move Outer out; release its former cell
+read(p)                        // invalid: its inline storage ended
+read(q)                        // child backing remains, if ownership was preserved
+```
+
+The second read is a physical-storage preservation expectation, not a completed
+call-contract derivation. A helper that instead destroys the child must invalidate
+q too. Nested transfer, conditional destruction and ordinary scope cleanup still
+need precise rules; no owner may contain a Ref merely because it is boxed.
+
+Vector can share the heap-allocation ownership mechanism without boxing each
+element or separately allocating a boxed descriptor. The target is one contiguous
+run of inline T representations with `{data_pointer, length, capacity}`. A
+generalized owning runtime-length storage form could underlie it; a fully
+initialized sized `Box<T>` interface alone does not provide uninitialized spare
+capacity. Selection between a compiler-owned run and a verified primitive
+storage API is open. The current BLK-1 run/window and BLK-3 transitions are
+existing evidence to examine, not permission to revive parked E2 rules.
+
+```text
+v: Vector<Box<Resource>> = ...
+slot = &v[0]                   // points into the movable vector backing
+payload = &deref(v[0])          // points into a separate Box allocation
+grow_by_relocation(&v, new_capacity) // examine its successful path
+read(slot)                     // invalid after the old backing ends
+read(payload)                  // requires a contract preserving that Box allocation
+```
+
+For arbitrary affine/linear T, growth must acquire new storage and transfer each
+initialized element's duty exactly once before ending the old backing. An
+allocation-refusal edge must have an explicit state for the old container and
+the incoming value; acquiring storage before moving old elements is one
+candidate ordering. Partial transfer and early exits need a loop/resource
+invariant, not implicit per-element occupancy flags. Remove, clear and consuming
+iteration must likewise preserve exact remaining duties. Relocation has actual
+element movement and potentially simultaneous old/new storage; it cannot be
+credited as a one-pointer Box move. A prefix-only run is not assumed to replace
+the existing wrapped-window capability without recording that capability loss.
+
+Arena must now be evaluated as a separate capability with explicit limitations:
+
+| Possible Arena role | Representation and useful capability | Boundary still to derive |
+|---|---|---|
+| Scoped scratch storage | Arena owns a fixed backing; child addresses are temporary local/call-input references, with no independent block owner. | Source formation cannot quietly add reference-returning functions; an allocation index followed by local address formation is one option. Reset/end and backing relocation invalidate children. This does not express stored or returned arena-reference graphs. |
+| Owning typed collection | Arena owns a global-heap run or chunks; stored graph edges are relative indices and access supplies the arena explicitly. | Growth, initialization, member cleanup, reset and slot reuse need proofs. A bare index is not a persistent object-identity guarantee or an autonomous handle. Mixed-origin self-releasing blocks remain unsupported. |
+
+Neither row is selected or validated. In particular, the active STOR-1 rejects
+arena-index pools that revive stale identities through recycling; naming an
+integer `NodeId` cannot bypass that objection. A candidate must either restrict
+reuse or account for stale identifiers with checked state/identity evidence.
+An ordinary array position and a stable object handle must not be conflated.
+No runtime generation check is inserted as a substitute for required proof.
+
+```text
+id = insert(&arena, Node { child: box_new(...), next: None })
+p = &arena[id]                 // requires current bounds and initialization
+reset(&arena)                 // child ownership must be discharged first
+read(p)                       // invalid, even if later insertion reuses its address
+
+id = if cond { insert(&a, value) } else { insert(&b, value) }
+consume_id_only(id)            // cannot recover its arena after the choice is lost
+```
+
+For a typed arena, resetting resource-bearing contents requires their cleanup;
+bulk byte reclamation alone does not discharge nested Box or linear duties.
+Heterogeneous payloads additionally need layout and cleanup knowledge, with
+its own representation/proof cost. A one-operation bump reset is therefore
+not evidence that arbitrary resource-bearing arena contents are equally cheap.
+Chunk growth can preserve earlier addresses at the cost of chunk/index
+structure; a contiguous reallocating backing cannot promise the same thing.
+
+Parallel performance is part of this choice. A shared Arena cursor conflicts
+with another update of that cursor, while already allocated, proved-disjoint
+payloads may still support parallel computation. Ordinary global allocation
+needs an explicit runtime concurrency contract and lowering model: treating
+every operation as a write to one ordinary heap root would serialize allocation,
+whereas ignoring non-thread-safe allocator state is unsound. Internal allocator
+synchronization or sharding is a runtime implementation cost, not proof erasure.
+Allocation freshness also prevents ordinary pure-call deduplication. These
+obligations remain open; the one-pointer target establishes none of them.
+
 ### Boundaries to settle before freezing x1
 
 1. Formalize the now-transitive storage prohibition and direct input/reborrow
@@ -586,10 +710,10 @@ or repair mechanism is supplied by this witness.
    lose access, and the Box discharge policy. The owner may itself be a field
    or array element; it is not necessarily a named local binding.
 
-ID reuse, resource families, container proofs, partial cleanup, providers and
-lowering remain visible gaps. The provider-origin discussion above is now
-explicitly reopened; no new mechanism has been selected. E1/E2 must not fill
-those gaps by default.
+ID reuse, resource families, container proofs, partial cleanup, Arena and
+lowering remain visible gaps. The owner now favors global-heap ordinary Box;
+the finite-store role and global-allocation concurrency contract are still open.
+No full successor has been selected. E1/E2 must not fill those gaps by default.
 
 Prepare the revised vector as explicit deltas to all 24 x0 axes, including
 dependencies on axes not directly changed. Begin the next full upper triangle
