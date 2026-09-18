@@ -291,13 +291,14 @@ the others. The frozen x0 still has 221 D, 12 C, 67 U and 0 X cells.
   read/write or write/write demands require proved separation. This is the
   owner's chosen direction, replacing x0 R11's general admission of aliased
   formals whose ordered body happened to be safe.
-- The owner proposes whole-referent effect names for reference formals:
-  `writes(data)` rather than `writes(object.data)`, with the caller passing
-  `&object.data` directly. Non-reference parameters arrive as complete values
-  by copy or ownership transfer; member effect paths remain a possible form for
-  those parameters. This is a proposed signature restriction, not evidence that
-  every member-path interface has an equal-cost rewrite. Caller-side target
-  resolution must still retain field, backing and range identities.
+- Retain member effect paths for both reference and whole-value parameters.
+  The owner declined the proposed root-only restriction: a function may choose
+  between `object.a` and `object.b`, and splitting all such interfaces into
+  projected parameters is unnecessary. Direct projection remains available,
+  but is not a mandatory rewrite. Caller-side target resolution must retain
+  field, backing and range identities. Conditional alternatives contribute
+  their possible accesses to the checked summary; they are not assumed to
+  happen simultaneously in one execution.
 - Operations through one formal may both read and write; the callee checks
   their order and state transitions. A row records exhibited possible effects,
   including conditional operations, not only the effects taken on one runtime
@@ -409,7 +410,71 @@ requires no payload copy. If a callee must first discover the selected member,
 an index/path-return rewrite can require reconstruction or a second traversal;
 whether it does is a concrete workload question. No inevitable slowdown or
 universal zero-cost translation is claimed. No function body is inspected by
-the caller merely to narrow an overly broad declared footprint.
+the caller merely to narrow an overly broad declared footprint. This argument
+motivated a possible root-only restriction, which the owner subsequently
+declined; keep both member paths and direct projected-argument interfaces.
+
+```text
+fn set_selected(object: Ref<Pair>, choose_a: Bool)
+    writes(object.a), writes(object.b)
+{
+    if choose_a { write(object.a, 1) }
+    else        { write(object.b, 1) }
+}
+```
+
+### Reopened provider and resource-origin question
+
+The owner asked to revisit Arena and the original store-origin brand because
+the objective was to treat heap storage and external resources through ordinary
+types and contracts, rather than give each resource class its own escape.
+This reopens an existing dependency of the candidate; it selects no replacement
+provider mechanism and does not resume E1/E2.
+
+The current v0.59 floor distinguishes three responsibilities in PROV-1,
+PROV-6 and BLK-4: store identity, store-dependent confinement, and which provider
+is needed for release. A store brand is encoded using a region, whereas a
+temporary loan region expresses a different relation. Branded Heap is explicit;
+legacy `box<T>`/`buffer<T>` still use an ambient heap. Arena is a frame-backed
+bump extent and does not already provide arbitrary individual reclamation.
+The existing IO design likewise uses ordinary owners, explicit close and
+provider operands; its detailed interface is outside this round.
+
+```text
+// Assume acquisition succeeded; operations below are semantic questions,
+// not claims that these APIs or a chosen type syntax already exist.
+a = make_store()
+b = make_store()
+block = allocate_from(a, value)
+release_to(b, move(block))       // must establish whether b is its right provider
+
+arena = make_extent()
+item = allocate_from(arena, value)
+holder = Holder { item: move(item) } // owning field, no stored Ref
+end_extent(arena)
+read_owned_payload(holder.item) // must reject end or this access
+```
+
+These relationships survive the stored-reference prohibition: an owning value
+can depend on provider backing or require a matching provider for destruction.
+An erased association is not a stored borrow, does not authorize access by
+itself, and is not a runtime address or an automatically fresh/disjoint name.
+How to form, preserve and discharge it remains to be selected. Hiding an
+ordinary persistent non-owning Ref inside a renamed Block is not a solution.
+
+Effect paths describe accesses, including shared management state. Distinct
+payloads may be separate while their release operations share a metadata write.
+Ending/resetting an extent also affects its child storage. Conflicting effects
+alone deny overlap of ordered calls; they do not prove a later sequential child
+access valid after its provider ends. Current-state/dependency evidence must
+handle that case. Define which provider state an operation actually touches
+instead of treating every metadata update as writing every live payload.
+
+The next discussion should define what relationship a provider-created owning
+value carries, how a matching provider is supplied, and which evidence prevents
+backing from ending too soon. Lifetime notation, runtime provider pointers,
+linear tokens and resource families are alternatives to compare, not decisions
+supplied by this note.
 
 ### Boundaries to settle before freezing x1
 
@@ -418,12 +483,10 @@ the caller merely to narrow an overly broad declared footprint.
    storable wrapper exceptions. Captures must not reopen aggregate storage.
    Preserve the current direct range-helper comparison; local branch/loop
    references were not restricted to one statement.
-2. Decide the proposed root-only reference-formal spelling and define its exact
-   granularity before evaluating it. Fix effect projection for owner payloads,
+2. Retain member effect paths and fix their projection for owner payloads,
    nested fields, dynamic ranges, argument evaluation, release and shared
-   provider metadata. Whole-root effects may conservatively cover untouched
-   parts; specify how the existing exact-row check operates at that chosen
-   granularity rather than silently changing it to arbitrary upper bounds.
+   provider metadata. Define exact-row checking at the chosen path granularity
+   rather than silently changing it to arbitrary upper bounds.
    A declaration must be verified, and no plain reference grants ambient
    authority. Same-formal and cross-formal access must remain distinguishable.
 3. Fix which storage survives owner moves/take/replacement, which references
@@ -431,8 +494,9 @@ the caller merely to narrow an overly broad declared footprint.
    or array element; it is not necessarily a named local binding.
 
 ID reuse, resource families, container proofs, partial cleanup, providers and
-lowering remain visible gaps for the next matrix; this summary selects no new
-mechanism for them. E1/E2 must not fill those gaps by default.
+lowering remain visible gaps. The provider-origin discussion above is now
+explicitly reopened; no new mechanism has been selected. E1/E2 must not fill
+those gaps by default.
 
 Prepare the revised vector as explicit deltas to all 24 x0 axes, including
 dependencies on axes not directly changed. Begin the next full upper triangle
