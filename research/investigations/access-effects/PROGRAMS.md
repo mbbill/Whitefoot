@@ -116,6 +116,16 @@ where applicable. Unchanged derivations are linked, not copied into every round.
 Existing P1-P19 and CASES.md provide useful source witnesses, but their original
 syntax or implementation-specific expectations do not override these task goals.
 
+The next-candidate discussion explicitly distinguishes rule consistency from
+task coverage. A correct rejection of stored-reference syntax is not successful
+implementation of a linked structure. Preserve the same task and compare an
+owning-edge, index or offset rewrite, including added copies, lookups, identity
+checks, retained memory and lost overlap. Awkward source alone is not a runtime
+performance defect. Large-aggregate ownership round trips have no assumed
+zero-copy ABI; retain direct temporary call references when testing current
+range-helper capability. See the decision status and open boundaries in
+[DESIGN.md](DESIGN.md#next-candidate-preparation-temporary-references-and-effect-derived-calls).
+
 ## P1 Container split with a runtime index
 
 ```text

@@ -1,12 +1,17 @@
 # Target packages: proposed x0 extension E1
 
+Status after the owner's process correction: parked, unselected mechanism
+draft. The agent explored it without the intervening candidate-choice discussion.
+Keep its cases as evidence; do not use its rules as x0 or next-candidate premises.
+Current preparation is in [DESIGN.md](DESIGN.md#next-candidate-preparation-temporary-references-and-effect-derived-calls).
+
 This note proposes a small research extension to the frozen x0 rule sheet in
 [MATRIX-X0.md](MATRIX-X0.md). It is not an x0 amendment, an official language rule, or a
 claim that general existentials, containers, or resource predicates are
 closed. E1 only lets finite fixed-object programs hide, copy, open, return, and
 repack one captured locator target. R1-R16 otherwise remain unchanged.
 
-## Alternatives and criterion fixed before selection
+## Alternatives considered in this draft
 
 The extension must recover a source snapshot's target correlation across copy
 and field rebinding; reject stale `Live`/`Full` facts and duplicate disposal
@@ -25,8 +30,8 @@ disjoint; and erase every proof-only component. It should discharge concrete
    context. Copy preserves the image; open reveals it under a scoped name.
    `Live`, layout, `Full`, duties, and separation remain operation-time facts.
 
-E1 chooses alternative 3. It adds a value-to-target relation, not a general
-resource logic.
+This unselected draft assumes alternative 3. It adds a value-to-target relation,
+not a general resource logic.
 
 ## Forms and static meaning
 

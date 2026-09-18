@@ -1,5 +1,10 @@
 # Incremental ownership design cases
 
+For the latest owner discussion, see
+[next-candidate preparation](DESIGN.md#next-candidate-preparation-temporary-references-and-effect-derived-calls).
+The local cases below retain their stated premises; they are not a frozen x1
+rule sheet or evidence that the new whole-language combination has passed.
+
 These cases preserve the local ownership discussion through branch joins,
 conditional cleanup, and fixed-object loops with early exits, recorded on
 2026-09-15 and 2026-09-16, with source-form and decomposition notes added on

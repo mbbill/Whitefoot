@@ -14,10 +14,12 @@ investigation replaces its analysis. There is no implementation work queue here.
 
 ## Finding and scope
 
-The [whole-language proposal](DESIGN.md) now gives two concrete alternatives:
-current-state access checking, and validity loans with mutation governed by
-effects. It recommends the first for further development while retaining the
-second as a substantive alternative. A
+The [whole-language proposal](DESIGN.md) records the frozen x0 matrix and the
+owner's latest preparation for temporary references and effect-derived call
+restrictions. The second pass has not started; E1/E2 are parked, unselected
+drafts. The current-state access and validity-loan alternatives developed below
+are earlier research hypotheses, not current authorization to retain arbitrary
+stored references. A
 [bounded executable model](../../experiments/access-state/RESULTS.md) exercises
 the first-order core, including reused physical slots and fault-injected
 counterexamples. Neither a language decision nor a complete soundness result
@@ -39,7 +41,7 @@ of the complete WF combination: movable owned aggregates, arbitrary stored
 associations, explicit reuse, checked partial operations, and proof-derived
 parallelism with specification-fixed, non-exponential checking.
 
-The most promising hypothesis to test is **aliasable references with explicit
+The initial hypothesis tested was **aliasable references with explicit
 association information, access effects, and resource-state contracts**.
 Associations describe targets; effects describe accesses; resource contracts
 describe which operations preserve or consume storage validity and ownership.

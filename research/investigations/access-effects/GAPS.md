@@ -197,42 +197,22 @@ the program's intended result is modular.
   and witness-precision issues, not grounds for silently changing the frozen
   matrix.
 
-## Highest-value bounded refinement
+## Next discussion, not an automatic repair sequence
 
-After the selected hidden-package experiment, test one **range-indexed
-resource-family certificate fragment**, with
-only four operations: create a family from a proved full owned range, project
-one bounded member, return that member with its exact duty, and split/join at a
-proved adjacent boundary. Give each step fixed syntactic premises and structural
-checking; exclude arbitrary user predicates, hidden existential targets,
-providers, recursion, and general cleanup from this refinement.
+The owner required a discussion between the frozen first pass and any revised
+candidate. [E1](TARGET-PACKAGES.md) and [E2](RANGE-FAMILIES.md) are therefore
+parked, unselected drafts, not closure of E or F and not the default next work.
+Their local examples remain evidence for comparing mechanisms.
 
-This is the preferred next substantial dependency if the priority is to test
-all three evaluation dimensions together rather than to isolate one semantic
-boundary. It tests more than cell count.
-It can render a growable resource buffer's initialized/owned prefix, justify
-sequential same-index take/put or consume in a loop, and carry adjacent shards
-to an already admitted R15 view-helper body. The family rule does not itself
-extend R15 to transfer, cleanup, or arbitrary callback bodies.
-That directly probes safety (exactly one duty per member), sequential
-expressiveness (dynamic resource containers), and current parallel performance
-(range separation and admitted element maps). It also exposes whether proof
-size and checker work scale with symbolic ranges rather than runtime length.
-Predicate abstraction, hidden graph edges, and provider dependencies remain
-separate later refinements, so a favorable result cannot conceal their costs.
+[Current preparation](DESIGN.md#next-candidate-preparation-temporary-references-and-effect-derived-calls)
+records the proposed restriction of non-owning references to locals and call
+inputs, with effect-derived cross-formal compatibility. This changes the design
+choices under discussion, not the x0 classifications above. Only the first
+broad problem area has been discussed in detail; the remaining gaps have not
+been resolved by that restriction.
 
-The E1 hidden-package local refinement is selected for the current round. It
-has the smaller independent missing-rule footprint and can isolate package
-snapshot, invalidation, and call-boundary semantics before predicate, family,
-provider, or lowering rules are supplied. That selection does not resolve F or
-make the range-family experiment lower value for the next substantial step.
-
-The acceptance discriminator should be one concrete resource-buffer program:
-initialize `0..n`, split at runtime `k`, independently process the adjacent
-ranges through an existing admitted view helper/body, join them, remove one
-element sequentially by duty
-transfer, restore or explicitly clean every remaining member, and end the
-backing allocation. Reject an out-of-bounds projection, double projection of
-one live duty, overlapping split, lost member at join, and parallel bodies with
-shared captured writes. Compare its sequential operations and retained R15
-permission with the current floor before broadening the certificate language.
+If stored-reference syntax is prohibited, retain the engineering task that
+motivated each case and examine its owner/index/offset rewrite and cost. Removing
+an E witness from the accepted syntax does not demonstrate that graphs,
+registries or linked structures remain expressible at acceptable performance.
+Dynamic owned resource families still need a rule even without stored locators.

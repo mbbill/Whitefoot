@@ -226,14 +226,18 @@ and local navigation. They do not prove the verdicts. Remaining rule gaps stay
 U; ordinary unsafe boundary variants stay rejected examples, not X. No current
 specification or compiler rule is changed by this record.
 
-## Follow-up refinement
+## Follow-up discussion and parked drafts
 
 The [gap map](GAPS.md) covers all 67 U and 12 C cells, with code discriminators,
 secondary dependencies and witness-precision corrections to investigate. The
-[E1 target-package note](TARGET-PACKAGES.md) is the next bounded rule experiment;
-it leaves this frozen rule sheet, cell verdicts and totals unchanged. Its local
-results must not be read as a completed new 300-cell matrix or a capability-floor
-audit.
+[E1 target-package note](TARGET-PACKAGES.md) and
+[E2 range-family note](RANGE-FAMILIES.md) are parked, unselected drafts. They
+leave this frozen rule sheet, cell verdicts and totals unchanged. Their local
+results are not a completed successor matrix or capability-floor audit. The
+owner's subsequent discussion is recorded in
+[next-candidate preparation](DESIGN.md#next-candidate-preparation-temporary-references-and-effect-derived-calls).
+The next pass has not started; do not patch x0 or import E1/E2 rules while
+preparing it.
 
 ## Complete upper triangle
 

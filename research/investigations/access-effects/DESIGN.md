@@ -62,14 +62,21 @@ it does not require every conceivable addressing form or general threads.
 floor; the broader coverage audit remains unfinished.
 
 Each iteration starts with explicit choices for this complete critical scope.
-Derive focused cases and their cross-feature interactions, repairing the
-combination until its core rules and interfaces can be implemented without
-inventing missing mechanisms. Then summarize the resulting combination's most
-important defects against the three criteria. Change one or several choices in
-response to those defects, include necessary dependent changes, and repeat the
-derivation to a coherent combination. A promising local fragment is not a
-completed iteration. Conversely, internal coherence does not establish adequate
-expressiveness or acceptable performance.
+Freeze them while deriving the interaction matrix. Record an absent rule as a
+gap; do not repair the candidate during that pass. Correct a mistaken derivation
+without changing its premises, and distinguish that correction from a new
+design choice. At the end of the pass, discuss the defects and alternatives with
+the owner. Only after that discussion selects a revised combination may the next
+pass begin. The owner explicitly corrected the previous agent-led E1/E2 repair
+sequence: a missing rule is not authorization to select a replacement mechanism.
+A promising local fragment is not a completed iteration. Internal coherence
+also does not establish adequate expressiveness or acceptable performance.
+
+Keep engineering witnesses when a capability is prohibited. Record separately
+whether the rules correctly reject the old source form and whether the same
+task has a safe implementation at acceptable cost. A forbidden construct must
+not disappear from coverage and become a vacuous success. Retain the broader
+PROGRAMS tasks to catch interactions involving more than two axes.
 
 An iteration record contains only: the complete compact choice/coverage table;
 changed rules and affected combinations; small positive/negative examples with
@@ -251,35 +258,170 @@ not x0 validation.
 The full task/capability table remains in scope, including copy/affine/linear,
 stored relations, generic calls, dynamic storage and parallel computation.
 
-## Current refinement: E1 target packages
+## Next-candidate preparation: temporary references and effect-derived calls
 
-The [gap map](GAPS.md) assigns every first-round U/C cell to one primary
-missing rule or known restriction. Its witness-precision follow-ups qualify the
-frozen results; they do not silently rewrite them. The original matrix is still
-the x0 baseline.
+Status: owner discussion recorded on 2026-09-17; not a frozen x1 rule sheet and
+not a language amendment. No second matrix pass has started. The seven broad
+first-round problem areas have not all been discussed. This preparation grows
+out of the first area, stored target relationships, rather than silently closing
+the others. The frozen x0 still has 221 D, 12 C, 67 U and 0 X cells.
 
-The next bounded experiment is [E1 target packages](TARGET-PACKAGES.md): hide a
-captured target in an ordinary stored value while keeping current validity and
-noncopyable duties separate from copyable target information. Select this seam
-first because snapshot identity, invalidation and call-boundary effects can be
-challenged without also supplying a general container or quantified-resource
-calculus. Before judging it, require copied packages not to resurrect state or
-duplicate duties, changed fields not to retarget old loads, exact signature
-projection to work for unknown targets, and both safe reads and conflict denial
-to survive across calls without runtime proof metadata.
+### Discussion conclusions and candidate direction
 
-Range-indexed resource families are the other concrete next experiment in the
-gap map. They exercise dynamic resource containers and existing parallel range
-helpers more directly, but need additional projection/split/join and exact-duty
-rules. Choosing E1 for isolation does not establish its greater overall value.
-The complete candidate retains all 24 axes, including current parallel
-computation; the narrower experiment is not a reduced language scope.
+- Static checking describes a sound overapproximation of possible joint states,
+  with retained correlations. It need not recover one concrete target after a
+  runtime choice. Storing references can make such relationships harder to
+  represent, update and expose in contracts. Neither unavoidable exponential
+  cost for every representation nor a claimed percentage reduction has been
+  established.
+- The owner now favors keeping non-owning references out of structs and arrays,
+  and not returning them from functions. Keep temporary local references and
+  direct call inputs so that library and parallel range operations need not
+  transfer or copy their payloads merely to access them. Return indices or
+  offsets where a caller can reconstruct a reference with the necessary proof;
+  this is a possible rewrite, not a claim that every reference result has a
+  free equivalent.
+- Use one reference form without a `uniq`/shared access-mode distinction.
+  Function contracts identify actual read/write targets. Within one call,
+  overlapping read/read demands from different formals are compatible;
+  read/write or write/write demands require proved separation. This is the
+  owner's chosen direction, replacing x0 R11's general admission of aliased
+  formals whose ordered body happened to be safe.
+- Operations through one formal may both read and write; the callee checks
+  their order and state transitions. A row records exhibited possible effects,
+  including conditional operations, not only the effects taken on one runtime
+  execution. This does not choose arbitrary padded effect upper bounds in place
+  of WF's existing exact-row discipline.
+- Distinguish within-call parameter compatibility from overlap of two calls.
+  Sequential calls may access the same target in write/read order. Their
+  conflicting complete effects deny concurrent execution, not sequential source.
+- A reference supplies no disposal duty. Retain current-state, initialization,
+  layout, bounds and resource checks. The candidate aims to require no explicit
+  borrow-lifetime parameters; removing surface annotations does not remove those
+  checks. No new blanket ban on release through a reference has been
+  selected when the corresponding duty is otherwise available.
+- A Box is an ordinary owning descriptor plus a relation to separately managed
+  storage and its nonduplicable disposal obligation. The owner proposed treating
+  it as linear. The precise explicit/automatic discharge policy remains to be
+  reconciled with the existing copy/affine/linear choices before a freeze.
+- The earlier proposal that every Box move invalidates all payload references
+  was reopened: the latest direction permits a temporary reference to continue
+  naming unmoved backing after the descriptor moves, subject to current validity.
+  Nested owner transfers still need a precise rule. Do not record either a
+  universal move-invalidates rule or a complete move-preservation theorem.
+- For this comparison, awkward source is not a failure by itself. Under the
+  safety constraint, charge extra copying, allocation, lookup, checking, retained
+  memory and lost parallelism. Expressibility and practical proof/checking cost
+  still constrain whether a large real program can be implemented.
 
-E1 remains a proposed rule refinement, not an adopted specification or a
-self-consistent successor candidate. Its rule choices, code challenges and local
-rerun results live in one maintained note. Do not count an old U as closed merely
-because one package operation now has a rule; its predicate, family, provider
-and lowering dependencies must still be discharged.
+### Code anchors for the next rule sheet
+
+These are discussion expectations and open boundaries, not a new derivation
+batch. `Ref`, `Box`, effects and transfer forms remain explanatory notation.
+
+```text
+struct Saved { p: Ref<Int> }  // proposed rejection: stored non-owning reference
+refs: Array<Ref<Int>>         // proposed rejection for the same reason
+fn choose(c, p: Ref<Int>, q: Ref<Int>) -> Ref<Int> // proposed result restriction
+
+fn inspect(p: Ref<Int>) reads(p) { return read(p) }
+fn set_one(p: Ref<Int>) writes(p) { write(p, 1) }
+inspect(&a); inspect(&a)      // compatible shared reads
+set_one(&a); inspect(&a)      // valid order; conflicting calls cannot overlap
+```
+
+```text
+fn update_then_read(p, q) writes(p), reads(q) {
+    write(p, 10)
+    return read(q)
+}
+update_then_read(&a, &a)      // reject under cross-formal conflict rule
+
+fn update_one(p) writes(p), reads(p) {
+    write(p, 10)
+    return read(p)
+}                           // same-formal ordered access is not that conflict
+
+fn process(p: Ref<Int>, owner: Box<Int>)
+    reads(target(p)), writes(payload(owner))
+    consumes(owner), ends(payload(owner))
+{
+    release(owner)
+    read(p)
+}
+process(&*a, move(a))        // same target: reject at caller compatibility check
+```
+
+`consumes`/`ends` above name resource/post-state information, not a decision to
+add new effect-row categories. The write footprint must cover ended storage,
+not just the descriptor. A contract's entry facts do not excuse invalid local
+operations inside its body.
+
+```text
+a = box(10)
+p = &*a
+b = move(a)
+read(p)                     // latest direction: preserve unmoved backing
+inspect(p)                  // callee binding ends on return
+read(p)                     // caller's p did not expire merely on call return
+release(b)
+read(p)                     // reject after backing ends
+```
+
+```text
+struct Node { value: Int, next: Option<Box<Node>> }
+struct Link { next: NodeId }
+struct Token { offset: Index, length: Index }
+```
+
+Owning recursion is not prohibited by the non-owning-reference restriction.
+NodeId/offset forms do not establish bounds, stable identity or permission by
+their spelling. Deletion, reuse and association with the correct owner remain
+proof obligations or explicit, costed program behavior.
+
+### Boundaries to settle before freezing x1
+
+1. Specify reference-containing wrappers: enums, tuples, generic instantiations,
+   views/slices and captures. Define direct input/reborrow and forwarding rules
+   without creating a wrapper loophole or silently prohibiting a current range
+   helper. Local branch/loop references were not restricted to one statement.
+2. Fix effect projection and compatibility for owner payloads, nested fields,
+   dynamic ranges, argument evaluation, release and shared provider metadata.
+   A declaration must be verified, and no plain reference grants ambient
+   authority. Same-formal and cross-formal access must remain distinguishable.
+3. Fix which storage survives owner moves/take/replacement, which references
+   lose access, and the Box discharge policy. The owner may itself be a field
+   or array element; it is not necessarily a named local binding.
+
+ID reuse, resource families, container proofs, partial cleanup, providers and
+lowering remain visible gaps for the next matrix; this summary selects no new
+mechanism for them. E1/E2 must not fill those gaps by default.
+
+Prepare the revised vector as explicit deltas to all 24 x0 axes, including
+dependencies on axes not directly changed. Begin the next full upper triangle
+only after the rule sheet is frozen through owner discussion. Use GPT-5.6 Sol
+for the derivations, retain positive/negative code and task outcomes, and stop
+at gaps rather than modifying rules. Current parallel capability and the
+PROGRAMS engineering tasks remain required comparisons.
+
+The discriminators are: owning-tree traversal without payload copies; token
+ranges over one or many backings; cyclic graph deletion/reuse; shared indexes;
+resource-container growth/removal; adjacent-range helper parallelism; and large
+owned aggregates crossing function boundaries. Ordinary move-in/move-out has
+no general zero-copy guarantee. A possible in-place ABI is an implementation
+alternative to test, not a selected replacement for temporary call references.
+
+## Parked drafts: E1 target packages and E2 range families
+
+The [gap map](GAPS.md) preserves the first-round U/C classifications and
+witness-precision follow-ups. [E1](TARGET-PACKAGES.md) and
+[E2](RANGE-FAMILIES.md) preserve bounded exploratory mechanisms and their code
+for comparison. The agent pursued them before the required owner discussion;
+they are not selected repairs or a successor candidate. E1's stored-reference
+packaging is not a premise of the new temporary-reference direction. Dynamic
+owned resource families remain a problem, but E2's interval ledger has not been
+selected to solve it. Neither draft changes x0 verdicts or supplies a complete
+capability-floor audit, runtime measurement or soundness proof.
 
 ## Earlier working candidates: A and B
 
