@@ -1,6 +1,6 @@
-# Candidate x1: frozen rule set (revision 4, 2026-09-18)
+# Candidate x1: frozen rule set (revision 5, 2026-09-18)
 
-Status: every rule below was confirmed by the owner in the 2026-09-17/18 sessions. Revision 4 adopts the owner's spelling decision: measures and window parts are members of the storage (`r.len`, `r.next`), measures being read-only pseudo-fields that only built-in operations change; this renames the existing `len_of` family mechanically. Revision 3 folded in the round-one rulings (payload returned on failed allocation, consuming moves out of a field, the atomic update in full, `&[T]`, generic `swap`, four bulk window operations, the payload path step) and removed the `par` notation. Nothing under "Proposed additions" remains open. The mechanisms under "Not in this candidate" must not be assumed by anyone deriving under it.
+Status: every rule below was confirmed by the owner in the 2026-09-17/18 sessions. Revision 5 applies the wording fixes from the targeted second round (`REVIEW-X1-round2.md`): window parts are row vocabulary only, range references die with their bound, the state in which adjacent statements are compared, `grow` returns a Result, runtime-capacity constructors are payload-free primitives, the atomic update's restriction is on writes to prefixes only, `writes` covers a path and everything below it. Revision 4 adopted member spelling for measures and named window parts; revision 3 folded in the round-one rulings. The list under "Proposed additions" holds the items awaiting the owner. The mechanisms under "Not in this candidate" must not be assumed by anyone deriving under it.
 
 Evaluation criteria, in the owner's words: safety through types and proofs at the current WF level (no runtime traps, no unsafe), runtime performance for single-thread and parallel computation, and enough expressiveness to build compilers, browsers, and kernels. Code is written by AI, so an ugly but equal-performance form is not a defect. A rejection counts as expressiveness loss only when no equal-performance rewrite exists.
 
@@ -121,13 +121,13 @@ Construction:
 
 ```text
 Array::new(v)                        // T Copy: every slot holds v; or a literal [a, b, c]
-Box::new(Array::filled(n, v))?       // runtime length, T Copy, every slot holds v; zero-filled maps to calloc
+Box::new_array_filled(n, v)?         // runtime length, T Copy, every slot holds v; Result<Box<Array<T>>, Oom>, no payload; zero-filled maps to calloc
 Slots::new<T, N>()                   // empty window
 Box::new(Slots::new<T>(cap))?        // empty window of runtime capacity
 Slots::from_array(move a)            // a full window; Slots::into_array(move r) requires r.len == N
 ```
 
-Window parts. Besides its slots, a window has four named parts that paths and effect rows may name, all interpreted at call entry: `r.next` (the append slot, at index `r.len`), `r.last` (the last filled slot, at index `r.len - 1`), `r.filled` (all slots below `r.len`), and `r.free` (all slots from `r.len` up). Overlap follows from the definitions: a live `r[i]` (which has `i < r.len`) never overlaps `r.next` or `r.free`, overlaps `r.last` unless `i != r.len - 1` is proved, and always overlaps `r.filled`. The measure `r.len` is itself a write target. This vocabulary is ordinary: the rows below use nothing a user function cannot write.
+Window parts. Besides its slots, a window has four named parts that paths and effect rows may name, all interpreted at call entry: `r.next` (the append slot, at index `r.len`), `r.last` (the last filled slot, at index `r.len - 1`), `r.filled` (all slots below `r.len`), and `r.free` (all slots from `r.len` up). Overlap follows from the definitions: a live `r[i]` (which has `i < r.len`) never overlaps `r.next` or `r.free`, overlaps `r.last` unless `i != r.len - 1` is proved, and always overlaps `r.filled`. The measure `r.len` is itself a write target. Parts are vocabulary for effect rows and the overlap judgment only: no program forms a reference to a part, reads it, or writes it; the append slot is written only by `place_back` and `insert_at`. This vocabulary is ordinary: the rows below use nothing a user function cannot write.
 
 Window operations, shared by `Slots` and `Ring` (`r` stands for the storage, e.g. `*b`):
 
@@ -142,8 +142,10 @@ remove_at(&r, k) -> own T  writes(r.filled), writes(r.len)                      
     contract { requires k < r.len; ensures r.len == entry(r).len - 1; }
 append(&dst, &src)         writes(dst.free), writes(dst.len), writes(src.filled), writes(src.len)   // one memcpy
     contract { requires dst.room >= src.len; ensures dst.len == entry(dst).len + entry(src).len, src.len == 0; }
-grow(&b, cap)              writes(*b)                                            // Box<Slots<T>> only; may reallocate in place
-    contract { requires cap >= (*b).cap; ensures (*b).cap == cap, (*b).len == entry(*b).len; }
+grow(&b, cap) -> Result<(), Oom>   writes(*b)                            // Box<Slots<T>> only; may reallocate in place
+    contract { requires cap >= (*b).cap;
+               ensures when Ok:  (*b).cap == cap, (*b).len == entry(*b).len;
+               ensures when Err: (*b).cap == entry(*b).cap, (*b).len == entry(*b).len; }
 set(&r[k], x)              writes(r[k])      // old value: affine released, linear rejected
 replace(&r[k], x) -> own T writes(r[k])      // the old value is returned
 place_front(&r, x)         writes(r)         // Ring only; every logical index shifts, so all references into r die
@@ -158,7 +160,7 @@ p = &(*g.nodes)[i]
 id = add_node(&g, node)                       // p survives: (*g.nodes)[i] with i < len never overlaps .next
 ```
 
-A reference `p = &r[i]` into a window is formed under the fact `i < r.len` and stays valid while that fact holds: `place_back`'s `ensures` carries it across the call; `take_back`'s does not, so p dies at a `take_back`. Ring positions are logical indices; the wrap is the storage's business.
+A reference into a window is formed under a bound and stays valid while that bound holds: `p = &r[i]` under `i < r.len`, `part = &r[lo..hi]` under `hi <= r.len`. `place_back`'s `ensures` carries the bound across the call; `take_back`'s, `remove_at`'s, and `truncate`'s do not, so such references die there. `insert_at` and `remove_at` write `r.filled`, a content write: a surviving slot reference names its slot, whose occupant may have changed, exactly as a stale index does (Rule 16); a writer who means the element re-forms the reference. Ring positions are logical indices; the wrap is the storage's business.
 
 Two operations apply to any owned place, not only to window slots:
 
@@ -169,8 +171,9 @@ swap(&a.left, &b.right)
 
 place = f(place, args...)  writes(place)            // atomic in-place update: the old value enters f by value,
                                                     // f's result is committed, no program point lies between
-node.left = insert(node.left, k)                    // f is total and returns the place's type; f's row must not
-c.f = reopen(c.f)                                   // overlap any prefix of place; failure is an enum in the place
+node.left = insert(node.left, k)                    // f is total and returns the place's type; f's row must not write,
+c.f = reopen(c.f)                                   // move out of, or free any prefix of place (reading anything, and writing
+n.left = fold(n.left, &n.right)                     // disjoint storage, is fine); failure is an enum in the place
 ```
 
 How a value leaves storage. There is no `take` and no hole. A move out of a field or out of Box content consumes the whole owner: the owner ceases to exist, its other affine parts are released, and a remaining linear part rejects the move (take it in the same destructuring). A move out of a window slot or an array element is rejected; use the operations above.
@@ -184,7 +187,7 @@ x = move r[k]                       // rejected: use take_back, remove_at, repla
 
 Release: at scope exit the compiler releases the slots inside the window recursively and frees the block; `Array` releases every slot. No operation releases a linear element: a storage whose element type is linear is itself linear (Rule 8) and the program must take every element out and consume it. Assigning over any owned place releases the old value if it is affine and is rejected if it is linear.
 
-Library code, all zero-cost compositions of the above: `swap_remove` (swap with the last slot, then `take_back`), `truncate`, `clear`, `Vector<T>` (a `Box<Slots<T>>` plus a `push` that calls `grow` when `room` is zero), `Arena<T>` (`place_back` returning the index as allocation, `truncate(0)` as reset), `Pool<T>` (a `Vector` plus a free list as data), `Deque<T>` (`Box<Ring<T>>` plus growth), open-addressing tables (`Box<Array<u8>>` of tags plus `Box<Array<Entry>>` or `Box<Array<Option<Entry>>>` of slots, all fully initialized), `String` (`Box<Slots<u8>>` plus growth).
+Library code, all zero-cost compositions of the above: `swap_remove` (swap with the last slot, then `take_back`), `truncate`, `clear`, `Vector<T>` (a `Box<Slots<T>>` plus a `push` that calls `grow` when `room` is zero), `Arena<T>` (`place_back` returning the index as allocation, `truncate(0)` as reset), `Pool<T>` (a `Vector` plus a free list as data), `Deque<T>` (`Box<Ring<T>>` plus growth by a fresh ring and one copy per doubling, `grow` being defined on `Box<Slots<T>>` only), open-addressing tables (`Box<Array<u8>>` of tags plus `Box<Array<Entry>>` or `Box<Array<Option<Entry>>>` of slots, all fully initialized), `String` (`Box<Slots<u8>>` plus growth).
 
 ## Rule 7. What can be indexed, and bounds are proved
 
@@ -203,7 +206,7 @@ if i < r.len { use(&r[i]) }         // the test establishes the fact; one compar
 
 ## Rule 8. Value classes: copy, affine, linear; no destructors
 
-A type is copy, affine, or linear. Copy values may be duplicated. Affine values are consumed at most once; at scope exit the compiler releases their memory recursively (Box, Slots, Ring, Array) and runs no user code. Linear values must be consumed by an explicit operation on every exit path; the compiler never releases them. Linearity is declared on external-resource types (the existing `linear` modifier) and propagates through every aggregate of Rule 1: a struct, enum, tuple, Array, Slots, Ring, or Box containing a linear part is linear.
+A type is copy, affine, or linear. Copy values may be duplicated. Affine values are consumed at most once; at scope exit the compiler releases their memory recursively (Box, Slots, Ring, Array) and runs no user code. Linear values must be consumed by an explicit operation on every exit path; the compiler never releases a linear value. A container emptied of its linear elements is an ordinary affine value and is released normally. Linearity is declared on external-resource types (the existing `linear` modifier) and propagates through every aggregate of Rule 1: a struct, enum, tuple, Array, Slots, Ring, or Box containing a linear part is linear.
 
 ```text
 linear type File;   fn close(f: own File)
@@ -215,7 +218,7 @@ Slots<File, 4>                       // linear: every element must be taken out 
 
 ## Rule 9. Effects are declared only on reference parameters
 
-An effect row lists `reads(path)` and `writes(path)` where each path starts at a reference parameter and may continue through fields, `*`, payload steps, and whole-index or range positions supplied as arguments. `writes` covers writing, replacing, moving out of, and freeing the storage at the path. A by-value parameter has no effect entry: the call site records the consumption (for `move`) or the read (for a copy) of the argument's place. Signatures never contain index expressions; an index enters an effect only through an argument, evaluated once at the call. The rows of the built-in operations of Rule 6 use only this vocabulary plus the window parts of Rule 6, which any user function may use too.
+An effect row lists `reads(path)` and `writes(path)` where each path starts at a reference parameter and may continue through fields, `*`, payload steps, and whole-index or range positions supplied as arguments. `writes` covers writing, replacing, moving out of, and freeing the storage at the path and everything below it. A by-value parameter has no effect entry: the call site records the consumption (for `move`) or the read (for a copy) of the argument's place. Signatures never contain index expressions; an index enters an effect only through an argument, evaluated once at the call. The rows of the built-in operations of Rule 6 use only this vocabulary plus the window parts of Rule 6, which any user function may use too.
 
 ```text
 fn bump(p: &Int)  writes(p)
@@ -287,7 +290,7 @@ slots: Box<Array<Option<Entry>>>            // non-Copy payloads: Option, using 
 
 ## Rule 13. Overlapped execution
 
-The program's meaning is its sequential meaning. Two adjacent statements of one block may overlap when the first's write paths are disjoint from the second's read and write paths and vice versa, using the same path-overlap and index/range-disjointness judgment as Rule 10; read/read overlap is allowed; a by-value consumption counts as a write of the argument's place. Allocation and release are not effects (Rule 14). The existing counted-loop forms (per-element maps, adjacent ranges passed to a helper, admitted reductions) keep their permissions, with the ranges written as range references. Because the meaning is sequential, results, errors, early exits, and linear obligations are exactly those of the sequential program; nothing new is defined for the overlapped case.
+The program's meaning is its sequential meaning. Two adjacent statements of one block may overlap when the first's write paths are disjoint from the second's read and write paths and vice versa, using the same path-overlap and index/range-disjointness judgment as Rule 10; read/read overlap is allowed; a by-value consumption counts as a write of the argument's place. Allocation and release are not effects (Rule 14). The existing counted-loop forms (per-element maps, adjacent ranges passed to a helper, admitted reductions) keep their permissions, with the ranges written as range references. The paths of both statements are interpreted in the state before the first statement; the first statement's `ensures` maps the second's indices into that state, so an index that is live only after an append is not distinct from the append slot. Permission composes: any run of adjacent statements that pairwise may overlap may all overlap. Because the meaning is sequential, results, errors, early exits, and linear obligations are exactly those of the sequential program; nothing new is defined for the overlapped case.
 
 ```text
 s1 = stats(&v); s2 = stats(&v)                                  // read/read: may overlap
@@ -328,7 +331,11 @@ truncate(&a.buf, 0)                        // reset: elements released; later re
 
 ## Proposed additions awaiting owner ruling
 
-None. The window-parts vocabulary was adopted into Rule 6 in revision 4.
+1. `split_off(&src, k, &dst)`: moves `src[k..len)` onto `dst`'s back in one memmove, `src.len` becoming `k`. Without it a B-tree node split or a suffix split costs a per-element loop, about twice the C++ split path.
+2. Function-argument refinement: a supplied function may carry a smaller row, a weaker `requires`, or a stronger `ensures` than the parameter declares (or must match exactly). Zero runtime cost either way.
+3. Contract facts beyond affine comparisons: a `requires` stating a refinement fact about a parameter (`p is Some`), and an `ensures` naming a single indexed path (`(*p.slots)[h.idx].gen == h.gen`). Fact-language questions; the second decides whether a guarded pool access pays one load, compare, and branch per call.
+4. Implementation requirements the no-trap promise needs, recorded for the implementation plan rather than as language rules: the compiler-derived release of an owned chain runs in bounded stack; self-recursive descent has tail calls eliminated or a stated depth budget.
+5. To verify against the existing FN rules: a function-typed parameter is instantiated per call site, so a literal argument is a direct call (the premise under which fused find-then-mutate is zero cost).
 
 ## Deferred to a future concurrency and layout round
 
