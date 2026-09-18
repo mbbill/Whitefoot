@@ -622,23 +622,35 @@ call-contract derivation. A helper that instead destroys the child must invalida
 q too. Nested transfer, conditional destruction and ordinary scope cleanup still
 need precise rules; no owner may contain a Ref merely because it is boxed.
 
-An even stronger transfer case uses only a local reference:
+A rejected self-containment call illustrates why the complete operation
+contract must precede a claimed counterexample:
 
 ```text
+fn put<T>(slot: Ref<T>, value: own T)
+    reads(value), writes(slot)
+{
+    // Transfer value into the destination under its initialization contract.
+}
+
 b = box_new(Node { next: None })
 slot = &deref(b).next
-put(slot, Some(move(b)))        // attempts to store the owner in its own descendant
+put(slot, Some(move(b)))        // reject: destination overlaps value's owned state
 ```
 
-This would make the allocation contain its own owner and duty, with no owning
-root left in b. The current cross-formal read/write rule does not by itself
-cover a value formal that only transfers ownership, and the temporary-reference
-direction does not categorically invalidate payload references on Box moves.
-Therefore neither acceptance nor rejection is already derived. A proposed
-owning-tree model must preserve well-founded containment across transfers;
-rejecting transfer into one's own descendant is one possible rule, not a selected
-repair. A more permissive model would instead owe explicit duty and exit rules.
-Do not claim that absence of stored Ref fields alone excludes ownership cycles.
+The owner challenged the earlier omission of value's access from this contract.
+Under the displayed row, reading the complete owning value projects to its
+owned contents, including the Box allocation containing slot. The existing
+cross-formal read/write separation check therefore rejects the call. Projecting
+the source read only to the local Option/Box descriptor would not establish
+this overlap and is not the interpretation used here.
+
+Withdraw the claim that this example establishes a need for a separate
+ownership-cycle mechanism. That claim silently used a transfer-only, access-free
+source formal instead of the displayed put contract. Retain this as a negative
+call-compatibility case. The successor rule sheet must explicitly specify
+source-value transfer effects and whole-owner projection; the frozen x0 and
+the active specification's old move-effect rules have not been amended by
+this discussion.
 
 Vector can share the heap-allocation ownership mechanism without boxing each
 element or separately allocating a boxed descriptor. The target is one contiguous
