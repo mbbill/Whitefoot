@@ -1,5 +1,3 @@
-Node: language/surface-form/in-place-update-form
-
 Decision: Replacing the value of an owned place by a function of that same old value is written as an ordinary assignment whose right-hand side is a call taking that place as a by-value argument, and the language gives the operation no name of its own, because that byte sequence has no competing meaning, since handing the place to a function by value in any other position would consume the whole owner the place sits in, so one spelling says exactly what happens, the old value enters the function and the function's result becomes the place's new value, instead of a named built-in update or modify operation taking a reference to the place together with a function argument.
 
 Rejected:

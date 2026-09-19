@@ -1,6 +1,6 @@
-# Candidate x1: frozen rule set (revision 5, 2026-09-18)
+# Candidate x1: frozen rule set (revision 6, 2026-09-19)
 
-Status: every rule below was confirmed by the owner in the 2026-09-17/18 sessions. This is a research result, not a specification or design-tree decision; adoption is a separate specification amendment and owner rulings into the design tree. Revision 5 applies the wording fixes from the targeted second round (`REVIEW-X1-round2.md`): window parts are row vocabulary only, range references die with their bound, the state in which adjacent statements are compared, `grow` returns a Result, runtime-capacity constructors are payload-free primitives, the atomic update's restriction is on writes to prefixes only, `writes` covers a path and everything below it. Revision 4 adopted member spelling for measures and named window parts; revision 3 folded in the round-one rulings. The list under "Proposed additions" holds the items awaiting the owner. The mechanisms under "Not in this candidate" must not be assumed by anyone deriving under it.
+Status: every rule below was confirmed by the owner in the 2026-09-17/18 sessions. Revision 6 records the owner's rulings of 2026-09-19: allocation never fails as a source-visible outcome (heap exhaustion terminates the program from the trusted base, and a program may declare that it uses no heap); `replace` is retired in favour of `swap`; there is no `release` operation, an affine value being released early by moving it into a block that ends; "total" for the atomic update means returning the place's type with no failure exit, not termination. This is a research result, not a specification or design-tree decision; adoption is a separate specification amendment and owner rulings into the design tree. Revision 5 applies the wording fixes from the targeted second round (`REVIEW-X1-round2.md`): window parts are row vocabulary only, range references die with their bound, the state in which adjacent statements are compared, `grow` returns a Result, runtime-capacity constructors are payload-free primitives, the atomic update's restriction is on writes to prefixes only, `writes` covers a path and everything below it. Revision 4 adopted member spelling for measures and named window parts; revision 3 folded in the round-one rulings. The list under "Proposed additions" holds the items awaiting the owner. The mechanisms under "Not in this candidate" must not be assumed by anyone deriving under it.
 
 Evaluation criteria, in the owner's words: safety through types and proofs at the current WF level (no runtime traps, no unsafe), runtime performance for single-thread and parallel computation, and enough expressiveness to build compilers, browsers, and kernels. Code is written by AI, so an ugly but equal-performance form is not a defect. A rejection counts as expressiveness loss only when no equal-performance rewrite exists.
 
@@ -71,7 +71,7 @@ c = move b             // b is a proper prefix of deref(b): p invalid, even thou
 use(p)                 // rejected; form a new reference from c
 
 p: &Int
-{ b = Box::new(...)?; p = &deref(b).value }   // b's scope ends here and b is released
+{ b = Box::new(...); p = &deref(b).value }   // b's scope ends here and b is released
 use(p)                 // rejected: p's root has gone out of scope
 ```
 
@@ -95,10 +95,10 @@ match find(&v, k) { Some(i) => { p = &v[i]; ... }  None => ... }   // caller re-
 
 The content type may be any `T`, including the three runtime-capacity shapes `Array<T>`, `Slots<T>`, and `Ring<T>` (Rule 6), which have no compile-time size and may appear only as the content of a Box: never inline in another value and never as a local variable.
 
-A fallible allocation that takes a by-value payload hands it back on failure, so a linear payload is never lost.
+Allocation never fails as a source-visible outcome: `Box::new(x)` returns the Box. Exhaustion of the heap is a failure of the trusted base that terminates the program, exactly as the current specification places it, so no allocation carries a `Result`, no payload is ever handed back, and no program point holds a value whose owner has vanished.
 
 ```text
-b = Box::new(Node { ... })?          // Result<Box<Node>, (Oom, Node)>: on Err the Node comes back
+b = Box::new(Node { ... })           // total; exhaustion terminates the program outside the language
 p = &deref(b).left                       // reference into the heap object
 c = move b                           // p invalid (Rule 3); the heap object did not move
 holder.child = move c                // a Box in a struct field: ordinary ownership
@@ -123,9 +123,9 @@ Construction:
 
 ```text
 Array::new(v)                        // T Copy: every slot holds v; or a literal [a, b, c]
-Box::new_array_filled(n, v)?         // runtime length, T Copy, every slot holds v; Result<Box<Array<T>>, Oom>, no payload; zero-filled maps to calloc
+Box::new_array_filled(n, v)          // runtime length, T Copy, every slot holds v; the size arithmetic n * size(T) carries the ordinary overflow obligation; zero-filled maps to calloc
 Slots::new<T, N>()                   // empty window
-Box::new_slots<T>(cap)?              // empty window of runtime capacity; Result<Box<Slots<T>>, Oom>, no payload; Box::new_ring likewise
+Box::new_slots<T>(cap)               // empty window of runtime capacity; Box::new_ring likewise
 Slots::from_array(move a)            // a full window; Slots::into_array(move r) requires r.len == N
 ```
 
@@ -146,12 +146,9 @@ append(&dst, &src)         writes(dst.free), writes(dst.len), writes(src.filled)
     contract { requires dst.room >= src.len; ensures dst.len == entry(dst).len + entry(src).len, src.len == 0; }
 split_off(&src, k, &dst)   writes(src.filled), writes(src.len), writes(dst.free), writes(dst.len)   // one memmove
     contract { requires k <= src.len, dst.room >= src.len - k; ensures src.len == k, dst.len == entry(dst).len + entry(src).len - k; }
-grow(&b, cap) -> Result<(), Oom>   writes(deref(b)                            // Box<Slots<T>> only; may reallocate in place
-    contract { requires cap >= deref(b).cap;
-               ensures when Ok:  deref(b).cap == cap, deref(b).len == entry(deref(b).len;
-               ensures when Err: deref(b).cap == entry(deref(b).cap, deref(b).len == entry(deref(b).len; }
+grow(&b, cap)              writes(deref(b))                                  // Box<Slots<T>> only; may reallocate in place
+    contract { requires cap >= deref(b).cap; ensures deref(b).cap == cap, deref(b).len == entry(deref(b)).len; }
 set(&r[k], x)              writes(r[k])      // old value: affine released, linear rejected
-replace(&r[k], x) -> own T writes(r[k])      // the old value is returned
 place_front(&r, x)         writes(r)         // Ring only; every logical index shifts, so all references into r die
 take_front(&r) -> own T    writes(r)         // Ring only
 ```
@@ -191,7 +188,7 @@ x = move r[k]                       // rejected: use take_back, remove_at, repla
 
 Release: at scope exit the compiler releases the slots inside the window recursively and frees the block; `Array` releases every slot. No operation releases a linear element: a storage whose element type is linear is itself linear (Rule 8) and the program must take every element out and consume it. Assigning over any owned place releases the old value if it is affine and is rejected if it is linear.
 
-Library code, all zero-cost compositions of the above: `swap_remove` (swap with the last slot, then `take_back`), `truncate`, `clear`, `Vector<T>` (a `Box<Slots<T>>` plus a `push` that calls `grow` when `room` is zero), `Arena<T>` (`place_back` returning the index as allocation, `truncate(0)` as reset), `Pool<T>` (a `Vector` plus a free list as data), `Deque<T>` (`Box<Ring<T>>` plus growth by a fresh ring and one copy per doubling, `grow` being defined on `Box<Slots<T>>` only), open-addressing tables (`Box<Array<u8>>` of tags plus `Box<Array<Entry>>` or `Box<Array<Option<Entry>>>` of slots, all fully initialized), `String` (`Box<Slots<u8>>` plus growth).
+Library code, all zero-cost compositions of the above: `replace` (swap the place with a local, return the local), `swap_remove` (swap with the last slot, then `take_back`), `truncate`, `clear`, `Vector<T>` (a `Box<Slots<T>>` plus a `push` that calls `grow` when `room` is zero), `Arena<T>` (`place_back` returning the index as allocation, `truncate(0)` as reset), `Pool<T>` (a `Vector` plus a free list as data), `Deque<T>` (`Box<Ring<T>>` plus growth by a fresh ring and one copy per doubling, `grow` being defined on `Box<Slots<T>>` only), open-addressing tables (`Box<Array<u8>>` of tags plus `Box<Array<Entry>>` or `Box<Array<Option<Entry>>>` of slots, all fully initialized), `String` (`Box<Slots<u8>>` plus growth).
 
 ## Rule 7. What can be indexed, and bounds are proved
 
@@ -210,7 +207,7 @@ if i < r.len { use(&r[i]) }         // the test establishes the fact; one compar
 
 ## Rule 8. Value classes: copy, affine, linear; no destructors
 
-A type is copy, affine, or linear. Copy values may be duplicated. Affine values are consumed at most once; at scope exit the compiler releases their memory recursively (Box, Slots, Ring, Array) and runs no user code. Linear values must be consumed by an explicit operation on every exit path; the compiler never releases a linear value. A window of linear elements is consumed by `free_empty(move r)` (or `Box::free_empty(move b)`), whose contract requires `r.len == 0`; the type stays linear, the proof is about the runtime length. Linearity is declared on external-resource types (the existing `linear` modifier) and propagates through every aggregate of Rule 1: a struct, enum, tuple, Array, Slots, Ring, or Box containing a linear part is linear.
+A type is copy, affine, or linear. Copy values may be duplicated. Affine values are consumed at most once; at scope exit the compiler releases their memory recursively (Box, Slots, Ring, Array) and runs no user code. Linear values must be consumed by an explicit operation on every exit path; the compiler never releases a linear value. An affine value is released early by moving it into a block that ends; there is no release operation. A window of linear elements is consumed by `free_empty(move r)` (or `Box::free_empty(move b)`), whose contract requires `r.len == 0`; the type stays linear, the proof is about the runtime length. Linearity is declared on external-resource types (the existing `linear` modifier) and propagates through every aggregate of Rule 1: a struct, enum, tuple, Array, Slots, Ring, or Box containing a linear part is linear.
 
 ```text
 linear type File;   fn close(f: own File)
@@ -305,11 +302,11 @@ push(&v, 1); stats(&v)                                          // may not overl
 
 ## Rule 14. One global heap; allocation can fail; the allocator has no effect
 
-There is one heap, provided by the trusted base, internally synchronized. Allocation and release carry no effect entry and never prevent two statements from overlapping. Allocation returns a `Result` and never traps (Rule 5 for the payload). Addresses are not observable, so allocator concurrency does not affect program determinism. There are no store or region parameters anywhere.
+There is one heap, provided by the trusted base, internally synchronized. Allocation and release carry no effect entry and never prevent two statements from overlapping. Allocation is total in the source: it never returns a failure and never traps; exhaustion of the heap terminates the program from the trusted base, outside the language, as the current specification already places it. The arithmetic that computes an allocation size carries the ordinary integer-overflow obligation. A program may declare that it uses no heap; such a program cannot name `Box` or the runtime-capacity shapes, and every capability that depends on them is unavailable to it. Addresses are not observable, so allocator concurrency does not affect program determinism. There are no store or region parameters anywhere.
 
 ```text
-a = build(&x)?; b = build(&y)?             // both allocate: may overlap
-Box::new(v)?                                // Result on every allocation
+a = build(&x); b = build(&y)               // both allocate: may overlap
+Box::new(v)                                 // no Result, no failure arm
 ```
 
 ## Rule 15. Return values are owned

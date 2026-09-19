@@ -1,5 +1,3 @@
-Node: language/ownership/multi-target-commit
-
 Decision: Exchanging the values of two places is a built-in two-place operation taking a reference to each, admitted even when the two references name the same place because exchanging a value with itself does nothing, because a partition or heap-adjustment loop then exchanges two runtime-selected slots with no distinctness proof, no index branch and no temporary hole, and the earlier objection that an exchange would be a third mutation path no longer holds now that a write through a reference is an ordinary declared effect and no loan or initialization state is keyed to a binding's death, instead of expressing the exchange as one multi-place commit that reads every target out before writing any.
 
 Rejected:

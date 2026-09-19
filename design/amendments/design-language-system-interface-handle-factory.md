@@ -1,8 +1,0 @@
-Node: language/system-interface/handle-factory
-
-Decision: Acquisition and close take the handle factory as a reference parameter that their declared effect row names as written, spending one credit on successful acquisition, restoring it on refusal and returning it on the explicit close that releases the allocation, because the call's own comparison of its substituted effect paths already refuses any second access to that same factory within the call, so the accounting stays visible without any exclusivity marker on the reference, implicit creator links, or cancellation effects, instead of hidden global capacity or one-shot permits with implicit cancellation.
-
-Rejected:
-- Marking the factory parameter as an exclusive loan held for the whole call, with its own rule against early loan release, the arrangement this node previously carried: rejected because a reference carries no exclusivity marker and holds no loan with an endpoint; it is a local name for the factory's path, and what excludes a competing access is the write entry in the row compared against every other effect of the same call; the ground is the reference and effect rule set recorded in research/investigations/access-effects/CANDIDATE-X1.md, Rules 2, 9 and 10.
-- A reservation whose drop silently returns factory credit: rejected because the selected ordinary interface has empty opaque drop and explicit host-state writes; a later reservation API would need explicit consuming return and cancellation outcomes.
-- Available factory capacity as a promise that host acquisition succeeds: rejected because other host activity and limits can still refuse an otherwise funded attempt, so refusal remains an ordinary outcome.

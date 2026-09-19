@@ -1,5 +1,3 @@
-Node: language/ownership/reference-validity
-
 Decision: A reference names a path that starts at a local variable or a parameter and continues through fields, the content of a heap cell, an index, a range, or the payload of an enum variant, and the reference variable is not storage of its own, so forming a reference to a reference variable is refused and extending a reference names the longer path rather than pointing at the reference, because a name for a path holds no address a program could copy or alias and can always be formed again, instead of a pointer value with an identity of its own.
 
 Decision: A payload step in a path is available only under the fact that the enum currently holds that variant, established by a match or a conditional binding in the selected arm and taken away by any write to the enum, because the payload exists only while the discriminant says so, instead of a payload reference that survives the test that justified it.
