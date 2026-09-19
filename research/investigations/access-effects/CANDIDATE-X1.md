@@ -142,6 +142,8 @@ remove_at(&r, k) -> own T  writes(r.filled), writes(r.len)                      
     contract { requires k < r.len; ensures r.len == entry(r).len - 1; }
 append(&dst, &src)         writes(dst.free), writes(dst.len), writes(src.filled), writes(src.len)   // one memcpy
     contract { requires dst.room >= src.len; ensures dst.len == entry(dst).len + entry(src).len, src.len == 0; }
+split_off(&src, k, &dst)   writes(src.filled), writes(src.len), writes(dst.free), writes(dst.len)   // one memmove
+    contract { requires k <= src.len, dst.room >= src.len - k; ensures src.len == k, dst.len == entry(dst).len + entry(src).len - k; }
 grow(&b, cap) -> Result<(), Oom>   writesderef(b)                            // Box<Slots<T>> only; may reallocate in place
     contract { requires cap >= deref(b).cap;
                ensures when Ok:  deref(b).cap == cap, deref(b).len == entryderef(b).len;
@@ -331,17 +333,17 @@ truncate(&a.buf, 0)                        // reset: elements released; later re
 
 ## Proposed additions awaiting owner ruling
 
-1. `split_off(&src, k, &dst)`: moves `src[k..len)` onto `dst`'s back in one memmove, `src.len` becoming `k`. Without it a B-tree node split or a suffix split costs a per-element loop, about twice the C++ split path.
-2. Function-argument refinement: a supplied function may carry a smaller row, a weaker `requires`, or a stronger `ensures` than the parameter declares (or must match exactly). Zero runtime cost either way.
-3. Contract facts beyond affine comparisons: a `requires` stating a refinement fact about a parameter (`p is Some`), and an `ensures` naming a single indexed path (`deref(p.slots)[h.idx].gen == h.gen`). Fact-language questions; the second decides whether a guarded pool access pays one load, compare, and branch per call.
-4. Implementation requirements the no-trap promise needs, recorded for the implementation plan rather than as language rules: the compiler-derived release of an owned chain runs in bounded stack; self-recursive descent has tail calls eliminated or a stated depth budget.
-5. To verify against the existing FN rules: a function-typed parameter is instantiated per call site, so a literal argument is a direct call (the premise under which fused find-then-mutate is zero cost).
+1. Function-argument matching: FN-4 today requires a supplied function to agree exactly with the formal signature; the alternative is ordinary refinement (smaller row, weaker `requires`, stronger `ensures`). Zero runtime cost either way; recommendation is to keep exact agreement.
+2. A wildcard path form `x.**` ("somewhere under x") so that a reference may descend an owned linked structure in a loop, at the price of conservative overlap and invalidation against everything under `x`. Without it the walk is recursive or index-based.
+
+Settled by the existing specification: function-typed parameters are generic parameters instantiated per instance (FN-2), so a function argument is a direct call. Recorded for the implementation plan, not as language rules: the compiler-derived release of an owned chain runs in bounded stack using the freed cells as its worklist; self-recursive descent has tail calls eliminated or a stated depth budget.
 
 ## Deferred to a future concurrency and layout round
 
 - A channel primitive in the trusted base (ownership-transfer queue) for producer/consumer pipelines and work stealing.
 - A heap block with a fixed header followed by a runtime-length tail in one allocation.
 - A bitmask fact (`x & (c - 1) < c` for a power-of-two `c`) to remove the per-probe bounds compare in hash tables.
+- Contract facts beyond affine comparisons: a `requires` stating a variant refinement (`p is Some`), and an `ensures` naming a single indexed path (`deref(p.slots)[h.idx].gen == h.gen`); the second decides whether a guarded pool access pays one load, compare, and branch per call.
 
 ## Known costs already recorded
 
