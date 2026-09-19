@@ -389,19 +389,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             scope.loops.len(),
         )?;
-        let holder_without_deref = value.mode != CheckedMode::Own
-            || match value.expression.ty() {
-                CheckedType::Nominal(nominal) => {
-                    matches!(self.nominal(nominal)?.kind, CheckedNominalKind::Box { .. })
-                }
-                _ => false,
-            };
-        if holder_without_deref {
+        // [REF-1] a reference variable denotes the reference, and the storage
+        // it names is reached only through `deref`, so a bare holder written
+        // here is that missing step. A `Box` is not one of these at v0.60:
+        // its content is the ordinary field `inner` [TYPE-9], so a `Box`
+        // operand is [ERR-3]'s own wrong-operand rejection below.
+        if value.mode != CheckedMode::Own {
             return self.issue_node(
                 SemanticRule::Type7,
                 expression_node,
                 SemanticIssueKind::MissingDereference {
                     mechanical_fix: "write `deref(holder)`",
+                },
+            );
+        }
+        // [ERR-3] propagation is a consuming context, and [OWN-1] admits a
+        // consume only for a place rooted in a live own-mode binding, which a
+        // place written under a `deref` is not.
+        if !self.is_copy_type(value.expression.ty())?
+            && self.operand_is_written_under_deref(expression_node)?
+        {
+            return self.issue_node(
+                SemanticRule::Own1,
+                expression_node,
+                SemanticIssueKind::MoveThroughReference {
+                    mechanical_fix: super::super::references::OWN1_ROOTED_CONSUME,
                 },
             );
         }
@@ -458,6 +470,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             value.effects,
         ))
+    }
+
+    /// Whether one written `expr` is a place whose `pbase` is a `deref`,
+    /// which [REF-1] makes the storage a reference names rather than a place
+    /// this function owns.
+    fn operand_is_written_under_deref(&self, expression: NodeId) -> Result<bool, CheckStop> {
+        let Some(atom) = self.tree.first_child_with(expression, Production::Atom)? else {
+            return Ok(false);
+        };
+        let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
+            return Ok(false);
+        };
+        let Some(pbase) = self.tree.first_child_with(place, Production::Pbase)? else {
+            return Ok(false);
+        };
+        self.has_fixed(pbase, crate::FixedTerminal::Deref)
+            .map_err(CheckStop::from)
     }
 
     fn invalid_propagation<ResultValue>(&self, node: NodeId) -> Result<ResultValue, CheckStop> {

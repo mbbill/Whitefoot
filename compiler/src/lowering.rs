@@ -145,17 +145,6 @@ impl IrElement {
     }
 }
 
-/// The `Option` a refusing [BLK-2] row hands back, by the tags [PRE-1] gives
-/// its two variants.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct IrRefusal {
-    pub nominal: IrNominalId,
-    /// The tag of the variant carrying the run.
-    pub made: u32,
-    /// The tag of the empty variant.
-    pub refused: u32,
-}
-
 /// The content of an [`IrType::Address`]. A typed place may hold inline
 /// content, a descriptor, or a handle. Source borrows of descriptors and
 /// handles still use their value ABI; a place containing one is distinct
@@ -882,6 +871,15 @@ pub struct IrRuntimeTargetObligations {
     allocation: IrTargetDomainObligation,
     element_address: IrTargetDomainObligation,
     source_length_upper_bound: u64,
+    /// Whether `source_length_upper_bound` is the numeric bound the
+    /// allocation site's own [OP-9] discharge established, or [OP-9]'s
+    /// ceiling standing in for a bound the checked program does not retain.
+    ///
+    /// A compiler-owned [PRE-1] construction row is one body per instance,
+    /// reached from every call of that row, so no single call's proved bound
+    /// belongs to it (compiler/prelude-records). Target qualification reads
+    /// this to say which of [STOR-6]'s two halves it actually has.
+    call_site_bound: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -906,6 +904,15 @@ impl From<CheckedLayoutMagnitude> for IrLayoutMagnitude {
             CheckedLayoutMagnitude::AboveU64 => Self::AboveU64,
         }
     }
+}
+
+/// The complete [OP-9] and [STOR-6] record one runtime-capacity allocation
+/// carries: the language layout ceiling its stored type must stay under, and
+/// the target-domain obligations with the retained source bound.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrAllocationObligations {
+    pub layout_ceiling: IrLayoutCeiling,
+    pub target_domains: IrRuntimeTargetObligations,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -935,6 +942,7 @@ impl TryFrom<CheckedRuntimeTargetObligations> for IrRuntimeTargetObligations {
             source_length_upper_bound: value
                 .source_length_upper_bound()
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+            call_site_bound: true,
         })
     }
 }
@@ -952,6 +960,31 @@ impl IrRuntimeTargetObligations {
 
     pub(crate) const fn source_length_upper_bound(self) -> u64 {
         self.source_length_upper_bound
+    }
+
+    /// Whether the retained bound came from the allocation site's own
+    /// [OP-9] discharge.
+    pub(crate) const fn has_call_site_bound(self) -> bool {
+        self.call_site_bound
+    }
+
+    /// The record one compiler-owned [PRE-1] allocation carries [OP-9].
+    ///
+    /// A construction row's body is built once per monomorphized instance and
+    /// is reached only from calls the checker accepted, and every accepted
+    /// call discharged [OP-9]'s own predicate on its own count, so the bound
+    /// retained here is that predicate's right-hand side: the largest count
+    /// the language admits for this stored type. Target qualification
+    /// separately requires the actual stride to be no larger than the
+    /// language ceiling [STOR-6], so this bound times the actual stride is
+    /// representable.
+    pub(crate) const fn from_language_ceiling(source_length_upper_bound: u64) -> Self {
+        Self {
+            allocation: IrTargetDomainObligation::RuntimeSizedAllocation,
+            element_address: IrTargetDomainObligation::ElementAddress,
+            source_length_upper_bound,
+            call_site_bound: false,
+        }
     }
 }
 
@@ -1146,6 +1179,63 @@ pub enum IrOperation {
     RunTaken {
         row: IrBoundary,
         run: IrValueId,
+    },
+    /// [OP-10] the one shift `insert_at` and `remove_at` each perform over
+    /// `window.filled`, followed by the boundary move that shift makes room
+    /// for or closes.
+    ///
+    /// `open` shifts every element at `index ..` up by one slot and raises
+    /// `len`; its complement shifts every element above `index` down by one
+    /// and lowers `len`. On a `Slots` the window is contiguous and the shift
+    /// is one memmove; on a `Ring` the window may wrap and the shift walks
+    /// the logical indices in the order that never overwrites an unread
+    /// slot [WIN-1].
+    RunShift {
+        run: IrValueId,
+        index: IrValueId,
+        open: bool,
+    },
+    /// [OP-10] `insert_at`'s placement into the slot [`Self::RunShift`] just
+    /// opened. The boundary has already moved, so the slot is inside the
+    /// window and the store is an ordinary element write.
+    RunInsert {
+        run: IrValueId,
+        index: IrValueId,
+        value: IrValueId,
+    },
+    /// [OP-10] the run of elements `append` and `split_off` each move between
+    /// two windows: `source[index ..]` moves to `destination.free`,
+    /// `source.len` becomes `index`, and `destination.len` grows by the
+    /// moved count. `append` is this row at index zero.
+    RunTransfer {
+        destination: IrValueId,
+        source: IrValueId,
+        index: IrValueId,
+    },
+    /// [OP-13] one runtime-capacity window block and the cell that owns it:
+    /// `[len | cap | head? | slots]` with an empty window
+    /// (compiler/storage-representation). The value is the cell pointer.
+    WindowBlockNew {
+        nominal: IrNominalId,
+        capacity: IrValueId,
+        obligations: IrAllocationObligations,
+    },
+    /// [OP-10] `grow`: the cell's content is remade whole at the new
+    /// capacity. One allocation, one copy of the header and the filled
+    /// slots, one free, and the cell's pointer slot takes the new block
+    /// (compiler/storage-representation).
+    WindowGrow {
+        nominal: IrNominalId,
+        cell: IrValueId,
+        capacity: IrValueId,
+        obligations: IrAllocationObligations,
+    },
+    /// [OP-14] the cell of a boxed window proved empty: its own storage is
+    /// freed and nothing inside it is released, because an empty window
+    /// holds no element [WIN-1].
+    CellFree {
+        nominal: IrNominalId,
+        value: IrValueId,
     },
     /// One discharged source subscript read [OP-4]; see [`Self::ArrayIndex`].
     BufferIndex {
@@ -1806,10 +1896,14 @@ impl IrProgram<'_, '_, '_> {
 pub enum LoweringFailure {
     InvalidCheckedProgram,
     CounterOverflow,
-    /// TEMPORARY capability stop: one [PRE-1] record the compiler itself owns
-    /// -- a window operation [OP-10], `swap` [OP-11], a construction function
+    /// Capability stop: one [PRE-1] record the compiler itself owns -- a
+    /// window operation [OP-10], `swap` [OP-11], a construction function
     /// [OP-13] or `free_empty` [OP-14] -- whose body this version does not
-    /// build yet.
+    /// build.
+    ///
+    /// Every row of [`COMPILER_OWNED_PRELUDE_ROWS`] is built today, so no
+    /// program reaches this. It remains the stop a row added to that list
+    /// ahead of its body would take.
     ///
     /// These records are declared body-less like the host rows, but unlike a
     /// host row no trusted-base object defines them: the compiler is supposed
@@ -1820,12 +1914,27 @@ pub enum LoweringFailure {
     UnimplementedPreludeRow(&'static str),
 }
 
-/// The [PRE-1] records whose compiler-owned bodies are not built yet.
+/// The [PRE-1] records whose bodies the compiler itself emits: the nine
+/// construction functions [OP-13], the nine window operations [OP-10],
+/// `swap` [OP-11] and `free_empty` [OP-14].
 ///
-/// A row leaves this list in the same change that lowers it. The host rows
-/// are deliberately absent: those are body-less because the trusted base
-/// defines them, and calling one emits an ordinary external call.
-pub(crate) const UNIMPLEMENTED_PRELUDE_ROWS: [&str; 20] = [
+/// The host rows are deliberately absent: those are body-less because the
+/// trusted base defines them, and calling one emits an ordinary external
+/// call. A name that is on this list but that `lower_prelude_row` does not
+/// build reaches [`LoweringFailure::UnimplementedPreludeRow`], so a row this
+/// version has not built can never become a module that names a symbol
+/// nothing defines.
+pub(crate) const COMPILER_OWNED_PRELUDE_ROWS: [&str; 20] = [
+    // [OP-13] the nine construction functions.
+    "box_new",
+    "array_filled",
+    "slots_new",
+    "ring_new",
+    "box_array_filled",
+    "box_slots_new",
+    "box_ring_new",
+    "slots_from_array",
+    "slots_into_array",
     // [OP-10] the nine window operations.
     "place_back",
     "take_back",
@@ -1839,16 +1948,6 @@ pub(crate) const UNIMPLEMENTED_PRELUDE_ROWS: [&str; 20] = [
     // [OP-11] `swap` and [OP-14] `free_empty`.
     "swap",
     "free_empty",
-    // [OP-13] the nine construction functions.
-    "box_new",
-    "slots_new",
-    "ring_new",
-    "array_filled",
-    "box_array_filled",
-    "box_slots_new",
-    "box_ring_new",
-    "slots_from_array",
-    "slots_into_array",
 ];
 
 mod builder;

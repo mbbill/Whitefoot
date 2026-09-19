@@ -258,14 +258,15 @@ fn main() -> status: own ExitStatus pure {
     // The proved count ceiling times the u16 stride fits the selected target's
     // byte domain. Target layout therefore admits the dynamic allocation and
     // the emitter needs only the allocator's null-result edge.
-    assert!(make.contains("call ptr @malloc"));
-    assert!(make.contains("icmp ne ptr"));
+    let filled = emitted_prelude_row(&llvm, "box_array_filled");
+    assert!(filled.contains("call ptr @malloc"));
+    assert!(filled.contains("icmp ne ptr"));
     // The two labels below are the v0.59 emitted names for the exhaustion
     // edge. [STOR-8] keeps the edge and moves its meaning - it is the trusted
     // base terminating, never a source arm - but does not fix a spelling, so
     // these stay as written for the lowering port to rename.
-    assert!(make.contains("buffer.fill.oom."));
-    assert!(make.contains("call void @wf_resource_abort()"));
+    assert!(filled.contains("buffer.fill.oom."));
+    assert!(filled.contains("call void @wf_resource_abort()"));
     for absent in [
         "buffer.fill.target.",
         "@wf_target_domain_abort",
@@ -303,8 +304,13 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
     let llvm = compile(source);
+    // The construction row is one out-of-line body per instance
+    // (compiler/prelude-records), so the allocation is in the row and the
+    // caller names it.
     let refill = emitted_function(&llvm, "refill");
-    assert!(refill.contains("call ptr @malloc"));
+    assert!(refill.contains("call ptr @wf_box_array_filled$instance$"));
+    let filled = emitted_prelude_row(&llvm, "box_array_filled");
+    assert!(filled.contains("call ptr @malloc"));
     for absent in [
         "buffer.fill.target.",
         "@wf_target_domain_abort",

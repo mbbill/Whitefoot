@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 mod finiteness;
+mod operands;
 
 use crate::syntax::NodeId;
 use crate::{
@@ -612,6 +613,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if template.generic_parameters.is_empty() {
                     continue;
                 }
+                // [OP-10, OP-11, OP-14] a window operation, `swap` and
+                // `free_empty` write no type arguments at a call: every type
+                // parameter is supplied by an operand, so the written syntax
+                // names no instance for this walk to build. The body check
+                // reads the operand's type and defers the instance it selects.
+                if self.operand_directed_row_index(&template)?.is_some() {
+                    continue;
+                }
                 if tolerate_source_failure && !self.postcondition_call_arguments_have_links(call)? {
                     continue;
                 }
@@ -857,6 +866,87 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .is_some_and(|instance| instance.substitution == substitution)
             })
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    /// The instance one call to an operand-directed [PRE-1] row selects
+    /// [OP-10, OP-11, OP-14], or `None` where the callee is any other row.
+    ///
+    /// The instance is keyed on the operand's own type, so it cannot exist
+    /// before the body reaches the call. A substitution with no built
+    /// signature is recorded and the function is retried, exactly as a
+    /// derived nominal is.
+    pub(super) fn operand_directed_function_for_call(
+        &self,
+        node: NodeId,
+        declaration: DeclarationId,
+        bindings: &HashMap<DeclarationId, super::LocalBinding>,
+    ) -> Result<Option<super::super::model::FunctionId>, CheckStop> {
+        let Some(&template_index) = self.templates_by_declaration.get(&declaration) else {
+            return Ok(None);
+        };
+        let template = self
+            .function_templates
+            .get(template_index)
+            .cloned()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let Some(row_index) = self.operand_directed_row_index(&template)? else {
+            return Ok(None);
+        };
+        let substitution =
+            self.operand_directed_substitution(node, &template, row_index, bindings)?;
+        if let Some(id) = self
+            .functions_by_declaration
+            .get(&declaration)
+            .into_iter()
+            .flatten()
+            .copied()
+            .find(|id| {
+                self.signatures
+                    .get(id.0 as usize)
+                    .is_some_and(|instance| instance.substitution == substitution)
+            })
+        {
+            return Ok(Some(id));
+        }
+        self.pending_instances
+            .borrow_mut()
+            .push((template_index, substitution));
+        Err(CheckStop::DeferredNominal)
+    }
+
+    /// Builds one deferred operand-directed instance and admits the [FN-9]
+    /// selectors of its declared `ensures`, which the ordinary pre-phase-A
+    /// admission could not reach.
+    pub(super) fn ensure_operand_directed_instance(
+        &mut self,
+        template_index: usize,
+        substitution: GenericSubstitution,
+    ) -> Result<(), CheckStop> {
+        let template = self
+            .function_templates
+            .get(template_index)
+            .cloned()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        if self
+            .functions_by_declaration
+            .get(&template.declaration)
+            .into_iter()
+            .flatten()
+            .copied()
+            .any(|id| {
+                self.signatures
+                    .get(id.0 as usize)
+                    .is_some_and(|instance| instance.substitution == substitution)
+            })
+        {
+            return Ok(());
+        }
+        let id = super::super::model::FunctionId(
+            u32::try_from(self.signatures.len())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        self.instantiate_function_signature(template_index, substitution)?;
+        self.admit_postcondition_selectors_for(id)
     }
 
     pub(super) fn instantiate_function_signature(
@@ -1165,15 +1255,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // rather than aliasing the real concrete entries by accident.
         self.admit_postcondition_selectors()?;
         let mut phase_a = Vec::with_capacity(self.signatures.len());
-        for index in 0..self.signatures.len() {
+        let mut index = 0_usize;
+        while index < self.signatures.len() {
             // Symbolic generic validation may discover a derived box or
             // prelude nominal (for example the Result produced by a
-            // `+checked` requires-local). Use the same deferred-nominal
-            // retry loop as concrete checking; the checkpoint below
-            // discards these symbolic-only instances afterwards. The dense
-            // inventory also includes nongeneric callees so FN-8 requirement
-            // installation uses the ordinary FunctionId-indexed path.
+            // `+checked` requires-local), or an operand-directed [PRE-1]
+            // instance [OP-10]. Use the same deferred retry loop as concrete
+            // checking; the checkpoint below discards these symbolic-only
+            // instances afterwards. The dense inventory also includes
+            // nongeneric callees so FN-8 requirement installation uses the
+            // ordinary FunctionId-indexed path.
             phase_a.push(self.check_function_interning_nominals(index)?);
+            index = index
+                .checked_add(1)
+                .ok_or(SemanticCompilerFailure::CounterOverflow)?;
         }
         for (canonical, declaration) in &canonical_generic_signatures {
             let checked = phase_a
@@ -1263,6 +1358,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         continue;
                     };
                     if callee.generic_parameters.is_empty() {
+                        continue;
+                    }
+                    // [OP-10, OP-11, OP-14] an operand-directed row writes no
+                    // type argument, so this walk over written argument lists
+                    // names no instance of it. Such a row is a [PRE-1] leaf
+                    // with no body and starts no instantiation cycle.
+                    if self.operand_directed_row_index(&callee)?.is_some() {
                         continue;
                     }
                     if let Some(targs) = self.tree.argument_list(call)? {

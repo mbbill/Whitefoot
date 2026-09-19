@@ -787,6 +787,13 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by WIN-3.
         mechanical_fix: &'static str,
     },
+    /// [OWN-1] a `move` of a place reached through a `deref`, which is not
+    /// rooted in a live own-mode binding of this function, so it is not one
+    /// of the consumes that rule admits.
+    MoveThroughReference {
+        /// Exact restructuring required by OWN-1.
+        mechanical_fix: &'static str,
+    },
     /// [TYPE-10] one of the four measure or four window-part spellings was
     /// written in a position that is not a measure read [OP-15]: a write of a
     /// measure, or a read, `borrow_expr` or write of a window part.

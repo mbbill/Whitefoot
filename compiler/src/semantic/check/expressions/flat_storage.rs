@@ -1391,7 +1391,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// storage. A subscript passes the chain before its own `psuffix` and
     /// anchors its wrong-base judgment there [OP-4]; a `len` or `slice_of`
     /// operand passes the complete chain and anchors at the place node.
-    fn check_indexed_place(
+    pub(in crate::semantic::check) fn check_indexed_place(
         &self,
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
@@ -1399,6 +1399,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         anchor: NodeId,
         function: &FunctionSignature,
         loop_depth: usize,
+    ) -> Result<CheckedIndexedPlace, CheckStop> {
+        self.check_indexed_place_rooted(
+            node,
+            bindings,
+            base_suffixes,
+            anchor,
+            function,
+            loop_depth,
+            LexicalUseRole::PlaceBase,
+        )
+    }
+
+    /// The same walk with the root's lexical role named.
+    ///
+    /// An `affine_factor` names its measure place in a proof position, whose
+    /// root carries that position's own use role [INV-1, PRF-1]; every other
+    /// caller is an ordinary place base [GRAM-5].
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::semantic::check) fn check_indexed_place_rooted(
+        &self,
+        node: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        base_suffixes: &[NodeId],
+        anchor: NodeId,
+        function: &FunctionSignature,
+        loop_depth: usize,
+        root_role: LexicalUseRole,
     ) -> Result<CheckedIndexedPlace, CheckStop> {
         let pbase = self
             .tree
@@ -1417,7 +1444,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if !self.tree.children(pbase)?.is_empty() {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
-        let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+        let usage = self.use_at(pbase, root_role)?;
         let ResolvedTarget::Source { declaration, class } = usage.target() else {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         };

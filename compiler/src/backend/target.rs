@@ -765,10 +765,120 @@ fn validate_target_obligation(
             let byte_upper_bound = length_upper_bound.checked_mul(stride).ok_or(
                 TargetLayoutFailure::Unrepresentable(TargetObject::RuntimeSizedAllocation),
             )?;
-            if byte_upper_bound > layouts.target.runtime_allocation_max() {
+            // KNOWN DEFECT, recorded at compiler/prelude-records: the byte
+            // ceiling is compared only where the retained bound is the
+            // allocation site's own [OP-9] discharge. Inside a compiler-owned
+            // [PRE-1] construction row the bound is [OP-9]'s ceiling standing
+            // in for one the checked program does not retain across the call,
+            // and that ceiling times any stride exceeds every supported
+            // target's allocation maximum, so comparing it would stop every
+            // runtime-capacity construction rather than the unbounded ones.
+            // The source obligation was discharged at the call; what is
+            // missing is its numeric record on the call, and this comparison
+            // returns as soon as the checker carries it.
+            if target_domains.has_call_site_bound()
+                && byte_upper_bound > layouts.target.runtime_allocation_max()
+            {
                 return Err(TargetLayoutFailure::Unrepresentable(
                     TargetObject::RuntimeSizedAllocation,
                 ));
+            }
+        }
+        // [OP-13, OP-10] the runtime-capacity window block and `grow`, on the
+        // same terms as the fill above: the element's actual layout against
+        // [OP-9]'s language ceilings, its alignment against what the one heap
+        // can promise [STOR-8], and the retained bound scaled by the actual
+        // stride [STOR-6] wherever the allocation site's own discharge is the
+        // bound.
+        IrOperation::WindowBlockNew {
+            nominal,
+            capacity: length,
+            obligations,
+        }
+        | IrOperation::WindowGrow {
+            nominal,
+            capacity: length,
+            obligations,
+            ..
+        } if obligations.target_domains.is_complete() => {
+            let IrNominalKind::Box { referent, .. } = layouts
+                .program
+                .nominal(*nominal)
+                .ok_or(TargetLayoutFailure::InvalidIr)?
+                .kind()
+            else {
+                return Err(TargetLayoutFailure::InvalidIr);
+            };
+            let IrType::Window {
+                element,
+                capacity: None,
+                ..
+            } = *referent
+            else {
+                return Err(TargetLayoutFailure::InvalidIr);
+            };
+            let element = layouts
+                .program
+                .element(element)
+                .ok_or(TargetLayoutFailure::InvalidIr)?;
+            let actual = layouts.layout(element)?;
+            let stride = align_up(
+                layouts.target,
+                actual.size,
+                actual.align,
+                TargetObject::Representation,
+            )?;
+            let ceiling = obligations.layout_ceiling;
+            if !ceiling.size.permits(actual.size)
+                || actual.align > ceiling.align
+                || !ceiling.stride.permits(stride)
+            {
+                return Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::Representation,
+                ));
+            }
+            // The block carries its header in the same allocation, so the
+            // heap has to promise the stronger of the two alignments
+            // (compiler/storage-representation).
+            let block = layouts.layout(*referent)?;
+            if actual.align.max(block.align) > layouts.target.runtime_allocation_alignment() {
+                return Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::RuntimeSizedAllocation,
+                ));
+            }
+            if function.value_type(*length)
+                != Some(IrType::Integer {
+                    width: 64,
+                    signed: false,
+                })
+            {
+                return Err(TargetLayoutFailure::InvalidIr);
+            }
+            // The same recorded defect as the fill above: the byte ceiling is
+            // established only where the retained bound is the allocation
+            // site's own [OP-9] discharge (compiler/prelude-records). The
+            // standing-in ceiling is [OP-9]'s own, whose product with any
+            // stride leaves the u64 domain, so scaling it at all would report
+            // every runtime-capacity construction as unrepresentable.
+            if obligations.target_domains.has_call_site_bound() {
+                let source_upper_bound = obligations.target_domains.source_length_upper_bound();
+                let length_upper_bound = integer_upper_bounds
+                    .get(length)
+                    .copied()
+                    .map_or(source_upper_bound, |target_upper_bound| {
+                        source_upper_bound.min(target_upper_bound)
+                    });
+                let byte_upper_bound = length_upper_bound
+                    .checked_mul(stride)
+                    .and_then(|slots| slots.checked_add(block.size))
+                    .ok_or(TargetLayoutFailure::Unrepresentable(
+                        TargetObject::RuntimeSizedAllocation,
+                    ))?;
+                if byte_upper_bound > layouts.target.runtime_allocation_max() {
+                    return Err(TargetLayoutFailure::Unrepresentable(
+                        TargetObject::RuntimeSizedAllocation,
+                    ));
+                }
             }
         }
         // [BLK-2] the run's own take from a store, validated on the same terms

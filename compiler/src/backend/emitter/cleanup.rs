@@ -93,9 +93,17 @@ fn emit_run_drop_helper(
 ) -> Result<(), BackendFailure> {
     let run_llvm = llvm_type(program, ty)?;
     let symbol = run_drop_helper_symbol(index);
+    // A runtime-capacity block is reached only through the `Box` that owns
+    // it [TYPE-9], so its helper takes the block pointer; every other run is
+    // a value and its helper takes that value.
+    let parameter = if matches!(ty, IrType::Window { capacity: None, .. }) {
+        "ptr".to_owned()
+    } else {
+        run_llvm.clone()
+    };
     writeln!(
         output,
-        "define private void @{symbol}({run_llvm} %value) {{\nentry:"
+        "define private void @{symbol}({parameter} %value) {{\nentry:"
     )
     .map_err(|_| BackendFailure::TextEmission)?;
     let element = match ty {
@@ -121,13 +129,37 @@ fn emit_run_drop_helper(
         } => {
             let slots = if shape == IrWindowShape::Ring { 2 } else { 1 };
             let origin = if shape == IrWindowShape::Ring {
-                "extractvalue {run_llvm} %value, 1".to_owned()
+                format!("extractvalue {run_llvm} %value, 1")
             } else {
                 "add i64 0, 0".to_owned()
             };
             writeln!(
                 output,
                 "  %storage = alloca {run_llvm}\n  store {run_llvm} %value, ptr %storage\n  %pointer = getelementptr inbounds {run_llvm}, ptr %storage, i64 0, i32 {slots}, i64 0\n  %capacity = add i64 {length}, 0\n  %length = extractvalue {run_llvm} %value, 0\n  %origin = {origin}"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            element
+        }
+        // A runtime-capacity block is `[len | cap | head? | slots]` in one
+        // allocation (compiler/storage-representation): every measure the
+        // walk needs is a header word of the block the parameter points at,
+        // and the slots follow that header.
+        IrType::Window {
+            shape,
+            element,
+            capacity: None,
+        } => {
+            let slots = if shape == IrWindowShape::Ring { 3 } else { 2 };
+            let origin = if shape == IrWindowShape::Ring {
+                format!(
+                    "  %origin.pointer = getelementptr inbounds {run_llvm}, ptr %value, i64 0, i32 2\n  %origin = load i64, ptr %origin.pointer"
+                )
+            } else {
+                "  %origin = add i64 0, 0".to_owned()
+            };
+            writeln!(
+                output,
+                "  %pointer = getelementptr inbounds {run_llvm}, ptr %value, i64 0, i32 {slots}, i64 0\n  %length = load i64, ptr %value\n  %capacity.pointer = getelementptr inbounds {run_llvm}, ptr %value, i64 0, i32 1\n  %capacity = load i64, ptr %capacity.pointer\n{origin}"
             )
             .map_err(|_| BackendFailure::TextEmission)?;
             element
@@ -419,6 +451,31 @@ fn emit_cleanup_jobs(
                         // cell frees, and a bump extent's is reclaimed by its
                         // region's own reset and has no action of its own.
                         IrNominalKind::Box { referent, release } => {
+                            // A boxed runtime-capacity window is thin: the
+                            // cell pointer is the block, whose header and
+                            // slots are the same allocation
+                            // (compiler/storage-representation). Loading the
+                            // block would read past its declared zero-length
+                            // slot array, so its walk takes the pointer and
+                            // the cell's own free is the block's.
+                            if matches!(referent, IrType::Window { capacity: None, .. }) {
+                                if *release == IrReleaseClass::General {
+                                    jobs.push(CleanupJob::FreePointer(operand.clone()));
+                                }
+                                let element = match referent {
+                                    IrType::Window { element, .. } => program
+                                        .element(*element)
+                                        .ok_or(BackendFailure::InvalidIr)?,
+                                    _ => return Err(BackendFailure::InvalidIr),
+                                };
+                                if type_requires_cleanup(program, element)? {
+                                    let symbol = run_drop_helper(program, *referent)?
+                                        .ok_or(BackendFailure::InvalidIr)?;
+                                    writeln!(output, "  call void @{symbol}(ptr {operand})")
+                                        .map_err(|_| BackendFailure::TextEmission)?;
+                                }
+                                continue;
+                            }
                             let loaded = next_temporary(temporary)?;
                             writeln!(
                                 output,
@@ -447,36 +504,13 @@ fn emit_cleanup_jobs(
                         }
                     }
                 }
-                // A run's release visits its window and then releases its own
-                // backing [PROV-6, BLK-1], and the helper is what carries
-                // that order. A frame-resident run reclaims no storage of its
-                // own, and a bump extent's run is reclaimed by its region's
-                // own reset [BLK-2]; a general store's run spends that
-                // store's capability, and its backing action is the free
-                // emitted here, after the window walk.
+                // A runtime-capacity window exists only as `Box` content
+                // [TYPE-9] and is never an owned value of its own, so the
+                // cell arm above is the one route to its release. Reaching
+                // here would mean a value of a type no storage can hold.
                 IrType::Window {
-                    element,
-                    capacity: None,
-                    ..
-                } => {
-                    let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
-                    if type_requires_cleanup(program, element)? {
-                        let symbol =
-                            run_drop_helper(program, ty)?.ok_or(BackendFailure::InvalidIr)?;
-                        let run_llvm = llvm_type(program, ty)?;
-                        writeln!(output, "  call void @{symbol}({run_llvm} {operand})")
-                            .map_err(|_| BackendFailure::TextEmission)?;
-                    }
-                    {
-                        let run_llvm = llvm_type(program, ty)?;
-                        let pointer = next_temporary(temporary)?;
-                        writeln!(
-                            output,
-                            "  %{pointer} = extractvalue {run_llvm} {operand}, 0\n  call void @free(ptr %{pointer})",
-                        )
-                        .map_err(|_| BackendFailure::TextEmission)?;
-                    }
-                }
+                    capacity: None, ..
+                } => return Err(BackendFailure::InvalidIr),
                 IrType::Array { element, .. }
                 | IrType::Window {
                     element,

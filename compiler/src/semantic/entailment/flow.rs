@@ -2173,6 +2173,7 @@ impl Analyzer<'_, '_> {
         projections: &[GoalProjection],
         ty: CheckedType,
     ) -> Option<TermId> {
+        let projections = self.body_projections(root, projections);
         let projections = projections
             .iter()
             .map(|projection| match projection {
@@ -4081,6 +4082,32 @@ impl Analyzer<'_, '_> {
         false
     }
 
+    /// [REF-1] the body-side reading of one clause place's projections.
+    ///
+    /// A clause names a reference parameter's referent as `deref(p)`, and the
+    /// declaration-boundary template keeps that step as its leading
+    /// projection because a caller substitutes the actual's own path for the
+    /// formal and consumes exactly it [FN-8, CALL-6]. Inside the body the
+    /// parameter name *is* the path, so the step names no place of its own
+    /// and is dropped: that is the identity every other term over `deref(p)`
+    /// already carries, `is_holder` above having synthesized none.
+    fn body_projections<'projections>(
+        &self,
+        root: PlaceRoot,
+        projections: &'projections [GoalProjection],
+    ) -> &'projections [GoalProjection] {
+        let PlaceRoot::Binding(binding) = root else {
+            return projections;
+        };
+        if !self.places.is_reference(binding) {
+            return projections;
+        }
+        match projections.split_first() {
+            Some((GoalProjection::Deref, rest)) => rest,
+            _ => projections,
+        }
+    }
+
     // ------------------------------------------------------------------
     // Place resolution and support
     // ------------------------------------------------------------------
@@ -4220,7 +4247,16 @@ impl Analyzer<'_, '_> {
             path: Vec::new(),
         };
         let mut holders = Vec::new();
-        for projection in &support.projections {
+        // [REF-1] the leading `deref` of a clause place over a reference
+        // formal names no place of its own inside the body; the reference
+        // itself is still the holder whose invalidation the support records.
+        let projections =
+            self.body_projections(PlaceRoot::Binding(support.root), &support.projections);
+        if projections.len() != support.projections.len() && self.places.is_reference(support.root)
+        {
+            holders.push(support.root);
+        }
+        for projection in projections {
             match projection {
                 GoalProjection::Field(field) => resolved.path.push(PlaceStep::Field(*field)),
                 GoalProjection::Subscript(offset) => {
@@ -5974,9 +6010,12 @@ impl Analyzer<'_, '_> {
                 ty,
             }) => {
                 let parameter = self.function.parameters.get(*ordinal as usize)?;
+                let binding = parameter.binding;
                 Some(GoalExpression::Datum(GoalDatum::Place {
-                    root: parameter.binding,
-                    projections: projections.clone(),
+                    root: binding,
+                    projections: self
+                        .body_projections(PlaceRoot::Binding(binding), projections)
+                        .to_vec(),
                     ty: *ty,
                 }))
             }
@@ -13925,13 +13964,17 @@ impl Analyzer<'_, '_> {
 
                 let mut step = vec![None; invariants.len()];
                 let mut hidden_update = !body_falls_through;
-                if body_falls_through {
-                    let current_binder = body_state
-                        .affine
-                        .values
-                        .get(binder)
-                        .cloned()
-                        .expect("a counted body retains its header binder affine value");
+                // A body reaching the backedge normally should still carry the
+                // header binder's affine image. Where this walk has lost it,
+                // the hidden `binder + 1` update is unproved and every
+                // next-header target with it: [OWN-8]'s conservative reading,
+                // which withholds the exhaustion rule and the step batch and
+                // never widens acceptance.
+                let current_binder = body_state.affine.values.get(binder).cloned();
+                if body_falls_through && current_binder.is_none() {
+                    step = vec![Some(false); invariants.len()];
+                }
+                if let (true, Some(current_binder)) = (body_falls_through, current_binder) {
                     let next_binder = current_binder
                         .add(&AffineForm::constant(1), &mut AffineCheckState::new())
                         .ok();

@@ -46,7 +46,47 @@ pub(super) struct MatchResult {
     pub(super) break_states: Vec<BreakState>,
 }
 
+/// How a `match` scrutinee is written, which is what [OWN-13] and [REF-1]
+/// read to decide whether the match goes through a reference.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScrutineeSpelling {
+    /// `&x`: a `borrow_expr` naming the enum's own path [REF-1]. No `deref`
+    /// step stands between the expression and the enum it names.
+    Borrowed,
+    /// `deref(p)` and anything selected below it: the storage a reference
+    /// names, reached under the step [REF-1] requires.
+    Dereferenced,
+    /// Every other written form: an owned place, a call result, a literal.
+    Other,
+}
+
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    fn scrutinee_spelling(&self, expression: NodeId) -> Result<ScrutineeSpelling, CheckStop> {
+        let Some(atom) = self.tree.first_child_with(expression, Production::Atom)? else {
+            return Ok(ScrutineeSpelling::Other);
+        };
+        if self
+            .tree
+            .first_child_with(atom, Production::BorrowExpr)?
+            .is_some()
+        {
+            return Ok(ScrutineeSpelling::Borrowed);
+        }
+        let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
+            return Ok(ScrutineeSpelling::Other);
+        };
+        let Some(pbase) = self.tree.first_child_with(place, Production::Pbase)? else {
+            return Ok(ScrutineeSpelling::Other);
+        };
+        Ok(
+            if self.has_fixed(pbase, crate::FixedTerminal::Deref)? {
+                ScrutineeSpelling::Dereferenced
+            } else {
+                ScrutineeSpelling::Other
+            },
+        )
+    }
+
     pub(super) fn check_match(
         &self,
         function: &FunctionSignature,
@@ -60,18 +100,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let scrutinee =
+        let mut scrutinee =
             self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
-        // [OWN-13] matches an enum value or a place reached through a borrow.
-        // A holder written where the enum itself is required — a bare borrow
-        // holder, a `borrow_expr`, a reference-returning call, or a `box` of
-        // an enum — is the [TYPE-7] implicit read, and this scrutinee's own
-        // wrong-type judgment forms no rejection.
-        if self.reads_implicitly_through_holder(
-            scrutinee.reference_value,
-            scrutinee.expression.ty(),
-            RequiredReferent::Enum,
-        )? {
+        let spelling = self.scrutinee_spelling(expression_node)?;
+        // [REF-1] a reference variable denotes the reference, and the storage
+        // it names is reached only through `deref`, so a bare holder written
+        // where the enum itself is required is that missing step. A `Box` is
+        // not one of these at v0.60: its content is the ordinary field
+        // `inner` [TYPE-9], so a `Box` scrutinee is the ordinary wrong-type
+        // judgment [TYPE-5] the descriptor below makes.
+        if spelling == ScrutineeSpelling::Other
+            && scrutinee.reference_value
+            && self.satisfies_referent_requirement(
+                scrutinee.expression.ty(),
+                RequiredReferent::Enum,
+            )?
+        {
             return self.issue_node(
                 SemanticRule::Type7,
                 expression_node,
@@ -80,6 +124,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
+        // [OWN-13] matching through a reference leaves the scrutinee live and
+        // binds each payload as a reference naming the scrutinee path
+        // extended by that payload step [REF-1]. `deref(p)` reads the value
+        // at the path `p` names everywhere else, so the reading is made here,
+        // where the rule distinguishes the two, and not at the place walk.
+        if spelling == ScrutineeSpelling::Dereferenced && scrutinee.reference.is_none() {
+            let place = scrutinee
+                .accesses
+                .first()
+                .map(|access| access.place.clone())
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            scrutinee.mode = CheckedMode::Reference;
+            scrutinee.reference = Some(ReferenceInfo::formed(
+                super::super::references::ReferenceKind::Single,
+                place,
+            ));
+        }
+        let scrutinee = scrutinee;
         let descriptor = self.match_descriptor(scrutinee.expression.ty(), expression_node)?;
         let base_bindings = bindings.clone();
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();

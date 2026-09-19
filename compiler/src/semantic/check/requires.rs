@@ -1062,9 +1062,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// Mirrors the already-completed TYPE-7 dereference type walk while
-    /// retaining only predicate identity. A borrow-holder dereference leaves
-    /// the written referent type unchanged; an own box dereference selects the
-    /// box nominal's referent type.
+    /// retaining only predicate identity.
+    ///
+    /// [TYPE-7] `deref` denotes the referent of a reference and nothing else:
+    /// a `Box`'s content is its field `inner` and is reached by the ordinary
+    /// field step [TYPE-9], so the only nested place this step admits is a
+    /// reference. The written step is retained as one projection of the
+    /// declaration-boundary template because a caller substitutes the
+    /// actual's own path for the formal and consumes exactly that leading
+    /// projection [FN-8, CALL-6]; the callee body, where [REF-1] makes the
+    /// parameter name the path itself, drops it instead.
     fn build_clause_place_inner(
         &self,
         place: NodeId,
@@ -1084,17 +1091,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let (nested, nested_holder_pending, nested_range) =
                 self.build_clause_place_inner(nested, bindings, expanded_bindings)?;
-            let ty = if nested_holder_pending {
-                nested.ty()
-            } else {
-                let CheckedType::Nominal(nominal) = nested.ty() else {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                };
-                let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind else {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                };
-                referent
-            };
+            if !nested_holder_pending {
+                // [TYPE-7] an owned place is named as itself; only a
+                // reference has a referent this step can name.
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            let ty = nested.ty();
             (
                 nested
                     .with_projection(GoalProjection::Deref, ty)

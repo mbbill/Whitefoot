@@ -408,6 +408,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let Some((_, template)) = self.called_function_template(call)? else {
                     continue;
                 };
+                // [OP-10, OP-11, OP-14] an operand-directed row names no
+                // instance in its written syntax; the body check selects one
+                // and the deferred instantiation admits its selectors.
+                if self.operand_directed_row_index(&template)?.is_some() {
+                    continue;
+                }
                 if !self.postcondition_call_arguments_have_links(call)? {
                     continue;
                 }
@@ -476,6 +482,43 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// failure.
     pub(super) fn admit_postcondition_selectors(&mut self) -> Result<(), CheckStop> {
         self.admit_postcondition_selectors_including(&[])
+    }
+
+    /// Admits the selectors of one instance built after the ordinary pass.
+    ///
+    /// An operand-directed [PRE-1] row [OP-10, OP-11, OP-14] selects its
+    /// instance from an operand, so that instance is built while a body is
+    /// being checked and the whole-inventory admission above has already run.
+    /// The record set and the per-signature admission are the same; only the
+    /// signature set this call walks is narrower.
+    pub(super) fn admit_postcondition_selectors_for(
+        &mut self,
+        function: FunctionId,
+    ) -> Result<(), CheckStop> {
+        let records = self.resolved.postconditions().to_vec();
+        if records.is_empty() {
+            return Ok(());
+        }
+        let signature = self
+            .signatures
+            .get(function.0 as usize)
+            .cloned()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let node = self.tree.path(signature.node)?.clone();
+        for record in &records {
+            if record.function != node {
+                continue;
+            }
+            let admitted = match self.admit_postcondition_selector(record, &signature, false) {
+                Ok(admitted) => admitted,
+                Err(CheckStop::Issue(_)) => {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                Err(stop) => return Err(stop),
+            };
+            self.postcondition_selectors.push(admitted);
+        }
+        Ok(())
     }
 
     /// Builds selectors for the ordinary locally reachable set plus concrete

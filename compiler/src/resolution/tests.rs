@@ -16,7 +16,7 @@ use super::{
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
-    max_sources: 64,
+    max_sources: 1_024,
     max_logical_path_bytes: 128,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
@@ -24,7 +24,7 @@ const SOURCE_LIMITS: SourceLimits = SourceLimits {
 };
 
 const LEX_LIMITS: LexLimits = LexLimits {
-    max_sources: 64,
+    max_sources: 1_024,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
     max_token_bytes: 16_384,
@@ -46,7 +46,7 @@ const FINALIZE_LIMITS: FinalizeLimits = FinalizeLimits {
     max_nodes: 131_072,
     max_child_edges: 131_072,
     max_terminals: 131_072,
-    max_sources: 64,
+    max_sources: 1_024,
 };
 
 const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {

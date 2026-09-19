@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 mod buffers;
 mod loops;
+mod prelude;
 mod probe;
 mod results;
 mod runs;
@@ -364,18 +365,12 @@ fn lower_function<'program>(
     permissions: Option<&'program FunctionPermissions>,
     overlap: OverlapLowering,
 ) -> Result<IrFunction, LoweringFailure> {
-    // TEMPORARY capability stop, made where the missing body would be built:
-    // one of the compiler-owned [PRE-1] records this version does not lower
-    // yet. Only a program that called the row reaches here, because a generic
-    // row has no instance until a call selects one, and the host rows are not
-    // on that list at all.
-    if function.body.is_none()
-        && let Some(row) = crate::lowering::UNIMPLEMENTED_PRELUDE_ROWS
-            .iter()
-            .find(|row| **row == function.name)
-    {
-        return Err(LoweringFailure::UnimplementedPreludeRow(row));
-    }
+    // One of the compiler-owned [PRE-1] records: declared body-less exactly
+    // like a host row, but with no trusted-base object behind it, so the
+    // compiler emits the body here. Only a program that called the row
+    // reaches this instance, because a generic row has no instance until a
+    // call selects one, and the host rows are not compiler-owned at all.
+    let compiler_owned = function.body.is_none() && prelude::compiler_owned_row(&function.name);
     let uninhabited = matches!(
         function.body_disposition,
         crate::semantic::CheckedBodyDisposition::Uninhabited { .. }
@@ -407,7 +402,12 @@ fn lower_function<'program>(
         if builder.bindings.insert(parameter.binding, value).is_some() {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        builder.promote_binding_if_needed(parameter.binding)?;
+        // A compiler-owned row's body names no binding: it reads its
+        // parameters as the operands they already are, so nothing is
+        // promoted to a frame slot for it.
+        if !compiler_owned {
+            builder.promote_binding_if_needed(parameter.binding)?;
+        }
     }
     if let Some(body) = &function.body {
         if uninhabited {
@@ -415,6 +415,8 @@ fn lower_function<'program>(
         } else {
             builder.lower_statements(body, None)?;
         }
+    } else if compiler_owned {
+        builder.lower_prelude_row(&function.name)?;
     } else {
         builder.blocks.clear();
         builder.current = None;

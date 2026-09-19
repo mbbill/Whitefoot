@@ -1,9 +1,17 @@
 use super::*;
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
-    /// Transfer all owners in logical order. Array and fixed-run storage have
-    /// different types and cannot share a storage-plan group; retaining the
-    /// source operand keeps its storage live through both split copies.
+    /// [OP-13] `slots_from_array` and `slots_into_array`: the consuming
+    /// conversion between a full fixed window and its dense array.
+    ///
+    /// Both rows are declared on `Slots` alone, whose window begins at slot
+    /// zero [WIN-1], and both sides are full, so the elements are one
+    /// contiguous extent on each side and the transfer is one copy of the
+    /// slots plus, in the array-to-window direction, the one descriptor word
+    /// the block carries. The header is first and the slots follow it
+    /// (compiler/storage-representation), so the slot extent is reached
+    /// through the window's own slots field rather than from the block's
+    /// base.
     pub(super) fn emit_full_array_conversion(
         &mut self,
         result: IrValueId,
@@ -11,45 +19,54 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         value: IrValueId,
     ) -> Result<(), BackendFailure> {
         let source_type = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
-        let (element, length, to_array) = match (source_type, ty) {
+        let (element, length, window_type, to_array) = match (source_type, ty) {
             (
                 IrType::Window {
+                    shape: crate::IrWindowShape::Slots,
                     element: source,
                     capacity: Some(source_length),
-                    ..
                 },
                 IrType::Array { element, length },
-            ) if source == element && source_length == length => (element, length, true),
+            ) if source == element && source_length == length => {
+                (element, length, source_type, true)
+            }
             (
                 IrType::Array {
                     element: source,
                     length: source_length,
                 },
                 IrType::Window {
+                    shape: crate::IrWindowShape::Slots,
                     element,
                     capacity: Some(length),
-                    ..
                 },
-            ) if source == element && source_length == length => (element, length, false),
+            ) if source == element && source_length == length => (element, length, ty, false),
             _ => return Err(BackendFailure::InvalidIr),
         };
         let source = self.value_place(value)?;
         let destination = self.value_place(result)?;
-        let fixed_type = if to_array { source_type } else { ty };
-        let fixed_llvm = llvm_type(self.program, fixed_type)?;
+        let window_llvm = llvm_type(self.program, window_type)?;
+        // A `Slots<T, N>` is `{ i64 len, [N x T] }`, so the slots are field
+        // one and the length is field zero.
+        let (window_place, slots) = if to_array {
+            (source.clone(), self.next_temporary()?)
+        } else {
+            (destination.clone(), self.next_temporary()?)
+        };
+        writeln!(
+            self.output,
+            "  %{slots} = getelementptr inbounds {window_llvm}, ptr {window_place}, i64 0, i32 1"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
         if !to_array {
-            if length != 0 {
-                // The fixed run's first field is the dense element storage.
-                self.copy_storage(source_type, &source, &destination)?;
-            }
-            for (field, contents) in [(1, length), (2, 0)] {
-                let pointer = self.next_temporary()?;
-                writeln!(self.output, "  %{pointer} = getelementptr inbounds {fixed_llvm}, ptr {destination}, i64 0, i32 {field}\n  store i64 {contents}, ptr %{pointer}")
-                    .map_err(|_| BackendFailure::TextEmission)?;
-            }
-            return Ok(());
+            let filled = self.next_temporary()?;
+            writeln!(
+                self.output,
+                "  %{filled} = getelementptr inbounds {window_llvm}, ptr {destination}, i64 0, i32 0\n  store i64 {length}, ptr %{filled}"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
         }
-        // No element access or head arithmetic is needed for the empty case.
+        // No element access is needed for the empty case.
         if length == 0 {
             return Ok(());
         }
@@ -58,26 +75,22 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .element(element)
             .ok_or(BackendFailure::InvalidIr)?;
         let element_llvm = llvm_type(self.program, element_type)?;
-        let head_pointer = self.next_temporary()?;
-        let head = self.next_temporary()?;
-        let tail = self.next_temporary()?;
-        let tail_source = self.next_temporary()?;
-        let prefix_destination = self.next_temporary()?;
-        writeln!(self.output,
-            "  %{head_pointer} = getelementptr inbounds {fixed_llvm}, ptr {source}, i64 0, i32 2\n  %{head} = load i64, ptr %{head_pointer}\n  %{tail} = sub i64 {length}, %{head}\n  %{tail_source} = getelementptr inbounds {element_llvm}, ptr {source}, i64 %{head}\n  %{prefix_destination} = getelementptr inbounds {element_llvm}, ptr {destination}, i64 %{tail}")
-            .map_err(|_| BackendFailure::TextEmission)?;
-        self.copy_element_range(
-            &element_llvm,
-            &format!("%{tail_source}"),
-            &destination,
-            &format!("%{tail}"),
-        )?;
-        self.copy_element_range(
-            &element_llvm,
-            &source,
-            &format!("%{prefix_destination}"),
-            &format!("%{head}"),
-        )
+        self.intrinsics.insert(IntrinsicDeclaration::MemoryMove);
+        if to_array {
+            self.copy_element_range(
+                &element_llvm,
+                &format!("%{slots}"),
+                &destination,
+                &length.to_string(),
+            )
+        } else {
+            self.copy_element_range(
+                &element_llvm,
+                &source,
+                &format!("%{slots}"),
+                &length.to_string(),
+            )
+        }
     }
 
     /// A bounded count of complete stride-spaced representations. Target

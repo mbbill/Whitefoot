@@ -17,7 +17,7 @@ use super::{
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
-    max_sources: 64,
+    max_sources: 1_024,
     max_logical_path_bytes: 128,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
@@ -25,7 +25,7 @@ const SOURCE_LIMITS: SourceLimits = SourceLimits {
 };
 
 const LEX_LIMITS: LexLimits = LexLimits {
-    max_sources: 64,
+    max_sources: 1_024,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
     max_token_bytes: 16_384,
@@ -47,7 +47,7 @@ const FINALIZE_LIMITS: FinalizeLimits = FinalizeLimits {
     max_nodes: 131_072,
     max_child_edges: 131_072,
     max_terminals: 131_072,
-    max_sources: 64,
+    max_sources: 1_024,
 };
 
 const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
@@ -284,204 +284,49 @@ fn call_definition(function: &IrFunction, result: IrValueId) -> (u32, &[IrValueI
         .expect("source metadata must name an actual IR call")
 }
 
-const RELEASE_INVENTORY_SOURCE: &[u8] = br#"fn observe['s](cell: &Box<'s, u64>, witness: &Box<'s, u64>) -> result: own unit pure {
-  return unit;
-}
-
-fn pair['l, 'r](left: &Box<'l, u64>, right: &Box<'r, u64>, left_witness: &Box<'l, u64>, right_witness: &Box<'r, u64>) -> result: own unit pure {
-  return unit;
-}
-
-fn pass<T: linear>(value: own T) -> result: own T pure {
+/// Retired subject: physical release specialization over the store axis, which
+/// the two `physical_call_inventory_*` tests drove with `Heap<'s>`, `region`
+/// blocks, `arena_frame` and `Box<'s, T>`; v0.60 has one heap [STOR-8], no
+/// region and no store parameter, so a `Box` has exactly one release and the
+/// axis those tests measured no longer exists. Successor: this test, which
+/// states the consequence -- one physical variant per source function, with
+/// the calls of each variant closed inside the inventory.
+#[test]
+fn physical_call_inventory_gives_one_variant_per_function_under_one_heap() {
+    let source = br#"fn pass<T: linear>(value: own T) -> result: own T pure {
   return move value;
 }
 
-fn relay['s](cell: own Box<'s, u64>) -> result: own Box<'s, u64> pure {
-  return pass::<Box<'s, u64>>(value: move cell);
-}
-
-fn recurse['s](cell: &Box<'s, u64>, witness: &Box<'s, u64>, again: own Bool) -> result: own unit pure {
-  if again {
-    let stop = False();
-    return recurse(cell: cell, witness: witness, again: stop);
-  }
+fn observe(cell: &Box<u64>, witness: &Box<u64>) -> result: own unit pure {
   return unit;
 }
 
-fn borrow_scalar(value: &u64) -> result: own unit pure {
-  return unit;
+fn relay(cell: own Box<u64>) -> result: own Box<u64> pure {
+  return pass::<Box<u64>>(value: move cell);
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  region 'a {
-    let first = arena_frame::<8, 8, 'a>();
-    region 'b {
-      let second = arena_frame::<8, 8, 'b>();
-      region {
-        match heap_box(store: &uniq heap, value: 1_u64) {
-          Err(error: back) => {
-            return exit_status(code: 70_u8);
-          }
-          Ok(value: general) => {
-            match arena_box(store: &uniq first, value: 2_u64) {
-              Err(error: back) => {
-                return exit_status(code: 70_u8);
-              }
-              Ok(value: extent_a) => {
-                match arena_box(store: &uniq second, value: 3_u64) {
-                  Err(error: back) => {
-                    return exit_status(code: 70_u8);
-                  }
-                  Ok(value: extent_b) => {
-                    let general_ready = relay(cell: move general);
-                    let extent_ready = relay(cell: move extent_a);
-                    region {
-                      let again = True();
-                      observe(cell: &general_ready, witness: &general_ready);
-                      observe(cell: &extent_ready, witness: &extent_ready);
-                      observe(cell: &extent_b, witness: &extent_b);
-                      pair(left: &general_ready, right: &extent_ready, left_witness: &general_ready, right_witness: &extent_ready);
-                      pair(left: &extent_ready, right: &general_ready, left_witness: &extent_ready, right_witness: &general_ready);
-                      recurse(cell: &general_ready, witness: &general_ready, again: again);
-                      recurse(cell: &extent_b, witness: &extent_b, again: again);
-                      return exit_status(code: 0_u8);
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+fn main() -> status: own ExitStatus pure {
+  let first = box_new::<u64>(value: 1_u64);
+  let second = box_new::<u64>(value: 2_u64);
+  let ready = relay(cell: move first);
+  observe(cell: &ready, witness: &second);
+  observe(cell: &second, witness: &ready);
+  return exit_status(code: 0_u8);
 }
 "#;
-
-#[test]
-fn physical_call_inventory_reuses_classes_and_keeps_independent_axes() {
-    use crate::semantic::CheckedReleaseClass::{Extent, General};
-
-    with_checked(RELEASE_INVENTORY_SOURCE, |checked| {
+    with_checked(source, |checked| {
         let plan = super::specialize::PhysicalFunctions::build(&checked.data)
             .expect("accepted call inventory must close");
-        let variants = |name: &str| {
-            let source = checked
-                .data
-                .functions
+        for function in &checked.data.functions {
+            let variants = plan
+                .variants
                 .iter()
-                .find(|function| function.name == name)
-                .expect("named source function")
-                .id;
-            plan.variants
-                .iter()
-                .filter(|variant| variant.source == source)
-                .map(|variant| {
-                    variant
-                        .releases
-                        .iter()
-                        .map(|(_, class)| *class)
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(variants("observe"), [vec![General], vec![Extent]]);
-        assert_eq!(
-            variants("pair"),
-            [
-                vec![General, General],
-                vec![General, Extent],
-                vec![Extent, General]
-            ],
-            "ordinary callable definitions retain their default physical ABI as well as the two independently instantiated call environments"
-        );
-        assert_eq!(
-            variants("borrow_scalar"),
-            [vec![]],
-            "loan-only regions are erased"
-        );
-        let main = plan
-            .variants
-            .iter()
-            .find(|variant| checked.data.functions[variant.source.0 as usize].name == "main")
-            .expect("ordinary main");
-        let observe = checked
-            .data
-            .functions
-            .iter()
-            .find(|function| function.name == "observe")
-            .expect("observe declaration")
-            .id;
-        let calls = main
-            .calls
-            .iter()
-            .filter_map(|(_, target)| {
-                (plan.variants[*target as usize].source == observe).then_some(*target)
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(calls.len(), 3);
-        assert_ne!(calls[0], calls[1]);
-        assert_eq!(
-            calls[1], calls[2],
-            "distinct extent brands share physical code"
-        );
-        assert!(
-            plan.variants
-                .windows(2)
-                .all(|pair| pair[0].source.0 <= pair[1].source.0)
-        );
-    });
-}
-
-#[test]
-fn physical_call_inventory_closes_captured_regions_and_recursive_edges() {
-    use crate::semantic::CheckedReleaseClass::{Extent, General};
-
-    with_checked(RELEASE_INVENTORY_SOURCE, |checked| {
-        let plan = super::specialize::PhysicalFunctions::build(&checked.data)
-            .expect("accepted recursive call inventory must close");
-        let pass = checked
-            .data
-            .functions
-            .iter()
-            .find(|function| function.name == "pass")
-            .expect("concrete generic pass instance");
-        assert!(
-            pass.region_parameters.is_empty(),
-            "the store is captured inside T"
-        );
-        let classes = plan
-            .variants
-            .iter()
-            .filter(|variant| variant.source == pass.id)
-            .map(|variant| {
-                variant
-                    .releases
-                    .iter()
-                    .map(|(_, class)| *class)
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(classes, [vec![General], vec![Extent]]);
-        let recursive = checked
-            .data
-            .functions
-            .iter()
-            .find(|function| function.name == "recurse")
-            .expect("recursive source declaration")
-            .id;
-        let variants = plan
-            .variants
-            .iter()
-            .enumerate()
-            .filter(|(_, variant)| variant.source == recursive)
-            .collect::<Vec<_>>();
-        assert_eq!(variants.len(), 2);
-        for (index, variant) in variants {
-            assert_eq!(variant.calls.len(), 1);
-            assert_eq!(
-                variant.calls[0].1 as usize, index,
-                "recursive calls retain the class environment"
+                .filter(|variant| variant.source == function.id)
+                .count();
+            assert!(
+                variants <= 1,
+                "{}: one heap leaves one release environment, got {variants}",
+                function.name
             );
         }
         for variant in &plan.variants {
@@ -489,9 +334,15 @@ fn physical_call_inventory_closes_captured_regions_and_recursive_edges() {
                 variant
                     .calls
                     .iter()
-                    .all(|(_, target)| (*target as usize) < plan.variants.len())
+                    .all(|(_, target)| (*target as usize) < plan.variants.len()),
+                "every call names a variant of this inventory"
             );
         }
+        assert!(
+            plan.variants
+                .windows(2)
+                .all(|pair| pair[0].source.0 <= pair[1].source.0)
+        );
     });
 }
 
@@ -537,22 +388,21 @@ fn return_drops(function: &IrFunction) -> &[IrDrop] {
     drops
 }
 
+/// Retired subject: `&uniq` against `&` over one descriptor representation,
+/// which v0.60 removed with the second reference kind [REF-1]; successor:
+/// this test over the three modes v0.60 does have.
 #[test]
-fn source_signature_modes_distinguish_identical_descriptor_representations() {
+fn source_signature_modes_distinguish_the_three_parameter_modes() {
     let source = format!(
-        "fn owned(value: own buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn shared(value: &buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn unique(value: &uniq buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\n{PLAIN_ENTRY}"
+        "fn owned(value: own Box<u64>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn referenced(value: &Box<u64>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn ranged(value: &[u8]) -> result: own unit pure {{\n  return unit;\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
-        let owned = function(program, "owned");
-        let representation = owned.parameters()[0].1;
-        assert!(matches!(representation, IrType::Buffer { .. }));
         for (name, mode) in [
             ("owned", IrSourceMode::Own),
-            ("shared", IrSourceMode::Shared),
-            ("unique", IrSourceMode::Unique),
+            ("referenced", IrSourceMode::Reference),
+            ("ranged", IrSourceMode::Range),
         ] {
             let lowered = function(program, name);
-            assert_eq!(lowered.parameters()[0].1, representation);
             let signature = lowered
                 .source_signature
                 .as_ref()
@@ -562,22 +412,24 @@ fn source_signature_modes_distinguish_identical_descriptor_representations() {
             assert_eq!(
                 return_drops(lowered).len(),
                 usize::from(mode == IrSourceMode::Own),
-                "equal descriptor types retain different release responsibilities"
+                "only an owned parameter carries a compiler-derived release"
             );
         }
     });
 }
 
+/// Retired subject: a borrow-mode *result*, which [REF-3] removed when it
+/// forbade returning a reference; successor: this test, which states that the
+/// declared result mode of every v0.60 function is `own`.
 #[test]
-fn source_signature_modes_retain_borrow_results_without_inventing_ownership() {
+fn source_signature_results_are_owned_because_no_reference_escapes() {
     let source = format!(
-        "fn owned(value: own u64) -> result: own u64 pure {{\n  return value;\n}}\n\nfn shared['r](value: &'r u64) -> result: &'r u64 pure {{\n  return value;\n}}\n\nfn unique['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {{\n  return move value;\n}}\n\n{PLAIN_ENTRY}"
+        "fn owned(value: own u64) -> result: own u64 pure {{\n  return value;\n}}\n\nfn read(value: &u64) -> result: own u64 reads(value) {{\n  return deref(value);\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         for (name, mode) in [
             ("owned", IrSourceMode::Own),
-            ("shared", IrSourceMode::Shared),
-            ("unique", IrSourceMode::Unique),
+            ("read", IrSourceMode::Reference),
         ] {
             let lowered = function(program, name);
             let signature = lowered
@@ -585,17 +437,9 @@ fn source_signature_modes_retain_borrow_results_without_inventing_ownership() {
                 .as_ref()
                 .expect("a source signature");
             assert_eq!(signature.parameters, [mode]);
-            assert_eq!(signature.result, mode);
-            assert_eq!(
-                matches!(lowered.result(), IrType::Address(_)),
-                mode != IrSourceMode::Own
-            );
+            assert_eq!(signature.result, IrSourceMode::Own);
+            assert!(!matches!(lowered.result(), IrType::Address(_)));
         }
-        assert_eq!(
-            function(program, "shared").result(),
-            function(program, "unique").result(),
-            "the same address representation does not distinguish loan strength"
-        );
     });
 }
 
@@ -633,12 +477,18 @@ fn source_signature_modes_are_not_invented_for_synthesized_functions() {
 #[test]
 fn source_call_uses_distinguish_borrow_and_consume_of_the_same_ir_value() {
     let source = format!(
-        "fn inspect(value: &buffer<u8>) -> result: own u64 reads(value) {{\n  return len_of(deref(value));\n}}\n\nfn consume(value: own buffer<u8>) -> result: own u64 reads(value) {{\n  return len_of(value);\n}}\n\nfn run() -> result: own u64 pure {{\n  let data = buffer_new(2_u64, 7_u8);\n  region {{\n    let before = inspect(value: &data);\n  }}\n  let after = consume(value: move data);\n  return after;\n}}\n\n{PLAIN_ENTRY}"
+        "fn inspect(value: &Box<Array<u8>>) -> result: own u64 reads(value) {{\n  return deref(value).inner.len;\n}}\n\nfn consume(value: own Box<Array<u8>>) -> result: own u64 pure {{\n  return value.inner.len;\n}}\n\nfn run() -> result: own u64 pure {{\n  let data = box_array_filled::<u8>(count: 2_u64, value: 7_u8);\n  let before = inspect(value: &data);\n  let after = consume(value: move data);\n  return after;\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let (borrow, borrowed_values) = source_call(program, "run", "inspect");
         let (consume, consumed_values) = source_call(program, "run", "consume");
-        assert_eq!(borrowed_values, consumed_values);
+        // Retired half: the two calls passing one identical IR value. A
+        // reference parameter is an address of the owner's storage and an own
+        // parameter is the value itself [REF-1, OWN-2], so the borrow and the
+        // consume of one source binding no longer share an operand; what the
+        // records still have to distinguish is the *use*, which is what the
+        // two assertions below read.
+        assert_ne!(borrowed_values, consumed_values);
         assert_ne!(borrow.result, consume.result);
         assert_eq!(borrow.arguments, [IrSourceArgument::Borrow]);
         assert_eq!(
@@ -648,31 +498,15 @@ fn source_call_uses_distinguish_borrow_and_consume_of_the_same_ir_value() {
     });
 }
 
-#[test]
-fn source_call_uses_keep_unique_holder_transfer_distinct_from_owning_storage() {
-    let source = format!(
-        "fn forward['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {{\n  return move value;\n}}\n\nfn relay['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {{\n  let next = forward(value: move value);\n  return move next;\n}}\n\n{PLAIN_ENTRY}"
-    );
-    with_ir(source.as_bytes(), |program| {
-        let (call, _) = source_call(program, "relay", "forward");
-        assert_eq!(
-            call.arguments,
-            [IrSourceArgument::Binding { consume_root: true }]
-        );
-        assert_eq!(call.returned_borrow_argument, Some(0));
-        let signature = function(program, "forward")
-            .source_signature
-            .as_ref()
-            .expect("a source signature");
-        assert_eq!(signature.parameters, [IrSourceMode::Unique]);
-        assert_eq!(signature.result, IrSourceMode::Unique);
-    });
-}
+// Retired test: `source_call_uses_keep_unique_holder_transfer_distinct_from_owning_storage`,
+// whose subject was the transfer of a `&uniq` holder out of a callee; v0.60
+// has one reference kind [REF-1] and returns none of them [REF-3], and its
+// successor is `source_signature_results_are_owned_because_no_reference_escapes`.
 
 #[test]
 fn source_call_uses_retain_projected_root_consumption() {
     let source = format!(
-        "struct Packet {{\n  first: box<u64>;\n  second: box<u64>;\n}}\n\nfn consume(value: own box<u64>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn run() -> result: own unit pure {{\n  let first = box_new(3_u64);\n  let second = box_new(5_u64);\n  let packet = Packet(first: move first, second: move second);\n  return consume(value: move packet.first);\n}}\n\n{PLAIN_ENTRY}"
+        "struct Packet {{\n  first: Box<u64>;\n  second: Box<u64>;\n}}\n\nfn consume(value: own Box<u64>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn run() -> result: own unit pure {{\n  let first = box_new::<u64>(value: 3_u64);\n  let second = box_new::<u64>(value: 5_u64);\n  let packet = Packet(first: move first, second: move second);\n  return consume(value: move packet.first);\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let (call, _) = source_call(program, "run", "consume");
@@ -684,38 +518,32 @@ fn source_call_uses_retain_projected_root_consumption() {
     });
 }
 
+/// Retired subject: the returned-borrow candidate of a call, which [REF-3]
+/// removed when it forbade returning a reference; successor: this test, which
+/// keeps the indexed-borrow *argument* half of the same question.
 #[test]
 fn source_call_uses_retain_the_actual_indexed_borrow_candidate() {
     let source = br#"struct Row {
   value: u64;
 }
 
-fn select['r](stamp: own u64, value: &'r Row) -> result: &'r Row pure {
-  return value;
+fn select(stamp: own u64, value: &Row) -> result: own u64 reads(value) {
+  return deref(value).value;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<Row, 2>();
+  let rows = slots_new::<Row, 2>();
   let first = Row(value: 3_u64);
-  region {
-    place_back(vector: &uniq empty, value: move first);
-  }
-  let prefix = move empty;
+  place_back(window: &rows, value: move first);
   let second = Row(value: 5_u64);
-  region {
-    place_back(vector: &uniq prefix, value: move second);
-  }
-  let rows = move prefix;
-  region {
-    let chosen = select(stamp: 7_u64, value: &rows[1_u64]);
-    let observed = deref(chosen).value;
-  }
+  place_back(window: &rows, value: move second);
+  let observed = select(stamp: 7_u64, value: &rows[1_u64]);
   return exit_status(code: 0_u8);
 }
 "#;
     with_ir(source, |program| {
         let (call, arguments) = source_call(program, "main", "select");
-        assert_eq!(call.returned_borrow_argument, Some(1));
+        assert_eq!(call.returned_borrow_argument, None);
         assert_eq!(
             call.arguments,
             [IrSourceArgument::Value, IrSourceArgument::Borrow]
@@ -730,7 +558,7 @@ fn main() -> status: own ExitStatus pure {
                     IrInstruction::Define {
                         result,
                         operation: IrOperation::ProjectAddress {
-                            projection: super::IrPlaceProjection::RunElement { .. },
+                            projection: super::IrPlaceStep::RunElement { .. },
                             ..
                         },
                         ..
@@ -905,11 +733,9 @@ fn counted_range_carries_one_stable_binder_address_for_body_local_shared_borrows
   let total = 0_u64;
   let upper = 2_u64;
   for @items (i in 0_u64..upper) {
-    region {
-      let held = &i;
-      let seen = deref(held);
-      set total = total +wrap seen;
-    }
+    let held = &i;
+    let seen = deref(held);
+    set total = total +wrap seen;
     set upper = 0_u64;
   }
   return total;
@@ -970,27 +796,26 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// Retired subject: the `dispose` statement's explicit release edge, which
+/// v0.60 has no spelling for -- an affine value is released early by moving it
+/// into a function that consumes it [PROV-6]; successor: this test, which
+/// keeps the addressed-cleanup half, that a release names its place instead of
+/// loading a second whole-owner snapshot.
 #[test]
 fn addressed_cleanup_keeps_places_instead_of_whole_owner_snapshots() {
     let source = format!(
         r#"struct Holder {{
-  bytes: buffer<u8>;
+  bytes: Box<u64>;
   stamp: u64;
 }}
 
-fn touch(value: &uniq Holder) -> result: own unit writes(value.stamp) {{
+fn touch(value: &Holder) -> result: own unit writes(value.stamp) {{
   set deref(value).stamp = 41_u64;
   return unit;
 }}
 
-fn release_holder(value: own Holder, early: own Bool) -> result: own unit writes(value, value.stamp) {{
-  region {{
-    touch(value: &uniq value);
-  }}
-  if early {{
-    dispose value;
-    return unit;
-  }}
+fn release_holder(value: own Holder) -> result: own unit pure {{
+  touch(value: &value);
   return unit;
 }}
 
@@ -1024,13 +849,16 @@ fn release_holder(value: own Holder, early: own Bool) -> result: own unit writes
                 groups.push(drops.as_slice());
             }
         }
-        assert_eq!(groups.len(), 2, "explicit disposal and normal scope exit");
+        assert_eq!(groups.len(), 1, "one scope exit, one release group");
         for drops in groups {
             let [field, owner] = drops else {
-                panic!("field release then owner node");
+                panic!("field release then owner node, got {drops:?}");
             };
-            assert!(matches!(field.ty(), IrType::Buffer { .. }));
+            // The cell is the field that derives release work; the owner node
+            // is the struct the walk runs over [PROV-6].
+            assert!(matches!(field.ty(), IrType::Nominal(_)));
             assert!(matches!(owner.ty(), IrType::Nominal(_)));
+            assert_ne!(field.ty(), owner.ty());
             for drop in drops {
                 let IrDropSubject::Place(address) = drop.subject() else {
                     panic!("an addressed owner keeps its cleanup place");
@@ -1048,10 +876,10 @@ fn release_holder(value: own Holder, early: own Bool) -> result: own unit writes
 fn an_unused_state_writing_call_reaches_ir() {
     let source = format!(
         "struct Pair {{\n  left: u64;\n}}\n\n\
-         fn mutate(pair: &uniq Pair) -> result: own unit writes(pair.left) {{\n  \
+         fn mutate(pair: &Pair) -> result: own unit writes(pair.left) {{\n  \
          set deref(pair).left = 1_u64;\n  return unit;\n}}\n\n\
-         fn wrapper(pair: &uniq Pair) -> result: own unit writes(pair.left) {{\n  \
-         mutate(pair: move pair);\n  return unit;\n}}\n\n\
+         fn wrapper(pair: &Pair) -> result: own unit writes(pair.left) {{\n  \
+         mutate(pair: pair);\n  return unit;\n}}\n\n\
          {PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -1265,13 +1093,23 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_buffer_release_retains_its_owned_storage_type() {
     // STOR-3 release names ordinary owned storage; opaque drops are empty.
+    // A runtime-capacity `Array<u8>` exists only as `Box` content [TYPE-9],
+    // so the owner released here is the cell.
     with_ir(
-        b"fn drop_buffer(values: own buffer<u8>) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn drop_buffer(values: own Box<Array<u8>>) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         |program| {
             let [drop] = return_drops(function(program, "drop_buffer")) else {
                 panic!("the buffer owner must be released once");
             };
-            assert!(matches!(drop.ty(), IrType::Buffer { .. }));
+            let IrType::Nominal(cell) = drop.ty() else {
+                panic!("the released owner is the cell, got {:?}", drop.ty());
+            };
+            let super::IrNominalKind::Box { referent, .. } =
+                program.nominal(cell).expect("cell nominal").kind()
+            else {
+                panic!("the released owner is a cell");
+            };
+            assert!(matches!(referent, IrType::Buffer { .. }));
         },
     );
 }

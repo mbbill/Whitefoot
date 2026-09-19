@@ -25,8 +25,9 @@ use std::collections::HashMap;
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationClass, DeclarationId, DeclarationRole, LexicalUseRole, Production, ResolvedTarget,
-    SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
+    DeclarationClass, DeclarationId, DeclarationRole, FixedTerminal, LexicalUseRole, Production,
+    ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
+    UnsupportedSemanticFeature,
 };
 
 use super::super::model::{
@@ -75,6 +76,10 @@ pub(super) const REF4_RING: &str =
 
 /// [WIN-3]'s restructuring for a move out of a window slot or array element.
 pub(super) const WIN3_NO_TAKE: &str = "use take_back, remove_at, or swap [OP-10, OP-11]";
+
+/// [OWN-1]'s restructuring for a `move` of a place reached through a `deref`.
+pub(super) const OWN1_ROOTED_CONSUME: &str =
+    "consume a place rooted in a live own-mode binding of this function";
 
 /// [WIN-3]'s restructuring for a remaining linear part of a consumed owner.
 pub(super) const WIN3_DESTRUCTURE: &str =
@@ -603,6 +608,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // `deref` is an ordinary path step [TYPE-7], so a `borrow_expr` over
         // one is an ordinary formation; the root of the complete path is what
         // decides the judgment.
+        //
+        // [REF-1] a place that goes through a reference variable is written
+        // under that step — `&deref(p)`, `&deref(p)[i]` — and resolving the
+        // step replaces it with the path the reference names. The root of the
+        // complete path is therefore that reference variable itself, which is
+        // what the reference-root replacement below already reads, so the two
+        // spellings reach one judgment and one representation.
+        let written_deref = self.has_fixed(pbase, FixedTerminal::Deref)?;
+        let pbase = if written_deref {
+            let inner = self
+                .tree
+                .first_child_with(pbase, Production::Place)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            if !self
+                .tree
+                .children_with(inner, Production::Psuffix)?
+                .is_empty()
+            {
+                // A reference is never stored in an aggregate [REF-3], so the
+                // only place a `deref` step names is a bare reference
+                // variable; anything else is a form this walk cannot root.
+                return self
+                    .unsupported(UnsupportedSemanticFeature::ReferenceFormation, place_node);
+            }
+            self.tree
+                .first_child_with(inner, Production::Pbase)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?
+        } else {
+            pbase
+        };
         let root_use = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
         let (root, root_type, root_binding) = match root_use.target() {
             ResolvedTarget::Source {
@@ -629,7 +664,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // [REF-1] a reference variable is not storage of its own, so
                 // `&r` where `r` is one has no path to name that `r` does not
                 // already name.
-                if local.reference.is_some() && self.tree.children(pbase)?.is_empty() {
+                if local.reference.is_some()
+                    && !written_deref
+                    && self.tree.children(pbase)?.is_empty()
+                {
                     let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
                     if suffixes.is_empty() {
                         return self.issue_node(
@@ -915,7 +953,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         required: RequiredReferent,
     ) -> Result<bool, CheckStop> {
         if holds_reference {
-            return self.satisfies_requirement(ty, required);
+            return self.satisfies_referent_requirement(ty, required);
         }
         let CheckedType::Nominal(nominal) = ty else {
             return Ok(false);
@@ -923,10 +961,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind else {
             return Ok(false);
         };
-        self.satisfies_requirement(referent, required)
+        self.satisfies_referent_requirement(referent, required)
     }
 
-    fn satisfies_requirement(
+    pub(super) fn satisfies_referent_requirement(
         &self,
         ty: CheckedType,
         required: RequiredReferent,

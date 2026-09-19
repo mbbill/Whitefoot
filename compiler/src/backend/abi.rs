@@ -1,7 +1,16 @@
 //! The internal function ABI, shared by definitions and every call route.
 //!
-//! This describes value representation only. Source access modes do not select
-//! aliasing permissions, and a declaration and definition use the same ABI.
+//! This module describes value representation: which parameters and results
+//! travel as values and which travel as a pointer to their storage. A
+//! declaration and a definition use the same ABI.
+//!
+//! Representation is not the whole signature. A parameter's *source mode*
+//! does select the aliasing facts its emitted signature carries
+//! (compiler/backend-facts): a reference parameter is `noalias`, `nonnull`,
+//! `dereferenceable` and non-capturing, because [REF-1] through [REF-3] and
+//! [EFF-5] already proved each of those, and `swap` [OP-11] is the one row
+//! whose two arguments may name the same place. The emitter reads the source
+//! signature, not this representation table, to decide that.
 
 use crate::{IrFunction, IrProgram, IrType};
 

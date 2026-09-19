@@ -833,13 +833,13 @@ mod tests {
         .expect_err("the unchanged source still lacks the file-name range proof");
         assert_eq!(failure.rule_id(), Some("FN-8"));
         assert!(
-            failure.detail().contains("1_u64 <= len_of(deref(name))"),
+            failure.detail().contains("1_u64 <= deref(name).len"),
             "{}",
             failure.detail()
         );
         let bounded = std::str::from_utf8(source).unwrap().replace(
             "writes(factory) {",
-            "writes(factory) contract {\n  requires 1_u64 <= len_of(deref(name));\n} {",
+            "writes(factory) contract {\n  requires 1_u64 <= deref(name).len;\n} {",
         );
         compile(
             &[SourceInput::new("bounded_walk.wf", bounded.as_bytes())],
@@ -1029,7 +1029,7 @@ fn main() -> status: own ExitStatus pure {{
         // and lowering erases it before the permission table is consumed.
         let proved = format!(
             "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 reads(values) {{
-  let size = len_of(values);
+  let size = values.len;
   let bounded = iand(index, 7_u64);
   invariant index_in_range: bounded <= 7_u64;
   return values[bounded];
@@ -1389,7 +1389,7 @@ fn main() -> status: own ExitStatus pure {
     fn a_counted_loop_a_give_can_leave_is_denied_by_condition_four() {
         let source =
             b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
-  let count = len_of(deref(src));
+  let count = deref(src).len;
   let acc = 0_u64;
   let always = True();
   let answer = if always {
@@ -1429,7 +1429,7 @@ fn main() -> status: own ExitStatus pure {
         // about the exit edge and not about the shape.
         let contained =
             b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
-  let count = len_of(deref(src));
+  let count = deref(src).len;
   let acc = 0_u64;
   let always = True();
   let answer = if always {
@@ -2186,7 +2186,7 @@ fn main() -> status: own ExitStatus pure {
         let contract = rejection(
             "contract.wf",
             br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
-  requires buffer_fits::<u8>(len_of(deref(data)));
+  requires buffer_fits::<u8>(deref(data).len);
 } {
   return 0_u64;
 }
@@ -2216,7 +2216,7 @@ fn main() -> status: own ExitStatus pure {
             &[SourceInput::new(
                 "repaired.wf",
                 br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 pure contract {
-  define spare = len_of(deref(data));
+  define spare = deref(data).len;
   requires end <= spare;
 } {
   return 0_u64;
@@ -2361,7 +2361,7 @@ fn main() -> status: own ExitStatus pure {
         let detail = rejection(
             "lifetime.wf",
             br#"fn sum(data: &buffer<u8>) -> out: own u64 reads(data) {
-  return len_of(deref(data));
+  return deref(data).len;
 }
 
 fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> pure {

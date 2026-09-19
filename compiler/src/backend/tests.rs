@@ -102,7 +102,7 @@ use crate::{
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
-    max_sources: 64,
+    max_sources: 1_024,
     max_logical_path_bytes: 128,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
@@ -110,7 +110,7 @@ const SOURCE_LIMITS: SourceLimits = SourceLimits {
 };
 
 const LEX_LIMITS: LexLimits = LexLimits {
-    max_sources: 64,
+    max_sources: 1_024,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
     max_token_bytes: 16_384,
@@ -132,7 +132,7 @@ const FINALIZE_LIMITS: FinalizeLimits = FinalizeLimits {
     max_nodes: 131_072,
     max_child_edges: 131_072,
     max_terminals: 131_072,
-    max_sources: 64,
+    max_sources: 1_024,
 };
 
 const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
@@ -684,6 +684,32 @@ fn emitted_function<'module>(module: &'module str, name: &str) -> &'module str {
         .find("\n}\n\n")
         .map(|offset| function_start + offset + 3)
         .expect("source function definition must close");
+    &module[function_start..function_end]
+}
+
+/// One monomorphized instance of a compiler-owned [PRE-1] record.
+///
+/// Those records are emitted as ordinary out-of-line bodies, one per instance
+/// (compiler/prelude-records), so the storage a construction row allocates and
+/// the descriptor words a window row writes are in the row's own definition
+/// rather than at the call.
+fn emitted_prelude_row<'module>(module: &'module str, row: &str) -> &'module str {
+    let symbol = format!(" @wf_{row}$instance$");
+    let function_start = module
+        .match_indices(&symbol)
+        .find_map(|(symbol_start, _)| {
+            let line_start = module[..symbol_start]
+                .rfind('\n')
+                .map_or(0, |newline| newline + 1);
+            module[line_start..symbol_start]
+                .starts_with("define ")
+                .then_some(line_start)
+        })
+        .unwrap_or_else(|| panic!("missing emitted prelude row {row}"));
+    let function_end = module[function_start..]
+        .find("\n}\n\n")
+        .map(|offset| function_start + offset + 3)
+        .expect("prelude row definition must close");
     &module[function_start..function_end]
 }
 

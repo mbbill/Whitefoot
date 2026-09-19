@@ -1,9 +1,9 @@
-fn read(values: &Slots<Box<Slots<Box<u8>>>, 2>) -> result: own u64 pure {
-  doc "A measure read is a place form and carries the empty effect row, so the declaration is `pure` [OP-15, EFF-1].";
+fn read(values: &Slots<Box<Slots<Box<u8>>>, 2>) -> result: own u64 reads(values.len) {
+  doc "A measure read is a place form, and one read through a reference parameter exhibits reads(p.len) on the declared row [OP-15, EFF-1].";
   return deref(values).len;
 }
 
-fn relay(values: &Slots<Box<Slots<Box<u8>>>, 2>) -> result: own u64 pure {
+fn relay(values: &Slots<Box<Slots<Box<u8>>>, 2>) -> result: own u64 reads(values.len) {
   doc "Written type arguments inside nested run and cell element types are substituted at their own positions, so the relayed parameter type is the same exact type [FN-2, TYPE-9].";
   return read(values: values);
 }

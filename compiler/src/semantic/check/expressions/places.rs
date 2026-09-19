@@ -24,7 +24,7 @@ use super::super::super::model::{
     CheckedType,
 };
 use super::super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
-use super::super::references::{AccessKind, WIN3_NO_TAKE};
+use super::super::references::{AccessKind, OWN1_ROOTED_CONSUME, WIN3_NO_TAKE};
 use super::super::{CheckStop, Checker, EffectSet, LocalBinding, PlaceAccess, TypedExpression};
 use super::{PlaceUseContext, PlaceUseOptions};
 
@@ -61,7 +61,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         use_node: NodeId,
         node: NodeId,
-        _pbase: NodeId,
+        pbase: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         options: PlaceUseOptions,
     ) -> Result<TypedExpression, CheckStop> {
@@ -102,6 +102,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let read_out = !copy && options.explicit_move && self.take_commit_read_out(&place.resolved);
         if !copy && !read_out {
             if options.explicit_move {
+                // [OWN-1] a consume is admitted only for a place rooted in a
+                // live own-mode binding. A place written under a `deref` is
+                // rooted at the storage the reference names, which this
+                // function does not own, so the `move` is refused there and
+                // not by [WIN-3], whose subject is a window slot or an array
+                // element.
+                if self.has_fixed(pbase, FixedTerminal::Deref)? {
+                    return self.issue_node(
+                        SemanticRule::Own1,
+                        use_node,
+                        SemanticIssueKind::MoveThroughReference {
+                            mechanical_fix: OWN1_ROOTED_CONSUME,
+                        },
+                    );
+                }
                 // [WIN-3] there is no take operation and no hole: a move out
                 // of a place a reference names would leave storage no owner
                 // can account for.

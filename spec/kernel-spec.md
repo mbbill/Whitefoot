@@ -1116,6 +1116,7 @@ A stale index that is still in bounds names the current occupant of that slot, w
 [OP-14] `free_empty`.
 `free_empty(window: move r)` consumes any window proved empty, an affine element type and a linear one alike, with the contract `requires window.len == 0_u64` submitted to [MSR-4] at the call.
 Its compiler-owned shape parameter W has exactly the admitted arguments `Slots<T, n>`, `Slots<T>`, `Ring<T, n>`, `Ring<T>`, `Box<Slots<T>>`, and `Box<Ring<T>>`, so `free_empty(window: move b)` consumes a boxed runtime-capacity window and frees its cell with it; at a boxed argument the row's measure place instantiates as `window.inner` and the clause reads `window.inner.len == 0_u64`, exactly as any `Box` content is reached [TYPE-9, OP-4].
+An operand whose shape is outside that admitted set is a hard error citing OP-14 at the complete `call`, with the restructuring `use a shape this operation admits`, exactly as [OP-10] refuses its own operands.
 A linear element type stays linear [PROV-6]; the proof is about the runtime length and never about the class.
 An undischarged obligation is a hard error citing OP-14 at the complete `call`, rendering the residual, with the restructuring `empty the window and establish its zero length at this point; otherwise take every element out and consume it`.
 

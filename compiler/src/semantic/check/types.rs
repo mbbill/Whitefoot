@@ -783,6 +783,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let CheckedType::Nominal(nominal) = ty else {
                     return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
                 };
+                // [TYPE-9] a `Box`'s content is its field `inner`, reached by
+                // the ordinary field step, so a row names it as that step and
+                // the selected type below it is the cell's referent. The
+                // resolved place identity of that step is the dereference the
+                // content already is, which is what [OWN-7] compares.
+                if let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind {
+                    if spelling != "inner" {
+                        return self.invalid_effect_row(path_node, EFF1_UNKNOWN_FIELD);
+                    }
+                    return Ok((CheckedEffectStep::Deref, referent));
+                }
                 let CheckedNominalKind::Struct { fields } = &self.nominal(nominal)?.kind else {
                     return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
                 };

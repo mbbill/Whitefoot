@@ -50,7 +50,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
-        let target = self.concrete_function_for_call(node, declaration, &function.substitution)?;
+        // [OP-10, OP-11, OP-14] a window operation, `swap` and `free_empty`
+        // write no type arguments at a call: the operand supplies every type
+        // parameter, so the instance is selected from the operand's own type
+        // here instead of from a written argument list [FN-2].
+        let target = match self.operand_directed_function_for_call(node, declaration, bindings)? {
+            Some(target) => target,
+            None => self.concrete_function_for_call(node, declaration, &function.substitution)?,
+        };
         let signature = self
             .signatures
             .get(target.0 as usize)

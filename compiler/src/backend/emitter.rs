@@ -561,6 +561,17 @@ const GRAIN_SPENT_LABEL: &str = "par.grain.spent";
 /// The attribute group every generated definition carries.
 const STACK_PROBE_GROUP: &str = "#0";
 
+/// The spelling of the no-capture parameter attribute this build's assembler
+/// accepts, probed at build time (compiler/backend-facts). LLVM 21 renamed
+/// `nocapture` to `captures(none)` and no version is pinned here.
+const NO_CAPTURE_ATTRIBUTE: &str = env!("WHITEFOOT_NO_CAPTURE_ATTRIBUTE");
+
+/// The one [PRE-1] record whose two reference arguments may name the same
+/// place [OP-11], so its parameters carry every proved fact but `noalias`.
+fn aliasing_admitted_row(name: &str) -> bool {
+    name == "swap" || name.starts_with("swap$")
+}
+
 /// Gives every definition in the assembled module the target's `probe-stack`
 /// attribute, and appends the group it names.
 ///
@@ -783,10 +794,6 @@ enum FunctionSlot {
     /// One immutable aggregate value's planned storage, shared only after
     /// complete control-flow interference checks.
     OwnedValue(usize),
-    /// The bump extent one [BLK-2] reservation lays out in the reserving
-    /// activation's own frame, at the byte extent and alignment its two type
-    /// constants fix.
-    ExtentStorage(IrValueId),
     ArrayFillIndex(IrValueId),
     Address(IrValueId),
     ArenaList(IrValueId),
@@ -977,6 +984,9 @@ fn push_function_slot(
 struct FunctionEmitter<'program, 'state> {
     program: &'program IrProgram<'program, 'program, 'program>,
     function: &'program IrFunction,
+    /// The selected target, for the extents a proved fact states in bytes
+    /// (compiler/backend-facts).
+    target: TargetLayout,
     intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     incoming: Vec<Vec<Incoming>>,
     output: String,
@@ -1122,6 +1132,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         Ok(Self {
             program,
             function,
+            target,
             intrinsics,
             incoming: Vec::new(),
             output: String::new(),
@@ -1143,6 +1154,60 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             grain,
             grain_next: None,
         })
+    }
+
+    /// The facts the checked program already proved about one reference
+    /// parameter, as the target attributes that name them
+    /// (compiler/backend-facts).
+    ///
+    /// A reference is a local name for a path that is live where it is used
+    /// [REF-1, REF-2], so it is `nonnull` and `dereferenceable` for the
+    /// referent's own extent; [REF-3] keeps it from escaping, so nothing in
+    /// the callee captures it; and [EFF-5]'s pairwise check runs at every
+    /// call and rejects any program whose substituted paths are not disjoint
+    /// where one of them writes, so the surviving callers are exactly the
+    /// ones for which `noalias` holds.
+    ///
+    /// `swap` is the stated exception: [OP-11] admits the one call whose two
+    /// arguments name the same place, so its two parameters carry every fact
+    /// but that one.
+    fn reference_parameter_facts(
+        &self,
+        index: usize,
+        ty: IrType,
+    ) -> Result<String, BackendFailure> {
+        let IrType::Address(referent) = ty else {
+            return Ok(String::new());
+        };
+        // A synthesized function has no source signature, and a fact whose
+        // derivation is missing is simply not emitted.
+        if self
+            .function
+            .source_signature()
+            .and_then(|signature| signature.parameters().get(index).copied())
+            != Some(crate::IrSourceMode::Reference)
+        {
+            return Ok(String::new());
+        }
+        let mut facts = String::new();
+        if !aliasing_admitted_row(self.function.name()) {
+            facts.push_str(" noalias");
+        }
+        facts.push_str(" nonnull ");
+        facts.push_str(NO_CAPTURE_ATTRIBUTE);
+        // The referent's own selected-target extent. A shape whose block
+        // extends past its statically typed header states only the header it
+        // is sure of, which is the direction `dereferenceable` needs.
+        if let Ok(layout) = crate::backend::target::validate_static_storage(
+            self.target,
+            self.program,
+            &crate::backend::target::TargetStorageType::source(referent.ty()),
+        ) && layout.size() > 0
+        {
+            write!(facts, " dereferenceable({})", layout.size())
+                .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        Ok(facts)
     }
 
     fn is_overlap_join_site(&self, value: IrValueId) -> bool {
@@ -1269,8 +1334,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             }
             write!(
                 self.output,
-                "{} {}",
+                "{}{} {}",
                 llvm_type(self.program, parameter.ty())?,
+                self.reference_parameter_facts(index, parameter.ty())?,
                 self.value_name(*value)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
@@ -1686,6 +1752,31 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::RunBoundary { row, run, value } => {
                 self.emit_run_boundary(result, ty, *row, *run, *value)
             }
+            IrOperation::RunShift { run, index, open } => {
+                self.emit_run_shift(result, ty, *run, *index, *open)
+            }
+            IrOperation::RunInsert { run, index, value } => {
+                self.emit_run_insert(result, ty, *run, *index, *value)
+            }
+            IrOperation::RunTransfer {
+                destination,
+                source,
+                index,
+            } => self.emit_run_transfer(result, ty, *destination, *source, *index),
+            IrOperation::WindowBlockNew {
+                nominal,
+                capacity,
+                obligations,
+            } => self.emit_window_block_new(result, ty, *nominal, *capacity, *obligations),
+            IrOperation::WindowGrow {
+                nominal,
+                cell,
+                capacity,
+                obligations,
+            } => self.emit_window_grow(result, ty, *nominal, *cell, *capacity, *obligations),
+            IrOperation::CellFree { nominal, value } => {
+                self.emit_cell_free(result, ty, *nominal, *value)
+            }
             IrOperation::BufferIndex {
                 buffer,
                 offset,
@@ -1883,28 +1974,53 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 Ok((self.value_name(scrutinee), "i1".to_owned()))
             }
             IrEnumType::Nominal(nominal) => {
-                if self.value_type(scrutinee) != Some(IrType::Nominal(nominal)) {
-                    return Err(BackendFailure::InvalidIr);
-                }
+                // Matching through a reference leaves the scrutinee live
+                // [OWN-13], so the operand is the address of the enum's own
+                // storage rather than a copy of it, and the tag is read from
+                // that storage.
+                let addressed = match self.value_type(scrutinee) {
+                    Some(IrType::Nominal(actual)) if actual == nominal => false,
+                    Some(IrType::Address(IrAddressed::Nominal(actual))) if actual == nominal => {
+                        true
+                    }
+                    _ => return Err(BackendFailure::InvalidIr),
+                };
                 let data = self.nominal(nominal)?;
                 let IrNominalKind::Enum { .. } = data.kind() else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if data.is_tag_only_enum() {
-                    return Ok((
-                        self.value_name(scrutinee),
-                        llvm_type(self.program, IrType::Nominal(nominal))?,
-                    ));
+                let tag_only = data.is_tag_only_enum();
+                let enum_llvm = llvm_type(self.program, IrType::Nominal(nominal))?;
+                let tag_ty = if tag_only {
+                    enum_llvm.clone()
+                } else {
+                    "i32".to_owned()
+                };
+                if !addressed {
+                    if tag_only {
+                        return Ok((self.value_name(scrutinee), tag_ty));
+                    }
+                    let temporary = self.next_temporary()?;
+                    writeln!(
+                        self.output,
+                        "  %{temporary} = extractvalue {enum_llvm} {}, 0",
+                        self.value_name(scrutinee)
+                    )
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                    return Ok((format!("%{temporary}"), tag_ty));
                 }
+                let address = self.value_name(scrutinee);
                 let temporary = self.next_temporary()?;
-                writeln!(
-                    self.output,
-                    "  %{temporary} = extractvalue {} {}, 0",
-                    llvm_type(self.program, IrType::Nominal(nominal))?,
-                    self.value_name(scrutinee)
-                )
-                .map_err(|_| BackendFailure::TextEmission)?;
-                Ok((format!("%{temporary}"), "i32".to_owned()))
+                if tag_only {
+                    writeln!(self.output, "  %{temporary} = load {tag_ty}, ptr {address}")
+                        .map_err(|_| BackendFailure::TextEmission)?;
+                } else {
+                    let field =
+                        self.aggregate_field_pointer(IrType::Nominal(nominal), &address, 0)?;
+                    writeln!(self.output, "  %{temporary} = load i32, ptr {field}")
+                        .map_err(|_| BackendFailure::TextEmission)?;
+                }
+                Ok((format!("%{temporary}"), tag_ty))
             }
         }
     }
@@ -2276,10 +2392,6 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock, overlaps: &[IrOverlap]
 
 /// The label one ordinary instruction's own emission leaves the block at, for
 /// the operations whose lowering opens a further LLVM block.
-/// The block one cell formation joins at S39.
-pub(super) fn store_box_join_label(result: IrValueId) -> String {
-    format!("box.join.v{}", result.ordinal())
-}
 
 fn definition_exit_label(
     _block_id: IrBlockId,
@@ -2328,6 +2440,21 @@ fn definition_exit_label(
             operation: IrOperation::BufferProbeSkip { .. },
             ..
         } => *label = buffer_probe_join_label(*result),
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::RunShift { .. },
+            ..
+        } => *label = runs::run_shift_done_label(*result),
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::RunTransfer { .. },
+            ..
+        } => *label = runs::run_transfer_done_label(*result),
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::WindowBlockNew { .. } | IrOperation::WindowGrow { .. },
+            ..
+        } => *label = runs::window_block_ready_label(*result),
         _ => {}
     }
 }

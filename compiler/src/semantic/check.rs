@@ -485,6 +485,15 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// Written by the `&self` checking path and drained by the `&mut self`
     /// driver between attempts at one function.
     pending_nominals: RefCell<Vec<PendingNominal>>,
+    /// [OP-10, OP-11, OP-14] instances of an operand-directed [PRE-1] row
+    /// whose substitution a body reached but whose signature is not built yet.
+    ///
+    /// These rows write no type arguments at a call, so the syntax alone
+    /// selects no instance and the discovery walk builds none. The `&self`
+    /// body check derives the substitution from the operand's type and
+    /// records it here; the `&mut self` driver builds the signature and
+    /// retries the function, exactly as it does for a derived nominal.
+    pending_instances: RefCell<Vec<(usize, generics::GenericSubstitution)>>,
     /// [PROV-1] the region an elided store brand denotes at the position
     /// being parsed: the enclosing nominal's sole region parameter while a
     /// `struct_decl` or `enum_decl` body is being read, and `None`
@@ -1080,6 +1089,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             result_list_nominals: HashMap::new(),
             arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
+            pending_instances: RefCell::new(Vec::new()),
             elided_store_brand: std::cell::Cell::new(None),
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
@@ -1132,9 +1142,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // acceptance-bearing entailment judgment runs. This makes forward,
         // recursive, mutually recursive, and concrete generic call summaries
         // independent of function traversal order.
+        // The cursor is re-read each round because checking a body may select
+        // an operand-directed [PRE-1] instance [OP-10, OP-11, OP-14] the
+        // syntax could not name; those signatures are appended here and are
+        // checked by this same loop before phase B reads the inventory.
         let mut function_inventory = Vec::with_capacity(self.signatures.len());
-        for index in 0..self.signatures.len() {
+        let mut index = 0_usize;
+        while index < self.signatures.len() {
             function_inventory.push(self.check_function_interning_nominals(index)?);
+            index = index
+                .checked_add(1)
+                .ok_or(SemanticCompilerFailure::CounterOverflow)?;
         }
         // Body checking may first instantiate a nominal through the fields of
         // an ordinary constructor. FN-6 has already checked the written finite
@@ -1504,7 +1522,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             match self.check_function_inventory(index) {
                 Err(CheckStop::DeferredNominal) => {
                     let pending = std::mem::take(&mut *self.pending_nominals.borrow_mut());
+                    let instances = std::mem::take(&mut *self.pending_instances.borrow_mut());
                     let before = self.nominals.len();
+                    let before_signatures = self.signatures.len();
+                    for (template, substitution) in instances {
+                        self.ensure_operand_directed_instance(template, substitution)?;
+                    }
                     for nominal in pending {
                         match nominal {
                             PendingNominal::Box(referent) => {
@@ -1530,7 +1553,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             }
                         }
                     }
-                    if self.nominals.len() == before {
+                    if self.nominals.len() == before
+                        && self.signatures.len() == before_signatures
+                    {
                         return Err(SemanticCompilerFailure::InvalidResolution.into());
                     }
                 }

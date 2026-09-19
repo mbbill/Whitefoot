@@ -938,6 +938,16 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
             std::iter::once(*run).chain(value.iter().copied()).collect()
         }
         IrOperation::RunTaken { run, .. } | IrOperation::SliceFromRun { run } => vec![*run],
+        IrOperation::RunShift { run, index, .. } => vec![*run, *index],
+        IrOperation::RunInsert { run, index, value } => vec![*run, *index, *value],
+        IrOperation::RunTransfer {
+            destination,
+            source,
+            index,
+        } => vec![*destination, *source, *index],
+        IrOperation::WindowBlockNew { capacity, .. } => vec![*capacity],
+        IrOperation::WindowGrow { cell, capacity, .. } => vec![*cell, *capacity],
+        IrOperation::CellFree { value, .. } => vec![*value],
         IrOperation::SliceRange { slice, start, end } => vec![*slice, *start, *end],
         IrOperation::BufferIndex { buffer, offset, .. } => vec![*buffer, *offset],
         IrOperation::BufferProbeSkip {
@@ -1094,12 +1104,12 @@ mod tests {
   right: u64;
 }
 
-fn split(value: own Row) -> (observed: own u64, updated: own Row) reads(value.left) {
+fn split(value: own Row) -> (observed: own u64, updated: own Row) pure {
   let observed = value.left;
   return observed, move value;
 }
 
-fn relay(value: own Row) -> result: own Row reads(value.left) {
+fn relay(value: own Row) -> result: own Row pure {
   let (observed, updated) = split(value: move value);
   return move updated;
 }
@@ -1531,28 +1541,25 @@ fn main() -> status: own ExitStatus pure {
 }
 
 fn build(seed: own u64) -> result: own Row pure {
-  let next = seed +wrap 1_u64;
-  return Row(left: seed, right: next);
+  let after = seed +wrap 1_u64;
+  return Row(left: seed, right: after);
 }
 
-fn exchange(old: &uniq Row) -> result: own Row reads(old), writes(old, old.left) {
-  let fresh = build(seed: 37_u64);
-  let previous = replace deref(old) = move fresh;
+fn exchange(old: &Row) -> result: own Row writes(old) {
+  let previous = build(seed: 11_u64);
+  swap(first: old, second: &previous);
   set deref(old).left = 99_u64;
   return move previous;
 }
 
 fn main() -> status: own ExitStatus pure {
   let first = build(seed: 11_u64);
-  region {
-    let previous = exchange(old: &uniq first);
-    set previous.right = 23_u64;
-    if first.left != 99_u64 {
-      return exit_status(code: 1_u8);
-    }
-    if previous.left != 11_u64 {
-      return exit_status(code: 2_u8);
-    }
+  let previous = exchange(old: &first);
+  if first.left != 99_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if previous.left != 11_u64 {
+    return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
 }
@@ -1601,8 +1608,8 @@ fn main() -> status: own ExitStatus pure {
                     }
                 }
                 assert_eq!(
-                    direct_calls, 1,
-                    "the borrowed owner receives its helper result directly"
+                    direct_calls, 2,
+                    "each fresh owner receives its helper result directly"
                 );
             },
         );
@@ -1740,12 +1747,12 @@ fn main() -> status: own ExitStatus pure {
   right: u64;
 }
 
-fn split(value: own Row) -> (updated: own Row, observed: own u64) reads(value.left) {
+fn split(value: own Row) -> (updated: own Row, observed: own u64) pure {
   let observed = value.left;
   return move value, observed;
 }
 
-fn relay(value: own Row) -> result: own Row reads(value.left) {
+fn relay(value: own Row) -> result: own Row pure {
   let (updated, observed) = split(value: move value);
   return move updated;
 }
@@ -1796,14 +1803,13 @@ fn main() -> status: own ExitStatus pure {
     fn checked_dense_ir_coalesces_without_changing_ownership() {
         with_program(
             br#"fn main() -> status: own ExitStatus pure {
-  let built = fixed_vector::<u64, 8>();
+  let built = slots_new::<u64, 8>();
   for @fill (
     at in 0_u64..8_u64,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= 8_u64,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len >= at,
+    invariant spare: built.room + at >= 8_u64
   ) {
-    place_back(vector: &uniq built, value: 1_u64);
+    place_back(window: &built, value: 1_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -1815,18 +1821,24 @@ fn main() -> status: own ExitStatus pure {
                     .find(|function| function.name() == "main")
                     .expect("fixture main");
                 let plan = FunctionStoragePlan::build(program, function).expect("plan");
+                // The construction row and the boundary row are ordinary
+                // [PRE-1] calls (compiler/prelude-records), so what this
+                // fixture shows is that the window the construction returns
+                // and the window each `place_back` addresses are one frame
+                // slot: the construction's result, every value of window type,
+                // and every address taken of one all share that backing.
                 let slots: BTreeSet<_> = function
-                    .blocks()
+                    .value_types()
                     .iter()
-                    .flat_map(|block| block.instructions())
-                    .filter_map(|instruction| match instruction {
-                        IrInstruction::Define {
-                            result,
-                            operation: IrOperation::FixedVector | IrOperation::RunBoundary { .. },
-                            ..
-                        } => plan.slot(*result),
-                        _ => None,
+                    .enumerate()
+                    .filter(|(_, ty)| {
+                        matches!(
+                            ty,
+                            IrType::Window { .. }
+                                | IrType::Address(crate::IrAddressed::Window { .. })
+                        )
                     })
+                    .filter_map(|(index, _)| plan.values.get(index).copied().flatten())
                     .collect();
                 assert_eq!(slots.len(), 1, "construction and append use one backing");
                 // PRE-1's ExitStatus is an ordinary opaque nominal, so its

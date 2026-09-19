@@ -598,7 +598,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // and a `construct`, is a rule rejection at this factor and not a
         // parse rejection.
         if let Some(atom) = self.tree.first_child_with(node, Production::Atom)? {
-            return self.check_affine_atom(node, atom, bindings, allowed_values, function, owner);
+            return self.check_affine_atom(
+                node,
+                atom,
+                bindings,
+                allowed_values,
+                function,
+                loop_depth,
+                owner,
+            );
         }
         if self
             .tree
@@ -640,6 +648,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// [INV-1] the one `atom` an affine factor admits: a bare IDENT place or
     /// an integer literal.
+    #[allow(clippy::too_many_arguments)]
     fn check_affine_atom(
         &self,
         node: NodeId,
@@ -647,6 +656,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
         function: &FunctionSignature,
+        loop_depth: usize,
         owner: AffineProofOwner,
     ) -> Result<(CheckedAffineExpression, Option<(i128, IntegerType)>), CheckStop> {
         if let Some(literal) = self
@@ -696,27 +706,63 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 "read the live own integer local without `move`",
             );
         }
-        if !self
-            .tree
-            .children_with(place, Production::Psuffix)?
-            .is_empty()
-        {
-            return self.invalid_affine_proof(
-                owner,
-                node,
-                "an affine factor selects a field or an element of a place",
-                "bind the integer value with a `let` and use that binding",
-            );
-        }
+        let suffixes = self.tree.children_with(place, Production::Psuffix)?;
         let pbase = self
             .tree
             .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if self.has_fixed(pbase, crate::syntax::terminal::FixedTerminal::Deref)? {
+            // [INV-1] a measure place's root names a live own-mode value of
+            // measured type, which a reference variable is not.
             return self.invalid_affine_proof(
                 owner,
                 node,
                 "an affine factor dereferences a holder",
+                "bind the integer value with a `let` and use that binding",
+            );
+        }
+        // [INV-1, OP-15] one `place` formed from an admitted measure place by
+        // one measure-member `psuffix`. The relation evaluates nothing and
+        // reads no storage, so the factor reaches the resolved place and the
+        // measure row and stops there: no access, no effect, and no goal.
+        if let Some(measure) = self.trailing_measure_member(&suffixes)? {
+            let base = &suffixes[..suffixes.len() - 1];
+            let measured =
+                self.check_indexed_place_rooted(
+                    place,
+                    bindings,
+                    base,
+                    place,
+                    function,
+                    loop_depth,
+                    owner.value_role(),
+                )?;
+            // [INV-1] the place resolves in the same context an IDENT does,
+            // and its root is one of the values that context admits.
+            if let Some(declaration) = measured.root_declaration()
+                && !allowed_values.contains(&declaration)
+            {
+                return self.invalid_affine_proof(
+                    owner,
+                    node,
+                    "an affine relation reads a value outside its admitted entry state",
+                    "measure a value that exists before this proof point",
+                );
+            }
+            let expression = self.measure_of_indexed_place(measure, measured, atom)?;
+            return Ok((
+                CheckedAffineExpression {
+                    node_path: self.tree.path(node)?.clone(),
+                    kind: CheckedAffineExpressionKind::Measure(Box::new(expression)),
+                },
+                None,
+            ));
+        }
+        if !suffixes.is_empty() {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine factor selects a field or an element of a place",
                 "bind the integer value with a `let` and use that binding",
             );
         }

@@ -93,11 +93,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let adjusted = self.next_temporary()?;
         let length = self.next_temporary()?;
         let partial = self.next_temporary()?;
-        // VIEW-2 discharged both domain conjuncts. Empty ranges, including
-        // one at the end of an allocation, form descriptors without a load.
+        // [REF-4] discharged both domain conjuncts, `lo <= hi` and
+        // `hi <= x.len`, before this descriptor exists, so the adjusted
+        // address stays inside the extent the original descriptor names and
+        // carries `inbounds` (compiler/backend-facts). Empty ranges,
+        // including one at the end of an allocation, form descriptors
+        // without a load.
         writeln!(
             self.output,
-            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{adjusted} = getelementptr {element_type}, ptr %{pointer}, i64 {}\n  %{length} = sub nuw i64 {}, {}\n  %{partial} = insertvalue {descriptor_type} zeroinitializer, ptr %{adjusted}, 0\n  {} = insertvalue {descriptor_type} %{partial}, i64 %{length}, 1",
+            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{adjusted} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  %{length} = sub nuw i64 {}, {}\n  %{partial} = insertvalue {descriptor_type} zeroinitializer, ptr %{adjusted}, 0\n  {} = insertvalue {descriptor_type} %{partial}, i64 %{length}, 1",
             self.value_name(slice), self.value_name(start), self.value_name(end),
             self.value_name(start), self.value_name(result),
         ).map_err(|_| BackendFailure::TextEmission)

@@ -12,7 +12,7 @@
 //! nothing needs it before runtime and a second scanner here would reintroduce
 //! exactly the duplication this removes.
 
-use std::{env, fs, path::Path};
+use std::{env, fs, path::Path, process::Command};
 
 #[path = "src/syntax/grammar/generator.rs"]
 mod grammar_generator;
@@ -66,4 +66,37 @@ pub const SPEC_SHA256_HEX: &str = "{hex}";
     let tables = grammar_generator::generate("spec/kernel-spec.md", text);
     let out = out.with_file_name("grammar_tables.rs");
     fs::write(&out, tables).unwrap_or_else(|error| panic!("write {}: {error}", out.display()));
+
+    println!(
+        "cargo::rustc-env=WHITEFOOT_NO_CAPTURE_ATTRIBUTE={}",
+        no_capture_attribute()
+    );
+}
+
+/// Which spelling of the no-capture parameter attribute the toolchain this
+/// build will hand its modules to accepts (compiler/backend-facts).
+///
+/// LLVM 21 renamed `nocapture` to `captures(none)`. No version is pinned, so
+/// the spelling is probed rather than assumed: a one-function module carrying
+/// the new spelling is handed to the assembler, and the old spelling is used
+/// when it is refused. The old spelling is also the fallback where no
+/// assembler can be run at all, because every LLVM that has the new one still
+/// auto-upgrades the old.
+fn no_capture_attribute() -> &'static str {
+    const OLD: &str = "nocapture";
+    const NEW: &str = "captures(none)";
+    let Ok(directory) = env::var("OUT_DIR") else {
+        return OLD;
+    };
+    let probe = Path::new(&directory).join("captures_probe.ll");
+    if fs::write(&probe, format!("define void @p(ptr {NEW} %v) {{\n  ret void\n}}\n")).is_err() {
+        return OLD;
+    }
+    let accepted = Command::new(env::var("CC").as_deref().unwrap_or("clang"))
+        .args(["-x", "ir", "-c", "-o"])
+        .arg(Path::new(&directory).join("captures_probe.o"))
+        .arg(&probe)
+        .output()
+        .is_ok_and(|output| output.status.success());
+    if accepted { NEW } else { OLD }
 }

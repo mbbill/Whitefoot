@@ -1122,7 +1122,7 @@ fn nested_and_residual_cleanup_preserve_release_graph_order() {
 struct Triple {
   first: Box<u64>;
   selected: Box<u64>;
-  last: Box<u64>;
+  tail: Box<u64>;
 }
 
 enum Packet {
@@ -1142,8 +1142,8 @@ fn hold_packet() -> result: own unit pure {
 fn hold_triple() -> result: own u8 pure {
   let first = box_new::<u64>(value: 44_u64);
   let selected = box_new::<u64>(value: 55_u64);
-  let last = box_new::<u64>(value: 66_u64);
-  let triple = Triple(first: move first, selected: move selected, last: move last);
+  let tail = box_new::<u64>(value: 66_u64);
+  let triple = Triple(first: move first, selected: move selected, tail: move tail);
   let retained = move triple.selected;
   let held = retained.inner;
   if held != 55_u64 {
@@ -1247,7 +1247,7 @@ fn boxed_window_bounded_append_preserves_storage_and_elements() {
   code: u8;
 }
 
-fn append(storage: own Box<Slots<Box<u64>, 2>>, value: own Box<u64>) -> result: own Box<Slots<Box<u64>, 2>> pure contract {
+fn add_one(storage: own Box<Slots<Box<u64>, 2>>, value: own Box<u64>) -> result: own Box<Slots<Box<u64>, 2>> pure contract {
   requires storage.inner.room > 0_u64;
 } {
   place_back(window: &storage.inner, value: move value);
@@ -1255,9 +1255,9 @@ fn append(storage: own Box<Slots<Box<u64>, 2>>, value: own Box<u64>) -> result: 
 }
 
 fn try_append(storage: own Box<Slots<Box<u64>, 2>>, value: own Box<u64>) -> (result: own Box<Slots<Box<u64>, 2>>, returned: own Option<Box<u64>>) pure {
-  let room = storage.inner.room;
-  if room > 0_u64 {
-    let updated = append(storage: move storage, value: move value);
+  let spare = storage.inner.room;
+  if spare > 0_u64 {
+    let updated = add_one(storage: move storage, value: move value);
     return move updated, None<Box<u64>>();
   }
   return move storage, Some<Box<u64>>(value: move value);

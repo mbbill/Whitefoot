@@ -32,18 +32,18 @@ fn observe_allocations(module: &str) -> String {
     result
 }
 
+/// Retired subject: the allocation-refusal sweep, which [STOR-8]'s total
+/// allocation leaves without a source-visible subject; successor: this test,
+/// which keeps the owner-identity half the observer still observes.
 #[test]
-fn owning_map_collision_tombstone_and_full_return_preserve_every_owner() {
+fn owning_map_collision_and_tombstone_preserve_every_owner_identity() {
     let source = include_bytes!("../../../../tests/programs/containers/owning-map.wf");
     let module = observe_allocations(&emit(source));
     let output = compile_link_and_run(&module, Some(include_str!("owning_map_observer.c")), &[]);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
     let report = String::from_utf8(output.stdout).unwrap();
-    assert!(
-        report.starts_with("PASS runs=193 refusal_positions=1..192 "),
-        "{report}"
-    );
+    assert!(report.starts_with("PASS status=0 allocations="), "{report}");
     assert!(report.ends_with(" live=0\n"), "{report}");
 }
 

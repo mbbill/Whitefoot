@@ -41,9 +41,15 @@ fn overflow_call_count(module: &str) -> usize {
         .count()
 }
 
-/// The proved exact site is a plain `add` and has no overflow carrier. The
+/// The proved exact site is one `add` and has no overflow carrier. The
 /// shipped emission and the forced-on entry are byte-identical: there is one
 /// acceptance and lowering path, not a switchable pair.
+///
+/// The `add` carries `nuw` because the `exact` family is exactly the one
+/// whose [OP-2] domain obligation the checker discharged before lowering, and
+/// the backend states a proved fact rather than leaving the optimizer to
+/// rediscover it (compiler/backend-facts). The flag is a statement about the
+/// same one instruction, not a second branch.
 #[test]
 fn a_proved_exact_site_emits_no_overflow_branch() {
     let shipped = emit(PROVED_EXACT);
@@ -55,8 +61,8 @@ fn a_proved_exact_site_emits_no_overflow_branch() {
     assert!(
         shipped
             .lines()
-            .any(|line| line.trim_start().starts_with('%') && line.contains("= add i64")),
-        "the discharged site compiles to the plain exact add",
+            .any(|line| line.trim_start().starts_with('%') && line.contains("= add nuw i64")),
+        "the discharged site compiles to one exact add carrying its proved domain",
     );
     assert_eq!(
         shipped,
