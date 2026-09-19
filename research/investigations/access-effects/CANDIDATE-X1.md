@@ -59,7 +59,7 @@ Whether one path is a prefix of another, and whether two paths overlap, is judge
 ```text
 p = &deref(v)[i]
 deref(v)[j] = 5            // a content write on slot j: p stays valid whether or not i == j
-grow(&v, cap)          // declares writesderef(v): *v is a proper prefix of deref(v)[i]: p invalid
+grow(&v, cap)          // declares writes(deref(v): *v is a proper prefix of deref(v)[i]: p invalid
 use(p)                 // rejected
 
 q = &deref(deref(g)[j]).value  // g: Box<Slots<Box<Node>>>
@@ -146,10 +146,10 @@ append(&dst, &src)         writes(dst.free), writes(dst.len), writes(src.filled)
     contract { requires dst.room >= src.len; ensures dst.len == entry(dst).len + entry(src).len, src.len == 0; }
 split_off(&src, k, &dst)   writes(src.filled), writes(src.len), writes(dst.free), writes(dst.len)   // one memmove
     contract { requires k <= src.len, dst.room >= src.len - k; ensures src.len == k, dst.len == entry(dst).len + entry(src).len - k; }
-grow(&b, cap) -> Result<(), Oom>   writesderef(b)                            // Box<Slots<T>> only; may reallocate in place
+grow(&b, cap) -> Result<(), Oom>   writes(deref(b)                            // Box<Slots<T>> only; may reallocate in place
     contract { requires cap >= deref(b).cap;
-               ensures when Ok:  deref(b).cap == cap, deref(b).len == entryderef(b).len;
-               ensures when Err: deref(b).cap == entryderef(b).cap, deref(b).len == entryderef(b).len; }
+               ensures when Ok:  deref(b).cap == cap, deref(b).len == entry(deref(b).len;
+               ensures when Err: deref(b).cap == entry(deref(b).cap, deref(b).len == entry(deref(b).len; }
 set(&r[k], x)              writes(r[k])      // old value: affine released, linear rejected
 replace(&r[k], x) -> own T writes(r[k])      // the old value is returned
 place_front(&r, x)         writes(r)         // Ring only; every logical index shifts, so all references into r die
@@ -300,7 +300,7 @@ The program's meaning is its sequential meaning. Two adjacent statements of one 
 s1 = stats(&v); s2 = stats(&v)                                  // read/read: may overlap
 bump(&r[i]); bump(&r[j])                                        // may overlap given i != j
 kernel(&r[0..mid], &out[0..mid]); kernel(&r[mid..n], &out[mid..n])   // disjoint ranges: may overlap
-push(&v, 1); stats(&v)                                          // may not overlap: writesderef(v) meets readsderef(v)
+push(&v, 1); stats(&v)                                          // may not overlap: writes(deref(v) meets reads(deref(v)
 ```
 
 ## Rule 14. One global heap; allocation can fail; the allocator has no effect
@@ -323,7 +323,7 @@ Confirmed by the owner on 2026-09-18 as a research decision. It reverses a posit
 ```text
 struct Arena<T> { buf: Box<Slots<T>> }
 fn alloc<T>(a: &Arena<T>, x: own T) -> u64   // row: the append slot of *a.buf and deref(a.buf).len; see the open proposal
-    contract { requires deref(a.buf).room > 0; ensures result == entryderef(a.buf).len; ensures deref(a.buf).len == result + 1; }
+    contract { requires deref(a.buf).room > 0; ensures result == entry(deref(a.buf).len; ensures deref(a.buf).len == result + 1; }
 id = alloc(&a, node)
 p  = &deref(a.buf)[id]                         // valid while id < deref(a.buf).len
 truncate(&a.buf, 0)                        // reset: elements released; later reads of slot id need id < len again
