@@ -1,5 +1,5 @@
-fn probe(table: own FixedVector<u8, 4>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
-  define spare = len_of(table);
+fn probe(table: &Slots<u8, 4>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
+  define spare = table.len;
   requires lo < hi;
   requires hi <= spare;
 } {
@@ -16,23 +16,9 @@ fn probe(table: own FixedVector<u8, 4>, lo: own u64, hi: own u64) -> found: own 
 }
 
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0_u8);
-  }
-  let two = move one;
-  region {
-    place_back(vector: &uniq two, value: 0_u8);
-  }
-  let three = move two;
-  region {
-    place_back(vector: &uniq three, value: 0_u8);
-  }
-  let table = move three;
-  let found = probe(table: move table, lo: 0_u64, hi: 4_u64);
+  doc "A four-slot window is filled from a full array, so its length is exactly four at the call.";
+  let values = array_filled::<u8, 4>(value: 0_u8);
+  let table = slots_from_array::<u8, 4>(values: move values);
+  let found = probe(table: &table, lo: 0_u64, hi: 4_u64);
   return exit_status(code: found);
 }

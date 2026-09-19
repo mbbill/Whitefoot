@@ -178,7 +178,7 @@ fn named_constants_remain_lexically_declaration_before_use() {
 
 #[test]
 fn decimal_array_sizes_need_no_lexical_target() {
-    let source = br#"const values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+    let source = br#"const values: Array<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn probe() -> result: own unit pure {
   return unit;
@@ -819,28 +819,126 @@ fn a_dotless_operation_name_is_reserved_from_body_invariant_declarations() {
     });
 }
 
+// Retired with v0.60: `region_names_are_unique_across_the_complete_function`
+// asserted [OWN-3]'s per-function region-name uniqueness through
+// `ResolutionRule::Own3` and `ResolutionIssueKind::RepeatedRegion`. v0.60
+// deletes [OWN-3] and the `region_stmt`, `region_params` and REGIONID
+// productions with it, so the rejection it exercised has no subject, no rule
+// to cite and no spelling to write. The obligation it guarded — that a
+// declaration's own names do not silently share one unit-wide scope — is now
+// carried by the generic-parameter half of [TYPE-6], covered by
+// `sibling_member_signatures_do_not_share_parameter_names` below. No
+// successor rule inherits region uniqueness, so nothing replaces this case.
+
+/// [FORM-3] reserves the four measure pseudo-fields and the four window parts
+/// "from every declaration role [OP-1] already lists", carrying the
+/// `measure-or-part` reserved class and its own [DIAG-1] ordinal.
 #[test]
-fn region_names_are_unique_across_the_complete_function() {
-    // Both blocks write `'r`, which [FORM-8] would separately reject because
-    // neither body references it. Resolution runs first and owns the repeated
-    // region name, which is the judgment under test.
-    let source = br#"fn nested() -> result: own unit pure {
-  region 'r {
-    give unit;
-  }
-  region 'r {
-    give unit;
-  }
+fn measure_and_window_part_names_are_reserved_from_source_declarations() {
+    for (source, declaration_role, spelling, ordinal) in [
+        (
+            &b"fn probe(len: own u64) -> result: own unit pure {\n  return unit;\n}\n"[..],
+            ReservedDeclarationRole::Parameter,
+            "len",
+            0_u16,
+        ),
+        (
+            &b"struct Holder {\n  room: u64;\n}\n"[..],
+            ReservedDeclarationRole::Field,
+            "room",
+            2,
+        ),
+        (
+            &b"fn probe() -> result: own unit pure {\n  let filled = 0_u64;\n  return unit;\n}\n"[..],
+            ReservedDeclarationRole::Let,
+            "filled",
+            6,
+        ),
+    ] {
+        with_one_resolution(source, |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("a reserved measure or part name must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Form3);
+            assert!(
+                matches!(
+                    issue.kind(),
+                    ResolutionIssueKind::ReservedName {
+                        spelling: observed,
+                        declaration_role: role,
+                        class: crate::ReservedNameClass::MeasureOrPart,
+                        inventory_ordinal,
+                    } if observed == spelling
+                        && *role == declaration_role
+                        && *inventory_ordinal == ordinal
+                ),
+                "{spelling}: {issue:?}"
+            );
+        });
+    }
+}
+
+/// [GRAM-2] admits a `heap_decl` "at most once in a compilation unit and only
+/// as the first `item` of the first source record". The grammar itself admits
+/// one at every item position, so resolution owns the unit-level judgment.
+#[test]
+fn a_heap_declaration_is_admitted_only_as_the_leading_item() {
+    with_one_resolution(
+        b"program no_heap;\n\nfn probe() -> result: own unit pure {\n  return unit;\n}\n",
+        |outcome| {
+            assert!(
+                matches!(outcome, ResolutionOutcome::Complete(_)),
+                "a leading heap declaration is admitted: {outcome:?}"
+            );
+        },
+    );
+    with_one_resolution(
+        b"fn probe() -> result: own unit pure {\n  return unit;\n}\n\nprogram no_heap;\n",
+        |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("a later heap declaration must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Gram2);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::MisplacedHeapDeclaration { admitted: None }
+            ));
+        },
+    );
+    with_one_resolution(b"program no_heap;\n\nprogram no_heap;\n", |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a second heap declaration must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Gram2);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::MisplacedHeapDeclaration { admitted: Some(_) }
+        ));
+    });
+}
+
+/// [SET-1] "A `set` whose target name resolves to nothing declares nothing and
+/// is a hard error citing SET-1 at that `place`." v0.59's [LIV-2] promoted
+/// exactly this target into a `let` declaration instead.
+#[test]
+fn an_unresolved_bare_set_target_declares_nothing_and_cites_set1() {
+    let source = br#"fn probe() -> result: own unit pure {
+  set missing = 0_u64;
+  return unit;
 }
 "#;
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("repeated function region must reject: {outcome:?}");
+            panic!("an unresolvable set target must reject: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRule::Own3);
+        assert_eq!(issue.rule(), ResolutionRule::Set1);
         assert!(matches!(
             issue.kind(),
-            ResolutionIssueKind::RepeatedRegion { spelling, .. } if spelling == "'r"
+            ResolutionIssueKind::UnresolvedUse {
+                spelling,
+                role: LexicalUseRole::PlaceBase,
+                ..
+            } if spelling == "missing"
         ));
     });
 }
@@ -1600,22 +1698,19 @@ fn probe() -> result: own unit pure {
     });
 }
 
-/// Three roles moved position under v0.23 and the fixture follows them rather
-/// than the assertions moving. `TypeRegion` came only from a `let` annotation
-/// that A3 deletes, so it now rides a signature-borne `Slice<'v, i32>`, which
-/// [TYPE-5] keeps written. `OperationCallee` is the OPNAME form specifically
-/// (`roles.rs` keys it on `TerminalPredicate::OperationName`), and the
-/// fixture's only operation call was `iadd.wrap`, one of the rows [OP-7]
-/// respelled — an operator token is never a callee, so a respelled row
-/// produces no lexical use at all. It now rides `iabs.checked`, a dotted row
-/// that keeps its operation-name route.
+/// The fixture follows the language rather than the assertions moving.
+/// `OperationCallee` is the OPNAME form specifically (`roles.rs` keys it on
+/// `TerminalPredicate::OperationName`), so it rides `iabs.checked`, a dotted
+/// [OP-1] row that keeps its operation-name route; an operator token is never
+/// a callee and produces no lexical use at all.
+///
+/// v0.60 deletes the five region use roles and the two region declaration
+/// roles with [OWN-3], [OWN-2] and [FORM-8], and adds two: `EffectIndex` for
+/// the index and range endpoints [EFF-1] now admits inside an effect path, and
+/// `PayloadVariant` for the variant TYPEID of the enum-payload `psuffix`
+/// [GRAM-5] adds. Both are materialized below.
 #[test]
-fn complete_role_fixture_materializes_every_d_u_and_x_family() {
-    // B7c4b left `viewer` on the retiring surface: the fixture has to
-    // materialize `LexicalUseRole::EffectAllocationRegion`, and the only
-    // spelling that produces it is the region-keyed `allocates(arena 'r)`
-    // entry, which has no path form on the container surface and retires with
-    // `arena<'r, T>` itself.
+fn complete_role_fixture_materializes_every_declaration_use_and_deferred_family() {
     let source = br#"formal Bound {
   fn member(value: &i32) -> result: own i32 reads(value);
 }
@@ -1625,7 +1720,12 @@ formal Numeric<T: Int> {
 }
 
 struct Package<T: affine, const n: i32> {
-  items: FixedVector<T, n>;
+  items: Array<T, n>;
+}
+
+struct Holder {
+  output: i32;
+  table: Array<i32, 4>;
 }
 
 enum Choice<T: affine> {
@@ -1645,7 +1745,7 @@ actual Implementation : Bound {
   member = implementation;
 }
 
-fn user<T: affine, const n: i32>['call](arg: &'call T) -> result: &'call T reads(arg) {
+fn user<T: affine, const n: i32>(arg: &T) -> result: own T reads(arg) {
   return arg;
 }
 
@@ -1654,8 +1754,7 @@ fn grouped<Bound>() -> result: own i32 pure {
   return called;
 }
 
-fn viewer['v](values: own Slice<'v, i32>, capability: own i32) -> result: own unit reads(values, capability), allocates(arena 'v) {
-  let held = arena_new::<'v, i32>(1_i32);
+fn adjust(holder: &Holder, first: own u64, last: own u64) -> result: own unit reads(holder.table[first..last]), writes(holder.output) {
   return unit;
 }
 
@@ -1667,16 +1766,13 @@ fn probe() -> result: own unit pure {
   let ordinary = 1_i32 +wrap two;
   let smaller = iabs.checked(ordinary);
   let made = Package<i32, one>(items: ordinary);
-  set deref(made).items = ordinary;
-  region 'outer {
-    let borrowed = &ordinary;
-    let called = user::<i32, one>(arg: borrowed);
-    let view = move called;
-    let comparison = ordinary == two;
-    region {
-      let outward = &'outer ordinary;
-    }
-  }
+  set made.items = ordinary;
+  let borrowed = &ordinary;
+  let called = user::<i32, one>(arg: borrowed);
+  let taken = move called;
+  let comparison = ordinary == two;
+  let chosen = Present(value: ordinary);
+  let payload = chosen.Present.value;
   loop @done {
     break @done;
   }
@@ -1685,8 +1781,8 @@ fn probe() -> result: own unit pure {
     break @counted;
   }
   match ordinary {
-    Present(value: payload) => {
-      give payload;
+    Present(value: held) => {
+      give held;
     }
     Absent() => {
       return unit;
@@ -1715,11 +1811,9 @@ fn probe() -> result: own unit pure {
             DeclarationRole::NamedConst,
             DeclarationRole::GenericType,
             DeclarationRole::ConstGeneric,
-            DeclarationRole::RegionParameter,
             DeclarationRole::Parameter,
             DeclarationRole::Let,
             DeclarationRole::LoopLabel,
-            DeclarationRole::LocalRegion,
             DeclarationRole::MatchBinder,
             DeclarationRole::CountedBinder,
         ] {
@@ -1753,14 +1847,11 @@ fn probe() -> result: own unit pure {
             LexicalUseRole::Type,
             LexicalUseRole::GenericBound,
             LexicalUseRole::FormalGroup,
+            LexicalUseRole::TypeArgument,
             LexicalUseRole::Construct,
             LexicalUseRole::ArmVariant,
-            LexicalUseRole::TypeRegion,
-            LexicalUseRole::ModeRegion,
-            LexicalUseRole::TypeArgumentRegion,
-            LexicalUseRole::EffectAllocationRegion,
             LexicalUseRole::EffectRoot,
-            LexicalUseRole::BorrowRegion,
+            LexicalUseRole::EffectIndex,
             LexicalUseRole::BreakLabel,
             LexicalUseRole::Const,
             LexicalUseRole::ConstValue,
@@ -1785,8 +1876,10 @@ fn probe() -> result: own unit pure {
             DeferredUseRole::FieldInitializer,
             DeferredUseRole::MatchField,
             DeferredUseRole::ProjectedField,
+            DeferredUseRole::PayloadVariant,
             DeferredUseRole::FunctionBinding,
             DeferredUseRole::FunctionMember,
+            DeferredUseRole::EffectField,
         ] {
             assert!(
                 deferred_roles.contains(&role),
@@ -1794,23 +1887,36 @@ fn probe() -> result: own unit pure {
             );
         }
 
-        // D7 retires law arguments; numeric literals retain their own
-        // suffix use, and qualified calls add the deferred member use above.
+        // Numeric literals retain their own suffix use, and qualified calls
+        // add the deferred member use above.
         let suffix = resolved
             .lexical_uses()
             .iter()
             .find(|usage| usage.role() == LexicalUseRole::GenericNumericSuffix)
             .expect("generic literal suffix must resolve");
         assert_eq!(suffix.origin().subtoken_ordinal(), 1);
+
+        // [EFF-1] `reads(holder.table[first..last])` roots at the reference
+        // parameter, selects one field below it, and supplies both endpoints
+        // as value parameters of the same callable.
+        let indices: Vec<_> = resolved
+            .lexical_uses()
+            .iter()
+            .filter(|usage| usage.role() == LexicalUseRole::EffectIndex)
+            .map(|usage| usage.spelling().to_owned())
+            .collect();
+        assert_eq!(indices, vec!["first".to_owned(), "last".to_owned()]);
     });
 }
 
 #[test]
 fn effect_paths_resolve_the_exact_formal_parameter_and_retain_fields() {
-    let source = b"struct Holder {\n  output: i32;\n}\n\nfn publish(holder: own Holder) -> result: own unit writes(holder.output) {\n  return unit;\n}\n";
+    // [EFF-1] every `effect_path` is rooted at a reference parameter, so the
+    // fixture's root is `&Holder` and not the v0.59 `own Holder`.
+    let source = b"struct Holder {\n  output: i32;\n}\n\nfn publish(holder: &Holder) -> result: own unit writes(holder.output) {\n  return unit;\n}\n";
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("a parameter-rooted state path must resolve: {outcome:?}");
+            panic!("a reference-parameter-rooted state path must resolve: {outcome:?}");
         };
         let parameter = resolved
             .declarations()
@@ -1957,21 +2063,26 @@ fn future() -> result: own unit pure {
     });
 }
 
+/// [TYPE-6] a `fn_sig` parameter "is not visible in a sibling member or the
+/// receiving function's body". v0.59 exercised this with a region parameter of
+/// a sibling member; regions are gone, so the same judgment is read off the
+/// parameter itself, which is the only owner-local name a member signature
+/// still declares.
 #[test]
-fn sibling_formal_signatures_do_not_share_region_parameters() {
+fn sibling_member_signatures_do_not_share_parameter_names() {
     let source = br#"formal Separate {
-  fn first(value: &i32) -> result: own unit pure;
-  fn second() -> result: own Slice<'r, i32> pure;
+  fn first(value: &i32) -> result: own unit reads(value);
+  fn second() -> result: own unit reads(value);
 }
 "#;
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("sibling member region must not participate: {outcome:?}");
+            panic!("sibling member parameter must not participate: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRule::Own3);
+        assert_eq!(issue.rule(), ResolutionRule::Eff1);
         assert!(matches!(
             issue.kind(),
-            ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "'r"
+            ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "value"
         ));
     });
 }
@@ -2459,14 +2570,25 @@ fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_cou
     assert_eq!(first[14].1, "Bool");
     assert_eq!(first[36].1, "TcpConnection");
     assert_eq!(first[40].1, "AcceptedConnection");
-    // PRE-1 removes 31 records for six outcome enums and adds four for the
-    // ordinary AcceptedConnection struct, constructor and two fields.
+    // [PRE-1]'s preorder: the opaque nominals, then each struct or enum with
+    // its constructor or variants and their fields, then `Int` and `Float`,
+    // then the host functions, then the construction functions [OP-13], then
+    // the window operations [OP-10], then `swap` [OP-11] and `free_empty`
+    // [OP-14], each with its type, const and value parameters in declared
+    // order. Nothing before `Int` moved in v0.60; the tail grew from 279 to
+    // 361 records because the twenty new function records carry 82 records of
+    // their own names, generic parameters and value parameters.
     assert_eq!(first[158].1, "Int");
     assert_eq!(first[159].1, "Float");
     assert_eq!(first[160].1, "args_count");
     assert_eq!(first[276].1, "close_send");
-    assert_eq!(first.len(), 279);
-    assert_eq!(first.last().map(|record| record.1.as_str()), Some("send"));
+    assert_eq!(first[279].1, "box_new");
+    assert_eq!(first[310].1, "place_back");
+    assert_eq!(first[354].1, "swap");
+    assert_eq!(first[358].1, "free_empty");
+    assert_eq!(first.len(), 361);
+    // `free_empty`'s own value parameter is the last record of the preorder.
+    assert_eq!(first.last().map(|record| record.1.as_str()), Some("window"));
     assert!(
         first.len() > 256,
         "the full ordinary inventory must not truncate at u8: {}",

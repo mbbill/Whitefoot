@@ -1,41 +1,25 @@
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "ReadStop is an ordinary enum nested inside Result. Omitting ReadFailed from its match remains ERR-2 non-exhaustiveness; C2 changes the API shape without weakening the rejected coverage.";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "ReadStop is an ordinary enum nested inside Result. Omitting ReadFailed from its match remains ERR-2 non-exhaustiveness; the storage and reference changes alter the API shape without weakening the rejected coverage.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: input) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let chunk = slots_new::<u8, 4>();
+  for @scratch (
+    at in 0_u64..4_u64,
+    invariant grown: chunk.len >= at,
+    invariant vacancy: chunk.room + at >= 4_u64
+  ) {
+    place_back(window: &chunk, value: 0_u8);
   }
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh) => {
-        let chunk = move fresh;
-        for @scratch (
-          at in 0_u64..4_u64,
-          invariant grown: len_of(chunk) >= at,
-          invariant spare: room_of(chunk) + at >= 4_u64,
-          invariant flat: head_of(chunk) <= 0_u64
-        ) {
-          place_back(vector: &uniq chunk, value: 0_u8);
+  let window = &chunk[0_u64..4_u64];
+  match read_next(factory: &entry_factory, input: &input, destination: window, start: 0_u64, end: 4_u64) {
+    Ok(value: endpoint) => {
+    }
+    Err(error: read_stop_7) => {
+      match read_stop_7 {
+        ReadEnd() => {
         }
-        region {
-          let window = mut_slice_of(&uniq chunk);
-          region {
-            match read_next(factory: &uniq entry_factory, input: &uniq input, destination: &uniq window, start: 0_u64, end: 4_u64) {
-              Ok(value: endpoint) => {
-              }
-              Err(error: read_stop_7) => {
-                match read_stop_7 {
-                  ReadEnd() => {
-                  }
-                }
-              }
-            }
-          }
-        }
-        return exit_status(code: 0_u8);
       }
     }
   }
+  return exit_status(code: 0_u8);
 }

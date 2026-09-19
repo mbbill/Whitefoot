@@ -5,7 +5,7 @@ enum Sign {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "OWN-1/OWN-13: matching an own value moves it; borrowing the now-dead binding afterward is a use-after-move.";
+  doc "Matching an own place moves it [OWN-13]; forming a reference to the now-dead binding afterward is a use after move, distinct from the usual match-after-move form and rejected citing OWN-1.";
   let s = Pos();
   match s {
     Neg(mag: m) => {
@@ -15,8 +15,6 @@ fn main() -> status: own ExitStatus pure {
     Pos() => {
     }
   }
-  region {
-    let b = &s;
-  }
+  let b = &s;
   return exit_status(code: 0_u8);
 }

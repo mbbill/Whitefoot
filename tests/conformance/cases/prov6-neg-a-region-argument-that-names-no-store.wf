@@ -1,21 +1,15 @@
-fn wider['s: affine](left: &'s u64, right: &'s u64) -> larger: own u64 reads(left, right) {
-  doc "A region parameter written `'s: affine` declares a store region: the bound is a claim about the store `'s` names, and a bump extent is the store whose reclamation is its own region reset.";
-  let a = deref(left);
-  let b = deref(right);
-  let ordered = a >= b;
-  if ordered {
-    return a;
-  } else {
-    return b;
-  }
+linear struct Token {
+  id: u64;
+}
+
+fn keep<T: copy>(value: own T) -> result: own unit pure {
+  doc "A copy-bounded parameter's body may duplicate the value, use it bare, and drop it.";
+  return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "PROV-6, S37: a region argument that names no store - a loan region, or a region a `region_stmt` introduced that no reserving occurrence names - has no store class and satisfies neither bound. This call passes a plain `region { }` region to `'s: affine` and is refused at the instantiation.";
-  let a = 1_u64;
-  let b = 2_u64;
-  region {
-    let top = wider(left: &a, right: &b);
-  }
+  doc "PROV-6: satisfaction is the strict chain copy < affine < linear read left to right, so a copy bound accepts copy arguments only. Token carries the linear modifier, so this instantiation's argument does not satisfy the written bound and the refusal is at the instantiation's call, naming the parameter, the bound, and the argument.";
+  let ticket = Token(id: 1_u64);
+  keep::<Token>(value: move ticket);
   return exit_status(code: 0_u8);
 }

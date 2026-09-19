@@ -1,9 +1,8 @@
 fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(0_u8);
-  region {
-    let view = mut_slice_of(&uniq values);
-    set view[2_u64] = 1_u8;
-    let seen = view[0_u64];
-  }
+  doc "OP-4, REF-4: a range reference's one measure is len, equal to hi - lo, and a subscript through it carries the ordinary bounds obligation against that len. The range covers two elements, so offset two is outside it.";
+  let values = array_filled::<u8, 2>(value: 0_u8);
+  let view = &values[0_u64..2_u64];
+  set view[2_u64] = 1_u8;
+  let seen = view[0_u64];
   return exit_status(code: 0_u8);
 }

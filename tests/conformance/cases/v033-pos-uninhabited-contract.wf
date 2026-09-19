@@ -2,10 +2,8 @@ fn impossible(value: own u8) -> output: own u8 pure contract {
   requires value == 0_u8;
   requires value != 0_u8;
 } {
-  let values = fixed_vector::<u8, 1>();
-  region {
-    place_back(vector: &uniq values, value: 0_u8);
-  }
+  doc "The contradictory entry state discharges a subscript no reachable caller could satisfy.";
+  let values = array_filled::<u8, 1>(value: 0_u8);
   return values[7_u64];
 }
 

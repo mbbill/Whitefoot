@@ -1,59 +1,23 @@
 fn main() -> status: own ExitStatus pure {
-  let line = fixed_vector::<u8, 10>();
-  region {
-    place_back(vector: &uniq line, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq line, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq line, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq line, value: 0_u8);
-  }
-  let spare = len_of(line);
+  doc "MSR-2, OP-11: a Slots keeps capacity ten while its initialized length changes from four to ten on a whole-descriptor exchange. The swap writes the window's own descriptor storage and kills every measure of it, so a fresh length observation and guard are what prove the new last slot; the pre-exchange length is not reused.";
+  let line = slots_new::<u8, 10>();
+  place_back(window: &line, value: 0_u8);
+  place_back(window: &line, value: 0_u8);
+  place_back(window: &line, value: 0_u8);
+  place_back(window: &line, value: 0_u8);
+  let spare = line.len;
   let first_end = 4_u64;
   let first_fits = first_end <= spare;
   if first_fits {
   } else {
     return exit_status(code: 1_u8);
   }
-  let grown = fixed_vector::<u8, 10>();
-  region {
-    place_back(vector: &uniq grown, value: 7_u8);
-  }
-  region {
-    place_back(vector: &uniq grown, value: 7_u8);
-  }
-  region {
-    place_back(vector: &uniq grown, value: 7_u8);
-  }
-  region {
-    place_back(vector: &uniq grown, value: 7_u8);
-  }
-  region {
-    place_back(vector: &uniq grown, value: 7_u8);
-  }
-  region {
-    place_back(vector: &uniq grown, value: 7_u8);
-  }
-  region {
-    place_back(vector: &uniq grown, value: 7_u8);
-  }
-  region {
-    place_back(vector: &uniq grown, value: 7_u8);
-  }
-  region {
-    place_back(vector: &uniq grown, value: 7_u8);
-  }
-  region {
-    place_back(vector: &uniq grown, value: 7_u8);
-  }
-  let old = replace line = move grown;
-  let room2 = len_of(line);
+  let values = array_filled::<u8, 10>(value: 7_u8);
+  let grown = slots_from_array::<u8, 10>(values: move values);
+  swap(first: &line, second: &grown);
+  let measured = line.len;
   let second_end = 10_u64;
-  let second_fits = second_end <= room2;
+  let second_fits = second_end <= measured;
   if second_fits {
   } else {
     return exit_status(code: 1_u8);

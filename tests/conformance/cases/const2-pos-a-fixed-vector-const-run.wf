@@ -1,16 +1,15 @@
-const table: FixedVector<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
+const table: Array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 fn main() -> status: own ExitStatus pure {
-  doc "[CONST-2, S34] the const form of the inline run. A `FixedVector<T, n>` of const-eligible `T` with exactly `n` literal entries is const-eligible: it is read-only static rodata that lowers to element storage only, and its descriptor is the four standing facts `len_of = cap_of = n` and `room_of = head_of = 0`, materialized at each use. All four measures read those constants, a subscript's bounds obligation discharges from `len_of = n`, and the const is the immutable-const origin of a shared view.";
+  doc "The const form of the inline run: an Array<T, N> of const-eligible T with exactly N literal entries is const-eligible read-only static rodata. It lowers to element storage only and stores no length, capacity or head, so the three measures its row has read the type's own constants, a subscript discharges from len == N, and the const is the immutable origin of a range reference.";
   let v = table[2_u64];
   if v == 30_u8 {
   } else {
     return exit_status(code: 201_u8);
   }
-  let n = len_of(table);
-  let c = cap_of(table);
-  let r = room_of(table);
-  let h = head_of(table);
+  let n = table.len;
+  let c = table.cap;
+  let r = table.room;
   if n == 4_u64 {
   } else {
     return exit_status(code: 202_u8);
@@ -23,17 +22,11 @@ fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 204_u8);
   }
-  if h == 0_u64 {
+  let window = &table[1_u64..2_u64];
+  let seen = window[0_u64];
+  if seen == 20_u8 {
   } else {
-    return exit_status(code: 205_u8);
-  }
-  region {
-    let window = slice_of(&table);
-    let seen = window[1_u64];
-    if seen == 20_u8 {
-    } else {
-      return exit_status(code: 206_u8);
-    }
+    return exit_status(code: 206_u8);
   }
   return exit_status(code: 0_u8);
 }

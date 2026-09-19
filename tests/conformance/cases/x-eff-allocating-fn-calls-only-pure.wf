@@ -1,18 +1,17 @@
 fn bump(x: own i32) -> function_result: own i32 pure {
-  doc "A pure helper with no allocation and no allocating callee.";
+  doc "A pure helper that allocates nothing and calls no writing callee.";
   return x +wrap 1_i32;
 }
 
-fn f['heap](heap: &uniq Heap<'heap>, x: own i32) -> function_result: own i32 allocates(heap) {
-  doc "Declares allocates(heap) over its provider parameter, but its body only calls a pure function [EFF-2].";
+fn f(cell: &Box<i32>, x: own i32) -> function_result: own i32 writes(deref(cell)) {
+  doc "Declares a write of the cell content, but the body only calls a pure function and performs no such write, so the row is declared-but-unexhibited [EFF-2]. Allocation and release carry no effect entry at all [STOR-8], so no row is justified by them either.";
   let a = bump(x: x);
   return a;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main() -> status: own ExitStatus pure {
   doc "Driver.";
-  region {
-    let a = f(heap: &uniq heap, x: 7_i32);
-  }
+  let cell = box_new::<i32>(value: 0_i32);
+  let a = f(cell: &cell, x: 7_i32);
   return exit_status(code: 0_u8);
 }

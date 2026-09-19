@@ -1,23 +1,26 @@
-formal Inspect<T: linear> {
+linear struct Token {
+  id: u64;
+}
+
+struct Wrapper {
+  ticket: Token;
+  count: u64;
+}
+
+formal Inspect<T: affine> {
   fn inspect(value: &T) -> result: own unit pure;
 }
 
-fn ignore['s](value: &Box<'s, u64>) -> result: own unit pure {
+fn ignore(value: &Wrapper) -> result: own unit pure {
+  doc "Observes nothing, so the row is empty.";
   return unit;
 }
 
-actual ExtentOnly['b: affine] : Inspect<Box<'b, u64>> {
+actual WrapperInspect : Inspect<Wrapper> {
   inspect = ignore;
 }
 
-fn apply<Inspect<T>>(value: &T) -> result: own unit pure {
-  return Inspect::inspect(value: value);
-}
-
-fn accepts['h](value: &Box<'h, u64>) -> result: own unit pure {
-  return apply::<ExtentOnly<'h>>(value: value);
-}
-
 fn main() -> status: own ExitStatus pure {
+  doc "PROV-6: a type owning a linear part at any depth is linear, so Wrapper is linear although it carries no modifier of its own. The affine bound of the group is not satisfied and the actual application is refused, exactly as the explicitly declared linear argument is.";
   return exit_status(code: 0_u8);
 }

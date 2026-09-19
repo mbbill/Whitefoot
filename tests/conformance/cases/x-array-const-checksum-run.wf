@@ -1,6 +1,7 @@
-const input: FixedVector<u64, 8> =[3_u64, 5_u64, 8_u64, 13_u64, 21_u64, 34_u64, 55_u64, 89_u64];
+const input: Array<u64, 8> =[3_u64, 5_u64, 8_u64, 13_u64, 21_u64, 34_u64, 55_u64, 89_u64];
 
 fn checksum() -> function_result: own u64 pure {
+  doc "Folds the static table; a const root contributes no read effect, so the row is the empty one.";
   let total = 0_u64;
   for (cursor in 0_u64..8_u64) {
     let value = input[cursor];
@@ -10,7 +11,7 @@ fn checksum() -> function_result: own u64 pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "A static const run feeds a counted-loop checksum whose range facts discharge indexing.";
+  doc "A fixed immutable table feeds a loop-carried checksum through statically discharged bounds obligations and ordinary scalar-update paths.";
   let result = checksum();
   if result == 228_u64 {
   } else {

@@ -1,12 +1,11 @@
-fn f ['heap](heap: &uniq Heap<'heap>, x: own i32) -> function_result: own i32 pure, allocates(heap) {
-  doc "D7 raw fn_sig parameters admit comma after pure in FOLLOW(effects); in this unchanged top-level source the comma fails the enclosing fn_decl continuation under DIAG-1/GRAM-2. The program still rejects and pure still cannot combine with another category.";
+fn f(cell: &Box<i32>, x: own i32) -> function_result: own i32 pure, reads(deref(cell)) {
+  doc "pure is the unique spelling of the empty row and is not an entry that another entry may follow, so the comma after it fails the enclosing fn_decl continuation under DIAG-1/GRAM-2. The program still rejects and pure still cannot combine with another entry.";
   return x;
 }
 
-fn main ['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main() -> status: own ExitStatus pure {
   doc "Driver.";
-  region {
-    let a: own i32 = f(heap: &uniq heap, x: 7_i32);
-  }
+  let cell = box_new::<i32>(value: 0_i32);
+  let a = f(cell: &cell, x: 7_i32);
   return exit_status(code: 0_u8);
 }

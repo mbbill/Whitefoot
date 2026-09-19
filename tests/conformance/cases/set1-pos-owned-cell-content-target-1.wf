@@ -1,15 +1,8 @@
-fn hold['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
-  region {
-    match heap_box(store: &uniq deref(store), value: 4_i32) {
-      Ok(value: b) => {
-        set deref(b) = 7_i32;
-        return unit;
-      }
-      Err(error: back) => {
-        return unit;
-      }
-    }
-  }
+fn hold() -> result: own unit pure {
+  doc "An owned cell's content is a legal scalar set target, reached through deref of a live cell binding and distinct from a target reached through a reference parameter.";
+  let b = box_new::<i32>(value: 4_i32);
+  set deref(b) = 7_i32;
+  return unit;
 }
 
 fn main() -> status: own ExitStatus pure {

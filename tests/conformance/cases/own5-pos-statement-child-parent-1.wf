@@ -1,27 +1,26 @@
-struct Pair {
-  left: u64;
-  right: u64;
+struct Cell {
+  value: u64;
 }
 
-fn change(value: &uniq u64) -> result: own u64 writes(value) {
-  set deref(value) = 9_u64;
+struct Pair {
+  left: Cell;
+  right: Cell;
+}
+
+fn change(cell: &Cell) -> result: own u64 writes(cell.value) {
+  doc "Writes the cell it was handed and returns an unrelated number.";
+  set cell.value = 9_u64;
   return 7_u64;
 }
 
-fn sink(value: &uniq Pair) -> result: own u64 pure {
-  return 11_u64;
-}
-
 fn main() -> status: own ExitStatus pure {
-  let pair = Pair(left: 3_u64, right: 5_u64);
-  let left = 0_u64;
-  let right = 0_u64;
-  region {
-    let holder = &uniq pair;
-    region {
-      set (left, right) = change(value: &uniq deref(holder).left), change(value: &uniq deref(holder).right);
-    }
-    set deref(holder).left = 13_u64;
-  }
+  doc "Two calls reaching disjoint fields through one reference each write their own path, and the whole value is written again after both have ended.";
+  let l = Cell(value: 3_u64);
+  let r = Cell(value: 5_u64);
+  let pair = Pair(left: move l, right: move r);
+  let holder = &pair;
+  let first = change(cell: &holder.left);
+  let second = change(cell: &holder.right);
+  set holder.left.value = 13_u64;
   return exit_status(code: 0_u8);
 }

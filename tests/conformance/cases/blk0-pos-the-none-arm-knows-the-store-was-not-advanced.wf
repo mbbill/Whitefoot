@@ -1,22 +1,15 @@
 fn main() -> status: own ExitStatus pure {
-  doc "BLK-0, CALL-6: the other arm of the same row. The None arm publishes len_of(store) = len_of(store at the call), so the store the caller holds after a refused take is the store it held before it, and the smaller proved take that follows discharges its own room requirement from that and from the row's unrouted cap_of(store) relation.";
-  region 'a {
-    let workspace = arena_frame::<4096, 16, 'a>();
-    region {
-      match arena_vector::<u8>(store: &uniq workspace, count: 8192_u64) {
-        Some(value: run) => {
-          return exit_status(code: 1_u8);
-        }
-        None() => {
-          let small = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
-          let held = len_of(small);
-          if held == 0_u64 {
-          } else {
-            return exit_status(code: 2_u8);
-          }
-        }
-      }
-    }
+  doc "The other arm of the same branch. On the arm on which no window operation ran, the run the writer holds is exactly the run it held before the branch: nothing was published there and the measures already established stand, so the placement that follows discharges its own room requirement from them.";
+  let run = slots_new::<u8, 4>();
+  let full = run.room == 0_u64;
+  if full {
+    return exit_status(code: 1_u8);
+  }
+  place_back(window: &run, value: 3_u8);
+  let held = run.len;
+  if held == 1_u64 {
+  } else {
+    return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
 }

@@ -1,62 +1,39 @@
-fn copy_bytes(out: &uniq MutSlice<u8>, source: own Slice<u8>) -> function_result: own u64 reads(source), writes(out) contract {
-  define out_length = len_of(deref(out));
-  define source_length = len_of(source);
+fn copy_bytes(out: &[u8], source: &[u8]) -> function_result: own u64 reads(source), writes(out) contract {
+  define out_length = out.len;
+  define source_length = source.len;
   requires source_length <= out_length;
 } {
-  let length = len_of(source);
+  doc "Copies the source range into the destination range; the requirement's body-entry axiom combines with each counted binder fact to prove every output write.";
+  let length = source.len;
   for (offset in 0_u64..length) {
     let value = source[offset];
-    set deref(out)[offset] = value;
+    set out[offset] = value;
   }
   return length;
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "Equal caller allocations discharge the output-capacity requirement before the call. In the callee, a counted range proves each source read, and that binder fact combines with the requirement to prove each output write. The two substituted effect paths have different roots, so EFF-5 admits the call. Explicit result controls observe the returned length and copied byte.";
   let length = 4_u64;
-  region 'w {
-    let workspace = arena_frame::<8, 1, 'w>();
-    region {
-      let source = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
-      for @fill_source (
-        at in 0_u64..4_u64,
-        invariant grown_source: len_of(source) >= at,
-        invariant spare_source: room_of(source) + at >= 4_u64,
-        invariant flat_source: head_of(source) <= 0_u64
-      ) {
-        place_back(vector: &uniq source, value: 7_u8);
-      }
-      let output = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
-      for @fill_output (
-        at in 0_u64..4_u64,
-        invariant grown_output: len_of(output) >= at,
-        invariant spare_output: room_of(output) + at >= 4_u64,
-        invariant flat_output: head_of(output) <= 0_u64
-      ) {
-        place_back(vector: &uniq output, value: 0_u8);
-      }
-      region {
-        let window = slice_of(&source);
-        let destination = mut_slice_of(&uniq output);
-        let window_length = len_of(window);
-        let destination_length = len_of(destination);
-        if window_length <= destination_length {
-        } else {
-          return exit_status(code: 203_u8);
-        }
-        region {
-          let written = copy_bytes(out: &uniq destination, source: window);
-          if written == length {
-          } else {
-            return exit_status(code: 201_u8);
-          }
-        }
-      }
-      let last = output[3_u64];
-      if last == 7_u8 {
-      } else {
-        return exit_status(code: 202_u8);
-      }
-    }
+  let source = array_filled::<u8, 4>(value: 7_u8);
+  let output = array_filled::<u8, 4>(value: 0_u8);
+  let window = &source[0_u64..4_u64];
+  let destination = &output[0_u64..4_u64];
+  let window_length = window.len;
+  let destination_length = destination.len;
+  if window_length <= destination_length {
+  } else {
+    return exit_status(code: 203_u8);
+  }
+  let written = copy_bytes(out: destination, source: window);
+  if written == length {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  let last = output[3_u64];
+  if last == 7_u8 {
+  } else {
+    return exit_status(code: 202_u8);
   }
   return exit_status(code: 0_u8);
 }

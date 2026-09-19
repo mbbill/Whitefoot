@@ -1,15 +1,9 @@
 fn main() -> status: own ExitStatus pure {
-  doc "FORM-3: v0.22 releases index from the fixed grammar atoms, so it is an ordinary IDENT, declarable as a binding and usable as a subscript offset.";
+  doc "FORM-3: `index` is not a fixed grammar atom, so it is an ordinary IDENT, declarable as a binding and usable as a subscript offset. The eight measure and window-part names are the spellings FORM-3 now reserves, and `index` is not one of them.";
   let index = 1_u64;
-  let empty = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq empty, value: 7_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 7_u8);
-  }
-  let items = move one;
+  let items = slots_new::<u8, 2>();
+  place_back(window: &items, value: 7_u8);
+  place_back(window: &items, value: 7_u8);
   let value = items[index];
   return exit_status(code: 0_u8);
 }

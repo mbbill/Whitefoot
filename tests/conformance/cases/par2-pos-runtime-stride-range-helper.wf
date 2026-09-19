@@ -1,43 +1,45 @@
-fn fill(output: own MutSlice<u64>) -> result: own u64 reads(output), writes(output) {
-  let count = len_of(output);
+fn fill(output: &[u64]) -> result: own u64 writes(output) {
+  doc "Fills every element of the range reference it was handed.";
+  let count = output.len;
   for (i in 0_u64..count) {
     set output[i] = 7_u64;
   }
   return count;
 }
 
-fn rows(width: own u64) -> result: own buffer<u64> pure contract {
+fn rows(width: own u64) -> result: own Box<Array<u64>> pure contract {
   requires width <= 32_u64;
 } {
+  doc "Three adjacent runtime-width rows are filled through range references whose endpoints are proved inside the allocation.";
   let cells = 3_u64 * width;
-  let values = buffer_new(cells, 0_u64);
+  let values = box_array_filled::<u64>(count: cells, value: 0_u64);
   for (i in 0_u64..3_u64) {
     let start = i * width;
     let end = start + width;
     invariant bounded: end <= cells {
       use width times (i + 1_u64 <= 3_u64);
     }
-    region {
-      let row = mut_slice_of(&uniq values, start, end);
-      let filled = fill(output: move row);
-    }
+    let row = &deref(values)[start..end];
+    let filled = fill(output: row);
   }
   return move values;
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "The retained exact products and the explicit endpoint proof permit the adjacent range assignment; zero stride is also a valid empty assignment.";
   let values = rows(width: 5_u64);
-  let count = len_of(values);
+  let count = deref(values).len;
   if count != 15_u64 {
     return exit_status(code: 1_u8);
   }
   for (i in 0_u64..count) {
-    if values[i] != 7_u64 {
+    let seen = deref(values)[i];
+    if seen != 7_u64 {
       return exit_status(code: 2_u8);
     }
   }
   let empty = rows(width: 0_u64);
-  let zero = len_of(empty);
+  let zero = deref(empty).len;
   if zero != 0_u64 {
     return exit_status(code: 3_u8);
   }

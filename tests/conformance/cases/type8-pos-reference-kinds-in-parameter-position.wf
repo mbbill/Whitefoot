@@ -1,0 +1,22 @@
+fn total(first: &u64, part: &[u64]) -> result: own u64 reads(first), reads(part) contract {
+  requires part.len > 0_u64;
+} {
+  doc "TYPE-8: a reference kind appears as a parameter kind and as a let-bound local, never inside a value.";
+  let a = first;
+  let b = part[0_u64];
+  let sum = a +wrap b;
+  return sum;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "TYPE-8: a reference kind is not a value type; every aggregate holds only owned values, and a reference is formed at a borrow expression and handed to a call.";
+  let x = 10_u64;
+  let a = array_filled::<u64, 4>(value: 2_u64);
+  let part = &a[0_u64..4_u64];
+  let sum = total(first: &x, part: part);
+  if sum == 12_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

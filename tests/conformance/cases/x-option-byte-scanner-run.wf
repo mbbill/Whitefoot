@@ -1,5 +1,6 @@
-fn find_byte(input: own Slice<u8>, needle: own u8) -> function_result: own Option<u64> reads(input) {
-  let length = len_of(input);
+fn find_byte(input: &[u8], needle: own u8) -> function_result: own Option<u64> reads(input) {
+  doc "Scans a range reference and returns an owned index, never a reference [REF-3].";
+  let length = input.len;
   for (offset in 0_u64..length) {
     let byte = input[offset];
     let found = byte == needle;
@@ -11,47 +12,34 @@ fn find_byte(input: own Slice<u8>, needle: own u8) -> function_result: own Optio
 }
 
 fn main() -> status: own ExitStatus pure {
-  let bytes = fixed_vector::<u8, 6>();
-  region {
-    place_back(vector: &uniq bytes, value: 10_u8);
-  }
-  region {
-    place_back(vector: &uniq bytes, value: 20_u8);
-  }
-  region {
-    place_back(vector: &uniq bytes, value: 30_u8);
-  }
-  region {
-    place_back(vector: &uniq bytes, value: 40_u8);
-  }
-  region {
-    place_back(vector: &uniq bytes, value: 50_u8);
-  }
-  region {
-    place_back(vector: &uniq bytes, value: 60_u8);
-  }
-  region {
-    let view = slice_of(&bytes);
-    let present = find_byte(input: view, needle: 40_u8);
-    match move present {
-      None() => {
-        return exit_status(code: 1_u8);
-      }
-      Some(value: present_offset) => {
-        let expected_offset = present_offset == 3_u64;
-        if expected_offset {
-        } else {
-          return exit_status(code: 2_u8);
-        }
+  doc "A range-reference byte scanner uses a counted range to prove every read in bounds. Ordinary controls observe Some(3), the expected None result, and every wrong variant or offset through distinct nonzero statuses.";
+  let bytes = array_filled::<u8, 6>(value: 0_u8);
+  set bytes[0_u64] = 10_u8;
+  set bytes[1_u64] = 20_u8;
+  set bytes[2_u64] = 30_u8;
+  set bytes[3_u64] = 40_u8;
+  set bytes[4_u64] = 50_u8;
+  set bytes[5_u64] = 60_u8;
+  let view = &bytes[0_u64..6_u64];
+  let present = find_byte(input: view, needle: 40_u8);
+  match move present {
+    None() => {
+      return exit_status(code: 1_u8);
+    }
+    Some(value: present_offset) => {
+      let expected_offset = present_offset == 3_u64;
+      if expected_offset {
+      } else {
+        return exit_status(code: 2_u8);
       }
     }
-    let missing = find_byte(input: view, needle: 99_u8);
-    match move missing {
-      None() => {
-      }
-      Some(value: missing_offset) => {
-        return exit_status(code: 3_u8);
-      }
+  }
+  let missing = find_byte(input: view, needle: 99_u8);
+  match move missing {
+    None() => {
+    }
+    Some(value: missing_offset) => {
+      return exit_status(code: 3_u8);
     }
   }
   return exit_status(code: 0_u8);

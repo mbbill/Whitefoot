@@ -1,39 +1,34 @@
 fn main() -> status: own ExitStatus pure {
-  doc "BLK-1: after a front removal and two back placements the window wraps, head is nonzero, and a subscript is still a logical offset whose obligation is against len.";
-  let empty = fixed_vector::<u8, 3>();
-  region {
-    place_back(vector: &uniq empty, value: 10_u8);
+  doc "After a front removal and a back placement the ring's window wraps and head is nonzero, and a subscript is still a logical offset whose OP-4 obligation is against len and never against cap or head. The room reread after the front removal is what discharges the next placement, because take_front replaces the whole window state.";
+  let run = ring_new::<u8, 3>();
+  place_back(window: &run, value: 10_u8);
+  place_back(window: &run, value: 20_u8);
+  place_back(window: &run, value: 30_u8);
+  let dropped = take_front(window: &run);
+  if dropped == 10_u8 {
+  } else {
+    return exit_status(code: 1_u8);
   }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 20_u8);
+  let spare = run.room;
+  if spare == 1_u64 {
+  } else {
+    return exit_status(code: 5_u8);
   }
-  let two = move one;
-  region {
-    place_back(vector: &uniq two, value: 30_u8);
+  place_back(window: &run, value: 40_u8);
+  let held = run.len;
+  if held == 3_u64 {
+  } else {
+    return exit_status(code: 4_u8);
   }
-  let three = move two;
-  region {
-    let dropped = take_front(vector: &uniq three);
-    let rest = move three;
-    if dropped == 10_u8 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-    region {
-      place_back(vector: &uniq rest, value: 40_u8);
-    }
-    let wrapped = move rest;
-    let at_zero = wrapped[0_u64];
-    if at_zero == 20_u8 {
-    } else {
-      return exit_status(code: 2_u8);
-    }
-    let at_two = wrapped[2_u64];
-    if at_two == 40_u8 {
-    } else {
-      return exit_status(code: 3_u8);
-    }
-    return exit_status(code: 0_u8);
+  let at_zero = run[0_u64];
+  if at_zero == 20_u8 {
+  } else {
+    return exit_status(code: 2_u8);
   }
+  let at_two = run[2_u64];
+  if at_two == 40_u8 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
 }

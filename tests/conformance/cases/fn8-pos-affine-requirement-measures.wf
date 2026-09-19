@@ -1,34 +1,34 @@
-fn fill(first: own Slice<u64>, second: own Slice<u64>, output: own MutSlice<u64>) -> result: own u64 reads(first, second, output), writes(output) contract {
-  requires len_of(first) <= 16_u64;
-  requires len_of(second) <= 16_u64;
-  requires len_of(first) + len_of(second) <= len_of(output);
+fn fill(first: &[u64], second: &[u64], output: &[u64]) -> result: own u64 writes(output) contract {
+  requires first.len <= 16_u64;
+  requires second.len <= 16_u64;
+  requires first.len + second.len <= output.len;
 } {
-  let a = len_of(first);
-  let b = len_of(second);
-  let capacity = len_of(output);
+  doc "Two length observations are read as place forms rather than calls [OP-15], so the affine requirement constrains their images directly; their sum bounds the one write into the caller-provided output. A measure read carries the empty effect row, so only the write appears in the row.";
+  let a = first.len;
+  let b = second.len;
+  let capacity = output.len;
   let total = a + b;
   invariant fits: total <= capacity;
   if total > 0_u64 {
-    let last = total - 1_u64;
-    set output[last] = 7_u64;
+    let end_index = total - 1_u64;
+    set output[end_index] = 7_u64;
   }
   return total;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let first = buffer_new(3_u64, 0_u64);
-  let second = buffer_new(5_u64, 0_u64);
-  let output = buffer_new(8_u64, 0_u64);
-  region {
-    let a = slice_of(&first);
-    let b = slice_of(&second);
-    let destination = mut_slice_of(&uniq output, 0_u64, 8_u64);
-    let count = fill(first: a, second: b, output: move destination);
-    if count != 8_u64 {
-      return exit_status(code: 1_u8);
-    }
+  let first = array_filled::<u64, 3>(value: 0_u64);
+  let second = array_filled::<u64, 5>(value: 0_u64);
+  let output = array_filled::<u64, 8>(value: 0_u64);
+  let a = &first[0_u64..3_u64];
+  let b = &second[0_u64..5_u64];
+  let destination = &output[0_u64..8_u64];
+  let count = fill(first: a, second: b, output: destination);
+  if count != 8_u64 {
+    return exit_status(code: 1_u8);
   }
-  if output[7_u64] != 7_u64 {
+  let seen = output[7_u64];
+  if seen != 7_u64 {
     return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);

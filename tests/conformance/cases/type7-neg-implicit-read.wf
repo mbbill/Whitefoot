@@ -3,11 +3,9 @@ fn takes(value: own i32) -> function_result: own unit pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Using a borrow where a value of its referent type is expected, without deref, is forbidden [TYPE-7].";
+  doc "A reference is read bare [TYPE-7]: it is a name for a path [REF-1], so writing it where a value of the referent type is declared reads that path. The same spelling was the v0.59 implicit-read rejection; v0.60 admits it, deref being the Box-content step alone.";
   let a = 1_i32;
-  region {
-    let p = &a;
-    takes(value: p);
-  }
+  let p = &a;
+  takes(value: p);
   return exit_status(code: 0_u8);
 }

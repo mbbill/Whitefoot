@@ -4,8 +4,8 @@ enum Color {
   Blue();
 }
 
-fn paint['r](x: &'r i32, y: &uniq 'r i32) -> function_result: own Color pure {
-  doc "Every mode (own, &'r, &uniq 'r) and type has a written canonical name [TYPE-3].";
+fn paint(x: &i32, y: &i32) -> function_result: own Color pure {
+  doc "Every mode (own and the single reference form) and every type has a written canonical name requiring no compiler execution.";
   return Red();
 }
 

@@ -55,15 +55,6 @@ impl PreludeInventory {
                 }
                 let classes = match role.kind {
                     RawRoleKind::Declaration(declaration) => {
-                        // FORM-8's generated unnamed region has no declaration
-                        // spelling in PRE-1 and contributes no written record.
-                        let coordinate = role.origin.coordinate;
-                        let written = file.bytes().get(
-                            coordinate.start().value() as usize..coordinate.end().value() as usize,
-                        ) == Some(role.spelling.as_bytes());
-                        if declaration == DeclarationRole::RegionParameter && !written {
-                            continue;
-                        }
                         let mut classes = declaration_classes(declaration);
                         if file.prelude() == Some(PreludeSource::Opaque) {
                             classes.retain(|class| *class != DeclarationClass::StructConstructor);

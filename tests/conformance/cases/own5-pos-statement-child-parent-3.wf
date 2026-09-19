@@ -1,35 +1,28 @@
 struct Pair {
-  left: buffer<u8>;
-  right: buffer<u8>;
+  left: Box<Slots<u8>>;
+  right: Box<Slots<u8>>;
 }
 
-fn change(value: &uniq buffer<u8>) -> result: own u64 reads(value), writes(value) {
-  let size = len_of(deref(value));
+fn change(cell: &Box<Slots<u8>>) -> result: own u64 writes(deref(cell)) {
+  doc "Writes the first element of the window behind the cell it was handed, when that window has one.";
+  let size = deref(cell).len;
   let available = size != 0_u64;
   if available {
-    set deref(value)[0_u64] = 9_u8;
+    set deref(cell)[0_u64] = 9_u8;
   }
   return 7_u64;
 }
 
-fn sink(value: &uniq Pair) -> result: own u64 pure {
-  return 11_u64;
-}
-
 fn main() -> status: own ExitStatus pure {
-  let first = buffer_new(1_u64, 3_u8);
-  let second = buffer_new(1_u64, 5_u8);
+  doc "Two calls reaching disjoint cell fields through one reference write their own storage, and the first field is written again after both have ended.";
+  let first = box_slots_new::<u8>(capacity: 1_u64);
+  place_back(window: &deref(first), value: 3_u8);
+  let second = box_slots_new::<u8>(capacity: 1_u64);
+  place_back(window: &deref(second), value: 5_u8);
   let pair = Pair(left: move first, right: move second);
-  let left = 0_u64;
-  let right = 0_u64;
-  region {
-    let holder = &uniq pair;
-    region {
-      set (left, right) = change(value: &uniq deref(holder).left), change(value: &uniq deref(holder).right);
-    }
-    region {
-      let resumed = change(value: &uniq deref(holder).left);
-    }
-  }
+  let holder = &pair;
+  let a = change(cell: &holder.left);
+  let b = change(cell: &holder.right);
+  let resumed = change(cell: &holder.left);
   return exit_status(code: 0_u8);
 }

@@ -1,12 +1,13 @@
-formal Inspect {
-  fn length['s: linear](values: &Vector<'s, u64>) -> result: own u64 reads(values);
+formal Inspect<T: linear> {
+  fn length(values: &T) -> result: own u64 reads(values);
 }
 
-fn shorter['t: affine](values: &Vector<'t, u64>) -> result: own u64 reads(values) {
-  return len_of(deref(values));
+fn shorter(values: &Array<u64, 4>) -> result: own u64 reads(values) {
+  doc "The instantiated member takes a reference to an eight-slot array; this actual takes a four-slot one.";
+  return values[0_u64];
 }
 
-actual Narrow : Inspect {
+actual Narrow : Inspect<Array<u64, 8>> {
   length = shorter;
 }
 

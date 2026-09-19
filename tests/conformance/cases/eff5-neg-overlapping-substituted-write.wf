@@ -1,0 +1,22 @@
+struct Cell {
+  value: u64;
+}
+
+fn copy_across(source: &Cell, destination: &Cell) -> result: own unit reads(source.value), writes(destination.value) {
+  doc "EFF-5: the callee declares one formal-path row that the call site substitutes.";
+  let v = source.value;
+  set destination.value = v;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "EFF-5: two substituted effects on overlapping paths where at least one is a write must be proved disjoint, and are otherwise a hard error at the complete call; the restructuring is to prove the two positions distinct, or pass one of them.";
+  let a = Cell(value: 4_u64);
+  copy_across(source: &a, destination: &a);
+  let seen = a.value;
+  if seen == 4_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

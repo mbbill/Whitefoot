@@ -1,25 +1,14 @@
 fn main() -> status: own ExitStatus pure {
-  doc "LIV-2: one target is read out at most once, because after its read-out the target is dead for the remainder of the evaluation. The second `move grid[1_u64]` is therefore an ordinary use of what the first read-out consumed, and an ordinary affine subscript read is TYPE-2's rejection.";
-  region 'a {
-    let workspace = arena_frame::<65536, 16, 'a>();
-    region {
-      let empty = fixed_vector::<Vector<'a, u8>, 2>();
-      let small = arena_vector_proved::<u8>(store: &uniq workspace, count: 256_u64);
-      region {
-        place_back(vector: &uniq empty, value: move small);
-      }
-      let one = move empty;
-      let large = arena_vector_proved::<u8>(store: &uniq workspace, count: 512_u64);
-      region {
-        place_back(vector: &uniq one, value: move large);
-      }
-      let grid = move one;
-      set (grid[0_u64], grid[1_u64]) = move grid[1_u64], move grid[1_u64];
-      let held = len_of(grid);
-      if held == 2_u64 {
-        return exit_status(code: 0_u8);
-      }
-    }
+  doc "WIN-3: there is no take operation and no hole, so a move out of a window slot is refused wherever it is written, including in the right-hand side of a commit whose target is another slot of the same window. The restructuring names take_back, remove_at and swap; the exchange this program wants is swap(first: &grid[0_u64], second: &grid[1_u64]).";
+  let grid = slots_new::<Box<Slots<u8>>, 2>();
+  let small = box_slots_new::<u8>(capacity: 256_u64);
+  place_back(window: &grid, value: move small);
+  let large = box_slots_new::<u8>(capacity: 512_u64);
+  place_back(window: &grid, value: move large);
+  set grid[0_u64] = move grid[1_u64];
+  let held = grid.len;
+  if held == 2_u64 {
+    return exit_status(code: 0_u8);
   }
   return exit_status(code: 1_u8);
 }

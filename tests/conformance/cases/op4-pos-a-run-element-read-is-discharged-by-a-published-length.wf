@@ -1,21 +1,15 @@
-fn two() -> made: own FixedVector<u8, 4> pure contract {
-  ensures len_of(made) >= 2_u64;
+fn two() -> made: own Slots<u8, 4> pure contract {
+  ensures made.len >= 2_u64;
 } {
   doc "Builds a run of two values and publishes what its window then holds.";
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 7_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 9_u8);
-  }
-  let filled = move one;
+  let filled = slots_new::<u8, 4>();
+  place_back(window: &filled, value: 7_u8);
+  place_back(window: &filled, value: 9_u8);
   return move filled;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "OP-4: the same obligation a target owes, discharged at a read. The callee's verified relation puts two elements in the window, so `1 < len_of(built)` holds at the subscript and the read executes with no runtime check.";
+  doc "OP-4: the same obligation a target owes, discharged at a read. The callee's verified relation puts two elements in the window, so `1_u64 < built.len` holds at the subscript and the read executes with no runtime check.";
   let built = two();
   let second = built[1_u64];
   if second == 9_u8 {

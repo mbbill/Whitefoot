@@ -2,39 +2,41 @@ enum DecodeError {
   ZeroByte();
 }
 
-fn transform<const n: u64>(input: own FixedVector<u8, n>) -> function_result: own Result<FixedVector<u8, n>, DecodeError> reads(input) contract {
-  requires len_of(input) >= n;
+fn transform<const n: u64>(input: own Slots<u8, n>) -> function_result: own Result<Slots<u8, n>, DecodeError> pure contract {
+  requires input.len >= n;
 } {
-  let output = fixed_vector::<u8, n>();
+  doc "Builds a matching output window, then transforms each byte or reports the first zero; abandonment on the error path releases the partly built output.";
+  let output = slots_new::<u8, n>();
   for @build (
     at in 0_u64..n,
-    invariant grown: len_of(output) >= at,
-    invariant spare: room_of(output) + at >= n,
-    invariant flat: head_of(output) <= 0_u64
+    invariant grown: output.len >= at,
+    invariant spare: output.room + at >= n
   ) {
-    place_back(vector: &uniq output, value: 0_u8);
+    place_back(window: &output, value: 0_u8);
   }
-  let length = len_of(output);
+  let length = output.len;
   for (offset in 0_u64..length) {
     let byte = input[offset];
     let zero = byte == 0_u8;
     if zero {
       let error = ZeroByte();
-      return Err<FixedVector<u8, n>, DecodeError>(error: error);
+      return Err<Slots<u8, n>, DecodeError>(error: error);
     } else {
       let transformed = byte +wrap 1_u8;
       set output[offset] = transformed;
     }
   }
-  return Ok<FixedVector<u8, n>, DecodeError>(value: move output);
+  return Ok<Slots<u8, n>, DecodeError>(value: move output);
 }
 
-fn abandon<const n: u64>(result: own Result<FixedVector<u8, n>, DecodeError>) -> function_result: own unit pure {
+fn abandon<const n: u64>(result: own Result<Slots<u8, n>, DecodeError>) -> function_result: own unit pure {
+  doc "Consumes a result without inspecting it, so its active variant takes the compiler-derived release.";
   return unit;
 }
 
-fn success_matches(value: own FixedVector<u8, 3>) -> result: own Bool reads(value) {
-  let length = len_of(value);
+fn success_matches(value: own Slots<u8, 3>) -> result: own Bool pure {
+  doc "Observes the transformed length and the two expected bytes.";
+  let length = value.len;
   let expected_length = length == 3_u64;
   if expected_length {
   } else {
@@ -48,16 +50,11 @@ fn success_matches(value: own FixedVector<u8, 3>) -> result: own Bool reads(valu
 }
 
 fn main() -> status: own ExitStatus pure {
-  let success_input = fixed_vector::<u8, 3>();
-  region {
-    place_back(vector: &uniq success_input, value: 1_u8);
-  }
-  region {
-    place_back(vector: &uniq success_input, value: 4_u8);
-  }
-  region {
-    place_back(vector: &uniq success_input, value: 1_u8);
-  }
+  doc "A fallible fixed-size byte transform uses a counted range for matching input and output indices, then uses an observed length branch to prove fixed verification reads. Ordinary controls observe success length and bytes plus every unexpected Result variant, while failure and abandonment preserve active-variant cleanup.";
+  let success_input = slots_new::<u8, 3>();
+  place_back(window: &success_input, value: 1_u8);
+  place_back(window: &success_input, value: 4_u8);
+  place_back(window: &success_input, value: 1_u8);
   let success = transform::<3>(input: move success_input);
   match move success {
     Ok(value: transformed) => {
@@ -71,13 +68,9 @@ fn main() -> status: own ExitStatus pure {
       return exit_status(code: 2_u8);
     }
   }
-  let failure_input = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq failure_input, value: 8_u8);
-  }
-  region {
-    place_back(vector: &uniq failure_input, value: 0_u8);
-  }
+  let failure_input = slots_new::<u8, 2>();
+  place_back(window: &failure_input, value: 8_u8);
+  place_back(window: &failure_input, value: 0_u8);
   let failure = transform::<2>(input: move failure_input);
   match move failure {
     Ok(value: failure_value) => {
@@ -90,16 +83,12 @@ fn main() -> status: own ExitStatus pure {
       }
     }
   }
-  let abandoned_input = fixed_vector::<u8, 1>();
-  region {
-    place_back(vector: &uniq abandoned_input, value: 6_u8);
-  }
+  let abandoned_input = slots_new::<u8, 1>();
+  place_back(window: &abandoned_input, value: 6_u8);
   let abandoned = transform::<1>(input: move abandoned_input);
   abandon::<1>(result: move abandoned);
-  let abandoned_error_input = fixed_vector::<u8, 1>();
-  region {
-    place_back(vector: &uniq abandoned_error_input, value: 0_u8);
-  }
+  let abandoned_error_input = slots_new::<u8, 1>();
+  place_back(window: &abandoned_error_input, value: 0_u8);
   let abandoned_error = transform::<1>(input: move abandoned_error_input);
   abandon::<1>(result: move abandoned_error);
   return exit_status(code: 0_u8);

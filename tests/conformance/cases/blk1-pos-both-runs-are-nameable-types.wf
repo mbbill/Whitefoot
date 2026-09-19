@@ -1,9 +1,9 @@
-struct Frame['heap] {
-  inline: FixedVector<u8, 4>;
-  taken: Vector<u8>;
+struct Frame {
+  inline: Slots<u8, 4>;
+  taken: Box<Slots<u8>>;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus pure {
-  doc "BLK-1 and PROV-1: one ordinary nominal contains both run representations and declares its store brand explicitly.";
+fn main() -> status: own ExitStatus pure {
+  doc "One ordinary nominal names both placements of one storage shape: a constant-capacity Slots inline in the struct, and a runtime-capacity Slots reached only as the content of its Box. Neither position needs a store brand or a region parameter to be a nameable type.";
   return exit_status(code: 0_u8);
 }

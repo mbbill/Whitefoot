@@ -1,6 +1,12 @@
-fn either['r](a: &uniq 'r i32, b: &'r i32) -> result: &'r i32 pure {
-  doc "Exactly one parameter is a provenance candidate for the shared-borrow result, but the other names the result's formal region in the other borrow kind. FN-1 rejects at the complete `rtype` for that reason alone: candidacy is written-mode identity, not a count.";
-  return &'r deref(b);
+struct Cell {
+  value: i32;
+}
+
+fn either(a: &Cell, b: &Cell) -> result: own i32 reads(b.value), writes(a.value) {
+  doc "The two parameters differ only in what the row grants [EFF-1]: the callee may write `a` and may only read `b`. Neither difference makes either one a candidate to hand back, because a reference never leaves the frame that formed it; REF-3 refuses the returned reference itself and names the restructuring `return an index and let the caller form the reference`.";
+  let seen = b.value;
+  set a.value = seen;
+  return &b.value;
 }
 
 fn main() -> status: own ExitStatus pure {

@@ -1,6 +1,11 @@
-fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> result: &uniq 'r i32 pure {
-  doc "Two parameters are written as uniq borrows in the result's formal region, so two provenance candidates leave the result's source undetermined and FN-1 rejects at the complete `rtype`. The declaration is the error: no caller appears in this program, because GRAM-9 admits a computed value only through a preceding `let` and a result no caller can bind is unusable by construction.";
-  return &uniq 'r deref(a);
+struct Cell {
+  value: i32;
+}
+
+fn pick(a: &Cell, b: &Cell) -> result: own i32 reads(a.value), reads(b.value) {
+  doc "Both parameters are ordinary references with the same row authority, so nothing distinguishes them, and the question this case asked before - which input the returned reference comes from - has no form here: a function returns owned values only [FN-1] and REF-3 refuses the returned reference at the declaration. No caller appears in this program, because the declaration alone is the error.";
+  let seen = a.value +wrap b.value;
+  return &a.value;
 }
 
 fn main() -> status: own ExitStatus pure {

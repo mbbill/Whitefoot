@@ -1,28 +1,15 @@
 fn main() -> status: own ExitStatus pure {
-  doc "MSR-3: the element placement, in both directions. A measured value committed at an element position keeps its measures as facts about P[i], and the SET-2 replace that displaces the value at that position gives the displaced value those facts, so a run that passed through a written slot keeps its figure and the placement into it is discharged with no read of room_of.";
-  region 'a {
-    let workspace = arena_frame::<4096, 16, 'a>();
-    region {
-      let blocks = fixed_vector::<Vector<'a, u8>, 2>();
-      let first = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
-      let second = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
-      let third = arena_vector_proved::<u8>(store: &uniq workspace, count: 32_u64);
-      region {
-        place_back(vector: &uniq blocks, value: move first);
-      }
-      let one = move blocks;
-      let spare = replace one[0_u64] = move second;
-      let held = replace one[0_u64] = move third;
-      region {
-        place_back(vector: &uniq held, value: 9_u8);
-      }
-      let filled = move held;
-      let seen = filled[0_u64];
-      if seen == 9_u8 {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-    }
+  doc "MSR-3: the element placement. A measured value committed at an element position keeps its measures as facts about P[i], so a window that passed through a written slot still discharges the window operation into it with no read of its room. The retired replace statement also handed the displaced value the position's own facts; that direction has no successor, because one commit writes one place.";
+  let blocks = slots_new::<Slots<u8, 8>, 2>();
+  let first = slots_new::<u8, 8>();
+  place_back(window: &blocks, value: move first);
+  let second = slots_new::<u8, 8>();
+  set blocks[0_u64] = move second;
+  place_back(window: &blocks[0_u64], value: 9_u8);
+  let seen = blocks[0_u64][0_u64];
+  if seen == 9_u8 {
+  } else {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

@@ -1,20 +1,14 @@
+fn fill(window: &[u8]) -> result: own unit writes(window) contract {
+  requires 1_u64 <= window.len;
+} {
+  doc "Takes the range reference kind, not a reference to the whole array.";
+  set window[0_u64] = 9_u8;
+  return unit;
+}
+
 fn main() -> status: own ExitStatus pure {
-  let table = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq table, value: 7_u8);
-  }
-  region {
-    place_back(vector: &uniq table, value: 7_u8);
-  }
-  region {
-    place_back(vector: &uniq table, value: 7_u8);
-  }
-  region {
-    place_back(vector: &uniq table, value: 7_u8);
-  }
-  region {
-    let window = mut_slice_of(&table);
-    set window[0_u64] = 9_u8;
-  }
+  doc "The written parameter kind decides the row: fill takes the range reference &[u8], so a whole-array reference is a TYPE-5 mismatch at that operand's atom, naming the kind the written row takes. The rejection is at the operand rather than at the result, because the row is selected before its result type exists.";
+  let table = array_filled::<u8, 4>(value: 7_u8);
+  fill(window: &table);
   return exit_status(code: 0_u8);
 }

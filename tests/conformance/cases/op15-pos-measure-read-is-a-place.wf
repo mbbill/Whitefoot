@@ -1,0 +1,31 @@
+fn measures(window: &Ring<u64, 4>) -> (length: own u64, capacity: own u64, spare: own u64, origin: own u64) pure {
+  doc "OP-15: reading a measure performs no operation, allocates nothing, reads only the descriptor storage, and carries the empty effect row.";
+  let l = window.len;
+  let c = window.cap;
+  let s = window.room;
+  let h = window.head;
+  return l, c, s, h;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "OP-15: r.len, r.cap, r.room and r.head are field selections on a measured place and are not calls; one quantity, one spelling, with no reader operation beside the place form.";
+  let r = ring_new::<u64, 4>();
+  let (length, capacity, spare, origin) = measures(window: &r);
+  if length == 0_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if capacity == 4_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  if spare == 4_u64 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  if origin == 0_u64 {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}

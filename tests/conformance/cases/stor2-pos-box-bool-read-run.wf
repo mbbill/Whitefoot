@@ -1,6 +1,7 @@
 fn main() -> status: own ExitStatus pure {
+  doc "A cell constructed from Bool yields the original value through deref. Normal exit is observed; this case does not count deallocations.";
   let flag = True();
-  let owner = box_new(flag);
+  let owner = box_new::<Bool>(value: flag);
   let loaded = deref(owner);
   if loaded {
   } else {

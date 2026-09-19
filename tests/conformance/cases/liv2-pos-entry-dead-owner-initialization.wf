@@ -3,22 +3,25 @@ struct Item {
 }
 
 fn reuse(owner: own Item, incoming: own Item) -> (current: own Item, previous: own Item) pure {
+  doc "Reinitializes a binding that is already dead at statement entry, so the commit writes over no previous owner.";
   let previous = move owner;
   set owner = move incoming;
   return move owner, move previous;
 }
 
 fn relay(owner: own Item) -> result: own Item pure {
+  doc "Hands the value straight back.";
   return move owner;
 }
 
-fn rebind(owner: own Item) -> result: own Item reads(owner), writes(owner) {
+fn rebind(owner: own Item) -> result: own Item pure {
+  doc "The same-statement update: the old value enters the callee and the callee's result is committed at the same place.";
   set owner = relay(owner: move owner);
   return move owner;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "LIV-2, EFF-2: reinitializing a complete binding already dead at statement entry writes no previous owner. In contrast, a same-statement read-out keeps its read and commit write. Both forms preserve the transferred ordinary struct values.";
+  doc "SET-1, EFF-2: reinitializing a complete binding already dead at statement entry writes no previous owner, while a same-statement update keeps its read and its commit write. An own parameter contributes no effect entry at all, so both helpers declare pure, and both forms preserve the transferred ordinary struct values.";
   let first = Item(value: 11_u64);
   let second = Item(value: 22_u64);
   let (current, previous) = reuse(owner: move first, incoming: move second);

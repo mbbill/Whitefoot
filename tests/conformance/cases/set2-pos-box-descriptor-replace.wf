@@ -1,33 +1,17 @@
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "SET-2 admits a replace whose target type is affine and region-free. A Box<'s, u64> descriptor is affine and carries no region of its own, so exchanging one owning descriptor for another is accepted, the previous cell is bound as a fresh own binding, and the target root stays live. This is the positive control for the region-bearing rejection: the two targets differ exactly in bearing a region.";
-  region {
-    match heap_box(store: &uniq heap, value: 1_u64) {
-      Err(error: first_back) => {
-        return exit_status(code: 70_u8);
-      }
-      Ok(value: first) => {
-        region {
-          match heap_box(store: &uniq heap, value: 2_u64) {
-            Err(error: second_back) => {
-              return exit_status(code: 71_u8);
-            }
-            Ok(value: second) => {
-              let previous = replace first = move second;
-              let old = deref(previous);
-              if old == 1_u64 {
-              } else {
-                return exit_status(code: 1_u8);
-              }
-              let current = deref(first);
-              if current == 2_u64 {
-              } else {
-                return exit_status(code: 2_u8);
-              }
-              return exit_status(code: 0_u8);
-            }
-          }
-        }
-      }
-    }
+fn main() -> status: own ExitStatus pure {
+  doc "swap admits two owning cell descriptors: a Box<u64> is affine and holds no reference, so exchanging the two descriptors leaves both roots live, each the sole owner of the cell the other held, and the previous content is read back through the second binding.";
+  let first = box_new::<u64>(value: 1_u64);
+  let second = box_new::<u64>(value: 2_u64);
+  swap::<Box<u64>>(first: &first, second: &second);
+  let old = deref(second);
+  if old == 1_u64 {
+  } else {
+    return exit_status(code: 1_u8);
   }
+  let current = deref(first);
+  if current == 2_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
 }

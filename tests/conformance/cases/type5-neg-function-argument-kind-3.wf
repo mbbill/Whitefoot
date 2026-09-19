@@ -1,12 +1,12 @@
-struct Holder['s] {
-  data: Box<'s, u64>;
+struct Holder<T: affine> {
+  data: Box<T>;
 }
 
 fn spare() -> result: own unit pure {
   return unit;
 }
 
-fn inspect(value: &FixedVector<fn spare, 4>) -> result: own unit pure {
+fn inspect(value: &Slots<fn spare, 4>) -> result: own unit pure {
   return unit;
 }
 

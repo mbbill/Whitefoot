@@ -1,25 +1,18 @@
 fn main() -> status: own ExitStatus pure {
-  doc "MSR-3: the payload placement over an enum exactly one of whose variants carries fields. The construct carries the run's measures into the payload, the match consumes the scrutinee and the datum minted before that consume is read at the arm binder that names the payload, so the run keeps its figure across both events and the placement into it is discharged.";
-  region 'a {
-    let workspace = arena_frame::<4096, 16, 'a>();
-    region {
-      let block = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
-      let slot = Some<Vector<'a, u8>>(value: move block);
-      match slot {
-        None() => {
-          return exit_status(code: 1_u8);
-        }
-        Some(value: back) => {
-          region {
-            place_back(vector: &uniq back, value: 2_u8);
-          }
-          let filled = move back;
-          let seen = filled[0_u64];
-          if seen == 2_u8 {
-          } else {
-            return exit_status(code: 2_u8);
-          }
-        }
+  doc "MSR-3: the payload placement over an enum exactly one of whose variants carries fields. The construct carries the window's measures into the payload, the match consumes the scrutinee, and the datum minted before that consume is read at the arm binder that names the payload, so the window keeps its figure across both events and the placement into it is discharged.";
+  let block = slots_new::<u8, 8>();
+  place_back(window: &block, value: 1_u8);
+  let slot = Some<Slots<u8, 8>>(value: move block);
+  match slot {
+    None() => {
+      return exit_status(code: 1_u8);
+    }
+    Some(value: back) => {
+      place_back(window: &back, value: 2_u8);
+      let seen = back[0_u64];
+      if seen == 1_u8 {
+      } else {
+        return exit_status(code: 2_u8);
       }
     }
   }

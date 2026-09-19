@@ -9,7 +9,8 @@ struct Settings {
 const settings: Settings = Settings(limits: Limits(offset: 1_u64));
 
 fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u64, 2>(7_u64);
+  doc "A scalar field of a nested struct constant retains its concrete value at the subscript: one is inside the two-element array, two is outside.";
+  let values = array_filled::<u64, 2>(value: 7_u64);
   let index = settings.limits.offset;
   let successor = index + 1_u64;
   let value = values[index];

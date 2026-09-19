@@ -1,26 +1,20 @@
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "The ordinary host_copy_utf8 implementation reports invalid text for the arranged non-UTF-8 argument. The outcome is a normal enum match; no semantic operand class or target qualification applies.";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text) => {
-        region {
-          match host_utf8_len(value: &text) {
-            Ok(value: measured) => {
-              return exit_status(code: 10_u8);
-            }
-            Err(error: invalid) => {
-              return exit_status(code: 0_u8);
-            }
-          }
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  match arg_get(args: &args, position: 1_u64) {
+    Ok(value: text) => {
+      match host_utf8_len(value: &text) {
+        Ok(value: measured) => {
+          return exit_status(code: 10_u8);
+        }
+        Err(error: invalid) => {
+          return exit_status(code: 0_u8);
         }
       }
-      Err(error: absent) => {
-        return exit_status(code: 11_u8);
-      }
+    }
+    Err(error: absent) => {
+      return exit_status(code: 11_u8);
     }
   }
 }

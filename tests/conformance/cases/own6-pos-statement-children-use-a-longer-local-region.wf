@@ -1,82 +1,83 @@
-fn exchange(target: &uniq box<u64>, incoming: own box<u64>) -> previous: own box<u64> reads(target), writes(target) {
-  let previous = replace deref(target) = move incoming;
-  return move previous;
+struct Holder {
+  value: Box<u64>;
 }
 
-fn observe(owner: &uniq box<u64>, incoming: own box<u64>) -> (old: own u64, current: own u64) reads(owner), writes(owner) {
-  region {
-    let previous = exchange(target: &uniq deref(owner), incoming: move incoming);
-    let old = deref(previous);
-    let current = deref(deref(owner));
-    return old, current;
-  }
+struct Counter {
+  total: u64;
 }
 
-fn tick(value: &uniq u64) -> result: own unit reads(value), writes(value) {
-  set deref(value) = deref(value) +wrap 1_u64;
+fn exchange(target: &Holder, incoming: own Box<u64>) -> previous: own u64 writes(target.value) {
+  doc "The old content is read out, then one commit installs the incoming cell and releases the old one.";
+  let previous = deref(target.value);
+  set target.value = move incoming;
+  return previous;
+}
+
+fn observe(owner: &Holder, incoming: own Box<u64>) -> (old: own u64, current: own u64) writes(owner.value) {
+  doc "A by-value parameter contributes no effect entry, so the row states only the write of the referenced field.";
+  let old = exchange(target: owner, incoming: move incoming);
+  let current = deref(owner.value);
+  return old, current;
+}
+
+fn tick(counter: &Counter) -> result: own unit writes(counter.total) {
+  doc "One declared write of the referenced field.";
+  let seen = counter.total;
+  let raised = seen +wrap 1_u64;
+  set counter.total = raised;
   return unit;
 }
 
-fn repeat(value: &uniq u64) -> result: own unit reads(value), writes(value) {
+fn repeat(counter: &Counter) -> result: own unit writes(counter.total) {
+  doc "Sequential statements each form their own access to the same referenced field.";
   let index = 0_u64;
   loop @again {
     if index == 2_u64 {
       break @again;
     }
-    tick(value: &uniq deref(value));
-    set deref(value) = deref(value) +wrap 1_u64;
-    set index = index +wrap 1_u64;
+    tick(counter: counter);
+    let seen = counter.total;
+    let raised = seen +wrap 1_u64;
+    set counter.total = raised;
+    let next_index = index +wrap 1_u64;
+    set index = next_index;
   }
   return unit;
 }
 
-fn acquire_twice['s](store: &uniq Heap<'s>) -> result: own u64 reads(store), writes(store), allocates(store) {
-  region {
-    let first = heap_box(store: &uniq deref(store), value: 31_u64);
-    let second = heap_box(store: &uniq deref(store), value: 47_u64);
-    match first {
-      Err(error: back) => {
-        return 0_u64;
-      }
-      Ok(value: left) => {
-        match second {
-          Err(error: back) => {
-            return 0_u64;
-          }
-          Ok(value: right) => {
-            return deref(left) +wrap deref(right);
-          }
-        }
-      }
-    }
-  }
+fn acquire_twice() -> result: own u64 pure {
+  doc "Allocation carries no effect entry, so two sequential cells leave the row empty and both results stay alive to the sum.";
+  let first = box_new::<u64>(value: 31_u64);
+  let second = box_new::<u64>(value: 47_u64);
+  let left = deref(first);
+  let right = deref(second);
+  let sum = left +wrap right;
+  return sum;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "OWN-6: an argument child uses a local region as its type ceiling, while statement-end retirement permits sequential calls and keeps owned results alive.";
-  let owner = box_new(17_u64);
-  let incoming = box_new(29_u64);
-  region {
-    let (old, current) = observe(owner: &uniq owner, incoming: move incoming);
-    if old != 17_u64 {
-      return exit_status(code: 1_u8);
-    }
-    if current != 29_u64 {
-      return exit_status(code: 2_u8);
-    }
+fn main() -> status: own ExitStatus pure {
+  doc "An argument reference lasts exactly through its call, statement-end retirement permits sequential calls, and owned results stay alive.";
+  let cell = box_new::<u64>(value: 17_u64);
+  let owner = Holder(value: move cell);
+  let incoming = box_new::<u64>(value: 29_u64);
+  let (old, current) = observe(owner: &owner, incoming: move incoming);
+  if old != 17_u64 {
+    return exit_status(code: 1_u8);
   }
-  if deref(owner) != 29_u64 {
+  if current != 29_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let held = deref(owner.value);
+  if held != 29_u64 {
     return exit_status(code: 3_u8);
   }
-  let count = 0_u64;
-  region {
-    repeat(value: &uniq count);
-    let sum = acquire_twice(store: &uniq heap);
-    if sum != 78_u64 {
-      return exit_status(code: 4_u8);
-    }
+  let counter = Counter(total: 0_u64);
+  repeat(counter: &counter);
+  let sum = acquire_twice();
+  if sum != 78_u64 {
+    return exit_status(code: 4_u8);
   }
-  if count != 4_u64 {
+  if counter.total != 4_u64 {
     return exit_status(code: 5_u8);
   }
   return exit_status(code: 0_u8);

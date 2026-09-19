@@ -1,13 +1,13 @@
-struct Bytes['heap] {
-  v: Vector<u8>;
+struct Bytes {
+  v: Box<Slots<u8>>;
 }
 
-struct Frame['heap] {
+struct Frame {
   flags: u64;
-  page: Vector<u8>;
+  page: Box<Array<u8>>;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus pure {
-  doc "PROV-1: each nominal field is branded to its enclosing nominal sole declared region, independent of program-start selection.";
+fn main() -> status: own ExitStatus pure {
+  doc "TYPE-9: a runtime-capacity shape is admitted in a field exactly as the content of a Box; a Box carries no brand, so no program-start selection determines declaration validity.";
   return exit_status(code: 0_u8);
 }

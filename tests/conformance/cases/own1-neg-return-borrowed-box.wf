@@ -2,9 +2,9 @@ enum State {
   Ready();
 }
 
-fn steal['heap](holder: &Box<'heap, State>) -> return_value: own Box<'heap, State> pure {
-  doc "OWN-1: one dereference exposes the borrowed box value, which remains non-owning even though State is Copy.";
-  return deref(holder);
+fn steal(holder: &Box<State>) -> return_value: own Box<State> reads(holder) {
+  doc "A reference names the cell's path; the cell itself is affine and is owned by the binding the reference reaches, so it cannot be moved out through that reference.";
+  return move holder;
 }
 
 fn main() -> return_value: own ExitStatus pure {

@@ -1,0 +1,23 @@
+struct Counter {
+  value: u64;
+}
+
+fn bumped(current: own Counter, step: own u64) -> result: own Counter pure contract {
+  requires current.value +defined step;
+} {
+  doc "OP-12: f returns the place's type and has no failure exit, so every declared result ordinal is the place's type.";
+  let raised = current.value + step;
+  return Counter(value: raised);
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "OP-12: set p = f(p, args...), where the first argument of the call is the target place itself, is the atomic in-place update: the old value enters f by value, f's result is committed, and no program point lies between.";
+  let total = Counter(value: 5_u64);
+  set total = bumped(current: move total, step: 3_u64);
+  let seen = total.value;
+  if seen == 8_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

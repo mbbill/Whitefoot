@@ -1,11 +1,14 @@
-fn peek['heap](run: own Vector<'heap, u8>) -> code: own u8 reads(run) contract {
-  requires len_of(run) > 0_u64;
-} {
-  doc "D3, PROV-6: the run is branded to a general store, so its release spends that store's provider capability. This scope holds no binding of that provider, so the value is linear here and has no derived release to carry it off the return edge.";
-  let byte = run[0_u64];
+linear struct Token {
+  id: u8;
+}
+
+fn peek(ticket: own Token) -> code: own u8 pure {
+  doc "PROV-6: linearity is a property of the type and holds in every scope, so a value the linear modifier makes linear may not reach a scope exit by a compiler-derived release. The refusal names the binding, the edge, and the declaration that made the value linear.";
+  let byte = ticket.id;
   return byte;
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "The rejection is in the helper above; this entry point does nothing.";
   return exit_status(code: 0_u8);
 }

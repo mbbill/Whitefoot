@@ -1,128 +1,80 @@
 struct StaticBlock {
-  bytes: FixedVector<u8, 4>;
+  bytes: Slots<u8, 4>;
 }
 
-fn take_static(free: &uniq FixedVector<StaticBlock, 2>) -> block: own StaticBlock reads(free), writes(free) contract {
-  requires len_of(deref(free)) > 0_u64;
-  ensures len_of(deref(free)) + 1_u64 == len_of(deref(entry(free)));
-  ensures room_of(deref(free)) == room_of(deref(entry(free))) + 1_u64;
+fn take_static(free_list: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(free_list.last), writes(free_list.len) contract {
+  requires free_list.len > 0_u64;
+  ensures free_list.len + 1_u64 == entry(free_list).len;
 } {
-  region {
-    let block = take_back(vector: &uniq deref(free));
-    return move block;
-  }
+  doc "Takes the last filled slot of the pool and hands the block back; the boundary move is published as the declared exit relation.";
+  let taken = take_back(window: free_list);
+  return move taken;
 }
 
-fn return_static(free: &uniq FixedVector<StaticBlock, 2>, block: own StaticBlock) -> result: own unit reads(free), writes(free) contract {
-  requires room_of(deref(free)) > 0_u64;
-  ensures len_of(deref(free)) == len_of(deref(entry(free))) + 1_u64;
+fn return_static(free_list: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(free_list.next), writes(free_list.len) contract {
+  requires free_list.room > 0_u64;
+  ensures free_list.len == entry(free_list).len + 1_u64;
 } {
-  region {
-    place_back(vector: &uniq deref(free), value: move block);
-  }
+  doc "Puts one block back into the pool's append slot and publishes the boundary move.";
+  place_back(window: free_list, value: move block);
   return unit;
 }
 
 fn plain() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 1_u8);
+  doc "A Slots capacity follows its static extent across a nominal pool helper [ENT-2]. The returned block's initialized length is observed dynamically rather than inferred from the capacity type, and the pool's own length is carried by the helpers' declared relations [FN-9, MSR-5].";
+  let bytes = slots_new::<u8, 4>();
+  place_back(window: &bytes, value: 1_u8);
+  place_back(window: &bytes, value: 2_u8);
+  place_back(window: &bytes, value: 3_u8);
+  place_back(window: &bytes, value: 4_u8);
+  let record = StaticBlock(bytes: move bytes);
+  let free_list = slots_new::<StaticBlock, 2>();
+  place_back(window: &free_list, value: move record);
+  let block = take_static(free_list: &free_list);
+  invariant capacity: block.bytes.cap >= 4_u64;
+  let length = block.bytes.len;
+  for (at in 0_u64..length) {
+    let byte = block.bytes[at];
+    let bumped = byte +wrap 1_u8;
+    set block.bytes[at] = bumped;
   }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 2_u8);
+  return_static(free_list: &free_list, block: move block);
+  let recovered = take_static(free_list: &free_list);
+  let recovered_length = recovered.bytes.len;
+  let sum = 0_u8;
+  for (at in 0_u64..recovered_length) {
+    let byte = recovered.bytes[at];
+    set sum = sum +wrap byte;
   }
-  let two = move one;
-  region {
-    place_back(vector: &uniq two, value: 3_u8);
-  }
-  let three = move two;
-  region {
-    place_back(vector: &uniq three, value: 4_u8);
-  }
-  let payload = move three;
-  let record = StaticBlock(bytes: move payload);
-  let free = fixed_vector::<StaticBlock, 2>();
-  region {
-    place_back(vector: &uniq free, value: move record);
-  }
-  let full = move free;
-  region {
-    let block = take_static(free: &uniq full);
-    let rest = move full;
-    invariant capacity: cap_of(block.bytes) >= 4_u64;
-    let length = len_of(block.bytes);
-    for (at in 0_u64..length) {
-      let byte = block.bytes[at];
-      let next = byte +wrap 1_u8;
-      set block.bytes[at] = next;
-    }
-    region {
-      return_static(free: &uniq rest, block: move block);
-      let returned = move rest;
-      region {
-        let recovered = take_static(free: &uniq returned);
-        let restored = move returned;
-        let recovered_length = len_of(recovered.bytes);
-        let sum = 0_u8;
-        for (at in 0_u64..recovered_length) {
-          let byte = recovered.bytes[at];
-          set sum = sum +wrap byte;
-        }
-        region {
-          return_static(free: &uniq restored, block: move recovered);
-          let complete = move restored;
-          invariant conserved: len_of(complete) >= 1_u64;
-          let result = sum -wrap 14_u8;
-          return exit_status(code: result);
-        }
-      }
-    }
-  }
+  return_static(free_list: &free_list, block: move recovered);
+  invariant conserved: free_list.len >= 1_u64;
+  let total = sum -wrap 14_u8;
+  return exit_status(code: total);
 }
 
-fn take_boxed['s: affine](free: &uniq FixedVector<Box<'s, FixedVector<u8, 4>>, 2>) -> block: own Box<'s, FixedVector<u8, 4>> reads(free), writes(free) contract {
-  requires len_of(deref(free)) > 0_u64;
-  ensures len_of(deref(free)) + 1_u64 == len_of(deref(entry(free)));
+fn take_boxed(free_list: &Slots<Box<Slots<u8, 4>>, 2>) -> block: own Box<Slots<u8, 4>> writes(free_list.last), writes(free_list.len) contract {
+  requires free_list.len > 0_u64;
+  ensures free_list.len + 1_u64 == entry(free_list).len;
 } {
-  region {
-    let block = take_back(vector: &uniq deref(free));
-    return move block;
-  }
+  doc "The same pool helper over boxed blocks; the cell is an ordinary owned value.";
+  let taken = take_back(window: free_list);
+  return move taken;
 }
 
 fn boxed() -> status: own ExitStatus pure {
-  region 'a {
-    let store = arena_frame::<64, 8, 'a>();
-    region {
-      let payload = fixed_vector::<u8, 4>();
-      match arena_box(store: &uniq store, value: move payload) {
-        Err(error: back) => {
-          return exit_status(code: 1_u8);
-        }
-        Ok(value: cell) => {
-          let free = fixed_vector::<Box<'a, FixedVector<u8, 4>>, 2>();
-          region {
-            place_back(vector: &uniq free, value: move cell);
-          }
-          let full = move free;
-          region {
-            let block = take_boxed(free: &uniq full);
-            let rest = move full;
-            invariant boxed_capacity: cap_of(deref(block)) >= 4_u64;
-            region {
-              place_back(vector: &uniq rest, value: move block);
-            }
-            let returned = move rest;
-            return exit_status(code: 0_u8);
-          }
-        }
-      }
-    }
-  }
+  doc "The boxed helper remains instantiated as the distinct compilation trigger: the capacity of the boxed window is still the static extent of its content type, reached through deref [TYPE-7, ENT-2].";
+  let payload = slots_new::<u8, 4>();
+  let cell = box_new::<Slots<u8, 4>>(value: move payload);
+  let free_list = slots_new::<Box<Slots<u8, 4>>, 2>();
+  place_back(window: &free_list, value: move cell);
+  let block = take_boxed(free_list: &free_list);
+  invariant boxed_capacity: deref(block).cap >= 4_u64;
+  place_back(window: &free_list, value: move block);
+  return exit_status(code: 0_u8);
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "Runs both pool shapes and reports the boxed one.";
   let first = plain();
   let second = boxed();
   return move second;

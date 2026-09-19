@@ -1,5 +1,5 @@
 fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
-  match deref(error) {
+  match error {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
     }
@@ -64,7 +64,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
       return False();
     }
     ResourceExhausted(code: native_code, origin: native_origin) => {
-      return deref(native_origin) == 0_u8;
+      return native_origin == 0_u8;
     }
     FileTooLarge(code: native_code, origin: native_origin) => {
       return False();
@@ -87,46 +87,38 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn component() -> made: own FixedVector<u8, 16> pure contract {
-  ensures len_of(made) >= 16_u64;
-  ensures room_of(made) <= 0_u64;
-  ensures head_of(made) <= 0_u64;
+fn component() -> made: own Slots<u8, 16> pure contract {
+  ensures made.len >= 16_u64;
+  ensures made.room <= 0_u64;
 } {
-  doc "One name range, built by the ordinary counted fill.";
-  let built = fixed_vector::<u8, 16>();
+  doc "One name run, built by the ordinary counted fill.";
+  let built = slots_new::<u8, 16>();
   for @fill (
     at in 0_u64..16_u64,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= 16_u64,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len >= at,
+    invariant spare: built.room + at >= 16_u64
   ) {
-    place_back(vector: &uniq built, value: 97_u8);
+    place_back(window: &built, value: 97_u8);
   }
   return move built;
 }
 
-fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
-  doc "C2 deletes PAR-3 outright: this case retains its ordinary source acceptance and source-order control flow after explicit factory and linear-close migration. Its former staged grant or numbered denial is retired, not reproduced by a native classification. Ordinary loans, field effects, loop ownership and exits still apply.";
+fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(cwd), writes(files) {
+  doc "Every arm of the scan leaves by its own exit: the refusing arm returns two distinct codes and the opening arm closes its handle before the next iteration.";
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = component();
-    region {
-      let window = slice_of(&name);
-      region {
-        match open_file(factory: &uniq deref(files), root: cwd, name: &window, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set total = total +wrap 1_u64;
-            close_read(factory: &uniq deref(files), file: move handle);
-          }
-          Err(error: problem) => {
-            region {
-              if factory_refusal(error: &problem) {
-                return exit_status(code: 5_u8);
-              }
-            }
-            return exit_status(code: 4_u8);
-          }
+    let window = &name[0_u64..4_u64];
+    match open_file(factory: files, root: cwd, name: window, start: 0_u64, end: 4_u64) {
+      Ok(value: handle) => {
+        set total = total +wrap 1_u64;
+        close_read(factory: files, file: move handle);
+      }
+      Err(error: problem) => {
+        if factory_refusal(error: &problem) {
+          return exit_status(code: 5_u8);
         }
+        return exit_status(code: 4_u8);
       }
     }
   }
@@ -136,9 +128,7 @@ fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own Exit
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
-  region {
-    let outcome = exercise(cwd: &cwd, files: &uniq files);
-    close_directory(factory: &uniq files, directory: move cwd);
-    return move outcome;
-  }
+  let outcome = exercise(cwd: &cwd, files: &files);
+  close_directory(factory: &files, directory: move cwd);
+  return move outcome;
 }

@@ -1,5 +1,5 @@
 struct Holder {
-  payload: FixedVector<u8, 4>;
+  payload: Slots<u8, 4>;
   count: u64;
 }
 
@@ -8,26 +8,25 @@ fn consume(h: own Holder) -> result: own unit pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let first = fixed_vector::<u8, 4>();
+  doc "swap exchanges a field's owner without consuming the root: the root stays live for sibling access and for the later whole-owner transfer, and the old owner ends up the sole owner of the local it was exchanged with.";
+  let first = slots_new::<u8, 4>();
   for @fill_first (
     at in 0_u64..2_u64,
-    invariant grown: len_of(first) >= at,
-    invariant spare: room_of(first) + at >= 2_u64,
-    invariant flat: head_of(first) <= 0_u64
+    invariant grown: first.len >= at,
+    invariant vacancy: first.room + at >= 2_u64
   ) {
-    place_back(vector: &uniq first, value: 1_u8);
+    place_back(window: &first, value: 1_u8);
   }
   let holder = Holder(payload: move first, count: 0_u64);
-  let second = fixed_vector::<u8, 4>();
+  let second = slots_new::<u8, 4>();
   for @fill_second (
     at in 0_u64..3_u64,
-    invariant grown: len_of(second) >= at,
-    invariant spare: room_of(second) + at >= 3_u64,
-    invariant flat: head_of(second) <= 0_u64
+    invariant grown: second.len >= at,
+    invariant vacancy: second.room + at >= 3_u64
   ) {
-    place_back(vector: &uniq second, value: 2_u8);
+    place_back(window: &second, value: 2_u8);
   }
-  let old = replace holder.payload = move second;
+  swap::<Slots<u8, 4>>(first: &holder.payload, second: &second);
   set holder.count = 1_u64;
   let observed = holder.count;
   let done = consume(h: move holder);

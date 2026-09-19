@@ -1,12 +1,17 @@
-fn mix['r](a: &uniq 'r i32, b: &'r i32) -> function_result: own unit pure {
+fn mix(a: &Slots<u8, 4>, b: &Slots<u8, 4>) -> function_result: own unit reads(b), writes(a) contract {
+  requires 1_u64 <= a.len;
+  requires 1_u64 <= b.len;
+} {
+  doc "Reads through one reference parameter and writes through the other.";
+  let seen = b[0_u64];
+  set a[0_u64] = seen;
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "OWN-12: a uniq argument and a shared argument over the same place alias at the call - rejected.";
-  let x = 0_i32;
-  region {
-    mix(a: &uniq x, b: &x);
-  }
+  doc "EFF-5: at a call the actual argument paths are substituted into the callee's row and compared pairwise. Both arguments name the same run, so the substituted write and read overlap and are not proved disjoint; the call is refused, carrying both substituted paths.";
+  let x = slots_new::<u8, 4>();
+  place_back(window: &x, value: 0_u8);
+  mix(a: &x, b: &x);
   return exit_status(code: 0_u8);
 }

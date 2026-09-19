@@ -1,8 +1,7 @@
-fn make['s](store: &uniq Heap<'s>, n: own u64) -> made: own Option<Vector<'s, i32>> reads(store), writes(store), allocates(store) {
-  doc "The count is a completely unconstrained runtime value, so the acquiring row's `fits::<i32>(count)` obligation has nothing to discharge it [BLK-0, OP-9].";
-  region {
-    return heap_vector::<i32>(store: &uniq deref(store), count: n);
-  }
+fn make(n: own u64) -> made: own Box<Slots<i32>> pure {
+  doc "The count is a completely unconstrained runtime value, so the construction's allocation-size obligation has nothing to discharge it [OP-9, OP-13].";
+  let taken = box_slots_new::<i32>(capacity: n);
+  return move taken;
 }
 
 fn main() -> return_value: own ExitStatus pure {

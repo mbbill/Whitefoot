@@ -1,4 +1,5 @@
-fn scan(data: own array<u8, 8>) -> result: own u8 reads(data) {
+fn scan(data: own Array<u8, 8>) -> result: own u8 pure {
+  doc "A nine-element counted range does not fit an eight-element array; the captured range upper bound cannot be silently narrowed to the subscript domain.";
   let total = 0_u8;
   for (i in 0_u64..9_u64) {
     let byte = data[i];

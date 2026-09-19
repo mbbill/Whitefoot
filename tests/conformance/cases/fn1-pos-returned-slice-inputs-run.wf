@@ -1,63 +1,39 @@
-fn pass_slice['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
-  return value;
+fn first_of(part: &[u8]) -> value: own u8 reads(part) contract {
+  requires 0_u64 < part.len;
+} {
+  return part[0_u64];
 }
 
-fn choose_slice['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
+fn choose_first(take_left: own Bool, left: &[u8], right: &[u8]) -> value: own u8 reads(left), reads(right) contract {
+  requires 0_u64 < left.len;
+  requires 0_u64 < right.len;
+} {
+  doc "A two-supplier function selects inside its own frame instead of handing a reference back [REF-3]: both range references arrive as arguments and the selected one is read here.";
   if take_left {
-    return left;
+    return first_of(part: left);
   } else {
-    return right;
+    return first_of(part: right);
   }
 }
 
 fn main() -> status: own ExitStatus pure {
-  let left_empty = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq left_empty, value: 11_u8);
+  doc "A range reference passes through one call and a two-supplier call reads either input; the caller keeps both references alive across the calls because neither call writes their storage [EFF-5].";
+  let left = slots_new::<u8, 2>();
+  place_back(window: &left, value: 11_u8);
+  let right = slots_new::<u8, 2>();
+  place_back(window: &right, value: 29_u8);
+  let left_part = &left[0_u64..1_u64];
+  let right_part = &right[0_u64..1_u64];
+  let passed = first_of(part: left_part);
+  if passed == 11_u8 {
+  } else {
+    return exit_status(code: 201_u8);
   }
-  let left_one = move left_empty;
-  region {
-    place_back(vector: &uniq left_one, value: 11_u8);
-  }
-  let left = move left_one;
-  let right_empty = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq right_empty, value: 29_u8);
-  }
-  let right_one = move right_empty;
-  region {
-    place_back(vector: &uniq right_one, value: 29_u8);
-  }
-  let right = move right_one;
-  region {
-    let pass_source = slice_of(&left);
-    let passed = pass_slice(value: pass_source);
-    let passed_room = len_of(passed);
-    let passed_ok = 0_u64 < passed_room;
-    if passed_ok {
-    } else {
-      return exit_status(code: 211_u8);
-    }
-    let passed_value = passed[0_u64];
-    if passed_value == 11_u8 {
-    } else {
-      return exit_status(code: 201_u8);
-    }
-    let left_source = slice_of(&left);
-    let right_source = slice_of(&right);
-    let take_left = False();
-    let selected = choose_slice(take_left: take_left, left: left_source, right: right_source);
-    let selected_room = len_of(selected);
-    let selected_ok = 0_u64 < selected_room;
-    if selected_ok {
-    } else {
-      return exit_status(code: 212_u8);
-    }
-    let selected_value = selected[0_u64];
-    if selected_value == 29_u8 {
-    } else {
-      return exit_status(code: 202_u8);
-    }
+  let take_left = False();
+  let selected = choose_first(take_left: take_left, left: left_part, right: right_part);
+  if selected == 29_u8 {
+  } else {
+    return exit_status(code: 202_u8);
   }
   return exit_status(code: 0_u8);
 }

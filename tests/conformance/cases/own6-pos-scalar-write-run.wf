@@ -1,14 +1,18 @@
-fn bump(n: &uniq i32) -> result: own unit writes(n) {
-  set deref(n) = 42_i32;
+struct Slot {
+  value: i32;
+}
+
+fn bump(target: &Slot) -> result: own unit writes(target.value) {
+  doc "The declared write on the referenced field reaches the caller's own storage.";
+  set target.value = 42_i32;
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let a = 0_i32;
-  region {
-    bump(n: &uniq a);
-  }
-  if a != 42_i32 {
+  doc "A write declared on a reference parameter updates the caller's actual storage and the value remains after the call returns.";
+  let a = Slot(value: 0_i32);
+  bump(target: &a);
+  if a.value != 42_i32 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);

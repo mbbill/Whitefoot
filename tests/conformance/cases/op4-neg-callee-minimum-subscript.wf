@@ -1,4 +1,4 @@
-const values: FixedVector<u64, 8> =[1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64];
+const values: Array<u64, 8> =[1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64];
 
 fn narrow(v: own u64) -> result: own u64 pure {
   let bounded = imin(v, 7_u64);

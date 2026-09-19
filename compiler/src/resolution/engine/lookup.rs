@@ -84,25 +84,10 @@ pub(super) fn resolve_uses_deferred(
                 }
                 available.insert(class);
                 if admissible.contains(&class)
-                    && kernel_admissible(use_record.role)
+                    && storage_nominal_admissible(use_record.role)
                     && let Ok(ordinal) = u8::try_from(ordinal)
                 {
                     candidates.push(ResolvedTarget::Container(crate::ContainerNominalId::new(
-                        ordinal,
-                    )));
-                }
-            }
-        }
-        for (ordinal, operation) in crate::KERNEL_OPERATIONS.iter().enumerate() {
-            if operation.spelling == use_record.spelling
-                && universe.contains(&crate::KERNEL_OPERATION_CLASS)
-            {
-                available.insert(crate::KERNEL_OPERATION_CLASS);
-                if admissible.contains(&crate::KERNEL_OPERATION_CLASS)
-                    && kernel_admissible(use_record.role)
-                    && let Ok(ordinal) = u8::try_from(ordinal)
-                {
-                    candidates.push(ResolvedTarget::Kernel(crate::KernelOperationId::new(
                         ordinal,
                     )));
                 }
@@ -202,8 +187,11 @@ pub(super) fn resolve_uses_deferred(
     Ok((resolved, None))
 }
 
-/// Kernel rows are not function-kind actual arguments.
-fn kernel_admissible(role: LexicalUseRole) -> bool {
+/// A [TYPE-9] storage nominal is a type and a constructor and nothing else.
+///
+/// Its constructor entry exists only to be refused at a constructor `call`
+/// [TYPE-9], and neither entry is a callee or a function-kind actual argument.
+fn storage_nominal_admissible(role: LexicalUseRole) -> bool {
     matches!(
         role,
         LexicalUseRole::Type
@@ -211,7 +199,6 @@ fn kernel_admissible(role: LexicalUseRole) -> bool {
             | LexicalUseRole::Construct
             | LexicalUseRole::ArmVariant
             | LexicalUseRole::EnsuresVariant
-            | LexicalUseRole::IdentifierCallee
     )
 }
 
@@ -235,12 +222,9 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
         LexicalUseRole::ArmVariant | LexicalUseRole::EnsuresVariant => {
             vec![DeclarationClass::EnumVariant]
         }
-        LexicalUseRole::TypeRegion
-        | LexicalUseRole::ModeRegion
-        | LexicalUseRole::TypeArgumentRegion
-        | LexicalUseRole::EffectAllocationRegion
-        | LexicalUseRole::BorrowRegion => vec![DeclarationClass::Region],
-        LexicalUseRole::EffectRoot => vec![DeclarationClass::Value],
+        LexicalUseRole::EffectRoot | LexicalUseRole::EffectIndex => {
+            vec![DeclarationClass::Value]
+        }
         LexicalUseRole::BreakLabel => vec![DeclarationClass::Label],
         LexicalUseRole::Const => {
             vec![DeclarationClass::NamedConst, DeclarationClass::ConstGeneric]
@@ -313,12 +297,9 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
                 DeclarationClass::EnumVariant,
             ]
         }
-        LexicalUseRole::TypeRegion
-        | LexicalUseRole::ModeRegion
-        | LexicalUseRole::TypeArgumentRegion
-        | LexicalUseRole::EffectAllocationRegion
-        | LexicalUseRole::BorrowRegion => vec![DeclarationClass::Region],
-        LexicalUseRole::EffectRoot => vec![DeclarationClass::Value],
+        LexicalUseRole::EffectRoot | LexicalUseRole::EffectIndex => {
+            vec![DeclarationClass::Value]
+        }
         LexicalUseRole::BreakLabel => vec![DeclarationClass::Label],
         LexicalUseRole::Const
         | LexicalUseRole::ConstValue
@@ -364,12 +345,7 @@ fn use_rule(role: LexicalUseRole) -> ResolutionRule {
         | LexicalUseRole::ArmVariant
         | LexicalUseRole::EnsuresVariant
         | LexicalUseRole::BreakLabel => ResolutionRule::Type6,
-        LexicalUseRole::TypeRegion
-        | LexicalUseRole::ModeRegion
-        | LexicalUseRole::TypeArgumentRegion
-        | LexicalUseRole::EffectAllocationRegion
-        | LexicalUseRole::BorrowRegion => ResolutionRule::Own3,
-        LexicalUseRole::EffectRoot => ResolutionRule::Eff1,
+        LexicalUseRole::EffectRoot | LexicalUseRole::EffectIndex => ResolutionRule::Eff1,
         LexicalUseRole::Const => ResolutionRule::Const1,
         LexicalUseRole::ConstValue => ResolutionRule::Const2,
         LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee => ResolutionRule::Op1,

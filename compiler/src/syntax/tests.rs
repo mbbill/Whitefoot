@@ -80,7 +80,7 @@ fn every_fixed_predicate_is_retained_without_identifier_priority() {
 
 #[test]
 fn every_external_shape_is_classified_context_free() {
-    let source = b"name Type 'region @label iadd.checked 42 1_i32 1.00_f64 0_T \"text\"";
+    let source = b"name Type @label iadd.checked 42 1_i32 1.00_f64 0_T \"text\"";
     let inputs = [SourceInput::new("external.wf", source)];
     let Ok(bundle) = source_bundle(&inputs) else {
         panic!("test source bundle must be constructible");
@@ -91,14 +91,13 @@ fn every_external_shape_is_classified_context_free() {
     let TerminalOutcome::Complete(classified) = classify_terminals(
         &lexed,
         ACTIVE_KERNEL_SPEC_HASH,
-        TerminalLimits { max_tokens: 10 },
+        TerminalLimits { max_tokens: 9 },
     ) else {
         panic!("external predicates must classify");
     };
     let expected = [
         TerminalPredicate::Identifier,
         TerminalPredicate::TypeIdentifier,
-        TerminalPredicate::RegionIdentifier,
         TerminalPredicate::Label,
         TerminalPredicate::OperationName,
         TerminalPredicate::Digits,
@@ -116,7 +115,23 @@ fn every_external_shape_is_classified_context_free() {
 
 #[test]
 fn retired_statement_spellings_are_ordinary_identifiers() {
-    for spelling in [b"check".as_slice(), b"trap".as_slice(), b"prove".as_slice()] {
+    // v0.60 releases eleven more spellings back to IDENT: the region and
+    // permission markers, the two retired statements, the retired effect
+    // category, and the five lowercase shape atoms [GRAM-1, GRAM-3, TYPE-9].
+    for spelling in [
+        b"check".as_slice(),
+        b"trap",
+        b"prove",
+        b"region",
+        b"uniq",
+        b"dispose",
+        b"replace",
+        b"allocates",
+        b"array",
+        b"box",
+        b"arena",
+        b"buffer",
+    ] {
         let inputs = [SourceInput::new("identifier.wf", spelling)];
         let bundle = source_bundle(&inputs).expect("identifier source must be constructible");
         let lexed = lexed(&bundle).expect("identifier must remain one lower-word token");
@@ -134,6 +149,40 @@ fn retired_statement_spellings_are_ordinary_identifiers() {
                 .contains(TerminalPredicate::Identifier)
         );
         assert_eq!(classified.tokens()[0].terminals().len(), 1);
+    }
+}
+
+/// `program` and `no_heap` leave IDENT, and `Slice` and `MutSlice` join TYPEID.
+///
+/// This is the other half of the retirement sweep above and the one that can
+/// silently break a source: v0.60's [GRAM-2] makes `program` and `no_heap`
+/// fixed atoms, so a binding or parameter that used either spelling no longer
+/// lexes as a name. In the other direction the capitalized view atoms retired
+/// with the view nominals, so `Slice` is an ordinary TYPEID again [GRAM-3].
+#[test]
+fn the_heap_declaration_atoms_leave_ident_and_the_view_atoms_rejoin_typeid() {
+    for (spelling, expected) in [
+        (
+            b"program".as_slice(),
+            TerminalPredicate::Fixed(FixedTerminal::Program),
+        ),
+        (b"no_heap", TerminalPredicate::Fixed(FixedTerminal::NoHeap)),
+        (b"Slice", TerminalPredicate::TypeIdentifier),
+        (b"MutSlice", TerminalPredicate::TypeIdentifier),
+    ] {
+        let inputs = [SourceInput::new("atoms.wf", spelling)];
+        let bundle = source_bundle(&inputs).expect("atom source must be constructible");
+        let lexed = lexed(&bundle).expect("atom must remain one word token");
+        let TerminalOutcome::Complete(classified) = classify_terminals(
+            &lexed,
+            ACTIVE_KERNEL_SPEC_HASH,
+            TerminalLimits { max_tokens: 1 },
+        ) else {
+            panic!("atom must classify: {spelling:?}");
+        };
+        let set = classified.tokens()[0].terminals();
+        assert_eq!(set.len(), 1, "spelling: {spelling:?}");
+        assert!(set.contains(expected), "spelling: {spelling:?}");
     }
 }
 

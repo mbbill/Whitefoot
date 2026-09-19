@@ -181,3 +181,55 @@ each is resolved by a discussion and a tree change.
   zero, one, and two premises and no more without a written certificate. Why
   the line sits at two, against one or three, is not remembered and needs a
   study before it is recorded.
+
+## Ownership redesign (candidate x1) follow-ups
+
+Items the owner asked to be kept on this list during the redesign recorded in
+`research/investigations/access-effects/CANDIDATE-X1.md` and adopted into
+`design/language` on 2026-09-19. None of them is a decision; each names the
+condition under which it is taken up.
+
+- **Iterative descent of owned links by reference.** A path has a static
+  shape, so `loop { p = &deref(p.next) }` over a Box-linked list is refused
+  and the walk is recursion or a pool with an index. Revisit if the
+  pool-plus-index form proves too slow or inexpressible on a real workload;
+  the candidate mechanism on record is a wildcard path form (`x.**`) with
+  conservative overlap and invalidation against everything under `x`.
+- **Totality and recursion-depth proofs.** Stack depth is an implementation
+  obligation, not a language promise: the compiler-derived release of an
+  owned chain must run in bounded stack (using the freed cells as its
+  worklist) and self tail calls must be eliminated. Domains that need
+  determinism about resource use will need proved totality (termination) and
+  proved recursion depth as obligation families; the atomic in-place update
+  deliberately requires only a function that returns the place's type with no
+  failure exit.
+- **Facts beyond affine comparisons in contracts.** A `requires` stating a
+  variant refinement (`p is Some`) and an `ensures` naming a single indexed
+  path (`deref(p.slots)[h.idx].gen == h.gen`). The second decides whether a
+  guarded pool access pays one load, compare, and branch per call. Take up
+  when the fact language is next revised.
+- **Open-addressing tables with non-Copy payloads.** One null check per hit
+  versus hashbrown, because occupancy that is decided by data is stored as
+  data. Measure on a real table before deciding whether any mechanism is
+  worth it.
+- **Channel primitive.** An ownership-transfer queue in the trusted base for
+  producer/consumer pipelines and work stealing; lock-free rings are not
+  expressible without it and batched fork-join is the available form. Research
+  when the future concurrency primitives are designed.
+- **Header-plus-tail heap block.** One allocation holding a fixed header and a
+  runtime-length tail (LLVM `User` with its operand list, `sk_buff`). Costs
+  one extra dependent memory access per hop today.
+- **Bitmask fact.** `x & (c - 1) < c` for a power-of-two `c`, which would
+  remove the per-probe bounds compare in hash tables.
+- **Handing checker facts to the backend.** Reference parameters with
+  `writes` become `noalias`, every reference parameter `captures(none)`,
+  `nonnull`, `dereferenceable`; rows become `memory(argmem: ...)`; proved
+  disjointness inside a body becomes scoped alias metadata; counted-loop
+  independence becomes `llvm.loop.parallel_accesses`; proved bounds become
+  `inbounds` and `nuw`/`nsw`. The current compiler emits none of these;
+  implement as its own step with a before/after benchmark.
+- **Performance floor after the port.** Re-measure the existing kernels and
+  the eight engineering tasks of the matrix rounds once the compiler
+  implements v0.60, so that the recorded costs (data-determined index
+  compare, refused scatter, re-descent on find-then-mutate, one element move
+  into the append slot) have numbers.

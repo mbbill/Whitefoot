@@ -1,18 +1,20 @@
-fn record['s](destination: &uniq Arena<'s, 4, 1>) -> available: own u64 reads(destination) contract {
-  ensures available == room_of(deref(destination));
+fn record(destination: &Slots<u8, 4>, value: own u8) -> available: own u64 writes(destination) contract {
+  requires destination.room > 0_u64;
+  ensures available == destination.room;
+  ensures destination.room + 1_u64 == entry(destination).room;
 } {
-  return room_of(deref(destination));
+  doc "Fills one slot of the window it is handed and reports the room that remains.";
+  place_back(window: destination, value: value);
+  let spare = destination.room;
+  return spare;
 }
 
 fn main() -> status: own ExitStatus pure {
-  region 'w {
-    let workspace = arena_frame::<4, 1, 'w>();
-    region {
-      let available = record(destination: &uniq workspace);
-      if available != 4_u64 {
-        return exit_status(code: 1_u8);
-      }
-    }
+  doc "MSR-3 admits a source ensures over the measure of a reference parameter the row writes: the bare measure denotes the exit-state term over the caller's resolved place, while entry(parameter) denotes the immutable entry datum, and the two are distinct terms even though both project from one formal and one actual.";
+  let workspace = slots_new::<u8, 4>();
+  let available = record(destination: &workspace, value: 1_u8);
+  if available != 3_u64 {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

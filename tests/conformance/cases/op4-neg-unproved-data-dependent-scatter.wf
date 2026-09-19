@@ -1,8 +1,8 @@
-fn count_low(input: own Slice<u64>) -> result: own u64 reads(input) contract {
-  requires len_of(input) <= 16777216_u64;
-  ensures result <= len_of(input);
+fn count_low(input: &[u64]) -> result: own u64 reads(input) contract {
+  requires input.len <= 16777216_u64;
+  ensures result <= input.len;
 } {
-  let count = len_of(input);
+  let count = input.len;
   let low = 0_u64;
   for (
     i in 0_u64..count,
@@ -17,13 +17,13 @@ fn count_low(input: own Slice<u64>) -> result: own u64 reads(input) contract {
   return low;
 }
 
-fn scatter(input: own Slice<u64>, output: own MutSlice<u64>, split: own u64) -> result: own u64 reads(input), writes(output) contract {
-  requires len_of(input) <= 16777216_u64;
-  requires len_of(input) <= len_of(output);
-  requires split <= len_of(input);
+fn scatter(input: &[u64], output: &[u64], split: own u64) -> result: own u64 reads(input), writes(output) contract {
+  requires input.len <= 16777216_u64;
+  requires input.len <= output.len;
+  requires split <= input.len;
 } {
   doc "This candidate deliberately has an insufficient contract. A bound on split does not relate it to the input's digit counts: split equal to one with a one-element odd input would write beyond the output. The retained OP-4 rejection identifies that missing relation, not an incorrect checker verdict or an impossibility result for every scatter representation.";
-  let count = len_of(input);
+  let count = input.len;
   let low = 0_u64;
   for (
     i in 0_u64..count,

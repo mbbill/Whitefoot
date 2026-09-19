@@ -1,33 +1,17 @@
 fn main() -> status: own ExitStatus pure {
-  doc "MSR-3, OWN-7: an element placement writes the element position it names and no other. A measure written at P[0] is a fact about P[0], and the value displaced out of P[1] carries what P[1] had, which nothing established; the two literal offsets are provably distinct, so the placement at the second position is undischarged.";
-  region 'a {
-    let workspace = arena_frame::<4096, 16, 'a>();
-    region {
-      let blocks = fixed_vector::<Vector<'a, u8>, 2>();
-      let first = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
-      let second = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
-      let third = arena_vector_proved::<u8>(store: &uniq workspace, count: 32_u64);
-      let fourth = arena_vector_proved::<u8>(store: &uniq workspace, count: 64_u64);
-      region {
-        place_back(vector: &uniq blocks, value: move first);
-      }
-      let one = move blocks;
-      region {
-        place_back(vector: &uniq one, value: move second);
-      }
-      let two = move one;
-      let spare = replace two[0_u64] = move third;
-      let held = replace two[1_u64] = move fourth;
-      region {
-        place_back(vector: &uniq held, value: 9_u8);
-      }
-      let filled = move held;
-      let seen = filled[0_u64];
-      if seen == 9_u8 {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-    }
+  doc "MSR-3, OWN-7: an element placement writes the element position it names and no other. The commit at blocks[0] carries that window's measures to blocks[0], and the two literal offsets are provably distinct, so nothing was established about blocks[1] and the subscript inside it has nothing to discharge against.";
+  let blocks = slots_new::<Slots<u8, 8>, 2>();
+  let first = slots_new::<u8, 8>();
+  let second = slots_new::<u8, 8>();
+  place_back(window: &blocks, value: move first);
+  place_back(window: &blocks, value: move second);
+  let third = slots_new::<u8, 8>();
+  place_back(window: &third, value: 1_u8);
+  set blocks[0_u64] = move third;
+  let seen = blocks[1_u64][0_u64];
+  if seen == 1_u8 {
+  } else {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

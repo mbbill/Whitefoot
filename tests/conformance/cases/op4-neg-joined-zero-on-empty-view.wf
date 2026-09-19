@@ -3,8 +3,8 @@ enum Pick {
   Wide();
 }
 
-fn get(b: own Slice<u8>, i: own u64, choice: own Pick) -> result: own u8 reads(b) {
-  let spare = len_of(b);
+fn get(b: &[u8], i: own u64, choice: own Pick) -> result: own u8 reads(b) {
+  let spare = b.len;
   let cursor = i;
   match choice {
     Zero() => {

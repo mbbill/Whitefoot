@@ -1,7 +1,7 @@
 const name: unit = unit;
 
 fn main() -> status: own ExitStatus pure {
-  doc "A non-integer const in a const-expr position is rejected [CONST-1].";
-  let xs = fixed_vector::<i32, name>();
+  doc "An IDENT resolving to a non-integer (unit-typed) const used in a const-expression position, here a run capacity, is a compile-time rejection.";
+  let xs = slots_new::<i32, name>();
   return exit_status(code: 0_u8);
 }

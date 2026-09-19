@@ -1,41 +1,28 @@
-fn fill_and_publish['r](destination: &uniq MutSlice<'r, u8>, value: own u8) -> filled: own Slice<'r, u8> writes(destination) contract {
-  requires 2_u64 <= len_of(deref(destination));
+fn fill_and_count(destination: &[u8], value: own u8) -> filled: own u64 writes(destination) contract {
+  requires 2_u64 <= destination.len;
+  ensures filled == 2_u64;
 } {
-  doc "Fills the destination it was handed and publishes the shared child of that view.";
-  set deref(destination)[0_u64] = value;
-  set deref(destination)[1_u64] = value;
-  return slice_of(&'r deref(destination));
+  doc "Fills the destination it was handed and publishes how many positions it filled.";
+  set destination[0_u64] = value;
+  set destination[1_u64] = value;
+  return 2_u64;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "[VIEW-6] the fill-and-publish helper. `slice_of(&'r deref(destination))` over a `&uniq MutSlice<'r, u8>` parameter is [OWN-6]'s shared child reborrow with a view as the parent: the child carries the parent's origin set and range under the narrower loan, so the parameter's formal-view origin is inside the result ceiling and the child is the helper's own result. The caller reads back through the published child what the helper wrote through its destination.";
-  region 'a {
-    let workspace = arena_frame::<4, 1, 'a>();
-    region {
-      let table = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
-      region {
-        place_back(vector: &uniq table, value: 3_u8);
-      }
-      region {
-        place_back(vector: &uniq table, value: 3_u8);
-      }
-      region {
-        let window = mut_slice_of(&uniq table);
-        region {
-          let published = fill_and_publish(destination: &uniq window, value: 200_u8);
-          let seen = len_of(published);
-          if seen == 2_u64 {
-          } else {
-            return exit_status(code: 201_u8);
-          }
-          let first = published[0_u64];
-          if first == 200_u8 {
-          } else {
-            return exit_status(code: 202_u8);
-          }
-        }
-      }
-    }
+  doc "The fill-and-publish helper, restated for v0.60. A reference never escapes its callee [REF-3], so the helper returns an owned count with its relation in ensures and the caller forms the child range itself: the re-slice &window[0..filled] names the same storage the helper wrote through [REF-4], and the caller reads back through that child exactly what the helper wrote through its destination.";
+  let table = box_array_filled::<u8>(count: 4_u64, value: 3_u8);
+  let window = &deref(table)[0_u64..4_u64];
+  let filled = fill_and_count(destination: window, value: 200_u8);
+  let published = &window[0_u64..filled];
+  let seen = published.len;
+  if seen == 2_u64 {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  let first = published[0_u64];
+  if first == 200_u8 {
+  } else {
+    return exit_status(code: 202_u8);
   }
   return exit_status(code: 0_u8);
 }

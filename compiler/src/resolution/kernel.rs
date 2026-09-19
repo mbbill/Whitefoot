@@ -1,23 +1,27 @@
-//! The [BLK-0] kernel declaration domain and the [TYPE-2] container and
-//! provider nominals it operates over.
+//! The four compiler-owned storage nominals [TYPE-9] and their [TYPE-6]
+//! lookup classes.
 //!
-//! [BLK-0] states that the container and store operations are one
-//! compiler-owned generic declaration domain, admitted to every compilation
-//! unit. It is specification data rather than a source record: no source construct declares,
-//! redeclares, extends, or overrides an entry, and a source declaration whose
-//! spelling equals an entry's in the same domain is the ordinary [DIAG-1]
-//! collision.
+//! [TYPE-9] states that `Array`, `Slots`, `Ring` and `Box` each contribute one
+//! nominal-type entry and one constructor entry of the same spelling. They are
+//! specification data rather than source records: no source construct
+//! declares, redeclares, extends, or overrides one, and a source declaration
+//! whose spelling equals an entry's in the same domain is the ordinary
+//! [DIAG-1] collision.
 //!
-//! Two tables live here because they are two [TYPE-6] domains. The four
-//! container and provider nominals are entries of the nominal-type TYPEID
-//! domain and are contributed by [TYPE-2]; the nine operations are entries of
-//! the lexical IDENT domain and are contributed by [BLK-0]. The
-//! `container_declaration_ordinal` a diagnostic origin carries is the second
-//! table's own index, which is [BLK-2]'s rows followed by [BLK-3]'s.
+//! The constructor entry exists to be refused. [TYPE-9] makes a constructor
+//! `call` naming one of the four a hard error with the restructuring `build it
+//! with a construction function [OP-13]`, and the entry is what makes that
+//! refusal a judgment over a resolved declaration rather than a name
+//! comparison in the checker.
+//!
+//! [BLK-0]'s kernel declaration domain is gone in v0.60: the construction
+//! functions [OP-13] and the window operations [OP-10] are ordinary [PRE-1]
+//! records parsed by the same grammar as source declarations, so this module
+//! carries no operation table any more.
 
 use super::DeclarationClass;
 
-/// Dense identity of one [TYPE-2] container or provider nominal.
+/// Dense identity of one [TYPE-9] compiler-owned storage nominal.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ContainerNominalId(u8);
 
@@ -33,24 +37,7 @@ impl ContainerNominalId {
     }
 }
 
-/// Dense identity of one [BLK-0] kernel-domain operation, in the preorder of
-/// [BLK-2]'s rows followed by [BLK-3]'s.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct KernelOperationId(u8);
-
-impl KernelOperationId {
-    pub(crate) const fn new(ordinal: u8) -> Self {
-        Self(ordinal)
-    }
-
-    /// Returns the zero-based `container_declaration_ordinal` [BLK-0].
-    #[must_use]
-    pub const fn ordinal(self) -> u8 {
-        self.0
-    }
-}
-
-/// One [TYPE-2] compiler-owned nominal spelling.
+/// One [TYPE-9] compiler-owned nominal spelling.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ContainerNominal {
     /// Exact TYPEID spelling.
@@ -59,40 +46,36 @@ pub struct ContainerNominal {
     pub shape: ContainerShape,
 }
 
-/// The five compiler-owned nominal shapes [TYPE-2].
+/// The four compiler-owned nominal shapes [TYPE-9].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ContainerShape {
-    /// `Vector<'s, T>`: a store-resident run [BLK-1].
-    Vector,
-    /// `FixedVector<T, n>`: a frame-resident run [BLK-1].
-    FixedVector,
-    /// `Heap<'s>`: the general store's provider [PROV-1].
-    Heap,
-    /// `Arena<'s, bytes, align>`: a bump extent's provider [PROV-1].
-    Arena,
-    /// `Box<'s, T>`: one store-resident value S39. It is store-branded
-    /// exactly as `Vector<'s, T>` is and carries no measure at all, a cell
-    /// being never empty.
+    /// `Array<T, N>` and `Array<T>`: every slot always holds a value and
+    /// `a.len == a.cap` [WIN-1].
+    Array,
+    /// `Slots<T, N>` and `Slots<T>`: a window whose filled prefix is `r.len`
+    /// [WIN-1].
+    Slots,
+    /// `Ring<T, N>` and `Ring<T>`: a window whose logical origin is `r.head`
+    /// [WIN-1, MSR-1].
+    Ring,
+    /// `Box<T>`: one heap object of any nameable T, carrying no brand and no
+    /// measure at all, a cell being never empty [TYPE-9].
     Box,
 }
 
-/// The five container and provider nominals, in [TYPE-2] order.
-pub const CONTAINER_NOMINALS: [ContainerNominal; 5] = [
+/// The four storage nominals, in [TYPE-9] order.
+pub const CONTAINER_NOMINALS: [ContainerNominal; 4] = [
     ContainerNominal {
-        spelling: "Vector",
-        shape: ContainerShape::Vector,
+        spelling: "Array",
+        shape: ContainerShape::Array,
     },
     ContainerNominal {
-        spelling: "FixedVector",
-        shape: ContainerShape::FixedVector,
+        spelling: "Slots",
+        shape: ContainerShape::Slots,
     },
     ContainerNominal {
-        spelling: "Heap",
-        shape: ContainerShape::Heap,
-    },
-    ContainerNominal {
-        spelling: "Arena",
-        shape: ContainerShape::Arena,
+        spelling: "Ring",
+        shape: ContainerShape::Ring,
     },
     ContainerNominal {
         spelling: "Box",
@@ -100,238 +83,45 @@ pub const CONTAINER_NOMINALS: [ContainerNominal; 5] = [
     },
 ];
 
-/// Which row of the inventory one kernel-domain operation is.
-///
-/// The checker selects behaviour from this discriminant rather than from the
-/// spelling, so the record is what the compiler reads and the name is only how
-/// a writer reaches it [BLK-0].
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum KernelRow {
-    /// `fixed_vector<T, const n: u64>() -> own FixedVector<T, n>` [BLK-2].
-    FixedVector,
-    /// `arena_vector<T, const bytes, const align>['s](store, count)` [BLK-2].
-    ArenaVector,
-    /// The proved arena take [BLK-2].
-    ArenaVectorProved,
-    /// `heap_vector<T>['s](store, count)` [BLK-2].
-    HeapVector,
-    /// `arena_box<T, const bytes, const align>['s](store, value)` [BLK-2, S39].
-    ArenaBox,
-    /// `heap_box<T>['s](store, value)` [BLK-2, S39].
-    HeapBox,
-    /// `arena_frame<const bytes, const align>['s]()` [BLK-2].
-    ArenaFrame,
-    /// `place_back(vector, value)` [BLK-3].
-    PlaceBack,
-    /// `place_front(vector, value)` [BLK-3].
-    PlaceFront,
-    /// `take_back(vector)` [BLK-3].
-    TakeBack,
-    /// `take_front(vector)` [BLK-3].
-    TakeFront,
-    /// `array_from_fixed(vector)` [BLK-3].
-    ArrayFromFixed,
-    /// `fixed_from_array(values)` [BLK-3].
-    FixedFromArray,
-    /// `slice_of(vector)` [VIEW-2]: the shared view over a viewable operand.
-    SliceOf,
-    /// `mut_slice_of(vector)` [VIEW-2]: the exclusive view over one.
-    MutSliceOf,
-}
-
-/// One [BLK-0] operation record's lookup data.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct KernelOperation {
-    /// Exact IDENT spelling.
-    pub spelling: &'static str,
-    /// The inventory row this spelling names.
-    pub row: KernelRow,
-    /// Declared value parameter names in declared order [GRAM-11]. The first
-    /// is the value the operation transforms and returns, the provider of one
-    /// that transforms nothing, or the value one that neither transforms nor
-    /// provides observes [BLK-0].
-    pub parameters: &'static [&'static str],
-    /// Declared result binder spellings in declared order [FN-1].
-    pub results: &'static [&'static str],
-}
-
-/// The operations of the inventory, in [BLK-2] then [BLK-3] order.
-pub const KERNEL_OPERATIONS: [KernelOperation; 13] = [
-    KernelOperation {
-        spelling: "fixed_vector",
-        row: KernelRow::FixedVector,
-        parameters: &[],
-        results: &["result"],
-    },
-    KernelOperation {
-        spelling: "arena_vector",
-        row: KernelRow::ArenaVector,
-        parameters: &["store", "count"],
-        results: &["made"],
-    },
-    KernelOperation {
-        spelling: "arena_vector_proved",
-        row: KernelRow::ArenaVectorProved,
-        parameters: &["store", "count"],
-        results: &["result"],
-    },
-    KernelOperation {
-        spelling: "heap_vector",
-        row: KernelRow::HeapVector,
-        parameters: &["store", "count"],
-        results: &["made"],
-    },
-    KernelOperation {
-        spelling: "arena_box",
-        row: KernelRow::ArenaBox,
-        parameters: &["store", "value"],
-        results: &["made"],
-    },
-    KernelOperation {
-        spelling: "heap_box",
-        row: KernelRow::HeapBox,
-        parameters: &["store", "value"],
-        results: &["made"],
-    },
-    KernelOperation {
-        spelling: "arena_frame",
-        row: KernelRow::ArenaFrame,
-        parameters: &[],
-        results: &["result"],
-    },
-    KernelOperation {
-        spelling: "place_back",
-        row: KernelRow::PlaceBack,
-        parameters: &["vector", "value"],
-        results: &["result"],
-    },
-    KernelOperation {
-        spelling: "place_front",
-        row: KernelRow::PlaceFront,
-        parameters: &["vector", "value"],
-        results: &["result"],
-    },
-    KernelOperation {
-        spelling: "take_back",
-        row: KernelRow::TakeBack,
-        parameters: &["vector"],
-        results: &["value"],
-    },
-    KernelOperation {
-        spelling: "take_front",
-        row: KernelRow::TakeFront,
-        parameters: &["vector"],
-        results: &["value"],
-    },
-    KernelOperation {
-        spelling: "array_from_fixed",
-        row: KernelRow::ArrayFromFixed,
-        parameters: &["vector"],
-        results: &["result"],
-    },
-    KernelOperation {
-        spelling: "fixed_from_array",
-        row: KernelRow::FixedFromArray,
-        parameters: &["values"],
-        results: &["result"],
-    },
-];
-
-/// The nominal record one resolved container target names.
+/// The nominal record one resolved storage target names.
 #[must_use]
 pub fn container_nominal(id: ContainerNominalId) -> Option<&'static ContainerNominal> {
     CONTAINER_NOMINALS.get(usize::from(id.ordinal()))
 }
 
-/// The operation record one resolved kernel target names.
-#[must_use]
-pub fn kernel_operation(id: KernelOperationId) -> Option<&'static KernelOperation> {
-    KERNEL_OPERATIONS.get(usize::from(id.ordinal()))
-}
-
-/// The lookup classes of every container nominal: one entry of the
-/// nominal-type TYPEID domain and one of the constructor TYPEID domain
-/// [TYPE-6], exactly as a source `struct_decl` contributes both.
-///
-/// The constructor entry exists to be refused: [BLK-1] states that no
-/// `construct` produces a run, a provider, or a store, and the entry is what
-/// makes that refusal a judgment over a resolved declaration rather than a
-/// name comparison in the checker.
+/// The lookup classes of every storage nominal: one entry of the nominal-type
+/// TYPEID domain and one of the constructor TYPEID domain [TYPE-6, TYPE-9],
+/// exactly as a source `struct_decl` contributes both.
 pub const CONTAINER_NOMINAL_CLASSES: [DeclarationClass; 2] = [
     DeclarationClass::NominalType,
     DeclarationClass::StructConstructor,
 ];
 
-/// The nominal-type class of a container nominal, which every `type` position
+/// The nominal-type class of a storage nominal, which every `type` position
 /// admits [TYPE-6].
 pub const CONTAINER_NOMINAL_CLASS: DeclarationClass = DeclarationClass::NominalType;
 
-/// The lookup class of every kernel-domain operation: one entry of the
-/// lexical IDENT domain, taking the function class [BLK-0, TYPE-6].
-pub const KERNEL_OPERATION_CLASS: DeclarationClass = DeclarationClass::Function;
-
 #[cfg(test)]
 mod tests {
-    use super::{CONTAINER_NOMINALS, KERNEL_OPERATIONS};
-    use crate::resolution::catalog::{MODE_WORDS, OPERATION_FAMILIES};
+    use super::CONTAINER_NOMINALS;
 
-    /// [BLK-0]: a kernel-domain operation spelling is IDENT-shaped, contains
-    /// no dot, and is no member of `ReservedLowerNames` [OP-1], so adding the
-    /// inventory takes no spelling away from a writer's declarations.
+    /// [FORM-3]: every storage nominal is TYPEID-shaped, so the four rows
+    /// occupy the nominal-type and constructor domains and take no lexical
+    /// IDENT spelling away from a writer's declarations.
     #[test]
-    fn no_kernel_operation_spelling_is_reserved() {
-        for operation in KERNEL_OPERATIONS {
-            assert!(!operation.spelling.contains('.'), "{}", operation.spelling);
+    fn every_storage_nominal_is_a_typeid() {
+        for nominal in CONTAINER_NOMINALS {
             assert!(
-                operation
-                    .spelling
-                    .starts_with(|byte: char| byte.is_ascii_lowercase()),
-                "{}",
-                operation.spelling
-            );
-            assert!(
-                !OPERATION_FAMILIES.contains(&operation.spelling),
-                "{} is an OP-1 family spelling",
-                operation.spelling
-            );
-            assert!(
-                !MODE_WORDS.contains(&operation.spelling),
-                "{} is a mode word",
-                operation.spelling
+                crate::syntax::terminal::is_type_identifier(nominal.spelling.as_bytes()),
+                "{} is not a TYPEID spelling",
+                nominal.spelling
             );
         }
     }
 
-    /// [BLK-0]: a row is reachable only if a writer can spell its call.
-    ///
-    /// A kernel-domain call writes its value arguments as a `fieldinit_list`
-    /// whose IDENTs equal the declared parameter names, and a result binder
-    /// list binds the declared result spellings, so every declared spelling
-    /// of this table must satisfy [FORM-3]'s IDENT class. A spelling that a
-    /// fixed grammar atom already produces makes its row unwritable, which is
-    /// a defect in this record data and not a language decision.
+    /// [TYPE-6]: spellings are unique within each domain.
     #[test]
-    fn every_declared_spelling_is_writable() {
-        for operation in KERNEL_OPERATIONS {
-            for name in operation
-                .parameters
-                .iter()
-                .chain(operation.results)
-                .chain(std::iter::once(&operation.spelling))
-            {
-                assert!(
-                    crate::syntax::terminal::is_identifier(name.as_bytes()),
-                    "{} declares the unwritable spelling {name}",
-                    operation.spelling
-                );
-            }
-        }
-    }
-
-    /// [TYPE-6]: spellings are unique within each domain and disjoint from
-    /// the ordinary prelude declarations of the same domain.
-    #[test]
-    fn kernel_spellings_are_unique_and_disjoint() {
+    fn storage_nominal_spellings_are_unique() {
         let mut nominals: Vec<_> = CONTAINER_NOMINALS
             .iter()
             .map(|nominal| nominal.spelling)
@@ -340,30 +130,24 @@ mod tests {
         let count = nominals.len();
         nominals.dedup();
         assert_eq!(nominals.len(), count);
-        let mut operations: Vec<_> = KERNEL_OPERATIONS
-            .iter()
-            .map(|operation| operation.spelling)
-            .collect();
-        operations.sort_unstable();
-        let count = operations.len();
-        operations.dedup();
-        assert_eq!(operations.len(), count);
     }
 
-    /// [BLK-0]'s first-parameter ordering, over the inventory this version
-    /// carries: the consuming rows name `vector` or `values` first, and the
-    /// acquiring rows name their provider first. Rows with no value parameter
-    /// have no first-parameter obligation.
+    /// [TYPE-9]: the four nominals are exactly the shapes the rule names, read
+    /// out of its own text rather than pinned by hand.
     #[test]
-    fn every_row_orders_its_first_parameter() {
-        for operation in KERNEL_OPERATIONS {
-            let Some(first) = operation.parameters.first() else {
-                continue;
-            };
+    fn storage_nominals_match_the_active_specification() {
+        let body = crate::ACTIVE_KERNEL_SPEC_TEXT
+            .split_once("[TYPE-9] Three storage shapes, two placements each, and one cell.")
+            .expect("exact TYPE-9 opening")
+            .1
+            .split_once("\n\n")
+            .expect("exact TYPE-9 body")
+            .0;
+        for nominal in CONTAINER_NOMINALS {
             assert!(
-                matches!(*first, "vector" | "values" | "store"),
-                "{} names {first} first",
-                operation.spelling
+                body.contains(&format!("`{}<", nominal.spelling)),
+                "TYPE-9 does not name {}",
+                nominal.spelling
             );
         }
     }

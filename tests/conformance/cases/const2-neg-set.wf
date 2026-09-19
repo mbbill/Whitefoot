@@ -1,7 +1,7 @@
-const table: FixedVector<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
+const table: Array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 fn main() -> status: own ExitStatus pure {
-  doc "A const item is immutable: writing through it is rejected [CONST-2].";
+  doc "A const item is immutable: a set through it is rejected.";
   set table[0_u64] = 99_u8;
   return exit_status(code: 0_u8);
 }

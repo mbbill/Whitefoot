@@ -5,25 +5,23 @@ enum Sign {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "IDENT, TYPEID, REGIONID, LABEL, and OPNAME lexical classes [FORM-3].";
+  doc "IDENT, TYPEID, LABEL (@l) and OPNAME (+checked) lexical classes used canonically [FORM-3]; the REGIONID class is gone with regions, and a reference is written with the bare `&` and read bare.";
   let a = 3_i32;
-  region {
-    let p = &a;
-    loop @l {
-      break @l;
+  let p = &a;
+  loop @l {
+    break @l;
+  }
+  let v = match p +checked 1_i32 {
+    Ok(value: w) => {
+      give w;
     }
-    let v = match deref(p) +checked 1_i32 {
-      Ok(value: w) => {
-        give w;
-      }
-      Err(error: e) => {
-        return exit_status(code: 1_u8);
-      }
+    Err(error: e) => {
+      return exit_status(code: 1_u8);
     }
-    if v == 4_i32 {
-    } else {
-      return exit_status(code: 2_u8);
-    }
+  }
+  if v == 4_i32 {
+  } else {
+    return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
 }

@@ -136,6 +136,71 @@ return unit;
     );
 }
 
+/// Every form v0.60 adds parses, and each new production is reached.
+///
+/// The five productions the amendment adds are `heap_decl` [GRAM-2],
+/// `range_tail` [GRAM-5], and `epbase`, `epsuffix` and `erange` [EFF-1]; the
+/// new arms are the range-reference parameter kind `&[T]` [REF-4], the enum
+/// payload step `.TYPEID.IDENT` [GRAM-5], `deref` inside an effect path, an
+/// index or range position supplied as an argument [EFF-1], an unqualified
+/// `&place` with no permission or region marker [REF-1], and a destructuring
+/// consume's trailing rest marker [PROV-6]. The complete fixture below
+/// exercises all 86 productions at once; this case is the narrow one that
+/// says which forms are new, so a later amendment that drops one fails here
+/// with its name rather than on a count.
+#[test]
+fn every_form_the_amendment_adds_parses() {
+    let source = br#"
+program no_heap;
+fn window(run: &Slots<i32, 4>, part: &[i32], node: &Tree, lo: own u64, hi: own u64)
+-> result: own unit reads(deref(node).Some.value), writes(part[lo..hi]), writes(run[lo])
+{
+let whole = &run[lo..hi];
+let element = &run[lo];
+let through = &deref(node).left;
+let payload = node.Some.value;
+let rest = run[lo..hi];
+let Tree(left: kept, ..) = move taken;
+let Leaf(..) = move spare;
+return unit;
+}
+"#;
+    let inputs = [SourceInput::new("added.wf", source)];
+    let bundle = bundle(&inputs);
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("added-form fixture must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits { max_tokens: 512 },
+    ) else {
+        panic!("added-form fixture must classify");
+    };
+    let outcome = parse(&classified, PARSE_LIMITS);
+    let ParseOutcome::Complete(parsed) = outcome else {
+        panic!("added-form fixture must parse: {outcome:?}");
+    };
+    for production in [
+        Production::HeapDecl,
+        Production::RangeTail,
+        Production::Epbase,
+        Production::Epsuffix,
+        Production::Erange,
+        Production::BorrowExpr,
+        Production::Psuffix,
+        Production::Param,
+    ] {
+        let present = parsed.tree.elements.iter().any(|element| {
+            matches!(
+                element,
+                DerivationElement::Production { production: actual, .. } if *actual == production
+            )
+        });
+        assert!(present, "added-form fixture omitted {production:?}");
+    }
+}
+
 /// [GRAM-5] `IDENT "<"` begins a comparison and nothing else, because a
 /// call writes its type arguments after the `::` delimiter; the `expr`
 /// decision therefore still falls at the second token. A type-argument list
@@ -150,8 +215,8 @@ let gt = atom > other;
 let le = atom <= other;
 let ne = atom != other;
 let call = user::<i32>(atom);
-let regions = walk::<'r, 's>(atom);
-let both = pick::<i32, 'r>(atom);
+let consts = walk::<4, limit>(atom);
+let both = pick::<i32, 2>(atom);
 return unit;
 }
 "#;
@@ -304,7 +369,13 @@ fn mandatory_name_and_numeric_pattern_mismatches_keep_their_owners() {
             SyntaxRule::Form3,
         ),
         (
-            b"const value: array<i32, 1_i32> =[0_i32];".as_slice(),
+            // [CONST-1] the tail of a const-expression takes only a decimal
+            // literal or an IDENT, so a suffixed literal fails inside `const`
+            // and the rejection keeps that production's owner. v0.59 wrote
+            // the same case as `array<i32, 1_i32>`, whose `const` slot was
+            // written directly into the `array` type form; v0.60 reaches the
+            // same slot through `targ` [GRAM-3, TYPE-9].
+            b"const value: Array<i32, 4 + 1_i32> =[0_i32];".as_slice(),
             SyntaxRule::Const1,
         ),
         (b"const value: i32 = 42;".as_slice(), SyntaxRule::Form5),
@@ -549,18 +620,19 @@ fn sufficient_limits_produce_identical_derivation_metrics() {
 #[test]
 fn complete_fixture_reaches_every_normative_production_kind() {
     let source = br#"
-struct Types<T: Bound, const n: array<u8, 4>> {
+program no_heap;
+struct Types<T: Bound, const n: u64> {
 doc "types";
 a: i8; b: i16; c: i32; d: i64; e: u8; f: u16; g: u32; h: u64;
-i: f32; j: f64; k: unit; l: Name<T, 'r, n>; m: array<u8, n>;
-n: Slice<'r, u8>; o: box<u8>; p: arena<'r, u8>; q: buffer<u8>;
+i: f32; j: f64; k: unit; l: Name<T, n>; m: Array<u8, n>;
+o: Box<u8>; p: Slots<u8, 4>; q: Ring<u8, 2 * n>;
 }
 enum Choice<T: copy> { doc "choice"; None(); Some(value: T); }
 linear struct Lease { doc "lease"; slot: u8; }
 linear enum Ticket { doc "ticket"; Open(value: u8); }
 formal Behavior<T: affine> {
 doc "formal";
-fn member['r](x: own T) -> result: own T reads(x), writes(x), allocates(x);
+fn member(x: own T, part: &[u8]) -> result: own T reads(part), writes(part);
 }
 actual Selected : Behavior<Name<T>> { doc "binding"; member = implementation::<fn other>; }
 fn forwarded<Behavior<K>, fn operation(value: own K) -> result: own K pure>() -> result: own unit pure {
@@ -569,14 +641,14 @@ return unit;
 }
 const zero: i32 = 0_i32;
 const alias: i32 = zero;
-const table: array<i32, 2> =[0_i32, zero];
+const table: Array<i32, 2> =[0_i32, zero];
 fn stored_entry(arguments: own i32, directory: own i32)
 -> result: own unit pure
 {
 return unit;
 }
-fn everything['r: affine, 's: linear](x: own i32, shared: &'r i32, unique: &uniq 'r i32)
--> result: own unit reads(shared, unique), writes(unique), allocates(arena 'r)
+fn everything<T: affine, S: linear>(x: own i32, shared: &i32, run: &Slots<i32, 4>, part: &[i32])
+-> result: own unit reads(shared), reads(deref(handle).Some.value), writes(run[index]), writes(part[lo..hi])
 contract {
 define pre = 0_i32 +wrap 1_i32;
 define post = 0_i32 +wrap 1_i32;
@@ -592,15 +664,17 @@ let attempted = propagate user(arg: ordinary);
 let selected = match ordinary { Some(value: payload) => { give payload; } }
 let made = Name<T>(value: ordinary);
 let moved = move ordinary;
-let borrowed = &'r ordinary;
-let unique_borrow = &uniq 'r ordinary;
+let borrowed = &ordinary;
+let field_borrow = &deref(pointer).field;
+let range_borrow = &run[ordinary..moved];
+let payload_read = made.Some.value;
+let entry_read = entry(directory).len;
 let loaded = table[ordinary];
 let compared = ordinary < moved;
 let least = imin(ordinary, moved);
 let chosen = if compared { give ordinary; } else { give moved; }
 set deref(pointer).field = ordinary;
-let previous = replace deref(pointer).field = ordinary;
-user::<T, 'r, 2>(arg: ordinary);
+user::<T, 2>(arg: ordinary);
 return unit;
 loop @again { break @again; }
 for @range (
@@ -611,12 +685,11 @@ break @range;
 }
 invariant parser_proof: ordinary + 1_i32 <= moved + 1_i32 {
 use (ordinary <= moved);
-use (0_i32 <= 0_i32);
+use 2 times (0_i32 <= 0_i32);
 }
-region { give ordinary; }
 let named = ordinary;
-let Name(value: destructured) = move made;
-dispose named;
+let (kept, spare) = split(taken: move run);
+let Name(value: destructured, ..) = move made;
 match ordinary { Some(value: payload) => { give payload; } }
 if compared { let then_branch = ordinary; } else if chosen { break @again; } else { return unit; }
 }

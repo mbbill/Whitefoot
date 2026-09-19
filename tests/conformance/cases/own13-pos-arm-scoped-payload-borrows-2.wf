@@ -4,22 +4,21 @@ enum Packet {
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "Repeated matches through one reference each derive their own arm-scoped payload binder, and the scrutinee stays live between them.";
   let packet = Data(value: 4_i32);
-  region {
-    let holder = &packet;
-    match deref(holder) {
-      Data(value: payload) => {
-        let saved = deref(payload);
-      }
-      Idle() => {
-      }
+  let holder = &packet;
+  match holder {
+    Data(value: payload) => {
+      let saved = payload;
     }
-    match deref(holder) {
-      Data(value: payload) => {
-        let again = deref(payload);
-      }
-      Idle() => {
-      }
+    Idle() => {
+    }
+  }
+  match holder {
+    Data(value: payload) => {
+      let again = payload;
+    }
+    Idle() => {
     }
   }
   return exit_status(code: 0_u8);

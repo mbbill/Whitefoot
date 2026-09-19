@@ -1,76 +1,23 @@
 struct Columns {
-  left: buffer<u64>;
-  right: buffer<u64>;
+  left: Box<Slots<u64>>;
+  right: Box<Slots<u64>>;
 }
 
-fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit reads(left, right) {
-  let left_room = len_of(deref(left));
-  let right_room = len_of(deref(right));
-  let index_value = 0_u64;
-  loop @fill {
-    let done = index_value == length;
-    if done {
-      break @fill;
-    } else {
-      let in_left = index_value < left_room;
-      if in_left {
-        set deref(left)[index_value] = index_value;
-      }
-      let shifted = index_value +wrap 10_u64;
-      let in_right = index_value < right_room;
-      if in_right {
-        set deref(right)[index_value] = shifted;
-      }
-      set index_value = index_value +wrap 1_u64;
-    }
-  }
+fn fill(left: &Box<Slots<u64>>, right: &Box<Slots<u64>>, value: own u64) -> function_result: own unit reads(deref(left)), reads(deref(right)) contract {
+  requires deref(left).room > 0_u64;
+  requires deref(right).room > 0_u64;
+} {
+  doc "Places one element in each column while declaring only reads of them, so the writes the body exhibits are missing from the row.";
+  place_back(window: &deref(left), value: value);
+  place_back(window: &deref(right), value: value);
   return unit;
 }
 
-fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads(left, right) {
-  let left_room = len_of(deref(left));
-  let right_room = len_of(deref(right));
-  let index_value = 0_u64;
-  let total = 0_u64;
-  loop @fold {
-    let done = index_value == length;
-    if done {
-      break @fold;
-    } else {
-      let in_left = index_value < left_room;
-      let left_value = if in_left {
-        give deref(left)[index_value];
-      } else {
-        give 0_u64;
-      }
-      let in_right = index_value < right_room;
-      let right_value = if in_right {
-        give deref(right)[index_value];
-      } else {
-        give 0_u64;
-      }
-      set total = total +wrap left_value;
-      set total = total +wrap right_value;
-      set index_value = index_value +wrap 1_u64;
-    }
-  }
-  return total;
-}
-
 fn main() -> status: own ExitStatus pure {
-  let length = 4_u64;
-  let left = buffer_new(length, 0_u64);
-  let right = buffer_new(length, 0_u64);
+  doc "Deleting an exhibited write from a column function's declaration is an effect-row mismatch: the row is checked both ways against the complete exhibited set, and undeclared-but-exhibited is an EFF-2 error.";
+  let left = box_slots_new::<u64>(capacity: 4_u64);
+  let right = box_slots_new::<u64>(capacity: 4_u64);
   let columns = Columns(left: move left, right: move right);
-  region {
-    let left_out = &uniq columns.left;
-    let right_out = &uniq columns.right;
-    fill(left: move left_out, right: move right_out, length: length);
-  }
-  region {
-    let left_in = &columns.left;
-    let right_in = &columns.right;
-    let total = fold(left: left_in, right: right_in, length: length);
-  }
+  fill(left: &columns.left, right: &columns.right, value: 1_u64);
   return exit_status(code: 0_u8);
 }

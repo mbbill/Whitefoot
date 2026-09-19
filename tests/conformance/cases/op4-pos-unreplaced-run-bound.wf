@@ -1,20 +1,19 @@
 struct Holder {
-  payload: FixedVector<u8, 4>;
+  payload: Slots<u8, 4>;
   count: u64;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let first = fixed_vector::<u8, 4>();
+  doc "An established member length qualifies the indexed write while no commit has killed that fact.";
+  let first = slots_new::<u8, 4>();
   for @fill_first (
     at in 0_u64..4_u64,
-    invariant grown: len_of(first) >= at,
-    invariant spare: room_of(first) + at >= 4_u64,
-    invariant flat: head_of(first) <= 0_u64
+    invariant grown: first.len == at
   ) {
-    place_back(vector: &uniq first, value: 7_u8);
+    place_back(window: &first, value: 7_u8);
   }
   let holder = Holder(payload: move first, count: 0_u64);
-  let size = len_of(holder.payload);
+  let size = holder.payload.len;
   let allocated_length = size == 4_u64;
   if allocated_length {
     set holder.payload[3_u64] = 5_u8;

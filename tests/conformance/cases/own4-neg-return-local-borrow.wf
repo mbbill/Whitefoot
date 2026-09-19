@@ -1,7 +1,7 @@
-fn leak['r0](x: &'r0 i32) -> return_value: &'r0 i32 pure {
-  region {
-    return &deref(x);
-  }
+fn leak() -> return_value: own i32 pure {
+  doc "A reference formed over a local never leaves the function that formed it; the return hands back owned data instead.";
+  let local = 0_i32;
+  return &local;
 }
 
 fn main() -> return_value: own ExitStatus pure {

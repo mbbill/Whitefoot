@@ -1,29 +1,26 @@
 struct Source {
-  bytes: FixedVector<u8, 5>;
+  bytes: Slots<u8, 5>;
 }
 
-fn head(input: &Source) -> byte: own u8 reads(input.bytes) {
-  doc "A run field reached through a shared borrow of its owner: the subscript is the same measured place, so its [OP-4] obligation is discharged from the measure read through the same holder.";
-  let size = len_of(deref(input).bytes);
+fn lead_byte(input: &Source) -> byte: own u8 reads(input.bytes) {
+  doc "A run field reached through a shared reference to its owner is one measured place: the measure read and the subscript name the same place through the same reference, so the OP-4 obligation is discharged from the guard written over that measure.";
+  let size = input.bytes.len;
   let ok = 0_u64 < size;
   if ok {
-    return deref(input).bytes[0_u64];
+    return input.bytes[0_u64];
   }
   return 0_u8;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let bytes = fixed_vector::<u8, 5>();
-  region {
-    place_back(vector: &uniq bytes, value: 43_u8);
-  }
+  doc "The owner is reached through one shared reference and the field effect names only that structural substate.";
+  let bytes = slots_new::<u8, 5>();
+  place_back(window: &bytes, value: 43_u8);
   let input = Source(bytes: move bytes);
-  region {
-    let window = &input;
-    let seen = head(input: window);
-    if seen == 43_u8 {
-      return exit_status(code: 0_u8);
-    }
+  let window = &input;
+  let seen = lead_byte(input: window);
+  if seen == 43_u8 {
+    return exit_status(code: 0_u8);
   }
   return exit_status(code: 1_u8);
 }

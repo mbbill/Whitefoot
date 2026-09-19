@@ -3,11 +3,13 @@ linear struct Ticket {
 }
 
 fn consume(ticket: own Ticket) -> number: own u8 pure {
-  let Ticket(number: number) = move ticket;
-  return number;
+  doc "The destructuring consume is one of the two routes a linear value leaves a scope by.";
+  let Ticket(number: taken) = move ticket;
+  return taken;
 }
 
 fn acquire(fail: own Bool) -> result: own Result<Ticket, u8> pure {
+  doc "A linear ticket on one outcome and an error code on the other.";
   if fail {
     return Err<Ticket, u8>(error: 7_u8);
   }
@@ -16,44 +18,32 @@ fn acquire(fail: own Bool) -> result: own Result<Ticket, u8> pure {
 }
 
 fn drain(fail: own Bool) -> result: own u8 pure {
-  let empty = fixed_vector::<Ticket, 2>();
+  doc "Every ticket is taken out and consumed on both outcomes, and the window's zero length is established on each leaving edge, which is exactly what free_empty requires of a window whose element type is linear.";
+  let run = slots_new::<Ticket, 2>();
   let first_ticket = Ticket(number: 1_u8);
-  region {
-    place_back(vector: &uniq empty, value: move first_ticket);
-  }
-  let one = move empty;
+  place_back(window: &run, value: move first_ticket);
   match acquire(fail: fail) {
     Err(error: problem) => {
-      region {
-        let first = take_back(vector: &uniq one);
-        let drained = move one;
-        let number = consume(ticket: move first);
-        invariant empty_again: len_of(drained) <= 0_u64;
-        return problem;
-      }
+      let first = take_back(window: &run);
+      let number = consume(ticket: move first);
+      free_empty(window: move run);
+      return problem;
     }
     Ok(value: second) => {
-      region {
-        place_back(vector: &uniq one, value: move second);
-      }
-      let two = move one;
-      region {
-        let last = take_back(vector: &uniq two);
-        let rest = move two;
-        region {
-          let first = take_back(vector: &uniq rest);
-          let drained = move rest;
-          let last_number = consume(ticket: move last);
-          let first_number = consume(ticket: move first);
-          invariant empty_again: len_of(drained) <= 0_u64;
-          return first_number +wrap last_number;
-        }
-      }
+      place_back(window: &run, value: move second);
+      let last = take_back(window: &run);
+      let first = take_back(window: &run);
+      let last_number = consume(ticket: move last);
+      let first_number = consume(ticket: move first);
+      free_empty(window: move run);
+      let total = first_number +wrap last_number;
+      return total;
     }
   }
 }
 
 fn attempt(fail: own Bool) -> result: own u8 pure {
+  doc "The same acquisition without a window: the prior ticket is consumed on both outcomes.";
   let first = Ticket(number: 1_u8);
   match acquire(fail: fail) {
     Err(error: problem) => {
@@ -63,12 +53,14 @@ fn attempt(fail: own Bool) -> result: own u8 pure {
     Ok(value: second) => {
       let one = consume(ticket: move first);
       let two = consume(ticket: move second);
-      return one +wrap two;
+      let total = one +wrap two;
+      return total;
     }
   }
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "Both outcomes of both helpers are exercised; no historical drained-window rejection label is retained as a language expectation.";
   let no = 0_u8 == 1_u8;
   let yes = 0_u8 == 0_u8;
   let success = attempt(fail: no);

@@ -1,5 +1,5 @@
 fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
-  match deref(error) {
+  match error {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
     }
@@ -64,7 +64,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
       return False();
     }
     ResourceExhausted(code: native_code, origin: native_origin) => {
-      return deref(native_origin) == 0_u8;
+      return native_origin == 0_u8;
     }
     FileTooLarge(code: native_code, origin: native_origin) => {
       return False();
@@ -87,23 +87,21 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn drain(link: &uniq TcpConnection, scratch: &uniq MutSlice<u8>) -> result: own u8 reads(link.receive, scratch), writes(link.receive, scratch) contract {
-  define room = len_of(deref(scratch));
+fn drain(link: &TcpConnection, scratch: &[u8]) -> result: own u8 writes(link.receive), writes(scratch) contract {
+  define room = scratch.len;
   requires 32_u64 <= room;
 } {
   doc "Reads one chunk through the receiving direction only, naming that direction as its effect path.";
   let outcome = 0_u8;
-  region {
-    match receive_next(receive: &uniq deref(link).receive, destination: &uniq deref(scratch), start: 0_u64, end: 32_u64) {
-      Ok(value: endpoint) => {
-      }
-      Err(error: read_stop_18) => {
-        match read_stop_18 {
-          ReadEnd() => {
-          }
-          ReadFailed(error: problem) => {
-            set outcome = 2_u8;
-          }
+  match receive_next(receive: &link.receive, destination: scratch, start: 0_u64, end: 32_u64) {
+    Ok(value: endpoint) => {
+    }
+    Err(error: read_stop_18) => {
+      match read_stop_18 {
+        ReadEnd() => {
+        }
+        ReadFailed(error: problem) => {
+          set outcome = 2_u8;
         }
       }
     }
@@ -111,56 +109,34 @@ fn drain(link: &uniq TcpConnection, scratch: &uniq MutSlice<u8>) -> result: own 
   return outcome;
 }
 
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "A helper receiving only through link.receive declares that exact ordinary field effect plus its scratch effects. The untouched send field adds nothing; field row precision does not shorten the whole-connection borrow.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  close_directory(factory: &handles, directory: move unused_cwd);
+  let scratch = slots_new::<u8, 32>();
+  for @fill (
+    at in 0_u64..32_u64,
+    invariant grown: scratch.len >= at,
+    invariant vacancy: scratch.room + at >= 32_u64
+  ) {
+    place_back(window: &scratch, value: 0_u8);
   }
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 32_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
+  let window = &scratch[0_u64..32_u64];
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9103_u16);
+  match tcp_connect(factory: &handles, address: &address) {
+    Ok(value: link) => {
+      let outcome = 0_u8;
+      set outcome = drain(link: &link, scratch: window);
+      let TcpConnection(receive: close_receive_19, send: close_send_19) = move link;
+      close_receive(factory: &handles, receive: move close_receive_19);
+      close_send(factory: &handles, send: move close_send_19);
+      return exit_status(code: outcome);
+    }
+    Err(error: problem) => {
+      if factory_refusal(error: &problem) {
+        return exit_status(code: 5_u8);
       }
-      Some(value: fresh) => {
-        let scratch = move fresh;
-        for @fill (
-          at in 0_u64..32_u64,
-          invariant grown: len_of(scratch) >= at,
-          invariant spare: room_of(scratch) + at >= 32_u64,
-          invariant flat: head_of(scratch) <= 0_u64
-        ) {
-          place_back(vector: &uniq scratch, value: 0_u8);
-        }
-        region {
-          let window = mut_slice_of(&uniq scratch);
-          let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9103_u16);
-          region {
-            region {
-              match tcp_connect(factory: &uniq handles, address: &address) {
-                Ok(value: link) => {
-                  let outcome = 0_u8;
-                  region {
-                    set outcome = drain(link: &uniq link, scratch: &uniq window);
-                  }
-                  let TcpConnection(receive: close_receive_19, send: close_send_19) = move link;
-                  close_receive(factory: &uniq handles, receive: move close_receive_19);
-                  close_send(factory: &uniq handles, send: move close_send_19);
-                  return exit_status(code: outcome);
-                }
-                Err(error: problem) => {
-                  region {
-                    if factory_refusal(error: &problem) {
-                      return exit_status(code: 5_u8);
-                    }
-                  }
-                  return exit_status(code: 4_u8);
-                }
-              }
-            }
-          }
-        }
-      }
+      return exit_status(code: 4_u8);
     }
   }
 }
