@@ -251,13 +251,39 @@ condition under which it is taken up.
   one extra dependent memory access per hop today.
 - **Bitmask fact.** `x & (c - 1) < c` for a power-of-two `c`, which would
   remove the per-probe bounds compare in hash tables.
-- **Handing checker facts to the backend.** Reference parameters with
-  `writes` become `noalias`, every reference parameter `captures(none)`,
-  `nonnull`, `dereferenceable`; rows become `memory(argmem: ...)`; proved
-  disjointness inside a body becomes scoped alias metadata; counted-loop
-  independence becomes `llvm.loop.parallel_accesses`; proved bounds become
-  `inbounds` and `nuw`/`nsw`. The current compiler emits none of these;
-  implement as its own step with a before/after benchmark.
+- **Handing checker facts to the backend.** Emitted since the v0.60 port:
+  `noalias` (not on `swap`), `nonnull`, `dereferenceable`,
+  `captures(none)` or `nocapture` by a build-time probe, `inbounds`, and
+  `nuw`/`nsw` on the exact family. Not emitted: `memory(argmem: ...)` (the
+  IR carries neither the declared row nor the allocation fact), scoped
+  alias metadata and `llvm.loop.parallel_accesses` (the emitter has no
+  metadata table). Build the metadata subsystem as its own step with a
+  before/after benchmark.
+- **Exact sum contracts for `append` and `split_off`.** Their rows publish
+  only `source.len == 0` (or `== index`) and
+  `destination.len >= entry(destination).len`, because a contract side
+  admits one datum and the exact sum needs two. A caller that needs the
+  exact length reads `destination.len` after the call. Revisit with the
+  contract-fact widening item above.
+- **Subscripted integer places as terms.** Today a place with subscripts is
+  a term only when its last step is a readonly field. The kill machinery
+  (offset support, overlapping element writes) already serves measure terms
+  and whole-expression goals, so generalizing to every integer place is
+  cheap in mechanism; measure its effect on closure size and checking time
+  first.
+- **Vocabulary no declaration can state.** The `len` of a range reference
+  (`&[T]` is a kind, not a type) and the four effect-row part names `next`,
+  `last`, `filled`, `free` remain specification vocabulary after the
+  measures became declared readonly fields. Find a better home for them.
+- **The storage shape declarations are inelegant.** `Array`, `Slots` and
+  `Ring` are prelude opaque structs with readonly fields, but the
+  omitted-capacity form, element storage and placement still live in the
+  type rules, and a constant-capacity `cap` is a field whose value is a
+  type constant.
+- **Generic linearity bound spelling.** `T: linear` accepts every class and
+  `T: copy` only copy types; the bound names how the body treats `T`, which
+  reads backwards. The current spelling never had an explicit owner ruling;
+  find one that reads in the intuitive direction.
 - **Performance floor after the port.** Re-measure the existing kernels and
   the eight engineering tasks of the matrix rounds once the compiler
   implements v0.60, so that the recorded costs (data-determined index
