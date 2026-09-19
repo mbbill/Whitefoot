@@ -337,7 +337,7 @@ fn walk(factory: &HandleFactory, dir: &DirectoryRead, prefix: &[u8], prefix_leng
                 if record_fits {
                   for @record (
                     slot in 0_u64..128_u64,
-                    invariant filled: deref(records).len == start + slot,
+                    invariant filled_so_far: deref(records).len == start + slot,
                     invariant fits: start <= 8064_u64
                   ) {
                     let byte = 0_u8;

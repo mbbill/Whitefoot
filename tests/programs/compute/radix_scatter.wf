@@ -137,7 +137,7 @@ fn radix_scatter(input: &[u64], bit: own u32) -> result: own Box<Array<u64>> rea
   let chunks = box_slots_new::<Option<Chunk>>(capacity: blocks);
   for (
     index in 0_u64..blocks,
-    invariant filled: chunks.inner.len >= index,
+    invariant filled_so_far: chunks.inner.len >= index,
     invariant bounded: chunks.inner.len <= index,
     invariant spare: chunks.inner.room + index >= blocks
   ) {

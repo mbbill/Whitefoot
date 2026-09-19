@@ -48,7 +48,7 @@ fn growth_trace(seed: own u8, initial: own u64, count: own u64, limit: own u64) 
   let state = seed;
   for (
     index in 0_u64..initial,
-    invariant filled: original.inner.len >= index,
+    invariant filled_so_far: original.inner.len >= index,
     invariant bound: original.inner.len <= index,
     invariant spare: original.inner.room + index >= initial
   ) {
@@ -65,7 +65,7 @@ fn growth_trace(seed: own u8, initial: own u64, count: own u64, limit: own u64) 
   let grown = box_slots_new::<u8>(capacity: count);
   for (
     index in 0_u64..initial,
-    invariant filled: grown.inner.len >= index,
+    invariant filled_so_far: grown.inner.len >= index,
     invariant bound: grown.inner.len <= index,
     invariant spare: grown.inner.room + index >= count
   ) {
@@ -75,7 +75,7 @@ fn growth_trace(seed: own u8, initial: own u64, count: own u64, limit: own u64) 
   release_run(run: move original);
   for (
     index in initial..count,
-    invariant filled: grown.inner.len >= index,
+    invariant filled_so_far: grown.inner.len >= index,
     invariant bound: grown.inner.len <= index,
     invariant spare: grown.inner.room + index >= count
   ) {
