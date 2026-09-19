@@ -75,21 +75,27 @@ of them is a decision. Remove an item when its fix and test land.
   unmeasured; these results establish neither linear total cost nor a
   universal cost for the full use ceiling.
   Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
-- **Pre-kill L0 closure has an unresolved compilation cost.** Before an
-  [ENT-5] invalidation batch, `materialize_before_event_kill` in
-  [`semantic/entailment/flow.rs`](../compiler/src/semantic/entailment/flow.rs)
-  calls `materialize_closure_before_kill` in
-  [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs).
-  A non-closed state with explicit relations takes the complete closure;
-  already-closed, contradictory, and empty-relation states have fast paths.
-  The [build/test investigation](../research/investigations/test-economy/build-and-test.md#a-compiler-hotspot-not-native-execution)
-  measures 58.29 s for one optimized read-heavy LLVM-only compilation; a
-  three-second semantic-checking sample puts 61.2% of leaf samples in
-  `close_with_excluded_term`. Whole-run attribution and a controlled algorithm
-  comparison remain necessary. A narrower projection must preserve every
-  surviving consequence,
-  including implicit type edges and disequality strengthening; filtering
-  explicit edges alone is insufficient. No speedup is established.
+- **S12 holder kills are too broad at sibling-field writes.**
+  [The conformance case](../tests/conformance/cases/ent5-pos-postcondition-sibling-field-write.wf)
+  expects acceptance under ENT-5: `observed == deref(pair).left` has the same
+  support after a verified postcondition as after an ordinary read, and
+  writing `deref(pair).right` kills neither conclusion. Both `3f205ff6` and
+  the incremental-closure follow-up reject the postcondition route at FN-8
+  while accepting the ordinary twin. `s12_candidate_term_killed` checks each
+  holder's whole root against the write rather than its precise support.
+  The manifest retains the normative accept verdict as an `xfail`; repair
+  the holder-support classification and remove that status together.
+- **Ordinary-fallback views still copy a fact state per materialization.**
+  After [incremental closure](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#selection),
+  the [retained-proof follow-up](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#retained-proof-follow-up-results)
+  checks `tests/programs/fixed_run_library.wf` in 1.21 s and
+  `tests/programs/wfgrep.wf` in 0.94 s. The previously attributed largest
+  fixed-run cost is `materialize_closure_at` in
+  [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs):
+  whenever a selected proof depends on a postcondition call, it clones the
+  state, removes the call-dependent candidates and closes that view again.
+  Kill-time edge insertion and derivation interning for recreated cells are
+  the next costs.
 - **Connection-level concurrency is not supplied by ordinary source order.**
   A loop that accepts and serves connections in source order
   completes the current handler before entering the next, so a handler waiting

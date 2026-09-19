@@ -28,7 +28,7 @@ use crate::{
 use super::entailment::{
     CallGoalDisposition, EntailmentCallee, EntailmentContext, PostconditionSchedule,
     VerifiedPostconditionSummary, analyze_function, analyze_function_candidate,
-    finalize_function_entailment, postcondition_schedule,
+    collect_statement_calls, finalize_function_entailment, postcondition_schedule,
 };
 use super::goal::{
     CheckedCallRequirement, CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression,
@@ -1249,8 +1249,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
         });
 
-        let postcondition_schedule =
-            self.analyze_function_inventory(&mut function_inventory, &callees, optimistic_batch)?;
+        let postcondition_schedule = self.analyze_function_inventory(
+            &mut function_inventory,
+            &callees,
+            optimistic_batch,
+            None,
+        )?;
         let baseline_functions = function_inventory
             .iter()
             .map(|checked| &checked.function)
@@ -1975,10 +1979,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     checked.function.body.as_deref().unwrap_or_default(),
                 )
         });
-        self.analyze_function_inventory(functions, callees, optimistic_batch)?;
+        // Only the canonical instances are judged below, and a judged body
+        // reads another function's analysis solely through the postcondition
+        // summaries of its callees. The other bodies of this scratch
+        // inventory — every nongeneric function among them — are analyzed
+        // again by the concrete phase, so analyzing them here would repeat
+        // that whole cost for a result nothing reads.
+        let analyzed = Self::generic_validation_scope(functions, canonical)?;
+        self.analyze_function_inventory(functions, callees, optimistic_batch, Some(&analyzed))?;
         if optimistic_batch {
-            for checked in functions.iter_mut() {
-                finalize_function_entailment(&mut checked.function.entailment);
+            for (checked, analyzed) in functions.iter_mut().zip(&analyzed) {
+                if *analyzed {
+                    finalize_function_entailment(&mut checked.function.entailment);
+                }
             }
         }
         if !self.reject_entailment {
@@ -1993,19 +2006,62 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(())
     }
+    /// The functions whose bodies symbolic validation must analyze: the
+    /// canonical instances and everything their calls reach, by the same
+    /// call-graph shape the postcondition schedule is built from.
+    ///
+    /// The set is closed under callees, so a strongly connected component is
+    /// either wholly inside it or wholly outside, and every summary an
+    /// analyzed body can consume is published by an analyzed component.
+    fn generic_validation_scope(
+        functions: &[CheckedFunctionInventory],
+        canonical: &[(usize, DeclarationId)],
+    ) -> Result<Vec<bool>, CheckStop> {
+        let mut analyzed = vec![false; functions.len()];
+        let mut pending = canonical
+            .iter()
+            .map(|(index, _)| *index)
+            .collect::<Vec<_>>();
+        let mut calls = Vec::new();
+        while let Some(index) = pending.pop() {
+            let slot = analyzed
+                .get_mut(index)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            if std::mem::replace(slot, true) {
+                continue;
+            }
+            let function = &functions[index].function;
+            calls.clear();
+            collect_statement_calls(
+                function.id,
+                function.body.as_deref().unwrap_or_default(),
+                &mut calls,
+            );
+            pending.extend(calls.iter().map(|call| call.callee.0 as usize));
+        }
+        Ok(analyzed)
+    }
+
+    /// Analyzes every function of the inventory, or only those `analyzed`
+    /// marks. A caller that restricts the set must close it under callees.
     fn analyze_function_inventory(
         &self,
         functions: &mut [CheckedFunctionInventory],
         callees: &[EntailmentCallee],
         optimistic_batch: bool,
+        analyzed: Option<&[bool]>,
     ) -> Result<PostconditionSchedule, CheckStop> {
+        let selected = |index: usize| analyzed.is_none_or(|analyzed| analyzed[index]);
         // ENT is the single acceptance-bearing proof path for ordinary
         // obligations, call requirements, invariants and postconditions.
         let mut schedule =
             postcondition_schedule(functions.iter().map(|checked| &checked.function))
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if schedule.components.is_empty() {
-            for checked in functions.iter_mut() {
+            for (index, checked) in functions.iter_mut().enumerate() {
+                if !selected(index) {
+                    continue;
+                }
                 let context = EntailmentContext {
                     callees,
                     constants: &self.checked_constants,
@@ -2024,6 +2080,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         } else {
             for component in &mut schedule.components {
+                // Callee closure keeps components whole: skipping one skips
+                // both its analysis and the summaries no analyzed body reads.
+                if !component
+                    .functions
+                    .iter()
+                    .any(|function| selected(function.0 as usize))
+                {
+                    continue;
+                }
                 for function in &component.functions {
                     let function_index = function.0 as usize;
                     let verified_postconditions = functions

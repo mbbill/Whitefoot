@@ -18,9 +18,9 @@ mod sources;
 
 use super::super::postcondition::PostconditionPlace;
 use sources::{MeasureCarry, ValueImage};
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use super::super::goal::{
     CheckedRequirement, ConcreteGoal, EvaluatedValueOccurrence, GoalDatum, GoalExpression,
@@ -56,9 +56,9 @@ use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
-    PostconditionCallSubstitution, Relation, SourceAffineFactRef, SourceLoopInvariantRef, close,
-    close_excluding_term, contradiction_without_proofs, join_at, materialize_closure_at,
-    materialize_closure_before_kill,
+    PostconditionCallSubstitution, Relation, SourceAffineFactRef, SourceLoopInvariantRef,
+    WordHashMap, close, close_excluding_term, closure_is_seeded, contradiction_without_proofs,
+    join_at, materialize_closure_at, materialize_closure_before_kill,
 };
 use super::term::{
     CallDatumProjection, CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceProjection,
@@ -217,11 +217,11 @@ struct ProofFlowState {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct AffineFlowState {
-    values: HashMap<BindingId, AffineForm>,
+    values: WordHashMap<BindingId, AffineForm>,
     /// Current measure images belong to this control-flow edge. Queries mint
     /// images lazily, but cloning a predecessor isolates its later kills.
-    measure_atoms: RefCell<HashMap<TermId, AffineForm>>,
-    ranges: HashMap<RangeId, CapturedRange>,
+    measure_atoms: RefCell<WordHashMap<TermId, AffineForm>>,
+    ranges: WordHashMap<RangeId, CapturedRange>,
     /// One atom standing for the whole value of a binding whose image is not
     /// already a single atom, minted on first demand.
     ///
@@ -234,7 +234,7 @@ struct AffineFlowState {
     /// the transparent reading available to everything else. Keyed and killed
     /// exactly as `values` is, so a write mints a fresh handle for a fresh
     /// value.
-    opaque_values: HashMap<BindingId, AffineForm>,
+    opaque_values: WordHashMap<BindingId, AffineForm>,
     /// Every published affine conclusion at this control-flow point. Fact
     /// identity is only the canonical inequality over immutable value images;
     /// evidence is retained solely to explain a selected derivation.
@@ -282,21 +282,24 @@ impl<'a> ProofContext<'a> {
         terms: &TermTable,
         goals: &GoalTable,
         ledger: &mut DerivationLedger,
-    ) -> Cow<'a, ClosedState> {
+    ) -> Rc<ClosedState> {
         if let Some(closed) = self.closed.filter(|closed| closed.matches(terms, goals)) {
-            Cow::Borrowed(&closed.state)
+            Rc::clone(&closed.state)
         } else {
-            Cow::Owned(close(self.facts, terms, goals, ledger))
+            close(self.facts, terms, goals, ledger)
         }
     }
 }
 
 /// A query-only view of one immutable entering fact state. It never becomes
-/// live facts or escapes the premise loop that owns that state borrow.
+/// live facts or escapes the premise loop that owns that state borrow. The
+/// fact state's remembered view would also serve the loop's repeated
+/// closures; this explicit view keeps the premise loop's reuse independent of
+/// how that memo is keyed.
 struct ProofClosure {
     term_revision: usize,
     goal_revision: usize,
-    state: ClosedState,
+    state: Rc<ClosedState>,
 }
 
 impl ProofClosure {
@@ -546,8 +549,8 @@ struct AffineDirectQuery<'a> {
     l0: &'a AffineL0Index,
     values: &'a AffineFlowState,
     closed: &'a ClosedState,
-    intervals: HashMap<AffineTermId, AffineAtomInterval>,
-    measures: Option<HashMap<AffineTermId, Vec<TermId>>>,
+    intervals: WordHashMap<AffineTermId, AffineAtomInterval>,
+    measures: Option<WordHashMap<AffineTermId, Vec<TermId>>>,
 }
 
 impl<'a> AffineDirectQuery<'a> {
@@ -556,7 +559,7 @@ impl<'a> AffineDirectQuery<'a> {
             l0,
             values,
             closed,
-            intervals: HashMap::new(),
+            intervals: WordHashMap::default(),
             measures: None,
         }
     }
@@ -983,7 +986,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         encountered_counted: 0,
         completed_counted_roots: 0,
         s12_roots: 0,
-        delivery_give_roots: 0,
+        delivery_give_roots: HashSet::new(),
         delivery_join_roots: 0,
         scopes: Vec::new(),
         loops: Vec::new(),
@@ -1280,7 +1283,7 @@ struct Analyzer<'check, 'unit> {
     encountered_counted: u32,
     completed_counted_roots: u32,
     s12_roots: u32,
-    delivery_give_roots: u32,
+    delivery_give_roots: HashSet<DerivationId>,
     delivery_join_roots: u32,
     /// Lexical scope stack: the bindings declared in each open block.
     scopes: Vec<Vec<BindingId>>,
@@ -2480,6 +2483,9 @@ impl Analyzer<'_, '_> {
     }
 
     fn kill_s12_candidates_for_event(&self, state: &mut FactState, event: &KillEvent) {
+        if !state.may_hold_postcondition_candidates() {
+            return;
+        }
         state.kill_proof_candidates(&self.derivations, |left, right, proof| {
             self.derivations.depends_on_postcondition_call(proof)
                 && (self.s12_candidate_term_killed(left, event)
@@ -2488,6 +2494,9 @@ impl Analyzer<'_, '_> {
     }
 
     fn kill_s12_candidates_for_scope(&self, state: &mut FactState, exited: &HashSet<BindingId>) {
+        if !state.may_hold_postcondition_candidates() {
+            return;
+        }
         state.kill_proof_candidates(&self.derivations, |left, right, proof| {
             self.derivations.depends_on_postcondition_call(proof)
                 && (self.s12_candidate_scope_kills_term(left, exited)
@@ -4091,7 +4100,7 @@ impl Analyzer<'_, '_> {
 
     /// Whether a kill event kills a fact supported by `term` [ENT-5].
     fn event_kills_term(&self, term: TermId, event: &KillEvent) -> bool {
-        match self.terms.kind(term).clone() {
+        match self.terms.kind(term) {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
             // Counted captures and commit values are immutable. A counted
             // capture dies with its construct-scope exit, handled separately
@@ -4105,7 +4114,7 @@ impl Analyzer<'_, '_> {
             TermKind::Place(place, _) => match event {
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
-                    self.places.overlaps(&self.resolve(&place), written)
+                    self.places.overlaps(&self.resolve(place), written)
                 }
                 KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
                 KillEvent::EntryImageHolderConsume { .. } => false,
@@ -4114,7 +4123,7 @@ impl Analyzer<'_, '_> {
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => self
                     .places
-                    .overlaps(&self.resolve_projected(&place), written),
+                    .overlaps(&self.resolve_projected(place), written),
                 KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
                 KillEvent::EntryImageHolderConsume { .. } => false,
             },
@@ -4122,12 +4131,12 @@ impl Analyzer<'_, '_> {
             // storage, which is the resolved place of P itself and not of
             // P's root: a write to a sibling field of P overlaps neither.
             TermKind::Measure(_, place) => {
-                let support = self.resolve(&place);
+                let support = self.resolve(place);
                 self.event_kills_measure(&support, place.root, event)
                     || Self::event_kills_offset_support(&support, event)
             }
             TermKind::ProjectedMeasure(_, place) => {
-                let support = self.resolve_projected(&place);
+                let support = self.resolve_projected(place);
                 self.event_kills_measure(&support, place.root, event)
                     || Self::event_kills_offset_support(&support, event)
             }
@@ -4318,12 +4327,20 @@ impl Analyzer<'_, '_> {
     /// before every kill entry so a write cannot erase one premise and make
     /// an unreachable point reachable again.
     fn promote_contradiction(&mut self, state: &mut FactState) {
-        if !state.all_derivable && contradiction_without_proofs(state, &self.terms, &self.goals) {
-            let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
-            if closed.contradictory() {
-                state.all_derivable = true;
-                state.contradiction = closed.contradiction_proof();
-            }
+        if state.all_derivable {
+            return;
+        }
+        // A seeded closure costs about what the proof-free probe does over a
+        // closed core and answers the same question directly; the probe stays
+        // the cheaper test for a state with no closed part.
+        if !closure_is_seeded(state)
+            && !contradiction_without_proofs(state, &self.terms, &self.goals)
+        {
+            return;
+        }
+        let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
+        if closed.contradictory() {
+            state.promote_to_contradiction(closed.contradiction_proof());
         }
     }
 
@@ -10746,7 +10763,7 @@ impl Analyzer<'_, '_> {
         };
         let mut bindings = first.affine.values.keys().copied().collect::<Vec<_>>();
         bindings.sort_by_key(|binding| binding.0);
-        let mut values = HashMap::new();
+        let mut values = WordHashMap::default();
         for binding in bindings {
             let Some(first_value) = first.affine.values.get(&binding) else {
                 continue;
@@ -10820,7 +10837,7 @@ impl Analyzer<'_, '_> {
         // An opaque handle is a convenience for one certificate, not a fact,
         // so a join keeps none: the next demand re-mints against whatever the
         // joined image is.
-        let opaque_values: HashMap<BindingId, AffineForm> = HashMap::new();
+        let opaque_values = WordHashMap::default();
 
         // A measure keeps its current image only when every predecessor
         // carries that exact image. Otherwise a later query mints a fresh
@@ -11034,11 +11051,13 @@ impl Analyzer<'_, '_> {
             ) {
                 continue;
             }
-            let occurrence = self.delivery_give_roots;
-            self.delivery_give_roots = self
-                .delivery_give_roots
-                .checked_add(1)
+            let occurrence = u32::try_from(self.delivery_give_roots.len())
                 .expect("value-if give roots exceed the u32 identity space");
+            // A full and an ordinary delivery join can share an edge parent.
+            // The ledger retains one required root per Give node.
+            if !self.delivery_give_roots.insert(parent.parent) {
+                continue;
+            }
             self.derivations.add_root(
                 DerivationRootKind::PostconditionGive { occurrence },
                 parent.parent,
@@ -11084,8 +11103,22 @@ impl Analyzer<'_, '_> {
             receiver,
             event,
         };
+        let mut delivered = self.delivery_edge_state(facts, &edge);
+        if delivered.may_hold_postcondition_candidates() {
+            let mut ordinary = source.facts.clone();
+            ordinary.retain_non_postcondition_candidates(&self.derivations);
+            let ordinary = close_excluding_term(
+                &ordinary,
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+                receiver,
+            );
+            let fallback = self.delivery_edge_state(ordinary, &edge);
+            delivered.merge_relation_candidates_from(&fallback, &self.derivations);
+        }
         let mut image = ProofFlowState {
-            facts: self.delivery_edge_state(facts, &edge),
+            facts: delivered,
             entry_images: Vec::new(),
             // Delivery-image construction currently exists only to retain
             // postcondition relations.  Withholding an affine image is
@@ -11106,6 +11139,30 @@ impl Analyzer<'_, '_> {
         context: &DeliveryJoinContext<'_>,
         target: &mut FactState,
     ) {
+        self.establish_delivery_join_once(images, context, target, false);
+        if !images
+            .iter()
+            .any(FactState::may_hold_postcondition_candidates)
+        {
+            return;
+        }
+        // Substitution preserves both proof layers. The join must do so too:
+        // selecting only the strongest edge proof here would lose an ordinary
+        // fallback when a later holder event removes call-dependent proofs.
+        let mut ordinary = images.to_vec();
+        for image in &mut ordinary {
+            image.retain_non_postcondition_candidates(&self.derivations);
+        }
+        self.establish_delivery_join_once(&ordinary, context, target, true);
+    }
+
+    fn establish_delivery_join_once(
+        &mut self,
+        images: &[FactState],
+        context: &DeliveryJoinContext<'_>,
+        target: &mut FactState,
+        ordinary_only: bool,
+    ) {
         assert!(images.iter().all(|image| {
             image.all_derivable
                 || image.live_l0_relations().iter().all(|(_, proof)| {
@@ -11124,19 +11181,35 @@ impl Analyzer<'_, '_> {
             return;
         };
         let first = &images[first_index];
-        let mut bound_pairs = first.bounds.keys().copied().collect::<Vec<_>>();
-        bound_pairs.sort_unstable();
-        for pair in bound_pairs {
+        let bound_pairs = first
+            .bounds
+            .cells()
+            .map(|(left, right, bound, _)| ((left, right), bound))
+            .collect::<Vec<_>>();
+        for (pair, first_bound) in bound_pairs {
             if pair.0 != context.receiver && pair.1 != context.receiver {
                 continue;
             }
-            let mut weakest = first.bounds[&pair];
+            let mut weakest = first_bound;
             if !rest.iter().all(|index| {
-                images[*index].bounds.get(&pair).is_some_and(|bound| {
-                    weakest = weakest.max(*bound);
-                    true
-                })
+                images[*index]
+                    .bounds
+                    .get(pair.0, pair.1)
+                    .is_some_and(|(bound, _)| {
+                        weakest = weakest.max(bound);
+                        true
+                    })
             }) {
+                continue;
+            }
+            if ordinary_only
+                && target
+                    .bounds
+                    .get(pair.0, pair.1)
+                    .is_some_and(|(bound, proof)| {
+                        bound <= weakest && !self.derivations.depends_on_postcondition_call(proof)
+                    })
+            {
                 continue;
             }
             let parents = images
@@ -11150,7 +11223,11 @@ impl Analyzer<'_, '_> {
                             .contradiction
                             .expect("contradictory delivery image has one proof")
                     } else {
-                        image.bound_proofs[&pair]
+                        image
+                            .bounds
+                            .get(pair.0, pair.1)
+                            .map(|(_, proof)| proof)
+                            .expect("every contributing delivery image holds the pair")
                     },
                 })
                 .collect::<Vec<_>>();
@@ -11196,6 +11273,14 @@ impl Analyzer<'_, '_> {
                 || !rest
                     .iter()
                     .all(|index| images[*index].distinct.contains(&pair))
+            {
+                continue;
+            }
+            if ordinary_only
+                && target
+                    .distinct_proofs
+                    .get(&pair)
+                    .is_some_and(|proof| !self.derivations.depends_on_postcondition_call(*proof))
             {
                 continue;
             }
@@ -12660,8 +12745,8 @@ impl Analyzer<'_, '_> {
     fn measure_terms_by_atom(
         &mut self,
         state: &AffineFlowState,
-    ) -> HashMap<AffineTermId, Vec<TermId>> {
-        let mut grouped: HashMap<AffineTermId, Vec<TermId>> = HashMap::new();
+    ) -> WordHashMap<AffineTermId, Vec<TermId>> {
+        let mut grouped: WordHashMap<AffineTermId, Vec<TermId>> = WordHashMap::default();
         for term in self.measure_terms() {
             if let Some(atom) = self.measure_atom(term, state).unit_term() {
                 grouped.entry(atom).or_default().push(term);
@@ -16183,8 +16268,7 @@ mod proof_closure_tests {
         };
         for _ in 0..3 {
             let view = context.close(&terms, &goals, &mut ledger);
-            assert!(matches!(view, Cow::Borrowed(_)));
-            assert!(std::ptr::eq(view.as_ref(), &closed.state));
+            assert!(Rc::ptr_eq(&view, &closed.state));
             assert!(view.derives_bound(ZERO, ZERO, 0));
         }
     }
@@ -16210,9 +16294,9 @@ mod proof_closure_tests {
             affine: &affine,
             closed: Some(&closed),
         };
-        assert!(matches!(
-            context.close(&terms, &goals, &mut ledger),
-            Cow::Owned(_)
+        assert!(!Rc::ptr_eq(
+            &context.close(&terms, &goals, &mut ledger),
+            &closed.state
         ));
 
         let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
@@ -16225,7 +16309,7 @@ mod proof_closure_tests {
             closed: Some(&closed),
         };
         let view = context.close(&terms, &goals, &mut ledger);
-        assert!(matches!(view, Cow::Owned(_)));
+        assert!(!Rc::ptr_eq(&view, &closed.state));
         assert!(view.derives_bound(term, ZERO, 7));
         assert!(view.derives_bound(ZERO, term, -7));
     }
@@ -16258,9 +16342,9 @@ mod proof_closure_tests {
             affine: &affine,
             closed: Some(&closed),
         };
-        assert!(matches!(
-            context.close(&terms, &goals, &mut ledger),
-            Cow::Owned(_)
+        assert!(!Rc::ptr_eq(
+            &context.close(&terms, &goals, &mut ledger),
+            &closed.state
         ));
     }
 }

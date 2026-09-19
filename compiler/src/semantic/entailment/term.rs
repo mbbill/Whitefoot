@@ -12,10 +12,9 @@
 //! [OWN-7] overlap relation over resolved places instead, which
 //! over-approximates it [ENT-5].
 
-use std::collections::HashMap;
-
 use super::super::model::{CheckedMeasure, IntegerType};
 pub(crate) use super::super::places::{PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm};
+use super::state::WordHashMap;
 use crate::DeclarationId;
 
 /// Which once-captured endpoint one private counted-range term denotes.
@@ -179,8 +178,8 @@ pub(crate) const ZERO: TermId = TermId(0);
 /// unregistered term.
 pub(crate) struct TermTable {
     terms: Vec<TermKind>,
-    ids: HashMap<TermKind, TermId>,
-    measure_bounds: HashMap<TermId, MeasureBound>,
+    ids: WordHashMap<TermKind, TermId>,
+    measure_bounds: WordHashMap<TermId, MeasureBound>,
     revision: usize,
 }
 
@@ -188,8 +187,8 @@ impl TermTable {
     pub(crate) fn new() -> Self {
         let mut table = Self {
             terms: Vec::new(),
-            ids: HashMap::new(),
-            measure_bounds: HashMap::new(),
+            ids: WordHashMap::default(),
+            measure_bounds: WordHashMap::default(),
             revision: 0,
         };
         let zero = table.intern(TermKind::Zero);

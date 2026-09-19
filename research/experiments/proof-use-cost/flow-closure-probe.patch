@@ -1,0 +1,108 @@
+diff --git a/compiler/src/semantic/entailment/state.rs b/compiler/src/semantic/entailment/state.rs
+index 79642fd0..a35390ec 100644
+--- a/compiler/src/semantic/entailment/state.rs
++++ b/compiler/src/semantic/entailment/state.rs
+@@ -3370,6 +3370,23 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool>(
+     ledger: &mut DerivationLedger,
+     excluded: Option<TermId>,
+ ) -> ClosedState {
++    let __t0 = std::time::Instant::now();
++    let __fp = {
++        use std::hash::{Hash, Hasher};
++        let mut h = std::hash::DefaultHasher::new();
++        let mut b: Vec<_> = state.bounds.iter().map(|(k, v)| (k.0 .0, k.1 .0, *v, state.bound_proofs[k].0)).collect();
++        b.sort_unstable();
++        b.hash(&mut h);
++        let mut d: Vec<_> = state.distinct_proofs.iter().map(|(k, v)| (k.0 .0, k.1 .0, v.0)).collect();
++        d.sort_unstable();
++        d.hash(&mut h);
++        let mut o: Vec<_> = state.opaque_proofs.iter().map(|(k, v)| (k.0 .0, matches!(k.1, GoalSign::Positive), v.0)).collect();
++        o.sort_unstable();
++        o.hash(&mut h);
++        (state.all_derivable, state.contradiction.map(|c| c.0), excluded.map(|e| e.0), terms.ids().count(), goals.revision()).hash(&mut h);
++        h.finish()
++    };
++    let __in_bounds = state.bounds.len();
+     if state.all_derivable {
+         return ClosedState {
+             all_derivable: true,
+@@ -3407,6 +3424,8 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool>(
+         }
+         return close_goal_contradictions(closed, goals, ledger);
+     }
++    let (mut __mid, mut __midwork, mut __lefts, mut __rows, mut __freshrows, mut __visits, mut __freshv, mut __cands, mut __rounds) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
++    let __tl = std::time::Instant::now();
+     let mut distinct = state.distinct.clone();
+     let mut distinct_proofs = state.distinct_proofs.clone();
+     // The dense matrix is the only live bound index while the fixed point
+@@ -3456,7 +3475,10 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool>(
+     // and subsumption (3). The rules are monotone over finitely many ordered
+     // pairs, so iteration terminates; strengthening only lowers a bound to
+     // -1, so the outer loop runs at most a handful of rounds.
++    let __tloop = std::time::Instant::now();
++    let __tprep = __tl.elapsed().as_micros();
+     loop {
++        __rounds += 1;
+         dense_bounds.begin_round();
+         let mut changed = false;
+         for middle in ids.iter().filter(|id| active_middles.contains(**id)) {
+@@ -3486,6 +3508,7 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool>(
+             // former order, so the accepted sequence is unchanged. When no
+             // incident cell of `middle` is fresh, none of its triples can
+             // become fresh either, because the block changes nothing.
++            __mid += 1;
+             if !incoming
+                 .iter()
+                 .any(|left| dense_bounds.fresh(*left, *middle))
+@@ -3495,7 +3518,9 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool>(
+             {
+                 continue;
+             }
++            __midwork += 1;
+             for left in incoming {
++                __lefts += 1;
+                 let (first, first_proof) = dense_bounds
+                     .get(left, *middle)
+                     .expect("incoming closure key collected above");
+@@ -3513,10 +3538,14 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool>(
+                 {
+                     continue;
+                 }
++                __rows += 1;
++                if dense_bounds.fresh(left, *middle) { __freshrows += 1; }
+                 for right in &outgoing {
++                    __visits += 1;
+                     if !dense_bounds.fresh(left, *middle) && !dense_bounds.fresh(*middle, *right) {
+                         continue;
+                     }
++                    __freshv += 1;
+                     let (second, second_proof) = dense_bounds
+                         .get(*middle, *right)
+                         .expect("outgoing closure key collected above");
+@@ -3535,6 +3564,7 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool>(
+                             }
+                         }
+                     }
++                    __cands += 1;
+                     let node = DerivationNode::TransitiveBound {
+                         left,
+                         middle: *middle,
+@@ -3618,6 +3648,7 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool>(
+             break;
+         }
+     }
++    let __tfix = __tloop.elapsed().as_micros();
+     let mut contradiction = None;
+     for id in &ids {
+         if let Some((bound, parent)) = dense_bounds.get(*id, *id) {
+@@ -3631,6 +3662,10 @@ fn close_with_row_pruning<const PRUNE_ROWS: bool>(
+         }
+     }
+     let (bounds, bound_proofs) = dense_bounds.into_maps();
++    let __el = __t0.elapsed().as_micros();
++    let __bt = std::backtrace::Backtrace::force_capture().to_string();
++    let __callers: Vec<&str> = __bt.lines().filter(|l| l.contains("whitefoot::semantic") && !l.contains("close_with")).map(|l| l.trim()).take(3).collect();
++    eprintln!("CLOSE\t{}\t{}\t{}\t{:x}\t{}\t{}\t{} {} {} {} {} {} {} {} {} prep={} fix={}", term_count, __in_bounds, bounds.len(), __fp, __el, __callers.join(" < "), __rounds, __mid, __midwork, __lefts, __rows, __freshrows, __visits, __freshv, __cands, __tprep, __tfix);
+     let closed = ClosedState {
+         all_derivable: contradiction.is_some(),
+         contradiction,
