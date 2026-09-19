@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-19 Variant payload overlap and early release without a block
+
+Nodes: language/ownership, language/ownership/no-stored-references, language/ownership/linearity, language/generics
+
+Owner-approved: The owner ruled in the PR #70 conversation that two payload paths through different variants of one enum overlap while two fields of one variant are disjoint, that no block statement or release operation exists (an affine value is released early by moving it into a consuming function), and that the kernel has no tuples, so the word is removed from the adopted nodes.
+
+Summary: Refine the overlap decision of language/ownership for enum payloads and drop the tuple mentions carried over from the candidate text.
+
 ## 2026-09-19 Adopt candidate x1: references as names, storage as windows
 
 Nodes: language/checks-and-proofs, language/ownership/multi-target-commit, language/contracts, language/data-model, language/data-model/kernel-minimality, language/data-model/storage-shapes, language/effects, language/effects/call-site-check, language/generics, language/ownership, language/ownership/affine-replacement, language/ownership/copy-classification, language/ownership/exchange, language/ownership/linearity, language/ownership/no-reborrow, language/ownership/no-stored-references, language/ownership/pools-and-arenas, language/ownership/range-reference, language/ownership/reference-rebinding, language/ownership/reference-validity, language/ownership/region-elision, language/ownership/slice-result-provenance, language/parallelism, language/parallelism/loop-permission, language/parallelism/permission-judgment, language/surface-form/borrow-lexicon, language/surface-form/construction-form, language/surface-form/in-place-update-form, language/surface-form/measure-spelling, language/system-interface, language/system-interface/directory-enumeration, language/system-interface/handle-factory
