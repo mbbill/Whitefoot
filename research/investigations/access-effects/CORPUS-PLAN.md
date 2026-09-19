@@ -1,6 +1,6 @@
 # Conformance corpus classification: kernel specification v0.59 -> v0.60 (candidate x1)
 
-Inputs read: `/private/tmp/whitefoot-spec-x1/tests/conformance/runner.py`, `/private/tmp/whitefoot-spec-x1/tests/conformance/manifest.jsonl` (1133 case rows + 16 `covered_by` annotations), the 1133 sources under `/private/tmp/whitefoot-spec-x1/tests/conformance/cases/`, `/private/tmp/whitefoot-spec-x1/spec/kernel-spec.md` (v0.60), `/private/tmp/whitefoot-spec-x1/spec/kernel-spec-v0.59.md`, and `/Users/mbbill/.claude/jobs/9f21dee6/tmp/spec-edit/TAG-LEDGER.md`.
+Inputs read: `/private/tmp/whitefoot-spec-x1/tests/conformance/runner.py`, `/private/tmp/whitefoot-spec-x1/tests/conformance/manifest.jsonl` (1133 case rows + 16 `covered_by` annotations), the 1133 sources under `/private/tmp/whitefoot-spec-x1/tests/conformance/cases/`, `/private/tmp/whitefoot-spec-x1/spec/kernel-spec.md` (v0.60), `/private/tmp/whitefoot-spec-x1/spec/kernel-spec-v0.59.md`, and `<session scratch>`.
 
 ## What the manifest requires
 
