@@ -20,14 +20,18 @@ of them is a decision. Remove an item when its fix and test land.
   images, which extends [ENT-6]'s automatic premise sequence, or whether the
   translation belongs in the fact establishment itself.
 
-- **A runtime-capacity construction submits no allocation-size obligation.**
-  [OP-9] states that the arithmetic computing an allocation size carries the
-  static overflow obligation, and [OP-13] attaches it to each runtime-capacity
-  construction. The checker submits no such goal, so
-  `box_slots_new::<i32>(capacity: n)` with an unconstrained `n` is accepted
-  ([`op9-neg-kernel-acquisition-without-a-fit-proof`](../tests/conformance/cases/op9-neg-kernel-acquisition-without-a-fit-proof.wf),
-  [`op13-neg-runtime-capacity-size-obligation`](../tests/conformance/cases/op13-neg-runtime-capacity-size-obligation.wf),
-  [`v033-neg-allocation-fit-unproved`](../tests/conformance/cases/v033-neg-allocation-fit-unproved.wf)).
+- **An accepted [OP-9] site's proved count ceiling does not reach the
+  allocation it authorizes.** The obligation is now submitted and refused at
+  each runtime-capacity construction and at `grow`, but the numeric ceiling
+  the discharge retains is not carried into the compiler-owned row whose
+  lowered body performs the allocation: that row is out of line and one
+  instance's body serves every call site. Target qualification therefore keeps
+  the `has_call_site_bound` gate at
+  [`backend/target.rs`](../compiler/src/backend/target.rs), comparing the byte
+  ceiling only where the retained bound is the allocation site's own, and a
+  proved 5e18-element `u16` construction is still lowered instead of being
+  reported unrepresentable. Either the weakest ceiling over an instance's call
+  sites must reach the row, or the row must be specialized per site.
 
 - **A field projected after dereferencing a runtime-indexed composite element
   stops as unsupported.** The specification admits ordinary chained element,

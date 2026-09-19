@@ -150,8 +150,12 @@ fn main() -> status: own ExitStatus pure {
             .iter()
             .find(|function| function.name == "unbox")
             .expect("unbox function");
+        // [TYPE-9, WIN-3] the consume of the content through the field step
+        // `inner` is not the ordinary content read: the cell ceases to exist
+        // here and is freed with the value it hands back, so the checked node
+        // is the unboxing one and not `BoxDeref`.
         let CheckedStatement::Let {
-            value: CheckedExpression::BoxDeref { referent, .. },
+            value: CheckedExpression::BoxTake { referent, .. },
             ..
         } = &unbox.body.as_deref().expect("WF body")[2]
         else {

@@ -2573,7 +2573,7 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(outcomes.len(), 2);
     assert!(outcomes[0].discharged, "True arm carries i < 4 = len");
     assert!(!outcomes[1].discharged, "False arm carries only i >= 4");
-    assert_eq!(outcomes[1].residual.as_deref(), Some("i < len_of(values)"));
+    assert_eq!(outcomes[1].residual.as_deref(), Some("i < values.len"));
 }
 
 #[test]
@@ -2709,7 +2709,7 @@ fn main() -> status: own ExitStatus pure {
     assert!(!outcomes[1].discharged, "9 < 4 is not derivable");
     assert_eq!(
         outcomes[1].residual.as_deref(),
-        Some("9_u64 < len_of(table)")
+        Some("9_u64 < table.len")
     );
     assert!(outcomes[1].derivation.is_none());
     let root = obligation_root(&summary, 0);
@@ -5645,7 +5645,7 @@ fn main() -> status: own ExitStatus pure {
     let outcomes = obligations(source, "read");
     assert_eq!(outcomes.len(), 1);
     assert!(!outcomes[0].discharged);
-    assert_eq!(outcomes[0].residual.as_deref(), Some("i < len_of(h.data)"));
+    assert_eq!(outcomes[0].residual.as_deref(), Some("i < h.data.len"));
 }
 
 #[test]
@@ -5680,7 +5680,7 @@ fn main() -> status: own ExitStatus pure {
     );
     assert_eq!(
         outcomes[1].residual.as_deref(),
-        Some("order[j] < len_of(lens)")
+        Some("order[j] < lens.len")
     );
 }
 
@@ -5706,7 +5706,7 @@ fn main() -> status: own ExitStatus pure {
     };
     assert_eq!(inner.family, ObligationFamily::Bounds);
     assert!(!inner.discharged);
-    assert_eq!(inner.residual.as_deref(), Some("j < len_of(order)"));
+    assert_eq!(inner.residual.as_deref(), Some("j < order.len"));
 }
 
 #[test]
@@ -5772,7 +5772,7 @@ fn main() -> status: own ExitStatus pure {
     );
     assert_eq!(
         window[1].residual.as_deref(),
-        Some("b[0_u64] < len_of(values)")
+        Some("b[0_u64] < values.len")
     );
 
     let ranged = obligations(source, "from_range")
@@ -5784,7 +5784,7 @@ fn main() -> status: own ExitStatus pure {
         1,
         "the failed inner range index prevents the outer site from being reached"
     );
-    assert_eq!(ranged[0].residual.as_deref(), Some("0_u64 < len_of(order)"));
+    assert_eq!(ranged[0].residual.as_deref(), Some("0_u64 < order.len"));
 }
 
 #[test]
@@ -5953,7 +5953,7 @@ fn main() -> status: own ExitStatus pure {
     );
     assert_eq!(
         unknown_bounds.residual.as_deref(),
-        Some("3_u64 < len_of(b)")
+        Some("3_u64 < b.len")
     );
 }
 
@@ -6199,7 +6199,7 @@ fn main() -> status: own ExitStatus pure {
         "target-position discharge is identical"
     );
     assert!(!outcomes[1].discharged);
-    assert_eq!(outcomes[1].residual.as_deref(), Some("i < len_of(values)"));
+    assert_eq!(outcomes[1].residual.as_deref(), Some("i < values.len"));
 }
 
 // ---------------------------------------------------------------------
@@ -7515,7 +7515,7 @@ fn main() -> status: own ExitStatus pure {
     );
     assert_eq!(
         direct[1].residual.as_deref(),
-        Some("table.entries[i] < len_of(values)")
+        Some("table.entries[i] < values.len")
     );
 }
 
@@ -8123,7 +8123,7 @@ fn main() -> status: own ExitStatus pure {
         source,
         SemanticRule::Op4,
         SemanticIssueKind::UndischargedBoundsObligation {
-            residual: "i < len_of(values)".to_owned(),
+            residual: "i < values.len".to_owned(),
             mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
         },
     );
@@ -10403,7 +10403,7 @@ fn main() -> status: own ExitStatus pure {
         source,
         SemanticRule::Op4,
         SemanticIssueKind::UndischargedBoundsObligation {
-            residual: "offset < len_of(b)".to_owned(),
+            residual: "offset < b.len".to_owned(),
             mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
         },
     );

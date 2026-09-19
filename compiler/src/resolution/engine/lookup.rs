@@ -53,9 +53,21 @@ pub(super) fn resolve_uses_deferred(
                 }
                 if admissible.contains(class) {
                     if visible {
-                        candidates.push(ResolvedTarget::Source {
-                            declaration: declaration.id,
-                            class: *class,
+                        // [TYPE-2, PRE-1] the cell `Box` is declared by the
+                        // prelude like any other opaque struct, but a written
+                        // `Box` names one compiler-owned shape [TYPE-9] and
+                        // not a source struct, so a use that selects that one
+                        // declaration resolves to the cell identity in both of
+                        // its domains: the nominal-type entry a `Box<T>` type
+                        // names, and the constructor entry [TYPE-2] exists to
+                        // refuse.
+                        candidates.push(if meta.cell {
+                            ResolvedTarget::Container(crate::CELL_NOMINAL_ID)
+                        } else {
+                            ResolvedTarget::Source {
+                                declaration: declaration.id,
+                                class: *class,
+                            }
                         });
                     } else {
                         invisible.push(declaration.diagnostic_origin(*class));

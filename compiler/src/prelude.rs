@@ -1,104 +1,125 @@
 //! Ordinary PRE-1 declaration records, parsed by the same grammar as source declarations.
-//! Opaque records have no fields or constructor; function signatures have no body.
+//! An opaque record has a refused constructor [TYPE-2]; a host handle has no
+//! fields and the cell `Box` has one; function signatures have no body.
 
 use crate::source::PreludeSource;
 
 pub(crate) const DECLARATIONS: &[(&str, PreludeSource, &str)] = &[
+    // [PRE-1] writes the cell first, ahead of the fourteen host handles, and
+    // [TYPE-2] makes it an opaque struct with one field and a constructor
+    // entry that exists to be refused.
+    //
+    // The fence writes the header `opaque struct Box<T>`, with no bound on
+    // `T`. That spelling does not parse: [GRAM-2]'s `gparam := TYPEID ":"
+    // (TYPEID | linearity_bound)` makes a bound mandatory, and [FN-2] states
+    // that every type parameter of a nominal "carries exactly one bound,
+    // written and never inferred, with no default". The bound written here is
+    // the widest linearity class, which is the one `box_new<T: linear>` of the
+    // same fence gives the same parameter, so the declared cell admits exactly
+    // the referents its construction row builds.
+    (
+        "prelude/Box.wf",
+        PreludeSource::Opaque,
+        r#"opaque struct Box<T: linear> {
+  inner: T;
+}
+"#,
+    ),
     (
         "prelude/Args.wf",
         PreludeSource::Opaque,
-        r#"struct Args {
+        r#"opaque struct Args {
 }
 "#,
     ),
     (
         "prelude/HostString.wf",
         PreludeSource::Opaque,
-        r#"struct HostString {
+        r#"opaque struct HostString {
 }
 "#,
     ),
     (
         "prelude/RelativePath.wf",
         PreludeSource::Opaque,
-        r#"struct RelativePath {
+        r#"opaque struct RelativePath {
 }
 "#,
     ),
     (
         "prelude/DirectoryRead.wf",
         PreludeSource::Opaque,
-        r#"linear struct DirectoryRead {
+        r#"opaque linear struct DirectoryRead {
 }
 "#,
     ),
     (
         "prelude/ReadFile.wf",
         PreludeSource::Opaque,
-        r#"linear struct ReadFile {
+        r#"opaque linear struct ReadFile {
 }
 "#,
     ),
     (
         "prelude/OutputStream.wf",
         PreludeSource::Opaque,
-        r#"struct OutputStream {
+        r#"opaque struct OutputStream {
 }
 "#,
     ),
     (
         "prelude/ExitStatus.wf",
         PreludeSource::Opaque,
-        r#"struct ExitStatus {
+        r#"opaque struct ExitStatus {
 }
 "#,
     ),
     (
         "prelude/DirectorySource.wf",
         PreludeSource::Opaque,
-        r#"linear struct DirectorySource {
+        r#"opaque linear struct DirectorySource {
 }
 "#,
     ),
     (
         "prelude/HandleFactory.wf",
         PreludeSource::Opaque,
-        r#"struct HandleFactory {
+        r#"opaque struct HandleFactory {
 }
 "#,
     ),
     (
         "prelude/InputStream.wf",
         PreludeSource::Opaque,
-        r#"struct InputStream {
+        r#"opaque struct InputStream {
 }
 "#,
     ),
     (
         "prelude/SocketAddress.wf",
         PreludeSource::Opaque,
-        r#"struct SocketAddress {
+        r#"opaque struct SocketAddress {
 }
 "#,
     ),
     (
         "prelude/TcpListener.wf",
         PreludeSource::Opaque,
-        r#"linear struct TcpListener {
+        r#"opaque linear struct TcpListener {
 }
 "#,
     ),
     (
         "prelude/TcpReceive.wf",
         PreludeSource::Opaque,
-        r#"linear struct TcpReceive {
+        r#"opaque linear struct TcpReceive {
 }
 "#,
     ),
     (
         "prelude/TcpSend.wf",
         PreludeSource::Opaque,
-        r#"linear struct TcpSend {
+        r#"opaque linear struct TcpSend {
 }
 "#,
     ),
@@ -651,10 +672,24 @@ mod tests {
             .iter()
             .filter(|function| function.body.is_none())
             .count();
-        // [PRE-1] 29 host records, then the nine construction functions
+        // [PRE-1]'s 29 host records are non-generic, so each one is checked as
+        // itself and is one body-less signature here. The twenty
+        // compiler-owned rows beside them — the nine construction functions
         // [OP-13], the nine window operations [OP-10], `swap` [OP-11] and
-        // `free_empty` [OP-14].
-        assert_eq!(signatures, 49);
+        // `free_empty` [OP-14] — are every one of them generic, so [FN-2]
+        // gives them a checked function only per concrete instance and this
+        // unit, which calls none of them, has no instance of any.
+        assert_eq!(signatures, 29);
+        for row in crate::lowering::COMPILER_OWNED_PRELUDE_ROWS {
+            assert!(
+                !checked
+                    .data
+                    .functions
+                    .iter()
+                    .any(|function| function.name == row),
+                "{row} is generic and this unit instantiates it nowhere"
+            );
+        }
         assert!(
             !checked
                 .data

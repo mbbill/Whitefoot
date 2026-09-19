@@ -53,14 +53,13 @@ impl PreludeInventory {
                 if record_phase != phase {
                     continue;
                 }
+                // [PRE-1]'s preorder takes "each opaque struct above in
+                // written order with its refused constructor and its fields
+                // in declaration order", so an opaque record contributes the
+                // same two lookup classes as any other struct and its refused
+                // constructor [TYPE-2] owns an ordinal a diagnostic can name.
                 let classes = match role.kind {
-                    RawRoleKind::Declaration(declaration) => {
-                        let mut classes = declaration_classes(declaration);
-                        if file.prelude() == Some(PreludeSource::Opaque) {
-                            classes.retain(|class| *class != DeclarationClass::StructConstructor);
-                        }
-                        classes
-                    }
+                    RawRoleKind::Declaration(declaration) => declaration_classes(declaration),
                     RawRoleKind::DependentDeclaration(_) => Vec::new(),
                     _ => continue,
                 };

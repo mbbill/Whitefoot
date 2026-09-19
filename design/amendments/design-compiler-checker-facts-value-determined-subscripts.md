@@ -1,0 +1,13 @@
+Node: compiler/checker-facts
+
+Decision: A subscript whose captured offset is a written integer literal or an in-scope const carries no source occurrence at all inside an [ENT-2] term or a goal datum: the pair `(the value, nothing)` is its whole identity there, so `rows[0_u64].len` written in one statement and the `rows[0_u64]` a later subscript is taken over are one measure term, because a term is interned by its path and a place written twice denotes one storage there exactly when its subscripts hold one value, which the pending compiler/checker-facts capture-identity decision already settles for the separation question by reading a literal's value rather than its occurrence; without dropping the occurrence, `let width = rows[0_u64].len;` and the bound `i < rows[0_u64].len` that the next subscript owes were two unrelated quantities and the length the program had just read proved nothing about the access, instead of giving the two occurrences one shared identity irrespective of value, which would make `rows[0_u64]` and `rows[1_u64]` compare as one storage.
+
+Decision: A subscript whose captured offset read a binding, and one whose offset is opaque, keep their occurrence, because two reads of one binding may straddle a write to that binding and only one evaluation makes them one value [REF-1], which is the same asymmetry the separation question already carries.
+
+Decision: The canonical form is applied where a term is interned and where a goal projection is built, rather than at each construction site, because both are single choke points every route reaches, and a path that reached one of them with the raw occurrence and the other with the canonical one would make a measure term and the bound stated over it two terms again.
+
+Decision: The separation question decides a value-determined pair by its value before it consults the occurrence, because a canonical occurrence is shared by every literal and consulting it first would report two different literals as one storage; for a pair that was already equal by occurrence the answer is unchanged, since one occurrence evaluated one literal.
+
+Rejected:
+- Giving every literal one shared canonical occurrence and leaving the separation question's occurrence-first shortcut in place: rejected because the shortcut would then prove `rows[0_u64]` and `rows[5_u64]` the same storage, which is an unsound identification and not a conservative one.
+- Normalizing only the goal projection and leaving interned terms alone: rejected because the [OP-4] bound is stated over a term built from a resolved place and the measure read is a term built from a goal datum, so the two routes must agree or the bound names a quantity the read never established.

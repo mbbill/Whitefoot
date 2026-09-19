@@ -12,6 +12,17 @@ use super::*;
 pub(super) struct PreparedTarget<'target> {
     ty: IrType,
     kind: TargetStorage<'target>,
+    /// [WIN-3] whether the value this commit overwrites is certainly still
+    /// live, so the commit owes it its compiler-derived release [STOR-3].
+    ///
+    /// A reference-rooted path and an element position are both always
+    /// initialized: a reference names a valid path [REF-1, REF-2], and an
+    /// element inside a window's filled prefix or an array's slots always
+    /// holds a value [WIN-1]. A directly named binding path is not: a
+    /// binding whose owner was moved out is re-initialized by a `set` that
+    /// displaces nothing, and which of the two a given commit is, is a
+    /// liveness judgment of the checker's and not readable here.
+    displaces_live_value: bool,
 }
 
 enum TargetStorage<'target> {
@@ -38,6 +49,7 @@ impl IrBuilder<'_> {
         target: &'target CheckedSetTarget,
     ) -> Result<PreparedTarget<'target>, LoweringFailure> {
         let ty = lower_type(self.erasure, target.ty())?;
+        let displaces_live_value = !matches!(target, CheckedSetTarget::Place(_));
         let address_kind = |address, referent| TargetStorage::Address { address, referent };
         let kind = match target {
             CheckedSetTarget::Storage(root) => {
@@ -120,7 +132,44 @@ impl IrBuilder<'_> {
                 }
             }
         };
-        Ok(PreparedTarget { ty, kind })
+        Ok(PreparedTarget {
+            ty,
+            kind,
+            displaces_live_value,
+        })
+    }
+
+    /// [WIN-3] "Assigning over any owned place releases the old value when it
+    /// is affine."
+    ///
+    /// The release is the commit's, so this reads the displaced value after
+    /// the right-hand side's effects and before the write, exactly where the
+    /// old owner stops being reachable. What it releases is the ordinary
+    /// [STOR-3] release of the target's own type: a cell frees its content
+    /// and then its heap object, a type with no release action owes nothing,
+    /// and a linear target never reaches lowering at all because [WIN-3]
+    /// makes that assignment a hard error.
+    ///
+    /// A directly named binding path returns `None` here. The checked program
+    /// carries no record of whether such a target still holds a value at the
+    /// commit [STOR-3, DIAG-2], and re-initializing a moved-out binding is an
+    /// accepted program, so deriving the release from the type alone would
+    /// release a value that is already gone.
+    pub(super) fn displaced_release(
+        &mut self,
+        target: &PreparedTarget<'_>,
+    ) -> Result<Option<IrDrop>, LoweringFailure> {
+        if !target.displaces_live_value
+            || !crate::lowering::type_derives_release(self.nominals, self.elements, target.ty)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?
+        {
+            return Ok(None);
+        }
+        let previous = self.read_target(target)?;
+        Ok(Some(IrDrop {
+            subject: IrDropSubject::Value(previous),
+            ty: target.ty,
+        }))
     }
 
     fn check_target_offset(

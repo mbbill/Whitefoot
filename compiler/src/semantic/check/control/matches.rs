@@ -62,6 +62,18 @@ enum ScrutineeSpelling {
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     fn scrutinee_spelling(&self, expression: NodeId) -> Result<ScrutineeSpelling, CheckStop> {
+        // [GRAM-5] `expr := atom infix_tail? | call`, and [OWN-13] asks its
+        // question of a *place* scrutinee: an `infix_tail` makes the
+        // expression an operation over two atoms, whose value is "a non-place
+        // expression scrutinee", an owned temporary moved into the match,
+        // whatever the first atom happens to spell.
+        if self
+            .tree
+            .first_child_with(expression, Production::InfixTail)?
+            .is_some()
+        {
+            return Ok(ScrutineeSpelling::Other);
+        }
         let Some(atom) = self.tree.first_child_with(expression, Production::Atom)? else {
             return Ok(ScrutineeSpelling::Other);
         };

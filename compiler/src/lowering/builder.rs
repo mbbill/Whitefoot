@@ -1741,6 +1741,21 @@ impl<'program> IrBuilder<'program> {
                 };
                 self.define(referent, IrOperation::BoxDeref { nominal, value })
             }
+            // [TYPE-9, WIN-3] `move b.inner`: the content is loaded out of
+            // the cell and the cell's own storage is released with it.
+            CheckedExpression::BoxTake { nominal, value, .. } => {
+                let value = self.expression(value)?;
+                let nominal = self.erased(*nominal);
+                let IrNominalKind::Box { referent, .. } = self
+                    .nominals
+                    .get(nominal.index())
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    .kind
+                else {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                };
+                self.define(referent, IrOperation::BoxTake { nominal, value })
+            }
             CheckedExpression::ArenaNew {
                 nominal,
                 list,
@@ -2024,6 +2039,11 @@ impl<'program> IrBuilder<'program> {
     /// [SET-1, LIV-2] the one-target commit: the right-hand side is
     /// evaluated once and completely, then the one target is written by the
     /// same commit a target list uses.
+    ///
+    /// [WIN-3] assigning over an owned place releases the old value, so the
+    /// displaced owner is read at the commit and released after the write.
+    /// The write comes first so that the place holds its new owner for the
+    /// whole of the old one's release walk.
     fn set(
         &mut self,
         target: &CheckedSetTarget,
@@ -2031,7 +2051,12 @@ impl<'program> IrBuilder<'program> {
     ) -> Result<(), LoweringFailure> {
         let target = self.prepare_target(target)?;
         let value = self.expression(value)?;
-        self.write_target(&target, value)
+        let displaced = self.displaced_release(&target)?;
+        self.write_target(&target, value)?;
+        if let Some(drop) = displaced {
+            self.append_drops(vec![drop])?;
+        }
+        Ok(())
     }
 
     fn project_struct_path(

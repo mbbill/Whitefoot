@@ -1437,6 +1437,23 @@ pub(crate) struct CheckedLayoutCeiling {
     pub(crate) stride: CheckedLayoutMagnitude,
 }
 
+/// The static allocation-size obligation one call carries [OP-9].
+///
+/// [OP-13] attaches it to every runtime-capacity construction and [OP-10] to
+/// `grow`, each "over that operation's own stored type and count". The
+/// predicate is `n <= floor((2^64 - 1) / stride_ceiling(T))`, so the record
+/// names the stored type, the language ceiling its stride fixes, and which
+/// declared argument supplies the count `n`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedAllocationFit {
+    /// The stored type T, after [FN-2] instantiation.
+    pub(crate) element: CheckedType,
+    /// [OP-9]'s language layout ceilings for that stored type.
+    pub(crate) layout_ceiling: CheckedLayoutCeiling,
+    /// The declared-order ordinal of the count argument.
+    pub(crate) count: usize,
+}
+
 impl CheckedRuntimeTargetObligations {
     pub(crate) const fn new() -> Self {
         Self {
@@ -1618,7 +1635,7 @@ impl CheckedContainerRoot {
                 CheckedPlaceStep::Field(field) => super::goal::GoalProjection::Field(*field),
                 CheckedPlaceStep::BoxReferent(_) => super::goal::GoalProjection::Deref,
                 CheckedPlaceStep::Subscript(subscript) => {
-                    super::goal::GoalProjection::Subscript(subscript.captured)
+                    super::goal::GoalProjection::Subscript(subscript.captured.goal_identity())
                 }
             })
             .collect()
@@ -1662,7 +1679,9 @@ impl CheckedPlaceStep {
         match self {
             Self::Field(field) => super::goal::GoalProjection::Field(*field),
             Self::BoxReferent(_) => super::goal::GoalProjection::Deref,
-            Self::Subscript(index) => super::goal::GoalProjection::Subscript(index.captured),
+            Self::Subscript(index) => {
+                super::goal::GoalProjection::Subscript(index.captured.goal_identity())
+            }
         }
     }
 
@@ -1752,6 +1771,10 @@ pub(crate) enum CheckedExpression {
         /// [ENT-5]; it is `None` for every own-mode result and whenever the
         /// extension is off.
         result_borrow: Option<CheckedResultBorrow>,
+        /// [OP-9, OP-13, OP-10] the static allocation-size obligation this
+        /// call carries, where it is a runtime-capacity construction or
+        /// `grow`. Every other call carries none.
+        allocation: Option<CheckedAllocationFit>,
     },
     IntegerOperation {
         carrier: NodePath,
@@ -1838,6 +1861,15 @@ pub(crate) enum CheckedExpression {
         element: CheckedType,
         layout_ceiling: CheckedLayoutCeiling,
         length: Box<CheckedExpression>,
+    },
+    /// [TYPE-9, WIN-3] `move b.inner`: the consume of a cell through its one
+    /// field. The `Box` ceases to exist here, its content is the value this
+    /// expression produces, and the cell is freed with it.
+    BoxTake {
+        carrier: NodePath,
+        nominal: NominalId,
+        referent: CheckedType,
+        value: Box<CheckedExpression>,
     },
     BufferMeasure {
         measure: CheckedMeasure,
@@ -2021,6 +2053,7 @@ impl CheckedExpression {
             | Self::ReadStorage { carrier, .. }
             | Self::BoxNew { carrier, .. }
             | Self::BoxDeref { carrier, .. }
+            | Self::BoxTake { carrier, .. }
             | Self::ArenaNew { carrier, .. }
             | Self::ArenaDeref { carrier, .. }
             | Self::BorrowBuffer { carrier, .. }
@@ -2073,7 +2106,7 @@ impl CheckedExpression {
             Self::BoxNew { nominal, .. } | Self::ArenaNew { nominal, .. } => {
                 CheckedType::Nominal(*nominal)
             }
-            Self::BoxDeref { referent, .. } => *referent,
+            Self::BoxDeref { referent, .. } | Self::BoxTake { referent, .. } => *referent,
             Self::ArenaDeref { content, .. } => *content,
             Self::BorrowBuffer { root, .. } => CheckedType::Buffer {
                 element: root.element,
@@ -2667,6 +2700,7 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::ArrayFill { value, .. }
         | CheckedExpression::BoxNew { value, .. }
         | CheckedExpression::BoxDeref { value, .. }
+        | CheckedExpression::BoxTake { value, .. }
         | CheckedExpression::ArenaNew { value, .. }
         | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => vec![value.as_ref()],

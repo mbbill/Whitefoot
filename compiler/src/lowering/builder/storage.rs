@@ -174,6 +174,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::ArrayFill { value, .. }
         | CheckedExpression::BoxNew { value, .. }
         | CheckedExpression::BoxDeref { value, .. }
+        | CheckedExpression::BoxTake { value, .. }
         | CheckedExpression::ArenaNew { value, .. }
         | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => collect_expression(value, bindings),

@@ -928,6 +928,7 @@ impl<'check> Survey<'check, '_> {
             | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::BoxNew { .. }
             | CheckedExpression::BoxDeref { .. }
+            | CheckedExpression::BoxTake { .. }
             | CheckedExpression::ArenaNew { .. }
             | CheckedExpression::ArenaDeref { .. } => {
                 self.refuse_form("an expression form this version no longer writes");

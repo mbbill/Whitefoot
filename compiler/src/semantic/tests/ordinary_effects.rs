@@ -28,9 +28,22 @@ fn memory_reclamation_contributes_no_release_row() {
     );
 }
 
+/// [WIN-3, OP-14] a linear window has no compiler-derived release at all,
+/// proved empty or not.
+///
+/// v0.59 gave a run proved empty an element-free derived release, so a
+/// `requires run.len == 0_u64` made the scope exit legal. [WIN-3] retires it:
+/// "No operation releases a linear element: a storage whose element type is
+/// linear is itself linear [PROV-6] and the program must take every element
+/// out and consume it, and then, with the storage proved empty, call
+/// `free_empty` [OP-14]." The zero-length fact is what `free_empty`'s own
+/// requirement reads; it is not a licence for the edge. The corpus states the
+/// same verdict in
+/// `prov6-neg-a-proved-empty-run-still-needs-its-backing-provider`, whose
+/// source is this first program with a symbolic element type.
 #[test]
-fn proved_empty_run_release_omits_only_the_element_subtree() {
-    assert_complete(
+fn a_linear_window_reaches_no_scope_exit_however_short_it_is_proved() {
+    assert_rule_kind(
         br#"linear struct Token {
   value: u64;
 }
@@ -45,7 +58,11 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
+        SemanticRule::Prov6,
+        |kind| matches!(kind, SemanticIssueKind::LinearValueNotConsumed { .. }),
     );
+    // An affine element type keeps its ordinary derived release on the same
+    // edge, symbolic capacity included [STOR-3].
     assert_complete(
         br#"fn release<const n: u64>(run: own Slots<u64, n>) -> result: own unit pure {
   return unit;
@@ -70,7 +87,7 @@ fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Prov6,
-        |kind| matches!(kind, SemanticIssueKind::UndischargedEmptyRunRelease { .. }),
+        |kind| matches!(kind, SemanticIssueKind::LinearValueNotConsumed { .. }),
     );
 }
 

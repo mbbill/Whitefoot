@@ -113,15 +113,23 @@ fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
     );
 }
 
+/// The same declared boundary `host_copy_bytes` carries [PRE-1], written as
+/// an ordinary Whitefoot definition.
+///
+/// [FORM-3] reserves the eight measure and part names from every declaration
+/// role, and `next` — the binder the prelude record's own fence spells — is
+/// one of them, so the writer-side clauses below bind `copied` instead. A
+/// clause binder is a local name; the declared relation, and with it the ABI
+/// this test compares, is the same one either spelling writes.
 const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
-  ensures when Ok(value: next): start <= next;
-  ensures when Ok(value: next): next <= end;
+  ensures when Ok(value: copied): start <= copied;
+  ensures when Ok(value: copied): copied <= end;
 } {
   match host_copy_bytes(value: value, destination: destination, start: start, end: end) {
-    Ok(value: next) => {
-      return Ok<u64, CopyError>(value: next);
+    Ok(value: copied) => {
+      return Ok<u64, CopyError>(value: copied);
     }
     Err(error: problem) => {
       return Err<u64, CopyError>(error: move problem);
@@ -174,12 +182,16 @@ fn a_range_reference_signature_is_identical_for_a_wf_body_and_a_linked_body() {
 
 #[test]
 fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts() {
+    // The formal's clause binder is spelled `copied` for the same [FORM-3]
+    // reason the wrapper above gives: `next` is one of the eight reserved
+    // measure and part names and a `fn_sig` inside a `formal_decl` is
+    // ordinary writer source.
     let formal = r#"formal Copier {
   fn transfer(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
     requires start <= end;
     requires end <= deref(destination).len;
-    ensures when Ok(value: next): start <= next;
-    ensures when Ok(value: next): next <= end;
+    ensures when Ok(value: copied): start <= copied;
+    ensures when Ok(value: copied): copied <= end;
   };
 }
 
@@ -226,9 +238,16 @@ fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts()
             compile_rejection(out_of_range.as_bytes()).rule_id(),
             Some("FN-8")
         );
+        // Two directions [FN-4] refuses: an actual whose row writes a path the
+        // formal does not declare, and an actual whose `requires` is stronger
+        // than the formal's. Dropping an `ensures` from the formal is the
+        // third direction and is *admitted* — [FN-4] asks the actual's
+        // postcondition to be stronger, and an actual carrying one clause the
+        // formal does not is exactly that — so the second negative narrows a
+        // `requires` instead of an `ensures`.
         for changed_formal in [
             formal.replace(", writes(destination)", ""),
-            formal.replace("    ensures when Ok(value: next): next <= end;\n", ""),
+            formal.replace("    requires end <= deref(destination).len;\n", ""),
         ] {
             // FN-4 checks the binding itself, before any generic caller is
             // needed. Keeping the forwarding body out of these negatives

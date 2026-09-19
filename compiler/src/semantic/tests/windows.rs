@@ -32,52 +32,31 @@
 //! The sources are the already-ported v0.60 conformance cases; these tests add
 //! the rule and issue kind the corpus manifest does not pin.
 //!
-//! Four of the judgments below are stated by the specification and are NOT
+//! Two of the judgments below are stated by the specification and are NOT
 //! implemented by the checker as this package lands. Each assertion here is
 //! the normative verdict, not the current one, because an unimplemented
 //! feature is not a source-language rejection and must not rewrite a
-//! normative expectation. The four gaps, with the code that owns each:
+//! normative expectation. The two gaps, with the code that owns each:
 //!
 //! 1. [OP-10]'s compiler-owned window type parameter is not inferred from the
-//!    operand. `check/generics.rs:2196-2213` (`generic_substitution`) refuses
-//!    any call to a callee with type parameters and no written argument list,
-//!    citing FN-2, while [OP-10] states that "a window operation, `swap`
-//!    [OP-11], and `free_empty` [OP-14] therefore write no type arguments at
-//!    a call: every type parameter of those rows is supplied by an operand".
-//!    Every `place_back`, `take_back`, `insert_at`, `remove_at`, `append`,
-//!    `split_off`, `grow`, `place_front`, `take_front`, `swap` and
-//!    `free_empty` call is therefore refused by FN-2 today.
-//! 2. A `Box`'s content is reached only on the explicit-`deref` chain
-//!    (`check/expressions/places.rs:214-234`); the ordinary bare-place read in
-//!    `check/expressions.rs` `resolve_struct_path` has no `Box` branch, so
-//!    `let n = b.inner;` cites TYPE-5 where [TYPE-9] makes it the ordinary
-//!    field step.
-//! 3. A runtime-capacity `Slots<T>` or `Ring<T>`, and a constant-capacity
+//!    operand. `check/generics.rs` (`generic_substitution`) refuses any call
+//!    to a callee with type parameters and no written argument list, citing
+//!    FN-2, while [OP-10] states that "a window operation, `swap` [OP-11],
+//!    and `free_empty` [OP-14] therefore write no type arguments at a call:
+//!    every type parameter of those rows is supplied by an operand".
+//! 2. A runtime-capacity `Slots<T>` or `Ring<T>`, and a constant-capacity
 //!    `Ring<T, N>`, stop as an unimplemented compiler capability at
-//!    `check/types.rs:464`.
-//! 4. A move out of a window slot still cites TYPE-2 with `AffineElementMove`
-//!    at `check/expressions/flat_storage.rs:613` and `:754`, whose mechanical
-//!    fix still names the retired `replace` statement, where [WIN-3] cites
-//!    WIN-3 and restructures to `take_back`, `remove_at`, or `swap`.
-//!    `SemanticIssueKind::MoveOutOfSlot` and `RemainingLinearPart` are
-//!    declared in `semantic/mod.rs` and never constructed.
-//! 5. [OP-14] has no site of its own: `free_empty`'s undischarged
-//!    `requires window.len == 0_u64` takes the ordinary call-requirement path
-//!    and cites FN-8 (`check.rs`, the `UndischargedCallRequirement` arm).
-//!    The corpus manifest expects OP-14 for
-//!    `op14-neg-free-empty-nonempty-window`, and so does the rule.
-//! 6. [OP-9]'s allocation-size obligation is not submitted at an [OP-13]
-//!    runtime-capacity construction: `judge_allocation_fit` in
-//!    `entailment/flow.rs` is reachable only from the retired
-//!    `CheckedExpression::BufferFill` / `BufferVacant`, which nothing
-//!    constructs any more. The OP-9 diagnostic's own mechanical fix also
-//!    still names `buffer_fits::<T>(n)`, a spelling [OP-9] says has none.
+//!    `check/types.rs`.
 //!
-//! [OP-15] is a seventh gap for the measure member read itself: `p.len` in
-//! expression position reaches `resolve_struct_path`
-//! (`check/expressions.rs`), which has no measure arm, so it answers TYPE-5.
-//! The v0.59 call form `len_of(P)` is gone and `check_flat_measure` has no
-//! caller left.
+//! The judgments this package's port closed, and which are now ordinary
+//! assertions above: a `Box`'s content reached by the bare field step
+//! `b.inner` and consumed by `let n = move b.inner;` [TYPE-9, WIN-3]; a move
+//! out of a window slot citing WIN-3 with `MoveOutOfSlot`; [OP-14]'s own site
+//! for an undischarged `free_empty` requirement; [OP-9]'s allocation-size
+//! obligation at each runtime-capacity construction and at `grow`, rendered
+//! as its defining comparison rather than as the retired `buffer_fits` row;
+//! and [OP-15]'s measure member read in expression position, including one
+//! over a subscripted place.
 
 use crate::{SemanticIssueKind, SemanticRule};
 

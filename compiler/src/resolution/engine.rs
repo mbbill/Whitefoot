@@ -113,6 +113,11 @@ struct DeclarationMeta {
     owner: Option<NodeId>,
     visibility: Visibility,
     entries: Vec<DeclarationClass>,
+    /// Whether this declaration is [PRE-1]'s cell `Box` [TYPE-2]. A use that
+    /// selects it resolves to [`crate::CELL_NOMINAL_ID`] rather than to the
+    /// declaration, because a written `Box` names one compiler-owned shape
+    /// and not a source struct [TYPE-9].
+    cell: bool,
 }
 
 struct DeclarationIndex {
@@ -240,12 +245,23 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                             .get(1)
                             .and_then(|owner| topology.node(*owner))
                             .is_some_and(|record| record.production == Production::FormalDecl);
-                    let mut entries = if grouped_member {
+                    // [TYPE-2] an opaque struct's constructor entry "exists to
+                    // be refused", so it is an ordinary entry of the
+                    // constructor TYPEID domain like any other struct's. The
+                    // refusal is the checker's hard error at the complete
+                    // `call`, which is a judgment over a resolved declaration
+                    // and needs the entry to reach.
+                    let entries = if grouped_member {
                         Vec::new()
                     } else {
                         declaration_classes(declaration_role)
                     };
-                    if declaration_role == DeclarationRole::Struct
+                    // [TYPE-2, PRE-1] the prelude's cell keeps the one
+                    // compiler-owned identity every later stage reads a
+                    // written `Box` through, even though its declaration is
+                    // now an ordinary prelude record [TYPE-9].
+                    let cell = declaration_role == DeclarationRole::Struct
+                        && role.spelling == crate::CELL_NOMINAL.spelling
                         && syntax
                             .finalized
                             .parsed
@@ -254,10 +270,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                             .file(role.origin.coordinate.source())
                             .is_some_and(|file| {
                                 file.prelude() == Some(crate::source::PreludeSource::Opaque)
-                            })
-                    {
-                        entries.retain(|class| *class != DeclarationClass::StructConstructor);
-                    }
+                            });
                     let record_index = declarations.len();
                     declarations.push(DeclarationRecord {
                         id,
@@ -305,6 +318,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                             declaration_visibility(topology, role, declaration_role)?
                         },
                         entries,
+                        cell,
                     });
                 }
                 RawRoleKind::DependentDeclaration(dependent_role) => {

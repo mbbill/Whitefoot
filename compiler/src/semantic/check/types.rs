@@ -42,8 +42,6 @@ const OPTION_TARGS_EXPECTED: &str = "Option with its type argument written: as a
 /// repeated-category one — `writes(cwd), writes(out)` — with nothing but the
 /// rule number to work from. The field-of-non-struct condition is cited at two
 /// sites, so five conditions cover six rejections.
-const EFF1_SHARED_WRITE: &str = "a `writes` path is rooted at a shared borrow parameter, which grants no exclusive access to that state";
-const EFF1_SHARED_WRITE_FIX: &str = "declare that parameter `&uniq` or `own`, or drop the path from `writes`; an effect path grants no permission of its own";
 const EFF1_CATEGORY_ORDER: &str = "a row is written in the canonical order, every `reads` entry before every `writes` entry";
 const EFF1_CATEGORY_ORDER_FIX: &str = "move every `reads` entry ahead of the first `writes` entry; a category may appear more than once";
 const EFF1_REPEATED_PATH: &str = "a row lists each path at most once per category, and this entry repeats one";

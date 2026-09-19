@@ -1358,20 +1358,25 @@ fn owning_map_put_releases_each_displaced_and_remaining_payload_once() {
         let module = retain_calls(&super::emit_lowered(source, overlap))
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
-        // Keys 1 and 3 collide: their payloads occupy slots 1 and 0. The old
-        // occupant leaves by swap [OP-11] and is consumed before the two
-        // remaining slots are released in storage order.
+        // Three cells, one per `allocate_put`: A1 is key 1's payload (id 11),
+        // A2 is key 3's (id 22), and A3 is the replacement offered for key 1
+        // (id 33). The observer's limit is that same three, so a fourth
+        // allocation would abort rather than be absorbed.
         //
-        // KEPT AS WRITTEN for the lowering port: this ledger was derived over
-        // the v0.59 case, whose wrapper allocated four times. The ported case
-        // makes three `box_new::<Resource>` calls, one per `allocate_put`, so
-        // both the observer's limit and the ledger must be re-derived against
-        // it and against the v0.60 release walk [STOR-3, PROV-6].
-        let observer = allocation_observer(4, 0);
+        // Keys 1 and 3 collide at home slot 1, so key 1 takes slot 1 and
+        // key 3 probes on to slot 0. The third put matches key 1 and the old
+        // occupant leaves by swap [OP-11]: `check_put` binds it as `old`,
+        // reads its id, and the binder's own release frees it — F1 — before
+        // `main` reaches its exit at all.
+        //
+        // `main`'s exit then releases the window's slots in ascending logical
+        // index order [STOR-3]: slot 0 holds key 3's cell, which is F2, and
+        // slot 1 holds the replacement, which is F3.
+        let observer = allocation_observer(3, 0);
         let output = compile_link_and_run(&module, Some(&observer), &[]);
         assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
         assert_eq!(
-            output.stdout, b"A1;A2;A3;A4;F2;F3;F4;F1;",
+            output.stdout, b"A1;A2;A3;F1;F2;F3;",
             "{overlap:?}: {output:?}"
         );
         assert!(output.stderr.is_empty(), "{output:?}");

@@ -231,11 +231,7 @@ impl TermTable {
     /// unwritable. Z carries exactly the bounds the constant zero would
     /// have contributed, so the merge loses no fact.
     pub(crate) fn intern(&mut self, kind: TermKind) -> TermId {
-        let kind = if matches!(kind, TermKind::Constant(0)) {
-            TermKind::Zero
-        } else {
-            kind
-        };
+        let kind = Self::identity(kind);
         if let Some(id) = self.ids.get(&kind) {
             return *id;
         }
@@ -254,7 +250,26 @@ impl TermTable {
 
     /// The identity of one already interned term, without interning it.
     pub(crate) fn interned(&self, kind: &TermKind) -> Option<TermId> {
-        self.ids.get(kind).copied()
+        self.ids.get(&Self::identity(kind.clone())).copied()
+    }
+
+    /// The one canonical form of a term kind.
+    ///
+    /// The constant zero is the distinguished zero term, for the reason
+    /// above. A place-carrying kind takes its path's term identity, so a
+    /// place written twice with the same literal or const subscript is one
+    /// term at both occurrences: `rows[0_u64].len` and the bound
+    /// `i < rows[0_u64].len` owes are otherwise two unrelated quantities
+    /// [MSR-1, ENT-2].
+    fn identity(kind: TermKind) -> TermKind {
+        match kind {
+            TermKind::Constant(0) => TermKind::Zero,
+            TermKind::Place(place, fragment) => TermKind::Place(place.term_identity(), fragment),
+            TermKind::Measure(measure, place) => {
+                TermKind::Measure(measure, place.term_identity())
+            }
+            other => other,
+        }
     }
 
     pub(crate) fn kind(&self, id: TermId) -> &TermKind {

@@ -25,6 +25,10 @@ use super::super::super::model::{
 };
 use super::super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
 use super::super::references::{AccessKind, OWN1_ROOTED_CONSUME, WIN3_NO_TAKE};
+
+/// [TYPE-9] the restructuring a `move` of a runtime-capacity content names.
+const TYPE9_NO_CONTENT_MOVE: &str =
+    "let the Box release it at scope exit, or empty it and call free_empty(move b) [OP-14]";
 use super::super::{CheckStop, Checker, EffectSet, LocalBinding, PlaceAccess, TypedExpression};
 use super::{PlaceUseContext, PlaceUseOptions};
 
@@ -62,7 +66,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         use_node: NodeId,
         node: NodeId,
         pbase: NodeId,
-        bindings: &HashMap<DeclarationId, LocalBinding>,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
         options: PlaceUseOptions,
     ) -> Result<TypedExpression, CheckStop> {
         let place = self.resolve_explicit_place(use_node, node, bindings)?;
@@ -158,6 +162,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
+                // [TYPE-9, WIN-3] `let n = move b.inner;` consumes the
+                // `Box`, yields its content, and frees the cell. It is the
+                // ordinary [WIN-3] consume of a field out of its owner: the
+                // owner ceases to exist at this use, which for a cell leaves
+                // no other part to release.
+                if let CheckedExpression::BoxDeref {
+                    nominal,
+                    referent,
+                    value,
+                    ..
+                } = &place.expression
+                    && place.resolved.path.as_slice() == [PlaceStep::Deref]
+                {
+                    return self.check_box_unbox(
+                        use_node,
+                        place.declaration,
+                        *nominal,
+                        *referent,
+                        value.as_ref().clone(),
+                        bindings,
+                    );
+                }
                 // [WIN-3] there is no take operation and no hole: a move out
                 // of a place a reference names would leave storage no owner
                 // can account for.
@@ -214,6 +240,77 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             accesses: vec![PlaceAccess {
                 place: place.resolved,
                 kind: AccessKind::Read,
+            }],
+        })
+    }
+
+    /// [TYPE-9, WIN-3] `let n = move b.inner;`.
+    ///
+    /// [TYPE-9]: "`let n = move b.inner;` consumes the `Box`, yields its
+    /// content, and frees the cell [WIN-3]." [WIN-3] makes the move out of a
+    /// field a consume of the whole owner, so the cell binding dies here and
+    /// the content is this expression's value. A cell has exactly one field,
+    /// so no other part of the owner survives to take a derived release.
+    ///
+    /// [TYPE-9] refuses the same spelling at a runtime-capacity content: its
+    /// block is the cell's heap object, and taking the window out of the cell
+    /// would leave a `Slots<T>` value in a position the rule admits nowhere.
+    #[allow(clippy::too_many_arguments)]
+    fn check_box_unbox(
+        &self,
+        use_node: NodeId,
+        declaration: DeclarationId,
+        nominal: super::super::super::model::NominalId,
+        referent: CheckedType,
+        value: CheckedExpression,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<TypedExpression, CheckStop> {
+        if matches!(
+            referent,
+            CheckedType::Buffer { .. }
+                | CheckedType::Window {
+                    capacity: None,
+                    ..
+                }
+        ) {
+            return self.issue_node(
+                SemanticRule::Type9,
+                use_node,
+                SemanticIssueKind::InlineRuntimeCapacityShape {
+                    spelling: self.checked_type_name(referent)?,
+                    mechanical_fix: TYPE9_NO_CONTENT_MOVE,
+                },
+            );
+        }
+        let local = bindings
+            .get(&declaration)
+            .cloned()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        // [REF-2] a consume is one of the three invalidating actions: every
+        // reference into the cell names storage this move has carried away.
+        Self::invalidate_references(
+            bindings,
+            &ResolvedPlace::binding(local.binding),
+            &super::super::references::InvalidationEvent::PrefixMoved,
+        );
+        bindings
+            .get_mut(&declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .live = false;
+        Ok(TypedExpression {
+            expression: CheckedExpression::BoxTake {
+                carrier: self.tree.path(use_node)?.clone(),
+                nominal,
+                referent,
+                value: Box::new(value),
+            },
+            mode: CheckedMode::Own,
+            reference: None,
+            reference_value: false,
+            effects: EffectSet::NONE,
+            accesses: vec![PlaceAccess {
+                place: ResolvedPlace::binding(local.binding),
+                kind: AccessKind::Move,
             }],
         })
     }

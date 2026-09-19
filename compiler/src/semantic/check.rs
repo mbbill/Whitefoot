@@ -137,11 +137,6 @@ struct CheckedFunctionInventory {
     binding_names: Vec<String>,
 }
 
-/// [STOR-4]'s restructuring for an arena value that would leave its region's
-/// block, shared by every site that establishes the escape.
-const ARENA_ESCAPE_RESTRUCTURING: &str = "keep the arena value inside its region's block; \
-     return or deliver its content, or a borrow OWN-10 admits, instead";
-
 #[derive(Clone)]
 struct FunctionTemplate {
     declaration: DeclarationId,
@@ -2299,6 +2294,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ArrayFill { value, .. }
             | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::BoxTake { value, .. }
             | CheckedExpression::ArenaNew { value, .. }
             | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
@@ -2537,6 +2533,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ArrayFill { value, .. }
             | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::BoxTake { value, .. }
             | CheckedExpression::ArenaNew { value, .. }
             | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
@@ -3451,7 +3448,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             location,
                             kind: SemanticIssueKind::UndischargedAllocationFitObligation {
                                 residual,
-                                mechanical_fix: "when the allocation must fit, establish `buffer_fits::<T>(n)` with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when allocation shortage is intended program behavior; otherwise restructure the allocation",
+                                mechanical_fix: "the allocation's own size arithmetic must stay inside u64: bound the count with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when the refusal is intended program behavior; otherwise restructure the allocation",
                             },
                         },
                         super::entailment::ObligationFamily::RangeSeparation => SemanticIssue {
@@ -3490,6 +3487,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             crate::CallRequirementDisposition::Unproved
                         }
                     };
+                    // [OP-14] `free_empty` has its own site: "An undischarged
+                    // obligation is a hard error citing OP-14 at the complete
+                    // `call`, rendering the residual". The requirement reaches
+                    // the checker on the ordinary call-requirement path, so
+                    // the rule and the restructuring are selected here rather
+                    // than by a second judgment of the same goal.
+                    if signature.name == "free_empty" {
+                        return Err(CheckStop::source_issue(SemanticIssue {
+                            rule: SemanticRule::Op14,
+                            location: SemanticLocation::SourceNode(
+                                outcome.node_path.clone(),
+                                self.tree.coordinate(node)?,
+                            ),
+                            kind: SemanticIssueKind::UndischargedEmptyRunRelease {
+                                residual: outcome.rendered_goal.clone(),
+                                mechanical_fix: "empty the window and establish its zero length at this point; otherwise take every element out and consume it",
+                            },
+                        }));
+                    }
                     let mechanical_fix = if first_ephemeral_argument(&outcome.goal.root).is_some() {
                         "bind that argument or referent value with one preceding ordinary let, establish the entire instantiated requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow"
                     } else {

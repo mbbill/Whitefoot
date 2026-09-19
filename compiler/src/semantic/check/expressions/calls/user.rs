@@ -265,6 +265,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 requirements: Vec::new(),
                 result,
                 result_borrow: None,
+                allocation: self.allocation_fit_of_call(node, function, signature)?,
             },
             mode: result_mode,
             // [REF-3] no call delivers a reference: FN-1 returns owned values
@@ -274,6 +275,81 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             reference_value: false,
             effects,
             accesses: Vec::new(),
+        })
+    }
+
+    /// [OP-9, OP-13, OP-10] the static allocation-size obligation this call
+    /// carries, if it is one of the operations that carry one.
+    ///
+    /// [OP-13] gives it to "each runtime-capacity construction" and [OP-10]
+    /// to `grow`, "over that operation's own stored type and count". The
+    /// three constructions take the count first and name the stored type in
+    /// their own result cell; `grow` remakes the cell it is handed, so its
+    /// stored type is that cell's and its count is its second argument. The
+    /// constant-capacity rows allocate nothing at runtime and the cell row
+    /// `box_new` allocates exactly one value, so neither carries the
+    /// obligation.
+    fn allocation_fit_of_call(
+        &self,
+        node: NodeId,
+        caller: &FunctionSignature,
+        signature: &FunctionSignature,
+    ) -> Result<Option<super::super::super::super::model::CheckedAllocationFit>, CheckStop> {
+        // [OP-9] the ceiling is `stride_ceiling(T)` of the operation's own
+        // stored type, and a symbolic type parameter fixes no stride. [FN-2]
+        // checks every concrete instance again with that instance's exact
+        // ceiling, so the obligation is carried there; the symbolic schema
+        // instance, which is never lowered and allocates nothing, carries
+        // none rather than one against an unknown ceiling.
+        if caller.substitution.is_symbolic() {
+            return Ok(None);
+        }
+        let (count, cell) = match signature.name.as_str() {
+            "box_array_filled" | "box_slots_new" | "box_ring_new" => (0, signature.result),
+            "grow" => {
+                let Some(parameter) = signature.parameters.first() else {
+                    return Ok(None);
+                };
+                (1, parameter.ty)
+            }
+            _ => return Ok(None),
+        };
+        let Some(element) = self.runtime_capacity_content_element(cell)? else {
+            return Ok(None);
+        };
+        Ok(Some(
+            super::super::super::super::model::CheckedAllocationFit {
+                element,
+                layout_ceiling: self.layout_ceiling(element, node)?,
+                count,
+            },
+        ))
+    }
+
+    /// The element type of the runtime-capacity shape a `Box` holds [TYPE-9].
+    ///
+    /// A runtime-capacity `Array<T>`, `Slots<T>` or `Ring<T>` exists only as
+    /// the content of its cell, so this is the one place the stored type of
+    /// an allocation is found, and a constant-capacity content, which
+    /// allocates no slots of its own, has none.
+    fn runtime_capacity_content_element(
+        &self,
+        cell: CheckedType,
+    ) -> Result<Option<CheckedType>, CheckStop> {
+        let CheckedType::Nominal(nominal) = cell else {
+            return Ok(None);
+        };
+        let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind else {
+            return Ok(None);
+        };
+        Ok(match referent {
+            CheckedType::Buffer { element } => Some(element.ty()),
+            CheckedType::Window {
+                element,
+                capacity: None,
+                ..
+            } => Some(self.element_type(element)?),
+            _ => None,
         })
     }
 
@@ -793,7 +869,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             match step {
                 PlaceStep::Field(field) => projections.push(GoalProjection::Field(*field)),
                 PlaceStep::Deref => projections.push(GoalProjection::Deref),
-                PlaceStep::Index(index) => projections.push(GoalProjection::Subscript(*index)),
+                PlaceStep::Index(index) => {
+                    projections.push(GoalProjection::Subscript(index.goal_identity()));
+                }
                 // [ENT-2] a goal datum's place carries field selections,
                 // `deref` wrappings and subscripts; a payload, range, part or
                 // measure step is no datum spelling, so the image stops here.
@@ -918,11 +996,38 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if holder_pending && !suffixes.is_empty() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        if !suffixes.is_empty() {
-            let (fields, final_ty) = self.resolve_struct_path(&suffixes, expression.ty())?;
+        for &suffix in &suffixes {
+            let ty = expression.ty();
+            // [TYPE-9] a `Box`'s content is its field `inner`, and the storage
+            // below that field is the cell's referent, so the image takes the
+            // dereference step the content already is rather than a field
+            // selection. The field walk below has no step for it.
+            if let CheckedType::Nominal(nominal) = ty
+                && let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind
+            {
+                let name = self
+                    .deferred_use_at(suffix, crate::DeferredUseRole::ProjectedField)?
+                    .spelling()
+                    .to_owned();
+                if name != "inner" {
+                    return self.issue_node(
+                        SemanticRule::Type9,
+                        suffix,
+                        SemanticIssueKind::type_mismatch(
+                            "the Box content field `inner`",
+                            format!("the field name `{name}`, which a Box does not declare"),
+                        ),
+                    );
+                }
+                expression = expression
+                    .with_projection(GoalProjection::Deref, referent)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                continue;
+            }
+            let (fields, selected) = self.resolve_struct_path(std::slice::from_ref(&suffix), ty)?;
             for field in fields {
                 expression = expression
-                    .with_projection(GoalProjection::Field(field), final_ty)
+                    .with_projection(GoalProjection::Field(field), selected)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             }
         }

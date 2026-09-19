@@ -18,8 +18,8 @@ use crate::{CanonicalSyntaxUnit, NodePath, SyntaxCoordinate};
 pub use engine::resolve;
 
 pub use kernel::{
-    CONTAINER_NOMINAL_CLASS, CONTAINER_NOMINAL_CLASSES, CONTAINER_NOMINALS, ContainerNominal,
-    ContainerNominalId, ContainerShape, container_nominal,
+    CELL_NOMINAL, CELL_NOMINAL_ID, CONTAINER_NOMINAL_CLASS, CONTAINER_NOMINAL_CLASSES,
+    CONTAINER_NOMINALS, ContainerNominal, ContainerNominalId, ContainerShape, container_nominal,
 };
 
 /// Returns the exact OP-1 spelling of a resolved operation family.

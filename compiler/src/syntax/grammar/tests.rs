@@ -235,7 +235,14 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 118);
+    // The same 119 decisions `complete_inventory_is_pinned` reads out of the
+    // generated table, counted a second time by walking every production's
+    // node tree. `struct_decl`'s `"opaque"?` optional [GRAM-2, TYPE-2] is
+    // reachable from `item`, so the walk and the table agree on it; a
+    // decision in the table that no production reaches would show up as the
+    // two counts disagreeing.
+    assert_eq!(decisions, DECISIONS.len());
+    assert_eq!(decisions, 119);
 }
 
 #[test]
@@ -336,6 +343,9 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
-    assert_eq!(total_rows, 5_218);
+    // The 5,237 rows `complete_inventory_is_pinned` pins, counted here by
+    // summing each decision's own rows: `struct_decl`'s `"opaque"?` optional
+    // [GRAM-2, TYPE-2] brought nineteen of them in with it.
+    assert_eq!(total_rows, 5_237);
     assert!(saw_atom_only);
 }

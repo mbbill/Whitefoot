@@ -231,6 +231,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ArrayFill { value, .. }
             | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::BoxTake { value, .. }
             | CheckedExpression::ArenaNew { value, .. }
             | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {

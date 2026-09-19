@@ -1227,7 +1227,7 @@ fn goal_projection_of_step(step: &PlaceStep) -> Option<GoalProjection> {
     match step {
         PlaceStep::Deref => Some(GoalProjection::Deref),
         PlaceStep::Field(field) => Some(GoalProjection::Field(*field)),
-        PlaceStep::Index(offset) => Some(GoalProjection::Subscript(*offset)),
+        PlaceStep::Index(offset) => Some(GoalProjection::Subscript(offset.goal_identity())),
         PlaceStep::Payload { .. }
         | PlaceStep::Range(_)
         | PlaceStep::Part(_)
@@ -4393,7 +4393,22 @@ impl Analyzer<'_, '_> {
                 | KillEvent::EntryImageHolderWrite { place: written, .. }
                     if support.measure.is_some() =>
                 {
+                    // [MSR-2, WIN-2] a row naming a measure word of P --
+                    // `writes(window.len)` in an [OP-10] row -- writes exactly
+                    // that word of P's own descriptor, which contains no
+                    // storage the place test above reaches. The L0 measure
+                    // term reads the same two sentences in
+                    // `event_kills_measure`, and a goal over the same measure
+                    // must die on the same event: otherwise the goal-level
+                    // reading of `deref(p).len` survives the operation that
+                    // changed it and stands beside the row's own post-state
+                    // relation as a contradiction.
                     written.contains(&place)
+                        || support.measure.is_some_and(|measure| {
+                            Self::descriptor_write_of(written, &place).is_some_and(|written| {
+                                Self::measure_word_carries(written, measure)
+                            })
+                        })
                 }
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
@@ -5384,6 +5399,9 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::Project { .. }
             | CheckedExpression::DerefAddressed { .. }
             | CheckedExpression::BoxDeref { .. }
+            // [TYPE-9, WIN-3] an unbox consumes its owner, so the value it
+            // produces is no longer a place any goal datum can name.
+            | CheckedExpression::BoxTake { .. }
             | CheckedExpression::ProjectValue { .. }
             | CheckedExpression::UserCall { .. }
             | CheckedExpression::PostconditionResultMeasure { .. }
@@ -6571,7 +6589,7 @@ impl Analyzer<'_, '_> {
         let contradictory = proof.route == Some(ProofRoute::Contradiction);
         let derivation = proof.derivation;
         let residual = (!discharged)
-            .then(|| format!("len_of({}) <= 0_u64", self.render_place(&place)));
+            .then(|| format!("{}.len <= 0_u64", self.render_place(&place)));
         let ordinal = u32::try_from(self.obligations.len())
             .expect("ENT obligation-root ordinal exceeds the u32 identity space");
         if let Some(root) = derivation {
@@ -6633,12 +6651,33 @@ impl Analyzer<'_, '_> {
                 arguments,
                 goal_arguments,
                 requirements,
+                allocation,
                 ..
             } => {
                 let obligation_start = self.obligations.len();
                 let mut actuals_reached = true;
                 for argument in arguments {
                     actuals_reached &= self.judge_expression(argument, states).reached;
+                }
+                // [OP-9] a runtime-capacity construction [OP-13] and `grow`
+                // [OP-10] carry the static allocation-size obligation over
+                // their own stored type and count. It is judged at the call,
+                // after the count expression's own obligations, and before
+                // the callee's written requirements: an unproved count is an
+                // OP-9 rejection of the allocation and not an FN-8 report
+                // about a clause the row happens to write.
+                if let Some(allocation) = allocation
+                    && actuals_reached
+                    && let Some(length) = arguments.get(allocation.count)
+                {
+                    self.judge_allocation_fit(
+                        allocation.element,
+                        allocation.layout_ceiling.stride.allocation_limit(),
+                        length,
+                        call.clone(),
+                        states,
+                    );
+                    actuals_reached &= self.obligations_since_discharged(obligation_start);
                 }
                 let actual_parents = self.obligations[obligation_start..]
                     .iter()
@@ -8272,7 +8311,7 @@ impl Analyzer<'_, '_> {
         let fixed_array_affine =
             self.affine_fixed_array_index_target(offset, array_length, &states.affine);
         let rendered_residual = format!(
-            "{} < len_of({})",
+            "{} < {}.len",
             self.render_expression(offset),
             self.render_place(&base)
         );
@@ -8737,9 +8776,12 @@ impl Analyzer<'_, '_> {
             )
             .ok()
         });
+        // [OP-9] the predicate "has no writer-callable spelling", so the
+        // residual is the defining comparison itself: the count this
+        // operation was handed against the largest one its stored type
+        // admits.
         let rendered = format!(
-            "buffer_fits::<{:?}>({})",
-            element,
+            "{} <= {maximum_length}_u64",
             self.render_expression(length)
         );
 
@@ -11665,7 +11707,7 @@ impl Analyzer<'_, '_> {
                     root.binding,
                     root.place_path(),
                 ));
-                return Some(format!("{}({place})", measure.spelling()));
+                return Some(format!("{place}.{}", measure.spelling()));
             }
             CheckedExpression::RangeMeasure { measure, root } => {
                 (*measure, root.binding, Vec::new())
@@ -11681,12 +11723,12 @@ impl Analyzer<'_, '_> {
                 root: root.root,
                 path: path.path,
             });
-                return Some(format!("{}({place})", measure.spelling()));
+                return Some(format!("{place}.{}", measure.spelling()));
             }
             _ => return None,
         };
         let place = self.render_place(&ResolvedPlace::spelled(PlaceRoot::Binding(binding), false, fields));
-        Some(format!("{}({place})", measure.spelling()))
+        Some(format!("{place}.{}", measure.spelling()))
     }
 
     fn checked_affine_relation_inequality(
@@ -15350,7 +15392,7 @@ impl Analyzer<'_, '_> {
                         }
                     }
                 }
-                format!("{}({place})", measure.spelling())
+                format!("{place}.{}", measure.spelling())
             }
             // A measure datum has no source spelling of its own: it is the
             // measure the carried value had at the event that renamed it.
@@ -15552,20 +15594,28 @@ impl Analyzer<'_, '_> {
                 ..
             } => format!("{}_{}", integer_value(*ty, *bits), integer_type_name(*ty)),
             CheckedExpression::Binding { binding, .. } => self.binding_name(*binding),
+            // [OP-15, MSR-1] a measure is read as a member of the measured
+            // place, so a residual naming one spells it `p.len` and never as
+            // a call of a reader row [FORM-1].
             CheckedExpression::BufferMeasure { measure, root } => format!(
-                "{}({})",
-                measure.spelling(),
+                "{}.{}",
                 self.render_place(&ResolvedPlace::from_path(root.binding, root.place_path())),
+                measure.spelling(),
             ),
             CheckedExpression::RangeMeasure { measure, root } => format!(
-                "{}({})",
-                measure.spelling(),
+                "{}.{}",
                 self.render_place(&ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), Vec::new())),
+                measure.spelling(),
             ),
             CheckedExpression::ArrayMeasure { measure, root, .. } => format!(
-                "{}({})",
-                measure.spelling(),
+                "{}.{}",
                 self.render_place(&self.array_root_place(root)),
+                measure.spelling(),
+            ),
+            CheckedExpression::ContainerMeasure { measure, root } => format!(
+                "{}.{}",
+                self.render_storage_place(root),
+                measure.spelling(),
             ),
             CheckedExpression::Project {
                 binding, fields, ..
@@ -15736,14 +15786,16 @@ fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
             arguments.join(", ")
         ),
         GoalOperation::ArrayFill { .. } => render_operation_spelling("array_new", arguments),
-        GoalOperation::ArrayMeasure { .. }
-        | GoalOperation::BufferMeasure { .. }
-        | GoalOperation::RangeMeasure { .. } => render_operation_spelling("len_of", arguments),
-        // [MSR-1]: one quantity, one name, term and reader alike, so the
-        // residual names the measure the row reads rather than one of them.
-        GoalOperation::ContainerMeasure { measure, .. } => {
-            render_operation_spelling(measure.spelling(), arguments)
-        }
+        // [OP-15, MSR-1]: one quantity, one name, term and reader alike, and
+        // the name is the member spelling `p.len` of the measured place. The
+        // v0.59 `len_of(p)` former is not a v0.60 spelling.
+        GoalOperation::ArrayMeasure { measure, .. }
+        | GoalOperation::BufferMeasure { measure, .. }
+        | GoalOperation::RangeMeasure { measure, .. }
+        | GoalOperation::ContainerMeasure { measure, .. } => match arguments {
+            [place] => format!("{place}.{}", measure.spelling()),
+            _ => "<invalid measure goal>".to_owned(),
+        },
         GoalOperation::ArrayIndex { .. }
         | GoalOperation::BufferIndex { .. }
         | GoalOperation::RunIndex { .. }

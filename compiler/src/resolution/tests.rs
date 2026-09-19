@@ -1709,6 +1709,12 @@ fn probe() -> result: own unit pure {
 /// the index and range endpoints [EFF-1] now admits inside an effect path, and
 /// `PayloadVariant` for the variant TYPEID of the enum-payload `psuffix`
 /// [GRAM-5] adds. Both are materialized below.
+///
+/// The effect path's two endpoint parameters are spelled `lower` and `upper`
+/// because [FORM-3] reserves the eight measure and part names from every
+/// declaration role and `last` is one of them. The role under test is the
+/// endpoint position, which any ordinary IDENT occupies, so the rename
+/// changes nothing the fixture exists to materialize.
 #[test]
 fn complete_role_fixture_materializes_every_declaration_use_and_deferred_family() {
     let source = br#"formal Bound {
@@ -1754,7 +1760,7 @@ fn grouped<Bound>() -> result: own i32 pure {
   return called;
 }
 
-fn adjust(holder: &Holder, first: own u64, last: own u64) -> result: own unit reads(holder.table[first..last]), writes(holder.output) {
+fn adjust(holder: &Holder, lower: own u64, upper: own u64) -> result: own unit reads(holder.table[lower..upper]), writes(holder.output) {
   return unit;
 }
 
@@ -1896,7 +1902,7 @@ fn probe() -> result: own unit pure {
             .expect("generic literal suffix must resolve");
         assert_eq!(suffix.origin().subtoken_ordinal(), 1);
 
-        // [EFF-1] `reads(holder.table[first..last])` roots at the reference
+        // [EFF-1] `reads(holder.table[lower..upper])` roots at the reference
         // parameter, selects one field below it, and supplies both endpoints
         // as value parameters of the same callable.
         let indices: Vec<_> = resolved
@@ -1905,7 +1911,7 @@ fn probe() -> result: own unit pure {
             .filter(|usage| usage.role() == LexicalUseRole::EffectIndex)
             .map(|usage| usage.spelling().to_owned())
             .collect();
-        assert_eq!(indices, vec!["first".to_owned(), "last".to_owned()]);
+        assert_eq!(indices, vec!["lower".to_owned(), "upper".to_owned()]);
     });
 }
 
@@ -2016,6 +2022,9 @@ fn prelude_collision_payload_keeps_both_ordered_struct_domains() {
         assert_eq!(conflicts.len(), 2);
         assert_eq!(conflicts[0].domain(), DeclarationDomain::NominalType);
         assert_eq!(conflicts[1].domain(), DeclarationDomain::Constructor);
+        // This unit is resolved without the parsed prelude, so the inventory
+        // is the built-in catalog alone and `Overflow`'s two records keep the
+        // ordinals that catalog gives them [PRE-1, DIAG-1].
         assert!(
             matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 15)
         );
@@ -2450,14 +2459,41 @@ fn ordinary_prelude_names_cannot_be_shadowed_and_opaque_types_have_no_constructo
             },
         );
     }
+    // [TYPE-2] an opaque struct's constructor entry "exists to be refused", so
+    // resolution supplies it and the refusal is the checker's hard error at
+    // the complete `call`. What is checked here is that the entry resolves:
+    // the rejection that used to happen at this stage, as an unresolved name,
+    // would have made [TYPE-2]'s judgment over a resolved declaration
+    // unreachable.
     let source = b"fn fabricate() -> result: own HostString pure {\n  return HostString();\n}\n";
     with_resolution_sources(&[SourceInput::new("opaque.wf", source)], true, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("an ordinary opaque nominal has no constructor: {outcome:?}");
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("an opaque nominal's constructor entry resolves: {outcome:?}");
         };
-        assert!(
-            matches!(issue.kind(), ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "HostString")
-        );
+        assert!(resolved.lexical_uses().iter().any(|usage| {
+            usage.spelling() == "HostString"
+                && matches!(
+                    usage.target(),
+                    ResolvedTarget::Source {
+                        class: DeclarationClass::StructConstructor,
+                        ..
+                    }
+                )
+        }));
+    });
+    // The cell keeps the one compiler-owned identity every later stage reads
+    // a written `Box` through [TYPE-2, TYPE-9, PRE-1], in the constructor
+    // domain as in the nominal one.
+    let source = b"fn hold(cell: own Box<u64>) -> result: own Box<u64> pure {\n  return move cell;\n}\n";
+    with_resolution_sources(&[SourceInput::new("cell.wf", source)], true, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("the cell resolves as a nominal type: {outcome:?}");
+        };
+        assert!(resolved.lexical_uses().iter().any(|usage| {
+            usage.origin().coordinate().source().ordinal() == 0
+                && usage.spelling() == "Box"
+                && usage.target() == ResolvedTarget::Container(crate::CELL_NOMINAL_ID)
+        }));
     });
 }
 
@@ -2502,13 +2538,17 @@ fn supplied_signature_locals_do_not_capture_writer_global_names() {
 
 #[test]
 fn ordinary_prelude_diagnostic_origins_follow_the_complete_record_preorder() {
-    // Opaque table first; Bool and its variants follow; the ordinary struct
-    // contributes distinct nominal and constructor records before its fields.
+    // The opaque structs first, each with the nominal and the refused
+    // constructor [TYPE-2] its collision names in both domains; `Bool` and
+    // its variants follow; the ordinary struct contributes distinct nominal
+    // and constructor records before its fields. `Bool` collides on its
+    // nominal alone, because an enum contributes its variants' spellings to
+    // the constructor domain and not its own.
     for (name, origins) in [
-        ("HostString", vec![1]),
-        ("Bool", vec![14]),
-        ("Overflow", vec![29, 30]),
-        ("TcpConnection", vec![36, 37]),
+        ("HostString", vec![6, 7]),
+        ("Bool", vec![32]),
+        ("Overflow", vec![47, 48]),
+        ("TcpConnection", vec![54, 55]),
     ] {
         let source = format!("struct {name} {{\n}}\n");
         with_resolution_sources(
@@ -2566,45 +2606,42 @@ fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_cou
     let first = read_inventory(b"fn helper() -> result: own unit pure {\n  return unit;\n}\n");
     let second = read_inventory(b"struct Extra {\n  field: u64;\n}\n\nfn helper() -> result: own unit pure {\n  let local = 0_u64;\n  return unit;\n}\n");
     assert_eq!(first, second);
-    assert_eq!(first[0].1, "Args");
-    assert_eq!(first[14].1, "Bool");
-    assert_eq!(first[36].1, "TcpConnection");
-    assert_eq!(first[40].1, "AcceptedConnection");
-    // [PRE-1]'s preorder: the opaque nominals, then each struct or enum with
-    // its constructor or variants and their fields, then `Int` and `Float`,
-    // then the host functions, then the construction functions [OP-13], then
-    // the window operations [OP-10], then `swap` [OP-11] and `free_empty`
-    // [OP-14], each with its type, const and value parameters in declared
-    // order. Nothing before `Int` moved in v0.60; the tail grew from 279 to
-    // 361 records because the twenty new function records carry 82 records of
-    // their own names, generic parameters and value parameters.
-    assert_eq!(first[158].1, "Int");
-    assert_eq!(first[159].1, "Float");
-    assert_eq!(first[160].1, "args_count");
-    assert_eq!(first[276].1, "close_send");
-    assert_eq!(first[279].1, "box_new");
-    assert_eq!(first[310].1, "place_back");
-    assert_eq!(first[354].1, "swap");
-    assert_eq!(first[358].1, "free_empty");
-    assert_eq!(first.len(), 361);
-    // This pin is against the prelude the front end actually declares. The
-    // later specification amendment that made `Box<T>` and the fourteen host
-    // handles `opaque struct` declarations has not reached `prelude.rs` or
-    // `resolution/engine.rs` yet, so the inventory below is still the one
-    // this compiler builds:
-    //   - `prelude.rs` declares the fourteen handles without the `opaque`
-    //     modifier and does not declare `Box` at all; `Box` is a
-    //     compiler-owned `CONTAINER_NOMINALS` row (`resolution/kernel.rs`).
-    //   - `resolution/engine.rs` removes the `StructConstructor` class from a
-    //     `PreludeSource::Opaque` struct, where [TYPE-2] now says that entry
-    //     "exists to be refused".
-    // When that lands, [PRE-1]'s preorder — "each opaque struct above in
-    // written order with its refused constructor and its fields in
-    // declaration order" — puts `opaque struct Box<T> { inner: T; }` first
-    // and gives each handle a constructor record, so the count rises by the
-    // fourteen handle constructors plus `Box`'s own records and every ordinal
-    // asserted above shifts. Update this pin and the ordinals in the same
-    // change as that front-end work, not before it.
+    // [PRE-1]'s preorder: "each opaque struct above in written order with its
+    // refused constructor and its fields in declaration order", so the cell
+    // comes first with four records of its own — its nominal, the constructor
+    // [TYPE-2] exists to refuse, its type parameter and its field `inner` —
+    // and each of the fourteen host handles follows with a nominal and a
+    // refused constructor and no field at all.
+    assert_eq!(first[0].1, "Box");
+    assert_eq!(first[0].2, Some(DeclarationClass::NominalType));
+    assert_eq!(first[1].1, "Box");
+    assert_eq!(first[1].2, Some(DeclarationClass::StructConstructor));
+    assert_eq!(first[2].1, "T");
+    assert_eq!(first[3].1, "inner");
+    assert_eq!(first[4].1, "Args");
+    assert_eq!(first[5].2, Some(DeclarationClass::StructConstructor));
+    assert_eq!(first[30].1, "TcpSend");
+    // Then each ordinary struct or enum with its constructor or variants and
+    // their fields, then `Int` and `Float`, then the host functions, then the
+    // construction functions [OP-13], then the window operations [OP-10],
+    // then `swap` [OP-11] and `free_empty` [OP-14], each with its type, const
+    // and value parameters in declared order.
+    assert_eq!(first[32].1, "Bool");
+    assert_eq!(first[54].1, "TcpConnection");
+    assert_eq!(first[58].1, "AcceptedConnection");
+    assert_eq!(first[176].1, "Int");
+    assert_eq!(first[177].1, "Float");
+    assert_eq!(first[178].1, "args_count");
+    assert_eq!(first[294].1, "close_send");
+    assert_eq!(first[297].1, "box_new");
+    assert_eq!(first[328].1, "place_back");
+    assert_eq!(first[372].1, "swap");
+    assert_eq!(first[376].1, "free_empty");
+    // The opaque phase went from 14 records to 32 when the cell joined it and
+    // every opaque struct gained its refused constructor: `Box` contributes
+    // four and each handle two, so the whole inventory grew by 18 and every
+    // ordinal from `Bool` on moved by that much.
+    assert_eq!(first.len(), 379);
     // `free_empty`'s own value parameter is the last record of the preorder.
     assert_eq!(first.last().map(|record| record.1.as_str()), Some("window"));
     assert!(
@@ -2635,7 +2672,7 @@ fn a_late_prelude_function_collision_preserves_an_ordinal_above_u8() {
             };
             assert_eq!(conflicts.len(), 1);
             assert!(
-                matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 276)
+                matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 294)
             );
         },
     );

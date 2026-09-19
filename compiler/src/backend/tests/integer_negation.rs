@@ -57,14 +57,33 @@ fn executes_every_negation_mode_for_every_signed_width() {
         let intrinsic = format!("@llvm.ssub.with.overflow.i{width}");
         assert!(
             llvm.contains(&format!("sub i{width} 0,")),
-            "wrapping and proved-exact negation must be plain subtraction for {ty}"
+            "wrapping negation must be plain subtraction for {ty}"
         );
         assert!(
             llvm.matches(&format!("{intrinsic}(i{width}")).count() == 3,
             "only the declaration and two checked {ty} negations need the overflow intrinsic"
         );
         assert!(llvm.contains(&format!("icmp ne i{width}")));
-        assert!(!llvm.contains(" nsw "));
+        // `nsw` appears exactly on the exact-mode negation and on no
+        // wrap-mode negation, which is what keeps this module free of
+        // undefined behavior. [OP-2] gives the `exact` family a domain
+        // obligation the checker discharged before lowering, so `0 - (-42)`
+        // provably does not overflow and the flag states a proved fact; the
+        // `wrap` family is defined at every operand, including the minimum
+        // this program hands it, so the same flag there would state the
+        // opposite of the rule and hand the optimizer a false premise about
+        // an operand the language defines. No negation is unsigned, so no row
+        // states `nuw` at all.
+        assert_eq!(
+            llvm.matches(&format!("sub nsw i{width} 0,")).count(),
+            1,
+            "exactly the exact-mode {ty} negation carries nsw"
+        );
+        assert_eq!(
+            llvm.matches(" nsw ").count(),
+            1,
+            "and no other {ty} row in the module carries it"
+        );
         assert!(!llvm.contains(" nuw "));
         let output = compile_and_run(&llvm);
         assert!(

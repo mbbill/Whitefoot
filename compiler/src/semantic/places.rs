@@ -43,6 +43,13 @@ use super::model::{
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct CaptureId(pub(crate) u32);
 
+/// The occurrence a value-determined capture carries in a goal datum.
+///
+/// It stands for no source node: a literal and a const denote one value at
+/// every occurrence, so the identity of the place they index is their value
+/// and not where it was written [REF-1, ENT-2].
+const VALUE_DETERMINED_CAPTURE: CaptureId = CaptureId(u32::MAX - 2);
+
 /// How the entailment fragment reads one captured value [ENT-2].
 ///
 /// A written literal and a named or generic const are values this relation
@@ -87,20 +94,43 @@ impl CapturedValue {
         Self::new(CaptureId(u32::MAX), CapturedTerm::Opaque)
     }
 
+    /// The identity this capture carries inside a goal datum [ENT-2].
+    ///
+    /// A goal datum is compared structurally, so a place written twice is one
+    /// term only when its subscripts are one value there. A written literal
+    /// and an in-scope const are value-determined: `rows[0_u64]` denotes one
+    /// storage wherever it is written, exactly as [`Self::provably_same`]
+    /// already decides. The occurrence that evaluated them therefore carries
+    /// no identity of its own and is dropped, which is what makes
+    /// `rows[0_u64].len` and the bound of `rows[0_u64][i]` one term [MSR-1].
+    /// A binding read and an opaque value keep their occurrence: a binding's
+    /// two reads may straddle a write to it, so they are one term only when
+    /// one evaluation produced both.
+    pub(crate) const fn goal_identity(self) -> Self {
+        match self.term {
+            CapturedTerm::Literal(_) | CapturedTerm::Const(_) => {
+                Self::new(VALUE_DETERMINED_CAPTURE, self.term)
+            }
+            CapturedTerm::Binding(_) | CapturedTerm::Opaque => self,
+        }
+    }
+
     /// Whether the two captures hold one value on every execution.
     ///
     /// One capture occurrence is one evaluation, so an equal `CaptureId` is
     /// equality of the value itself. Across two occurrences only the two
     /// value-determined terms decide it: a binding's two reads may straddle a
     /// write to that binding, and an opaque value names no term at all.
+    /// A value-determined term decides the pair by its own value, before the
+    /// occurrence is consulted at all: two literals hold one value exactly
+    /// when they are the same literal, whether or not one evaluation produced
+    /// both, and [`Self::goal_identity`] drops the occurrence from such a
+    /// capture, so the occurrence is no longer evidence there.
     pub(crate) fn provably_same(self, other: Self) -> bool {
-        if self.capture == other.capture {
-            return true;
-        }
         match (self.term, other.term) {
             (CapturedTerm::Literal(left), CapturedTerm::Literal(right)) => left == right,
             (CapturedTerm::Const(left), CapturedTerm::Const(right)) => left == right,
-            _ => false,
+            _ => self.capture == other.capture,
         }
     }
 
@@ -249,6 +279,33 @@ pub(crate) struct ResolvedPlace {
 }
 
 impl ResolvedPlace {
+    /// The identity this place carries as an [ENT-2] term.
+    ///
+    /// A term is interned by its path, so `rows[0_u64].len` written twice is
+    /// one measure term only when the two paths are equal there. A written
+    /// literal and an in-scope const are value-determined, so their
+    /// occurrence carries no identity of its own and
+    /// [`CapturedValue::goal_identity`] drops it; a binding read and an
+    /// opaque offset keep theirs, because two reads of one binding may
+    /// straddle a write to it.
+    pub(crate) fn term_identity(mut self) -> Self {
+        for step in &mut self.path {
+            match step {
+                PlaceStep::Index(offset) => *offset = offset.goal_identity(),
+                PlaceStep::Range(range) => {
+                    range.start = range.start.goal_identity();
+                    range.end = range.end.goal_identity();
+                }
+                PlaceStep::Field(_)
+                | PlaceStep::Deref
+                | PlaceStep::Payload { .. }
+                | PlaceStep::Part(_)
+                | PlaceStep::Measure(_) => {}
+            }
+        }
+        self
+    }
+
     /// The whole storage of one binding, with no selection below the root.
     pub(crate) const fn binding(binding: BindingId) -> Self {
         Self {

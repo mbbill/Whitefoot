@@ -1245,6 +1245,7 @@ fn collect_operand_reads(
         | CheckedExpression::ReborrowAddressed { .. }
         | CheckedExpression::BoxNew { .. }
         | CheckedExpression::BoxDeref { .. }
+        | CheckedExpression::BoxTake { .. }
         | CheckedExpression::ArenaNew { .. }
         | CheckedExpression::ArenaDeref { .. } => {
             footprint.unresolved = Some(node.clone());

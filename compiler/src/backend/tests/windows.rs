@@ -176,7 +176,12 @@ fn main() -> status: own ExitStatus pure {
 
     // INV-1 and OP-2 discharge before lowering. The loop therefore contains
     // one plain integer addition and no runtime representation of `per_byte`.
-    assert!(weigh.contains("add i32"));
+    // The addition is spelled `add nuw i32`: `+` is [OP-2]'s exact family,
+    // whose domain obligation the checker discharged here, and the emitted
+    // flag states that proved fact over an unsigned operand. It remains one
+    // addition, with no runtime check of its own.
+    assert!(weigh.contains("add nuw i32"));
+    assert_eq!(weigh.matches("add nuw i32").count(), 1);
     assert!(!weigh.contains(".with.overflow."));
     assert!(!weigh.contains("call void @wf_trap"));
     assert!(!llvm.contains("per_byte"));

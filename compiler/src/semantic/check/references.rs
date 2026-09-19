@@ -82,10 +82,6 @@ pub(super) const WIN3_NO_TAKE: &str = "use take_back, remove_at, or swap [OP-10,
 pub(super) const OWN1_ROOTED_CONSUME: &str =
     "consume a place rooted in a live own-mode binding of this function";
 
-/// [WIN-3]'s restructuring for a remaining linear part of a consumed owner.
-pub(super) const WIN3_DESTRUCTURE: &str =
-    "take it in the same destructuring: let N(f: a, ..) = move v;";
-
 /// What one use does to the storage at a place.
 ///
 /// There are four, and no fifth: v0.59's shared/unique borrow split had the
