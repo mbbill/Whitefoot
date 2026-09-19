@@ -545,11 +545,3 @@ would stop the work. For a consumer of checked facts, ask:
 
 Record a selected experiment and its discriminating criterion in its existing
 research home, following [decision practice](practice.md#decision-work).
-
-### Iterative descent of owned links by reference
-
-Candidate x1 gives every path a static shape: a loop may change the indices inside a reference's path but may not extend the path through the reference itself, so `loop { p = &deref(p.next) }` over a Box-linked list is refused and the walk is written by recursion or over a pool with an index. Revisit if the pool-plus-index form proves too slow or inexpressible on a real workload; the candidate mechanism on record is a wildcard path form (`x.**`, "somewhere under x") with conservative overlap and invalidation against everything under `x`. See [candidate x1](../research/investigations/access-effects/CANDIDATE-X1.md), Rule 2 and the deferred list.
-
-### Totality and recursion-depth proofs
-
-Stack depth is an implementation obligation, not a language promise: the compiler-derived release of an owned chain runs in bounded stack and self tail calls are eliminated. Domains that need determinism about resource use will eventually need proved totality (termination) and proved recursion depth as obligation families; neither exists today, and the atomic in-place update of candidate x1 deliberately requires only that its function returns the place's type with no failure exit.
