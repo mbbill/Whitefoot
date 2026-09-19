@@ -42,7 +42,7 @@ A reference may be rebound. At a control-flow join, a reference variable's targe
 
 ```text
 w = if cond { &v1 } else { &v2 }     // w names one of {v1, v2}
-p = &deref(w)[i]                         // p names one of {(*v1)[i], (*v2)[i]}
+p = &deref(w)[i]                         // p names one of {deref(v1)[i], deref(v2)[i]}
 loop { p = &deref(p.kids)[0] }           // rejected: the path would grow without bound; use recursion or indices
 ```
 
@@ -60,12 +60,12 @@ deref(v)[j] = 5            // a content write on slot j: p stays valid whether o
 grow(&v, cap)          // declares writesderef(v): *v is a proper prefix of deref(v)[i]: p invalid
 use(p)                 // rejected
 
-q = &(*deref(g)[j]).value  // g: Box<Slots<Box<Node>>>
+q = &deref(deref(g)[j]).value  // g: Box<Slots<Box<Node>>>
 replace_at(&g, i, nb)  // writes deref(g)[i]: overlaps deref(g)[j] unless i != j is proved: q invalid
                        // with the fact i != j, q survives
 
 p = &deref(b)                // b: Box<Node>; p names the heap Node
-c = move b             // b is a proper prefix of *b: p invalid, even though the Node did not move
+c = move b             // b is a proper prefix of deref(b): p invalid, even though the Node did not move
 use(p)                 // rejected; form a new reference from c
 
 p: &Int
@@ -129,7 +129,7 @@ Slots::from_array(move a)            // a full window; Slots::into_array(move r)
 
 Window parts. Besides its slots, a window has four named parts that paths and effect rows may name, all interpreted at call entry: `r.next` (the append slot, at index `r.len`), `r.last` (the last filled slot, at index `r.len - 1`), `r.filled` (all slots below `r.len`), and `r.free` (all slots from `r.len` up). Overlap follows from the definitions: a live `r[i]` (which has `i < r.len`) never overlaps `r.next` or `r.free`, overlaps `r.last` unless `i != r.len - 1` is proved, and always overlaps `r.filled`. The measure `r.len` is itself a write target. Parts are vocabulary for effect rows and the overlap judgment only: no program forms a reference to a part, reads it, or writes it; the append slot is written only by `place_back` and `insert_at`. This vocabulary is ordinary: the rows below use nothing a user function cannot write.
 
-Window operations, shared by `Slots` and `Ring` (`r` stands for the storage, e.g. `*b`):
+Window operations, shared by `Slots` and `Ring` (`r` stands for the storage, e.g. `deref(b)`):
 
 ```text
 place_back(&r, x)          writes(r.next), writes(r.len)
