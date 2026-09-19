@@ -637,10 +637,17 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
                             | "len"
                             | "initialized slots"
                             | "slots taken"
-                            | "cap - len"
                             | "range elements"
                     ),
                     "{name}'s {} cell is a runtime quantity of the block, written {written}",
+                    measure.spelling()
+                ),
+                // The one cell the table fixes as the complement of the other
+                // two, which is every window row's `room` and no other cell.
+                MeasureCell::ExactComplement => assert_eq!(
+                    written,
+                    "cap - len",
+                    "{name}'s {} cell is the complement the table writes",
                     measure.spelling()
                 ),
                 MeasureCell::Bounded => {

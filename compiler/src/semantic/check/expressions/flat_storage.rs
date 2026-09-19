@@ -187,13 +187,7 @@ impl CheckedIndexedPlace {
                 }
                 CheckedArrayRoot::Constant(_) => Vec::new(),
             },
-            Self::Buffer(buffer) => buffer
-                .root
-                .fields
-                .iter()
-                .copied()
-                .map(PlaceStep::Field)
-                .collect(),
+            Self::Buffer(buffer) => buffer.root.place_path(),
             // [REF-1] the reference names one path; the element is that path
             // extended by this subscript.
             Self::Range(range) => range.resolved.path.clone(),
@@ -1433,13 +1427,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let fields = field_prefix(&path);
         match ty {
             CheckedType::Buffer { element } => {
-                let Some(fields) = fields else {
-                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
-                };
                 Ok(CheckedIndexedPlace::Buffer(CheckedBufferPlace {
                     root: CheckedBufferRoot {
                         binding,
-                        fields,
+                        path: path.clone(),
                         element,
                     },
                     declaration: place.declaration,
@@ -1683,19 +1674,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let (Some(binding), Some(declaration)) = (binding, declaration) else {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 };
-                let Some(fields) = fields else {
-                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, anchor);
+                let root = CheckedBufferRoot {
+                    binding,
+                    path: path.clone(),
+                    element,
                 };
-                let resolved_fields = fields.clone();
+                let resolved = ResolvedPlace::from_path(binding, root.place_path());
                 Ok(CheckedIndexedPlace::Buffer(CheckedBufferPlace {
-                    root: CheckedBufferRoot {
-                        binding,
-                        fields,
-                        element,
-                    },
+                    root,
                     declaration,
                     element_type: element.ty(),
-                    resolved: ResolvedPlace::fields(binding, resolved_fields),
+                    resolved,
                 }))
             }
             // [TYPE-7] owns the implicit-read case exclusively: a `box` holder

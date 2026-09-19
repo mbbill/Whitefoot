@@ -9,8 +9,10 @@ struct Table {
 
 fn main() -> status: own ExitStatus pure {
   doc "A field-index-field path distinguishes disjoint scalar siblings inside one element, so the write to the sibling leaves the reference to the first field valid.";
-  let seed = Row(left: 3_u64, right: 4_u64);
-  let rows = array_filled::<Row, 1>(value: seed);
+  let row0 = Row(left: 3_u64, right: 4_u64);
+  let slots = slots_new::<Row, 1>();
+  place_back(window: &slots, value: move row0);
+  let rows = slots_into_array::<Row, 1>(values: move slots);
   let table = Table(rows: move rows);
   let left = &table.rows[0_u64].left;
   set table.rows[0_u64].right = 9_u64;

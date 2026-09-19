@@ -375,7 +375,7 @@ impl FunctionDependencies {
                     ..
                 } => {
                     self.types.push(CheckedType::Nominal(*nominal));
-                    self.types.extend(bindings.iter().map(|(_, ty)| *ty));
+                    self.types.extend(bindings.iter().map(|(_, ty, _)| *ty));
                     self.expression(value);
                 }
                 CheckedStatement::SetList {

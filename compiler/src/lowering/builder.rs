@@ -945,6 +945,7 @@ impl<'program> IrBuilder<'program> {
                 // struct projection every other field read uses.
                 CheckedStatement::DestructuringLet {
                     bindings,
+                    covered,
                     nominal,
                     value: expression,
                     ..
@@ -960,7 +961,7 @@ impl<'program> IrBuilder<'program> {
                     if let Some(IrNominalKind::Box { .. }) =
                         self.nominals.get(erased.index()).map(IrNominal::kind)
                     {
-                        let [(binding, ty)] = bindings.as_slice() else {
+                        let [(binding, ty, _)] = bindings.as_slice() else {
                             return Err(LoweringFailure::InvalidCheckedProgram);
                         };
                         let referent = lower_type(self.erasure, *ty)?;
@@ -977,10 +978,17 @@ impl<'program> IrBuilder<'program> {
                         self.promote_binding_if_needed(*binding)?;
                         continue;
                     }
-                    for (ordinal, (binding, ty)) in bindings.iter().enumerate() {
-                        let field = u32::try_from(ordinal)
-                            .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
-                        let value = self.project_struct_path(aggregate, &[field], true)?;
+                    // [WIN-3, STOR-3] every field a final `..` covers takes
+                    // its compiler-derived release here, before the binders
+                    // read the fields the statement names: the statement is
+                    // the point at which the owner ceases to exist.
+                    let mut lowered = Vec::with_capacity(covered.len());
+                    for drop in covered {
+                        lowered.push(self.lower_projected_drop(aggregate, drop)?);
+                    }
+                    self.append_drops(lowered)?;
+                    for (binding, ty, field) in bindings {
+                        let value = self.project_struct_path(aggregate, &[*field], true)?;
                         if self.value_type(value)? != lower_type(self.erasure, *ty)? {
                             return Err(LoweringFailure::InvalidCheckedProgram);
                         }
@@ -2240,6 +2248,7 @@ const fn fixed_measure(measure: CheckedMeasure, measured: MeasuredKind) -> Optio
         MeasureCell::ExactExtent
         | MeasureCell::ExactTypeConstant
         | MeasureCell::ExactRuntime
+        | MeasureCell::ExactComplement
         | MeasureCell::Bounded
         | MeasureCell::Absent => None,
     }

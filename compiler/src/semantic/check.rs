@@ -1610,10 +1610,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let generics::GenericArgument::Type(ty) = argument else {
                 continue;
             };
-            if ty.is_concrete(&self.elements.borrow()) {
+            if !self.is_window_type_parameter(*declaration)? {
                 continue;
             }
-            if self.is_window_type_parameter(*declaration)? {
+            // Once an operand has supplied the shape, `deref(window).len`
+            // names a measure of one of [MSR-1]'s measured types whatever
+            // that shape's element type and capacity still are, and the row's
+            // clauses are judged exactly as any other generic row's. Only the
+            // unsubstituted parameter of the symbolic schema instance is no
+            // measured type, and it is the one this answers for.
+            if ty.measured().is_none() {
                 return Ok(true);
             }
         }

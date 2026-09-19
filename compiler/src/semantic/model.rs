@@ -669,9 +669,15 @@ pub(crate) enum MeasureCell {
     /// or a `FixedVector`'s capacity, or an `Arena`'s byte extent.
     ExactTypeConstant,
     /// The measure is exact and is an independent runtime quantity of the
-    /// value's own descriptor: a run's `len`, a `Vector`'s `cap`, and the
-    /// `room` [MSR-2]'s identity relates to the other two [BLK-1].
+    /// value's own descriptor: a run's `len` and a runtime-capacity window's
+    /// `cap` [BLK-1].
     ExactRuntime,
+    /// The measure is exactly `cap - len` of the same place: the `room` cell
+    /// every window row of [MSR-1]'s table writes that way. The cell is
+    /// table data like any other, so the value is the difference of the two
+    /// images and never a quantity of its own, and [MSR-2]'s standing
+    /// identity is then true of the images themselves.
+    ExactComplement,
     /// The measure is exact but only two-sidedly published by some writing
     /// operation. A run's `head` is the one cell of this class [BLK-3].
     Bounded,
@@ -688,7 +694,8 @@ impl MeasureCell {
             Self::ExactExtent
             | Self::ExactConstant(_)
             | Self::ExactTypeConstant
-            | Self::ExactRuntime => "exact",
+            | Self::ExactRuntime
+            | Self::ExactComplement => "exact",
             Self::Bounded => "bounded",
             Self::Absent => "absent",
         }
@@ -741,7 +748,14 @@ impl CheckedMeasure {
                 | MeasuredKind::RuntimeSlots
                 | MeasuredKind::ConstantRing
                 | MeasuredKind::RuntimeRing,
-                Self::Length | Self::Room,
+                Self::Room,
+            ) => MeasureCell::ExactComplement,
+            (
+                MeasuredKind::ConstantSlots
+                | MeasuredKind::RuntimeSlots
+                | MeasuredKind::ConstantRing
+                | MeasuredKind::RuntimeRing,
+                Self::Length,
             )
             | (
                 MeasuredKind::RuntimeSlots | MeasuredKind::RuntimeRing,
@@ -1464,8 +1478,19 @@ pub(crate) enum CheckedArrayRoot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedBufferRoot {
     pub(crate) binding: BindingId,
-    pub(crate) fields: Vec<u32>,
+    /// The complete checked path from the binding to the run [REF-1]. A
+    /// runtime-capacity `Array<T>` exists only as the content of a `Box`
+    /// [TYPE-9], so the path of one reached from an owner carries that
+    /// content step and [OWN-7] and [ENT-5] compare it like any other.
+    pub(crate) path: Vec<CheckedPlaceStep>,
     pub(crate) element: CheckedFlatElement,
+}
+
+impl CheckedBufferRoot {
+    /// The [REF-1] resolved steps of this root.
+    pub(crate) fn place_path(&self) -> Vec<super::places::PlaceStep> {
+        self.path.iter().map(CheckedPlaceStep::place_step).collect()
+    }
 }
 
 /// One range reference's own root [REF-4].
@@ -1632,6 +1657,15 @@ impl CheckedPlaceStep {
     /// continues a path through `Box` content, and [OWN-7] reads the complete
     /// resolved path, so erasing the step would make `deref(h).value` and
     /// `h.value` one place.
+    /// The [FN-9] clause-side projection this step is, for a goal place.
+    pub(crate) fn goal_projection(&self) -> super::goal::GoalProjection {
+        match self {
+            Self::Field(field) => super::goal::GoalProjection::Field(*field),
+            Self::BoxReferent(_) => super::goal::GoalProjection::Deref,
+            Self::Subscript(index) => super::goal::GoalProjection::Subscript(index.captured),
+        }
+    }
+
     pub(crate) fn place_step(&self) -> super::places::PlaceStep {
         match self {
             Self::Field(field) => super::places::PlaceStep::Field(*field),
@@ -2254,8 +2288,15 @@ pub(crate) enum CheckedStatement {
     /// sole binder receives its referent.
     DestructuringLet {
         node_path: NodePath,
-        /// Each binder and its selected value type, in written order.
-        bindings: Vec<(BindingId, CheckedType)>,
+        /// Each binder, its selected value type, and the field or result
+        /// ordinal it receives, in written order. [GRAM-4]'s rest marker
+        /// leaves the ordinals it covers unbound, so the binders are not
+        /// always the leading ordinals.
+        bindings: Vec<(BindingId, CheckedType, u32)>,
+        /// [WIN-3, STOR-3] the compiler-derived release of every field a
+        /// final `..` covers, in declaration order, rooted at the consumed
+        /// value. A result list covers nothing and carries none.
+        covered: Vec<CheckedProjectedDrop>,
         /// The consumed product or cell nominal [CALL-4, TYPE-6, S39].
         nominal: NominalId,
         value: CheckedExpression,

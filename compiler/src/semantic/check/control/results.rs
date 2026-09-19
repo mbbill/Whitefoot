@@ -2,12 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationClass, DeclarationId, LexicalUseRole, Production, ResolvedTarget,
+    DeclarationClass, DeclarationId, FixedTerminal, LexicalUseRole, Production, ResolvedTarget,
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
 use super::super::super::model::{
-    BindingId, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType, PropagationContext,
+    BindingId, CheckedMode, CheckedNominalKind, CheckedProjectedDrop, CheckedReleaseMode,
+    CheckedStatement, CheckedType, PropagationContext,
 };
 use super::super::{CheckStop, Checker, FunctionSignature, LocalBinding, PreludeType};
 use super::{ControlScope, StatementResult};
@@ -122,12 +123,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
-            binder_ids.push((binding, ty));
+            binder_ids.push((
+                binding,
+                ty,
+                u32::try_from(binder_ids.len())
+                    .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+            ));
         }
         Ok(Self::continuing_statement(
             CheckedStatement::DestructuringLet {
                 node_path: self.tree.path(node)?.clone(),
                 bindings: binder_ids,
+                // [CALL-4] a result list binds every ordinal, so there is no
+                // covered ordinal and no derived release here.
+                covered: Vec::new(),
                 nominal,
                 value: value.expression,
             },
@@ -222,18 +231,41 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Some(list) => self.tree.children_with(list, Production::Fieldbind)?,
             None => Vec::new(),
         };
-        if binders.len() != fields.len() {
+        // [GRAM-4] the rest marker is the statement's own `..` token. The
+        // consumed `place` carries none: a range step spells its `..` inside
+        // a `psuffix`, which is not a direct token of this statement.
+        let rest = self.has_fixed(node, FixedTerminal::DotDot)?;
+        if !rest && binders.len() != fields.len() {
             return self.invalid_destructuring_fields(&written, &fields, node);
         }
         let mut binder_ids = Vec::with_capacity(fields.len());
-        for (written_binder, field) in binders.into_iter().zip(&fields) {
-            if self
+        let mut cursor = 0_usize;
+        let mut covered = Vec::new();
+        for written_binder in binders {
+            let spelling = self
                 .deferred_use_at(written_binder, crate::DeferredUseRole::MatchField)?
                 .spelling()
-                != field.name
-            {
+                .to_owned();
+            // [GRAM-10] every written field name is written exactly once in
+            // declared order, so the next one is found at or after the field
+            // the previous binder took. A missing, extra, repeated,
+            // misspelled, or out-of-order name leaves no field here.
+            let Some(offset) = fields[cursor..]
+                .iter()
+                .position(|field| field.name == spelling)
+            else {
+                return self.invalid_destructuring_fields(&written, &fields, written_binder);
+            };
+            if offset > 0 && !rest {
                 return self.invalid_destructuring_fields(&written, &fields, written_binder);
             }
+            covered.extend(cursor..cursor.saturating_add(offset));
+            let ordinal = cursor
+                .checked_add(offset)
+                .ok_or(SemanticCompilerFailure::CounterOverflow)?;
+            let field = fields
+                .get(ordinal)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             let declaration = self.declaration_at(written_binder, crate::DeclarationRole::Let)?;
             let binding = Self::allocate_binding(counters.next_binding)?;
             counters
@@ -257,17 +289,73 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
-            binder_ids.push((binding, field.ty));
+            binder_ids.push((
+                binding,
+                field.ty,
+                u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+            ));
+            cursor = ordinal
+                .checked_add(1)
+                .ok_or(SemanticCompilerFailure::CounterOverflow)?;
         }
+        if cursor < fields.len() {
+            if !rest {
+                return self.invalid_destructuring_fields(&written, &fields, node);
+            }
+            covered.extend(cursor..fields.len());
+        }
+        let covered = self.covered_field_releases(place, &fields, &covered)?;
         Ok(Self::continuing_statement(
             CheckedStatement::DestructuringLet {
                 node_path: self.tree.path(node)?.clone(),
                 bindings: binder_ids,
+                covered,
                 nominal,
                 value: value.expression,
             },
             value.effects,
         ))
+    }
+
+    /// [WIN-3, STOR-3] the compiler-derived release of every field a final
+    /// `..` covers.
+    ///
+    /// The owner ceases to exist at the statement, so each covered field's
+    /// own release action runs there. A covered field that is linear has no
+    /// such action: it is a remaining linear part of a consumed owner, which
+    /// is [WIN-3]'s hard error at the complete consumed `place`.
+    fn covered_field_releases(
+        &self,
+        place: NodeId,
+        fields: &[super::super::super::model::CheckedField],
+        covered: &[usize],
+    ) -> Result<Vec<CheckedProjectedDrop>, CheckStop> {
+        let mut releases = Vec::new();
+        for ordinal in covered {
+            let field = fields
+                .get(*ordinal)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            if self.linear_release_obligation(field.ty)?.is_some() {
+                return self.issue_node(
+                    SemanticRule::Win3,
+                    place,
+                    SemanticIssueKind::InvalidElementMove {
+                        mechanical_fix:
+                            "take it in the same destructuring: let N(f: a, ..) = move v;",
+                    },
+                );
+            }
+            let ordinal =
+                u32::try_from(*ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            for (path, ty) in self.drop_paths(field.ty, vec![ordinal])? {
+                releases.push(CheckedProjectedDrop {
+                    fields: path,
+                    ty,
+                    release: CheckedReleaseMode::Full,
+                });
+            }
+        }
+        Ok(releases)
     }
 
     /// [TYPE-5] the destructuring consume's operand is not a value of the

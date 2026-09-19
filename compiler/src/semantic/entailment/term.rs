@@ -153,6 +153,11 @@ pub(crate) struct TermId(pub(crate) u32);
 pub(crate) enum MeasureBound {
     Constant(i128),
     Equal(TermId),
+    /// [MSR-1] the `room` cell of every window row: `cap - len` of the same
+    /// place. It is not a difference bound, so [ENT-4]'s closure carries only
+    /// the ordering it implies; the affine image of the measure is the
+    /// difference of the two images this names.
+    Complement { capacity: TermId, length: TermId },
 }
 
 /// The zero term is always interned first.

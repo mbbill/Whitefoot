@@ -127,11 +127,32 @@ impl IrBuilder<'_> {
         root_value: IrValueId,
         root: &CheckedBufferRoot,
     ) -> Result<IrValueId, LoweringFailure> {
-        let value = if root.fields.is_empty() {
-            root_value
-        } else {
-            self.project_struct_path(root_value, &root.fields, false)?
-        };
+        let mut value = root_value;
+        for step in &root.path {
+            value = match step {
+                crate::semantic::CheckedPlaceStep::Field(field) => {
+                    self.project_struct_path(value, &[*field], false)?
+                }
+                // [TYPE-9] a runtime-capacity run lives as the content of a
+                // cell, and the path that reaches it carries that content
+                // step; reading it is the ordinary cell dereference.
+                crate::semantic::CheckedPlaceStep::BoxReferent(nominal) => {
+                    let nominal = self.erased(*nominal);
+                    let IrNominalKind::Box { referent, .. } = self
+                        .nominals
+                        .get(nominal.index())
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                        .kind
+                    else {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    };
+                    self.define(referent, IrOperation::BoxDeref { nominal, value })?
+                }
+                crate::semantic::CheckedPlaceStep::Subscript(_) => {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+            };
+        }
         if self.value_type(value)?
             != (IrType::Buffer {
                 element: lower_flat_element(self.erasure, root.element)?,

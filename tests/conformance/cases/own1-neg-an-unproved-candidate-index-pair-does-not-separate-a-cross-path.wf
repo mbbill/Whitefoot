@@ -9,8 +9,12 @@ fn invalid(i: own u64, k: own u64) -> result: own unit pure contract {
   requires i < k;
 } {
   doc "Index separation never keeps a later subscript live: one consuming use kills the whole binding that roots the place, so even a proved distinct candidate pair leaves the second read rooted in a dead binding.";
-  let seed = Cell(tag: 0_u64, weight: 0_u64);
-  let cells = array_filled::<Cell, 2>(value: seed);
+  let cell0 = Cell(tag: 0_u64, weight: 0_u64);
+  let cell1 = Cell(tag: 0_u64, weight: 0_u64);
+  let slots = slots_new::<Cell, 2>();
+  place_back(window: &slots, value: move cell0);
+  place_back(window: &slots, value: move cell1);
+  let cells = slots_into_array::<Cell, 2>(values: move slots);
   let first = cells[i].tag;
   let taken = move cells;
   let observed = cells[k].tag;

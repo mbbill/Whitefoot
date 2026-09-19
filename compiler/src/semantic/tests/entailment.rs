@@ -493,6 +493,9 @@ fn assert_run_length_bound(summary: &FunctionEntailment, left: TermId, right: Te
             ((left == length && right == parameter) || (left == parameter && right == length))
                 && bound == 0
         }
+        // [MSR-1] the complement cell relates three terms, so it is no
+        // difference bound between this pair.
+        MeasureBound::Complement { .. } => false,
     };
     let matched = [left, right].into_iter().any(|candidate| {
         matches!(retained_term(summary, candidate), TermKind::Measure(..))
@@ -5504,7 +5507,7 @@ fn main() -> status: own ExitStatus pure {
                 .iter()
                 .filter_map(|bound| match bound {
                     Some(MeasureBound::Constant(value)) => Some(*value),
-                    Some(MeasureBound::Equal(_)) | None => None,
+                    Some(MeasureBound::Equal(_) | MeasureBound::Complement { .. }) | None => None,
                 })
                 .collect();
             constants.sort_unstable();
@@ -10360,7 +10363,7 @@ fn main() -> status: own ExitStatus pure {
                 .iter()
                 .filter_map(|bound| match bound {
                     Some(MeasureBound::Constant(value)) => Some(*value),
-                    Some(MeasureBound::Equal(_)) | None => None,
+                    Some(MeasureBound::Equal(_) | MeasureBound::Complement { .. }) | None => None,
                 })
                 .collect();
             constants.sort_unstable();

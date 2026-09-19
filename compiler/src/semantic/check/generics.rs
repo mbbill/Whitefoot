@@ -1253,7 +1253,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // Schema validation uses a separate scratch inventory starting at
         // zero, so it must build and later discard its own selector table
         // rather than aliasing the real concrete entries by accident.
-        self.admit_postcondition_selectors()?;
+        //
+        // This pass checks every generic template's own body, and no
+        // nongeneric signature reaches those bodies, so the canonical
+        // symbolic instances seed the reachable-instance walk [FN-9]. Without
+        // them a call a generic body makes — `slots_new` and every other
+        // [PRE-1] record among them — contributed no selector here and its
+        // declared `ensures` was published to no generic body.
+        let canonical_seeds = canonical_generic_signatures
+            .iter()
+            .map(|(index, _)| {
+                Ok(super::super::model::FunctionId(
+                    u32::try_from(*index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+                ))
+            })
+            .collect::<Result<Vec<_>, CheckStop>>()?;
+        self.admit_postcondition_selectors_including(&canonical_seeds)?;
         let mut phase_a = Vec::with_capacity(self.signatures.len());
         let mut index = 0_usize;
         while index < self.signatures.len() {

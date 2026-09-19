@@ -495,7 +495,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(reference) = &mut local.reference else {
                 continue;
             };
-            if reference.paths.iter().any(|path| window.contains(path)) {
+            // The subject is a reference *into* the window, formed under a
+            // bound the operation ends: `&r[i]` under `i < r.len` and
+            // `&r[lo..hi]` under `hi <= r.len` [REF-4]. A reference to the
+            // window itself names the window whatever its boundary is, and a
+            // callee that received one and moved that boundary still holds
+            // it.
+            if reference
+                .paths
+                .iter()
+                .any(|path| window.is_proper_prefix_of(path))
+            {
                 reference.invalidate(InvalidationEvent::WindowBoundaryMoved);
             }
         }

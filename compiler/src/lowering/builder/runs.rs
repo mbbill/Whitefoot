@@ -64,7 +64,10 @@ impl IrBuilder<'_> {
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
                 self.lower_fixed_measure(length)
             }
-            MeasureCell::ExactExtent | MeasureCell::ExactRuntime | MeasureCell::Bounded => {
+            MeasureCell::ExactExtent
+            | MeasureCell::ExactRuntime
+            | MeasureCell::ExactComplement
+            | MeasureCell::Bounded => {
                 let container = self.container_root_value(root)?;
                 // [MSR-2] `room` is the complement of `len` in `cap`; where
                 // the capacity is the type constant it is formed here rather

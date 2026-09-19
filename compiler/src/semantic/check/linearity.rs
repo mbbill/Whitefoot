@@ -253,7 +253,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         matches!(ty, CheckedType::Window { .. })
     }
 
-    fn linear_release_obligation(&self, ty: CheckedType) -> Result<Option<String>, CheckStop> {
+    pub(super) fn linear_release_obligation(&self, ty: CheckedType) -> Result<Option<String>, CheckStop> {
         if let Some(marked) = self.owns_modifier_linear_node(ty)? {
             return Ok(Some(self.nominal(marked)?.name.clone()));
         }

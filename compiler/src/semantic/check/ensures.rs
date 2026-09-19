@@ -236,7 +236,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Err(stop) => return Err(stop),
         }
 
-        let eligible = self.eligible_postcondition_functions()?;
+        let eligible = self.eligible_postcondition_functions(&[])?;
         let mut admitted_records = Vec::new();
         for record in &records {
             let concrete = self
@@ -364,7 +364,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// The scratch and real checkers each run this helper over their own dense
     /// identities; no FunctionId, NominalId, or CheckedType crosses between
     /// them.
-    fn eligible_postcondition_functions(&self) -> Result<Vec<FunctionId>, CheckStop> {
+    ///
+    /// `seeds` are instances the caller knows are checked although no
+    /// nongeneric signature reaches them. Symbolic schema validation checks
+    /// every generic template's own body, so the callees those bodies name —
+    /// a [PRE-1] record's `ensures` among them — are part of that pass's
+    /// universe and are walked from these seeds exactly as a nongeneric
+    /// caller's callees are.
+    fn eligible_postcondition_functions(
+        &self,
+        seeds: &[FunctionId],
+    ) -> Result<Vec<FunctionId>, CheckStop> {
         let group_functions = self
             .behavior
             .declaration_arguments
@@ -377,6 +387,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .filter(|signature| {
                 signature.formal_parameter.is_some()
                     || group_functions.contains(&signature.id)
+                    || seeds.contains(&signature.id)
                     || self
                         .templates_by_declaration
                         .get(&signature.declaration)
@@ -425,11 +436,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .copied()
                         .next()
                 } else {
+                    // A caller whose own substitution is symbolic is a schema
+                    // instance, and every callee substitution it forms is
+                    // symbolic with it: requiring a concrete one here would
+                    // reach no callee of any generic body. A concrete caller
+                    // keeps the concrete requirement, which is what excludes
+                    // an H0 instance materialized from an incomplete [FN-2]
+                    // call.
+                    let symbolic_caller =
+                        !caller.substitution.is_concrete(&self.elements.borrow());
                     let substitution =
                         match self.call_generic_substitution(call, &template, &caller.substitution)
                         {
                             Ok(substitution)
-                                if substitution.is_concrete(&self.elements.borrow()) =>
+                                if symbolic_caller
+                                    || substitution.is_concrete(&self.elements.borrow()) =>
                             {
                                 substitution
                             }
@@ -533,7 +554,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if records.is_empty() {
             return Ok(());
         }
-        let mut eligible = self.eligible_postcondition_functions()?;
+        let mut eligible = self.eligible_postcondition_functions(additional)?;
         for function in additional {
             if !eligible.contains(function) {
                 eligible.push(*function);
@@ -553,7 +574,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .cloned()
                 .collect::<Vec<_>>();
             for signature in concrete {
-                let admitted = match self.admit_postcondition_selector(record, &signature, false) {
+                // A schema instance is judged as a schema instance here too:
+                // its type arguments are symbolic and the clause typing that
+                // needs a concrete [FN-2] substitution waits for one, exactly
+                // as the from-source path above decides.
+                let symbolic = !signature.substitution.is_concrete(&self.elements.borrow());
+                let admitted = match self.admit_postcondition_selector(record, &signature, symbolic)
+                {
                     Ok(admitted) => admitted,
                     Err(CheckStop::Issue(_)) => {
                         return Err(SemanticCompilerFailure::InvalidResolution.into());
@@ -601,14 +628,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 !signature.substitution.is_concrete(&self.elements.borrow()),
             )?;
             // An unbounded symbolic type has no concrete FN-2 fragment
-            // judgment yet. Its selector is provisionally admitted for
-            // resolution order, but clause typing and selected-return
+            // judgment yet, so clause typing and selected-return
             // classification wait for a concrete instance. A declared Int
             // bound already supplies the exact symbolic integer row used by
-            // ordinary generic validation.
-            if !matches!(selector.result_type, CheckedType::Generic(_)) {
-                selectors.push(selector);
-            }
+            // ordinary generic validation. The selector is still kept: a
+            // clause naming only exclusive exit state supplies no result
+            // datum at all [FN-9], so a row like `take_back`, whose result
+            // ordinal is the operand's element type, still publishes the
+            // length it carries across the call; the schema builder below is
+            // what holds every other clause to the fragment.
+            selectors.push(selector);
         }
         Ok(selectors)
     }
@@ -1209,7 +1238,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .is_some_and(|parameter| parameter_has_exit_state(function, parameter))
                 )
             });
-        if (!matches!(selector.result_type, CheckedType::Integer(_)) && !exclusive_state_only)
+        // [FN-9, CALL-4] the second admitted unrouted shape: a result ordinal
+        // of a measured type [MSR-1] named as a measure member and nowhere
+        // else. Every measure is u64 whatever the element type is, so such a
+        // clause is already inside the concrete integer fragment and the
+        // symbolic type argument reaches none of it. Without this a [PRE-1]
+        // construction row's `ensures result.len == 0_u64` was published to
+        // no generic body, and every window proof inside one started with no
+        // length at all.
+        let measured_result_only = selector.result_type.measured().is_some()
+            && relation
+                .operands
+                .iter()
+                .all(|operand| !matches!(operand.datum, RelationDatum::Result { .. }));
+        if (!matches!(selector.result_type, CheckedType::Integer(_))
+            && !exclusive_state_only
+            && !measured_result_only)
             || relation
                 .operands
                 .iter()
@@ -1358,7 +1402,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::DestructuringLet {
                     bindings: binders, ..
                 } => {
-                    for (binding, ty) in binders {
+                    for (binding, ty, _) in binders {
                         bindings.insert(
                             *binding,
                             PostconditionBindingInfo {
@@ -1642,6 +1686,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
             }
             CheckedExpression::BufferMeasure { measure, root } => {
+                // [TYPE-9] a run reached through its cell has a content step
+                // in its path, which this classification's field walk does
+                // not represent; such a return supplies no datum here.
+                let Some(fields) = root
+                    .path
+                    .iter()
+                    .map(|step| match step {
+                        super::super::model::CheckedPlaceStep::Field(field) => Some(*field),
+                        _ => None,
+                    })
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    return Ok(None);
+                };
                 let Some(
                     place @ PostconditionReturnPlace {
                         ty: CheckedType::Buffer { element },
@@ -1649,7 +1707,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 ) = self.postcondition_binding_place(
                     root.binding,
-                    &root.fields,
+                    &fields,
                     statement,
                     binding_info,
                 )?

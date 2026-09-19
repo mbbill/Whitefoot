@@ -732,7 +732,7 @@ impl PlaceMap {
                 // ordinary fresh binding of its result ordinal's type, and a
                 // function returns owned values only [FN-1, REF-3].
                 CheckedStatement::DestructuringLet { bindings, .. } => {
-                    for (binding, ty) in bindings {
+                    for (binding, ty, _) in bindings {
                         self.summary_mut(*binding).ty = Some(*ty);
                     }
                 }
@@ -830,15 +830,9 @@ impl PlaceMap {
             CheckedExpression::BorrowAddressed { root, .. } => {
                 self.resolve(root.root, &root.place_path())
             }
-            CheckedExpression::BorrowBuffer { root, .. } => self.resolve(
-                PlaceRoot::Binding(root.binding),
-                &root
-                    .fields
-                    .iter()
-                    .copied()
-                    .map(PlaceStep::Field)
-                    .collect::<Vec<_>>(),
-            ),
+            CheckedExpression::BorrowBuffer { root, .. } => {
+                self.resolve(PlaceRoot::Binding(root.binding), &root.place_path())
+            }
             CheckedExpression::BorrowBox { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. } => {
                 self.resolve(PlaceRoot::Binding(*binding), &[])

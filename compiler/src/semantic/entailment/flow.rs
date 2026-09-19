@@ -245,6 +245,16 @@ struct AffineFlowState {
     published_invariants: HashMap<crate::DeclarationId, AffineInequality>,
 }
 
+/// The capture identity [EFF-5] substitution gives every index and range
+/// position of one call.
+///
+/// [REF-1] names a captured value by the occurrence it was evaluated at, and
+/// a substituted row position has no `psuffix` of its own to be named by. It
+/// sits outside the node-derived identities [`CapturedValue`] mints and
+/// outside the unknown offset, so no substituted position is ever taken for a
+/// place's own written subscript or for an offset this version cannot name.
+const SUBSTITUTED_OFFSET_CAPTURE: CaptureId = CaptureId(u32::MAX - 2);
+
 /// The affine images of one range formation's two captured endpoints
 /// [REF-4], with the node the formation stands at.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2255,6 +2265,14 @@ impl Analyzer<'_, '_> {
                     )),
                     Some(CheckedConst::Derived(_)) | None => None,
                 },
+                // [MSR-1] the `room` cell of every window row is `cap - len`
+                // of the same place, so the cell fixes the value exactly as a
+                // constant cell does and the measure is never an independent
+                // quantity.
+                MeasureCell::ExactComplement => Some(MeasureBound::Complement {
+                    capacity: self.intern_measure(CheckedMeasure::Capacity, &path),
+                    length: extent,
+                }),
                 // An independent runtime quantity of the value's own
                 // descriptor: the standing facts [MSR-2] already publishes
                 // relate it to the others, and it carries no bound of its own.
@@ -2869,10 +2887,21 @@ impl Analyzer<'_, '_> {
                     // declared result ordinal, and this operand is that
                     // place's measure rather than its value.
                     PostconditionPlaceRoot::Result { ordinal } => {
-                        let (root, projections, ty) =
-                            result_places.get(ordinal as usize)?.as_ref()?;
+                        let (root, destination, _) = result_places.get(ordinal as usize)?.as_ref()?;
+                        // [CALL-4, MSR-1] the clause's own projections below
+                        // the result ordinal continue the destination's path:
+                        // `result.inner.len` names the measure of the cell
+                        // content the binder holds [TYPE-9] and not a measure
+                        // of the cell, which has no row at all.
+                        let mut projections = destination.clone();
+                        projections.extend(place.projections.iter().cloned());
                         (
-                            self.postcondition_measure_term(*measure, *root, projections, *ty)?,
+                            self.postcondition_measure_term(
+                                *measure,
+                                *root,
+                                &projections,
+                                place.ty,
+                            )?,
                             None,
                         )
                     }
@@ -3667,7 +3696,7 @@ impl Analyzer<'_, '_> {
         let target = match target {
             CheckedSetTarget::Place(target) => ResolvedPlace::spelled(PlaceRoot::Binding(target.binding), self.is_holder(target.binding), target.fields.clone()),
             CheckedSetTarget::ArrayIndex(target) => ResolvedPlace::spelled(PlaceRoot::Binding(target.binding), self.is_holder(target.binding), target.fields.clone()),
-            CheckedSetTarget::BufferIndex(target) => ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), target.root.fields.clone()),
+            CheckedSetTarget::BufferIndex(target) => ResolvedPlace::from_path(target.root.binding, target.root.place_path()),
             // [REF-4, REF-1] a range reference names one path; writing an
             // element of it writes that path.
             CheckedSetTarget::RangeIndex(target) => ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), Vec::new()),
@@ -4160,9 +4189,9 @@ impl Analyzer<'_, '_> {
             // [MSR-2] a measure term's support is its place's DESCRIPTOR
             // storage, which is the resolved place of P itself and not of
             // P's root: a write to a sibling field of P overlaps neither.
-            TermKind::Measure(_, place) => {
+            TermKind::Measure(measure, place) => {
                 let support = self.resolve(&place);
-                self.event_kills_measure(&support, place.root, event)
+                self.event_kills_measure(measure, &support, place.root, event)
                     || self.event_kills_offset_support(&support, event)
             }
         }
@@ -4177,8 +4206,19 @@ impl Analyzer<'_, '_> {
     /// measures of every place it reaches. Two subscripts of one base are the
     /// same step of that reach unless their offsets are provably distinct
     /// [OWN-7].
+    ///
+    /// A written place that names a measure word of P -- `writes(window.len)`
+    /// in an [OP-10] row, which [WIN-2] states "is itself a write target and
+    /// overlaps no slot" -- does not contain P, and the containment above
+    /// alone would let the pre-call relations of P survive the operation that
+    /// changes them. Such a write reaches exactly the word it names, because
+    /// [EFF-2]'s both-ways check is what admits the row: a body that changed
+    /// another word of P's descriptor would exhibit a write the row does not
+    /// carry. It reaches no element storage either, so the measures of an
+    /// element of P survive it.
     fn event_kills_measure(
         &self,
+        measure: CheckedMeasure,
         support: &ResolvedPlace,
         root: PlaceRoot,
         event: &KillEvent,
@@ -4187,9 +4227,59 @@ impl Analyzer<'_, '_> {
             KillEvent::Write { place: written, .. }
             | KillEvent::EntryImageHolderWrite { place: written, .. } => {
                 written.contains(support)
+                    || Self::descriptor_write_of(written, support)
+                        .is_some_and(|written| Self::measure_word_carries(written, measure))
             }
             KillEvent::Consume { binding, .. } => root == PlaceRoot::Binding(*binding),
             KillEvent::EntryImageHolderConsume { .. } => false,
+        }
+    }
+
+    /// [MSR-2, WIN-2] the measure word of `support` itself that `written`
+    /// names, where it names one.
+    ///
+    /// The path is cut at its first measure step and what remains must be
+    /// `support` exactly: a measure word of an element of P is descriptor
+    /// storage of that element and not of P.
+    fn descriptor_write_of(
+        written: &ResolvedPlace,
+        support: &ResolvedPlace,
+    ) -> Option<CheckedMeasure> {
+        let cut = written
+            .path
+            .iter()
+            .position(|step| matches!(step, PlaceStep::Measure(_)))?;
+        let PlaceStep::Measure(measure) = written.path.get(cut)? else {
+            return None;
+        };
+        let named = ResolvedPlace {
+            root: written.root,
+            path: written.path[..cut].to_vec(),
+        };
+        (named.path.len() == support.path.len() && named.contains(support)).then_some(*measure)
+    }
+
+    /// [MSR-1] whether a write of one measure word of P changes the value of
+    /// another measure of P.
+    ///
+    /// The table decides it: `room` is the complement `cap - len`, so a write
+    /// of either of those two changes it, and every other cell is a word of
+    /// its own that no other word's write reaches. A row that wrote `room`
+    /// would reach both of the words it is the complement of, and no [PRE-1]
+    /// record writes one, so that direction stays conservative.
+    const fn measure_word_carries(written: CheckedMeasure, measured: CheckedMeasure) -> bool {
+        match (written, measured) {
+            (CheckedMeasure::Room, _) => true,
+            (_, CheckedMeasure::Room) => matches!(
+                written,
+                CheckedMeasure::Length | CheckedMeasure::Capacity
+            ),
+            (left, right) => matches!(
+                (left, right),
+                (CheckedMeasure::Length, CheckedMeasure::Length)
+                    | (CheckedMeasure::Capacity, CheckedMeasure::Capacity)
+                    | (CheckedMeasure::Head, CheckedMeasure::Head)
+            ),
         }
     }
 
@@ -5212,7 +5302,7 @@ impl Analyzer<'_, '_> {
             CheckedExpression::BufferMeasure { measure, root } => {
                 let argument = self.goal_binding_place(
                     root.binding,
-                    root.fields.iter().copied().map(GoalProjection::Field),
+                    root.path.iter().map(CheckedPlaceStep::goal_projection),
                     CheckedType::Buffer {
                         element: root.element,
                     },
@@ -5262,7 +5352,7 @@ impl Analyzer<'_, '_> {
                 };
                 let collection = self.goal_binding_place(
                     root.binding,
-                    root.fields.iter().copied().map(GoalProjection::Field),
+                    root.path.iter().map(CheckedPlaceStep::goal_projection),
                     collection_type,
                 );
                 build_operation(
@@ -6082,16 +6172,28 @@ impl Analyzer<'_, '_> {
     // Kill collection from expressions
     // ------------------------------------------------------------------
 
-    /// [EFF-5] one declared `epsuffix*` as resolved-path steps.
+    /// [EFF-5] one declared `epsuffix*` as resolved-path steps, with each
+    /// index and range position substituted by its own argument's value.
     ///
-    /// A signature never contains an index expression: an index position is
-    /// the value parameter its own argument supplies, evaluated once at the
-    /// call. The flow does not hold those argument values, so an index or
-    /// range position becomes the unknown offset, which no admitted family
-    /// separates and which therefore reaches every element of the indexed
-    /// base. That is the conservative direction for a kill.
-    fn substituted_steps(steps: &[super::super::model::CheckedEffectStep]) -> Vec<PlaceStep> {
+    /// A signature never contains an index expression: an index position
+    /// names a value parameter of the same callable [EFF-1], and [EFF-5]
+    /// substitutes that parameter's actual at the call, evaluated once.
+    /// `offsets` carries the value each such parameter's argument holds. A
+    /// position whose argument is no value a place relation can name stays
+    /// the unknown offset, which no admitted family separates and which
+    /// therefore reaches every element of the indexed base. That is the
+    /// conservative direction for a kill.
+    fn substituted_steps(
+        steps: &[super::super::model::CheckedEffectStep],
+        offsets: &HashMap<crate::DeclarationId, CapturedValue>,
+    ) -> Vec<PlaceStep> {
         use super::super::model::CheckedEffectStep as Step;
+        let offset = |declaration: &crate::DeclarationId| {
+            offsets
+                .get(declaration)
+                .copied()
+                .unwrap_or_else(CapturedValue::unknown)
+        };
         steps
             .iter()
             .map(|step| match step {
@@ -6101,15 +6203,61 @@ impl Analyzer<'_, '_> {
                     variant: *variant,
                     field: *field,
                 },
-                Step::Index(_) => PlaceStep::Index(CapturedValue::unknown()),
-                Step::Range { .. } => PlaceStep::Range(CapturedRange {
-                    start: CapturedValue::unknown(),
-                    end: CapturedValue::unknown(),
+                Step::Index(declaration) => PlaceStep::Index(offset(declaration)),
+                Step::Range { start, end } => PlaceStep::Range(CapturedRange {
+                    start: offset(start),
+                    end: offset(end),
                 }),
                 Step::Part(part) => PlaceStep::Part(*part),
                 Step::Measure(measure) => PlaceStep::Measure(*measure),
             })
             .collect()
+    }
+
+    /// The value one call's argument supplies to an [EFF-5] substituted row
+    /// position, for every value parameter whose argument names one.
+    ///
+    /// [REF-1] names a captured value by the occurrence it was evaluated at,
+    /// and a substituted position is evaluated at its argument rather than at
+    /// a `psuffix` of its own, so every position of one call shares the one
+    /// reserved identity below. Two positions holding two different written
+    /// literals are still separated by [OWN-7], which reads the value beside
+    /// the identity; a pair the identity alone leaves unseparated is treated
+    /// as one storage, which is the conservative direction for a kill.
+    fn substituted_offsets(
+        callee: Option<&super::EntailmentCallee>,
+        arguments: &[CheckedExpression],
+    ) -> HashMap<crate::DeclarationId, CapturedValue> {
+        let mut offsets = HashMap::new();
+        let Some(callee) = callee else {
+            return offsets;
+        };
+        for (declaration, argument) in callee.parameter_declarations.iter().zip(arguments) {
+            let term = match *argument {
+                CheckedExpression::Constant(super::super::model::CheckedValue::Integer {
+                    bits,
+                    ..
+                })
+                | CheckedExpression::NamedConstant {
+                    value: super::super::model::CheckedValue::Integer { bits, .. },
+                    ..
+                } => CapturedTerm::Literal(bits),
+                CheckedExpression::Constant(
+                    super::super::model::CheckedValue::ConstGeneric { declaration, .. },
+                ) => CapturedTerm::Const(declaration),
+                CheckedExpression::Binding {
+                    binding,
+                    consume_root: false,
+                    ..
+                } => CapturedTerm::Binding(binding),
+                _ => continue,
+            };
+            offsets.insert(
+                *declaration,
+                CapturedValue::new(SUBSTITUTED_OFFSET_CAPTURE, term),
+            );
+        }
+        offsets
     }
 
     fn is_copy(&self, ty: CheckedType) -> bool {
@@ -6142,7 +6290,7 @@ impl Analyzer<'_, '_> {
         };
         match argument {
             CheckedExpression::BorrowBuffer { root, .. } => {
-                let steps: Vec<_> = root.fields.iter().copied().map(PlaceStep::Field).collect();
+                let steps = root.place_path();
                 resolve(PlaceRoot::Binding(root.binding), &steps).map(|place| (place, false))
             }
             CheckedExpression::BorrowAddressed { root, .. } => {
@@ -6261,6 +6409,7 @@ impl Analyzer<'_, '_> {
                 for argument in arguments {
                     self.collect_expression_kills(argument, events);
                 }
+                let offsets = Self::substituted_offsets(callee, arguments);
                 for (index, argument) in arguments.iter().enumerate() {
                     let boundary_writes = formal_effects.as_ref().and_then(|effects| {
                         let declaration = callee?.parameter_declarations.get(index)?;
@@ -6298,7 +6447,7 @@ impl Analyzer<'_, '_> {
                     if let Some((place, entry_image_only)) = self.argument_referent(argument) {
                         for steps in writes {
                             let mut written = place.clone();
-                            written.path.extend(Self::substituted_steps(steps));
+                            written.path.extend(Self::substituted_steps(steps, &offsets));
                             if entry_image_only {
                                 events.push(KillEvent::EntryImageHolderWrite {
                                     place: written,
@@ -6616,7 +6765,7 @@ impl Analyzer<'_, '_> {
                     self.judge_children_reach_parent(std::iter::once(offset.as_ref()), states);
                 let obligation_start = self.obligations.len();
                 if reaches_index {
-                    let base = ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone());
+                    let base = ResolvedPlace::from_path(root.binding, root.place_path());
                     self.judge_obligation(
                         base,
                         MeasuredKind::RuntimeArray,
@@ -8056,7 +8205,7 @@ impl Analyzer<'_, '_> {
     fn mint_destructuring_placements(
         &mut self,
         node_path: &crate::NodePath,
-        bindings: &[(BindingId, CheckedType)],
+        bindings: &[(BindingId, CheckedType, u32)],
         value: &CheckedExpression,
         state: &mut ProofFlowState,
     ) -> Vec<(u32, MeasureCarry)> {
@@ -8065,10 +8214,13 @@ impl Analyzer<'_, '_> {
         };
         let base = ResolvedPlace::spelled(PlaceRoot::Binding(*binding), self.is_holder(*binding), Vec::new());
         let mut carried = Vec::new();
-        for (ordinal, (_, ty)) in bindings.iter().enumerate() {
-            let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
+        // [MSR-3] the destructuring placement's source is the field the
+        // binder names, which the rest marker makes a written ordinal rather
+        // than the binder's own position.
+        for (position, (_, ty, field)) in bindings.iter().enumerate() {
+            let ordinal = u32::try_from(position).unwrap_or(u32::MAX);
             let mut source = base.clone();
-            source.path.push(PlaceStep::Field(ordinal));
+            source.path.push(PlaceStep::Field(*field));
             if let Some(carry) = self.mint_measure_datums(
                 node_path,
                 ordinal,
@@ -10065,7 +10217,7 @@ impl Analyzer<'_, '_> {
                     self.judge_children_reach_parent(std::iter::once(&target.offset), states);
                 let obligation_start = self.obligations.len();
                 if reaches_target {
-                    let base = ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), target.root.fields.clone());
+                    let base = ResolvedPlace::from_path(target.root.binding, target.root.place_path());
                     self.judge_obligation(
                         base,
                         MeasuredKind::RuntimeArray,
@@ -11509,7 +11661,11 @@ impl Analyzer<'_, '_> {
                 ..
             } => (*measure, *binding, fields.clone()),
             CheckedExpression::BufferMeasure { measure, root } => {
-                (*measure, root.binding, root.fields.clone())
+                let place = self.render_place(&ResolvedPlace::from_path(
+                    root.binding,
+                    root.place_path(),
+                ));
+                return Some(format!("{}({place})", measure.spelling()));
             }
             CheckedExpression::RangeMeasure { measure, root } => {
                 (*measure, root.binding, Vec::new())
@@ -12188,13 +12344,28 @@ impl Analyzer<'_, '_> {
     /// A measure the table fixes reads as its standing [MSR-2] fact.
     fn measure_atom(&mut self, term: TermId, state: &AffineFlowState) -> AffineForm {
         let mut anchor = term;
-        // The table relates a cell to a constant or to one other term, and
-        // this version's rows chain at most once (`cap` to the run's own
-        // extent). The bound keeps a future row from looping.
+        // The table relates a cell to a constant, to one other term, or to
+        // the complement of two, and this version's rows chain at most once
+        // (`cap` to the run's own extent). The bound keeps a future row from
+        // looping.
         for _ in 0..4 {
             match self.terms.measure_bound(anchor) {
                 Some(MeasureBound::Constant(value)) => return AffineForm::constant(value),
                 Some(MeasureBound::Equal(other)) => anchor = other,
+                // [MSR-1] `room` is `cap - len` of the same place, so its
+                // image is the difference of those two images. Neither of
+                // them is itself a complement, so this recursion is one deep.
+                // A difference that leaves the i128 form is no image this
+                // version can carry, and the ordinary atom below stands in.
+                Some(MeasureBound::Complement { capacity, length }) => {
+                    let capacity = self.measure_atom(capacity, state);
+                    let length = self.measure_atom(length, state);
+                    let mut arithmetic = AffineCheckState::new();
+                    if let Ok(form) = capacity.subtract(&length, &mut arithmetic) {
+                        return form;
+                    }
+                    break;
+                }
                 None => break,
             }
         }
@@ -12823,8 +12994,6 @@ impl Analyzer<'_, '_> {
         let mut judgment = self.judge_expression(expression, state);
         let mut events = Vec::new();
         self.collect_expression_kills(expression, &mut events);
-        if matches!(expression, CheckedExpression::UserCall { .. }) {
-        }
         if let Some(prepared) = &mut judgment.prepared_call {
             if !events.is_empty() {
                 self.promote_flow_contradiction(state);
@@ -12944,7 +13113,7 @@ impl Analyzer<'_, '_> {
                 });
             }
             CheckedSetTarget::BufferIndex(target) => {
-                let spelled = ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), target.root.fields.clone());
+                let spelled = ResolvedPlace::from_path(target.root.binding, target.root.place_path());
                 target_kills.push(KillEvent::Write {
                     place: element_write_place(self.resolve(&spelled), CapturedValue::unknown()),
                     element: true,
@@ -13431,13 +13600,13 @@ impl Analyzer<'_, '_> {
                 let taken = self.mint_destructuring_placements(node_path, bindings, value, state);
                 let judgment = self.expression_effects(value, state);
                 let mut destinations = Vec::with_capacity(bindings.len());
-                for (binding, ty) in bindings {
+                for (binding, ty, _) in bindings {
                     self.declare(*binding);
                     destinations.push(Some((*binding, Vec::new(), *ty)));
                 }
                 if judgment.reached {
                     for (ordinal, carry) in &taken {
-                        let Some((binding, _)) = bindings.get(*ordinal as usize) else {
+                        let Some((binding, _, _)) = bindings.get(*ordinal as usize) else {
                             continue;
                         };
                         let destination = self.bound_place(*binding);
@@ -14872,7 +15041,7 @@ impl Analyzer<'_, '_> {
                 });
             }
             CheckedSetTarget::BufferIndex(target) => {
-                let spelled = ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), target.root.fields.clone());
+                let spelled = ResolvedPlace::from_path(target.root.binding, target.root.place_path());
                 events.push(KillEvent::Write {
                     place: element_write_place(self.resolve(&spelled), CapturedValue::unknown()),
                     element: true,
@@ -15386,7 +15555,7 @@ impl Analyzer<'_, '_> {
             CheckedExpression::BufferMeasure { measure, root } => format!(
                 "{}({})",
                 measure.spelling(),
-                self.render_place(&ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone())),
+                self.render_place(&ResolvedPlace::from_path(root.binding, root.place_path())),
             ),
             CheckedExpression::RangeMeasure { measure, root } => format!(
                 "{}({})",
@@ -15437,7 +15606,7 @@ impl Analyzer<'_, '_> {
             }
             CheckedExpression::ReadStorage { root, .. } => self.render_storage_place(root),
             CheckedExpression::BufferIndex { root, offset, .. } => {
-                let base = ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone());
+                let base = ResolvedPlace::from_path(root.binding, root.place_path());
                 format!(
                     "{}[{}]",
                     self.render_place(&base),

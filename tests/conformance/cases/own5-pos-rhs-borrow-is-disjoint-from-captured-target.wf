@@ -10,8 +10,12 @@ fn change(cell: &Slot) -> result: own u64 writes(cell.value) {
 
 fn main() -> status: own ExitStatus pure {
   doc "Distinct literal elements keep the right-hand side's reference disjoint from the captured commit target, and that reference ends before the following statement writes its own element.";
-  let seed = Slot(value: 0_u64);
-  let values = array_filled::<Slot, 2>(value: seed);
+  let first = Slot(value: 0_u64);
+  let second = Slot(value: 0_u64);
+  let slots = slots_new::<Slot, 2>();
+  place_back(window: &slots, value: move first);
+  place_back(window: &slots, value: move second);
+  let values = slots_into_array::<Slot, 2>(values: move slots);
   set values[0_u64].value = 3_u64;
   set values[1_u64].value = 5_u64;
   set values[0_u64].value = change(cell: &values[1_u64]);

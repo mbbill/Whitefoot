@@ -789,7 +789,7 @@ impl Analyzer<'_, '_> {
             ),
             CheckedExpression::BufferMeasure { measure, root } => (
                 *measure,
-                ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone()),
+                ResolvedPlace::from_path(root.binding, root.place_path()),
                 MeasuredKind::RuntimeArray,
                 None,
             ),

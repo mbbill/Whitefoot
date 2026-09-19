@@ -1301,6 +1301,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?
                         .live = false;
                 }
+                // [REF-2] a consume is one of the three invalidating actions:
+                // a reference whose path has this place as a proper prefix
+                // names storage the move has carried away, and [REF-2] says a
+                // move never re-roots an existing reference. A reference to
+                // the consumed place itself is not this rule's subject, which
+                // is a *proper* prefix, and the consumed binding's own death
+                // is what a later use of it reaches.
+                if !copy && !read_out {
+                    Self::invalidate_references(
+                        bindings,
+                        &ResolvedPlace::fields(local.binding, fields.clone()),
+                        &super::references::InvalidationEvent::PrefixMoved,
+                    );
+                }
                 let access = ResolvedPlace::fields(local.binding, access_fields);
                 let mut effects = EffectSet::NONE;
                 // [LIV-2, EFF-2] a read-out reads the target's own storage,

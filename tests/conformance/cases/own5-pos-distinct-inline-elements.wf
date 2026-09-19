@@ -5,8 +5,16 @@ struct Row {
 
 fn main() -> status: own ExitStatus pure {
   doc "Different literal indices provably select different storages, so two references into one array name disjoint elements and a write through one leaves the other valid.";
-  let seed = Row(left: 3_u64, right: 4_u64);
-  let rows = array_filled::<Row, 4>(value: seed);
+  let row0 = Row(left: 3_u64, right: 4_u64);
+  let row1 = Row(left: 3_u64, right: 4_u64);
+  let row2 = Row(left: 3_u64, right: 4_u64);
+  let row3 = Row(left: 3_u64, right: 4_u64);
+  let slots = slots_new::<Row, 4>();
+  place_back(window: &slots, value: move row0);
+  place_back(window: &slots, value: move row1);
+  place_back(window: &slots, value: move row2);
+  place_back(window: &slots, value: move row3);
+  let rows = slots_into_array::<Row, 4>(values: move slots);
   let left = &rows[0_u64];
   let right = &rows[1_u64];
   let value = deref(left).left;

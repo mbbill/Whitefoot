@@ -3148,6 +3148,13 @@ fn for_each_implicit_bound(
                     emit(id, other, 0, ImplicitBoundKind::StandingMeasure);
                     emit(other, id, 0, ImplicitBoundKind::StandingMeasure);
                 }
+                // [MSR-1] `room` is `cap - len`, which is no difference bound
+                // and enters [ENT-6]'s affine images instead. What it gives
+                // this closure is the ordering it implies, `room <= cap`,
+                // because a length is never negative.
+                Some(MeasureBound::Complement { capacity, .. }) => {
+                    emit(id, capacity, 0, ImplicitBoundKind::StandingMeasure);
+                }
                 None => {}
             }
             // `len_of(P) <= cap_of(P)` and `head_of(P) <= cap_of(P)`, emitted from the

@@ -161,6 +161,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
             if argument.mode != parameter.mode {
+                // [TYPE-7] "A reference binding used where a value of its
+                // referent type is expected is a hard error citing TYPE-7,
+                // with the mechanical fix `deref(.)`." The operand mode is
+                // what says which of the two refusals this is: a reference
+                // standing in an `own` position is the implicit read the rule
+                // refuses, and every other disagreement is [TYPE-5]'s.
+                if argument.mode.is_reference()
+                    && parameter.mode == super::super::super::super::model::CheckedMode::Own
+                {
+                    return self.issue_node(
+                        SemanticRule::Type7,
+                        atom,
+                        SemanticIssueKind::MissingDereference {
+                            mechanical_fix: "write `deref(.)`",
+                        },
+                    );
+                }
                 return self.issue_node(
                     SemanticRule::Type5,
                     atom,
@@ -504,7 +521,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return;
         }
         for entry in entries {
-            Self::invalidate_window_references(bindings, &entry.place);
+            // A row entry names a part or a measure word of the window --
+            // `writes(window.filled)`, `writes(window.len)` -- and the window
+            // whose bound the operation ends is the place below that step.
+            let cut = entry
+                .place
+                .path
+                .iter()
+                .position(|step| {
+                    matches!(step, PlaceStep::Part(_) | PlaceStep::Measure(_))
+                })
+                .unwrap_or(entry.place.path.len());
+            let window = ResolvedPlace {
+                root: entry.place.root,
+                path: entry.place.path[..cut].to_vec(),
+            };
+            Self::invalidate_window_references(bindings, &window);
         }
     }
 

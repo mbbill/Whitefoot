@@ -147,7 +147,7 @@ fn recognize_load(
     let CheckedExpression::BufferIndex { root, offset, .. } = value else {
         return None;
     };
-    if !root.fields.is_empty()
+    if !root.path.is_empty()
         || !declared_outside.contains(&root.binding)
         || crate::lowering::lower_type(TypeLowering::EMPTY, root.element.ty()).ok()? != U8
     {

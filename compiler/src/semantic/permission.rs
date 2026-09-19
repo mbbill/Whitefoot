@@ -996,7 +996,7 @@ pub(super) fn set_target_place(
         }
         CheckedSetTarget::BufferIndex(target) => {
             collect_operand_reads(places, &target.offset, node, footprint);
-            let mut steps = field_steps(&target.root.fields);
+            let mut steps = target.root.place_path();
             steps.push(PlaceStep::Index(CapturedValue::unknown()));
             places.resolve(PlaceRoot::Binding(target.root.binding), &steps)
         }

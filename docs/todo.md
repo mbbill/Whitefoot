@@ -3,30 +3,31 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
-- **A window operation's call kills no measure fact of the window it writes.**
-  A `place_back`, `take_back`, `append`, `grow` or other [OP-10] call whose row
-  declares `writes(window)` leaves the pre-call [MSR-1] measure relations of
-  the actual alive, so the state after it holds both the construction's
-  `len_of(r) == 0` and the operation's `len_of(r) == entry + 1`. Two
-  consequences follow and both are wrong. Where the two relations contradict,
-  `prove_bounded_relation` returns `Proved` by `ProofRoute::Contradiction` and
-  every later obligation is discharged: `win1-neg-subscript-above-len` writes
-  `r[2_u64]` after one `place_back` into a four-slot window and is accepted.
-  Where they do not, the stale relation *refutes* a true goal before the
-  affine route runs: after `for at in 0_u64..4_u64` with
-  `invariant grown: built.len >= at`, the [INV-1] exhaustion export publishes
-  `len_of(built) >= 4` as an affine fact, and `built[3_u64]` is still rejected
-  because L0 derives `len_of(built) <= 0` from the construction and
-  `closed.derives(&relation.negated())` returns `Refuted` at
-  `compiler/src/semantic/entailment/flow.rs` before `goal.direct_affine` is
-  consulted. The kill event for such a call is built in
-  `collect_expression_kills`'s `CheckedExpression::UserCall` arm from
-  `EntailmentCallee::parameter_writes`, which comes from the instance's
-  `declared_effects.writes`; an operand-directed [PRE-1] instance
-  [OP-10, OP-11, OP-14] whose row entry is missing there produces no event and
-  therefore no kill. Confirm whether that instance's `writes(window)` survives
-  `parse_effects` in `generics.rs`, fix the missing row or the missing event,
-  and keep the reproducers above as tests.
+- **A contract fact stated over `room` does not survive the window write it
+  precedes.** [MSR-1]'s table fixes a window's `room` cell as `cap - len`, so
+  the affine image of `r.room` is the difference of the other two images and a
+  relation over it is an [ENT-4] fact about the `room` *term*. That term has
+  no difference bound relating it to `len` -- `room + len = cap` is a
+  three-term relation no difference-bound domain holds -- so the consequence
+  the relation carries about `len` exists only as an ephemeral affine image at
+  query time and dies with the term at the first descriptor write. A callee
+  whose own `requires deref(window).room > 1_u64` should admit two
+  `place_back` calls therefore stops at the second
+  ([`call6-pos-a-row-relation-establishes-at-a-caller`](../tests/conformance/cases/call6-pos-a-row-relation-establishes-at-a-caller.wf)),
+  while the same program with the requirement restated as a local `invariant`
+  is accepted, because an invariant conclusion is published over the immutable
+  atoms. Decide whether such a relation should also be published over its
+  images, which extends [ENT-6]'s automatic premise sequence, or whether the
+  translation belongs in the fact establishment itself.
+
+- **A runtime-capacity construction submits no allocation-size obligation.**
+  [OP-9] states that the arithmetic computing an allocation size carries the
+  static overflow obligation, and [OP-13] attaches it to each runtime-capacity
+  construction. The checker submits no such goal, so
+  `box_slots_new::<i32>(capacity: n)` with an unconstrained `n` is accepted
+  ([`op9-neg-kernel-acquisition-without-a-fit-proof`](../tests/conformance/cases/op9-neg-kernel-acquisition-without-a-fit-proof.wf),
+  [`op13-neg-runtime-capacity-size-obligation`](../tests/conformance/cases/op13-neg-runtime-capacity-size-obligation.wf),
+  [`v033-neg-allocation-fit-unproved`](../tests/conformance/cases/v033-neg-allocation-fit-unproved.wf)).
 
 - **A field projected after dereferencing a runtime-indexed composite element
   stops as unsupported.** The specification admits ordinary chained element,
