@@ -238,21 +238,9 @@ ordinary representation under the same workload; stop if the benefit does
 not justify the extra proof boundary. No general privileged proof system or
 sealed container catalog is selected by this question.
 
-### Association parameters and access effects
+### References as names, storage as windows
 
-Can references retain object relationships without reserving exclusive write
-access for their entire lifetime? The
-[access-effects investigation](../research/investigations/access-effects/RESEARCH.md)
-compares association polymorphism, local access permissions, reachability
-types, and resource-state contracts. The
-[whole-language proposal](../research/investigations/access-effects/DESIGN.md)
-compares current-state access checking with validity loans whose mutation is
-governed by effects. Discriminating cases include mutable graphs, container
-invalidation, callbacks, stored associations, storage reuse, common IO state,
-and parallel ranges. The
-[bounded model](../research/experiments/access-state/RESULTS.md) tests an
-alias/state fragment; it does not establish a new WF rule, compiler support,
-or whole-language soundness.
+The [access-effects investigation](../research/investigations/access-effects/RESEARCH.md) redesigned ownership and references from the requirements up. Its result, [candidate x1](../research/investigations/access-effects/CANDIDATE-X1.md), keeps references as local names for paths that are never stored or returned, states write permission in effect rows rather than reference modes, checks calls pairwise for path overlap, uses one global heap with an affine `Box`, and gives dynamic storage a compiler-maintained window (`Array`, `Slots`, `Ring`). Two derivation rounds over the frozen rules found only wording defects; the recorded costs are listed at the end of the candidate. The next step is a specification amendment; the [bounded model](../research/experiments/access-state/RESULTS.md) of the earlier alias/state fragment is superseded and kept as an experiment record.
 
 ### Wider parallel proof domains
 
