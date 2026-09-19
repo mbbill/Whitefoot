@@ -3,7 +3,7 @@ fn bump(x: own i32) -> function_result: own i32 pure {
   return x +wrap 1_i32;
 }
 
-fn f(cell: &Box<i32>, x: own i32) -> function_result: own i32 writes(deref(cell)) {
+fn f(cell: &Box<i32>, x: own i32) -> function_result: own i32 writes(cell) {
   doc "Declares a write of the cell content, but the body only calls a pure function and performs no such write, so the row is declared-but-unexhibited [EFF-2]. Allocation and release carry no effect entry at all [STOR-8], so no row is justified by them either.";
   let a = bump(x: x);
   return a;

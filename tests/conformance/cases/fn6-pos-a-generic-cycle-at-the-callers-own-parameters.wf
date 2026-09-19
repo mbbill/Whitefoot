@@ -10,8 +10,8 @@ fn walk<const n: u64>(run: &Slots<u8, n>, at: own u64) -> total: own u64 reads(r
   }
   let here = deref(run)[at];
   let widened = cvt::<u8, u64>(here);
-  let next_index = at + 1_u64;
-  let rest = walk::<n>(run: run, at: next_index);
+  let next = at + 1_u64;
+  let rest = walk::<n>(run: run, at: next);
   return widened +wrap rest;
 }
 
@@ -21,8 +21,8 @@ fn countdown<T: Int>(at: own u64) -> total: own u64 pure {
   if done {
     return 0_u64;
   }
-  let next_index = at -wrap 1_u64;
-  let rest = countdown::<T>(at: next_index);
+  let next = at -wrap 1_u64;
+  let rest = countdown::<T>(at: next);
   return rest +wrap 1_u64;
 }
 

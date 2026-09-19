@@ -15,8 +15,8 @@ fn step(x: own i32) -> result: own Result<i32, StepError> pure {
 fn forward(x: own i32) -> result: own Result<i32, StepError> pure {
   doc "Ok binds y and the continuation runs; Err returns Err(err) with the same E [ERR-3].";
   let y = propagate step(x: x);
-  let bumped = y +wrap 1_i32;
-  return Ok<i32, StepError>(value: bumped);
+  let next = y +wrap 1_i32;
+  return Ok<i32, StepError>(value: next);
 }
 
 fn main() -> status: own ExitStatus pure {

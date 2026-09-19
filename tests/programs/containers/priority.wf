@@ -30,12 +30,12 @@ fn pop(heap: &Slots<u64, 16>) -> minimum: own u64 writes(heap) contract {
   ensures deref(heap).len == deref(entry(heap)).len - 1_u64;
 } {
   let minimum = deref(heap)[0_u64];
-  let tail_value = take_back(window: heap);
+  let last = take_back(window: heap);
   let count = deref(heap).len;
   if count == 0_u64 {
     return minimum;
   }
-  set deref(heap)[0_u64] = tail_value;
+  set deref(heap)[0_u64] = last;
   let at = 0_u64;
   loop @sink (
     invariant live: at < deref(heap).len

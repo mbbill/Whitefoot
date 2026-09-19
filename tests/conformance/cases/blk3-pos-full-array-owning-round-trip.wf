@@ -54,10 +54,10 @@ fn main() -> status: own ExitStatus pure {
     return exit_status(code: 3_u8);
   }
   let full = open::<Record, 3>(values: move values);
-  let tail_one = take_back(window: &full);
+  let last = take_back(window: &full);
   let middle = take_back(window: &full);
   let earliest = take_back(window: &full);
-  if tail_one.tag != 22_u64 {
+  if last.tag != 22_u64 {
     return exit_status(code: 4_u8);
   }
   if middle.tag != 99_u64 {

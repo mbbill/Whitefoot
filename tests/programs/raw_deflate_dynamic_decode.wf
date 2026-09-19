@@ -151,7 +151,7 @@ fn decode_dynamic(state: &InflateState, input: &[u8], out: &[u8]) -> result: own
     place_back(window: &code_lengths, value: 0_u8);
   }
   let code_window = &code_lengths[0_u64..19_u64];
-  let loaded = propagate read_dynamic_code_lengths(state: state, input: input, code_lengths: code_window, code_count: code_count);
+  let filled = propagate read_dynamic_code_lengths(state: state, input: input, code_lengths: code_window, code_count: code_count);
   let code_tree_allow_single = False();
   let code_tree_allow_empty = False();
   let code_table = propagate build_huffman_table(lengths: code_window, symbol_count: 19_u64, max_bits: 7_u32, allow_single: code_tree_allow_single, allow_empty: code_tree_allow_empty);

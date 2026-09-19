@@ -1,4 +1,4 @@
-fn f(cell: &Box<Slots<u64>>, x: own i32) -> result: own i32 writes(deref(cell)) {
+fn f(cell: &Box<Slots<u64>>, x: own i32) -> result: own i32 writes(cell) {
   doc "Declares a write of the cell content that the body never performs.";
   return x;
 }

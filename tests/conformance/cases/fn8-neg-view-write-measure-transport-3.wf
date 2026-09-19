@@ -5,8 +5,8 @@ fn fill(destination: &Slots<u8, 64>, at: own u64) -> result: own u64 writes(dest
   if inside {
     set deref(destination)[at] = 65_u8;
   }
-  let advanced = at +wrap 1_u64;
-  return advanced;
+  let next = at +wrap 1_u64;
+  return next;
 }
 
 fn emit(source: &Slots<u8, 64>, length: own u64) -> result: own u64 reads(source) contract {

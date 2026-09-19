@@ -1,4 +1,4 @@
-fn filled_slots<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
   ensures result.len == n;
 } {
   doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
@@ -25,7 +25,7 @@ fn needs_eight(bound: own u64) -> ok: own unit pure contract {
 
 fn main() -> status: own ExitStatus pure {
   doc "A routed ensures names the result ordinal the route applies to, and an unrouted clause names another ordinal of the same declaration. The unrouted relation reaches its binder at the destructuring let while the routed one stays restricted to its own arm.";
-  let run = filled_slots::<u8, 8>(value: 0_u8);
+  let run = filled::<u8, 8>(value: 0_u8);
   let (outcome, spare) = probe(taken: move run);
   let confirmed = needs_eight(bound: spare);
   match outcome {

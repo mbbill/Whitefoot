@@ -160,18 +160,18 @@ fn zeroed_words(count: own u64) -> made: own Box<Slots<u64>> pure contract {
   return move built;
 }
 
-fn append_slice(destination: &[u8], capacity: own u64, used: own u64, text: &[u8]) -> result: own u64 reads(text), writes(destination) contract {
+fn append_slice(destination: &[u8], capacity: own u64, filled: own u64, text: &[u8]) -> result: own u64 reads(text), writes(destination) contract {
   requires capacity == deref(destination).len;
-  requires used <= capacity;
+  requires filled <= capacity;
   ensures result <= capacity;
 } {
   doc "Appends as much of one static message as the destination still holds. The destination's capacity is a written operand rather than a measure the row writes, so the published bound is a fact about a value this caller supplied [MSR-3].";
   let spare = deref(destination).len;
-  let admitted = used <= spare;
+  let admitted = filled <= spare;
   let length = deref(text).len;
   if admitted {
-    for @append (at in used..spare) {
-      let taken = at -wrap used;
+    for @append (at in filled..spare) {
+      let taken = at -wrap filled;
       let done = taken >= length;
       if done {
         return at;
@@ -181,7 +181,7 @@ fn append_slice(destination: &[u8], capacity: own u64, used: own u64, text: &[u8
     }
     return spare;
   } else {
-    return used;
+    return filled;
   }
 }
 
@@ -227,8 +227,8 @@ fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], le
       break @publish;
     }
     match write_once(factory: factory, output: output, source: source, start: sent, end: length) {
-      Ok(value: next_endpoint) => {
-        set sent = next_endpoint;
+      Ok(value: next) => {
+        set sent = next;
       }
       Err(error: problem) => {
         return Err<unit, IoError>(error: move problem);
@@ -342,7 +342,7 @@ fn assemble_failure(report: &[u8], capacity: own u64, path: &[u8], path_length: 
   let length = 0_u64;
   let report_capacity = deref(report).len;
   let prefix_view = &error_prefix[0_u64..8_u64];
-  set length = append_slice(destination: report, capacity: report_capacity, used: length, text: prefix_view);
+  set length = append_slice(destination: report, capacity: report_capacity, filled: length, text: prefix_view);
   let prior_length = length;
   let path_room = deref(path).len;
   let copied_count = 0_u64;
@@ -374,36 +374,36 @@ fn assemble_failure(report: &[u8], capacity: own u64, path: &[u8], path_length: 
     give prior_length;
   }
   let separator_view = &error_separator[0_u64..2_u64];
-  set tail = append_slice(destination: report, capacity: report_capacity, used: tail, text: separator_view);
+  set tail = append_slice(destination: report, capacity: report_capacity, filled: tail, text: separator_view);
   let named = 0_u8;
   if status == 1_u8 {
     set named = 1_u8;
     let view = &reason_missing[0_u64..26_u64];
-    set tail = append_slice(destination: report, capacity: report_capacity, used: tail, text: view);
+    set tail = append_slice(destination: report, capacity: report_capacity, filled: tail, text: view);
   }
   if status == 2_u8 {
     set named = 1_u8;
     let view = &reason_denied[0_u64..18_u64];
-    set tail = append_slice(destination: report, capacity: report_capacity, used: tail, text: view);
+    set tail = append_slice(destination: report, capacity: report_capacity, filled: tail, text: view);
   }
   if status == 3_u8 {
     set named = 1_u8;
     let view = &reason_directory[0_u64..15_u64];
-    set tail = append_slice(destination: report, capacity: report_capacity, used: tail, text: view);
+    set tail = append_slice(destination: report, capacity: report_capacity, filled: tail, text: view);
   }
   if status == 5_u8 {
     set named = 1_u8;
     let view = &reason_invalid_path[0_u64..22_u64];
-    set tail = append_slice(destination: report, capacity: report_capacity, used: tail, text: view);
+    set tail = append_slice(destination: report, capacity: report_capacity, filled: tail, text: view);
   }
   if status == 6_u8 {
     set named = 1_u8;
     let view = &reason_long_line[0_u64..14_u64];
-    set tail = append_slice(destination: report, capacity: report_capacity, used: tail, text: view);
+    set tail = append_slice(destination: report, capacity: report_capacity, filled: tail, text: view);
   }
   if named == 0_u8 {
     let view = &reason_unreadable[0_u64..12_u64];
-    set tail = append_slice(destination: report, capacity: report_capacity, used: tail, text: view);
+    set tail = append_slice(destination: report, capacity: report_capacity, filled: tail, text: view);
   }
   return tail;
 }
@@ -540,7 +540,7 @@ fn search_file(factory: &HandleFactory, file: &ReadFile, pattern: &[u8], pattern
   let empty_pattern = pattern_length == 0_u64;
   let matched = 0_u8;
   let status = 0_u8;
-  let batched = 0_u64;
+  let filled = 0_u64;
   let line_number = 0_u64;
   let carry = 0_u64;
   let file_offset = 0_u64;
@@ -623,12 +623,12 @@ fn search_file(factory: &HandleFactory, file: &ReadFile, pattern: &[u8], pattern
         let span = stop -wrap scan;
         let front = path_length +wrap 24_u64;
         let record = front +wrap span;
-        let need = batched +wrap record;
+        let need = filled +wrap record;
         let overfull = need > 8192_u64;
         if overfull {
-          let batch_fits = batched <= batch_room;
+          let batch_fits = filled <= batch_room;
           if batch_fits {
-            match publish_all(factory: factory, output: out, source: batch, length: batched) {
+            match publish_all(factory: factory, output: out, source: batch, length: filled) {
               Ok(value: published) => {
               }
               Err(error: problem) => {
@@ -638,22 +638,22 @@ fn search_file(factory: &HandleFactory, file: &ReadFile, pattern: &[u8], pattern
           } else {
             set status = 6_u8;
           }
-          set batched = 0_u64;
+          set filled = 0_u64;
         }
         if status == 0_u8 {
-          set batched = copy_range(destination: batch, at: batched, source: path, from: 0_u64, to: path_length);
-          let colon_room = batched < batch_room;
+          set filled = copy_range(destination: batch, at: filled, source: path, from: 0_u64, to: path_length);
+          let colon_room = filled < batch_room;
           if colon_room {
-            set deref(batch)[batched] = 58_u8;
-            set batched = batched +wrap 1_u64;
+            set deref(batch)[filled] = 58_u8;
+            set filled = filled +wrap 1_u64;
           }
-          set batched = put_decimal(destination: batch, at: batched, value: line_number);
-          let second_room = batched < batch_room;
+          set filled = put_decimal(destination: batch, at: filled, value: line_number);
+          let second_room = filled < batch_room;
           if second_room {
-            set deref(batch)[batched] = 58_u8;
-            set batched = batched +wrap 1_u64;
+            set deref(batch)[filled] = 58_u8;
+            set filled = filled +wrap 1_u64;
           }
-          set batched = copy_range(destination: batch, at: batched, source: input, from: scan, to: stop);
+          set filled = copy_range(destination: batch, at: filled, source: input, from: scan, to: stop);
         } else {
           break @lines;
         }
@@ -679,11 +679,11 @@ fn search_file(factory: &HandleFactory, file: &ReadFile, pattern: &[u8], pattern
       break @chunks;
     }
   }
-  let pending = batched > 0_u64;
+  let pending = filled > 0_u64;
   if pending {
-    let final_fits = batched <= batch_room;
+    let final_fits = filled <= batch_room;
     if final_fits {
-      match publish_all(factory: factory, output: out, source: batch, length: batched) {
+      match publish_all(factory: factory, output: out, source: batch, length: filled) {
         Ok(value: published) => {
         }
         Err(error: problem) => {
@@ -1227,15 +1227,15 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
     let report_room = deref(report).len;
     if startup == 1_u8 {
       let view = &usage_text[0_u64..27_u64];
-      set length = append_slice(destination: report, capacity: report_room, used: length, text: view);
+      set length = append_slice(destination: report, capacity: report_room, filled: length, text: view);
     }
     if startup == 2_u8 {
       let view = &reason_pattern_too_long[0_u64..25_u64];
-      set length = append_slice(destination: report, capacity: report_room, used: length, text: view);
+      set length = append_slice(destination: report, capacity: report_room, filled: length, text: view);
     }
     if startup == 3_u8 {
       let view = &reason_root_too_long[0_u64..29_u64];
-      set length = append_slice(destination: report, capacity: report_room, used: length, text: view);
+      set length = append_slice(destination: report, capacity: report_room, filled: length, text: view);
     }
     match publish_all(factory: files, output: err, source: report, length: length) {
       Ok(value: published) => {
@@ -1252,7 +1252,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
     let length = 0_u64;
     let report_room = deref(report).len;
     let view = &reason_root_too_long[0_u64..29_u64];
-    set length = append_slice(destination: report, capacity: report_room, used: length, text: view);
+    set length = append_slice(destination: report, capacity: report_room, filled: length, text: view);
     match publish_all(factory: files, output: err, source: report, length: length) {
       Ok(value: published) => {
       }

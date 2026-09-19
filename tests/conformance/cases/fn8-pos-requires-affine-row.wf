@@ -1,10 +1,10 @@
 fn scaled(out: &[u8], src: &[u8]) -> written: own u64 pure contract {
-  define capacity = deref(out).len;
+  define room = deref(out).len;
   define count = deref(src).len;
   define needed = count * 2_u64;
-  requires capacity >= needed;
+  requires room >= needed;
 } {
-  doc "The exact affine rows are read mathematically in a clause, so an expansion function states its own size precondition over a measure and a literal factor; the caller proves it from the lengths it allocated. The definition binder is no longer spelled `room`, which is reserved from every declaration role [FORM-3, TYPE-10].";
+  doc "The exact affine rows are read mathematically in a clause, so an expansion function states its own size precondition over a measure and a literal factor; the caller proves it from the lengths it allocated.";
   return 0_u64;
 }
 

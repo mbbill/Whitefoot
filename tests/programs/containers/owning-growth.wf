@@ -130,7 +130,7 @@ fn probe(slot: &Slot, key: own u64) -> result: own Probe reads(slot) {
   }
 }
 
-fn fill_slots(slots: &Box<Slots<Slot>>, count: own u64) -> result: own unit writes(deref(slots)) contract {
+fn fill_slots(slots: &Box<Slots<Slot>>, count: own u64) -> result: own unit writes(slots) contract {
   requires deref(slots).inner.len == 0_u64;
   requires deref(slots).inner.room >= count;
   ensures deref(slots).inner.len == count;
@@ -138,7 +138,7 @@ fn fill_slots(slots: &Box<Slots<Slot>>, count: own u64) -> result: own unit writ
   doc "One vacant slot per position, under a counted header that carries the length and the remaining room.";
   for (
     index in 0_u64..count,
-    invariant filled_so_far: deref(slots).inner.len >= index,
+    invariant filled: deref(slots).inner.len >= index,
     invariant bounded: deref(slots).inner.len <= index,
     invariant spare: deref(slots).inner.room + index >= count
   ) {
@@ -150,7 +150,7 @@ fn fill_slots(slots: &Box<Slots<Slot>>, count: own u64) -> result: own unit writ
   return unit;
 }
 
-fn put(slots: &Box<Slots<Slot>>, key: own u64, payload: own Box<Resource>) -> outcome: own PutOutcome writes(deref(slots)) contract {
+fn put(slots: &Box<Slots<Slot>>, key: own u64, payload: own Box<Resource>) -> outcome: own PutOutcome writes(slots) contract {
   ensures deref(slots).inner.len == deref(entry(slots)).inner.len;
 } {
   doc "The installation is swap: the offered occupant goes into the slot and the binding comes back holding the slot's previous value, so no program point sees a hole.";
@@ -251,7 +251,7 @@ fn read_slot(slot: &Slot) -> (control: own u8, key: own u64, id: own u64) reads(
   }
 }
 
-fn find(slots: &Box<Slots<Slot>>, key: own u64) -> (found: own Option<u64>, examined: own u64) reads(deref(slots)) {
+fn find(slots: &Box<Slots<Slot>>, key: own u64) -> (found: own Option<u64>, examined: own u64) reads(slots) {
   let count = deref(slots).inner.len;
   let tag = fingerprint(key: key);
   for (offset in 0_u64..count) {
@@ -271,7 +271,7 @@ fn find(slots: &Box<Slots<Slot>>, key: own u64) -> (found: own Option<u64>, exam
   return None<u64>(), count;
 }
 
-fn remove(slots: &Box<Slots<Slot>>, key: own u64) -> removed: own Option<Box<Resource>> writes(deref(slots)) contract {
+fn remove(slots: &Box<Slots<Slot>>, key: own u64) -> removed: own Option<Box<Resource>> writes(slots) contract {
   ensures deref(slots).inner.len == deref(entry(slots)).inner.len;
 } {
   let count = deref(slots).inner.len;
@@ -304,7 +304,7 @@ fn remove(slots: &Box<Slots<Slot>>, key: own u64) -> removed: own Option<Box<Res
   return None<Box<Resource>>();
 }
 
-fn allocate_put(slots: &Box<Slots<Slot>>, key: own u64, id: own u64) -> outcome: own PutOutcome writes(deref(slots)) contract {
+fn allocate_put(slots: &Box<Slots<Slot>>, key: own u64, id: own u64) -> outcome: own PutOutcome writes(slots) contract {
   ensures deref(slots).inner.len == deref(entry(slots)).inner.len;
 } {
   doc "Allocation is total, so one owner is built for every offered insertion.";
@@ -347,7 +347,7 @@ fn check_put(outcome: own PutOutcome, kind: own u64, expected: own u64) -> code:
   }
 }
 
-fn digest(slots: &Box<Slots<Slot>>) -> result: own u64 reads(deref(slots)) {
+fn digest(slots: &Box<Slots<Slot>>) -> result: own u64 reads(slots) {
   let count = deref(slots).inner.len;
   let start = ixor(1469598103934665603_u64, count);
   let hash = start *wrap 1099511628211_u64;
@@ -371,7 +371,7 @@ fn cleanup(state: own Rehash) -> result: own unit pure {
   return unit;
 }
 
-fn advance(source: &Box<Slots<Slot>>, target: &Box<Slots<Slot>>, progress: &Progress, budget: own u64) -> (examined: own u64, moved: own u64) writes(deref(source)), writes(deref(target)), writes(progress.held), writes(progress.source_next), writes(progress.next_probe), writes(progress.phase) {
+fn advance(source: &Box<Slots<Slot>>, target: &Box<Slots<Slot>>, progress: &Progress, budget: own u64) -> (examined: own u64, moved: own u64) writes(source), writes(target), writes(progress.held), writes(progress.source_next), writes(progress.next_probe), writes(progress.phase) {
   doc "Each transfer is two exchanges: the source slot's occupant goes into the held field and the held occupant goes into its target slot, so the displaced vacant value is released by the ordinary scope exit.";
   let source_cursor = deref(progress).source_next;
   let probe_cursor = deref(progress).next_probe;
@@ -461,7 +461,7 @@ fn create_table(count: own u64) -> result: own Box<Slots<Slot>> pure contract {
   return move spare;
 }
 
-fn checked_insert(slots: &Box<Slots<Slot>>, key: own u64, id: own u64, kind: own u64, expected: own u64) -> code: own u8 writes(deref(slots)) {
+fn checked_insert(slots: &Box<Slots<Slot>>, key: own u64, id: own u64, kind: own u64, expected: own u64) -> code: own u8 writes(slots) {
   let outcome = allocate_put(slots: slots, key: key, id: id);
   let verdict = check_put(outcome: move outcome, kind: kind, expected: expected);
   return verdict;
@@ -489,7 +489,7 @@ fn state_hash(state: &Rehash) -> result: own u64 reads(state.source), reads(stat
   return ninth *wrap 131_u64;
 }
 
-fn check_lookup(slots: &Box<Slots<Slot>>, key: own u64, expected: own u64, work: own u64) -> code: own u8 reads(deref(slots)) {
+fn check_lookup(slots: &Box<Slots<Slot>>, key: own u64, expected: own u64, work: own u64) -> code: own u8 reads(slots) {
   let (found, examined) = find(slots: slots, key: key);
   if examined != work {
     return 11_u8;

@@ -100,7 +100,7 @@ fn fill_slots(slots: &Slots<Slot, 2>, count: own u64) -> result: own unit writes
   doc "One vacant slot per position, under a counted header that carries the length and the remaining room.";
   for (
     index in 0_u64..count,
-    invariant filled_bound: deref(slots).len >= index,
+    invariant filled: deref(slots).len >= index,
     invariant bounded: deref(slots).len <= index,
     invariant spare: deref(slots).room + index >= count
   ) {

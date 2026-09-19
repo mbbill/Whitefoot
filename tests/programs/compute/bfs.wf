@@ -57,7 +57,7 @@ fn bfs_pull(edges: &[u64]) -> result: own Box<Array<u64>> reads(edges) contract 
   let covered = count * 4_u64;
   invariant complete_rows: covered <= slots;
   let current = box_array_filled::<u64>(count: count, value: count);
-  let other = box_array_filled::<u64>(count: count, value: count);
+  let next = box_array_filled::<u64>(count: count, value: count);
   if count == 0_u64 {
     return move current;
   }
@@ -66,13 +66,13 @@ fn bfs_pull(edges: &[u64]) -> result: own Box<Array<u64>> reads(edges) contract 
     let parity = level % 2_u64;
     if parity == 0_u64 {
       let previous = &current.inner[0_u64..count];
-      let output = &other.inner[0_u64..count];
+      let output = &next.inner[0_u64..count];
       let changed = pull_level(edges: edges, previous: previous, output: output, count: count, level: level);
       if changed == 0_u64 {
-        return move other;
+        return move next;
       }
     } else {
-      let previous = &other.inner[0_u64..count];
+      let previous = &next.inner[0_u64..count];
       let output = &current.inner[0_u64..count];
       let changed = pull_level(edges: edges, previous: previous, output: output, count: count, level: level);
       if changed == 0_u64 {
@@ -84,7 +84,7 @@ fn bfs_pull(edges: &[u64]) -> result: own Box<Array<u64>> reads(edges) contract 
   if parity == 0_u64 {
     return move current;
   }
-  return move other;
+  return move next;
 }
 
 fn bfs_sparse(edges: &[u64]) -> result: own Box<Array<u64>> reads(edges) contract {
@@ -106,7 +106,7 @@ fn bfs_sparse(edges: &[u64]) -> result: own Box<Array<u64>> reads(edges) contrac
     if frontier >= count {
       break;
     }
-    let pending = count;
+    let next = count;
     let vertex = frontier;
     loop {
       if vertex >= count {
@@ -122,14 +122,14 @@ fn bfs_sparse(edges: &[u64]) -> result: own Box<Array<u64>> reads(edges) contrac
         if neighbor < count {
           if distance.inner[neighbor] == count {
             set distance.inner[neighbor] = level + 1_u64;
-            set links.inner[neighbor] = pending;
-            set pending = neighbor;
+            set links.inner[neighbor] = next;
+            set next = neighbor;
           }
         }
       }
       set vertex = links.inner[vertex];
     }
-    set frontier = pending;
+    set frontier = next;
   }
   return move distance;
 }

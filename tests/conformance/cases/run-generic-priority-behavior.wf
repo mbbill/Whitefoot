@@ -131,12 +131,12 @@ fn pop<Order<T, E>>(queue: &Queue<Order<T, E>>, env: &E) -> minimum: own T reads
   ensures deref(queue).heap.len == deref(entry(queue)).heap.len - 1_u64;
 } {
   doc "The tail is taken out and exchanged with the root by swap, so no slot is ever empty inside the window.";
-  let last_value = take_back(window: &deref(queue).heap);
+  let last = take_back(window: &deref(queue).heap);
   let count = deref(queue).heap.len;
   if count == 0_u64 {
-    return move last_value;
+    return move last;
   }
-  let minimum = move last_value;
+  let minimum = move last;
   swap(first: &deref(queue).heap[0_u64], second: &minimum);
   sift_sink::<Order<T, E>>(queue: queue, count: count, env: env);
   return move minimum;

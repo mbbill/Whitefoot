@@ -12,8 +12,8 @@ fn touched_byte(limit: own u64, xs: &[u8]) -> value: own u8 reads(xs) contract {
       break;
     }
   }
-  let last_value = cursor - 1_u64;
-  return deref(xs)[last_value];
+  let last = cursor - 1_u64;
+  return deref(xs)[last];
 }
 
 fn main() -> status: own ExitStatus pure {

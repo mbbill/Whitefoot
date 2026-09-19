@@ -103,18 +103,18 @@ const reason_output_full: Array<u8, 63> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 
 
 const reason_write_failed: Array<u8, 56> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 112_u8, 117_u8, 98_u8, 108_u8, 105_u8, 115_u8, 104_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 100_u8, 101_u8, 99_u8, 111_u8, 100_u8, 101_u8, 100_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 10_u8];
 
-fn append_slice(destination: &[u8], capacity: own u64, used: own u64, text: &[u8]) -> result: own u64 reads(text), writes(destination) contract {
+fn append_slice(destination: &[u8], capacity: own u64, filled: own u64, text: &[u8]) -> result: own u64 reads(text), writes(destination) contract {
   requires capacity == deref(destination).len;
-  requires used <= capacity;
+  requires filled <= capacity;
   ensures result <= capacity;
 } {
   doc "Appends as much of one static message as the destination range reference still holds.";
   let spare = deref(destination).len;
-  let admitted = used <= spare;
+  let admitted = filled <= spare;
   let length = deref(text).len;
   if admitted {
-    for @append (at in used..spare) {
-      let taken = at -wrap used;
+    for @append (at in filled..spare) {
+      let taken = at -wrap filled;
       let done = taken >= length;
       if done {
         return at;
@@ -124,7 +124,7 @@ fn append_slice(destination: &[u8], capacity: own u64, used: own u64, text: &[u8
     }
     return spare;
   } else {
-    return used;
+    return filled;
   }
 }
 
@@ -197,8 +197,8 @@ fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], le
       break @publish;
     }
     match write_once(factory: factory, output: output, source: source, start: sent, end: length) {
-      Ok(value: next_endpoint) => {
-        set sent = next_endpoint;
+      Ok(value: next) => {
+        set sent = next;
       }
       Err(error: problem) => {
         return Err<unit, IoError>(error: move problem);
@@ -217,35 +217,35 @@ fn assemble_reason(report: &[u8], capacity: own u64, reason: own u8) -> result: 
   let report_capacity = capacity;
   if reason == 1_u8 {
     let view = &usage_text[0_u64..33_u64];
-    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
+    set length = append_slice(destination: report, capacity: report_capacity, filled: length, text: view);
   }
   if reason == 2_u8 {
     let view = &reason_unreadable[0_u64..55_u64];
-    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
+    set length = append_slice(destination: report, capacity: report_capacity, filled: length, text: view);
   }
   if reason == 3_u8 {
     let view = &reason_empty[0_u64..45_u64];
-    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
+    set length = append_slice(destination: report, capacity: report_capacity, filled: length, text: view);
   }
   if reason == 4_u8 {
     let view = &reason_too_large[0_u64..64_u64];
-    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
+    set length = append_slice(destination: report, capacity: report_capacity, filled: length, text: view);
   }
   if reason == 5_u8 {
     let view = &reason_truncated[0_u64..51_u64];
-    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
+    set length = append_slice(destination: report, capacity: report_capacity, filled: length, text: view);
   }
   if reason == 6_u8 {
     let view = &reason_malformed[0_u64..50_u64];
-    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
+    set length = append_slice(destination: report, capacity: report_capacity, filled: length, text: view);
   }
   if reason == 7_u8 {
     let view = &reason_output_full[0_u64..63_u64];
-    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
+    set length = append_slice(destination: report, capacity: report_capacity, filled: length, text: view);
   }
   if reason == 8_u8 {
     let view = &reason_write_failed[0_u64..56_u64];
-    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
+    set length = append_slice(destination: report, capacity: report_capacity, filled: length, text: view);
   }
   return length;
 }
@@ -285,7 +285,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
     return exit_status(code: 1_u8);
   }
   let status = 0_u8;
-  let loaded = 0_u64;
+  let filled = 0_u64;
   let file_offset = 0_u64;
   match arg_get(args: args, position: 1_u64) {
     Ok(value: text) => {
@@ -295,22 +295,22 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
             Ok(value: file) => {
               let ended = 0_u8;
               loop @chunks {
-                let within_scratch = loaded <= 4097_u64;
+                let within_scratch = filled <= 4097_u64;
                 if within_scratch {
                 } else {
                   set ended = 2_u8;
                   break @chunks;
                 }
-                let spare = 4097_u64 -wrap loaded;
+                let spare = 4097_u64 -wrap filled;
                 let full = spare == 0_u64;
                 if full {
                   break @chunks;
                 }
-                match read_at(factory: files, file: &file, destination: scratch_window, file_offset: file_offset, start: loaded, end: 4097_u64) {
+                match read_at(factory: files, file: &file, destination: scratch_window, file_offset: file_offset, start: filled, end: 4097_u64) {
                   Ok(value: endpoint) => {
-                    let received = endpoint -wrap loaded;
+                    let received = endpoint -wrap filled;
                     set file_offset = file_offset +wrap received;
-                    set loaded = endpoint;
+                    set filled = endpoint;
                   }
                   Err(error: read_stop_15) => {
                     match read_stop_15 {
@@ -356,7 +356,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
     }
     return exit_status(code: status);
   }
-  let empty = loaded == 0_u64;
+  let empty = filled == 0_u64;
   if empty {
     let assembled = assemble_reason(report: report_window, capacity: report_room, reason: 3_u8);
     match publish_all(factory: files, output: err, source: report_window, length: assembled) {
@@ -367,7 +367,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
     }
     return exit_status(code: 3_u8);
   }
-  let too_large = loaded > 4096_u64;
+  let too_large = filled > 4096_u64;
   if too_large {
     let assembled = assemble_reason(report: report_window, capacity: report_room, reason: 4_u8);
     match publish_all(factory: files, output: err, source: report_window, length: assembled) {
@@ -387,7 +387,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
     place_back(window: &stream, value: 0_u8);
   }
   let stream_window = &stream[0_u64..4096_u64];
-  let copied = copy_range(destination: stream_window, at: 0_u64, source: scratch_window, from: 0_u64, to: loaded);
+  let copied = copy_range(destination: stream_window, at: 0_u64, source: scratch_window, from: 0_u64, to: filled);
   let decoded = slots_new::<u8, 65536>();
   for @reserve_decoded (
     at in 0_u64..65536_u64,
@@ -397,7 +397,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
     place_back(window: &decoded, value: 0_u8);
   }
   let decoded_window = &decoded[0_u64..65536_u64];
-  let stream_view = &stream[0_u64..loaded];
+  let stream_view = &stream[0_u64..filled];
   let decoded_length = 0_u64;
   match inflate(out: decoded_window, input: stream_view) {
     Ok(value: produced) => {

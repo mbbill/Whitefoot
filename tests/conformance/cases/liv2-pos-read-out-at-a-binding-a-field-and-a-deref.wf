@@ -17,7 +17,7 @@ fn bump(cell: own u64) -> back: own u64 pure contract {
   return raised;
 }
 
-fn refill(out: &Box<u64>) -> done: own unit writes(deref(out)) {
+fn refill(out: &Box<u64>) -> done: own unit writes(out) {
   doc "The atomic update at a cell's content reached through a reference parameter: the old value enters the callee by value and the result is committed with no program point between.";
   set deref(out).inner = bump(cell: deref(out).inner);
   return unit;

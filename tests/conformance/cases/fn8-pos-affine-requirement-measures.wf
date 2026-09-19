@@ -10,8 +10,8 @@ fn fill(first: &[u64], second: &[u64], output: &[u64]) -> result: own u64 writes
   let total = a + b;
   invariant fits: total <= capacity;
   if total > 0_u64 {
-    let end_index = total - 1_u64;
-    set deref(output)[end_index] = 7_u64;
+    let last = total - 1_u64;
+    set deref(output)[last] = 7_u64;
   }
   return total;
 }

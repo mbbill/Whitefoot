@@ -143,7 +143,7 @@ fn key_probe<Key<K, E>>(slot: &Slot<K>, tag: own u8, key: &K, env: &E) -> action
   }
 }
 
-fn key_put<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: own K, payload: own Box<Resource>, env: &E) -> outcome: own KeyPut<K> reads(env), writes(deref(slots)) contract {
+fn key_put<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: own K, payload: own Box<Resource>, env: &E) -> outcome: own KeyPut<K> reads(env), writes(slots) contract {
   ensures deref(slots).inner.len == deref(entry(slots)).inner.len;
 } {
   doc "The probe loop only selects a destination, so the owning key and payload are never moved inside a loop body; the one installation is written after it and exchanges the old occupant out by swap.";
@@ -192,7 +192,7 @@ fn key_put<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: own K, payload: own Box<
   return Installed<K>(previous: move offered);
 }
 
-fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: own unit writes(deref(slots)) contract {
+fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: own unit writes(slots) contract {
   requires deref(slots).inner.len == 0_u64;
   requires deref(slots).inner.room >= count;
   ensures deref(slots).inner.len == count;
@@ -200,7 +200,7 @@ fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: o
   doc "One vacant slot per position, under a counted header that carries the length and the remaining room.";
   for (
     index in 0_u64..count,
-    invariant filled_bound: deref(slots).inner.len >= index,
+    invariant filled: deref(slots).inner.len >= index,
     invariant bounded: deref(slots).inner.len <= index,
     invariant spare: deref(slots).inner.room + index >= count
   ) {
@@ -243,7 +243,7 @@ fn key_inspect<Key<K, E>>(slot: &Slot<K>, tag: own u8, key: &K, env: &E) -> (act
   }
 }
 
-fn key_find<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> (found: own Option<u64>, examined: own u64) reads(deref(slots)), reads(key), reads(env) {
+fn key_find<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> (found: own Option<u64>, examined: own u64) reads(slots), reads(key), reads(env) {
   doc "The lookup walks the same probe order and reports how many positions it examined.";
   let hash = Key::hash(env: env, key: key);
   let tag = fingerprint(key: hash);

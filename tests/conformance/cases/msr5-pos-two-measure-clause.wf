@@ -1,4 +1,4 @@
-fn filled_slots<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
   ensures result.len >= n;
   ensures result.room <= 0_u64;
 } {
@@ -24,8 +24,8 @@ fn read_shared(short: own Slots<u8, 4>, long: own Slots<u8, 8>) -> value: own u8
 
 fn main() -> status: own ExitStatus pure {
   doc "MSR-5: a clause names a measure of a place directly on either side of its comparison, and again against a literal, with no contract definition in the block.";
-  let small = filled_slots::<u8, 4>(value: 0_u8);
-  let large = filled_slots::<u8, 8>(value: 0_u8);
+  let small = filled::<u8, 4>(value: 0_u8);
+  let large = filled::<u8, 8>(value: 0_u8);
   let value = read_shared(short: move small, long: move large);
   if value == 0_u8 {
   } else {

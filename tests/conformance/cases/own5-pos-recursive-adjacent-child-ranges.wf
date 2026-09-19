@@ -23,8 +23,8 @@ fn main() -> status: own ExitStatus pure {
     set values.inner[i] = i;
   }
   let window = &values.inner[0_u64..17_u64];
-  let filled_count = fill(output: window);
-  if filled_count != 17_u64 {
+  let filled = fill(output: window);
+  if filled != 17_u64 {
     return exit_status(code: 1_u8);
   }
   for (i in 0_u64..17_u64) {

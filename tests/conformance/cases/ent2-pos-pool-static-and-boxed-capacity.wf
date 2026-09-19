@@ -2,21 +2,21 @@ struct StaticBlock {
   bytes: Slots<u8, 4>;
 }
 
-fn take_static(free_list: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(free_list.last), writes(free_list.len) contract {
-  requires deref(free_list).len > 0_u64;
-  ensures deref(free_list).len + 1_u64 == deref(entry(free_list)).len;
+fn take_static(free: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(free.last), writes(free.len) contract {
+  requires deref(free).len > 0_u64;
+  ensures deref(free).len + 1_u64 == deref(entry(free)).len;
 } {
   doc "Takes the last filled slot of the pool and hands the block back; the boundary move is published as the declared exit relation.";
-  let taken = take_back(window: free_list);
+  let taken = take_back(window: free);
   return move taken;
 }
 
-fn return_static(free_list: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(free_list.next), writes(free_list.len) contract {
-  requires deref(free_list).room > 0_u64;
-  ensures deref(free_list).len == deref(entry(free_list)).len + 1_u64;
+fn return_static(free: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(free.next), writes(free.len) contract {
+  requires deref(free).room > 0_u64;
+  ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
   doc "Puts one block back into the pool's append slot and publishes the boundary move.";
-  place_back(window: free_list, value: move block);
+  place_back(window: free, value: move block);
   return unit;
 }
 
@@ -28,36 +28,36 @@ fn plain() -> status: own ExitStatus pure {
   place_back(window: &bytes, value: 3_u8);
   place_back(window: &bytes, value: 4_u8);
   let record = StaticBlock(bytes: move bytes);
-  let free_list = slots_new::<StaticBlock, 2>();
-  place_back(window: &free_list, value: move record);
-  let block = take_static(free_list: &free_list);
+  let free = slots_new::<StaticBlock, 2>();
+  place_back(window: &free, value: move record);
+  let block = take_static(free: &free);
   invariant capacity: block.bytes.cap >= 4_u64;
   let length = block.bytes.len;
   for (at in 0_u64..length) {
     let byte = block.bytes[at];
-    let bumped = byte +wrap 1_u8;
-    set block.bytes[at] = bumped;
+    let next = byte +wrap 1_u8;
+    set block.bytes[at] = next;
   }
-  return_static(free_list: &free_list, block: move block);
-  let recovered = take_static(free_list: &free_list);
+  return_static(free: &free, block: move block);
+  let recovered = take_static(free: &free);
   let recovered_length = recovered.bytes.len;
   let sum = 0_u8;
   for (at in 0_u64..recovered_length) {
     let byte = recovered.bytes[at];
     set sum = sum +wrap byte;
   }
-  return_static(free_list: &free_list, block: move recovered);
-  invariant conserved: free_list.len >= 1_u64;
+  return_static(free: &free, block: move recovered);
+  invariant conserved: free.len >= 1_u64;
   let total = sum -wrap 14_u8;
   return exit_status(code: total);
 }
 
-fn take_boxed(free_list: &Slots<Box<Slots<u8, 4>>, 2>) -> block: own Box<Slots<u8, 4>> writes(free_list.last), writes(free_list.len) contract {
-  requires deref(free_list).len > 0_u64;
-  ensures deref(free_list).len + 1_u64 == deref(entry(free_list)).len;
+fn take_boxed(free: &Slots<Box<Slots<u8, 4>>, 2>) -> block: own Box<Slots<u8, 4>> writes(free.last), writes(free.len) contract {
+  requires deref(free).len > 0_u64;
+  ensures deref(free).len + 1_u64 == deref(entry(free)).len;
 } {
   doc "The same pool helper over boxed blocks; the cell is an ordinary owned value.";
-  let taken = take_back(window: free_list);
+  let taken = take_back(window: free);
   return move taken;
 }
 
@@ -65,11 +65,11 @@ fn boxed() -> status: own ExitStatus pure {
   doc "The boxed helper remains instantiated as the distinct compilation trigger: the capacity of the boxed window is still the static extent of its content type, reached by the ordinary field step inner [TYPE-9, ENT-2].";
   let payload = slots_new::<u8, 4>();
   let cell = box_new::<Slots<u8, 4>>(value: move payload);
-  let free_list = slots_new::<Box<Slots<u8, 4>>, 2>();
-  place_back(window: &free_list, value: move cell);
-  let block = take_boxed(free_list: &free_list);
+  let free = slots_new::<Box<Slots<u8, 4>>, 2>();
+  place_back(window: &free, value: move cell);
+  let block = take_boxed(free: &free);
   invariant boxed_capacity: block.inner.cap >= 4_u64;
-  place_back(window: &free_list, value: move block);
+  place_back(window: &free, value: move block);
   return exit_status(code: 0_u8);
 }
 

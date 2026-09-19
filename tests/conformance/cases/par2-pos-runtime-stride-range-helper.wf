@@ -20,7 +20,7 @@ fn rows(width: own u64) -> result: own Box<Array<u64>> pure contract {
       use width times (i + 1_u64 <= 3_u64);
     }
     let row = &values.inner[start..end];
-    let filled_count = fill(output: row);
+    let filled = fill(output: row);
   }
   return move values;
 }

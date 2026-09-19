@@ -12,7 +12,7 @@ fn main() -> status: own ExitStatus pure {
   push(values: &values, value: 7_u64);
   invariant upper: values.len <= 1_u64;
   invariant lower: values.len >= 1_u64;
-  let last_taken = take_back(window: &values);
+  let last = take_back(window: &values);
   invariant empty: values.len <= 0_u64;
   return exit_status(code: 0_u8);
 }

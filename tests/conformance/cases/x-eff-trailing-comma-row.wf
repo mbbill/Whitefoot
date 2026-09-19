@@ -1,4 +1,4 @@
-fn f(cell: &Box<i32>, x: own i32) -> function_result: own i32 reads(deref(cell)), {
+fn f(cell: &Box<i32>, x: own i32) -> function_result: own i32 reads(cell), {
   doc "A trailing comma after an effect entry is rejected because EFF-1 permits commas only between effects.";
   return x;
 }

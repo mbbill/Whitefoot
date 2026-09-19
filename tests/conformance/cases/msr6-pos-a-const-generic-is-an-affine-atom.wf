@@ -1,4 +1,4 @@
-fn filled_slots<const n: u64>(value: own u8) -> result: own Slots<u8, n> pure contract {
+fn filled<const n: u64>(value: own u8) -> result: own Slots<u8, n> pure contract {
   ensures result.len >= n;
   ensures result.room <= 0_u64;
 } {
@@ -16,7 +16,7 @@ fn filled_slots<const n: u64>(value: own u8) -> result: own Slots<u8, n> pure co
 
 fn main() -> status: own ExitStatus pure {
   doc "MSR-6: the loop invariant names the const generic directly, which is the fourth position in which a const generic is a value.";
-  let bytes = filled_slots::<4>(value: 7_u8);
+  let bytes = filled::<4>(value: 7_u8);
   let held = bytes.len;
   if held == 4_u64 {
   } else {

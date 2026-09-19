@@ -14,7 +14,7 @@ fn bs_new() -> made: own Box<Slots<u8>> pure contract {
   return move made;
 }
 
-fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(deref(s)) contract {
+fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(s) contract {
   requires total >= deref(s).inner.cap;
   ensures deref(s).inner.cap == total;
   ensures deref(s).inner.len == deref(entry(s)).inner.len;
@@ -24,7 +24,7 @@ fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(der
   return unit;
 }
 
-fn digest(run: &Box<Slots<u8>>, status: own u64) -> result: own u64 reads(deref(run)) {
+fn digest(run: &Box<Slots<u8>>, status: own u64) -> result: own u64 reads(run) {
   doc "Folds the window into one word, most significant byte first.";
   let result = status;
   let length = deref(run).inner.len;
@@ -48,7 +48,7 @@ fn growth_trace(seed: own u8, initial: own u64, count: own u64, limit: own u64) 
   let state = seed;
   for (
     index in 0_u64..initial,
-    invariant filled_so_far: original.inner.len >= index,
+    invariant filled: original.inner.len >= index,
     invariant bound: original.inner.len <= index,
     invariant spare: original.inner.room + index >= initial
   ) {
@@ -65,7 +65,7 @@ fn growth_trace(seed: own u8, initial: own u64, count: own u64, limit: own u64) 
   let grown = box_slots_new::<u8>(capacity: count);
   for (
     index in 0_u64..initial,
-    invariant filled_so_far: grown.inner.len >= index,
+    invariant filled: grown.inner.len >= index,
     invariant bound: grown.inner.len <= index,
     invariant spare: grown.inner.room + index >= count
   ) {
@@ -75,7 +75,7 @@ fn growth_trace(seed: own u8, initial: own u64, count: own u64, limit: own u64) 
   release_run(run: move original);
   for (
     index in initial..count,
-    invariant filled_so_far: grown.inner.len >= index,
+    invariant filled: grown.inner.len >= index,
     invariant bound: grown.inner.len <= index,
     invariant spare: grown.inner.room + index >= count
   ) {
@@ -201,8 +201,8 @@ fn main() -> status: own ExitStatus pure {
     return exit_status(code: 1_u8);
   }
   if 5_u64 < stored {
-    let tail = held.inner[5_u64];
-    if tail == 33_u8 {
+    let last = held.inner[5_u64];
+    if last == 33_u8 {
     } else {
       return exit_status(code: 1_u8);
     }

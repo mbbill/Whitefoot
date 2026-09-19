@@ -3,9 +3,9 @@ fn main() -> status: own ExitStatus pure {
   let blocks = slots_new::<Box<Slots<u8>>, 2>();
   let first = box_slots_new::<u8>(capacity: 8_u64);
   place_back(window: &blocks, value: move first);
-  let recovered = take_back(window: &blocks);
-  place_back(window: &recovered.inner, value: 3_u8);
-  let seen = recovered.inner[0_u64];
+  let last = take_back(window: &blocks);
+  place_back(window: &last.inner, value: 3_u8);
+  let seen = last.inner[0_u64];
   if seen == 3_u8 {
   } else {
     return exit_status(code: 1_u8);

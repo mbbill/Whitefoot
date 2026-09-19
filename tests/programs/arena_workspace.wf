@@ -36,8 +36,8 @@ fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 4_u8);
   }
-  let tail = deref(built)[7_u64];
-  if tail == 7_u64 {
+  let last = deref(built)[7_u64];
+  if last == 7_u64 {
   } else {
     return exit_status(code: 5_u8);
   }

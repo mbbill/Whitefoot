@@ -54,9 +54,9 @@ fn main() -> status: own ExitStatus pure {
   }
   let taken = remove_at(window: &three, index: 0_u64);
   let rest = move three;
-  let second_byte = remove_at(window: &rest, index: 0_u64);
+  let next = remove_at(window: &rest, index: 0_u64);
   let shorter = move rest;
-  let third_byte = remove_at(window: &shorter, index: 0_u64);
+  let last = remove_at(window: &shorter, index: 0_u64);
   let drained = move shorter;
   let nothing = &drained[0_u64..drained.len];
   let empty_width = deref(nothing).len;

@@ -5,13 +5,13 @@ fn main() -> status: own ExitStatus pure {
   set deref(window)[0_u64] = 9_u8;
   set deref(window)[3_u64] = 11_u8;
   let first = table.inner[0_u64];
-  let last_value = table.inner[3_u64];
+  let last = table.inner[3_u64];
   let untouched = table.inner[1_u64];
   if first == 9_u8 {
   } else {
     return exit_status(code: 201_u8);
   }
-  if last_value == 11_u8 {
+  if last == 11_u8 {
   } else {
     return exit_status(code: 202_u8);
   }

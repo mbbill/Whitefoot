@@ -2,7 +2,7 @@ struct Counter {
   value: u64;
 }
 
-fn recomputed(current: own u64, holder: &Box<Counter>) -> result: own u64 writes(deref(holder)) {
+fn recomputed(current: own u64, holder: &Box<Counter>) -> result: own u64 writes(holder) {
   doc "OP-12 refuses this callee at the update site: its declared row writes a proper prefix of the target place.";
   set deref(holder).inner = Counter(value: 0_u64);
   return current;

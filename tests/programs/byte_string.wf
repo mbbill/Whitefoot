@@ -18,7 +18,7 @@ const line_end: Array<u8, 1> =[10_u8];
 
 const digit_glyphs: Array<u8, 10> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8];
 
-fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(deref(s)) contract {
+fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(s) contract {
   requires total >= deref(s).inner.cap;
   ensures deref(s).inner.cap == total;
   ensures deref(s).inner.len == deref(entry(s)).inner.len;
@@ -28,12 +28,12 @@ fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(der
   return unit;
 }
 
-fn bs_len(s: &Box<Slots<u8>>) -> result: own u64 reads(deref(s)) {
+fn bs_len(s: &Box<Slots<u8>>) -> result: own u64 reads(s) {
   doc "Reports how many bytes the string holds; a measure read is a place form, not a call [OP-15].";
   return deref(s).inner.len;
 }
 
-fn bs_byte(s: &Box<Slots<u8>>, index: own u64) -> result: own Option<u8> reads(deref(s)) {
+fn bs_byte(s: &Box<Slots<u8>>, index: own u64) -> result: own Option<u8> reads(s) {
   doc "Reads one stored byte, delivering None for a position the string does not hold.";
   let stored = deref(s).inner.len;
   let within = index < stored;
@@ -44,7 +44,7 @@ fn bs_byte(s: &Box<Slots<u8>>, index: own u64) -> result: own Option<u8> reads(d
   return None<u8>();
 }
 
-fn bs_append_range(s: &Box<Slots<u8>>, capacity: own u64, text: &[u8]) -> result: own unit reads(text), writes(deref(s)) contract {
+fn bs_append_range(s: &Box<Slots<u8>>, capacity: own u64, text: &[u8]) -> result: own unit reads(text), writes(s) contract {
   requires deref(s).inner.cap == capacity;
   requires deref(s).inner.len + deref(text).len <= capacity;
   ensures deref(s).inner.cap == capacity;
@@ -55,7 +55,7 @@ fn bs_append_range(s: &Box<Slots<u8>>, capacity: own u64, text: &[u8]) -> result
   let start = deref(s).inner.len;
   for @append (
     at in 0_u64..count,
-    invariant filled_so_far: deref(s).inner.len == start + at,
+    invariant filled: deref(s).inner.len == start + at,
     invariant kept: deref(s).inner.cap == capacity,
     invariant fits: start + count <= capacity
   ) {
@@ -76,7 +76,7 @@ fn bs_from(text: &[u8]) -> made: own Box<Slots<u8>> reads(text) contract {
   return move made;
 }
 
-fn bs_concat(destination: &Box<Slots<u8>>, capacity: own u64, source: &Box<Slots<u8>>) -> result: own unit reads(deref(source)), writes(deref(destination)) contract {
+fn bs_concat(destination: &Box<Slots<u8>>, capacity: own u64, source: &Box<Slots<u8>>) -> result: own unit reads(source), writes(destination) contract {
   requires deref(destination).inner.cap == capacity;
   requires deref(destination).inner.len + deref(source).inner.len <= capacity;
   ensures deref(destination).inner.cap == capacity;
@@ -87,7 +87,7 @@ fn bs_concat(destination: &Box<Slots<u8>>, capacity: own u64, source: &Box<Slots
   let start = deref(destination).inner.len;
   for @concat (
     at in 0_u64..count,
-    invariant filled_so_far: deref(destination).inner.len == start + at,
+    invariant filled: deref(destination).inner.len == start + at,
     invariant kept: deref(destination).inner.cap == capacity,
     invariant fits: start + count <= capacity
   ) {
@@ -97,7 +97,7 @@ fn bs_concat(destination: &Box<Slots<u8>>, capacity: own u64, source: &Box<Slots
   return unit;
 }
 
-fn bs_find(haystack: &Box<Slots<u8>>, needle: &Box<Slots<u8>>) -> result: own Option<u64> reads(deref(haystack)), reads(deref(needle)) {
+fn bs_find(haystack: &Box<Slots<u8>>, needle: &Box<Slots<u8>>) -> result: own Option<u64> reads(haystack), reads(needle) {
   doc "Reports the first position where the needle bytes occur, by the naive left-to-right scan. A position found by a search is returned as an index, never as a reference [REF-3].";
   let hay_length = deref(haystack).inner.len;
   let needle_length = deref(needle).inner.len;
@@ -105,10 +105,10 @@ fn bs_find(haystack: &Box<Slots<u8>>, needle: &Box<Slots<u8>>) -> result: own Op
   if longer {
     return None<u64>();
   }
-  let final_start = hay_length -wrap needle_length;
+  let last = hay_length -wrap needle_length;
   let start = 0_u64;
   loop @scan {
-    let past = start > final_start;
+    let past = start > last;
     if past {
       break @scan;
     }
@@ -149,7 +149,7 @@ fn bs_find(haystack: &Box<Slots<u8>>, needle: &Box<Slots<u8>>) -> result: own Op
   return None<u64>();
 }
 
-fn bs_push_decimal(s: &Box<Slots<u8>>, capacity: own u64, value: own u64, digits: own u64) -> result: own unit writes(deref(s)) contract {
+fn bs_push_decimal(s: &Box<Slots<u8>>, capacity: own u64, value: own u64, digits: own u64) -> result: own unit writes(s) contract {
   requires digits >= 1_u64;
   requires digits <= 20_u64;
   requires deref(s).inner.cap == capacity;
@@ -173,7 +173,7 @@ fn bs_push_decimal(s: &Box<Slots<u8>>, capacity: own u64, value: own u64, digits
   for @emit (
     at in 0_u64..digits,
     invariant left: scratch.len + at == digits,
-    invariant filled_so_far: deref(s).inner.len == start + at,
+    invariant filled: deref(s).inner.len == start + at,
     invariant kept: deref(s).inner.cap == capacity,
     invariant fits: start + digits <= capacity
   ) {
@@ -196,8 +196,8 @@ fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], le
       break @publish;
     }
     match write_once(factory: factory, output: output, source: source, start: sent, end: length) {
-      Ok(value: accepted) => {
-        set sent = accepted;
+      Ok(value: next) => {
+        set sent = next;
       }
       Err(error: problem) => {
         return Err<unit, IoError>(error: move problem);

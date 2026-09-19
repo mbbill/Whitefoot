@@ -16,11 +16,11 @@ fn build(depth: own u64, w: own f64) -> result: own Box<LNode> pure {
   if done {
     return boxed_leaf(w: w);
   }
-  let deeper = depth -wrap 1_u64;
+  let next = depth -wrap 1_u64;
   let wl = fmul.strict(w, 1.0009765625_f64);
   let wr = fmul.strict(w, 0.9990234375_f64);
-  let l = build(depth: deeper, w: wl);
-  let r = build(depth: deeper, w: wr);
+  let l = build(depth: next, w: wl);
+  let r = build(depth: next, w: wr);
   let branch = Branch(left: move l, right: move r, w: w, h: 0.25_f64, out: 0.0_f64);
   let cell = box_new::<LNode>(value: move branch);
   return move cell;
@@ -219,7 +219,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
     }
   }
   let words = &words_cell.inner[0_u64..8192_u64];
-  let final_total = 0.0_f64;
+  let last = 0.0_f64;
   let batch = 0_u64;
   loop @layout_batches {
     let all_batches_done = batch >= batches;
@@ -234,7 +234,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
         break @reps;
       }
       let total = layout(node: &tree, words: words, inh: seed);
-      set final_total = total;
+      set last = total;
       set seed = fadd.strict(seed, 0.0625_f64);
       set i = i +wrap 1_u64;
     }
@@ -261,7 +261,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
     }
     set band_batch = band_batch +wrap 1_u64;
   }
-  let last_bits = reinterpret::<f64, u64>(final_total);
+  let last_bits = reinterpret::<f64, u64>(last);
   let banded_bits = reinterpret::<f64, u64>(banded);
   let report = slots_new::<u8, 34>();
   for @fill_report (
@@ -276,7 +276,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let first = spell_hex(destination: window, at: 0_u64, value: last_bits);
   let second = spell_hex(destination: window, at: 17_u64, value: banded_bits);
   match write_once(factory: &entry_factory, output: &out, source: window, start: 0_u64, end: 34_u64) {
-    Ok(value: next_endpoint) => {
+    Ok(value: next) => {
       return exit_status(code: 0_u8);
     }
     Err(error: problem) => {

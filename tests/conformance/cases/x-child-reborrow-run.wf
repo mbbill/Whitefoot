@@ -23,16 +23,16 @@ fn proxy_byte(out: &[u8]) -> function_result: own unit writes(out) contract {
 
 fn bump_counter(counter: &Counter) -> function_result: own unit writes(counter.value) {
   doc "Reads and writes one field through a reference parameter; writes subsumes reads for one path, so the pair is never written [EFF-1].";
-  let next_value = deref(counter).value +wrap 1_u64;
-  set deref(counter).value = next_value;
+  let next = deref(counter).value +wrap 1_u64;
+  set deref(counter).value = next;
   return unit;
 }
 
 fn proxy_counter(counter: &Counter) -> function_result: own unit writes(counter.value) {
   doc "Passes its reference parameter onward and writes the same field again afterward.";
   bump_counter(counter: counter);
-  let next_value = deref(counter).value +wrap 1_u64;
-  set deref(counter).value = next_value;
+  let next = deref(counter).value +wrap 1_u64;
+  set deref(counter).value = next;
   return unit;
 }
 

@@ -11,8 +11,8 @@ fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], le
       break @publish;
     }
     match write_once(factory: factory, output: output, source: source, start: sent, end: length) {
-      Ok(value: next_endpoint) => {
-        set sent = next_endpoint;
+      Ok(value: next) => {
+        set sent = next;
       }
       Err(error: problem) => {
         return Err<unit, IoError>(error: move problem);

@@ -88,8 +88,8 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
 }
 
 fn pump(receive: &TcpReceive, send: &TcpSend, scratch: &[u8]) -> result: own u8 writes(receive), writes(send), writes(scratch) contract {
-  define room_left = deref(scratch).len;
-  requires 64_u64 <= room_left;
+  define room = deref(scratch).len;
+  requires 64_u64 <= room;
 } {
   doc "Reads one chunk from the receiving direction and sends it back through the sending direction, holding both directions at once.";
   let outcome = 0_u8;

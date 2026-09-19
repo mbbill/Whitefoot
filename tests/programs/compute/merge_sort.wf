@@ -5,8 +5,8 @@ fn search_step(input: &[u64], lower: own u64, upper: own u64, key: own u64) -> (
   ensures next_lower <= next_upper;
   ensures next_upper <= deref(input).len;
 } {
-  let last_index = upper - 1_u64;
-  let span = last_index - lower;
+  let last = upper - 1_u64;
+  let span = last - lower;
   let half = span / 2_u64;
   let middle = lower + half;
   let value = deref(input)[middle];
@@ -96,8 +96,8 @@ fn merge_values(first: &[u64], second: &[u64], output: &[u64]) -> result: own u6
   if n < m {
     return merge_values(first: second, second: first, output: output);
   }
-  let last_index = n - 1_u64;
-  let middle = last_index / 2_u64;
+  let last = n - 1_u64;
+  let middle = last / 2_u64;
   let pivot = deref(first)[middle];
   let rank = lower_bound(input: second, key: pivot);
   let split = middle + rank;

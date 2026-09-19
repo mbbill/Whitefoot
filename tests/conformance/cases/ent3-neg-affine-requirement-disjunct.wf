@@ -1,4 +1,4 @@
-fn spare(a: own u64, b: own u64, limit: own u64) -> result: own u64 pure contract {
+fn room(a: own u64, b: own u64, limit: own u64) -> result: own u64 pure contract {
   define sum = a + b;
   define bounded = sum <= limit;
   define permitted = a <= 16_u64;

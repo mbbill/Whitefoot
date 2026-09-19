@@ -1,17 +1,17 @@
-const limit: u64 = 255_u64;
+const cap: u64 = 255_u64;
 
-fn walk(count: own u64) -> reached: own u64 pure contract {
-  requires count <= limit;
+fn walk(count: own u64) -> last: own u64 pure contract {
+  requires count <= cap;
 } {
   doc "A named integer const is an affine atom: the header relation names the declared limit rather than repeating its digits, and reads exactly as the literal it names.";
-  let reached = 0_u64;
+  let last = 0_u64;
   for (
     i in 0_u64..count,
-    invariant within: i <= limit
+    invariant within: i <= cap
   ) {
-    set reached = i;
+    set last = i;
   }
-  return reached;
+  return last;
 }
 
 fn main() -> status: own ExitStatus pure {

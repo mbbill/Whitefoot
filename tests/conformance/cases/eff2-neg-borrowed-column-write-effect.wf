@@ -3,7 +3,7 @@ struct Columns {
   right: Box<Slots<u64>>;
 }
 
-fn fill(left: &Box<Slots<u64>>, right: &Box<Slots<u64>>, value: own u64) -> function_result: own unit reads(deref(left)), reads(deref(right)) contract {
+fn fill(left: &Box<Slots<u64>>, right: &Box<Slots<u64>>, value: own u64) -> function_result: own unit reads(left), reads(right) contract {
   requires deref(left).inner.room > 0_u64;
   requires deref(right).inner.room > 0_u64;
 } {

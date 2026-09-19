@@ -7,7 +7,7 @@ linear struct Lease {
 }
 
 struct BlockPool {
-  spares: Slots<Block, 8>;
+  free: Slots<Block, 8>;
 }
 
 fn block_new() -> made: own Block pure {
@@ -19,47 +19,47 @@ fn block_new() -> made: own Block pure {
 
 fn pool_new() -> made: own BlockPool pure {
   doc "A pool is a Slots plus the blocks it holds [OP-13]: eight runs are carved into one run of runs and kept as a free list.";
-  let spares = slots_new::<Block, 8>();
+  let free = slots_new::<Block, 8>();
   for @carve (
     at in 0_u64..8_u64,
-    invariant grown: spares.len >= at,
-    invariant bounded: spares.len <= at,
-    invariant spare: spares.room + at >= 8_u64
+    invariant grown: free.len >= at,
+    invariant bounded: free.len <= at,
+    invariant spare: free.room + at >= 8_u64
   ) {
     let run = block_new();
-    place_back(window: &spares, value: move run);
+    place_back(window: &free, value: move run);
   }
-  let pool = BlockPool(spares: move spares);
+  let pool = BlockPool(free: move free);
   return move pool;
 }
 
-fn take_free(spares: &Slots<Block, 8>) -> block: own Block writes(spares.last), writes(spares.len) contract {
-  requires deref(spares).len > 0_u64;
-  ensures deref(spares).len + 1_u64 == deref(entry(spares)).len;
-  ensures deref(spares).room == deref(entry(spares)).room + 1_u64;
+fn take_free(free: &Slots<Block, 8>) -> block: own Block writes(free.last), writes(free.len) contract {
+  requires deref(free).len > 0_u64;
+  ensures deref(free).len + 1_u64 == deref(entry(free)).len;
+  ensures deref(free).room == deref(entry(free)).room + 1_u64;
 } {
   doc "One block off the back boundary; the row names exactly the last filled slot and the length take_back moves [OP-10].";
-  let block = take_back(window: spares);
+  let block = take_back(window: free);
   return move block;
 }
 
-fn return_free(spares: &Slots<Block, 8>, block: own Block) -> result: own unit writes(spares.next), writes(spares.len) contract {
-  requires deref(spares).room > 0_u64;
-  ensures deref(spares).len == deref(entry(spares)).len + 1_u64;
+fn return_free(free: &Slots<Block, 8>, block: own Block) -> result: own unit writes(free.next), writes(free.len) contract {
+  requires deref(free).room > 0_u64;
+  ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
   doc "One block back onto the append slot, under the caller's proof that the free list has room.";
-  place_back(window: spares, value: move block);
+  place_back(window: free, value: move block);
   return unit;
 }
 
 fn pool_take(pool: own BlockPool) -> (rest: own BlockPool, leased: own Option<Lease>) pure {
   doc "Leases one run, or reports that the free list is empty. The pool arrives by value, so the row is empty and the reference the body forms is rooted in local storage [EFF-1, EFF-2].";
-  let spare = pool.spares.len;
+  let spare = pool.free.len;
   let any = spare > 0_u64;
   if any {
-    let one = take_free(spares: &pool.spares);
-    invariant removed_one_upper: pool.spares.len + 1_u64 <= spare;
-    invariant removed_one_lower: pool.spares.len + 1_u64 >= spare;
+    let one = take_free(free: &pool.free);
+    invariant removed_one_upper: pool.free.len + 1_u64 <= spare;
+    invariant removed_one_lower: pool.free.len + 1_u64 >= spare;
     let ticket = Lease(run: move one);
     return move pool, Some<Lease>(value: move ticket);
   }
@@ -67,11 +67,11 @@ fn pool_take(pool: own BlockPool) -> (rest: own BlockPool, leased: own Option<Le
 }
 
 fn pool_release(pool: own BlockPool, lease: own Lease) -> rest: own BlockPool pure contract {
-  requires pool.spares.room > 0_u64;
+  requires pool.free.room > 0_u64;
 } {
   doc "Returns one lease to the free list; the caller has proved there is room. The linear lease leaves this scope only by being taken apart, which is what makes the return unavoidable [PROV-6].";
   let Lease(run: back) = move lease;
-  return_free(spares: &pool.spares, block: move back);
+  return_free(free: &pool.free, block: move back);
   return move pool;
 }
 
@@ -79,22 +79,22 @@ struct StaticBlock {
   bytes: Slots<u8, 4>;
 }
 
-fn take_static(spares: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(spares.last), writes(spares.len) contract {
-  requires deref(spares).len > 0_u64;
-  ensures deref(spares).len + 1_u64 == deref(entry(spares)).len;
-  ensures deref(spares).room == deref(entry(spares)).room + 1_u64;
+fn take_static(free: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(free.last), writes(free.len) contract {
+  requires deref(free).len > 0_u64;
+  ensures deref(free).len + 1_u64 == deref(entry(free)).len;
+  ensures deref(free).room == deref(entry(free)).room + 1_u64;
 } {
   doc "The same boundary take over a frame-resident element type.";
-  let block = take_back(window: spares);
+  let block = take_back(window: free);
   return move block;
 }
 
-fn return_static(spares: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(spares.next), writes(spares.len) contract {
-  requires deref(spares).room > 0_u64;
-  ensures deref(spares).len == deref(entry(spares)).len + 1_u64;
+fn return_static(free: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(free.next), writes(free.len) contract {
+  requires deref(free).room > 0_u64;
+  ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
   doc "The same boundary place over a frame-resident element type.";
-  place_back(window: spares, value: move block);
+  place_back(window: free, value: move block);
   return unit;
 }
 
@@ -108,23 +108,23 @@ fn static_block_round_trip() -> code: own u8 pure {
   let record = StaticBlock(bytes: move payload);
   let full = slots_new::<StaticBlock, 2>();
   place_back(window: &full, value: move record);
-  let block = take_static(spares: &full);
+  let block = take_static(free: &full);
   invariant capacity: block.bytes.cap >= 4_u64;
   let length = block.bytes.len;
   for (at in 0_u64..length) {
     let byte = block.bytes[at];
-    let bumped = byte +wrap 1_u8;
-    set block.bytes[at] = bumped;
+    let next = byte +wrap 1_u8;
+    set block.bytes[at] = next;
   }
-  return_static(spares: &full, block: move block);
-  let recovered = take_static(spares: &full);
+  return_static(free: &full, block: move block);
+  let recovered = take_static(free: &full);
   let recovered_length = recovered.bytes.len;
   let sum = 0_u8;
   for (at in 0_u64..recovered_length) {
     let byte = recovered.bytes[at];
     set sum = sum +wrap byte;
   }
-  return_static(spares: &full, block: move recovered);
+  return_static(free: &full, block: move recovered);
   invariant conserved: full.len >= 1_u64;
   let result = sum -wrap 14_u8;
   return result;
@@ -138,26 +138,26 @@ fn boxed_block_round_trip() -> code: own u8 pure {
   place_back(window: &payload, value: 3_u8);
   place_back(window: &payload, value: 4_u8);
   let cell = box_new::<Slots<u8, 4>>(value: move payload);
-  let spares = slots_new::<Box<Slots<u8, 4>>, 2>();
-  place_back(window: &spares, value: move cell);
-  let block = take_back(window: &spares);
+  let free = slots_new::<Box<Slots<u8, 4>>, 2>();
+  place_back(window: &free, value: move cell);
+  let block = take_back(window: &free);
   invariant capacity: block.inner.cap >= 4_u64;
   let length = block.inner.len;
   for (at in 0_u64..length) {
     let byte = block.inner[at];
-    let bumped = byte +wrap 1_u8;
-    set block.inner[at] = bumped;
+    let next = byte +wrap 1_u8;
+    set block.inner[at] = next;
   }
-  place_back(window: &spares, value: move block);
-  let recovered = take_back(window: &spares);
+  place_back(window: &free, value: move block);
+  let recovered = take_back(window: &free);
   let recovered_length = recovered.inner.len;
   let sum = 0_u8;
   for (at in 0_u64..recovered_length) {
     let byte = recovered.inner[at];
     set sum = sum +wrap byte;
   }
-  place_back(window: &spares, value: move recovered);
-  invariant conserved: spares.len >= 1_u64;
+  place_back(window: &free, value: move recovered);
+  invariant conserved: free.len >= 1_u64;
   let result = sum -wrap 14_u8;
   return result;
 }
@@ -165,7 +165,7 @@ fn boxed_block_round_trip() -> code: own u8 pure {
 fn main() -> status: own ExitStatus pure {
   doc "Runs the block pool: eight runs carved into one run of runs, a lease taken off the back boundary and returned to a free list the caller proved had room, then the two round trips over a frame-resident and a heap-cell element type.";
   let pool = pool_new();
-  let held = pool.spares.len;
+  let held = pool.free.len;
   if held == 8_u64 {
   } else {
     return exit_status(code: 2_u8);
@@ -176,11 +176,11 @@ fn main() -> status: own ExitStatus pure {
       return exit_status(code: 3_u8);
     }
     Some(value: ticket) => {
-      let spare = rest.spares.len;
+      let spare = rest.free.len;
       let fits = spare < 8_u64;
       if fits {
         let back = pool_release(pool: move rest, lease: move ticket);
-        let full = back.spares.len;
+        let full = back.free.len;
         if full == 8_u64 {
         } else {
           return exit_status(code: 4_u8);

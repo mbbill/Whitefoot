@@ -94,9 +94,9 @@ fn summarize_records(input: &[u8], offsets: &[u64], first: own u64, end: own u64
   let output = box_array_filled::<u64>(count: count, value: 0_u64);
   for (target in 0_u64..count) {
     let record = first + target;
-    let following = record + 1_u64;
+    let next = record + 1_u64;
     let lower = deref(offsets)[record];
-    let upper = deref(offsets)[following];
+    let upper = deref(offsets)[next];
     let size = deref(input).len;
     let value = if lower > upper {
       give 18446744073709551614_u64;

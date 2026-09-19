@@ -16,7 +16,7 @@ fn vacant<T: affine, const n: u64>() -> result: own Ring<Option<T>, n> pure cont
   return move built;
 }
 
-fn saturated<T: copy, const n: u64>(value: own T) -> result: own Ring<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: own T) -> result: own Ring<T, n> pure contract {
   ensures result.len >= n;
   ensures result.room <= 0_u64;
 } {
@@ -113,25 +113,25 @@ fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 19_u8);
   }
-  let bytes = saturated::<u8, 4>(value: 7_u8);
+  let bytes = filled::<u8, 4>(value: 7_u8);
   let filled_held = bytes.len;
   if filled_held == 4_u64 {
   } else {
     return exit_status(code: 2_u8);
   }
-  let wide = saturated::<u64, 4>(value: 9_u64);
+  let wide = filled::<u64, 4>(value: 9_u64);
   let wide_first = wide[0_u64];
   if wide_first == 9_u64 {
   } else {
     return exit_status(code: 20_u8);
   }
   let first = bytes[0_u64];
-  let tail = bytes[3_u64];
+  let last = bytes[3_u64];
   if first == 7_u8 {
   } else {
     return exit_status(code: 3_u8);
   }
-  if tail == 7_u8 {
+  if last == 7_u8 {
   } else {
     return exit_status(code: 4_u8);
   }

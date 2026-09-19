@@ -24,13 +24,13 @@ fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 1_u8);
   }
-  let tail_one = take_back(window: &run);
-  if tail_one == 1_u8 {
+  let last = take_back(window: &run);
+  if last == 1_u8 {
   } else {
     return exit_status(code: 2_u8);
   }
-  let next_one = take_back(window: &run);
-  if next_one == 2_u8 {
+  let next = take_back(window: &run);
+  if next == 2_u8 {
   } else {
     return exit_status(code: 3_u8);
   }

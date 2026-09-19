@@ -1,7 +1,7 @@
 fn carve<T: affine, const n: u64>(store: &Slots<T, n>) -> spare: own u64 reads(store) {
   doc "One helper generic over a window shape: its written type and const arguments are substituted into this parameter's container type at every call.";
-  let room_left = deref(store).room;
-  return room_left;
+  let room = deref(store).room;
+  return room;
 }
 
 fn main() -> status: own ExitStatus pure {

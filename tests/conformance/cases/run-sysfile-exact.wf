@@ -100,8 +100,8 @@ fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: 
             Ok(value: file) => {
               match read_at(factory: files, file: &file, destination: window, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
                 Ok(value: n) => {
-                  let filled_flag = n == 8_u64;
-                  if filled_flag {
+                  let filled = n == 8_u64;
+                  if filled {
                   } else {
                     close_read(factory: files, file: move file);
                     return exit_status(code: 10_u8);

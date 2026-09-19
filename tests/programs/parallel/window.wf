@@ -103,9 +103,9 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let report = box_array_filled::<u8>(count: 8_u64, value: 0_u8);
   let value = fold(node: &root);
   let window = &report.inner[0_u64..8_u64];
-  let stored = spell(destination: window, at: 0_u64, value: value);
+  let filled = spell(destination: window, at: 0_u64, value: value);
   match write_once(factory: &entry_factory, output: &out, source: window, start: 0_u64, end: 8_u64) {
-    Ok(value: accepted) => {
+    Ok(value: next) => {
       return exit_status(code: 0_u8);
     }
     Err(error: problem) => {

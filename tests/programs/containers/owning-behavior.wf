@@ -154,7 +154,7 @@ fn key_probe<Key<K, E>>(slot: &Slot<K>, tag: own u8, key: &K, env: &E) -> action
   }
 }
 
-fn key_put<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: own K, payload: own Box<Resource>, env: &E) -> outcome: own KeyPut<K> reads(env), writes(deref(slots)) contract {
+fn key_put<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: own K, payload: own Box<Resource>, env: &E) -> outcome: own KeyPut<K> reads(env), writes(slots) contract {
   ensures deref(slots).inner.len == deref(entry(slots)).inner.len;
 } {
   doc "The installation is swap: the offered occupant goes into the slot and the binding comes back holding the slot's previous value, so the owning key and payload are never left in a hole.";
@@ -198,7 +198,7 @@ fn key_put<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: own K, payload: own Box<
   return Rejected<K>(key: move key, payload: move payload);
 }
 
-fn key_find_index<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> found: own Result<u64, unit> reads(deref(slots)), reads(key), reads(env) contract {
+fn key_find_index<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> found: own Result<u64, unit> reads(slots), reads(key), reads(env) contract {
   ensures when Ok(value: index): index < deref(slots).inner.len;
 } {
   let hash = Key::hash(env: env, key: key);
@@ -224,7 +224,7 @@ fn key_find_index<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> f
   return Err<u64, unit>(error: unit);
 }
 
-fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: own unit writes(deref(slots)) contract {
+fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: own unit writes(slots) contract {
   requires deref(slots).inner.len == 0_u64;
   requires deref(slots).inner.room >= count;
   ensures deref(slots).inner.len == count;
@@ -232,7 +232,7 @@ fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: o
   doc "One vacant slot per position, under a counted header that carries the length and the remaining room.";
   for (
     index in 0_u64..count,
-    invariant filled_so_far: deref(slots).inner.len >= index,
+    invariant filled: deref(slots).inner.len >= index,
     invariant bounded: deref(slots).inner.len <= index,
     invariant spare: deref(slots).inner.room + index >= count
   ) {
@@ -292,7 +292,7 @@ fn key_begin<K: linear>(source: own Box<Slots<Slot<K>>>, count: own u64) -> resu
   return move state;
 }
 
-fn key_advance<Key<K, E>>(source: &Box<Slots<Slot<K>>>, target: &Box<Slots<Slot<K>>>, progress: &Progress<K>, budget: own u64, env: &E) -> (examined: own u64, moved: own u64) reads(env), writes(deref(source)), writes(deref(target)), writes(progress.held), writes(progress.source_next), writes(progress.next_probe), writes(progress.phase) {
+fn key_advance<Key<K, E>>(source: &Box<Slots<Slot<K>>>, target: &Box<Slots<Slot<K>>>, progress: &Progress<K>, budget: own u64, env: &E) -> (examined: own u64, moved: own u64) reads(env), writes(source), writes(target), writes(progress.held), writes(progress.source_next), writes(progress.next_probe), writes(progress.phase) {
   doc "Each transfer is two exchanges: the source slot's occupant goes into the held field and the held occupant goes into its target slot, so the displaced vacant value is released by the ordinary scope exit.";
   let source_cursor = deref(progress).source_next;
   let probe_cursor = deref(progress).next_probe;
@@ -372,7 +372,7 @@ fn key_rehash_all<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, count: own u64, env: &
   return phase, work, moved;
 }
 
-fn key_remove<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> removed: own Slot<K> reads(key), reads(env), writes(deref(slots)) contract {
+fn key_remove<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> removed: own Slot<K> reads(key), reads(env), writes(slots) contract {
   ensures deref(slots).inner.len == deref(entry(slots)).inner.len;
 } {
   match key_find_index::<Key<K, E>>(slots: slots, key: key, env: env) {
@@ -407,7 +407,7 @@ fn key_inspect<Key<K, E>>(slot: &Slot<K>, tag: own u8, key: &K, env: &E) -> (act
   }
 }
 
-fn key_find<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> (found: own Option<u64>, examined: own u64) reads(deref(slots)), reads(key), reads(env) {
+fn key_find<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> (found: own Option<u64>, examined: own u64) reads(slots), reads(key), reads(env) {
   let hash = Key::hash(env: env, key: key);
   let tag = fingerprint(key: hash);
   let count = deref(slots).inner.len;
@@ -432,7 +432,7 @@ fn key_find<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> (found:
   return None<u64>(), count;
 }
 
-fn put(slots: &Box<Slots<Slot<u64>>>, key: own u64, payload: own Box<Resource>) -> outcome: own PutOutcome writes(deref(slots)) contract {
+fn put(slots: &Box<Slots<Slot<u64>>>, key: own u64, payload: own Box<Resource>) -> outcome: own PutOutcome writes(slots) contract {
   ensures deref(slots).inner.len == deref(entry(slots)).inner.len;
 } {
   let env = Empty();
@@ -456,13 +456,13 @@ fn put(slots: &Box<Slots<Slot<u64>>>, key: own u64, payload: own Box<Resource>) 
   }
 }
 
-fn find(slots: &Box<Slots<Slot<u64>>>, key: own u64) -> (found: own Option<u64>, examined: own u64) reads(deref(slots)) {
+fn find(slots: &Box<Slots<Slot<u64>>>, key: own u64) -> (found: own Option<u64>, examined: own u64) reads(slots) {
   let env = Empty();
   let (found, examined) = key_find::<WordKey>(slots: slots, key: &key, env: &env);
   return move found, examined;
 }
 
-fn remove(slots: &Box<Slots<Slot<u64>>>, key: own u64) -> removed: own Option<Box<Resource>> writes(deref(slots)) contract {
+fn remove(slots: &Box<Slots<Slot<u64>>>, key: own u64) -> removed: own Option<Box<Resource>> writes(slots) contract {
   ensures deref(slots).inner.len == deref(entry(slots)).inner.len;
 } {
   let env = Empty();
@@ -486,7 +486,7 @@ fn begin(source: own Box<Slots<Slot<u64>>>, count: own u64) -> result: own Rehas
   return key_begin::<u64>(source: move source, count: count);
 }
 
-fn advance(source: &Box<Slots<Slot<u64>>>, target: &Box<Slots<Slot<u64>>>, progress: &Progress<u64>, budget: own u64) -> (examined: own u64, moved: own u64) writes(deref(source)), writes(deref(target)), writes(progress.held), writes(progress.source_next), writes(progress.next_probe), writes(progress.phase) {
+fn advance(source: &Box<Slots<Slot<u64>>>, target: &Box<Slots<Slot<u64>>>, progress: &Progress<u64>, budget: own u64) -> (examined: own u64, moved: own u64) writes(source), writes(target), writes(progress.held), writes(progress.source_next), writes(progress.next_probe), writes(progress.phase) {
   let env = Empty();
   let (examined, moved) = key_advance::<WordKey>(source: source, target: target, progress: progress, budget: budget, env: &env);
   return examined, moved;
@@ -524,7 +524,7 @@ fn read_slot(slot: &Slot<u64>) -> (control: own u8, key: own u64, id: own u64) r
   }
 }
 
-fn allocate_put(slots: &Box<Slots<Slot<u64>>>, key: own u64, id: own u64) -> outcome: own PutOutcome writes(deref(slots)) contract {
+fn allocate_put(slots: &Box<Slots<Slot<u64>>>, key: own u64, id: own u64) -> outcome: own PutOutcome writes(slots) contract {
   ensures deref(slots).inner.len == deref(entry(slots)).inner.len;
 } {
   doc "Allocation is total, so one owner is built for every offered insertion.";
@@ -567,7 +567,7 @@ fn check_put(outcome: own PutOutcome, kind: own u64, expected: own u64) -> code:
   }
 }
 
-fn digest(slots: &Box<Slots<Slot<u64>>>) -> result: own u64 reads(deref(slots)) {
+fn digest(slots: &Box<Slots<Slot<u64>>>) -> result: own u64 reads(slots) {
   let count = deref(slots).inner.len;
   let start = ixor(1469598103934665603_u64, count);
   let hash = start *wrap 1099511628211_u64;
@@ -591,7 +591,7 @@ fn cleanup(state: own Rehash<u64>) -> result: own unit pure {
   return unit;
 }
 
-fn checked_insert(slots: &Box<Slots<Slot<u64>>>, key: own u64, id: own u64, kind: own u64, expected: own u64) -> code: own u8 writes(deref(slots)) {
+fn checked_insert(slots: &Box<Slots<Slot<u64>>>, key: own u64, id: own u64, kind: own u64, expected: own u64) -> code: own u8 writes(slots) {
   let outcome = allocate_put(slots: slots, key: key, id: id);
   let verdict = check_put(outcome: move outcome, kind: kind, expected: expected);
   return verdict;
@@ -619,7 +619,7 @@ fn state_hash(state: &Rehash<u64>) -> result: own u64 reads(state.source), reads
   return ninth *wrap 131_u64;
 }
 
-fn check_lookup(slots: &Box<Slots<Slot<u64>>>, key: own u64, expected: own u64, work: own u64) -> code: own u8 reads(deref(slots)) {
+fn check_lookup(slots: &Box<Slots<Slot<u64>>>, key: own u64, expected: own u64, work: own u64) -> code: own u8 reads(slots) {
   let (found, examined) = find(slots: slots, key: key);
   if examined != work {
     return 11_u8;

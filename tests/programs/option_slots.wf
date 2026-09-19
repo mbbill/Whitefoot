@@ -34,9 +34,9 @@ fn optvec_push(v: own OptVec, x: own u32) -> result: own OptVec pure {
   } else {
     return move v;
   }
-  let fresh_slot = Some<u32>(value: x);
-  swap(first: &v.buf[count], second: &fresh_slot);
-  match fresh_slot {
+  let filled = Some<u32>(value: x);
+  swap(first: &v.buf[count], second: &filled);
+  match filled {
     None() => {
     }
     Some(value: stray) => {
@@ -56,16 +56,16 @@ fn optvec_pop(v: own OptVec) -> (rest: own OptVec, taken: own u32) pure {
   } else {
     return move v, 0_u32;
   }
-  let top_index = count - 1_u64;
+  let last = count - 1_u64;
   let limit = v.buf.len;
-  let in_range = top_index < limit;
+  let in_range = last < limit;
   if in_range {
   } else {
     return move v, 0_u32;
   }
   let hole = None<u32>();
-  swap(first: &v.buf[top_index], second: &hole);
-  set v.fill = top_index;
+  swap(first: &v.buf[last], second: &hole);
+  set v.fill = last;
   match hole {
     None() => {
       return move v, 0_u32;

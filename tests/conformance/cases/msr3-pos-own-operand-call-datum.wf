@@ -1,4 +1,4 @@
-fn filled_slots<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
   ensures result.len >= n;
   ensures result.room <= 0_u64;
 } {
@@ -31,7 +31,7 @@ fn needs_eight(bound: own u64) -> ok: own unit pure contract {
 
 fn main() -> status: own ExitStatus pure {
   doc "MSR-3: the own operand of a published relation denotes this call's call datum, a compiler-owned term with empty support, so the relation survives the consume the same statement performs and the caller discharges a later requirement from it.";
-  let run = filled_slots::<u8, 8>(value: 0_u8);
+  let run = filled::<u8, 8>(value: 0_u8);
   let measured = size_of(taken: move run);
   let confirmed = needs_eight(bound: measured);
   return exit_status(code: 0_u8);

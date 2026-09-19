@@ -18,7 +18,7 @@ fn direct(owner: own Box<Payload>) -> result: own Box<Payload> pure {
   return move owner;
 }
 
-fn borrowed(owner: &Box<Payload>) -> result: own unit writes(deref(owner)) {
+fn borrowed(owner: &Box<Payload>) -> result: own unit writes(owner) {
   doc "The atomic update at Box content reached through a reference parameter whose row writes that path.";
   set deref(owner).inner = refresh(old: move deref(owner).inner);
   return unit;

@@ -179,8 +179,8 @@ fn socket_class(error: own IoError) -> result: own u8 pure {
 
 fn byte_at(store: &[u8], index: own u64) -> result: own u8 reads(store) {
   doc "Reads one stored byte, delivering zero for a position the range reference does not hold.";
-  let span = deref(store).len;
-  let inside = index < span;
+  let room = deref(store).len;
+  let inside = index < room;
   if inside {
     let value = deref(store)[index];
     return value;
@@ -233,8 +233,8 @@ fn send_all(send: &TcpSend, source: &[u8], length: own u64) -> result: own Resul
       break @sending;
     }
     match send_once(send: send, source: source, start: sent, end: length) {
-      Ok(value: next_endpoint) => {
-        set sent = next_endpoint;
+      Ok(value: next) => {
+        set sent = next;
       }
       Err(error: problem) => {
         return Err<unit, IoError>(error: move problem);
@@ -264,7 +264,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   ) {
     place_back(window: &chunk, value: 0_u8);
   }
-  let digit_span = 16_u64;
+  let room = 16_u64;
   let held = 4096_u64;
   let window = &digits[0_u64..16_u64];
   let sink = &chunk[0_u64..4096_u64];
@@ -278,7 +278,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let carried = 0_u64;
   match arg_get(args: &args, position: 1_u64) {
     Ok(value: text) => {
-      match host_copy_utf8(value: &text, destination: window, start: 0_u64, end: digit_span) {
+      match host_copy_utf8(value: &text, destination: window, start: 0_u64, end: room) {
         Ok(value: written) => {
           set carried = written;
         }

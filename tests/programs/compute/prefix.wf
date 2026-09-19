@@ -77,8 +77,8 @@ fn main() -> status: own ExitStatus pure {
   if length != 17_u64 {
     return exit_status(code: 1_u8);
   }
-  let final_value = output.inner[16_u64];
-  if final_value != 136_u64 {
+  let last = output.inner[16_u64];
+  if last != 136_u64 {
     return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);

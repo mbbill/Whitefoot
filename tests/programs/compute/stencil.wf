@@ -28,7 +28,7 @@ fn stencil(width: own u64, height: own u64, steps: own u64) -> result: own Box<A
   doc "Runs a five-point Jacobi update from distinct positive finite bit patterns derived from squared positions, preserving the initial boundary values. Runtime dimensions determine the contiguous grids; alternating source and destination range references retain source order for each strict floating-point operation.";
   let cells = width * height;
   let current = box_array_filled::<f64>(count: cells, value: 0.0_f64);
-  let other = box_array_filled::<f64>(count: cells, value: 0.0_f64);
+  let next = box_array_filled::<f64>(count: cells, value: 0.0_f64);
   for (cell in 0_u64..cells) {
     let position = cell + 1_u64;
     let square = position * position;
@@ -36,7 +36,7 @@ fn stencil(width: own u64, height: own u64, steps: own u64) -> result: own Box<A
     let encoded = 4607182418800017408_u64 + fraction;
     let value = reinterpret::<u64, f64>(encoded);
     set current.inner[cell] = value;
-    set other.inner[cell] = value;
+    set next.inner[cell] = value;
   }
   let last_row = height - 1_u64;
   for (t in 0_u64..steps) {
@@ -56,7 +56,7 @@ fn stencil(width: own u64, height: own u64, steps: own u64) -> result: own Box<A
         let top = &current.inner[before..first];
         let middle = &current.inner[first..end];
         let bottom = &current.inner[end..after];
-        let row = &other.inner[first..end];
+        let row = &next.inner[first..end];
         let written = stencil_row(top: top, middle: middle, bottom: bottom, output: row);
       }
     } else {
@@ -71,9 +71,9 @@ fn stencil(width: own u64, height: own u64, steps: own u64) -> result: own Box<A
         invariant after_row: after <= cells {
           use width times (y + 2_u64 <= height);
         }
-        let top = &other.inner[before..first];
-        let middle = &other.inner[first..end];
-        let bottom = &other.inner[end..after];
+        let top = &next.inner[before..first];
+        let middle = &next.inner[first..end];
+        let bottom = &next.inner[end..after];
         let row = &current.inner[first..end];
         let written = stencil_row(top: top, middle: middle, bottom: bottom, output: row);
       }
@@ -83,7 +83,7 @@ fn stencil(width: own u64, height: own u64, steps: own u64) -> result: own Box<A
   if parity == 0_u64 {
     return move current;
   } else {
-    return move other;
+    return move next;
   }
 }
 

@@ -1,11 +1,11 @@
 const count: u64 = 4_u64;
 
 fn read(values: own Array<i32, count>, i: own u64) -> result: own i32 pure {
-  doc "Closure runs before lexical support is forgotten, so an arm-local proof term may establish a surviving relation that does not name it. The true branch derives out = bumped = i + 1 and i < 3; ENT-4 closure materializes out < 4 before bumped leaves scope, ENT-5 then kills every conclusion still naming bumped, and the survivor-only bound discharges the continuation subscript [OP-4].";
+  doc "Closure runs before lexical support is forgotten, so an arm-local proof term may establish a surviving relation that does not name it. The true branch derives out = next = i + 1 and i < 3; ENT-4 closure materializes out < 4 before next leaves scope, ENT-5 then kills every conclusion still naming next, and the survivor-only bound discharges the continuation subscript [OP-4].";
   let out = 0_u64;
   if i < 3_u64 {
-    let bumped = i +wrap 1_u64;
-    set out = bumped;
+    let next = i +wrap 1_u64;
+    set out = next;
   } else {
     return 0_i32;
   }

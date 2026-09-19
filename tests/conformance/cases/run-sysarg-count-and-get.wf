@@ -16,7 +16,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
     }
   }
   match arg_get(args: &arguments, position: 2_u64) {
-    Ok(value: last_value) => {
+    Ok(value: last) => {
     }
     Err(error: absent) => {
       return exit_status(code: 12_u8);

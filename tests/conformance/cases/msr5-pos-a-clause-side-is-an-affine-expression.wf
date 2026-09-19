@@ -3,8 +3,8 @@ fn bump(count: own u64) -> total: own u64 pure contract {
   ensures total == count + 1_u64;
 } {
   doc "One more than its operand, related to it by a displaced equality.";
-  let raised = count + 1_u64;
-  return raised;
+  let next = count + 1_u64;
+  return next;
 }
 
 fn main() -> status: own ExitStatus pure {
