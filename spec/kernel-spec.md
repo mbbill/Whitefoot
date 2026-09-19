@@ -297,6 +297,7 @@ range_tail     := ".." atom
 The enum payload step is `"." TYPEID "." IDENT` — the variant name and then that variant's declared field name, `n.left.Some.value` — and it is the one spelling for reaching a payload, the kernel having no positional fields [GRAM-8].
 A field step and a payload step are told apart by the shape kind of the token after the `.`, never by grammar position or context, so both spellings are META-2-clean [GRAM-1].
 The range step is factored into `"[" atom range_tail? "]"` with `range_tail` a production of its own, because `"[" atom "]"` and `"[" atom ".." atom "]"` as two alternatives would share a `SELECT_2` language [GRAM-1]; `range_tail` maps 1:1 to its own node kind, so the mapping of [GRAM-1] holds for the factored form.
+The `deref` alternative of `pbase` takes any `place` whose selected kind is a reference or a cell — `&T`, `&[T]`, or `Box<T>` — so one production spells the referent of a reference and the content of a cell alike [TYPE-7].
 `borrow_expr` is `"&" place`: there is no permission marker and no other qualifier on a reference [REF-1].
 
 [GRAM-6] There is no general operator syntax and no precedence: an `infix` expression is exactly one operation over two atoms [GRAM-5, GRAM-9], composition is by `let`, and no precedence, associativity, or parenthesization surface exists.
@@ -465,7 +466,7 @@ The second IDENT of a `result_route` fieldbind is an FN-9-owned payload candidat
 After the route's leading constructor and field are admitted, that binder is visible only in the same `ensures_clause` expression and the header result binder is not visible there.
 It must differ from its paired field, every parameter, the result binder, and every live definition.
 Different ensures clauses have disjoint result-datum scopes and may reuse one route-binder spelling.
-Neither kind of result datum has runtime storage or ownership state, and neither is visible in the function body.
+Neither kind of result datum has runtime storage or ownership state, and neither is visible in the function body, so a body `let` may reuse a result binder's spelling without a redeclaration event.
 A match binder becomes visible in its arm body only after the complete fieldbind list and only after GRAM-10 has established that it differs from its paired field label, every earlier binder in that arm list, and every lexical-IDENT declaration live on arm entry.
 A `for_binding` binder becomes visible after its complete `for_binding`, including both endpoint atoms, through the remaining `header_invariant` clauses and the counted body; it is not visible in either endpoint.
 An ordinary or counted loop label, when written, is visible only in its loop body; a counted label is not visible in the binding or invariant header.
@@ -507,6 +508,7 @@ Absence of an in-scope const generic under this spelling remains the ordinary [T
 [TYPE-8] A reference kind is not a value type.
 `&T` and `&[T]` are reference kinds and not types [GRAM-3].
 No struct field, enum variant payload, `Array`, `Slots`, or `Ring` element, `Box` content, or written generic type argument may be one, recursively and closed under wrapping, so `Option<&T>` does not form whatever T is.
+The grammar admits no reference kind in a stored or type-argument position at all [GRAM-3, STOR-5], so the semantic check closes exactly one case: a substituted generic instance.
 A violation is a hard error citing TYPE-8 at the complete offending `type`, with the restructuring `return an index or other owned data and let the caller form the reference`.
 Every aggregate therefore holds only owned values, which is what [STOR-7] rests on.
 
@@ -519,14 +521,14 @@ Each of the four nominals contributes one nominal-type entry and one constructor
 
 [TYPE-10] Measures and window parts are names, not declarations.
 `len`, `cap`, `room`, and `head` are read-only pseudo-fields of a measured place [MSR-1]; a program reads them like fields [OP-15] and can never assign one, and only the operations of [OP-10] and [OP-13] change them.
-`next`, `last`, `filled`, and `free` are the four window parts [WIN-2]; they are vocabulary for effect rows and the overlap judgment only, and no program forms a reference to one, reads one, or writes one.
+`next`, `last`, `filled`, and `free` are the four window parts [WIN-2]; they are vocabulary for effect rows and the overlap judgment only.
 The eight spellings occupy no declaration domain and are reserved from field, parameter, binder, and result binding by [FORM-3].
-A write to a measure or a part in source position is a hard error citing TYPE-10 at the complete target `place`, with the restructuring `use the operation that moves the window boundary [OP-10]`.
+A write to a measure, and a read of a window part, a `borrow_expr` over one, and a write of one, are each a hard error citing TYPE-10 at the complete `place`, with the restructuring `use the operation that moves the window boundary [OP-10]`.
 
-[TYPE-7] Reaching `Box` content is explicit; a reference is read bare.
-`deref(place)` where `place` has type `Box<T>` denotes a place of referent type T [GRAM-5]; a use of that place copies it when T is copy and requires `move` when T is affine [OWN-1].
-A `Box` binding used where a value of its content type T is expected is a hard error citing TYPE-7, with the mechanical fix `deref(.)`.
-A reference is read bare: `&T` is a name for a path [REF-1], and no read-through operation, no `deref` on a reference, and no implicit read exist.
+[TYPE-7] Reading through a reference or a cell is explicit.
+`deref(place)` where `place` has type `&T`, `&[T]`, or `Box<T>` denotes a place of referent type T [GRAM-5] — for `&[T]` the run of T elements that range names [REF-4] — and a use of that place copies it when T is copy and requires `move` when T is affine [OWN-1].
+A reference or `Box` binding used where a value of its referent type is expected is a hard error citing TYPE-7, with the mechanical fix `deref(.)`.
+There is no implicit read through a reference or through a cell [TYPE-4, META-2].
 `move deref(b)` consumes the `Box`, yields its content, and frees the cell [WIN-3].
 
 [SET-1] Place assignment.
@@ -535,9 +537,10 @@ A `set` target must resolve to a binding already in scope: a `set` whose target 
 A nested place is evaluated from its base outward; at each subscript, the base place is evaluated before its offset atom, and the subscript's [OP-4] discharge obligation is judged at that target place exactly as in read position, so accepted target evaluation executes no runtime check and cannot trap.
 Field suffixes introduce no runtime evaluation.
 
-This rule judges a value target; a `set` whose target is a reference variable rebinds that name and is judged by [REF-1] instead.
+This rule judges a value target; a `set` whose target is a reference variable and whose right-hand side is a `borrow_expr` rebinds that name and is judged by [REF-1] instead.
+A `set` whose target is a reference variable and whose right-hand side is a value is not a rebinding: it is a hard error citing TYPE-7 at the target `place`, with the mechanical fix `deref(.)`.
 The value target's final selected type is T.
-The target is writable exactly when it is rooted in a live own-mode value binding, is reached through a reference parameter whose declared row carries `writes` of that path [EFF-1, EFF-5], or is reached through `deref` of a live `Box` binding rooted the same way.
+The target is writable exactly when it is rooted in a live own-mode value binding, is `deref(p)` or a path below it where `p` is a reference parameter whose declared row carries `writes` of that path [EFF-1, EFF-5] or a local reference variable whose named path is itself writable, or is reached through `deref` of a live `Box` binding rooted the same way.
 Fields and indices inherit the writability of their selected base.
 A named const is never writable [CONST-2].
 A `for_stmt` binder is compiler-updated state and is never source-writable; a target rooted there is a SET-1 rejection at the complete target `place`.
@@ -604,13 +607,15 @@ After any consuming use, the whole binding rooting `p` is dead (partial moves ki
 SET-1 rechecks its premises after its right-hand side under [LIV-1]; a dead binding is revived only by a [SET-1] commit whose target is that complete binding, which reinitializes it, and by nothing else.
 
 [REF-1] A reference is a local name for a path.
-A path starts at a local variable or a parameter and continues through field selections, `deref` (`Box` content [TYPE-7]), an index step, a range step [REF-4], or an enum payload step [GRAM-5].
+A path starts at a local variable or a parameter and continues through field selections, `deref` (a reference's referent or `Box` content [TYPE-7]), an index step, a range step [REF-4], or an enum payload step [GRAM-5].
 A payload step is available only under the refinement fact that the enum currently holds that variant, which a `match` arm establishes [ENT-3.S15] and which any write to the enum invalidates [REF-2].
+A reference variable denotes the reference, and the storage it names is reached only through `deref` [TYPE-7]: every place expression, subscript, field selection, payload step, and measure read that goes through a reference variable `p` is written under that step — `deref(p)`, `deref(p).field`, `deref(part)[i]`, `deref(part).len`, and `deref(p).Some.value`.
+`let q = p;` where `p` is a reference variable makes `q` a reference to the same path — an alias, not a copy of the referent — and passing a bare reference variable where a `&T` or `&[T]` parameter is expected passes that reference.
 A reference variable names a path and is not storage of its own, so `&p` where `p` is a reference variable is a hard error citing REF-1 at that `borrow_expr`, with the restructuring `name the path the reference names`.
-Resolving a place rooted at a reference variable replaces that root with the path that reference names, recursively, and every [OWN-7] judgment reads resolved places.
+Resolving a place whose `deref` step names a reference variable replaces that step with the path that reference names, recursively, and every [OWN-7] judgment reads resolved places.
 An index expression inside a path is evaluated when the reference is formed; the path records that value, and later assignments to the variables the expression used do not change it.
 A `let` binder whose initializer is a `borrow_expr`, and a `let` binder whose initializer is a `value_if` or a `value_match` every arm of which delivers a reference, takes that reference kind — `&T` or `&[T]` — rather than a type [TYPE-5, GIVE-1], and is itself a reference variable.
-A `set` whose target is a reference variable rebinds that name and writes no storage, so [SET-1]'s value-target judgment does not apply to it.
+A `set` whose target is a reference variable and whose right-hand side is a `borrow_expr` rebinds that name and writes no storage, so [SET-1]'s value-target judgment does not apply to it.
 At a control-flow join, the join of a value initializer's delivering arms included, a reference variable's target is the union of the path sets its incoming edges may name, and every check on it must hold for every member of that set.
 A path has a static shape: a loop-carried rebinding may change only the index values inside the path and may never extend the path through itself, and a rebinding that does is a hard error citing REF-1 at the `set_stmt`, with the restructuring `walk owned links by recursion, or keep the nodes in one storage and iterate an index`.
 There is no permission marker on a reference; whether a callee may write through a reference parameter is stated by its effect row [EFF-1].
@@ -625,16 +630,16 @@ A reference-validity fact is an ownership judgment and is not a member of the en
 
 [REF-3] References never escape.
 A reference may be bound to a local and passed as a call argument, and may be used within the function that formed it or received it.
-It may not be assigned into any aggregate [TYPE-8], may not be returned [FN-1], and may not be captured by a function value that is stored or returned [FN-5].
+It may not be assigned into any aggregate [TYPE-8], may not be returned, and may not be captured by a function value that is stored or returned [FN-5].
 A function that finds something returns an index or other owned data, with its bounds relation in `ensures` [FN-9], and the caller forms the reference.
-A violation is a hard error citing REF-3 at the offending `expr`, with the restructuring `return an index and let the caller form the reference`.
+A violation is a hard error citing REF-3 at the offending `expr`, with the restructuring `return an index and let the caller form the reference`; a `return_stmt` whose selected expression is a reference is that violation, and [FN-1] forms no candidate there.
 
 [REF-4] Range references.
 `&x[lo..hi]` forms a range reference over an indexable place or over another range reference, under the obligation `lo <= hi` and `hi <= x.len` submitted to [MSR-4].
 Its parameter kind is `&[T]` [GRAM-2], which is a reference kind and not a type [TYPE-8].
 Its one measure is `len`, equal to `hi - lo` [MSR-1].
 It is never a stored value, never a result, and never a generic type argument.
-Re-slicing is admitted: `&part[a..b]` under `a <= b <= part.len`.
+Re-slicing is admitted: `&deref(part)[a..b]` under `a <= b <= deref(part).len`.
 A range reference over a `Ring` is a hard error citing REF-4 at the complete `psuffix`, carrying the restructuring `a ring hands out single slots; take the elements one at a time`, because a wrapped window is two extents and `&[T]` has one `len`.
 A range reference dies with the bound that formed it exactly as any other reference does [REF-2].
 
@@ -792,7 +797,7 @@ A successful [SET-1] assignment derives no finalizer or cleanup edge and no rele
 
 [STOR-5] Storage is reference-free.
 No struct field, enum variant payload, element of any shape, `Box` content, or written generic type argument is a reference kind [TYPE-8].
-The `field`/`vfield` grammar admits only `type`, and `type` has no reference production [GRAM-3]; the semantic check is recursive after substitution and therefore also closes indirect forms such as `Box<Option<&T>>` and a generic field instantiated with a reference kind.
+The `field`, `vfield`, and `targ` grammar admits only `type`, and `type` has no reference production [GRAM-3], so no source writes a reference kind in a stored or type-argument position at all; the semantic check is recursive after substitution and is therefore the closing clause for a substituted generic instance alone, such as `Box<Option<&T>>` or a generic field instantiated with a reference kind.
 A violation is a hard error citing STOR-5 at the complete contained `type`, with the restructuring `keep the reference as a direct local or parameter; do not store it inside another value`.
 
 Consequently reference provenance cannot hide in a stored or generic payload.
@@ -966,7 +971,7 @@ All these rows are pure.
 Float ops that are EXACT or exact-selection are dotless: `fneg` `fabs` `fcopysign` `fmin` `fmax` `ffloor` `fceil` `ftrunc` `froundeven` `frem` and the six comparisons.
 Approximation/fast-math modes remain an OPEN numeric-semantics question; a relaxed float op would be introduced as a distinct OPNAME (FORM-1-additive).
 
-[OP-4] A subscript `p[i]` selects one element place of an indexable base: the base place `p`'s final selected type must be `Array<T, N>`, `Array<T>`, `Slots<T, N>`, `Slots<T>`, `Ring<T, N>`, `Ring<T>`, or a range reference `&[T]` [TYPE-9, REF-4], a runtime-capacity form being reached through `deref` [TYPE-7], and the subscripted place's selected type is exactly that element type T — derived from the base place's already-fixed type [TYPE-5] — written where the binding carries an annotation, derived at a body `let` — by the same declared-type selection that types a field suffix, never from expected type or cross-statement inference; a subscript whose base's final selected type is not one of those indexable types is a hard error citing OP-4 at that subscript's `psuffix` node.
+[OP-4] A subscript `p[i]` selects one element place of an indexable base: the base place `p`'s final selected type must be `Array<T, N>`, `Array<T>`, `Slots<T, N>`, `Slots<T>`, `Ring<T, N>`, `Ring<T>`, or the run of T elements a range reference `&[T]` names [TYPE-9, REF-4], a runtime-capacity form and a range reference alike being reached through `deref` [TYPE-7], and the subscripted place's selected type is exactly that element type T — derived from the base place's already-fixed type [TYPE-5] — written where the binding carries an annotation, derived at a body `let` — by the same declared-type selection that types a field suffix, never from expected type or cross-statement inference; a subscript whose base's final selected type is not one of those indexable types is a hard error citing OP-4 at that subscript's `psuffix` node.
 A `const` item whose type is `Array<T, N>` is indexable on the same terms [CONST-2].
 The subscript carries the bounds obligation `i < p.len` [ENT-6], and `i` is a logical offset whose storage slot [WIN-1] fixes, so the obligation is against `p.len` for every indexable base and never against `p.cap`.
 The injectivity sentence of [MSR-1] is what carries that logical conclusion to a storage conclusion, and its premise `p.len <= p.cap` is one of [MSR-2]'s standing facts, so no subscript occurrence submits a separate obligation for it.
@@ -1062,6 +1067,9 @@ The language defines no numeric frame limit, and target-layout and resource fail
 [OP-10] The window operations.
 The nine operations are `place_back`, `take_back`, `insert_at`, `remove_at`, `append`, `split_off`, `grow`, `place_front`, and `take_front`; their signatures, rows and contracts are the [PRE-1] records and are declared there alone, and this rule states which part of the window each one moves and what that costs.
 A compiler-owned window type parameter, written W in this rule and W or X in a [PRE-1] record, has exactly the admitted arguments `Slots<T, n>`, `Slots<T>`, `Ring<T, n>`, and `Ring<T>`; its element type is that shape's own element type; it is supplied by the operand and never written, and no source declaration can write such a parameter.
+A window operation, `swap` [OP-11], and `free_empty` [OP-14] therefore write no type arguments at a call: every type parameter of those rows is supplied by an operand.
+The construction functions [OP-13] write theirs explicitly at every call, as [FN-2] requires of every other generic callee.
+An operand whose shape is outside the operation's admitted set — `place_front` or `take_front` on a `Slots`, or any other operand outside the admitted arguments stated here — is a hard error citing OP-10 at the complete `call`, with the restructuring `use a shape this operation admits`.
 `place_back` fills the append slot `r.next` and moves the boundary `r.len` up by one; `take_back` empties the last filled slot `r.last` and moves that boundary down by one.
 `insert_at` and `remove_at` each shift `r.filled` by one memmove and move the boundary by one, `insert_at` filling the append slot on its way.
 Each of those two is a content write of `r.filled`, so a surviving slot reference names its slot, whose occupant may have changed, exactly as a stale index does [OP-13].
@@ -1079,11 +1087,12 @@ It is the one operation whose two reference arguments may name the same place, i
 That admission concerns its own two arguments and nothing else: against any other statement a `swap` is judged by the ordinary pairwise rule on its two write paths [PAR-1, EFF-5], so an adjacent statement touching either path denies overlap permission.
 At every program point each place holds exactly one valid owner; no temporary uninitialized hole, vacancy state, or second owner exists.
 Neither root is consumed: both bindings remain live.
-A `swap` over a copy place is a hard error citing OP-11 at the first `borrow_expr`, with the restructuring `read the two values and assign them back`.
+A `swap` over a copy place is a hard error citing OP-11 at the first `borrow_expr`, with the restructuring `read the two values and assign them back`; that refusal is judged once at the written bound, exactly as [OWN-1]'s spelling judgment is, and is not re-made at a concrete instance [FN-2].
 
 [OP-12] The atomic in-place update.
-`set p = f(p, args...);`, where the first argument of the call is the target place itself, is the atomic in-place update: the old value enters `f` by value, `f`'s result is committed, and no program point lies between.
-Its target `p` is any owned place named by a path [REF-1] and writable under [SET-1], a place reached through `deref` of a live `Box` binding and a place reached through a reference parameter whose declared row carries `writes` of that path included.
+`set p = f(move p, args...);` for an affine place and `set p = f(p, args...);` for a copy one, where the first argument of the call is the target place itself, is the atomic in-place update: the old value enters `f` by value, `f`'s result is committed, and no program point lies between.
+The target argument carries [OWN-1]'s spelling of its own class and no other.
+Its target `p` is any owned place named by a path [REF-1] and writable under [SET-1], a place reached through `deref` of a live `Box` binding and a place reached through `deref` of a reference parameter whose declared row carries `writes` of that path included.
 Its effect is `writes(p)`.
 `f` must return the place's type and must have no failure exit — every declared result ordinal is the place's type and no `ensures when` route removes a normal return.
 `f`'s declared row must not write, move out of, or free any prefix of `p`, while reading anything and writing disjoint storage is admitted [EFF-5]; a row that does is a hard error citing OP-12 at the complete `call`, carrying that substituted path.
@@ -1103,14 +1112,15 @@ A pool is a `Slots` plus indices used as handles, and a bump allocator is the sa
 A stale index that is still in bounds names the current occupant of that slot, which is a logic error and not a memory error, and a program that must detect it keeps a generation number as data.
 
 [OP-14] `free_empty`.
-`free_empty(window: move r)` consumes a window whose element type is linear, with the contract `requires window.len == 0_u64` submitted to [MSR-4] at the call.
+`free_empty(window: move r)` consumes any window proved empty, an affine element type and a linear one alike, with the contract `requires window.len == 0_u64` submitted to [MSR-4] at the call.
 Its compiler-owned shape parameter W has exactly the admitted arguments `Slots<T, n>`, `Slots<T>`, `Ring<T, n>`, `Ring<T>`, `Box<Slots<T>>`, and `Box<Ring<T>>`, so `free_empty(window: move b)` consumes a boxed runtime-capacity window and frees its cell with it; at a boxed argument the row's measure place instantiates as `deref(window)` and the clause reads `deref(window).len == 0_u64`, exactly as any runtime-capacity measure is reached [TYPE-7, OP-4].
-The type stays linear [PROV-6]; the proof is about the runtime length.
+A linear element type stays linear [PROV-6]; the proof is about the runtime length and never about the class.
 An undischarged obligation is a hard error citing OP-14 at the complete `call`, rendering the residual, with the restructuring `empty the window and establish its zero length at this point; otherwise take every element out and consume it`.
 
 [OP-15] A measure read is a place form.
 `r.len`, `r.cap`, `r.room`, and `r.head` are `psuffix` field selections on a measured place [GRAM-5, MSR-1] and are not calls.
-Reading one performs no operation, allocates nothing, reads only the descriptor storage [MSR-2], and carries the empty effect row; its exact type is `own u64` and its value mode is exact `own`, so the ordinary [TYPE-5] check applies at each use.
+Reading one performs no operation, allocates nothing, and reads only the descriptor storage [MSR-2]; its exact type is `own u64` and its value mode is exact `own`, so the ordinary [TYPE-5] check applies at each use.
+Its effect is the ordinary attribution [EFF-2]: a measure read through a reference parameter `p`, written `deref(p).len` [REF-1], exhibits `reads(p.len)`, the measure being a path below that parameter [EFF-1]; a measure read rooted in a local exhibits nothing.
 A measure is never a write target [TYPE-10].
 One quantity, one spelling: there is no reader operation beside the place form [FORM-1].
 
@@ -1132,7 +1142,8 @@ A `fn_sig` may carry the same requirement and postcondition templates. FN-4 chec
 Function-signature visibility is the [TYPE-6] table.
 Every explicit `return e1, ..., en;` writes exactly as many expressions as the enclosing declaration writes results, and expression i must produce exactly result ordinal i's `rtype`; there is no result-mode or result-type conversion [TYPE-4].
 A written count other than the declared result count is a hard error citing FN-1 at the `return_stmt` node.
-The implicit-read case already owned by [TYPE-7] is exclusive: when `e` uses a `Box` binding where its content value would be required by the written `rtype`, that use is rejected citing TYPE-7 and FN-1 forms no candidate.
+The implicit-read case already owned by [TYPE-7] is exclusive: when `e` uses a reference or `Box` binding where its referent value would be required by the written `rtype`, that use is rejected citing TYPE-7 and FN-1 forms no candidate.
+A returned reference is owned by [REF-3] in the same exclusive way.
 Every other return mode or type mismatch is a hard error citing FN-1 at the `return_stmt` node, with `SourceCoordinate` equal to the complete checked half-open source extent of its selected `expr` child.
 FN-9 adds a stricter result and return-expression shape only for a function that declares an `ensures_clause`; a function with none retains every return form admitted here.
 
@@ -1364,7 +1375,8 @@ A `fn_decl` declares one result or an ordered result list of two or more [GRAM-2
 Every ordinal is a datum of every clause, written as that ordinal's binder spelling, and a single-result declaration is the one-ordinal case of this sentence rather than a second rule.
 A result ordinal's declared type is a fragment integer after concrete [FN-2] substitution [FN-9] or a measured type [MSR-1], and which of the two decides what that ordinal supplies: a fragment ordinal is a datum of the clause as its own value, and a measured ordinal is a datum only as a measure member of that ordinal's place.
 A measure member of a result place is instantiated at that ordinal's own destination [ENT-3.S12] — the place the destination names — exactly as a measure member of a formal place is instantiated at the formal's, and is queried at a selected return over the place that return hands back.
-DEFERRED: a measure member of a result place formed with field-selection `psuffix`es, `deref` wrappings, or subscripts, in place of the bare result place this version admits; its delta is numbered rules +0 and grammar productions +0, and it is an admission widening of [FN-9] rather than a new judgment.
+A measure member of a result place reached through `deref` — `deref(result).len` — is admitted in an `ensures_clause`, because the construction rows publish exactly that of a boxed runtime-capacity shape [OP-13, PRE-1].
+DEFERRED: a measure member of a result place formed with field-selection `psuffix`es or subscripts, in place of the bare and `deref`-wrapped result places this version admits; its delta is numbered rules +0 and grammar productions +0, and it is an admission widening of [FN-9] rather than a new judgment.
 
 A routed clause is written `when V(f: r):` or `when b is V(f: r):`, where `b` names the result ordinal the route applies to.
 The ordinal binder may be omitted exactly when one declared ordinal has that route's enum type; when two or more do, the route is ambiguous and the declaration is a hard error citing CALL-4 at the `ensures_clause`, `AmbiguousResultRoute`, carrying the restructuring `name the result ordinal the route applies to: write `when b is V(f: r):``.
@@ -1394,6 +1406,7 @@ erange := ".." IDENT
 
 An effect row lists `reads(path)` and `writes(path)`, each entry naming exactly one path, which is the one spelling of an entry [FORM-1].
 A category may appear more than once in one row, and the canonical order is every `reads` entry before every `writes` entry, each in written argument order.
+A row lists each path at most once per category, and a repeated entry is an EFF-1 rejection at that `effect`.
 `pure` is the unique spelling of the empty row.
 Frame residency [STOR-1] is not an allocation by definition, and allocation and release carry no effect entry [STOR-8].
 The spellings `external`, `blocks`, `memory`, `world`, and `capability` are not grammar atoms, effects, retired spellings, or reserved words. They satisfy IDENT wherever any other lowercase identifier does.
@@ -1420,7 +1433,7 @@ The actuals' call data are captured after argument evaluation and before the cal
 Framing an action out of an enclosing row removes no checked action or ordinary effect footprint. Optimization is governed by EFF-3 and the source's value, ownership and control semantics.
 
 A SET-1 commit contributes a write. SET-1's reinitialization of a complete binding already dead at statement entry keeps its no-previous-owner exception. Target and right-hand-side evaluation contribute ordinarily.
-Rows are checked both ways against this complete exhibited set: undeclared-but-exhibited and declared-but-unexhibited are both EFF-2 errors. A declaration with no exhibited contribution writes `pure`, whether or not it carries erased contracts.
+A declared entry is exhibited when the body accesses storage at or below its path. Rows are checked both ways against this complete exhibited set — every declared entry is exhibited in that sense, and every exhibited access lies under some declared entry — so undeclared-but-exhibited and declared-but-unexhibited are both EFF-2 errors. A declaration with no exhibited contribution writes `pure`, whether or not it carries erased contracts.
 A PRE-1 function signature is the ordinary declared boundary; its linked definition must satisfy the same boundary [SCOPE-3, PRE-1]. No source body is fabricated for it and no alternate effect rule applies to its calls.
 
 [EFF-3] A call whose row is `pure` and which allocates nothing licenses deduplication and reordering with equal arguments.
@@ -1459,7 +1472,7 @@ The propagation operand is a consuming context.
 A non-place Result expression is its owned temporary.
 When `e` is a direct bare place of affine `Result<T, E>` type rooted in a live own-mode binding, propagation consumes that place exactly once under [OWN-1] without requiring a written `move`; a partial place consumes its whole root and retains the ordinary residual cleanup.
 An explicitly written `move p` retains its ordinary OWN-1 meaning.
-A place rooted through a reference, or a `Box` binding used without `deref`, a dead root, and an outer affine root consumed inside a loop retain their REF-2, TYPE-7, OWN-1, and OWN-11 judgments; ERR-3 grants no read-through, move-through-reference, revival, copy, or loop escape.
+A place reached through `deref` of a reference, a reference or `Box` binding used without `deref`, a dead root, and an outer affine root consumed inside a loop retain their REF-2, TYPE-7, OWN-1, and OWN-11 judgments; ERR-3 grants no read-through, move-through-reference, revival, copy, or loop escape.
 The operand is consumed before the result tag is dispatched.
 On `Ok(v)` propagation binds v; on `Err(err)` the function returns `Err(err)`, and the checked program attaches an auto-derived context record `(function, node_path)` to the propagation edge — zero hand-written tokens per site.
 For an enclosing FN-9 `Ok` route, that automatic error return is unselected and publishes no normal-result relation.
@@ -1940,13 +1953,13 @@ Permission holds for a `for_stmt` L exactly when all of the following hold, writ
 Among whole-place writes of B, at most one place is rooted in a binding declared outside L; that binding is L's accumulator, and every occurrence of it in B is one operand of one `set` statement whose target is that whole binding and whose right-hand side is one operation applied to that operand and to a second operand reaching the accumulator nowhere.
 That operation is one operation fixed for the accumulator across the whole of B, and is exactly one of `+wrap`, `*wrap`, `iand`, `ior`, `ixor`, `imin`, `imax`, `band`, `bor`, and `bxor` [OP-1].
 Every place a footprint of B writes is iteration-own storage, the accumulator's whole place, one proved single-binder affine element write, or one proved range reference.
-A proved single-binder affine element write is exactly a `set_stmt` whose target is one direct `Array` or `Slots` subscript rooted in an own binding declared outside L or reached through a reference parameter whose row declares the write [EFF-5], whose exact [OP-4] bounds obligation at that subscript is discharged in the current ProofContext and retains the offset's canonical exact value `a*i + b`: i is L's compiler-owned binder, a and b are mathematical integer constants, a is nonzero, and no other symbolic term occurs.
+A proved single-binder affine element write is exactly a `set_stmt` whose target is one direct `Array` or `Slots` subscript rooted in an own binding declared outside L or reached through `deref` of a reference parameter whose row declares the write [EFF-5], whose exact [OP-4] bounds obligation at that subscript is discharged in the current ProofContext and retains the offset's canonical exact value `a*i + b`: i is L's compiler-owned binder, a and b are mathematical integer constants, a is nonzero, and no other symbolic term occurs.
 The retained [OP-4] result and affine value are consumed from the same source semantic check. The value may have been carried through copies and checked affine operations; PAR-2 neither repeats the bounds proof, reconstructs the value from parser shape, nor trusts a runtime check, optimizer fact, or backend result.
 For permission only, this fixed form refines the ordinary whole-collection write footprint to the single-element range `[a*i + b, a*i + b + 1)`.
 The counted recurrence of [FN-1] gives distinct binder values to distinct iterations, and multiplication by the same nonzero integer a preserves distinctness, so their refined ranges do not overlap; statement order within one iteration is unchanged.
 This refinement proves only the source element-range and cross-iteration disjointness. The selected-target [STOR-6] check must still prove the concrete element stride, layout, and address domain before emission; that later target check consumes the already-permitted source access and never grants PAR-2 permission retroactively.
 Every write by B to one mapped root must be another proved single-binder affine element write carrying exactly the same a and b; different resolved roots may carry different maps. Every operand read through that same root binding must be a direct `Array` or `Slots` subscript whose own discharged [OP-4] result retains exactly the same a and b. For permission only, that read footprint is refined to the same single-element range, so it overlaps writes of its own iteration in source order and no access of another iteration. A whole-root read, a subscript carrying a different or unavailable map, any other access overlapping the resolved root, or an unresolved place denies.
-The element family admits one affine map per root, including same-index read-modify-write and writes reached through a reference parameter whose row declares the write. A constant element image, two different element maps of one root, and every other element injectivity argument deny permission rather than starting proof search. A `Ring` in an element-map position denies permission, because a `Ring` subscript selects the slot `(r.head + i) mod r.cap` [WIN-1], a wrapping map onto storage rather than a linear offset.
+The element family admits one affine map per root, including same-index read-modify-write and writes reached through `deref` of a reference parameter whose row declares the write. A constant element image, two different element maps of one root, and every other element injectivity argument deny permission rather than starting proof search. A `Ring` in an element-map position denies permission, because a `Ring` subscript selects the slot `(r.head + i) mod r.cap` [WIN-1], a wrapping map onto storage rather than a linear offset.
 
 A proved range reference is a range reference `&r[s*i+b..s*i+b+s]` [REF-4] passed as an ordinary argument, whose discharged endpoint domain retains the exact mathematical images `[s*i+b, s*i+b+s)`, where i is L's binder, and s and b are fixed throughout L with proved `0 <= s` and `0 <= b`. The indexable place or range reference it is formed from is declared outside B and retains its resolved origin; a range reference formed inside B instead inherits an existing proved range reference only when its complete origin path is a descendant of that range reference. Each further formation's own [REF-4] endpoint obligation establishes containment. No child call, read, or write gains a wider extent than its actual origin path.
 The automatic image family is finite and fixed. At L's preheader after continuing kills, the immutable numeric value atoms still available to surviving scalar bindings and measures are fixed. Canonical checked affine sums and scalar multiples preserve exact value images. A recorded admitted exact multiplication may be expanded through its two operand value images, including the checked transparent images behind copied-value handles. A product of two fixed operands is fixed. Otherwise exactly one operand may depend on i, and multiplying its coefficient and constant part by the fixed operand must leave both parts affine: each such multiplication has a mathematical constant on at least one side. This rule recursively traverses the finite checked value graph, rejects a cyclic or unknown image, and introduces no arbitrary-degree polynomial or injectivity search. Normalized constants and coefficients use [ENT-6]'s checked mathematical integer domain. Each active counted binder is considered once, endpoint coefficients must agree, and the ending constant part must equal the starting constant part plus s. Both sign goals are submitted to the existing ProofContext and their successful derivations are retained with the formation's bounds result. Permission consumes those checked images and proofs; it neither reinterprets source spelling nor reruns arithmetic proof.
@@ -2118,14 +2131,14 @@ fn arg_get(args: &Args, position: own u64) -> result: own Result<HostString, Arg
 fn host_bytes_len(value: &HostString) -> result: own u64 reads(value);
 fn host_copy_bytes(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
   requires start <= end;
-  requires end <= destination.len;
+  requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
 fn host_utf8_len(value: &HostString) -> result: own Result<u64, Utf8Error> reads(value);
 fn host_copy_utf8(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, Utf8CopyError> reads(value), writes(destination) contract {
   requires start <= end;
-  requires end <= destination.len;
+  requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
@@ -2133,38 +2146,38 @@ fn relative_path(value: own HostString) -> result: own Result<RelativePath, Path
 fn open_read(factory: &HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: own Result<ReadFile, IoError> reads(root), reads(path), writes(factory);
 fn read_at(factory: &HandleFactory, file: &ReadFile, destination: &[u8], file_offset: own u64, start: own u64, end: own u64) -> result: own Result<u64, ReadStop> writes(factory), writes(file), writes(destination) contract {
   requires start <= end;
-  requires end <= destination.len;
+  requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
 fn write_once(factory: &HandleFactory, output: &OutputStream, source: &[u8], start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(source), writes(factory), writes(output) contract {
   requires start <= end;
-  requires end <= source.len;
+  requires end <= deref(source).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
 fn exit_status(code: own u8) -> result: own ExitStatus pure;
 fn open_directory(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(root), reads(name), writes(factory) contract {
   requires start <= end;
-  requires end <= name.len;
+  requires end <= deref(name).len;
 };
 fn open_directory_source(factory: &HandleFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(directory), writes(factory);
 fn directory_next(source: &DirectorySource, destination: &[u8], start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) writes(source), writes(destination) contract {
   requires start <= end;
-  requires end <= destination.len;
+  requires end <= deref(destination).len;
   ensures start <= next;
   ensures next <= end;
 };
 fn open_file(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(root), reads(name), writes(factory) contract {
   requires start <= end;
-  requires end <= name.len;
+  requires end <= deref(name).len;
 };
 fn close_read(factory: &HandleFactory, file: own ReadFile) -> result: own Result<unit, IoError> writes(factory);
 fn close_directory(factory: &HandleFactory, directory: own DirectoryRead) -> result: own Result<unit, IoError> writes(factory);
 fn close_directory_source(factory: &HandleFactory, source: own DirectorySource) -> result: own Result<unit, IoError> writes(factory);
 fn read_next(factory: &HandleFactory, input: &InputStream, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, ReadStop> writes(factory), writes(input), writes(destination) contract {
   requires start <= end;
-  requires end <= destination.len;
+  requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
@@ -2175,13 +2188,13 @@ fn tcp_accept(factory: &HandleFactory, listener: &TcpListener) -> result: own Re
 fn tcp_connect(factory: &HandleFactory, address: &SocketAddress) -> result: own Result<TcpConnection, IoError> reads(address), writes(factory);
 fn receive_next(receive: &TcpReceive, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, ReadStop> writes(receive), writes(destination) contract {
   requires start <= end;
-  requires end <= destination.len;
+  requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
 fn send_once(send: &TcpSend, source: &[u8], start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(source), writes(send) contract {
   requires start <= end;
-  requires end <= source.len;
+  requires end <= deref(source).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
@@ -2222,49 +2235,55 @@ fn slots_into_array<T: linear, const n: u64>(values: own Slots<T, n>) -> result:
   ensures result.len == n;
 };
 fn place_back<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window.next), writes(window.len) contract {
-  requires window.room > 0_u64;
-  ensures window.len == entry(window).len + 1_u64;
-  ensures window.cap == entry(window).cap;
+  requires deref(window).room > 0_u64;
+  ensures deref(window).len == deref(entry(window)).len + 1_u64;
+  ensures deref(window).cap == deref(entry(window)).cap;
 };
 fn take_back<W: linear, T: linear>(window: &W) -> value: own T writes(window.last), writes(window.len) contract {
-  requires window.len > 0_u64;
-  ensures window.len + 1_u64 == entry(window).len;
-  ensures window.cap == entry(window).cap;
+  requires deref(window).len > 0_u64;
+  ensures deref(window).len + 1_u64 == deref(entry(window)).len;
+  ensures deref(window).cap == deref(entry(window)).cap;
 };
 fn insert_at<W: linear, T: linear>(window: &W, index: own u64, value: own T) -> result: own unit writes(window.filled), writes(window.next), writes(window.len) contract {
-  requires index <= window.len;
-  requires window.room > 0_u64;
-  ensures window.len == entry(window).len + 1_u64;
-  ensures window.cap == entry(window).cap;
+  requires index <= deref(window).len;
+  requires deref(window).room > 0_u64;
+  ensures deref(window).len == deref(entry(window)).len + 1_u64;
+  ensures deref(window).cap == deref(entry(window)).cap;
 };
 fn remove_at<W: linear, T: linear>(window: &W, index: own u64) -> value: own T writes(window.filled), writes(window.len) contract {
-  requires index < window.len;
-  ensures window.len + 1_u64 == entry(window).len;
-  ensures window.cap == entry(window).cap;
+  requires index < deref(window).len;
+  ensures deref(window).len + 1_u64 == deref(entry(window)).len;
+  ensures deref(window).cap == deref(entry(window)).cap;
 };
 fn append<W: linear, X: linear>(destination: &W, source: &X) -> result: own unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
-  requires destination.room >= source.len;
-  ensures destination.len == entry(destination).len + entry(source).len;
-  ensures source.len == 0_u64;
+  requires deref(destination).room >= deref(source).len;
+  ensures deref(destination).len == deref(entry(destination)).len + deref(entry(source)).len;
+  ensures deref(source).len == 0_u64;
 };
 fn split_off<W: linear, X: linear>(source: &W, index: own u64, destination: &X) -> result: own unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
-  requires index <= source.len;
-  requires destination.room >= source.len - index;
-  ensures source.len == index;
-  ensures destination.len == entry(destination).len + entry(source).len - index;
+  requires index <= deref(source).len;
+  requires deref(destination).room >= deref(source).len - index;
+  ensures deref(source).len == index;
+  ensures deref(destination).len == deref(entry(destination)).len + deref(entry(source)).len - index;
 };
 fn grow<T: linear>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(deref(cell)) contract {
-  requires capacity >= deref(cell).cap;
-  ensures deref(cell).cap == capacity;
-  ensures deref(cell).len == deref(entry(cell)).len;
+  requires capacity >= deref(deref(cell)).cap;
+  ensures deref(deref(cell)).cap == capacity;
+  ensures deref(deref(cell)).len == deref(deref(entry(cell))).len;
 };
 fn place_front<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window) contract {
-  requires window.room > 0_u64;
-  ensures window.len == entry(window).len + 1_u64;
+  requires deref(window).room > 0_u64;
+  ensures deref(window).len == deref(entry(window)).len + 1_u64;
+  ensures deref(window).cap == deref(entry(window)).cap;
+  ensures deref(window).head >= 0_u64;
+  ensures deref(window).head <= deref(window).cap;
 };
 fn take_front<W: linear, T: linear>(window: &W) -> value: own T writes(window) contract {
-  requires window.len > 0_u64;
-  ensures window.len + 1_u64 == entry(window).len;
+  requires deref(window).len > 0_u64;
+  ensures deref(window).len + 1_u64 == deref(entry(window)).len;
+  ensures deref(window).cap == deref(entry(window)).cap;
+  ensures deref(window).head >= 0_u64;
+  ensures deref(window).head <= deref(window).cap;
 };
 fn swap<T: linear>(first: &T, second: &T) -> result: own unit writes(first), writes(second);
 fn free_empty<W: linear>(window: own W) -> result: own unit pure contract {
@@ -2423,8 +2442,9 @@ At every point at which P is live these hold implicitly, as [ENT-2] implicit fac
 Z <= P.len     Z <= P.room     Z <= P.head     P.len <= P.cap     P.head <= P.cap
 ```
 
-The identity `P.len + P.room = P.cap` is appended, as two inequalities, to [ENT-6]'s automatic affine-premise sequence for a place whose row has all three cells, with the empty support every standing fact has.
-The identity is a convenience for the writer and is never a route by which an operation's own post-state is derived, and a contract clause both of whose sides follow from these standing facts alone discharges no obligation.
+The identity `P.len + P.room = P.cap`, equivalently `P.room = P.cap - P.len`, is a standing fact of every window — every `Slots` and every `Ring` row has all three cells — and the [ENT-4] closure uses it exactly as it uses any other standing fact.
+It is appended, as two inequalities, to [ENT-6]'s automatic affine-premise sequence for a place whose row has all three cells, with the empty support every standing fact has.
+The identity is never a route by which an operation's own post-state is derived, and a contract clause both of whose sides follow from these standing facts alone discharges no obligation.
 A measure whose value the table fixes as a compile-time constant or a runtime-profile symbol is a standing fact with empty support: for `Array<T, N>` both `P.room = Z` and `P.len = P.cap = N`, for `Array<T>` both `P.room = Z` and `P.cap = P.len`, for `&[T]` no constant beyond `Z <= P.len`, and for a constant-capacity `Slots<T, N>` or `Ring<T, N>` `P.cap = N`.
 A row whose cell is *bounded* fixes no such constant: a `Ring`'s `head` is a standing fact only through `Z <= P.head` and `P.head <= P.cap` above, and a window's `len` and `room` are ordinary killable terms.
 A standing fact holds at every program point of P's scope and no event kills it, exactly as an [ENT-2] implicit fact does.
@@ -2433,14 +2453,14 @@ A standing fact holds at every program point of P's scope and no event kills it,
 The complete measure table is:
 
 ```text
-| measure operand position                           | inside the callee     | at the caller        |
-|----------------------------------------------------|-----------------------|----------------------|
-| requires, any parameter                            | entry image           | pre-transfer term    |
-| ensures, own parameter                             | immutable entry datum | immutable call datum |
-| ensures, reference parameter the row only reads    | immutable entry datum | live term            |
-| ensures, bare reference parameter the row writes   | exit-state term       | resolved exit place  |
-| ensures, entry(reference parameter the row writes) | immutable entry datum | immutable call datum |
-| ensures, result binder                             | selected result       | result destination   |
+| measure operand position                                  | inside the callee     | at the caller        |
+|-----------------------------------------------------------|-----------------------|----------------------|
+| requires, any parameter                                   | entry image           | pre-transfer term    |
+| ensures, own parameter                                    | immutable entry datum | immutable call datum |
+| ensures, deref(reference parameter the row only reads)    | immutable entry datum | live term            |
+| ensures, deref(reference parameter the row writes)        | exit-state term       | resolved exit place  |
+| ensures, deref(entry(reference parameter the row writes)) | immutable entry datum | immutable call datum |
+| ensures, result binder                                    | selected result       | result destination   |
 ```
 
 The proof-only former `entry(parameter)` is admitted only in an `ensures_clause` and only when its direct IDENT resolves to a reference parameter of that function whose declared row carries a `writes` of that path; every other occurrence is a hard error citing MSR-3 at the former, with the restructuring `use entry only on a reference parameter the row writes, in ensures`.
@@ -2462,7 +2482,7 @@ For each parameter of measured type and each [MSR-1] measure of it that a declar
 It is the same kind of term as a call datum and carries the same closure: no place occurs in it, no [ENT-5] event kills it, and no later write retargets it.
 That is what the immutable entry-datum cells of the table above denote.
 A body that overwrites an `own` parameter's local binding with newly constructed storage — `set vector = move fresh;` — therefore leaves every clause naming that parameter's measure meaning exactly what it read as at entry, and the caller reading the same clause after substitution reads that call's call datum, which the same statement's commit cannot kill either.
-For a reference parameter whose declared row writes it the immutable entry datum is named explicitly through `entry(parameter)`; the bare parameter's measure instead denotes the selected return's resolved referent.
+For a reference parameter whose declared row writes it the immutable entry datum is named explicitly through `deref(entry(parameter))`; the same measure read through `deref(parameter)` without that former instead denotes the selected return's resolved referent.
 An entry datum is formed, never proved, and it is not a second fact source: its standing orderings [MSR-2] reach it through the equality it is established with, exactly as they reach any other term.
 A parameter operand that is not a measure keeps the entry-image judgment [FN-9] states over the live place, since a value of fragment type is not a measured value and has no measure datum.
 A **placement datum** is the same former at every remaining placement, each of which is one naming event inside a body at which a measured value crosses from one place to another.
@@ -2487,7 +2507,8 @@ The complete placement table is:
 |   use of one enum place                                               |   scrutinee's payload       |                              |
 ```
 
-A right-hand side, operand, or scrutinee that is anything but a bare use of a measured place mints none, and the ordinary sources establish whatever that expression publishes.
+A `move p` of a measured place is such a use: [OWN-1] requires the `move` spelling of an affine place, so `move p` carries that place's measures into the REBIND and CONSTRUCT placements exactly as a bare use of a copy place does.
+A right-hand side, operand, or scrutinee that is anything but a bare or `move`d use of a measured place mints none, and the ordinary sources establish whatever that expression publishes.
 The element placement names an element position, and an element position is a place exactly where its offset is one a place relation can name [MSR-1]: a written literal, a live `own` fragment-integer binding, or an in-scope const generic [MSR-6].
 Two element places are decided by their offsets [OWN-7], so an offset provably distinct from nothing — itself included — would relate two elements of one window as one term; a commit at such an offset carries no measure and, being an element write of unknown position, kills every measure of every element of that window [MSR-2].
 The element placement reaches only a written element position, so a window operation [OP-10] carries no measure through the slot it writes: `place_back` stores its value at the entry length of its referent and `take_back` takes one from the exit length of its referent, and a measure term is not an offset this version admits.
@@ -2593,7 +2614,7 @@ An index target and a non-fragment target receive no commit value, and a right-h
 - S6 (length facts).
 S6 carries no construction row: a construction function's length, capacity and origin facts are the `ensures` of its [PRE-1] record and reach the caller through [ENT-3.S12] like any other declared relation.
 `let m = P.len;` for a tracked P establishes m = P.len.
-`let part = &P[lo..hi];` for a tracked P establishes `part.len = hi - lo` after [REF-4]'s domain goals discharge, over the exact current-value images captured where the endpoints are evaluated.
+`let part = &P[lo..hi];` for a tracked P establishes `deref(part).len = hi - lo` after [REF-4]'s domain goals discharge, over the exact current-value images captured where the endpoints are evaluated.
 This is a mathematical difference of captured values, not a new executed subtraction or a relation that is retargeted when an endpoint binding is later assigned.
 [ENT-3.S7]
 - S7 (constant-offset arithmetic).
@@ -3152,10 +3173,10 @@ fn fill_eight() -> total: own u64 pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "let-initializer match with give and a reference read bare.";
+  doc "let-initializer match with give and a reference read through deref.";
   let a = 40_i32;
   let p = &a;
-  let v = match p +checked 2_i32 {
+  let v = match deref(p) +checked 2_i32 {
     Ok(value: w) => {
       give w;
     }
