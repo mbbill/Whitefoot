@@ -381,6 +381,7 @@ Callee kind is resolved by name lookup [OP-1], the same partition that already s
 
 [TYPE-2] Composite types: `struct`, `enum`, and the four compiler-owned nominals `Array`, `Slots`, `Ring`, and `Box`.
 The four are nominals of the nominal-type TYPEID domain [TYPE-6], written as a TYPEID with `targs` [GRAM-3] and declared by no source item; their forms, capacities, placements, and element domains are [TYPE-9]'s.
+In this specification's prose `N` stands for a written const argument; source writes a `const` IDENT, lowercase under [FORM-3], as the [PRE-1] rows do.
 Every value of the four is affine [OWN-1] unless its element or content type makes it linear [PROV-6].
 A `struct` or `enum` declaration may carry the `linear` modifier [GRAM-2], which states a logical must-consume obligation on values of that nominal in every scope and changes no component, layout, or construction route [PROV-6].
 An opaque nominal [PRE-1] has no writer-visible component or constructor. It obeys the ordinary nominal type, ownership, and call rules.
@@ -530,6 +531,7 @@ A reference is read bare: `&T` is a name for a path [REF-1], and no read-through
 
 [SET-1] Place assignment.
 For `set p = e;`, target evaluation first resolves and evaluates the complete `p` without reading or consuming the value stored there.
+A `set` target must resolve to a binding already in scope: a `set` whose target name resolves to nothing declares nothing and is a hard error citing SET-1 at that `place`, with the restructuring `declare the binding with let first`.
 A nested place is evaluated from its base outward; at each subscript, the base place is evaluated before its offset atom, and the subscript's [OP-4] discharge obligation is judged at that target place exactly as in read position, so accepted target evaluation executes no runtime check and cannot trap.
 Field suffixes introduce no runtime evaluation.
 
@@ -2186,86 +2188,86 @@ fn send_once(send: &TcpSend, source: &[u8], start: own u64, end: own u64) -> res
 fn close_listener(factory: &HandleFactory, listener: own TcpListener) -> result: own Result<unit, IoError> writes(factory);
 fn close_receive(factory: &HandleFactory, receive: own TcpReceive) -> result: own Result<unit, IoError> writes(factory);
 fn close_send(factory: &HandleFactory, send: own TcpSend) -> result: own Result<unit, IoError> writes(factory);
-fn box_new<T>(value: own T) -> result: own Box<T> pure;
-fn array_filled<T, const n: u64>(value: own T) -> result: own Array<T, n> pure contract {
+fn box_new<T: linear>(value: own T) -> result: own Box<T> pure;
+fn array_filled<T: copy, const n: u64>(value: own T) -> result: own Array<T, n> pure contract {
   ensures result.len == n;
 };
-fn slots_new<T, const n: u64>() -> result: own Slots<T, n> pure contract {
+fn slots_new<T: linear, const n: u64>() -> result: own Slots<T, n> pure contract {
   ensures result.len == 0_u64;
   ensures result.cap == n;
 };
-fn ring_new<T, const n: u64>() -> result: own Ring<T, n> pure contract {
+fn ring_new<T: linear, const n: u64>() -> result: own Ring<T, n> pure contract {
   ensures result.len == 0_u64;
   ensures result.cap == n;
   ensures result.head == 0_u64;
 };
-fn box_array_filled<T>(count: own u64, value: own T) -> result: own Box<Array<T>> pure contract {
+fn box_array_filled<T: copy>(count: own u64, value: own T) -> result: own Box<Array<T>> pure contract {
   ensures deref(result).len == count;
 };
-fn box_slots_new<T>(capacity: own u64) -> result: own Box<Slots<T>> pure contract {
+fn box_slots_new<T: linear>(capacity: own u64) -> result: own Box<Slots<T>> pure contract {
   ensures deref(result).len == 0_u64;
   ensures deref(result).cap == capacity;
 };
-fn box_ring_new<T>(capacity: own u64) -> result: own Box<Ring<T>> pure contract {
+fn box_ring_new<T: linear>(capacity: own u64) -> result: own Box<Ring<T>> pure contract {
   ensures deref(result).len == 0_u64;
   ensures deref(result).cap == capacity;
   ensures deref(result).head == 0_u64;
 };
-fn slots_from_array<T, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pure contract {
+fn slots_from_array<T: linear, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pure contract {
   ensures result.len == n;
   ensures result.cap == n;
 };
-fn slots_into_array<T, const n: u64>(values: own Slots<T, n>) -> result: own Array<T, n> pure contract {
+fn slots_into_array<T: linear, const n: u64>(values: own Slots<T, n>) -> result: own Array<T, n> pure contract {
   requires values.len == n;
   ensures result.len == n;
 };
-fn place_back<W, T>(window: &W, value: own T) -> result: own unit writes(window.next), writes(window.len) contract {
+fn place_back<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window.next), writes(window.len) contract {
   requires window.room > 0_u64;
   ensures window.len == entry(window).len + 1_u64;
   ensures window.cap == entry(window).cap;
 };
-fn take_back<W, T>(window: &W) -> value: own T writes(window.last), writes(window.len) contract {
+fn take_back<W: linear, T: linear>(window: &W) -> value: own T writes(window.last), writes(window.len) contract {
   requires window.len > 0_u64;
   ensures window.len + 1_u64 == entry(window).len;
   ensures window.cap == entry(window).cap;
 };
-fn insert_at<W, T>(window: &W, index: own u64, value: own T) -> result: own unit writes(window.filled), writes(window.next), writes(window.len) contract {
+fn insert_at<W: linear, T: linear>(window: &W, index: own u64, value: own T) -> result: own unit writes(window.filled), writes(window.next), writes(window.len) contract {
   requires index <= window.len;
   requires window.room > 0_u64;
   ensures window.len == entry(window).len + 1_u64;
   ensures window.cap == entry(window).cap;
 };
-fn remove_at<W, T>(window: &W, index: own u64) -> value: own T writes(window.filled), writes(window.len) contract {
+fn remove_at<W: linear, T: linear>(window: &W, index: own u64) -> value: own T writes(window.filled), writes(window.len) contract {
   requires index < window.len;
   ensures window.len + 1_u64 == entry(window).len;
   ensures window.cap == entry(window).cap;
 };
-fn append<W, X>(destination: &W, source: &X) -> result: own unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
+fn append<W: linear, X: linear>(destination: &W, source: &X) -> result: own unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
   requires destination.room >= source.len;
   ensures destination.len == entry(destination).len + entry(source).len;
   ensures source.len == 0_u64;
 };
-fn split_off<W, X>(source: &W, index: own u64, destination: &X) -> result: own unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
+fn split_off<W: linear, X: linear>(source: &W, index: own u64, destination: &X) -> result: own unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
   requires index <= source.len;
   requires destination.room >= source.len - index;
   ensures source.len == index;
   ensures destination.len == entry(destination).len + entry(source).len - index;
 };
-fn grow<T>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(deref(cell)) contract {
+fn grow<T: linear>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(deref(cell)) contract {
   requires capacity >= deref(cell).cap;
   ensures deref(cell).cap == capacity;
   ensures deref(cell).len == deref(entry(cell)).len;
 };
-fn place_front<W, T>(window: &W, value: own T) -> result: own unit writes(window) contract {
+fn place_front<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window) contract {
   requires window.room > 0_u64;
   ensures window.len == entry(window).len + 1_u64;
 };
-fn take_front<W, T>(window: &W) -> value: own T writes(window) contract {
+fn take_front<W: linear, T: linear>(window: &W) -> value: own T writes(window) contract {
   requires window.len > 0_u64;
   ensures window.len + 1_u64 == entry(window).len;
 };
-fn swap<T>(first: &T, second: &T) -> result: own unit writes(first), writes(second);
-fn free_empty<W>(window: own W) -> result: own unit pure contract {
+fn swap<T: linear>(first: &T, second: &T) -> result: own unit writes(first), writes(second);
+fn free_empty<W: linear>(window: own W) -> result: own unit pure contract {
   requires window.len == 0_u64;
 };
 ```
