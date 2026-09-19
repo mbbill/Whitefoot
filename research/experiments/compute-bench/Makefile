@@ -747,6 +747,46 @@ build: compiler deps
 images: $(addprefix $(BUILD)/,$(KERNELS)) \
         $(if $(AB),$(addsuffix -b,$(addprefix $(BUILD)/,$(KERNELS))))
 
+# Consumer-specific diagnostic image. Coarse clocks change code generation,
+# so this image has its own driver name and never enters ordinary `compare`.
+# Keep the transform and its generated-module check only while the scatter
+# attribution reproducer in README uses them.
+.PHONY: scatter-phases scatter-phases-check
+scatter-phases: build
+	$(MAKE) $(BUILD)/radix_scatter-phases
+
+$(BUILD)/radix_scatter_phases: radix_scatter_phases.rs
+	@mkdir -p $(BUILD)
+	rustc --edition=2024 -D warnings $< -o $@
+
+$(BUILD)/radix_scatter-phases.ll: $(BUILD)/radix_scatter-par.ll $(BUILD)/radix_scatter_phases radix_scatter_host.ll host-adapter.awk module-symbols.awk
+	$(BUILD)/radix_scatter_phases $(BUILD)/radix_scatter-par.ll.raw $@.raw
+	awk -f host-adapter.awk $@.raw radix_scatter_host.ll > $@.bound
+	awk -v prefix=wfb_radix_scatter_par -v api=wf_bench_radix_scatter -v mode=par \
+	    -f module-symbols.awk $@.bound > $@
+
+$(BUILD)/radix_scatter-phases.o: $(BUILD)/radix_scatter-phases.ll $(WF_FLAGS_STAMP)
+	$(CC) $(WF_FLAGS) -c $< -o $@
+
+$(BUILD)/radix_scatter_bench-phases.o: radix_scatter_bench.c harness.h backend.h $(BUILD)/radix_scatter_split.h
+	$(CC) $(CFLAGS) -I$(BUILD) -DWFB_SCATTER_PHASES -c $< -o $@
+
+$(BUILD)/radix_scatter-phases: $(BUILD)/radix_scatter_bench-phases.o $(BUILD)/radix_scatter-phases.o $(BUILD)/radix_scatter-seq.o $(COMMON_OBJS)
+	$(CXX) -pthread -fno-lto $(BUILD)/radix_scatter_bench-phases.o $(SHARED_OBJS) \
+	    $(BUILD)/radix_scatter-phases.o $(BUILD)/radix_scatter-seq.o $(RUNTIME_OBJS) $(LINK_LIBS) -o $@
+	$(call assert-real-runtime,$@)
+	$(call require-strong,$@,wf__floor_run)
+
+# Compile real emitted IR and the observer without fetching native schedulers;
+# a changed lowering shape or missing input must not silently omit a phase.
+scatter-phases-check: $(BUILD)/radix_scatter-phases.o $(BUILD)/radix_scatter_bench-phases.o
+	rustfmt --edition=2024 --check radix_scatter_phases.rs
+	! $(BUILD)/radix_scatter_phases /dev/null $(BUILD)/invalid-phases.ll 2> $(BUILD)/invalid-phases.err
+	grep -q 'expected two complete scatter roots' $(BUILD)/invalid-phases.err
+	sed '/ = call i8 @wf__par_split_/d' $(BUILD)/radix_scatter-par.ll.raw > $(BUILD)/missing-phase.ll
+	! $(BUILD)/radix_scatter_phases $(BUILD)/missing-phase.ll $(BUILD)/invalid-phases.ll 2> $(BUILD)/invalid-phases.err
+	grep -q 'unexpected phase 3; expected 2' $(BUILD)/invalid-phases.err
+
 # ------------------------------------------------------------------ verify --
 # Every form the image reports, at every width the harness's width rule emits
 # on this host, oversubscribed ones included. No expected count appears here:
@@ -958,7 +998,7 @@ compare: build
 # $(WFC) through `compiler` before the sub-make reads it as a prerequisite.
 programs-check: compiler module-symbols-test baseline-entry-test
 	@mkdir -p $(CHECK)
-	$(MAKE) -j$(JOBS) $(CHECKED)
+	$(MAKE) -j$(JOBS) $(CHECKED) scatter-phases-check
 
 # This gate-only witness exposes an ordinary executable entry, not a timed
 # kernel ABI. Keep both permission checks and exercise the native driver and

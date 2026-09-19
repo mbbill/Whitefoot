@@ -132,6 +132,9 @@ fn main() -> status: own ExitStatus pure {
 "#;
     for overlap in [OverlapLowering::Off, OverlapLowering::On] {
         let module = emit_lowered(source, overlap);
+        let exchange = super::emitted_function(&module, "exchange");
+        assert!(exchange.contains("call void @llvm.memmove."));
+        assert!(!exchange.contains("load %wf.t"));
         for module in [&module, &super::owned_places::retain_calls(&module)] {
             let output = compile_and_run(module);
             assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");

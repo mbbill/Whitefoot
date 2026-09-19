@@ -127,6 +127,36 @@ normalized, and before/after image hashes match. The
 records the successful expression and failed competitive-cost criterion.
 Keep these rows while the scatter investigation cites them.
 
+For coarse phase attribution, `make scatter-phases KERNELS=radix_scatter`
+builds a separate `WORK/build/radix_scatter-phases` image. For example:
+
+```sh
+WF_WORKERS=8 WFB_SCATTER_GRID=large WFB_SCATTER_NATIVE=chain \
+  "$WORK/build/radix_scatter-phases" verify wf 8
+WF_WORKERS=8 WFB_SCATTER_GRID=large WFB_SCATTER_NATIVE=chain WFB_GAP_US=0 \
+  "$WORK/build/radix_scatter-phases" time wf 8 0 5 > phases.out 2> phases.log
+```
+
+Use `tbb`, `parlay` or `rayon-join` for the native chain; the useful serial
+oracle and standalone `wf-seq` image are deliberately absent. `wf` at W1
+uses its instrumented pool-off clone. `scatter-phase` stderr rows contain
+form, width, call index (zero is warm-up), phase, start timestamp, wall ns,
+process CPU ns and Whitefoot steal delta. Native steal deltas do not measure
+native scheduler activity. Eight intervals cover chunk allocation, partition,
+tally, digit-stream allocation, packing, result allocation, final copy and
+intermediate release. Lazy allocation faults belong to the phase that touches
+the page. CPU includes runtime spinning; it is not a useful-work counter.
+The observer stores at most 256 calls and prints after timing. Coarse callbacks
+retain the joins but can inhibit optimization: compare its total wall/CPU
+against the ordinary image in alternating processes before interpreting the
+phases. These rows never enter the ordinary `compare` target.
+
+`radix_scatter_phases.rs` transforms only this consumer's emitted roots, with
+checked boundary counts and order. `programs-check` compiles the actual
+instrumented module and observer and verifies missing input is refused. Keep
+this diagnostic while the scatter attribution uses it; if lowering changes
+its shape, reestablish the boundaries against the generated code.
+
 [`compute-model-2026-09-13.tsv`](compute-model-2026-09-13.tsv) retains the
 compute-model main run and diagnostic fixtures, with an interpretation in the
 [investigation](../../investigations/compute-model/DESIGN.md#measurements-and-assessment-2026-09-13).

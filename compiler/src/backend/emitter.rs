@@ -1484,19 +1484,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         instruction: &IrInstruction,
     ) -> Result<(), BackendFailure> {
         match instruction {
-            IrInstruction::StoreBuffer {
-                buffer,
-                index,
-                value,
-            } => {
-                self.materialize_operands([*buffer, *index, *value])?;
+            IrInstruction::StoreBuffer { buffer, index, .. } => {
+                self.materialize_operands([*buffer, *index])?;
             }
-            IrInstruction::StoreSlice {
-                slice,
-                index,
-                value,
-            } => {
-                self.materialize_operands([*slice, *index, *value])?;
+            IrInstruction::StoreSlice { slice, index, .. } => {
+                self.materialize_operands([*slice, *index])?;
             }
             IrInstruction::Store { address, value, .. } => {
                 self.materialize_operands([*address, *value])?;

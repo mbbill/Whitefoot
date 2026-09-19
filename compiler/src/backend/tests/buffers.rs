@@ -984,9 +984,10 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
         .find("buffer.vacant.body")
         .expect("the all-None init loop must be emitted");
     assert!(main[body..].contains("zeroinitializer"));
-    // The SET-2 element commit is one aggregate load and one aggregate
-    // store through the same element address arithmetic.
-    assert!(main.contains("load %wf.t"));
+    // The SET-2 snapshot survives the replacement as a place copy, without
+    // expanding the whole owning element through aggregate SSA loads.
+    assert!(main.contains("call void @llvm.memmove."));
+    assert!(!main.contains("load %wf.t"));
     assert!(main.contains("store %wf.t"));
     // The scope-exit drop is the per-element loop [STOR-3]: the buffer
     // helper drops each element through the enum helper, then frees.
