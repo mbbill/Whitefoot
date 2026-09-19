@@ -1,0 +1,35 @@
+fn touch_after_move(value: own FixedVector<u8, 2>) -> result: own u8 pure {
+  let moved = move value;
+  region {
+    let holder = &uniq moved;
+    let spare = len_of(deref(holder));
+    let nonempty = 0_u64 < spare;
+    if nonempty {
+      let byte = deref(holder)[0_u64];
+      set deref(holder)[0_u64] = byte;
+      return byte;
+    } else {
+      return 0_u8;
+    }
+  }
+}
+
+fn slice_after_move(value: own FixedVector<u8, 2>) -> result: own u8 pure contract {
+  requires head_of(value) <= room_of(value);
+} {
+  let moved = move value;
+  region {
+    let view = slice_of(&moved);
+    let spare = len_of(view);
+    let nonempty = 0_u64 < spare;
+    if nonempty {
+      return view[0_u64];
+    } else {
+      return 0_u8;
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

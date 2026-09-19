@@ -4,7 +4,7 @@
 set -eu
 work=$(mktemp -d "${TMPDIR:-/tmp}/whitefoot-baseline-entry.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
-cp programs/quadrature.wf "$work/current.wf"
+cp ../../../tests/programs/compute/quadrature.wf "$work/current.wf"
 sh baseline-entry.sh adapt ordinary "$work/current.wf" "$work/ordinary.wf"
 cmp "$work/current.wf" "$work/ordinary.wf"
 sh baseline-entry.sh adapt command "$work/current.wf" "$work/old.wf"

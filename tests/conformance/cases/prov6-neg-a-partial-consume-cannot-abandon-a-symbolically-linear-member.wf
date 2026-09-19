@@ -1,0 +1,12 @@
+struct Carrier<T: linear> {
+  must_consume: T;
+  returned: buffer<u8>;
+}
+
+fn take_returned<T: linear>(carrier: own Carrier<T>) -> result: own buffer<u8> pure {
+  return move carrier.returned;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

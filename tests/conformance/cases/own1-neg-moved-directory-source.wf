@@ -1,0 +1,8 @@
+fn moved(list: own DirectorySource, destination: &uniq MutSlice<u8>) -> result: own unit reads(list, destination), writes(list, destination) {
+  doc "Moves an ordinary linear enumeration value and then borrows its dead place.";
+  let taken = move list;
+  region {
+    let (outcome, endpoint, reported) = directory_next(source: &uniq list, destination: &uniq deref(destination), start: 0_u64, end: 0_u64);
+  }
+  return unit;
+}

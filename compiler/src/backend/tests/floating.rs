@@ -214,39 +214,3 @@ fn main() -> status: own ExitStatus pure {
         String::from_utf8_lossy(&output.stderr)
     );
 }
-
-#[test]
-fn float_constants_work_in_aggregates_and_runs() {
-    let source = br#"struct Sample {
-  value: f32;
-}
-
-const values: FixedVector<f32, 2> =[1.5_f32, 2.5_f32];
-
-fn main() -> status: own ExitStatus pure {
-  let sample = Sample(value: values[0_u64]);
-  let empty = fixed_vector::<f32, 2>();
-  region {
-    place_back(vector: &uniq empty, value: 0.0_f32);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0.0_f32);
-  }
-  let storage = move one;
-  set storage[1_u64] = sample.value;
-  let loaded = storage[1_u64];
-  if feq(loaded, 1.5_f32) {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let output = compile_and_run(&compile(source));
-    assert!(
-        output.status.success(),
-        "float storage failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}

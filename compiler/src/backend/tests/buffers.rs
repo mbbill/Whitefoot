@@ -3,48 +3,6 @@ use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject, va
 use super::system::with_ir;
 use super::*;
 
-#[test]
-fn generic_allocation_fit_uses_each_concrete_element_ceiling() {
-    let source = br#"fn fits_element<T: linear>(count: own u64) -> result: own Bool pure {
-  let fits = buffer_fits::<T>(count);
-  return fits;
-}
-
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus pure {
-  let scalar_boundary = fits_element::<u64>(count: 2305843009213693951_u64);
-  if scalar_boundary {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let scalar_overflow = fits_element::<u64>(count: 2305843009213693952_u64);
-  if scalar_overflow {
-    return exit_status(code: 2_u8);
-  }
-  let inline_boundary = fits_element::<FixedVector<u64, 2>>(count: 576460752303423487_u64);
-  if inline_boundary {
-  } else {
-    return exit_status(code: 3_u8);
-  }
-  let inline_overflow = fits_element::<FixedVector<u64, 2>>(count: 576460752303423488_u64);
-  if inline_overflow {
-    return exit_status(code: 4_u8);
-  }
-  let stored_boundary = fits_element::<Vector<'heap, u8>>(count: 576460752303423487_u64);
-  if stored_boundary {
-  } else {
-    return exit_status(code: 5_u8);
-  }
-  let stored_overflow = fits_element::<Vector<'heap, u8>>(count: 576460752303423488_u64);
-  if stored_overflow {
-    return exit_status(code: 6_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let output = compile_and_run(&compile(source));
-    assert!(output.status.success(), "{output:?}");
-}
-
 const AFFINE_INVARIANT_BOUNDED_ALLOCATION: &[u8] =
     br#"fn allocate(n: own u64, half: own u64) -> result: own unit pure contract {
   requires half <= 500_u64;
@@ -472,36 +430,6 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
 }
 
 #[test]
-fn an_empty_run_has_zero_length_and_a_normal_release() {
-    let source = br#"fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 0_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh) => {
-        let values = move fresh;
-        let length = len_of(values);
-        if length != 0_u64 {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let output = compile_and_run(&compile(source));
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
-#[test]
 fn run_cleanup_is_explicit_on_return_and_break_edges() {
     let source = br#"fn cleanup['s](flag: own Bool, store: &uniq Heap<'s>) -> result: own unit reads(store), writes(store), allocates(store) {
   doc "Every edge that leaves this scope holding a run carries that run's release: the early return, the loop break, and the final return.";
@@ -555,16 +483,6 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
     // what that edge holds [STOR-3].
     assert_eq!(cleanup.matches("call void @free").count(), 3);
     let output = compile_and_run(&llvm);
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
-#[test]
-fn compiler_independent_mutable_buffer_checksum_executes() {
-    let output = compile_and_run(&compile(include_bytes!(
-        "../../../../tests/conformance/cases/x-buffer-mutable-checksum-run.wf"
-    )));
     assert!(output.status.success());
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
@@ -679,7 +597,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn compiler_independent_borrowed_pool_tree_executes() {
+fn borrowed_pool_tree_preserves_view_and_result_abi() {
     let llvm = compile(include_bytes!(
         "../../../../tests/conformance/cases/x-borrowed-pool-tree-run.wf"
     ));
@@ -724,11 +642,6 @@ fn compiler_independent_borrowed_pool_tree_executes() {
     assert!(!main.contains("call void @wf_trap"));
     assert_eq!(main.matches("call void @wf_exit_status").count(), 5);
     assert_eq!(main.matches("call void @free").count(), 0);
-
-    let output = compile_and_run(&llvm);
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
 }
 
 /// The case counts lines, words and bytes over two chunks and combines the
@@ -738,7 +651,7 @@ fn compiler_independent_borrowed_pool_tree_executes() {
 /// each taking its own inline run by value instead of one heap descriptor,
 /// and the whole program allocates nothing. The assertions are those facts.
 #[test]
-fn compiler_independent_wc_chunk_summary_executes() {
+fn chunk_summary_instances_preserve_view_abi_and_avoid_allocation() {
     let llvm = compile(include_bytes!(
         "../../../../tests/conformance/cases/x-wc-chunk-summary-run.wf"
     ));
@@ -786,11 +699,6 @@ fn compiler_independent_wc_chunk_summary_executes() {
     );
     assert!(!llvm.contains("call ptr @malloc"));
     assert!(!llvm.contains("call void @free"));
-
-    let output = compile_and_run(&llvm);
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
 }
 
 #[test]
@@ -957,7 +865,7 @@ struct Owner['s] {
   suffix: Vector<'s, u8>;
 }
 
-fn take['s](owner: own Owner<'s>) -> result: own Vector<'s, u8> pure {
+fn take['s](heap: &uniq Heap<'s>, owner: own Owner<'s>) -> result: own Vector<'s, u8> writes(heap) {
   doc "Takes one field out; the three residual siblings are released here, on the store whose provider this scope holds.";
   return move owner.pair.first;
 }
@@ -991,7 +899,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
                   Some(value: suffix) => {
                     let owner = Owner(prefix: move prefix, pair: move pair, suffix: move suffix);
                     region {
-                      let retained = take(owner: move owner);
+                      let retained = take(heap: &uniq heap, owner: move owner);
                     }
                     return exit_status(code: 0_u8);
                   }
@@ -1019,16 +927,6 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
         7
     );
     let output = compile_and_run(&llvm);
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
-#[test]
-fn compiler_independent_struct_of_buffers_checksum_executes() {
-    let output = compile_and_run(&compile(include_bytes!(
-        "../../../../tests/conformance/cases/x-struct-of-buffers-checksum-run.wf"
-    )));
     assert!(output.status.success());
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());

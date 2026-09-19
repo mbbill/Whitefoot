@@ -1,0 +1,85 @@
+linear struct Ticket {
+  number: u8;
+}
+
+fn consume(ticket: own Ticket) -> number: own u8 pure {
+  let Ticket(number: number) = move ticket;
+  return number;
+}
+
+fn acquire(fail: own Bool) -> result: own Result<Ticket, u8> pure {
+  if fail {
+    return Err<Ticket, u8>(error: 7_u8);
+  }
+  let ticket = Ticket(number: 2_u8);
+  return Ok<Ticket, u8>(value: move ticket);
+}
+
+fn drain(fail: own Bool) -> result: own u8 pure {
+  let empty = fixed_vector::<Ticket, 2>();
+  let first_ticket = Ticket(number: 1_u8);
+  region {
+    place_back(vector: &uniq empty, value: move first_ticket);
+  }
+  let one = move empty;
+  match acquire(fail: fail) {
+    Err(error: problem) => {
+      region {
+        let first = take_back(vector: &uniq one);
+        let drained = move one;
+        let number = consume(ticket: move first);
+        invariant empty_again: len_of(drained) <= 0_u64;
+        return problem;
+      }
+    }
+    Ok(value: second) => {
+      region {
+        place_back(vector: &uniq one, value: move second);
+      }
+      let two = move one;
+      region {
+        let last = take_back(vector: &uniq two);
+        let rest = move two;
+        region {
+          let first = take_back(vector: &uniq rest);
+          let drained = move rest;
+          let last_number = consume(ticket: move last);
+          let first_number = consume(ticket: move first);
+          invariant empty_again: len_of(drained) <= 0_u64;
+          return first_number +wrap last_number;
+        }
+      }
+    }
+  }
+}
+
+fn attempt(fail: own Bool) -> result: own u8 pure {
+  let first = Ticket(number: 1_u8);
+  match acquire(fail: fail) {
+    Err(error: problem) => {
+      let one = consume(ticket: move first);
+      return problem;
+    }
+    Ok(value: second) => {
+      let one = consume(ticket: move first);
+      let two = consume(ticket: move second);
+      return one +wrap two;
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  let no = 0_u8 == 1_u8;
+  let yes = 0_u8 == 0_u8;
+  let success = attempt(fail: no);
+  let failure = attempt(fail: yes);
+  let drained_failure = drain(fail: yes);
+  let drained_success = drain(fail: no);
+  let correct_success = success == 3_u8;
+  let correct_failure = failure == 7_u8;
+  let correct = band(correct_success, correct_failure);
+  if correct {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

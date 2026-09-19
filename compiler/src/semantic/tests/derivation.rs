@@ -6,24 +6,6 @@ use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::{assert_rule, assert_rule_at, assert_rule_kind, with_semantics};
 
-#[test]
-fn an_ordinary_let_takes_the_type_its_right_hand_side_produces() {
-    let source = br#"fn answer() -> result: own i32 pure {
-  let value = 40_i32;
-  return value;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("an unannotated let must derive its binder: {outcome:?}");
-        };
-    });
-}
-
 /// The derived type is the operand's own, so a right-hand side that produces
 /// a different type than the use site wants is still caught — by the
 /// consuming construct's rule ([FN-1] at `return`), not by the vanished
@@ -43,31 +25,6 @@ fn main() -> status: own ExitStatus pure {
         SemanticRule::Fn1,
         SemanticIssueKind::ReturnMismatch,
     );
-}
-
-#[test]
-fn a_value_match_derives_its_binding_from_the_delivery_set() {
-    let source = br#"fn choose(flag: own Option<i32>) -> result: own i32 pure {
-  let picked = match flag {
-    Some(value: inner) => {
-      give inner;
-    }
-    None() => {
-      give 0_i32;
-    }
-  }
-  return picked;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("a delivery set of one exact type must derive: {outcome:?}");
-        };
-    });
 }
 
 /// [GIVE-1] derivation is agreement over the closed delivery set, never a
@@ -193,27 +150,6 @@ fn a_result_construction_writes_both_of_its_arguments() {
     });
 }
 
-#[test]
-fn a_table_operation_selects_its_row_from_its_operands() {
-    let source = br#"fn smaller(x: own i32, y: own i32) -> result: own i32 pure {
-  return imin(x, y);
-}
-
-fn widest(x: own u64, y: own u64) -> result: own u64 pure {
-  return imin(x, y);
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("one spelling must select two rows by operand type: {outcome:?}");
-        };
-    });
-}
-
 /// [OP-2] a written type argument on a deleted-class operation cites OP-1.
 /// This is the judgment that inverted: v0.22 cited FN-2 for its *absence*.
 #[test]
@@ -270,29 +206,6 @@ fn main() -> status: own ExitStatus pure {
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
-}
-
-/// [OP-9] `buffer_new(n, v)` is the one deleted-class row that selects from
-/// its second operand, and `len` then derives from the place it is given.
-///
-/// B7c4b left this case on the retiring surface deliberately: no row of the
-/// container surface selects an element type from an operand. A run's element
-/// is written at `fixed_vector::<T, n>()` or comes from the run the operand
-/// already is, so this property has no twin to be rewritten as. It retires
-/// with `buffer_new` itself.
-#[test]
-fn buffer_new_selects_its_element_from_the_fill_value() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(4_u64, 7_u8);
-  let count = len_of(data);
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("buffer_new must select its element from the fill value: {outcome:?}");
-        };
-    });
 }
 
 /// [STOR-5] the written referent type used to carry the box-content

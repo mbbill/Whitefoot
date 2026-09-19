@@ -1,0 +1,19 @@
+fn main() -> status: own ExitStatus pure {
+  let sum = 0_u32;
+  for (
+    i in 0_u64..4_u64,
+    invariant per_step: sum <= 1_u32 * i
+  ) {
+    let should_break = i == 2_u64;
+    if should_break {
+      set sum = sum +wrap 4294967293_u32;
+      break;
+    }
+    set sum = sum + 1_u32;
+  }
+  let after = sum + 1_u32;
+  if after == 0_u32 {
+    return exit_status(code: 7_u8);
+  }
+  return exit_status(code: 0_u8);
+}

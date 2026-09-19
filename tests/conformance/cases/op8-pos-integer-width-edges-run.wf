@@ -1,0 +1,146 @@
+fn main() -> status: own ExitStatus pure {
+  region {
+    let shifted = ishl.wrap(1_u8, 9_u32);
+    if shifted == 2_u8 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+    let rotated = irotl(1_u8, 9_u32);
+    if rotated == 2_u8 {
+    } else {
+      return exit_status(code: 2_u8);
+    }
+    let population = ipopcount(255_u8);
+    if population == 8_u32 {
+    } else {
+      return exit_status(code: 3_u8);
+    }
+    let leading = iclz(0_u8);
+    if leading == 8_u32 {
+    } else {
+      return exit_status(code: 4_u8);
+    }
+    let trailing = ictz(0_u8);
+    if trailing == 8_u32 {
+    } else {
+      return exit_status(code: 5_u8);
+    }
+    let saturated = 255_u8 *sat 2_u8;
+    if saturated == 255_u8 {
+    } else {
+      return exit_status(code: 6_u8);
+    }
+  }
+  region {
+    let shifted = ishl.wrap(1_u16, 17_u32);
+    if shifted == 2_u16 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+    let rotated = irotl(1_u16, 17_u32);
+    if rotated == 2_u16 {
+    } else {
+      return exit_status(code: 2_u8);
+    }
+    let population = ipopcount(65535_u16);
+    if population == 16_u32 {
+    } else {
+      return exit_status(code: 3_u8);
+    }
+    let leading = iclz(0_u16);
+    if leading == 16_u32 {
+    } else {
+      return exit_status(code: 4_u8);
+    }
+    let trailing = ictz(0_u16);
+    if trailing == 16_u32 {
+    } else {
+      return exit_status(code: 5_u8);
+    }
+    let saturated = 65535_u16 *sat 2_u16;
+    if saturated == 65535_u16 {
+    } else {
+      return exit_status(code: 6_u8);
+    }
+    let swapped = ibswap(1_u16);
+    if swapped == 256_u16 {
+    } else {
+      return exit_status(code: 7_u8);
+    }
+  }
+  region {
+    let shifted = ishl.wrap(1_u32, 33_u32);
+    if shifted == 2_u32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+    let rotated = irotl(1_u32, 33_u32);
+    if rotated == 2_u32 {
+    } else {
+      return exit_status(code: 2_u8);
+    }
+    let population = ipopcount(4294967295_u32);
+    if population == 32_u32 {
+    } else {
+      return exit_status(code: 3_u8);
+    }
+    let leading = iclz(0_u32);
+    if leading == 32_u32 {
+    } else {
+      return exit_status(code: 4_u8);
+    }
+    let trailing = ictz(0_u32);
+    if trailing == 32_u32 {
+    } else {
+      return exit_status(code: 5_u8);
+    }
+    let saturated = 4294967295_u32 *sat 2_u32;
+    if saturated == 4294967295_u32 {
+    } else {
+      return exit_status(code: 6_u8);
+    }
+    let swapped = ibswap(1_u32);
+    if swapped == 16777216_u32 {
+    } else {
+      return exit_status(code: 7_u8);
+    }
+  }
+  region {
+    let shifted = ishl.wrap(1_u64, 65_u32);
+    if shifted == 2_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+    let rotated = irotl(1_u64, 65_u32);
+    if rotated == 2_u64 {
+    } else {
+      return exit_status(code: 2_u8);
+    }
+    let population = ipopcount(18446744073709551615_u64);
+    if population == 64_u32 {
+    } else {
+      return exit_status(code: 3_u8);
+    }
+    let leading = iclz(0_u64);
+    if leading == 64_u32 {
+    } else {
+      return exit_status(code: 4_u8);
+    }
+    let trailing = ictz(0_u64);
+    if trailing == 64_u32 {
+    } else {
+      return exit_status(code: 5_u8);
+    }
+    let saturated = 18446744073709551615_u64 *sat 2_u64;
+    if saturated == 18446744073709551615_u64 {
+    } else {
+      return exit_status(code: 6_u8);
+    }
+    let swapped = ibswap(1_u64);
+    if swapped == 72057594037927936_u64 {
+    } else {
+      return exit_status(code: 7_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,24 @@
+fn change(value: &uniq u64) -> result: own u64 writes(value) {
+  set deref(value) = 9_u64;
+  return 7_u64;
+}
+
+struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn apply(pair: &uniq Pair) -> result: own unit writes(pair.left, pair.right) {
+  let left = 0_u64;
+  let right = 0_u64;
+  region {
+    let marker = 0_u64;
+    set (left, right) = change(value: &uniq deref(pair).left), change(value: &uniq deref(pair).right);
+    set deref(pair).left = 11_u64;
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

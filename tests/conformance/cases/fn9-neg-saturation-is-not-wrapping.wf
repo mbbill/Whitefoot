@@ -1,0 +1,12 @@
+fn clamped_sum(left: own i8, right: own i8) -> result: own i8 pure contract {
+  requires left == 100_i8;
+  requires right == 100_i8;
+  ensures result == -56_i8;
+} {
+  let clamped = left +sat right;
+  return clamped;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

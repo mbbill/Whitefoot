@@ -1,0 +1,25 @@
+enum Inner {
+  Leaf(value: i32);
+}
+
+enum Outer {
+  Wrap(inner: Inner);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let leaf = Leaf(value: 7_i32);
+  let packet = Wrap(inner: move leaf);
+  region {
+    let holder = &packet;
+    match deref(holder) {
+      Wrap(inner: nested) => {
+        match deref(nested) {
+          Leaf(value: payload) => {
+            let saved = deref(payload);
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -2367,27 +2367,6 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn malformed_trailing_argument_does_not_enter_final_selector_metadata() {
-    let source = br#"fn generic<T: Int>(value: own T) -> result: own T pure contract {
-  ensures result == result;
-} {
-  return value;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let bad = generic::<i32, i32>(value: 1_i32);
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("malformed call must remain a source FN-2 issue: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Fn2, "{issue:?}");
-    });
-}
-
-#[test]
 fn invalid_unrelated_function_template_does_not_suppress_selector_admission() {
     let source = br#"fn broken<const n: Bool>() -> result: own unit pure {
   return unit;
@@ -2927,58 +2906,6 @@ fn main() -> status: own ExitStatus pure {
         }
     });
     assert_complete(source);
-}
-
-/// An endpoint outside an enum is an ordinary multi-result datum [CALL-4].
-/// Supplied signatures and checked WF bodies publish exactly the same bounds;
-/// observing the independent status does not need delayed enum fact transfer.
-#[test]
-fn ordinary_directory_result_bounds_cross_both_callable_body_forms() {
-    let source = br#"fn forward(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) reads(source, destination), writes(source, destination) contract {
-  requires start <= end;
-  requires end <= len_of(deref(destination));
-  ensures start <= next;
-  ensures next <= end;
-} {
-  region {
-    let (outcome, cursor, count) = directory_next(source: &uniq deref(source), destination: &uniq deref(destination), start: start, end: end);
-    match move outcome {
-      Ok(value: done) => {
-        return Ok<unit, ListStop>(value: unit), cursor, count;
-      }
-      Err(error: stopped) => {
-        return Err<unit, ListStop>(error: move stopped), start, count;
-      }
-    }
-  }
-}
-
-fn observe(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own unit reads(source, destination), writes(source, destination) contract {
-  requires start <= end;
-  requires end <= len_of(deref(destination));
-} {
-  region {
-    let (outcome, cursor, count) = forward(source: &uniq deref(source), destination: &uniq deref(destination), start: start, end: end);
-    match move outcome {
-      Ok(value: done) => {
-        invariant bounded_low: start <= cursor;
-        invariant bounded_high: cursor <= end;
-      }
-      Err(error: stopped) => {
-        invariant bounded_low: start <= cursor;
-        invariant bounded_high: cursor <= end;
-      }
-    }
-  }
-  return unit;
-}
-"#;
-    super::with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, crate::SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        );
-    });
 }
 
 #[test]

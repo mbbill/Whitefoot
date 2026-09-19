@@ -671,15 +671,8 @@ wf_file_result wf_file_execute_direct(wf_file_request *request) {
         return wf_file_windows_socket_transfer(request);
     case WF_FILE_SOCKET_SHUTDOWN:
         return wf_file_windows_socket_shutdown(request);
-    case WF_FILE_PWRITE:
-    case WF_FILE_STATUS:
     default:
-        /* The shapes the Windows target row does not qualify: a positioned
-         * write (the row's write is `write_once`, which has the stream's own
-         * current position) and a status (the row reports no `stat` record).
-         * Each is refused as an outcome the program sees, because the emitter
-         * can name any submit entry on any target and a refusal is not a defect
-         * of the runtime. */
+        /* An unknown private request kind has no host operation. */
         return wf_file_windows_refused(request, ERROR_NOT_SUPPORTED);
     }
 }

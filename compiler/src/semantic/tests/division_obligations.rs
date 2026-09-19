@@ -292,44 +292,6 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// A signed site with two non-constant operands still requires its complete
-/// typed domain predicate. An unrelated effect declaration cannot replace
-/// that proof; EFF-2 retains precedence when the row already disagrees.
-#[test]
-fn a_signed_two_variable_site_requires_static_domain_proof() {
-    let pure_row = br#"fn ratio(n: own i32, d: own i32) -> result: own i32 pure {
-  let q = n / d;
-  return q;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(pure_row, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("a signed two-variable site must require proof: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Op2);
-    });
-    let extra_effect_row =
-        br#"fn ratio['heap](heap: &uniq Heap<'heap>, n: own i32, d: own i32) -> result: own i32 allocates(heap) {
-  let q = n / d;
-  return q;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(extra_effect_row, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("an unrelated effect cannot replace a static proof: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Eff2);
-    });
-}
-
 /// `/checked` is total: no exact-domain obligation attaches, the row stays a
 /// `Result`-returning operation, and a zero divisor remains a recoverable
 /// value rather than a source rejection.
@@ -405,27 +367,6 @@ fn the_default_checker_rejects_a_constant_zero_divisor() {
                 disposition: StaticObligationDisposition::Refuted,
                 mechanical_fix: DIVISION_FIX,
             },
-        );
-    });
-}
-
-/// The default checker accepts a `pure` body whose exact-division obligation
-/// is statically discharged.
-#[test]
-fn the_default_checker_accepts_a_discharged_exact_division() {
-    let source = br#"fn halve(n: own i32) -> result: own i32 pure {
-  let q = n / 2_i32;
-  return q;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "a discharged exact site has no runtime effect, so `pure` is correct: {outcome:?}",
         );
     });
 }
@@ -640,28 +581,6 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn replacing_the_quotient_does_not_transfer_its_old_division_image() {
-    let source =
-        br#"fn replace_quotient(count: own u64, replacement: own u64) -> result: own u64 pure {
-  let quotient = count / 2_u64;
-  set quotient = replacement;
-  let doubled = quotient * 2_u64;
-  return doubled;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("a new quotient value must not inherit the old division image: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Op2);
-    });
-}
-
-#[test]
 fn replacing_the_dividend_does_not_retarget_the_old_division_image() {
     let source =
         br#"fn replace_dividend(count: own u64, replacement: own u64) -> result: own u64 pure {
@@ -685,88 +604,6 @@ fn main() -> status: own ExitStatus pure {
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         assert_eq!(&source[start..end], b"count - doubled");
-    });
-}
-
-#[test]
-fn a_live_alias_keeps_the_old_quotient_value_image_after_set() {
-    let source = br#"fn alias_before_set(count: own u64, replacement: own u64) -> result: own u64 pure contract {
-  ensures result <= count;
-} {
-  let quotient = count / 2_u64;
-  let saved = quotient;
-  set quotient = replacement;
-  let doubled = saved * 2_u64;
-  return doubled;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "the image belongs to the saved runtime value, not the overwritten name: {outcome:?}"
-        );
-    });
-}
-
-#[test]
-fn independent_branch_images_are_not_merged_without_a_value_transfer_rule() {
-    let source =
-        br#"fn branch_half(count: own u64, choose_left: own Bool) -> result: own u64 pure {
-  let quotient = if choose_left {
-    let left = count / 2_u64;
-    give left;
-  } else {
-    let right = count / 2_u64;
-    give right;
-  }
-  let doubled = quotient * 2_u64;
-  return doubled;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("branch-local value atoms require an explicit delivery transfer: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Op2);
-    });
-}
-
-/// A generic exact division is pure only when its complete typed domain
-/// predicate is a static requirement. The one `/defined` goal covers both
-/// zero divisors and the signed `MIN / -1` case; concrete callers discharge
-/// that same template for either instance.
-#[test]
-fn a_generic_divisor_site_uses_one_static_domain_requirement() {
-    let source = br#"fn ratio<T: Int>(n: own T, d: own T) -> result: own T pure contract {
-  requires n /defined d;
-} {
-  let q = n / d;
-  return q;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let a = 10_i32;
-  let b = 3_i32;
-  let signed = ratio::<i32>(n: a, d: b);
-  let x = 10_u32;
-  let y = 3_u32;
-  let unsigned = ratio::<u32>(n: x, d: y);
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "the generic domain requirement must discharge both concrete instances: {outcome:?}"
-        );
     });
 }
 
@@ -1276,63 +1113,5 @@ fn main() -> status: own ExitStatus pure {
             panic!("unchanged aliases retain captured values: {outcome:?}");
         };
         validate_derivations(&named(&checked.data.functions, "covered").entailment);
-    });
-}
-
-#[test]
-fn changed_runtime_division_operands_cannot_retarget_the_product_bound() {
-    for mutation in [
-        "set count = 0_u64;",
-        "set divisor = 64_u64;",
-        "set quotient = count;",
-        "if choose {\n    set quotient = count;\n  }",
-    ] {
-        let source = format!(
-            r#"fn changed(count: own u64, divisor: own u64, choose: own Bool) -> result: own u64 pure contract {{
-  requires count <= 4096_u64;
-  requires 1_u64 <= divisor;
-  requires divisor <= 64_u64;
-}} {{
-  let quotient = count / divisor;
-  {mutation}
-  let product = quotient * divisor;
-  invariant covered_input: product <= count;
-  return product;
-}}
-
-fn main() -> status: own ExitStatus pure {{
-  return exit_status(code: 0_u8);
-}}
-"#
-        );
-        with_semantics(source.as_bytes(), |outcome| {
-            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-                panic!("a replacement must not inherit captured facts: {mutation}: {outcome:?}");
-            };
-            assert_eq!(issue.rule(), SemanticRule::Inv1, "{mutation}: {issue:?}");
-        });
-    }
-}
-
-#[test]
-fn a_quotient_product_consequence_cannot_discharge_its_own_domain() {
-    let source =
-        br#"fn covered(count: own u64, divisor: own u64) -> result: own u64 pure contract {
-  requires 1_u64 <= divisor;
-} {
-  let quotient = count / divisor;
-  let product = quotient * divisor;
-  return product;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the product's ordinary domain must discharge first: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Op2);
     });
 }

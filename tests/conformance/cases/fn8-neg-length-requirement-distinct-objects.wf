@@ -1,0 +1,62 @@
+fn get_bounded(b: own Slice<u8>, i: own u64) -> value: own u8 reads(b) contract {
+  define spare = len_of(b);
+  requires i < spare;
+} {
+  return b[i];
+}
+
+fn main() -> status: own ExitStatus pure {
+  let wide = fixed_vector::<u8, 8>();
+  region {
+    place_back(vector: &uniq wide, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq wide, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq wide, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq wide, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq wide, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq wide, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq wide, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq wide, value: 1_u8);
+  }
+  let narrow = fixed_vector::<u8, 4>();
+  region {
+    place_back(vector: &uniq narrow, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq narrow, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq narrow, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq narrow, value: 2_u8);
+  }
+  region {
+    let wp = slice_of(&wide);
+    let first = get_bounded(b: wp, i: 7_u64);
+    if first == 1_u8 {
+    } else {
+      return exit_status(code: 201_u8);
+    }
+    let np = slice_of(&narrow);
+    let second = get_bounded(b: np, i: 7_u64);
+    if second == 2_u8 {
+    } else {
+      return exit_status(code: 202_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

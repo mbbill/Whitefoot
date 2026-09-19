@@ -22,11 +22,10 @@
 //! verdict.
 //! Nothing about a case's identity, name, or family selects a path here.
 //!
-//! The corpus-wide run is `#[ignore]`d for cost, not for a blocker: it obtains
-//! the actual compiler verdict for every non-pending case and links and runs
-//! every run case. It is kept out of the default `cargo test` run and
-//! invoked by `make conformance-run` with `--ignored`; root `make check`
-//! includes that focused target. The wiring and the attribute are one unit.
+//! The corpus-wide run is an ordinary test in the shared source-corpus
+//! executable. It obtains every non-pending verdict and executes each run
+//! case. `make conformance-run` selects it for focused use; the full gate
+//! reaches it once through the normal corpus tests, with no ignored opt-in.
 //! The adapter excludes no case, weakens no expectation, and skips nothing the
 //! manifest does not itself mark `pending`; running it prints the complete
 //! tally.
@@ -262,10 +261,6 @@ fn outcome(case: &Case, reached: &Verdict) -> Outcome {
 }
 
 #[test]
-#[ignore = "Cost, not a blocker: this obtains every non-pending case's compiler verdict \
-            and links and runs every run case, so it stays out of default `cargo test`. \
-            `make conformance-run` invokes it with `--ignored`, and root `make check` includes \
-            that target; removing the attribute without dropping `--ignored` would select no test."]
 fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() {
     let cases = corpus::load();
     assert!(

@@ -183,9 +183,7 @@ fn build_huffman_table(lengths: own Slice<u8>, symbol_count: own u64, max_bits: 
     let permitted_single = band(allow_single, one_symbol);
     let permitted_one_bit = band(permitted_single, one_bit);
     let no_symbols = nonzero == 0_u64;
-    let one_declared_symbol = symbol_count == 1_u64;
-    let permitted_empty_tree = band(allow_empty, no_symbols);
-    let permitted_empty = band(permitted_empty_tree, one_declared_symbol);
+    let permitted_empty = band(allow_empty, no_symbols);
     let permitted_incomplete = bor(permitted_one_bit, permitted_empty);
     if permitted_incomplete {
     } else {

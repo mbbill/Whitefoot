@@ -34,7 +34,7 @@ itself select the source API, a new compiler-owned builder, or public raw storag
 
 ## Current Whitefoot large-result boundary
 
-`large-result.wf` is an accepted current-language probe: a producer returns either
+[`large_result.wf`](../../../../tests/programs/containers/large_result.wf) is the shared formal program: a producer returns either
 an error or a record containing 4,096 bytes; a helper immediately matches that
 result and appends the record to a two-slot inline run. The executable checks all
 4,096 successful payload bytes and the empty result on refusal. `make check`

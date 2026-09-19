@@ -28,6 +28,112 @@ fn memory_reclamation_contributes_no_release_row() {
 }
 
 #[test]
+fn proved_empty_run_release_omits_only_the_element_subtree() {
+    assert_complete(
+        br#"fn release<T: linear>['s](run: own Vector<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(run, store) contract {
+  requires len_of(run) <= 0_u64;
+} {
+  dispose run;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    assert_complete(
+        br#"fn release<T: linear, const n: u64>(run: own FixedVector<T, n>) -> result: own unit pure contract {
+  requires len_of(run) <= 0_u64;
+} {
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    assert_rule_kind(
+        br#"fn release<T: linear>['s](run: own Vector<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(run, store) {
+  dispose run;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Prov6,
+        |kind| matches!(kind, SemanticIssueKind::UndischargedEmptyRunRelease { .. }),
+    );
+}
+
+#[test]
+fn an_explicit_release_cannot_discard_a_symbolically_linear_member() {
+    assert_rule_kind(
+        br#"enum Slot<T: linear>['s] {
+  Vacant();
+  Occupied(value: T, owner: Box<'s, u64>);
+}
+
+fn discard<T: linear>['s](slot: own Slot<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(slot, store) {
+  dispose slot;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Prov6,
+        |kind| matches!(kind, SemanticIssueKind::DisposeOfLinearNode { .. }),
+    );
+}
+
+#[test]
+fn a_partial_consume_cannot_abandon_a_symbolically_linear_member() {
+    assert_rule_kind(
+        br#"struct Carrier<T: linear> {
+  must_consume: T;
+  returned: buffer<u8>;
+}
+
+fn take_returned<T: linear>(carrier: own Carrier<T>) -> result: own buffer<u8> pure {
+  return move carrier.returned;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Prov6,
+        |kind| matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. }),
+    );
+}
+
+#[test]
+fn a_partial_consume_cannot_abandon_storage_without_its_provider() {
+    assert_rule_kind(
+        br#"struct Carrier['s] {
+  must_have_provider: Vector<'s, u8>;
+  returned: buffer<u8>;
+}
+
+fn take_returned['s](carrier: own Carrier<'s>) -> result: own buffer<u8> pure {
+  return move carrier.returned;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Prov6,
+        |kind| matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. }),
+    );
+}
+
+#[test]
 fn live_effect_categories_keep_eff1_canonical_order_and_multiplicity() {
     super::assert_parse_rule(
         b"fn probe(file: own ReadFile) -> result: own unit pure, writes(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",

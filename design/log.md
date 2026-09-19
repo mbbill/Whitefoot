@@ -5,6 +5,22 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-16 Consolidate build inputs and verification ownership
+
+Nodes: compiler/build-inputs, compiler/verification
+
+Owner-approved: The owner explicitly accepted both proposed revisions, including the shared local/CI inventory decision, after their explanations and DCR results in the PR #66 conversation.
+
+Summary: Apply both amendments unchanged as new compiler nodes: derive specification identity and grammar tables during construction, check independent document properties without a Rust tool, and give verification explicit ownership, construction reuse, bounded host execution, test admission and separate performance responsibilities. One Makefile inventory supplies local and hosted correctness selection. The [test-system investigation](../research/investigations/test-economy/redesign.md) records the duplication and coverage grounds, rejected alternatives and remaining performance uncertainty. Remove the accepted amendments; this ruling changes neither implementation nor language rules.
+
+## 2026-09-15 Admit proof-directed dynamic target separation
+
+Nodes: language/ownership, language/ownership/linearity
+
+Owner-approved: The owner reviewed the complete proof-directed index-overlap revision after its candidate-fact soundness repair and explicitly approved it; the branch's accompanying language/ownership/linearity revision retains the owner's separate 2026-09-14 PROV-6 approval recorded immediately below.
+
+Summary: Within one LIV-2 target list, corresponding runtime integer indices separate complete target paths only when the fixed ENT-6 family proves one strict order in the state after target formation. The permission does not extend to candidate index pairs, cross-combined paths, loans, whole-place accesses, or later statements; an undischarged pair remains overlapping. This lets generic container algorithms exchange runtime-selected elements without an uninitialized hole, extra run mutation, allocation, or a container-specific kernel swap. The accepted amendment is removed. The separately approved proved-empty-run decision under language/ownership/linearity is unchanged; it is named here because this newest entry covers every live-tree node changed by the branch relative to main.
+
 ## 2026-09-15 Skip provably dominated closure products
 
 Nodes: compiler/closure-row-dominance
@@ -12,6 +28,14 @@ Nodes: compiler/closure-row-dominance
 Owner-approved: The owner explicitly approved the closure-row-dominance revision after its complete proposal and review results were presented in the PR #65 conversation.
 
 Summary: Apply the approved amendment unchanged: skip a transitive candidate product only when conservative numeric and proof-depth row bounds prove that no candidate can improve a fully populated destination row, retaining the original traversal for undecided products and equal-depth ties. The [entering-context cost study](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#entering-context-follow-up) attributes the redundant traversal and compares the selected optimization with unchanged scalar checks. This adds to query-preparation reuse without a cross-flow cache or a different witness-selection algorithm. The accepted amendment is removed; the language rules and authorization to merge into main are unchanged.
+
+## 2026-09-14 Admit proved-empty run release
+
+Nodes: language/ownership/linearity
+
+Owner-approved: The owner reaffirmed the previously approved PROV-6 direction after reviewing the exact empty-run revision and authorized updating the specification, tree, and log.
+
+Summary: A direct FixedVector or Vector proved empty at a release edge omits its element edge for that release while retaining consumption, loan, backing, provider, and effect obligations. This lets a source-defined growable container reclaim its emptied old backing without requiring providers for elements that do not exist. The ordinary release walk remains the only runtime mechanism; an unchecked backing-only operation remains rejected.
 
 ## 2026-09-14 Reuse proof-query preparation within one entering context
 

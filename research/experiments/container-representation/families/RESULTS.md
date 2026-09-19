@@ -1210,13 +1210,25 @@ indirect call, behavior adapter or executable proof check.
 ### Executed contracts
 
 The map retains D5's collision/replacement/tombstone/reuse/growth/refusal and
-cleanup protocol and its native control. Empty-environment scalar keys run that
-entire protocol. Stateful seeded hashing, an owning store-branded key, and
-deliberately non-reflexive equality are additional instances. A rejected insert
-returns its offered key and payload; replacement returns the complete old slot,
-so the generic implementation never silently discards an owning key.
+cleanup protocol and its native control. Its implementation now states the
+contract it actually proves: `K: affine`. Empty-environment scalar keys run that
+entire protocol. Stateful seeded hashing, an owning store-branded affine key,
+and deliberately non-reflexive equality are additional instances. A rejected
+insert returns its offered key and payload; replacement returns the complete
+old slot, so the admitted construction path never silently discards an owning
+key.
 The hostile instance may retain two equal-looking keys and miss both on lookup;
 bounds, ownership and the exact release ledger still hold.
+
+The earlier `K: linear` spelling depended on a compiler defect: explicit
+`dispose previous_held` did not inspect a symbolic type parameter's written
+linearity bound. PROV-6 requires the symbolic instance of `K: linear` to be
+consumed, and the corrected checker rejects that exact statement. The current
+sparse state machine can prove its phase numerically but cannot express that
+`progress.held` is `Vacant` on the replacement edge. Supporting must-consume
+linear keys therefore needs a representation that carries the variant state in
+ownership, or a language design that publishes and consumes such state; an
+impossible branch that merely destroys the key would not be a valid repair.
 
 Each of default, `--par` and `--no-overlap` passes 1,808 matched map executions,
 including 1,504 injected refusals, 2,736 resource releases and 1,808 backing

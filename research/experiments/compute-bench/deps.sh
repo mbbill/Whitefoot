@@ -93,8 +93,8 @@ rm -f "$prefix/parlay-unavailable.txt"
     -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_INSTALL_LIBDIR=lib \
     -DTBB_TEST=OFF -DTBB_EXAMPLES=OFF -DTBBMALLOC_BUILD=OFF \
     -DTBB_DISABLE_HWLOC_AUTOMATIC_SEARCH=ON
-# CHANGE 3: the original built with --parallel 2 on every host.
-"$cmake" --build "$build" --target tbb --parallel "$(getconf _NPROCESSORS_ONLN)"
+# Respect the verification wrapper's build limit, including across worktrees.
+"$cmake" --build "$build" --target tbb --parallel "${JOBS:-$(getconf _NPROCESSORS_ONLN)}"
 "$cmake" --install "$build" --config Release
 "$cmake" -E copy_directory "$parlay/include/parlay" "$prefix/include/parlay"
 diff -qr "$parlay/include/parlay" "$prefix/include/parlay"

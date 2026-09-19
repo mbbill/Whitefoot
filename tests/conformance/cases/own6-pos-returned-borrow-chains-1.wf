@@ -1,0 +1,13 @@
+fn passthru['r0](x: &uniq 'r0 i32) -> result: &uniq 'r0 i32 pure {
+  return &uniq 'r0 deref(x);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let v = 5_i32;
+  region {
+    let h = &uniq v;
+    let r = passthru(x: &uniq deref(h));
+    set deref(r) = 9_i32;
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,13 +1,14 @@
 //! Immutable active-specification grammar and strong-LL(2) production data.
 //!
 //! This crate contains no parser and grants no syntax or semantic authority.
-//! Its committed generated arrays are checked against the exact numbered
-//! specification before the production compiler is built.
+//! Cargo derives its arrays from the active specification's normative EBNF.
 
 use crate::syntax::terminal::TerminalPredicate;
 use crate::{ACTIVE_KERNEL_SPEC_HASH, SpecHash};
 
-mod generated;
+mod generated {
+    include!(concat!(env!("OUT_DIR"), "/grammar_tables.rs"));
+}
 
 pub use generated::Production;
 

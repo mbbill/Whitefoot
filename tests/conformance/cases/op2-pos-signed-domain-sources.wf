@@ -1,0 +1,43 @@
+fn safe_div(n: own i32, d: own i32) -> result: own i32 pure contract {
+  define nonzero = d != 0_i32;
+  define not_neg1 = d != -1_i32;
+  requires band(nonzero, not_neg1);
+} {
+  return n / d;
+}
+
+fn negate(n: own i32) -> result: own i32 pure {
+  if n > -2147483648_i32 {
+    return ineg(n);
+  }
+  return 0_i32;
+}
+
+fn negate_guarded(x: own i16) -> negated: own i16 pure {
+  let is_min = x == -32768_i16;
+  if is_min {
+    return 32767_i16;
+  } else {
+    return ineg(x);
+  }
+}
+
+fn magnitude_guarded(x: own i32) -> abs_value: own i32 pure {
+  let is_min = x == -2147483648_i32;
+  if is_min {
+    return 2147483647_i32;
+  } else {
+    return iabs(x);
+  }
+}
+
+fn shifted(value: own i32, amount: own u32) -> result: own i32 pure {
+  if amount < 32_u32 {
+    return ishr(value, amount);
+  }
+  return 0_i32;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

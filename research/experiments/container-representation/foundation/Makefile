@@ -32,10 +32,10 @@ $(BUILD)/rust-baseline-tests$(EXE): rust-baseline.rs | $(BUILD)
 $(BUILD)/layout$(EXE): layout.c | $(BUILD)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror $< -o $@
 
-$(BUILD)/large-result.ll: large-result.wf $(WHITEFOOTC) | $(BUILD)
+$(BUILD)/large-result.ll: ../../../../tests/programs/containers/large_result.wf $(WHITEFOOTC) | $(BUILD)
 	$(WHITEFOOTC) --emit-llvm -o $@ $<
 
-$(BUILD)/large-result$(EXE): large-result.wf $(WHITEFOOTC) | $(BUILD)
+$(BUILD)/large-result$(EXE): ../../../../tests/programs/containers/large_result.wf $(WHITEFOOTC) | $(BUILD)
 	$(WHITEFOOTC) -o $@ $<
 
 # Keep the producer boundary to inspect aggregate materialization independently

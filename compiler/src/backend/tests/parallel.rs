@@ -1,18 +1,6 @@
-//! Actualization of the permission judgment: what a permitted overlap group
-//! emits, what an unpermitted pair still emits, what links, and what the
-//! program observes.
-//!
-//! The load-bearing property of this whole path is that overlapping changes
-//! nothing observable. A test that only ran the overlapped program would pass
-//! just as well against a runtime that never granted a lane, so the runs below
-//! read the runtime's own grant count and refuse to accept a repeat that never
-//! actually overlapped.
-//!
-//! Actualization is compile-time opt-in, so every case that expects a hand-out
-//! emits through [`emit_with_overlap`], the unfiltered `--par-scalar-leaf-limit off`
-//! form of `whitefootc --par`. Plain [`emit`] is the default compilation, and
-//! `the_default_compilation_hands_nothing_out` is the case that pins what it
-//! leaves out.
+//! Parallel compiler internals: frame/clone/ABI emission, native object
+//! observations and controlled runtime boundaries. Complete tree/spine/window
+//! results live in programs; native construction is explicit in these helpers.
 
 use std::path::Path;
 use std::process::Command;
@@ -25,9 +13,8 @@ use crate::backend::target::{
 
 use super::system::{with_ir, with_parallel_ir};
 use super::{
-    HOST_OPTIMIZATION_ARGUMENTS, append_runtime_units, build_executable, build_linked_executable,
-    compile_and_run, emit, emit_with_overlap, emitted_function, module_requires_parallel_runtime,
-    test_directory,
+    build_executable, build_linked_executable, compile_and_run, emit, emit_with_overlap,
+    emitted_function, module_requires_parallel_runtime, test_directory,
 };
 
 /// A pure recursive fold over a heap tree, the smallest shape that has
@@ -35,133 +22,25 @@ use super::{
 /// sibling constructor pairs inside `pair`, `quad`, and `oct`, and a run of
 /// four sibling calls in `main`. Its whole result is written to standard
 /// output, so a difference anywhere in the tree is a difference in the bytes.
-const OVERLAPPING_FOLD: &[u8] = br#"enum Node {
-  Leaf(w: u64);
-  Branch(left: box<Node>, right: box<Node>, w: u64);
-}
+const OVERLAPPING_FOLD: &[u8] = include_bytes!("../../../../tests/programs/parallel/tree.wf");
 
-fn leaf(w: own u64) -> result: own box<Node> pure {
-  let node = Leaf(w: w);
-  return box_new(move node);
+fn fold_module(parallel: bool) -> String {
+    use std::sync::OnceLock;
+    static PLAIN: OnceLock<String> = OnceLock::new();
+    static PARALLEL: OnceLock<String> = OnceLock::new();
+    let cell = if parallel { &PARALLEL } else { &PLAIN };
+    let module = cell
+        .get_or_init(|| {
+            if parallel {
+                emit_with_overlap(OVERLAPPING_FOLD)
+            } else {
+                emit(OVERLAPPING_FOLD)
+            }
+        })
+        .clone();
+    super::exhaustion::assert_stack_probes(&module);
+    module
 }
-
-fn branch(left: own box<Node>, right: own box<Node>) -> result: own box<Node> pure {
-  let node = Branch(left: move left, right: move right, w: 0_u64);
-  return box_new(move node);
-}
-
-fn pair(a: own u64, b: own u64) -> result: own box<Node> pure {
-  let l = leaf(w: a);
-  let r = leaf(w: b);
-  return branch(left: move l, right: move r);
-}
-
-fn quad(a: own u64, b: own u64, c: own u64, d: own u64) -> result: own box<Node> pure {
-  let l = pair(a: a, b: b);
-  let r = pair(a: c, b: d);
-  return branch(left: move l, right: move r);
-}
-
-fn oct(a: own u64, b: own u64, c: own u64, d: own u64, e: own u64, f: own u64, g: own u64, h: own u64) -> result: own box<Node> pure {
-  let l = quad(a: a, b: b, c: c, d: d);
-  let r = quad(a: e, b: f, c: g, d: h);
-  return branch(left: move l, right: move r);
-}
-
-fn mix(a: own u64, b: own u64) -> result: own u64 pure {
-  let spun = irotl(a, 13_u32);
-  let scattered = imulhi(b, 2654435761_u64);
-  let blended = ixor(spun, b);
-  return ixor(blended, scattered);
-}
-
-fn fold(node: &uniq box<Node>) -> result: own u64 reads(node), writes(node) {
-  match deref(deref(node)) {
-    Leaf(w: leaf_w) => {
-      return deref(leaf_w);
-    }
-    Branch(left: l, right: r, w: slot) => {
-      let a = fold(node: move l);
-      let b = fold(node: move r);
-      let mixed = mix(a: a, b: b);
-      set deref(slot) = mixed;
-      return mixed;
-    }
-  }
-}
-
-fn low_byte(v: own u64) -> result: own u8 pure {
-  let low = iand(v, 255_u64);
-  match cvt::<u64, u8>(low) {
-    Ok(value: byte) => {
-      return byte;
-    }
-    Err(error: problem) => {
-      return 0_u8;
-    }
-  }
-}
-
-fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
-  let cursor = at;
-  let rest = value;
-  loop @octets {
-    let limit = at +wrap 8_u64;
-    let done = cursor >= limit;
-    if done {
-      break @octets;
-    }
-    let spare = len_of(deref(destination));
-    let writable = cursor < spare;
-    if writable {
-      let byte = low_byte(v: rest);
-      set deref(destination)[cursor] = byte;
-    }
-    set rest = irotr(rest, 8_u32);
-    set cursor = cursor +wrap 1_u64;
-  }
-  return at +wrap 8_u64;
-}
-
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  let t0 = oct(a: 1_u64, b: 2_u64, c: 3_u64, d: 4_u64, e: 5_u64, f: 6_u64, g: 7_u64, h: 8_u64);
-  let t1 = oct(a: 9_u64, b: 10_u64, c: 11_u64, d: 12_u64, e: 13_u64, f: 14_u64, g: 15_u64, h: 16_u64);
-  let t2 = oct(a: 17_u64, b: 18_u64, c: 19_u64, d: 20_u64, e: 21_u64, f: 22_u64, g: 23_u64, h: 24_u64);
-  let t3 = oct(a: 25_u64, b: 26_u64, c: 27_u64, d: 28_u64, e: 29_u64, f: 30_u64, g: 31_u64, h: 32_u64);
-  let half0 = branch(left: move t0, right: move t1);
-  let half1 = branch(left: move t2, right: move t3);
-  let root = branch(left: move half0, right: move half1);
-  let report = buffer_new(8_u64, 0_u8);
-  region {
-    let value = fold(node: &uniq root);
-    region {
-      let window = mut_slice_of(&uniq report);
-      region {
-        let filled = spell(destination: &uniq window, at: 0_u64, value: value);
-      }
-    }
-  }
-  region {
-    region {
-      let ordinary_source_1 = slice_of(&report);
-      region {
-        match write_once(factory: &uniq entry_factory, output: &uniq out, source: &ordinary_source_1, start: 0_u64, end: 8_u64) {
-          Ok(value: next) => {
-            return exit_status(code: 0_u8);
-          }
-          Err(error: problem) => {
-            return exit_status(code: 1_u8);
-          }
-        }
-      }
-    }
-  }
-}
-"#;
 
 const LANE_FRAME_LAYOUT_FUNCTIONS: &[u8] =
     br#"fn exact_frame(values: own array<u8, 255>) -> result: own u8 reads(values) {
@@ -460,7 +339,7 @@ fn ordinary_overlap_uses_only_target_proved_lane_frames() {
 /// edge makes the same call this thread would have made anyway.
 #[test]
 fn a_permitted_pair_is_outlined_offered_and_joined() {
-    let module = emit_with_overlap(OVERLAPPING_FOLD);
+    let module = fold_module(true);
 
     // The thunk is the outlined call: it loads the arguments out of the frame,
     // calls the same monomorphized function the inline edge calls, and stores
@@ -841,43 +720,10 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
 
-/// Asking for overlap must not cost recursion depth when no lane is granted.
-///
-/// The frame of a handed-out call used to be a stack slot of the *calling*
-/// function, so every activation of an eligible recursive function carried it
-/// and its argument spills whether or not a lane was ever granted. The
-/// measured price was about four times the stack per frame on a small
-/// activation, and the death was a bare SIGSEGV with no diagnostic — a
-/// recursion that ran without `--par` and did not run with it, at the same
-/// schedule. The frame belongs to the lane now, so a refused hand-out builds
-/// nothing.
-///
-/// The measurement is the frame width itself rather than survival at a chosen
-/// depth, and it was rewritten on 2026-08-23 for that reason.
-///
-/// It used to run both builds under `ulimit -s 1024` at depth 18 600, chosen
-/// to sit between what the old lowering reached under that limit (about
-/// 16 200 frames) and what this one reached (about 21 600). That calibration
-/// stopped meaning anything when the entry moved onto a stack the runtime
-/// owns: `@main` trampolines to `wf__floor_run` regardless of world, so the
-/// shell's limit binds neither build and both complete at depth 1 000 000,
-/// fifty-four times what the case asked for. Against ceilings of 33 554 432
-/// and 22 369 621 levels the margin was over a thousandfold, so the fourfold
-/// frame regression this case exists to catch left it passing — as did every
-/// other outcome.
-///
-/// A frame width is exact and the defect is a frame width, so that is what is
-/// compared: the `--par` build's sequential clone against the plain build's
-/// own function, byte for byte at one level. A per-activation slot for a
-/// hand-out that was never granted shows up here immediately, with no depth to
-/// calibrate and no host limit to depend on.
-///
-/// The original mechanism — a refused hand-out building no frame, which is what
-/// the overlapped world still relies on whenever the pool is on and an acquisition is
-/// refused — is held structurally by `handing_a_call_out_adds_no_stack_slot`,
-/// whose count is taken over the overlapped world alone.
+/// Two machine-code ledgers protect both exact clone cost and the 48-byte
+/// offer-state bound; neither assertion is a deep program execution.
 #[test]
-fn handing_calls_out_keeps_the_sequential_recursion_depth() {
+fn machine_frames_preserve_clone_cost_and_bound_offer_overhead() {
     let source = DEEP_RECURSION.replace("DEPTH", "1000").into_bytes();
     let overlapped_module = emit_with_overlap(&source);
     assert!(
@@ -899,87 +745,14 @@ fn handing_calls_out_keeps_the_sequential_recursion_depth() {
          out is taxing activations that were never granted a lane"
     );
 
+    let budget = super::stack_ledger::reported_frame_bytes(&overlapped, "wf__par_budget_spine");
+    assert!(
+        budget <= clone + 48,
+        "budget frame {budget} exceeds clone {clone} by more than 48 bytes"
+    );
+
     std::fs::remove_dir_all(&plain_directory).expect("remove the test directory");
     std::fs::remove_dir_all(&overlapped_directory).expect("remove the test directory");
-}
-
-/// The world an unconfigured `--par` binary runs in reaches a deep recursion
-/// too.
-///
-/// [`handing_calls_out_keeps_the_sequential_recursion_depth`] holds the clone
-/// a pool-off binary runs; this holds the one a binary with no configuration
-/// at all runs, which is the world the original defect lived in. A
-/// per-activation frame slot cost about four times the stack there and died as
-/// a bare SIGSEGV: a recursion that ran without `--par` and did not run with
-/// it.
-///
-/// Which function one overlapped level is moved with the recursion budget's
-/// default: the levels above the cut run in the component's budget-carrying
-/// variant, so the ledger reports the cycle there, while the writer's own
-/// symbol asks the runtime for a budget once and enters it. Below the cut the
-/// sequential clone runs, which is the other row read here.
-///
-/// What is pinned is a bound and not a parity, because an overlapped
-/// activation is genuinely not free: the acquisition handle, the recursion's own
-/// argument and the value the join reads back are live across the call to
-/// `wf__par_acquire_lane`, and whatever the register allocator cannot keep in
-/// registers across that call is spilled into the frame.
-///
-/// The bound is that overhead in bytes rather than a multiple of the
-/// sequential level, and it was rewritten that way on 2026-08-27 because the
-/// multiple did not survive its second host. The two architectures cost the
-/// same overlapped activation and differ in the sequential one they are
-/// measured against — 48 bytes an overlapped level on both, against 32 a
-/// sequential level on arm64 and 16 on x86-64 — so the same lowering reads as
-/// a ratio of 1.5 on one host and 3 on the other, and the bound of two it used
-/// to carry was a fact about the arm64 register allocator. The measured
-/// overhead is two machine words on arm64 and four on x86-64; the bound is
-/// six, which admits both with room and refuses an activation that has started
-/// carrying storage for the hand-out itself.
-///
-/// The mechanism — the record belongs to the lane, so a refused hand-out
-/// builds nothing — is held exactly, and with no tolerance to calibrate, by
-/// [`handing_a_call_out_adds_no_stack_slot`]. This case is the frame the
-/// optimizer actually emitted, which is the thing a structural count cannot
-/// see.
-///
-/// It used to be a survival probe at depth 60 000 under `ulimit -s 8192`,
-/// re-aimed on 2026-08-23 for the reason its own doc gave: the entry runs on a
-/// stack the runtime owns and a lane runs on one the same size, so that
-/// `ulimit` bounds neither thread, and the depth sat three orders of magnitude
-/// inside a ceiling nothing in the shell could move. The instrument that
-/// catches a moved frame is the frame, and the ledger prints it.
-#[test]
-fn the_shipped_default_keeps_a_deep_recursion() {
-    /// How much more stack one overlapped level may cost than one sequential
-    /// level, in bytes.
-    const WIDEST_ADMITTED_OVERHEAD: u64 = 48;
-
-    let source = DEEP_RECURSION.replace("DEPTH", "1000").into_bytes();
-    let overlapped_module = emit_with_overlap(&source);
-    assert!(
-        module_requires_parallel_runtime(&overlapped_module),
-        "the fixture must hand work out, or this case is vacuous"
-    );
-
-    let directory = test_directory();
-    let lines = super::stack_ledger::ledger_lines(&overlapped_module, &directory);
-    // Under the default recursion budget the recursion above the cut is the
-    // component's budget-carrying variant, so that is the overlapped level the
-    // ledger reports a cycle for; `wf_spine` is the entry that asks the
-    // runtime for a budget once and is no longer part of the cycle at all.
-    let overlapped = super::stack_ledger::reported_frame_bytes(&lines, "wf__par_budget_spine");
-    let sequential = super::stack_ledger::reported_frame_bytes(&lines, "wf__par_seq_spine");
-    assert!(
-        overlapped <= sequential + WIDEST_ADMITTED_OVERHEAD,
-        "one overlapped level costs {overlapped} bytes against the sequential \
-         clone's {sequential} in the same binary, which is more than \
-         {WIDEST_ADMITTED_OVERHEAD} bytes of hand-out state, so the world a \
-         --par binary runs in unconfigured is taxing activations far beyond \
-         what lane acquisition keeps live"
-    );
-
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
 /// The lane's frame is the lane's: asking for overlap adds no stack slot to
@@ -1002,8 +775,8 @@ fn the_shipped_default_keeps_a_deep_recursion() {
 /// lowering byte for byte, so its slots are the sequential build's slots.
 #[test]
 fn handing_a_call_out_adds_no_stack_slot() {
-    let sequential = emit(OVERLAPPING_FOLD);
-    let overlapped = emit_with_overlap(OVERLAPPING_FOLD);
+    let sequential = fold_module(false);
+    let overlapped = fold_module(true);
     assert!(
         module_requires_parallel_runtime(&overlapped),
         "the fixture must hand work out, or this test is vacuous"
@@ -1039,8 +812,8 @@ fn handing_a_call_out_adds_no_stack_slot() {
 /// worlds, and after it there must be nothing left.
 #[test]
 fn the_sequential_clone_is_the_sequential_lowering() {
-    let sequential = emit(OVERLAPPING_FOLD);
-    let overlapped = emit_with_overlap(OVERLAPPING_FOLD);
+    let sequential = fold_module(false);
+    let overlapped = fold_module(true);
 
     // The closure, spelled out: every function from which a handed-out call is
     // reachable. `pair`, `quad`, and `oct` hand out their sibling
@@ -1090,7 +863,7 @@ fn the_sequential_clone_is_the_sequential_lowering() {
 /// the cases that pin them, cannot be disturbed by it.
 #[test]
 fn the_bootstrap_selects_one_world_once() {
-    let overlapped = emit_with_overlap(OVERLAPPING_FOLD);
+    let overlapped = fold_module(true);
 
     // Asked once, in the one place that runs once and is inside no loop and no
     // recursion.
@@ -1111,8 +884,8 @@ fn the_bootstrap_selects_one_world_once() {
             && bootstrap.contains("call void @\"wf__par_seq_main\"(ptr %status,"),
         "the bootstrap must branch between the two lowerings of the entry:\n{bootstrap}"
     );
-    // With no runtime linked no pool can start, so the module's own answer is
-    // the honest one and such a program runs the sequential lowering of itself.
+    // These POSIX fallback definitions are an emitted-module property. The
+    // shipped driver still links the complete ordinary runtime for every build.
     assert!(
         overlapped.contains("define weak i32 @wf__par_pool_active() #0 {\nentry:\n  ret i32 0\n}"),
         "the module must carry its own answer:\n{overlapped}"
@@ -1176,7 +949,7 @@ fn the_bootstrap_selects_one_world_once() {
 /// platform primitives resolve them. Runtime resource exhaustion may still
 /// refuse an offer and execute its ordinary-call fallback.
 #[test]
-fn windows_parallel_modules_fail_closed_at_the_link_boundary() {
+fn windows_parallel_emission_requires_external_runtime_symbols() {
     let windows = TargetLayout::for_triple("x86_64-pc-windows-msvc")
         .expect("the supported Windows target must have a system row");
     let module = with_parallel_ir(OVERLAPPING_FOLD, |program| {
@@ -1213,149 +986,6 @@ fn windows_parallel_modules_fail_closed_at_the_link_boundary() {
         module_requires_parallel_runtime(&module),
         "the Windows declarations must remain a driver-visible link obligation"
     );
-}
-
-/// A recursion far deeper than the runtime can hold offers for, whose whole
-/// result is published as bytes so a wrong schedule is a wrong output.
-///
-/// One eligible pair per activation, and the handed-out member is the deep
-/// side, so every level of the descent offers.
-const DEEP_OVERLAPPED_SPINE: &str = r#"fn leafval(v: own f64) -> result: own f64 pure {
-  return fmul.strict(v, 0.5_f64);
-}
-
-fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
-  let done = depth == 0_u64;
-  if done {
-    return v;
-  }
-  let next = depth -wrap 1_u64;
-  let scaled = fmul.strict(v, 1.0009765625_f64);
-  let a = spine(depth: next, v: scaled);
-  let b = leafval(v: v);
-  return fadd.strict(a, b);
-}
-
-fn low_byte(v: own u64) -> result: own u8 pure {
-  let nibble = iand(v, 255_u64);
-  match cvt::<u64, u8>(nibble) {
-    Ok(value: byte) => {
-      return byte;
-    }
-    Err(error: wide) => {
-      return 0_u8;
-    }
-  }
-}
-
-fn spell(destination: &uniq MutSlice<u8>, value: own u64) -> result: own u64 reads(destination), writes(destination) {
-  let cursor = 0_u64;
-  let rest = value;
-  loop @octets {
-    let done = cursor >= 8_u64;
-    if done {
-      break @octets;
-    }
-    let spare = len_of(deref(destination));
-    let writable = cursor < spare;
-    if writable {
-      let byte = low_byte(v: rest);
-      set deref(destination)[cursor] = byte;
-    }
-    set rest = irotr(rest, 8_u32);
-    set cursor = cursor +wrap 1_u64;
-  }
-  return cursor;
-}
-
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
-  let bits = reinterpret::<f64, u64>(total);
-  let report = buffer_new(8_u64, 0_u8);
-  region {
-    let window = mut_slice_of(&uniq report);
-    region {
-      let filled = spell(destination: &uniq window, value: bits);
-    }
-  }
-  region {
-    region {
-      let ordinary_source_3 = slice_of(&report);
-      region {
-        match write_once(factory: &uniq entry_factory, output: &uniq out, source: &ordinary_source_3, start: 0_u64, end: 8_u64) {
-          Ok(value: next) => {
-            return exit_status(code: 0_u8);
-          }
-          Err(error: problem) => {
-            return exit_status(code: 1_u8);
-          }
-        }
-      }
-    }
-  }
-}
-"#;
-
-/// A recursion deeper than the runtime holds offers for still computes the
-/// sequential answer, at every worker count.
-///
-/// The runtime can only hold a bounded number of outstanding offers per
-/// thread, so a descent this deep runs out partway down and every offer below
-/// that point is refused — which puts three different edges in one run: the
-/// reclaimed offer near the root, the refused offer below the bound, and
-/// whatever a thief took. Nothing else here exercises the exhausted bound,
-/// and a runtime that mishandled it would either lose a result or reuse a
-/// frame that is still live, both of which move the published bytes.
-#[test]
-fn a_recursion_deeper_than_the_offer_bound_still_publishes_the_sequential_bytes() {
-    const DEPTH: u32 = 4_000;
-
-    let source = DEEP_OVERLAPPED_SPINE
-        .replace("DEPTH", &DEPTH.to_string())
-        .into_bytes();
-    let module = emit_with_overlap(&source);
-    assert!(
-        module_requires_parallel_runtime(&module),
-        "the fixture must hand work out, or this case is vacuous"
-    );
-    let directory = test_directory();
-    let executable = build_executable(&module, &directory);
-
-    let mut runs = Vec::new();
-    for workers in ["1", "2", "4", "8"] {
-        for _ in 0..3 {
-            let output = Command::new(&executable)
-                .env("WF_WORKERS", workers)
-                .output()
-                .expect("run the deep overlapped spine");
-            assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
-            assert_eq!(
-                output.stdout.len(),
-                8,
-                "the spine must report eight bytes at WF_WORKERS={workers}"
-            );
-            runs.push((format!("WF_WORKERS={workers}"), output.stdout));
-        }
-    }
-    // The reference is the same source compiled with no hand-outs at all, so
-    // the comparison is against the sequential answer rather than against the
-    // overlapped build agreeing with itself.
-    let plain = test_directory();
-    let sequential = build_executable(&emit(&source), &plain);
-    let reference = Command::new(&sequential)
-        .output()
-        .expect("run the sequential spine");
-    assert_eq!(reference.status.code(), Some(0));
-    runs.push(("no hand-outs".to_owned(), reference.stdout));
-
-    identical(&runs).expect("a deep overlapped recursion must publish the sequential bytes");
-
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-    std::fs::remove_dir_all(&plain).expect("remove the test directory");
 }
 
 /// A pair the judgment denies emits exactly the sequential calls, with no
@@ -1431,79 +1061,6 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// A module that hands nothing out is a complete program with no runtime, and
-/// says so: the link path's own predicate is false, so no link anywhere adds
-/// the runtime to it.
-#[test]
-fn a_module_that_hands_nothing_out_needs_no_runtime() {
-    let module = emit_with_overlap(DEPENDENT_SIBLINGS);
-    assert!(!module_requires_parallel_runtime(&module));
-    let output = compile_and_run(&module);
-    assert_eq!(output.status.code(), Some(0));
-
-    // The overlapping module is the other half of the same statement: it does
-    // hand work out, so linking the runtime is what gives it lanes.
-    assert!(module_requires_parallel_runtime(&emit_with_overlap(
-        OVERLAPPING_FOLD
-    )));
-}
-
-/// The module carries a weak sequential answer to both runtime entry points,
-/// and the runtime's own definitions replace them at link.
-///
-/// Without this the whole path could be silently sequential forever: every
-/// other test here passes just as well when the weak refusal wins, because
-/// refusing every lane is a correct execution.
-///
-/// The linked library and scheduler share their native runtime. With
-/// WF_WORKERS=1 the build adapter selects the ordinary sequential clone.
-/// The grant observer establishes that this edge publishes no work.
-#[test]
-fn the_runtime_replaces_the_modules_weak_refusal() {
-    let module = emit_with_overlap(OVERLAPPING_FOLD);
-    let directory = test_directory();
-    let counted = CountedProgram::link(&module, &directory);
-
-    let (refused, sequential) = counted.run(Some("1"));
-    assert_eq!(sequential.status.code(), Some(0));
-    assert_eq!(
-        sequential.stdout.len(),
-        8,
-        "the fold must report eight bytes"
-    );
-    assert_eq!(
-        refused, 0,
-        "the sequential world hands nothing out, so nothing can be granted"
-    );
-
-    // Asked for a pool: the strong definitions win. The count is the
-    // runtime's own, reported at process exit by the observer unit, so a
-    // link that kept the weak refusal reports zero here and fails.
-    let (granted, parallel) = counted.run(Some("4"));
-    assert_eq!(parallel.status.code(), Some(0));
-    assert_eq!(
-        parallel.stdout, sequential.stdout,
-        "granting lanes must not move one byte of the result"
-    );
-    if a_steal_is_observable(4) {
-        let observed_grants = if granted == 0 {
-            counted.grants_over_runs(Some("4"), GRANT_OBSERVATION_RUNS)
-        } else {
-            granted
-        };
-        assert!(
-            observed_grants > 0,
-            "the runtime granted no lane, so nothing was overlapped"
-        );
-    }
-
-    // The explicit opt-out is the reference run above: one lane of execution
-    // is the calling thread alone, so no hand-out is made and nothing is
-    // granted.
-
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
 /// The shipped default is a pool: a `--par` binary run with `WF_WORKERS`
 /// absent grants lanes, and only an explicit opt-out refuses them.
 ///
@@ -1528,34 +1085,33 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
 /// the output channel. So it is checked here as that, beside the two opt-outs
 /// it is no longer one of.
 #[test]
-fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
-    let module = emit_with_overlap(OVERLAPPING_FOLD);
+fn linked_runtime_observes_startup_opt_out_and_a_real_worker() {
+    let module = fold_module(true);
     let directory = test_directory();
 
-    // "The pool started" is read from the core's own count of the pool
-    // threads it started, which the observer prints on the `compute:` line
-    // after the grant line. It is not read from the grant count: a grant is a
-    // steal, and a steal is a scheduling event that needs a pool thread to be
-    // given a CPU while the offering lane still holds the work. The
-    // three-core macOS gate runner, saturated by the sibling cases of this
-    // suite, ran this program to its end before either of its two started
-    // workers was scheduled at all (`workers_started=2 parks=0 steals=0
-    // inline_runs=63`), and that is the default doing exactly what it should
-    // with the CPU it was given, not the path being off. That the default
-    // build CAN be granted lanes is the WF_WORKERS=4 case above, which makes
-    // that existential observation over [`GRANT_OBSERVATION_RUNS`] runs; this
-    // case is about which world an absent setting selects, and the started
-    // count states that directly. The opt-out runs below stay exact.
+    // Startup accounting distinguishes the default worker world from the
+    // pool-off world. The separate controlled task assertion checks entry.
     let counted = CountedProgram::link(&module, &directory);
     let (_, published) = counted.run(None);
     assert_eq!(published.status.code(), Some(0));
     let started = workers_started(&published);
-    assert!(
-        started >= 1,
-        "a --par binary with no worker setting must start the pool, or the \
-         path is off for every real run; the run reported: {}",
-        String::from_utf8_lossy(&published.stderr).trim()
+    let report = String::from_utf8_lossy(&published.stderr);
+    let requested = report
+        .lines()
+        .find_map(|line| line.strip_prefix("compute: threads="))
+        .and_then(|tail| tail.split_whitespace().next())
+        .and_then(|count| count.parse::<u64>().ok())
+        .expect("configured width");
+    assert_eq!(
+        started > 0,
+        requested > 1,
+        "the default must start a pool exactly when its configured width enables one: {report}"
     );
+
+    let (granted, parallel) = counted.run(Some("4"));
+    assert_eq!(parallel.status.code(), Some(0));
+    assert!(granted > 0, "the controlled task must enter a real worker");
+    assert_eq!(parallel.stdout, published.stdout);
 
     let mut runs = vec![("WF_WORKERS absent".to_owned(), published.stdout)];
     for setting in ["0", "1"] {
@@ -1604,70 +1160,6 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
-/// The repeat: the same program, at every worker count, over and over, is the
-/// same bytes. Lanes are granted at every count above one, so each repeat is a
-/// real overlapped execution rather than the refusal path run again.
-#[test]
-fn an_overlapped_program_reports_one_byte_sequence_at_every_worker_count() {
-    let module = emit_with_overlap(OVERLAPPING_FOLD);
-    let directory = test_directory();
-    let executable = build_executable(&module, &directory);
-    let mut runs = Vec::new();
-    for workers in ["1", "2", "4", "8"] {
-        for _ in 0..5 {
-            let output = Command::new(&executable)
-                .env("WF_WORKERS", workers)
-                .output()
-                .expect("run the overlapped program");
-            assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
-            runs.push((format!("WF_WORKERS={workers}"), output.stdout));
-        }
-    }
-    // The sequential reference is the default compilation of the same source
-    // — no overlap group actualized at all, so no hand-out and no thunk — and
-    // the repeat is therefore compared against today's execution rather than
-    // only against itself. It used to be the same overlapped module linked
-    // with no parallel runtime, which design §7's union predicate retires: a
-    // module that submits an operation carries the scheduler core in every
-    // link the compiler produces, and the core is what supplies the lanes.
-    let alone = build_executable(&emit(OVERLAPPING_FOLD), &directory);
-    let reference = Command::new(&alone)
-        .output()
-        .expect("run the sequential compilation");
-    assert_eq!(reference.status.code(), Some(0));
-    runs.push(("no overlap lowering".to_owned(), reference.stdout));
-
-    identical(&runs).expect("overlapping must not move one byte of the result");
-
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-#[test]
-fn a_budget_family_preserves_exclusive_tree_borrows_and_owned_constructors() {
-    let reference = compile_and_run(&emit(OVERLAPPING_FOLD));
-    assert!(reference.status.success());
-    let module = super::emit_lowered(
-        OVERLAPPING_FOLD,
-        crate::OverlapLowering::OnWithRecursionBudget {
-            budget: crate::RecursionBudget::Pinned(std::num::NonZeroU8::new(2).unwrap()),
-            maximum_scalar_leaf_operations: None,
-            sequential_refusal: false,
-        },
-    );
-    assert!(module.contains("@wf__par_budget_fold("));
-    let directory = test_directory();
-    let executable = build_executable(&module, &directory);
-    for workers in ["1", "4"] {
-        let output = Command::new(&executable)
-            .env("WF_WORKERS", workers)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{output:?}");
-        assert_eq!(output.stdout, reference.stdout);
-    }
-    std::fs::remove_dir_all(directory).unwrap();
-}
-
 /// Overlap lowering is compile-time opt-in: the default compilation of a
 /// program full of eligible sites names no part of the runtime.
 ///
@@ -1681,7 +1173,7 @@ fn a_budget_family_preserves_exclusive_tree_borrows_and_owned_constructors() {
 /// `WF_WORKERS` unset.
 #[test]
 fn the_default_compilation_hands_nothing_out() {
-    let default = emit(OVERLAPPING_FOLD);
+    let default = fold_module(false);
     assert!(
         !default.contains("wf__par_"),
         "the default compilation must name no runtime symbol:\n{default}"
@@ -1697,61 +1189,13 @@ fn the_default_compilation_hands_nothing_out() {
 
     // The same source asked for lanes: the sites were there all along, so the
     // assertions above are about the option and not about the program.
-    let requested = emit_with_overlap(OVERLAPPING_FOLD);
+    let requested = fold_module(true);
     assert!(
         requested.contains("call void @wf__par_publish(ptr ")
             && requested.contains(", ptr @wf__par_thunk_"),
         "the fixture must hand work out when asked, or this test is vacuous"
     );
     assert!(module_requires_parallel_runtime(&requested));
-}
-
-/// The differential: the same source lowered *without* any overlap group
-/// produces the same bytes as the overlapped lowering, at every worker count.
-///
-/// This is the comparison the rest of this module cannot make. Every other
-/// test here links one emitted module two ways, so a defect introduced by the
-/// outlining itself — a moved read, a hoisted operand, a join in the wrong
-/// place — is present in the reference too and compares equal. The reference
-/// here is the default compilation of the same source, whose calls were never
-/// handed out, which is the only way an overlap's "changes nothing observable"
-/// guarantee can be checked against something other than itself.
-#[test]
-fn the_overlapped_lowering_agrees_with_the_lowering_that_hands_nothing_out() {
-    let sequential_module = emit(OVERLAPPING_FOLD);
-    assert!(
-        !module_requires_parallel_runtime(&sequential_module),
-        "the reference module must contain no hand-out at all"
-    );
-    assert!(
-        module_requires_parallel_runtime(&emit_with_overlap(OVERLAPPING_FOLD)),
-        "the overlapped module must hand work out, or the comparison is vacuous"
-    );
-
-    let directory = test_directory();
-    let reference = Command::new(build_executable(&sequential_module, &directory))
-        .output()
-        .expect("run the module that hands nothing out");
-    assert_eq!(reference.status.code(), Some(0));
-    assert_eq!(
-        reference.stdout.len(),
-        8,
-        "the fold must report eight bytes"
-    );
-
-    let overlapped = build_executable(&emit_with_overlap(OVERLAPPING_FOLD), &directory);
-    let mut runs = vec![("no overlap lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "2", "4", "8"] {
-        let output = Command::new(&overlapped)
-            .env("WF_WORKERS", workers)
-            .output()
-            .expect("run the overlapped program");
-        assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
-        runs.push((format!("WF_WORKERS={workers}"), output.stdout));
-    }
-    identical(&runs).expect("outlining a call must not move one byte of the result");
-
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
 /// The negative control for the repeat above: its comparison reports a
@@ -1773,72 +1217,6 @@ fn the_repeat_comparison_reports_an_injected_difference() {
     }
 }
 
-/// The negative control the repeat actually needs: a lowering with its joins
-/// removed is caught.
-///
-/// The comparison control above proves the byte comparison reports a
-/// difference it is handed. This one proves the *program* comparison reports a
-/// real lowering defect: the branch's own emitted module, with both join calls
-/// struck out, linked against the real runtime. A missed join lets the calling
-/// thread read a frame slot the worker has not written and lets the frame's
-/// activation return underneath the worker, so a run either publishes
-/// different bytes or dies.
-///
-/// Detection is per-run and not certain — a granted lane sometimes finishes
-/// before the read anyway — so the control runs the injected build up to twelve
-/// times and requires that at least one run disagree with the reference. The
-/// measured per-run detection rate is about four in five, which puts a false
-/// green here below one in a hundred million.
-///
-/// The requirement is existential, so the loop stops at the first disagreement
-/// and the twelve are the bound the *undetected* direction pays: a lowering
-/// whose missing joins this comparison cannot see makes all twelve runs and
-/// fails, exactly as before. What that bound removes is eleven runs of a
-/// program that is expected to die — measured in batch 0093 at 30 seconds a
-/// run on the four-core Linux runner, where a run that dies under a core-dump
-/// handler is three orders of magnitude dearer than the same run here.
-#[test]
-fn the_repeat_reports_a_lowering_whose_joins_were_removed() {
-    let module = emit_with_overlap(OVERLAPPING_FOLD);
-    let directory = test_directory();
-
-    let reference = Command::new(build_executable(&module, &directory))
-        .env("WF_WORKERS", "1")
-        .output()
-        .expect("run the intact program");
-    assert_eq!(reference.status.code(), Some(0));
-    assert_eq!(reference.stdout.len(), 8);
-
-    let joinless = module.replace(
-        "  call void @wf__par_join(ptr ",
-        "  call void @wf__par_join_removed(ptr ",
-    );
-    assert_ne!(joinless, module, "the injection must change the module");
-    let joinless = format!(
-        "{joinless}\ndefine internal void @wf__par_join_removed(ptr %handle) {{\nentry:\n  ret void\n}}\n"
-    );
-    let broken = build_executable(&joinless, &directory);
-
-    let mut disagreements = 0;
-    for _ in 0..12 {
-        let output = Command::new(&broken)
-            .env("WF_WORKERS", "4")
-            .output()
-            .expect("run the join-less program");
-        if output.status.code() != Some(0) || output.stdout != reference.stdout {
-            disagreements += 1;
-            break;
-        }
-    }
-    assert!(
-        disagreements > 0,
-        "removing every join changed nothing observable in twelve runs, \
-         so this comparison cannot see a missed join"
-    );
-
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
 /// Every run produced the same bytes, or the first run that did not.
 pub(super) fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
     let Some((first_name, first)) = runs.first() else {
@@ -1854,49 +1232,11 @@ pub(super) fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether this host can tell "the runtime granted no lane" apart from "no
-/// worker was scheduled inside the window".
-///
-/// A steal is only observable if a worker reaches the offer before the
-/// offering thread has already finished the work itself, which needs a core
-/// that is not already carrying a lane. Measured in batch 0090 on GitHub's
-/// runners: the four-lane observations reach zero over their whole sample on
-/// the three-core macOS runner and are non-zero on every four-core host run,
-/// so a zero there is a fact about the host rather than about the lowering.
-/// Where the host has the cores, the observation is enforced exactly as it
-/// always was; where it does not, the case says so on standard error rather
-/// than reporting a lowering regression it cannot see.
-pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
-    let cores = std::thread::available_parallelism().map_or(0, std::num::NonZero::get);
-    if cores < lanes {
-        eprintln!(
-            "host-limited: {cores} schedulable cores cannot show a steal across {lanes} lanes, \
-             so the grant observation is not made on this host"
-        );
-        return false;
-    }
-    true
-}
+/// Select a real worker execution without changing the runtime's code. Only
+/// call sites are wrapped; declarations and the actual queue/join stay intact.
+pub(super) use crate::native_test_support::observe_worker_schedule;
 
-/// The upper bound on the runs an existential grant observation makes before
-/// it reports that the runtime granted nothing.
-///
-/// A steal is a scheduling event, so one run samples the host's schedule
-/// rather than the lowering: the offering thread can finish the work itself
-/// before any pool thread reaches the offer, and on a busy machine it often
-/// does. Measured in batch 0090 on the three-core `macos-14` runner, where the
-/// default-pool observation totalled zero over five runs in one gate run and
-/// was granted on the first run of the next — five runs were sampling that
-/// host's luck. Thirty-two runs of a fixture that finishes in milliseconds
-/// cost one link and a fraction of a second, and a runtime that grants nothing
-/// still totals zero over all of them.
-///
-/// [`CountedProgram::grants_over_runs`] stops at the first granted lane, so
-/// this is what the *negative* direction pays and not what a healthy host
-/// pays: the property these runs support is existential — some run was granted a
-/// lane — and one grant settles it. A runtime that grants nothing still makes
-/// every one of the thirty-two runs and still totals zero.
-pub(super) const GRANT_OBSERVATION_RUNS: usize = 32;
+pub(super) const WORKER_SCHEDULE: &str = include_str!("worker_schedule.c");
 
 /// The observer linked beside a counted program: one destructor that reports
 /// the runtime's own grant count on standard error at process exit.
@@ -1912,13 +1252,9 @@ pub(super) const GRANT_OBSERVER: &str = include_str!("../sched/grant_observer.c"
 /// observer, so a case that wants several runs of one module pays for the link
 /// once.
 ///
-/// Linking is the expensive half — clang compiles the whole runtime, the
-/// exhaustion floor and the observer beside the emitted module, and a run of
-/// these fixtures is milliseconds. The cases below ask one program several
-/// questions: what it grants at four lanes, what it grants with the variable
-/// absent, and that each named opt-out grants nothing. Through the
-/// link-and-run helper this replaces, each of those questions linked the same
-/// executable again — five links of one module in one case.
+/// The immutable runtime objects are shared. Each distinct emitted module and
+/// observer is linked once and executed under the selected fresh-process
+/// configurations; no previous output or runtime state is reused.
 ///
 /// The observer reads `wf__par_grants`, which no Whitefoot construct can name;
 /// it exists exactly so a pool that never grants a lane cannot pass for one
@@ -1932,7 +1268,11 @@ impl CountedProgram {
     /// done with the fixture.
     pub(super) fn link(module: &str, directory: &Path) -> Self {
         Self {
-            executable: link_counting_grants(module, directory, GRANT_OBSERVER),
+            executable: link_counting_grants(
+                &observe_worker_schedule(module),
+                directory,
+                &format!("{WORKER_SCHEDULE}\n{GRANT_OBSERVER}"),
+            ),
         }
     }
 
@@ -1944,88 +1284,18 @@ impl CountedProgram {
     pub(super) fn run(&self, workers: Option<&str>) -> (u64, std::process::Output) {
         counted_run(&self.executable, workers)
     }
-
-    /// What the runtime granted over at most `runs` runs, stopping at the
-    /// first run that was granted a lane.
-    ///
-    /// A steal is a race, so one run's count samples the schedule rather than
-    /// stating a property of the lowering. A fixture whose whole range is
-    /// worth only a few dozen offers can lose nearly all of them to the
-    /// offering thread on a saturated machine — measured down to three grants
-    /// at `WF_WORKERS=4` — which would fail a per-run `granted > 0` for a
-    /// reason that has nothing to do with the code under test. A total keeps
-    /// exactly what those assertions are for: a runtime that grants nothing
-    /// totals zero and still fails.
-    ///
-    /// Every caller asserts `> 0`, which is an existential observation: the first
-    /// grant is the whole observation, and the runs after it re-observe
-    /// something already seen. Stopping there changes neither direction of the
-    /// result — the total is positive exactly when some run of the sample was
-    /// granted a lane, and a runtime that grants nothing still makes all
-    /// `runs` runs and still returns zero.
-    pub(super) fn grants_over_runs(&self, workers: Option<&str>, runs: usize) -> u64 {
-        let mut total = 0;
-        for run in 0..runs {
-            let (granted, output) = self.run(workers);
-            assert_eq!(
-                output.status.code(),
-                Some(0),
-                "run {run} of the counted program must succeed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            total += granted;
-            if total > 0 {
-                break;
-            }
-        }
-        total
-    }
 }
 
-/// Links one module against the runtime and the observer, and returns the
-/// executable. Linking is the expensive half, so a case that wants several runs
-/// of one module pays for it once.
+/// Link the fresh observer/module with the ordinary immutable runtime objects.
 pub(super) fn link_counting_grants(
     module: &str,
     directory: &Path,
     observation: &str,
 ) -> std::path::PathBuf {
-    let assembly = directory.join("counted.ll");
-    let floor = directory.join("counted_floor.c");
-    let observer = directory.join("observer.c");
-    let executable = directory.join("counted");
-    std::fs::write(&assembly, module).expect("write the module");
-    // The floor protects the entry and each ordinary worker stack. This
-    // harness links the same runtime sources as a shipped program.
-    std::fs::write(&floor, super::FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
-    std::fs::write(&observer, observation).expect("write the observer");
-    let mut command = Command::new("/usr/bin/clang");
-    command
-        .arg("-std=c11")
-        .arg("-pthread")
-        .arg("-x")
-        .arg("ir")
-        .arg(&assembly)
-        .arg("-x")
-        .arg("c")
-        .arg(&floor)
-        .arg(&observer);
-    let _runtime_units = append_runtime_units(&mut command, module, directory);
-    let linked = command
-        .args(HOST_OPTIMIZATION_ARGUMENTS)
-        .arg("-o")
-        .arg(&executable)
-        .output()
-        .expect("invoke host clang");
-    assert!(
-        linked.status.success(),
-        "the runtime and its observer must link:\n{}",
-        String::from_utf8_lossy(&linked.stderr)
-    );
-    for path in [assembly, observer] {
-        std::fs::remove_file(path).expect("remove a counted-run artifact");
-    }
-    executable
+    let built = build_linked_executable(module, Some(observation), &[], directory);
+    let counted = directory.join("counted");
+    std::fs::rename(built, &counted).expect("retain the counted executable");
+    counted
 }
 
 /// One run of a linked module, with the grant count the observer reported.
@@ -2132,79 +1402,16 @@ pub(super) fn function_body<'module>(module: &'module str, symbol: &str) -> &'mo
     &module[start..end]
 }
 
-/// The fixture above with one pure builtin written *between* the two recursive
-/// calls, which is the shape the adjacency window admits.
-///
-/// It is produced by editing the one arm rather than by copying the whole
-/// program, so the two sources differ in exactly the statement under test and
-/// nothing else can drift between them. The interposed statement reads the
-/// node's own `w` slot — a place neither child call reaches, since each reaches
-/// only its own `&uniq` payload binder — and defines a binding neither call
-/// reads, so the window is permitted.
-fn windowed_fold() -> Vec<u8> {
-    let source = std::str::from_utf8(OVERLAPPING_FOLD).expect("the fixture is UTF-8");
-    let original = "      let a = fold(node: move l);\n      let b = fold(node: move r);\n      let mixed = mix(a: a, b: b);\n";
-    let windowed = "      let a = fold(node: move l);\n      let seed = irotl(deref(slot), 3_u32);\n      let b = fold(node: move r);\n      let blended = mix(a: a, b: b);\n      let mixed = ixor(blended, seed);\n";
-    assert!(
-        source.contains(original),
-        "the windowed fixture must be an edit of the adjacent one"
-    );
-    source.replace(original, windowed).into_bytes()
-}
-
-/// The window's differential: a fold whose two recursive calls are separated by
-/// a builtin still hands work out, and still produces the bytes its own
-/// sequential lowering produces at every worker count.
-///
-/// This is the case the checker's widening made reachable, and it is the one
-/// the widening could break. The checker now hands the backend a group whose
-/// members are not adjacent statements, so the fork, the interposed
-/// instructions, and the join share one straight-line edge for the first time.
-/// The reference is the default compilation of the same source — a lowering
-/// with no hand-out at all — so a moved read or a misplaced join shows up as a
-/// byte difference rather than being present identically on both sides.
+/// External results live in programs; this case observes the interposed
+/// statement's outlined call/join boundary without a native construction.
 #[test]
-fn a_fold_whose_calls_are_separated_by_a_builtin_hands_out_and_agrees() {
-    let source = windowed_fold();
-    let overlapped_module = emit_with_overlap(&source);
-    assert!(
-        overlapped_module.contains("call void @wf__par_publish(ptr ")
-            && overlapped_module.contains(", ptr @wf__par_thunk_"),
-        "the windowed fold must still hand work out, or this test is vacuous:\n{overlapped_module}"
-    );
-
-    let sequential_module = emit(&source);
-    assert!(
-        !module_requires_parallel_runtime(&sequential_module),
-        "the reference module must contain no hand-out at all"
-    );
-
-    let directory = test_directory();
-    let reference = Command::new(build_executable(&sequential_module, &directory))
-        .output()
-        .expect("run the module that hands nothing out");
-    assert_eq!(reference.status.code(), Some(0));
-    assert_eq!(
-        reference.stdout.len(),
-        8,
-        "the fold must report eight bytes"
-    );
-
-    let overlapped = build_executable(&overlapped_module, &directory);
-    let mut runs = vec![("no overlap lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "2", "4", "8"] {
-        for _ in 0..3 {
-            let output = Command::new(&overlapped)
-                .env("WF_WORKERS", workers)
-                .output()
-                .expect("run the overlapped program");
-            assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
-            runs.push((format!("WF_WORKERS={workers}"), output.stdout));
-        }
-    }
-    identical(&runs).expect("a statement between the two calls must not move one byte");
-
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+fn an_interposed_builtin_retains_the_outlined_call_and_join() {
+    let source = include_bytes!("../../../../tests/programs/parallel/window.wf");
+    let module = emit_with_overlap(source);
+    let fold = function_body(&module, "@wf__par_budget_fold");
+    assert!(fold.contains("call void @wf__par_publish(ptr "));
+    assert!(fold.contains("call void @wf__par_join(ptr "));
+    assert!(fold.contains(", ptr @wf__par_thunk_"));
 }
 
 // Stored results need independent caller destinations after lane retirement;
@@ -2331,8 +1538,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
 }
 "#;
     // Ordinary shared-provider effects retain this loop's ordering: allocation in the
-    // prologue and cell release in the epilogue share the same Heap. The
-    // separate Arena case below exercises real delayed worker retirement.
+    // prologue and cell release in the epilogue share the same Heap.
     // Retain this complete Heap source, including both allocation failures.
     for overlap in [crate::OverlapLowering::Off, crate::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
@@ -2345,6 +1551,9 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
         // Allocation one belongs to the path buffer. Refuse each of the
         // eight explicit cell allocations in turn, after any earlier pairs
         // have completed; every retained owner must still be released once.
+        let directory = test_directory();
+        let host = super::owned_places::allocation_observer_by_process(9);
+        let executable = build_linked_executable(&observed, Some(&host), &[], &directory);
         for refused in [0, 2, 3, 4, 5, 6, 7, 8, 9] {
             let mut expected = String::from("A1;");
             for first in [2, 4, 6, 8] {
@@ -2363,8 +1572,10 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
                 expected.push_str(&format!("A{second};F{first};F{second};"));
             }
             expected.push_str("F1;");
-            let host = super::owned_places::allocation_observer(9, refused);
-            let output = super::compile_link_and_run(&observed, Some(&host), &[]);
+            let output = Command::new(&executable)
+                .env("WF_TEST_REFUSE_ALLOCATION", refused.to_string())
+                .output()
+                .expect("run selected allocation refusal");
             assert_eq!(
                 output.status.code(),
                 Some(if refused == 0 { 0 } else { 70 }),
@@ -2373,6 +1584,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
             assert_eq!(output.stdout, expected.as_bytes(), "{output:?}");
             assert!(output.stderr.is_empty(), "{output:?}");
         }
+        std::fs::remove_dir_all(directory).expect("remove observed heap program");
     }
 }
 
@@ -2427,6 +1639,22 @@ fn run_owned_lane_cases(
             .expect("run the aggregate adapter with forced refusal or real lanes");
         outcomes.push((mode, output));
     }
+    let joinless = observed.replace(
+        "call void @wf_test_join_lane(",
+        "call void @wf_test_join_removed(",
+    );
+    assert_ne!(joinless, observed);
+    let joinless =
+        format!("{joinless}\ndefine void @wf_test_join_removed(ptr %frame) {{\n  ret void\n}}\n");
+    let broken = build_linked_executable(&joinless, Some(OWNED_LANE_OBSERVER), &[], &directory);
+    let missing = Command::new(broken)
+        .env("WF_WORKERS", "4")
+        .env("WF_TEST_REFUSE_LANE", "2")
+        .output()
+        .expect("run one controlled missing-join path");
+    assert_eq!(missing.status.code(), Some(86), "{missing:?}");
+    assert!(missing.stdout.is_empty(), "{missing:?}");
+    assert_eq!(missing.stderr, b"test observer: release before join\n");
     std::fs::remove_dir_all(&directory).expect("remove aggregate lane artifacts");
     // Execute every schedule before asserting. Deferral holds each acquired
     // frame until its actual join, exposing premature backing reuse without
@@ -2472,6 +1700,7 @@ const OWNED_LANE_OBSERVER: &str = r#"#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+
 extern void *wf__par_acquire_lane(unsigned long bytes);
 extern void wf__par_release(void *frame);
 extern void wf__par_publish(void *frame, void (*run)(void *));
@@ -2498,7 +1727,10 @@ void *wf_test_acquire_lane(unsigned long bytes) {
 
 void wf_test_release_lane(void *frame) {
     for (unsigned i = 0; i < 16; ++i) {
-        if (pending_frames[i] == frame) abort();
+        if (pending_frames[i] == frame) {
+            fputs("test observer: release before join\n", stderr);
+            _Exit(86);
+        }
     }
     wf__par_release(frame);
     atomic_fetch_add(&released, 1);
@@ -2698,12 +1930,14 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 const IO_WORKER_OBSERVER: &str = r#"#include <pthread.h>
 #include <sched.h>
 #include <stdatomic.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 extern void wf__par_publish(void *frame, void (*run)(void *));
 extern void wf__par_join(void *frame);
 extern unsigned wf__sched_pool_running(void);
+extern uint64_t wf_prim_monotonic_us(void);
 static void *published_frame;
 static void (*original_run)(void *);
 static pthread_t offering_thread;
@@ -2731,7 +1965,13 @@ void wf_test_io_publish(void *frame, void (*run)(void *)) {
 
 void wf_test_io_join(void *frame) {
     if (frame != published_frame) abort();
+    unsigned long long started = wf_prim_monotonic_us();
     while (atomic_load_explicit(&entered, memory_order_acquire) == 0) {
+        unsigned long long now = wf_prim_monotonic_us();
+        if (!started || !now || now - started >= 5000000) {
+            fputs("worker publication fixture: no real worker entered within five seconds\n", stderr);
+            _Exit(86);
+        }
         sched_yield();
     }
     wf__par_join(frame);
@@ -2827,7 +2067,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn scalar_leaf_control_drops_all_small_offers_without_a_clone_or_runtime() {
+fn scalar_leaf_control_drops_small_offers_without_clones() {
     let source = br#"fn twice(x: own u64) -> result: own u64 pure {
   return x +wrap x;
 }
@@ -2942,6 +2182,7 @@ fn main() -> status: own ExitStatus pure {{
             // The `None` cells are plain `--par`: the policies a build with
             // no recursion control selects, which take the default budget and
             // so get the family. The rest are the control's three forms.
+            let mut implicit_modules: [Option<String>; 2] = [None, None];
             for (sequential, budget) in [
                 (false, None),
                 (true, None),
@@ -2970,6 +2211,15 @@ fn main() -> status: own ExitStatus pure {{
                 };
                 let family = budget != Some(crate::RecursionBudget::Off);
                 let module = super::emit_lowered(source.as_bytes(), policy);
+                if budget.is_none() {
+                    implicit_modules[usize::from(sequential)] = Some(module.clone());
+                } else if budget == Some(crate::RecursionBudget::RuntimeDerived) {
+                    assert_eq!(
+                        implicit_modules[usize::from(sequential)].as_ref().unwrap(),
+                        &module
+                    );
+                    continue; // Equality retains the emission check; its image already ran.
+                }
                 let entry = function_body(&module, "@wf_fold");
                 let target = if mutual { "alternate" } else { "fold" };
                 assert_eq!(module.contains("@wf__par_budget_fold("), family);
@@ -3035,7 +2285,8 @@ fn main() -> status: own ExitStatus pure {{
                 // The budget the runtime answers, for the forms that ask.
                 // Zero is the answer a scheduler-less link gets from the
                 // module's own weak stub: the first node runs the clone.
-                for derived in [5_u32, 0] {
+                let derived_values: &[u32] = if budget.is_none() { &[5, 0] } else { &[0] };
+                for &derived in derived_values {
                     for granted in [false, true] {
                         let output = Command::new(&executable)
                             .env("WF_TEST_ONE_GRANT", if granted { "1" } else { "0" })
@@ -3096,6 +2347,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 1_u8);
 }
 "#;
+    let reference = emit_with_overlap(source);
     for policy in [
         crate::OverlapLowering::OnWithSequentialRefusal {
             maximum_scalar_leaf_operations: None,
@@ -3112,9 +2364,9 @@ fn main() -> status: own ExitStatus pure {
         },
     ] {
         let module = super::emit_lowered(source, policy);
-        assert_eq!(module, emit_with_overlap(source));
-        assert!(compile_and_run(&module).status.success());
+        assert_eq!(module, reference);
     }
+    assert!(compile_and_run(&reference).status.success());
 }
 
 // C2 removes the suspension-based cycle exclusion. The ordinary linked-call
@@ -3157,3 +2409,90 @@ void wf_test_release(void *p) {
     require(p == frame && joined && !releases); ++releases;
 }
 "#;
+
+/// Source permissions, clone/offer shape and actual nonowner execution for
+/// both layout folds share one compilation and one observed native image.
+/// Public output behavior is exercised separately by the programs collection.
+#[test]
+fn layout_folds_preserve_permissions_and_each_execute_a_worker() {
+    let source = include_bytes!("../../../../tests/programs/par_layout.wf");
+    let plain = emit(source);
+    assert!(!module_requires_parallel_runtime(&plain));
+    let (llvm, ledger) = whitefoot_compile_layout(source);
+    let ledger = ledger.join("\n");
+    assert!(
+        module_requires_parallel_runtime(&llvm),
+        "a module with an eligible site must ask for the runtime"
+    );
+
+    for name in ["layout", "layout_banded"] {
+        let entry = function_body(&llvm, &format!("@wf_{name}"));
+        assert!(
+            entry.contains("= call i64 @wf__par_recursion_budget()")
+                && entry.contains(&format!("call double @wf__par_budget_{name}(")),
+            "wf_{name} must obtain a budget and enter its family:\n{entry}"
+        );
+        let symbol = format!("@wf__par_budget_{name}");
+        let symbol = symbol.as_str();
+        let fold = function_body(&llvm, symbol);
+        assert!(
+            fold.contains(&format!("@wf__par_seq_{name}(")),
+            "{symbol} must enter its sequential clone with its budget spent:\n{fold}"
+        );
+        assert!(
+            fold.contains("= call ptr @wf__par_acquire_lane(i64 "),
+            "{symbol} must acquire a lane for its first child call:\n{fold}"
+        );
+        assert!(
+            fold.contains(", ptr @wf__par_thunk_"),
+            "{symbol} must publish the outlined call to the acquired lane:\n{fold}"
+        );
+        assert!(
+            fold.contains("call void @wf__par_join(ptr"),
+            "{symbol} must join what it offered:\n{fold}"
+        );
+    }
+
+    let measure = function_body(&llvm, "@wf_measure_band");
+    assert!(
+        !measure.contains("call void @wf_trap("),
+        "proved source bounds must not lower to a runtime proof-failure call:\n{measure}"
+    );
+    assert!(
+        !measure.contains("wf__par_"),
+        "a callee in no permitted pair must name no part of the runtime:\n{measure}"
+    );
+    assert!(
+        ledger.contains("pair(layout, layout)  eligible"),
+        "the table-bounded fold's child pair must be reported eligible:\n{ledger}"
+    );
+    assert!(
+        ledger.contains("pair(layout_banded, layout_banded)  eligible"),
+        "the caller-bounded fold's child pair must be reported eligible too:\n{ledger}"
+    );
+    assert!(
+        !ledger.contains("not-actualizable"),
+        "no verdict may be withheld after all source bounds are proved:\n{ledger}"
+    );
+
+    let (observed, host) = crate::native_test_support::observe_layout(&llvm);
+    let directory = test_directory();
+    let executable = build_linked_executable(&observed, Some(&host), &[], &directory);
+    let output = Command::new(executable)
+        .env("WF_WORKERS", "4")
+        .output()
+        .expect("run observed layout");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, b"420a993efa7437a1 41fa962893d45299\n");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove observed layout");
+}
+
+fn whitefoot_compile_layout(source: &[u8]) -> (String, Vec<String>) {
+    crate::compile_with_permission_ledger(
+        &[crate::SourceInput::new("par_layout.wf", source)],
+        crate::CompilerLimits::default(),
+        crate::OverlapLowering::On,
+    )
+    .expect("layout source must compile")
+}

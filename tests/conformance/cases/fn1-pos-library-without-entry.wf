@@ -1,0 +1,3 @@
+fn quiet() -> result: own unit pure {
+  return unit;
+}

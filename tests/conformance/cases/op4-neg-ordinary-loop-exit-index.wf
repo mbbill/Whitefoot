@@ -1,0 +1,18 @@
+fn scan(data: own Slice<u8>) -> result: own u8 reads(data) {
+  let count = len_of(data);
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: cursor <= count
+  ) {
+    if cursor < count {
+      set cursor = cursor + 1_u64;
+    } else {
+      break;
+    }
+  }
+  return data[cursor];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -4,7 +4,7 @@
 Each case is a canonical `.wf` source (tests/conformance/cases/<id>.wf) plus a
 manifest entry (tests/conformance/manifest.jsonl) declaring the rule id(s) it
 exercises and the expected verdict. Cases are driven through a named toolchain
-adapter. The active adapter is native, not Python: `compiler/tests/conformance.rs`
+adapter. The active adapter is native, not Python: `compiler/tests/corpus.rs`
 compiles each case through the ordinary compiler path, realizes the ARRANGE
 below as a real invocation, and reduces the outcome to one verdict below
 (`make conformance-run`, included by root `make check`). This file stays on the other side of that boundary —
@@ -76,7 +76,7 @@ ROOT = HERE.parent.parent
 CASES = HERE / "cases"
 MANIFEST = HERE / "manifest.jsonl"
 ACTIVE_SPEC = Path("spec/kernel-spec.md")
-# The named native adapter is compiler/tests/conformance.rs, reached through
+# The named native adapter is compiler/tests/corpus.rs, reached through
 # `make conformance-run` and therefore root `make check`; this hook stays open for a future non-native
 # toolchain. Keeping it explicit prevents a missing compiler, crash, or broad
 # exception from becoming `Unsupported`.
@@ -129,17 +129,44 @@ def run_cases(cases):
     return results
 
 
+RULE_ID = r"[A-Z]+-[0-9]+[a-z]?(?:\.S[0-9]+)?"
+
+
+def specification_rules(text):
+    """Check Markdown definition/reference integrity without a compiler build.
+
+    Sub-rule anchors are checked individually, but coverage counts their parent.
+    This checks citations, not semantic uniqueness or a change's selection ground.
+    """
+    definitions = {}
+    for number, line in enumerate(text.splitlines(), 1):
+        match = re.match(rf"^\[({RULE_ID})\]", line)
+        if match:
+            rule = match[1]
+            if rule in definitions:
+                raise ValueError(
+                    f"specification line {number}: duplicate rule definition [{rule}] "
+                    f"(first defined at line {definitions[rule]})"
+                )
+            definitions[rule] = number
+    for number, line in enumerate(text.splitlines(), 1):
+        for match in re.finditer(rf"\[({RULE_ID})\]", line):
+            if match[1] not in definitions:
+                raise ValueError(
+                    f"specification line {number}: unresolved rule reference [{match[1]}]"
+                )
+    return {base_rule(rule) for rule in definitions}
+
+
 def spec_rule_ids(root=ROOT):
-    # The specification's bytes are its identity; no separate record pins them,
-    # so there is nothing here to agree with. The compiled `whitefoot-spec`
-    # gate checks that the generated identity module names these bytes.
+    # The active file is the authority; its bytes need no duplicate identity.
     spec = root / ACTIVE_SPEC
     text = spec.read_bytes().decode("utf-8")
     # Rule ids at line starts. A `[FAM-N.Sk]` sub-id line is an addressable
     # citation anchor inside its parent rule, not a rule of its own: the
     # coverage denominator stays the base rules, and a citation of a sub-id
     # counts toward its parent (see base_rule below).
-    return set(re.findall(r"^\[([A-Z]+-\d+[a-z]?)(?:\.S\d+)?\]", text, re.M)), spec.name
+    return specification_rules(text), spec.name
 
 
 def base_rule(rule_id):

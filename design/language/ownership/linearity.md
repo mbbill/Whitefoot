@@ -1,3 +1,9 @@
 Decision: A value is linear only in a scope that does not hold the capability its release needs, or whose type a declaration marks linear, so a scope whose signature carries that capability takes the compiler-derived release on every leaving edge exactly as for an ordinary affine value, because reading linearity from the type alone forced dozens of explicit dispose statements per hosted function and pushed writers toward single-exit rewrites, while the capability cannot be smuggled since it is named in the scope's own parameter list and effect row, instead of a linearity fixed by a value's type alone.
 
 Decision: dispose is an explicit early release distinct from the unconditional scope-exit release, admitted only over a value whose release graph holds a capability-released leaf and no linear node, because early release lowers peak resource use against holding a value to its scope's end, and no ordinary source statement can perform the structural release walk itself, instead of relying on scope-exit release alone.
+
+Decision: At a release edge, a direct FixedVector or Vector whose length is statically proved zero omits its element edge from that release's linearity, provider, and drop obligations, while retaining whole-value consumption, active-loan, backing-release, provider, and effect obligations, because no element instance exists to visit, and this lets source-defined growth reclaim an emptied old backing without requiring providers for hypothetical elements.
+
+Rejected:
+- Judge every run release solely from its element type: rejected because this prevents a general source-defined growable container over linear elements from reclaiming an emptied old backing.
+- Add an unchecked backing-only release operation: rejected because a wrong precondition could leak live elements through a second release mechanism outside the proved release walk.

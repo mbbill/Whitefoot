@@ -1,0 +1,24 @@
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
+  let bytes = buffer_new(4_u64, 65_u8);
+  region {
+    region {
+      region {
+        let native_window_13 = slice_of(&bytes);
+        region {
+          match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_13, start: 1_u64, end: 9_u64) {
+            Ok(value: written) => {
+              return exit_status(code: 10_u8);
+            }
+            Err(error: problem) => {
+              return exit_status(code: 20_u8);
+            }
+          }
+        }
+      }
+    }
+  }
+}

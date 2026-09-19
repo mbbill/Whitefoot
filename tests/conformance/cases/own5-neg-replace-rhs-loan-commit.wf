@@ -1,0 +1,23 @@
+struct Payload {
+  value: u64;
+}
+
+fn update(value: &uniq u64) -> result: own Payload writes(value) {
+  set deref(value) = 5_u64;
+  let replacement = Payload(value: 7_u64);
+  return move replacement;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let empty = fixed_vector::<Payload, 1>();
+  let payload = Payload(value: 3_u64);
+  region {
+    place_back(vector: &uniq empty, value: move payload);
+  }
+  let entries = move empty;
+  region {
+    let previous = replace entries[0_u64] = update(value: &uniq entries[0_u64].value);
+    let observed = previous.value;
+  }
+  return exit_status(code: 0_u8);
+}

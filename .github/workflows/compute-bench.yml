@@ -3,19 +3,17 @@
 # Whitefoot program built with plain `--par` the fastest thing in the row? --
 # answered on a real Linux host and on an ordinary Apple M1.
 #
-# It runs on demand, and automatically only when what it measures changes: the
-# scheduler runtime, the floor, the emitter and the lowering that decide what
-# `--par` actualizes, the compiler driver, or the bundle itself.
+# research-boundary: manual-only
+# Explicitly requested framework comparison; no push or pull-request trigger.
+# Formal correctness and paired regression use the maintained test system.
 #
 # FAILURE POLICY. The job fails on a `deps`, `build` or `verify` failure and on
-# nothing else. The `compare` step's exit status is the reducer's, and the
+# nothing else. The manual `compare` step's exit status is the reducer's, and the
 # reducer fails only on a missing or malformed row. No ratio, no spread, no
-# ordering and no elapsed time selects a pass anywhere in this workflow. If a
-# later change wants a performance gate it belongs in a separate target the
-# repository gate does not run: selecting acceptance on measured time is
-# exactly what an earlier bundle's band-gating jobs did, and exactly why they
-# are not reused here. `timeout-minutes` below bounds a stuck runner; it
-# decides no result.
+# ordering and no elapsed time selects a pass anywhere in this workflow.
+# Performance-regression verdicts belong to compute-regression.yml, outside
+# deterministic `make check`. `timeout-minutes` bounds a stuck runner and
+# decides no source-language result.
 #
 # Every table a batch relies on is copied by hand into
 # `research/investigations/compute-runtime/RESULTS.md` with its run id,
@@ -27,8 +25,7 @@ on:
     # An A/B twin on a quiet runner: a non-empty control value builds the second
     # image and adds the wf-b rows (README, "The A/B twin"); such a table is
     # never a recorded plain table. `gap_us` is not a control and builds
-    # nothing, but marks its table the same way. Pushes always run plain, back
-    # to back, with no twin.
+    # nothing, but marks its table the same way.
     inputs:
       par_control_flags:
         description: WF_PAR_CONTROL_FLAGS for the B image (emission)
@@ -52,16 +49,6 @@ on:
         description: WFB_GAP_US, microseconds waited between consecutive timed calls (every form)
         default: ""
         type: string
-  push:
-    paths:
-      - 'research/experiments/compute-bench/**'
-      - 'compiler/src/backend/sched/**'
-      - 'compiler/src/backend/wf_floor.c'
-      - 'compiler/src/backend/emitter/**'
-      - 'compiler/src/lowering/**'
-      - 'compiler/src/driver.rs'
-      - 'compiler/src/bin/whitefootc.rs'
-      - '.github/workflows/compute-bench.yml'
 
 # Every shell step runs under `bash -eo pipefail`, so a step that fails behind
 # a pipe fails the step. io-bench.yml carries the same default and records the
@@ -109,7 +96,7 @@ jobs:
           # The three A/B controls and the call cadence travel as environment
           # variables, which the bundle Makefile's `?=` defaults yield to; they
           # are empty on a push and on a dispatch that set none, so such a run
-          # builds no twin and times its calls back to back.
+          # builds no twin. Only a dispatch performs timed calls.
           {
             echo "WF_PAR_CONTROL_FLAGS=${{ inputs.par_control_flags }}"
             echo "WF_RUNTIME_CONTROL_FLAGS=${{ inputs.runtime_control_flags }}"
@@ -187,12 +174,13 @@ jobs:
       # The reducer's exit status is this step's. It fails only on a missing
       # or malformed row, never on a measurement.
       - name: Run the timed passes and print the table
+        if: github.event_name == 'workflow_dispatch'
         run: |
           make -C research/experiments/compute-bench compare \
             PASSES=5 RESULTS="$RUNNER_TEMP/results"
 
       - name: Publish the table
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch'
         run: |
           {
             echo "## compute-bench (${{ matrix.os }})"
@@ -207,7 +195,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch'
         with:
           name: compute-bench-${{ matrix.os }}
           if-no-files-found: warn

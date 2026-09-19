@@ -3,6 +3,16 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
+- **A field projected after dereferencing a runtime-indexed composite element
+  stops as unsupported.** The specification admits ordinary chained element,
+  dereference, and field selection, but
+  `deref(owners.storage[index]).id` stops in semantic checking as
+  `Unsupported(CompositeValues)` with no rule or source diagnostic. The
+  growable-vector executable currently borrows `owners.storage[index]` into a
+  helper and performs `deref(deref(item)).id` there. Complete the general
+  checked-place and lowering path for a subscript followed by dereference and
+  field projection, add owning and copy-element tests, then remove that helper.
+
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
@@ -35,6 +45,17 @@ of them is a decision. Remove an item when its fix and test land.
   the cause is established and the trial's work, space and measured-cost
   criteria are met, or its remaining tradeoffs are accepted.
 
+- **The formal compute comparison has unresolved attribution and measurement costs.**
+  [Hosted observations](../research/investigations/test-economy/redesign.md#identical-image-host-control-failure)
+  include an identical-image stencil control failing the unchanged three-percent
+  band, and a separate actual records comparison failing at two widths while
+  later runs retain a one-width suspect. A null failure supplies no compiler
+  regression verdict, and a later pass does not explain an earlier failure.
+  Attribute host/sample variability separately from emitted code, linked layout
+  and runtime changes before changing a policy or declaring the suspect noise.
+  Close this item when the source of both observations and the resulting
+  measurement/detection tradeoff are established.
+
 - **A runtime-sized `buffer_new` fails with no rule and no location.** At an
   unproved runtime capacity the driver stops four stages after semantic
   checking with `TargetLayout(Unrepresentable(RuntimeSizedAllocation))` and no
@@ -61,8 +82,12 @@ of them is a decision. Remove an item when its fix and test land.
   [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs).
   A non-closed state with explicit relations takes the complete closure;
   already-closed, contradictory, and empty-relation states have fast paths.
-  The cost on real programs needs stage attribution before changing this
-  path. A narrower projection must preserve every surviving consequence,
+  The [build/test investigation](../research/investigations/test-economy/build-and-test.md#a-compiler-hotspot-not-native-execution)
+  measures 58.29 s for one optimized read-heavy LLVM-only compilation; a
+  three-second semantic-checking sample puts 61.2% of leaf samples in
+  `close_with_excluded_term`. Whole-run attribution and a controlled algorithm
+  comparison remain necessary. A narrower projection must preserve every
+  surviving consequence,
   including implicit type edges and disequality strengthening; filtering
   explicit edges alone is insufficient. No speedup is established.
 - **Connection-level concurrency is not supplied by ordinary source order.**
@@ -102,12 +127,24 @@ of them is a decision. Remove an item when its fix and test land.
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
+- **Sparse containers over must-consume linear elements need ownership-visible
+  slot state.** The behavior-map growth witness previously wrote
+  `formal Key<K: linear, ...>` while replacing `progress.held` and disposing
+  the returned `Slot<K>`. That depended on a compiler defect which failed to
+  apply PROV-6 to a symbolic linear bound. The current checker correctly
+  rejects `dispose previous_held`: a numeric phase does not prove that the
+  returned enum is `Vacant`, and an `Occupied` value contains a `K` that must
+  be consumed. The maintained witness is narrowed to `K: affine`, which still
+  covers its scalar and store-branded owning instances. Investigate a state
+  encoding or checked variant-state relation that lets rehash move every
+  must-consume key without an impossible cleanup branch; do not add a discard
+  behavior merely to satisfy the checker.
+
 - **Local region introduction and explicit region blocks.** Revisit whether
   an ordinary function body should introduce a local region, and which
   borrows need a writer-spelled `region` block. In the
-  [weighted-sum example](../tests/snapshot/cases/accumulators/accumulators__adversary-r1__p12_per_byte_widened_checked_sum.wf),
-  the four `place_back(vector: &uniq weights, ...)` calls can share one region
-  after the `weights` binding, but removing that region rejects under FORM-8.
+  [buffer checksum case](../tests/conformance/cases/x-buffer-mutable-checksum-run.wf),
+  a region encloses allocation and the `place_back` calls that fill the vector.
   The temporary loans already end at their statement boundaries under OWN-6;
   their region's formation and storage-validity extent is a different matter
   under OWN-3 and OWN-10. Compare explicit blocks, function-body regions and

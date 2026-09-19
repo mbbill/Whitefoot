@@ -1,0 +1,19 @@
+fn hold['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
+  let bytes = fixed_vector::<u8, 1>();
+  let other = fixed_vector::<u8, 1>();
+  region {
+    match heap_box(store: &uniq deref(store), value: move bytes) {
+      Ok(value: owner) => {
+        let old = replace deref(owner) = move other;
+        return unit;
+      }
+      Err(error: back) => {
+        return unit;
+      }
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

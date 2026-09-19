@@ -45,8 +45,6 @@ enum wf_file_operation_kind {
     WF_FILE_READ = 2,
     WF_FILE_WRITE = 3,
     WF_FILE_PREAD = 4,
-    WF_FILE_PWRITE = 5,
-    WF_FILE_STATUS = 6,
     WF_FILE_CLOSE = 7,
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     /* One bounded batch of directory entries, advancing the descriptor's own
@@ -173,22 +171,6 @@ typedef struct wf_file_request {
             size_t count;
             int64_t offset;
         } pread;
-        struct {
-            int descriptor;
-            const void *buffer;
-            size_t count;
-            int64_t offset;
-        } pwrite;
-        struct {
-            int descriptor;
-            /* Where a submitted status writes its bytes.  The record carries
-             * no status storage of its own: the submit names the destination
-             * and the engine writes it there, so a 192-byte status record is
-             * not a 192-byte tax on every frame that can hold any operation
-             * (design §7).  The direct executor names neither. */
-            void *destination;
-            size_t capacity;
-        } status;
         struct {
             int descriptor;
         } close;
@@ -330,11 +312,6 @@ typedef struct wf_completion_record {
     int opened_descriptor;
     unsigned open_outcome;
     int open_error;
-    /* How many bytes a submitted status wrote into the destination it named.
-     * A size, never the bytes, and 32 bits because the destination's capacity
-     * is a target's status record and the record pays for this field on every
-     * operation. */
-    uint32_t status_written;
     /* The intrusive link of the file adapter's pending list.  The queue is
      * threaded through the records themselves, so it has no capacity of its
      * own and cannot refuse an operation (design §7). */

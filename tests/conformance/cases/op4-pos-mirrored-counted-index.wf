@@ -1,0 +1,20 @@
+fn reverse(bytes: own MutSlice<u8>) -> result: own unit reads(bytes), writes(bytes) contract {
+  requires len_of(bytes) >= 1_u64;
+} {
+  let count = len_of(bytes);
+  let last = count - 1_u64;
+  for (i in 0_u64..count) {
+    let mirror = last - i;
+    if i < mirror {
+      let front = bytes[i];
+      let back = bytes[mirror];
+      set bytes[i] = back;
+      set bytes[mirror] = front;
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

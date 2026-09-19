@@ -6,8 +6,9 @@
 # bytes, native IOCP use and ordinary scheduler activity remain checked; speed
 # does not select success (see `research/experiments/io-completion-bench/`).
 #
-# They run on demand, and automatically only when what they measure changes:
-# the completion runtime, the emitter, or the bench bundle itself. Every table
+# Full measurement matrices run on demand. Ordinary pushes retain the native
+# IO correctness workflows and benchmark-program compilation in the gate;
+# an emitter edit does not need a half-hour storage experiment. Every table
 # a batch relies on is copied into `research/investigations/io-model/RESULTS.md`
 # with its run id, because job logs and artifacts expire.
 name: io-bench
@@ -19,26 +20,6 @@ on:
         description: Compare full worker count with the primary count on one Windows VM
         type: boolean
         default: false
-  push:
-    paths:
-      - 'compiler/src/backend/completion/**'
-      - 'compiler/src/backend/emitter/**'
-      - 'compiler/src/backend/sched/**'
-      - 'compiler/src/backend/windows_runtime.c'
-      - 'compiler/src/backend/windows_runtime.h'
-      - 'compiler/src/backend/wf_floor_windows.c'
-      - 'compiler/src/backend/ordinary_values.c'
-      - 'compiler/src/backend/ordinary_values.ll'
-      - 'compiler/src/prelude.rs'
-      - 'compiler/src/bin/whitefootc.rs'
-      - 'compiler/src/backend.rs'
-      - 'compiler/src/driver.rs'
-      - 'compiler/src/driver/**'
-      - 'compiler/src/lib.rs'
-      - 'tests/programs/par_layout.wf'
-      - 'research/experiments/io-completion-bench/**'
-      - 'research/investigations/proof-derived-parallelism/bench/rust/**'
-      - '.github/workflows/io-bench.yml'
 
 # Every shell step runs under `bash -eo pipefail`, so a protocol that fails
 # behind `| tee` fails the step. Before this, the compiler rejecting a bench

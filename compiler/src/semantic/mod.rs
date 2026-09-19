@@ -860,6 +860,14 @@ pub enum SemanticIssueKind {
         /// The mechanical fix ENT-6 names.
         mechanical_fix: &'static str,
     },
+    /// A release selected the empty-run graph but the current facts do not
+    /// prove that the run has no initialized elements [PROV-6, ENT-6].
+    UndischargedEmptyRunRelease {
+        /// The exact remaining relation, `len_of(P) <= 0_u64`.
+        residual: String,
+        /// The source-level way to establish or avoid the obligation.
+        mechanical_fix: &'static str,
+    },
     /// One proof-required exact integer operation's canonical `.defined`
     /// goal is not derivable from the closed fact state [OP-2, ENT-6].
     UndischargedIntegerDomainObligation {

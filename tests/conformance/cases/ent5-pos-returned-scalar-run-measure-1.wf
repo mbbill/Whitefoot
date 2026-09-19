@@ -1,0 +1,32 @@
+struct Row {
+  left: u64;
+  right: u64;
+}
+
+fn identity['r](value: &'r Row) -> result: &'r Row pure {
+  return value;
+}
+
+fn exclusive['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {
+  return &uniq 'r deref(value);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let empty = fixed_vector::<Row, 4>();
+  let first = Row(left: 3_u64, right: 4_u64);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let prefix = move empty;
+  let second = Row(left: 5_u64, right: 6_u64);
+  region {
+    place_back(vector: &uniq prefix, value: move second);
+  }
+  let rows = move prefix;
+  region {
+    let changed = exclusive(value: &uniq rows[1_u64].right);
+    set deref(changed) = 9_u64;
+  }
+  let observed = rows[0_u64].left;
+  return exit_status(code: 0_u8);
+}

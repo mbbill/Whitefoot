@@ -1,0 +1,13 @@
+fn scan_pair_bad(data: own array<i16, 8>, start: own u64) -> result: own i16 reads(data) contract {
+  requires start < 8_u64;
+} {
+  let first = data[start];
+  let jumped = start +wrap 3_u64;
+  set start = jumped;
+  let second = data[start];
+  return first +wrap second;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

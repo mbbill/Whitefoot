@@ -5,11 +5,29 @@ RUSTC ?= rustc
 CLANG ?= clang
 EXE := $(if $(filter Windows_NT,$(OS)),.exe,)
 BUILD := .build
+vpath %.wf $(ROOT)/tests/programs/containers
 .DELETE_ON_ERROR:
 
-include ../native.mk
+include $(ROOT)/compiler/runtime.mk
 
 .PHONY: check check-interface measure measure-interface reproduce-runtime-gap reproduce-region-gap clean
+
+# Rebuild source programs when their source, compiler or invocation changes;
+# execute every source/mode pair on every check. The old shell loop rebuilt
+# all 45 executables even when none of those inputs had changed.
+PROGRAM_SOURCES := hashmap owning-map owning-growth owning-behavior ordered priority \
+                   priority-borrowed priority-behavior priority-behavior-direct packed-page \
+                   growth boxed-migration ordered-runtime-gap boxed-helper-gap shared-option-view
+PROGRAM_MODES := default par no-overlap
+PROGRAMS := $(foreach mode,$(PROGRAM_MODES),$(addprefix $(BUILD)/,$(addsuffix -$(mode)$(EXE),$(PROGRAM_SOURCES))))
+
+define source_mode
+$(BUILD)/%-$(1)$(EXE): %.wf $(WHITEFOOTC) Makefile | $(BUILD)
+	$$(WHITEFOOTC) $(2) $$< -o $$@
+endef
+$(eval $(call source_mode,default,))
+$(eval $(call source_mode,par,--par))
+$(eval $(call source_mode,no-overlap,--no-overlap))
 
 $(BUILD)/owning-growth-%.raw.ll: owning-growth.wf $(WHITEFOOTC) | $(BUILD)
 	@set -eu; case '$*' in default) flags= ;; par) flags=--par ;; no-overlap) flags=--no-overlap ;; *) exit 1 ;; esac; \
@@ -17,10 +35,11 @@ $(BUILD)/owning-growth-%.raw.ll: owning-growth.wf $(WHITEFOOTC) | $(BUILD)
 
 $(BUILD)/owning-growth-%.ll: $(BUILD)/owning-growth-%.raw.ll $(BUILD)/abi$(EXE)
 	$(BUILD)/abi$(EXE) --observe-allocations $< $@.tmp
-	awk '/^define internal i64 @wf_map_contract\(ptr %v0, i64 %v1, i64 %v2, i64 %v3\)/ { sub(/internal /, ""); exported++ } { print } END { if (exported != 1) exit 1 }' $@.tmp > $@
+	awk '/^define i32 @wf__main_body\(/ { sub(/@wf__main_body/, "@wf_fixture_body") } /^define internal i64 @wf_map_contract\(ptr %v0, i64 %v1, i64 %v2, i64 %v3\)/ { sub(/internal /, ""); exported++ } { print } END { if (exported != 1) exit 1 }' $@.tmp > $@
+	printf '\ndeclare i32 @wf__main_body(i32, ptr)\n' >> $@
 	rm $@.tmp
 
-$(BUILD)/owning-growth-observer-%$(EXE): owning-growth-observer.c $(BUILD)/owning-growth-%.ll ../costs/sparse-owned.c $(NATIVE_OBJECTS)
+$(BUILD)/owning-growth-observer-%$(EXE): $(ROOT)/compiler/src/backend/tests/owning_growth_observer.c $(BUILD)/owning-growth-%.ll $(NATIVE_OBJECTS)
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $< $(BUILD)/owning-growth-$*.ll $(NATIVE_OBJECTS) $(NATIVE_LINK_FLAGS) -o $@
 
 .PHONY: check-owning-growth
@@ -35,10 +54,11 @@ $(BUILD)/owning-behavior-%.raw.ll: owning-behavior.wf $(WHITEFOOTC) | $(BUILD)
 
 $(BUILD)/owning-behavior-%.ll: $(BUILD)/owning-behavior-%.raw.ll $(BUILD)/abi$(EXE)
 	$(BUILD)/abi$(EXE) --observe-allocations $< $@.tmp
-	awk '/^define internal i64 @wf_map_contract\(ptr %v0, i64 %v1, i64 %v2, i64 %v3\)/ { sub(/internal /, ""); exported++ } /^define internal i8 @wf_behavior_contract\(ptr %v0, i64 %v1\)/ { sub(/internal /, ""); exported++ } { print } END { if (exported != 2) exit 1 }' $@.tmp > $@
+	awk '/^define i32 @wf__main_body\(/ { sub(/@wf__main_body/, "@wf_fixture_body") } /^define internal i64 @wf_map_contract\(ptr %v0, i64 %v1, i64 %v2, i64 %v3\)/ { sub(/internal /, ""); exported++ } /^define internal i8 @wf_behavior_contract\(ptr %v0, i64 %v1\)/ { sub(/internal /, ""); exported++ } { print } END { if (exported != 2) exit 1 }' $@.tmp > $@
+	printf '\ndeclare i32 @wf__main_body(i32, ptr)\n' >> $@
 	rm $@.tmp
 
-$(BUILD)/owning-behavior-observer-%$(EXE): owning-growth-observer.c $(BUILD)/owning-behavior-%.ll ../costs/sparse-owned.c $(NATIVE_OBJECTS)
+$(BUILD)/owning-behavior-observer-%$(EXE): $(ROOT)/compiler/src/backend/tests/owning_growth_observer.c $(BUILD)/owning-behavior-%.ll $(NATIVE_OBJECTS)
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DBEHAVIOR_DEMOS $< $(BUILD)/owning-behavior-$*.ll $(NATIVE_OBJECTS) $(NATIVE_LINK_FLAGS) -o $@
 
 .PHONY: check-owning-behavior
@@ -62,7 +82,7 @@ $(addprefix $(BUILD)/owning-growth-cost-,normal.ll retained.ll inlined.ll): $(BU
 $(BUILD)/owning-growth-cost-%.opt.ll: $(BUILD)/owning-growth-cost-%.ll
 	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
 
-$(BUILD)/owning-growth-costs-%$(EXE): owning-growth-costs.c $(BUILD)/owning-growth-cost-%.ll ../costs/sparse-owned.c $(NATIVE_OBJECTS)
+$(BUILD)/owning-growth-costs-%$(EXE): owning-growth-costs.c $(BUILD)/owning-growth-cost-%.ll $(NATIVE_OBJECTS)
 	@set -eu; case '$*' in normal) flags= ;; retained) flags=-DRETAIN_HELPERS ;; inlined) flags=-DINLINE_HELPERS ;; *) exit 1 ;; esac; \
 	  $(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $$flags $< $(BUILD)/owning-growth-cost-$*.ll $(NATIVE_OBJECTS) $(NATIVE_LINK_FLAGS) -o $@
 
@@ -97,7 +117,7 @@ $(addprefix $(BUILD)/owning-behavior-cost-,normal.ll retained.ll inlined.ll): $(
 $(BUILD)/owning-behavior-cost-%.opt.ll: $(BUILD)/owning-behavior-cost-%.ll
 	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
 
-$(BUILD)/owning-behavior-costs-%$(EXE): owning-growth-costs.c $(BUILD)/owning-behavior-cost-%.ll ../costs/sparse-owned.c $(NATIVE_OBJECTS)
+$(BUILD)/owning-behavior-costs-%$(EXE): owning-growth-costs.c $(BUILD)/owning-behavior-cost-%.ll $(NATIVE_OBJECTS)
 	@set -eu; case '$*' in normal) flags= ;; retained) flags=-DRETAIN_HELPERS ;; inlined) flags=-DINLINE_HELPERS ;; *) exit 1 ;; esac; \
 	  $(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $$flags $< $(BUILD)/owning-behavior-cost-$*.ll $(NATIVE_OBJECTS) $(NATIVE_LINK_FLAGS) -o $@
 
@@ -238,7 +258,7 @@ $(BUILD)/owning-map.raw.ll: owning-map.wf $(WHITEFOOTC) | $(BUILD)
 $(BUILD)/owning-map.observed.ll: $(BUILD)/owning-map.raw.ll $(BUILD)/abi$(EXE)
 	$(BUILD)/abi$(EXE) --observe-allocations $< $@
 
-$(BUILD)/owning-map-observer$(EXE): owning-map-observer.c $(BUILD)/owning-map.observed.ll $(NATIVE_OBJECTS)
+$(BUILD)/owning-map-observer$(EXE): $(ROOT)/compiler/src/backend/tests/owning_map_observer.c $(BUILD)/owning-map.observed.ll $(NATIVE_OBJECTS)
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ $(NATIVE_LINK_FLAGS) -o $@
 
 $(BUILD)/growth-abi$(EXE): growth-abi.rs ../linkage.rs | $(BUILD)
@@ -257,16 +277,15 @@ $(BUILD)/growth.opt.ll: $(BUILD)/growth.instrumented.ll $(BUILD)/growth-abi$(EXE
 $(BUILD)/growth-costs$(EXE): growth-costs.c $(BUILD)/growth.opt.ll $(NATIVE_OBJECTS)
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ $(NATIVE_LINK_FLAGS) -o $@
 
-check: check-interface check-owning-growth check-owning-behavior check-owning-costs check-behavior-costs $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) \
+check: $(PROGRAMS) check-interface check-owning-growth check-owning-behavior check-owning-costs check-behavior-costs $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) \
        $(BUILD)/priority-borrowed-costs$(EXE) $(BUILD)/priority-borrowed-boundary-costs$(EXE) \
        $(BUILD)/priority-borrowed-retained-costs$(EXE) \
        $(BUILD)/owning-map-observer$(EXE) $(BUILD)/growth-costs$(EXE)
 	rustfmt --edition 2024 --check abi.rs growth-abi.rs priority-interface.rs ../linkage.rs
 	@set -eu; \
-	  for source in hashmap owning-map owning-growth owning-behavior ordered priority priority-borrowed priority-behavior priority-behavior-direct packed-page growth boxed-migration ordered-runtime-gap boxed-helper-gap shared-option-view; do \
-	    for mode in default par no-overlap; do \
-	      case "$$mode" in default) flags= ;; par) flags=--par ;; no-overlap) flags=--no-overlap ;; esac; \
-	      "$(WHITEFOOTC)" $$flags "$$source.wf" -o "$(BUILD)/$$source-$$mode$(EXE)"; \
+	  echo 'container families: execute all 45 source/mode pairs'; \
+	  for source in $(PROGRAM_SOURCES); do \
+	    for mode in $(PROGRAM_MODES); do \
 	      "$(BUILD)/$$source-$$mode$(EXE)"; \
 	    done; \
 	  done

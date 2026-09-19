@@ -11,13 +11,19 @@ by `../../archive/governance/decision-log.md`; current design decisions live in
 compiler defects in [todo](../../docs/todo.md). Research notes do not grant or
 withhold branch permission.
 
+These bundles follow the [research boundary](../README.md): execution is
+explicitly requested, and useful daily regression checks are extracted into
+formal test ownership with their required inputs and oracles. Existing caller
+descriptions do not grant an exception to that boundary.
+
 ## Language design models
 
-- [access-state/](access-state/RESULTS.md) — symbolic access/state checking
-  compared with reusable physical storage, including stored aliases, shared
-  control state, generic contracts, and fault-injected counterexamples. This
-  is a language-design model, not a WF source compiler or a soundness proof;
-  its executable checks run in `make check`.
+- [access-state/](access-state/RESULTS.md) — symbolic access/state checking of
+  an earlier alias/state fragment, compared with reusable physical storage. A
+  language-design model, not a WF source compiler or a soundness proof; it is
+  superseded by the access-effects investigation's candidate x1 and kept as an
+  experiment record. Its self-checks run manually with
+  `make -C research/experiments/access-state check`.
 
 ## Current flagship experiment evidence
 
@@ -196,8 +202,10 @@ commit each RESULTS.md names.
 
 These results used the now-archived democ implementation. They remain measured
 evidence rather than current-compiler benchmark requirements. Historical
-benchmark runners are not active compiler gates; maintained unit tests that
-still execute against HEAD are included by the root `make check` target.
+benchmark runners are not active compiler gates. Self-tests of the completed
+frequency and model-trajectory instruments remain available through
+`make historical-tool-tests`. Useful current-compiler observations and
+independent oracles require a formal test home outside this directory.
 
 - `effect-attrs-channel/` — channel 2: effect rows -> LLVM fn attributes.
   O(n)->O(1) at opaque boundaries; ties fat LTO at per-file build cost.

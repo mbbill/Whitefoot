@@ -72,22 +72,29 @@ fn visit(
     published: &mut Vec<u8>,
     hit: &mut bool,
 ) {
+    // A DirEntry may retain its directory handle. Store only value metadata
+    // before descending, so the reference does not consume a handle per level.
     let mut entries: Vec<_> = std::fs::read_dir(directory)
         .expect("read the reference fixture directory")
-        .map(|entry| entry.expect("one reference fixture entry"))
+        .map(|entry| {
+            let entry = entry.expect("one reference fixture entry");
+            (
+                entry.file_name(),
+                entry.path(),
+                entry.file_type().expect("one reference fixture entry kind"),
+            )
+        })
         .collect();
-    entries.sort_by_key(std::fs::DirEntry::file_name);
-    for entry in entries {
-        let name = entry.file_name();
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    for (name, entry_path, kind) in entries {
         let name = name.as_bytes().to_vec();
         let mut path = display.to_vec();
         if !path.is_empty() {
             path.push(b'/');
         }
         path.extend_from_slice(&name);
-        let kind = entry.file_type().expect("one reference fixture entry kind");
         if kind.is_file() {
-            let content = std::fs::read(entry.path()).expect("read one reference fixture file");
+            let content = std::fs::read(&entry_path).expect("read one reference fixture file");
             for (ordinal, line) in lines(&content).into_iter().enumerate() {
                 if occurs(line, pattern) {
                     *hit = true;
@@ -100,7 +107,7 @@ fn visit(
                 }
             }
         } else if kind.is_dir() {
-            visit(&entry.path(), &path, pattern, published, hit);
+            visit(&entry_path, &path, pattern, published, hit);
         }
     }
 }
@@ -222,30 +229,17 @@ fn wfgrep_agrees_with_grep_on_the_empty_and_the_total_hit_set() {
     );
 }
 
-/// The descent carries no depth cap of its own, and the failure it used to
-/// have was the worst kind: a file below sixteen levels was left unsearched,
-/// the walk returned normally, and the answer was byte-identical to a real
-/// absence.
-///
-/// Three hundred levels is not a round number chosen for effect — it is well
-/// past the deleted cap and well inside the two bounds that do still apply.
-/// The host bounds one absolute path, so the fixture root's own length is part
-/// of the budget; and `walk` refuses a display path past a thousand bytes.
-/// That refusal is arithmetic on the *display* path, so the level it lands at
-/// depends on the root name's length, which is why quoting a level without the
-/// root is not reproducible: for this fixture's four-byte root `tree`,
-/// `4 + 2n + len_of("/bottom.txt") <= 1000` gives n <= 492, and 493 is the first
-/// level that fails — measured, and measured again at 493 completing with a
-/// three-byte root. Neither program bound is the stack: on this test target,
-/// the stack ledger prices one `wf_walk` activation at 1744 bytes and the
-/// current runtime's configured stack at 615,677 of them. This comparison
-/// establishes that the test reaches the program's display-buffer boundary;
-/// it makes no portable guarantee about external stack availability.
+/// The former sixteen-level cutoff silently skipped a matching file while
+/// reporting a normal result. Seventeen descents distinguish that defect;
+/// a shallow hit also checks that the result is not merely an error/empty walk.
+/// Arbitrary deeper stress is not another correctness boundary: the program
+/// retains a host directory handle per level, so it also requires a declared
+/// host descriptor budget. Runtime stack/path limits have their own tests.
 #[test]
-fn a_tree_far_deeper_than_the_deleted_cap_is_searched_completely() {
+fn a_tree_beyond_the_former_sixteen_level_cap_is_searched_completely() {
     let fixture = fixture_directory();
     let mut relative = String::from("tree");
-    for _ in 0..300 {
+    for _ in 0..17 {
         relative.push_str("/d");
     }
     relative.push_str("/bottom.txt");

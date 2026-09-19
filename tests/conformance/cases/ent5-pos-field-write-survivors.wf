@@ -1,0 +1,34 @@
+struct Cursor {
+  idx: u64;
+  limit: u64;
+  tag: u8;
+}
+
+fn shrink(c: &uniq Cursor) -> unused: own unit writes(c.limit) {
+  set deref(c).limit = 1_u64;
+  return unit;
+}
+
+fn read_after_shrink<const n: u64>(table: own FixedVector<u8, n>, cursor: own Cursor) -> value: own u8 reads(table, cursor.idx), writes(cursor.limit) contract {
+  define spare = len_of(table);
+  requires cursor.idx < cursor.limit;
+  requires cursor.limit <= spare;
+} {
+  region {
+    let done = shrink(c: &uniq cursor);
+  }
+  return table[cursor.idx];
+}
+
+fn read_after_tag_write<const n: u64>(table: own FixedVector<u8, n>, cursor: own Cursor) -> value: own u8 reads(table, cursor.idx), writes(cursor.tag) contract {
+  define spare = len_of(table);
+  requires cursor.idx < cursor.limit;
+  requires cursor.limit <= spare;
+} {
+  set cursor.tag = 9_u8;
+  return table[cursor.idx];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

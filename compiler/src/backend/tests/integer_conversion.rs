@@ -149,20 +149,6 @@ fn executes_exact_success_and_failure_edges_for_every_conversion_class() {
     assert!(output.stderr.is_empty());
 }
 
-#[test]
-fn compiler_independent_crc32_vector_executes() {
-    let source =
-        include_bytes!("../../../../tests/conformance/cases/x-crc32-standard-vector-run.wf");
-    let output = compile_and_run(&compile(source));
-    assert!(
-        output.status.success(),
-        "CRC32 vector failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
 const fn converts_totally(source: IntegerType, destination: IntegerType) -> bool {
     source.width < destination.width
         && (source.signed == destination.signed || (!source.signed && destination.signed))

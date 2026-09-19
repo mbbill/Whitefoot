@@ -138,7 +138,7 @@ and selection grounds remain in this table.
 | Laws / termination / region safety | None assumed; rules below | Same | Same; no arbitrary CTFE |
 | Likely growth pressure | Group nesting, defaults | Fake types, header extraction, type projection | Signature aliases, inferred requirements |
 
-**A** uses the owner's `formal Key<K: linear,E: linear>`,
+**A** uses the owner's general mechanism spelling `formal Key<K: linear,E: linear>`,
 `actual SeedKey : Key<u64,Seed>`, `fn find<Key<K,E>>`, `Key::hash`, and
 `find::<SeedKey>`. `Key<K,E>` forwards the whole group; the full
 `Key<K1,E1>::hash` disambiguates distinct written applications before
@@ -149,6 +149,13 @@ not a type; equal expanded vectors give identical container types. Declaration
 pack positions bind fresh ordered type/const names; forwarding positions name
 existing bindings. Generated function-formal identities are hygienic: `Key::hash`
 cannot capture `put`'s local `hash`.
+
+The maintained complete sparse-map witness linked above deliberately narrows
+that mechanism to `K: affine`. Its duplicate-replacement path explicitly
+disposes the displaced key, which is not a valid operation at the symbolic
+`K: linear` instance. The earlier linear spelling therefore demonstrates the
+behavior-parameter mechanism's bound shape, not a claim that this particular
+full sparse state machine can consume every must-consume key on replacement.
 
 **B** puts those function formals on `struct Map`; `fn find<Map<K,E>>`
 imports its generic header, and `Map::hash` selects a formal, never a method.

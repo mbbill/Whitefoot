@@ -14,8 +14,9 @@
 # run for minutes, and report timings that no build should depend on. The one
 # source target the gate runs is `programs-check`, which compiles every program
 # here with the current compiler, so a language change cannot leave one behind.
-# The gate also runs `uring-check`, a deterministic correctness fixture for the
-# native reference; neither target measures performance.
+# On Linux the gate also runs `uring-check`, a deterministic correctness fixture
+# for the native reference. It needs Linux headers but no live io_uring or
+# network; neither target measures performance.
 #
 #   make -C research/experiments/io-completion-bench verify   correctness only
 #   make -C research/experiments/io-completion-bench bench     the macOS table
@@ -129,6 +130,11 @@ compiler:
 	cd $(ROOT)/compiler && env CARGO_TARGET_DIR=$(ROOT)/compiler/target \
 		cargo build --profile gate --bin whitefootc --locked --offline
 
+# Refresh Cargo before comparing image inputs, including under parallel Make.
+# A no-op Cargo build leaves this real file unchanged. Depending directly on
+# the phony target rebuilt every WF image again for `verify` and `bench`.
+$(WFC): compiler
+
 $(BUILD)/gen: gen.c workload.h | prepare
 	$(CLANG) $(CFLAGS) $< -o $@
 
@@ -146,51 +152,51 @@ $(BUILD)/pipe_harness: pipe_harness.c | prepare
 
 # The gate compiles every WF program and executes the bounded native caller
 # correctness checks. Full workload protocols remain below; independent WF
-# compilations use as many jobs as the host has processors.
+# compilations use JOBS (the guarded gate supplies two by default).
 PROGRAMS := $(wildcard programs/*.wf)
 CHECKED := $(PROGRAMS:programs/%.wf=$(BUILD)/checked_%)
 JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 
-programs-check: compiler ordinary-check | prepare
+programs-check: compiler ordinary-check $(if $(filter Linux,$(shell uname -s)),uring-check) | prepare
 	$(MAKE) -j$(JOBS) $(CHECKED)
 
-$(BUILD)/checked_%: programs/%.wf | prepare
+$(BUILD)/checked_%: programs/%.wf $(WFC) Makefile | prepare
 	$(WFC) -o $@ $<
 
 # The C and S labels retain the same source under two lowering configurations.
 # An identical emitted module makes this pair a measurement-noise control.
-$(BUILD)/%: programs/%.wf compiler | prepare
+$(BUILD)/%: programs/%.wf $(WFC) Makefile | prepare
 	$(WFC) -o $@ $<
 
-$(BUILD)/many_files_wide_seq: programs/many_files_wide.wf compiler | prepare
+$(BUILD)/many_files_wide_seq: programs/many_files_wide.wf $(WFC) Makefile | prepare
 	$(WFC) --no-overlap -o $@ $<
 
-$(BUILD)/many_files_wide8_seq: programs/many_files_wide8.wf compiler | prepare
+$(BUILD)/many_files_wide8_seq: programs/many_files_wide8.wf $(WFC) Makefile | prepare
 	$(WFC) --no-overlap -o $@ $<
 
-$(BUILD)/many_files_narrow_seq: programs/many_files_narrow.wf compiler | prepare
+$(BUILD)/many_files_narrow_seq: programs/many_files_narrow.wf $(WFC) Makefile | prepare
 	$(WFC) --no-overlap -o $@ $<
 
-$(BUILD)/many_files_loop_seq: programs/many_files_loop.wf compiler | prepare
+$(BUILD)/many_files_loop_seq: programs/many_files_loop.wf $(WFC) Makefile | prepare
 	$(WFC) --no-overlap -o $@ $<
 
-$(BUILD)/pipe_relay_seq: programs/pipe_relay.wf compiler | prepare
+$(BUILD)/pipe_relay_seq: programs/pipe_relay.wf $(WFC) Makefile | prepare
 	$(WFC) --no-overlap -o $@ $<
 
 
 $(BUILD)/read_baseline: read_baseline.c workload.h uring_baseline.h | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
 
-$(BUILD)/read_heavy_narrow_seq: programs/read_heavy_narrow.wf compiler | prepare
+$(BUILD)/read_heavy_narrow_seq: programs/read_heavy_narrow.wf $(WFC) Makefile | prepare
 	$(WFC) --no-overlap -o $@ $<
 
-$(BUILD)/read_heavy_wide8_seq: programs/read_heavy_wide8.wf compiler | prepare
+$(BUILD)/read_heavy_wide8_seq: programs/read_heavy_wide8.wf $(WFC) Makefile | prepare
 	$(WFC) --no-overlap -o $@ $<
 
-$(BUILD)/read_heavy_narrow_4k_seq: programs/read_heavy_narrow_4k.wf compiler | prepare
+$(BUILD)/read_heavy_narrow_4k_seq: programs/read_heavy_narrow_4k.wf $(WFC) Makefile | prepare
 	$(WFC) --no-overlap -o $@ $<
 
-$(BUILD)/read_heavy_wide8_4k_seq: programs/read_heavy_wide8_4k.wf compiler | prepare
+$(BUILD)/read_heavy_wide8_4k_seq: programs/read_heavy_wide8_4k.wf $(WFC) Makefile | prepare
 	$(WFC) --no-overlap -o $@ $<
 
 gen: $(BUILD)/gen
@@ -563,7 +569,7 @@ $(BUILD)/epoll_echo: epoll_echo.c | prepare
 $(BUILD)/netload: netload.c | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
 
-$(BUILD)/wf_echo: programs/tcp_echo_server.wf compiler | prepare
+$(BUILD)/wf_echo: programs/tcp_echo_server.wf $(WFC) Makefile | prepare
 	$(WFC) --par -o $@ $<
 
 # The Whitefoot line joins this check when its program is in the bundle; the
@@ -583,7 +589,7 @@ clean:
 
 # Matched public/body callers use the existing ordinary-library object list.
 # Correctness is gated; the optional table uses the original runner and seeds.
-include ../container-representation/native.mk
+include $(ROOT)/compiler/runtime.mk
 .PHONY: ordinary-build ordinary-check ordinary-bench
 ordinary-build: prepare $(BUILD)/ordinary-public $(BUILD)/ordinary-body $(BUILD)/gen $(BUILD)/runner
 

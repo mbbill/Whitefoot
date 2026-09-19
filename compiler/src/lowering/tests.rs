@@ -146,18 +146,15 @@ fn runtime_helper_extents_reach_the_outer_split_estimate() {
     }
     for (source, name) in [
         (
-            include_bytes!("../../../research/experiments/compute-bench/programs/prefix.wf")
-                .as_slice(),
+            include_bytes!("../../../tests/programs/compute/prefix.wf").as_slice(),
             "prefix",
         ),
         (
-            include_bytes!("../../../research/experiments/compute-bench/programs/stencil.wf")
-                .as_slice(),
+            include_bytes!("../../../tests/programs/compute/stencil.wf").as_slice(),
             "stencil",
         ),
         (
-            include_bytes!("../../../research/experiments/compute-bench/programs/histogram.wf")
-                .as_slice(),
+            include_bytes!("../../../tests/programs/compute/histogram.wf").as_slice(),
             "histogram",
         ),
     ] {

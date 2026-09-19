@@ -1,0 +1,157 @@
+fn count_equal_prefix(left: own Slice<u64>, right: own Slice<u64>) -> matched: own u64 reads(left, right) {
+  let left_len = len_of(left);
+  let right_len = len_of(right);
+  let shorter = left_len < right_len;
+  let bound = if shorter {
+    give left_len;
+  } else {
+    give right_len;
+  }
+  let i = 0_u64;
+  let j = 0_u64;
+  let matched = 0_u64;
+  loop (
+    invariant tied_lo: i <= j,
+    invariant tied_hi: j <= i,
+    invariant bounded: i <= bound
+  ) {
+    let remaining = i < bound;
+    if remaining {
+      let left_value = left[i];
+      let right_value = right[j];
+      let same = left_value == right_value;
+      if same {
+        set matched = matched +wrap 1_u64;
+        set i = i + 1_u64;
+        set j = j + 1_u64;
+      } else {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  return matched;
+}
+
+fn fill_ring(capacity: own u64, steps: own u64) -> last_cursor: own u64 pure {
+  let cursor = 0_u64;
+  let taken = 0_u64;
+  loop (
+    invariant bounded: cursor <= capacity,
+    invariant progress: taken <= steps
+  ) {
+    let pending = taken < steps;
+    if pending {
+      let wrapped = cursor >= capacity;
+      if wrapped {
+        set cursor = 0_u64;
+      }
+      let spare = cursor < capacity;
+      if spare {
+        set cursor = cursor + 1_u64;
+      }
+      set taken = taken + 1_u64;
+    } else {
+      break;
+    }
+  }
+  return cursor;
+}
+
+fn text_length<const n: u64>(text: own FixedVector<u8, n>) -> length: own u64 reads(text) {
+  let capacity = len_of(text);
+  let cursor = 0_u64;
+  loop (
+    invariant bounded: cursor <= capacity
+  ) {
+    let inside = cursor < capacity;
+    if inside {
+    } else {
+      break;
+    }
+    let byte = text[cursor];
+    let terminator = byte == 0_u8;
+    if terminator {
+      break;
+    } else {
+      set cursor = cursor + 1_u64;
+    }
+  }
+  return cursor;
+}
+
+fn merge_total<const left_cap: u64, const right_cap: u64>(left: own FixedVector<u64, left_cap>, right: own FixedVector<u64, right_cap>) -> total: own u64 reads(left, right) {
+  let left_len = len_of(left);
+  let right_len = len_of(right);
+  let i = 0_u64;
+  let j = 0_u64;
+  let total = 0_u64;
+  loop (
+    invariant bounded_left: i <= left_len,
+    invariant bounded_right: j <= right_len
+  ) {
+    let left_open = i < left_len;
+    if left_open {
+    } else {
+      break;
+    }
+    let right_open = j < right_len;
+    if right_open {
+    } else {
+      break;
+    }
+    let left_value = left[i];
+    let right_value = right[j];
+    let take_left = left_value <= right_value;
+    if take_left {
+      set total = total +wrap left_value;
+      set i = i + 1_u64;
+    } else {
+      set total = total +wrap right_value;
+      set j = j + 1_u64;
+    }
+  }
+  loop {
+    let left_open = i < left_len;
+    if left_open {
+      let left_value = left[i];
+      set total = total +wrap left_value;
+      set i = i +wrap 1_u64;
+    } else {
+      break;
+    }
+  }
+  loop {
+    let right_open = j < right_len;
+    if right_open {
+      let right_value = right[j];
+      set total = total +wrap right_value;
+      set j = j +wrap 1_u64;
+    } else {
+      break;
+    }
+  }
+  return total;
+}
+
+fn countdown_sum(start: own u64) -> total: own u64 pure {
+  let cursor = start;
+  let total = 0_u64;
+  loop (
+    invariant bounded: cursor <= start
+  ) {
+    let more = cursor > 0_u64;
+    if more {
+      set total = total +wrap cursor;
+      set cursor = cursor - 1_u64;
+    } else {
+      break;
+    }
+  }
+  return total;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

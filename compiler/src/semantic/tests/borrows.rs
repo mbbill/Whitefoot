@@ -136,42 +136,6 @@ fn buffer_borrows_keep_modes_provenance_effects_and_distinct_field_loans() {
 }
 
 #[test]
-fn borrowed_column_effect_rows_are_exact() {
-    let wrong = BORROWED_COLUMNS
-        .windows(b"reads(left, right), writes(left, right)".len())
-        .position(|window| window == b"reads(left, right), writes(left, right)")
-        .expect("fixture contains fill effects");
-    let mut source = BORROWED_COLUMNS.to_vec();
-    source.splice(
-        wrong..wrong + b"reads(left, right), writes(left, right)".len(),
-        b"reads(left, right)".iter().copied(),
-    );
-    with_semantics(&source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("missing write effect must be rejected: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Eff2);
-    });
-}
-
-#[test]
-fn borrowed_buffer_length_exhibits_a_read_of_its_storage_origin() {
-    let source = br#"fn length(values: &buffer<u8>) -> result: own u64 reads(values) {
-  return len_of(deref(values));
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("borrowed length must exhibit its incoming region read: {outcome:?}");
-        };
-    });
-}
-
-#[test]
 fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
     assert_rule(
         br#"fn main() -> status: own ExitStatus pure {
@@ -236,33 +200,6 @@ fn main() -> status: own ExitStatus pure {
         SemanticRule::Own10,
         |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
-}
-
-#[test]
-fn call_effects_preserve_the_incoming_storage_origin() {
-    let source = br#"fn write(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) {
-  let spare = len_of(deref(out));
-  let ok = 0_u64 < spare;
-  if ok {
-    set deref(out)[0_u64] = 1_u8;
-  }
-  return unit;
-}
-
-fn proxy(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) {
-  write(out: move out);
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("incoming call effects must retain their formal origin: {outcome:?}");
-        };
-    });
 }
 
 #[test]
@@ -1011,31 +948,6 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     );
 }
 
-/// [OWN-3, OWN-4] an enclosing region outlives an inner one, so a borrow of
-/// an outer region is legally held by a binding declared any number of
-/// blocks deeper: the borrow value stays live for the holder's whole scope.
-/// The judgment is the outlives relation over region blocks, not a fixed
-/// holder-directly-inside-its-region shape.
-#[test]
-fn outer_region_borrows_may_be_held_under_inner_regions() {
-    with_semantics(
-        b"fn main() -> status: own ExitStatus pure {\n  let a = 7_i32;\n  region 'r {\n    region {\n      region {\n        let q = &'r a;\n        let observed = deref(q);\n      }\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
-        |outcome| {
-            let SemanticOutcome::Complete(_) = outcome else {
-                panic!("an outer-region borrow held two blocks deeper must check: {outcome:?}");
-            };
-        },
-    );
-    with_semantics(
-        b"fn main() -> status: own ExitStatus pure {\n  let a = 7_i32;\n  region 'r {\n    region {\n      let u = &uniq 'r a;\n      set deref(u) = 8_i32;\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
-        |outcome| {
-            let SemanticOutcome::Complete(_) = outcome else {
-                panic!("an outer-region uniq borrow held one block deeper must check: {outcome:?}");
-            };
-        },
-    );
-}
-
 /// [EFF-2] §9.1 attributes reads and writes through an incoming borrow
 /// parameter to that parameter's formal region, both ways.
 #[test]
@@ -1181,39 +1093,6 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// [OWN-13] the borrow-mode payload binder is an arm-scoped child reborrow of
-/// the scrutinee place's root binding: usable within its arm from a `uniq`
-/// root, whose suspension the binder creation establishes; shared roots stay
-/// plain overlapping shared borrows, and a shared binder roots the next
-/// scrutinee in a chain.
-#[test]
-fn arm_scoped_child_reborrows_admit_payload_uses() {
-    with_semantics(
-        b"enum Packet {\n  Data(value: i32);\n}\n\nfn main() -> status: own ExitStatus pure {\n  let packet = Data(value: 4_i32);\n  region {\n    let holder = &uniq packet;\n    match deref(holder) {\n      Data(value: payload) => {\n        let saved = deref(payload);\n      }\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
-        |outcome| {
-            let SemanticOutcome::Complete(_) = outcome else {
-                panic!("a uniq-match payload read through its binder must check: {outcome:?}");
-            };
-        },
-    );
-    with_semantics(
-        b"enum Packet {\n  Data(value: i32);\n  Idle();\n}\n\nfn main() -> status: own ExitStatus pure {\n  let packet = Data(value: 4_i32);\n  region {\n    let holder = &packet;\n    match deref(holder) {\n      Data(value: payload) => {\n        let saved = deref(payload);\n      }\n      Idle() => {\n      }\n    }\n    match deref(holder) {\n      Data(value: payload) => {\n        let again = deref(payload);\n      }\n      Idle() => {\n      }\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
-        |outcome| {
-            let SemanticOutcome::Complete(_) = outcome else {
-                panic!("a shared root is never suspended and matches again: {outcome:?}");
-            };
-        },
-    );
-    with_semantics(
-        b"enum Inner {\n  Leaf(value: i32);\n}\n\nenum Outer {\n  Wrap(inner: Inner);\n}\n\nfn main() -> status: own ExitStatus pure {\n  let leaf = Leaf(value: 7_i32);\n  let packet = Wrap(inner: move leaf);\n  region {\n    let holder = &packet;\n    match deref(holder) {\n      Wrap(inner: nested) => {\n        match deref(nested) {\n          Leaf(value: payload) => {\n            let saved = deref(payload);\n          }\n        }\n      }\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
-        |outcome| {
-            let SemanticOutcome::Complete(_) = outcome else {
-                panic!("a shared binder must root the next scrutinee: {outcome:?}");
-            };
-        },
-    );
-}
-
 /// [OWN-13] a matched-through `uniq` root does not resume within its region:
 /// its post-match use is the OWN-5 suspension rejection on every path, in-arm
 /// use is rejected the same way, and the suspension joins across arms that
@@ -1287,57 +1166,6 @@ fn same_node_return_rejections_cite_the_first_defined_rule() {
 
 const PASSTHRU: &[u8] = b"fn passthru['r0](x: &uniq 'r0 i32) -> result: &uniq 'r0 i32 pure {\n  return &uniq 'r0 deref(x);\n}\n\n";
 
-/// Extension: a borrow-returning call with one same-kind same-region borrow
-/// parameter has unambiguous provenance, so its bound result is an ordinary
-/// holder over the candidate actual's storage: deref reads and set commits
-/// through it check, and a statement-scoped grandchild of the bound result
-/// rides the existing OWN-6 child rule.
-#[test]
-fn extension_binds_call_result_borrows_and_composes_grandchild_chains() {
-    // Bind from a candidate-position child reborrow, then write through it.
-    let mut chain = PASSTHRU.to_vec();
-    chain.extend_from_slice(
-        b"fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region {\n    let h = &uniq v;\n    let r = passthru(x: &uniq deref(h));\n    set deref(r) = 9_i32;\n  }\n  return exit_status(code: 0_u8);\n}\n",
-    );
-    with_semantics(&chain, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("a bound call-result borrow with one candidate must check: {outcome:?}");
-        };
-    });
-    // A statement-scoped grandchild of the bound result feeds an
-    // own-returning callee under the unchanged v0.7 child rule.
-    let mut grandchild = PASSTHRU.to_vec();
-    grandchild.extend_from_slice(
-        b"fn bump(n: &uniq i32) -> result: own unit writes(n) {\n  set deref(n) = 42_i32;\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region {\n    let h = &uniq v;\n    let r = passthru(x: &uniq deref(h));\n    region {\n      bump(n: &uniq deref(r));\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
-    );
-    with_semantics(&grandchild, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("a grandchild chain through a bound result must check: {outcome:?}");
-        };
-    });
-    // A shared bare-holder actual sources a shared result the same way.
-    with_semantics(
-        b"fn source['r](x: &'r i32) -> result: &'r i32 pure {\n  return x;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region {\n    let h = &v;\n    let r = source(x: h);\n    let w = deref(r);\n  }\n  return exit_status(code: 0_u8);\n}\n",
-        |outcome| {
-            let SemanticOutcome::Complete(_) = outcome else {
-                panic!("a shared bare-holder-sourced result must check: {outcome:?}");
-            };
-        },
-    );
-    // The recursive composition: a candidate child in the caller-supplied
-    // parameter region, its bound result, and a returned reborrow of that
-    // result — the chain a recursive traversal threads through its frames.
-    let mut recursive = PASSTHRU.to_vec();
-    recursive.extend_from_slice(
-        b"fn twice['q0](x: &uniq 'q0 i32) -> result: &uniq 'q0 i32 pure {\n  let r = passthru(x: &uniq 'q0 deref(x));\n  return &uniq 'q0 deref(r);\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-    );
-    with_semantics(&recursive, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("a caller-supplied-region chain must check: {outcome:?}");
-        };
-    });
-}
-
 /// Extension: creating the chain suspends the candidate parent holder for
 /// the remainder of its life; the borrow may outlive the statement inside
 /// the bound result — so a later use through the parent, or a second chain
@@ -1389,32 +1217,6 @@ fn extension_keeps_non_candidate_children_rejected() {
         SemanticRule::Own6,
         SemanticIssueKind::InvalidChildReborrow {
             mechanical_fix: OWN6_ARGUMENT_POSITION,
-        },
-    );
-}
-
-/// The candidate child argument and the bare-holder-sourced binding that
-/// v0.30 rejected at OWN-6 and TYPE-5 are admitted through the ordinary
-/// `check_semantics` path — now the only checked judgment there is.
-#[test]
-fn the_shipped_checker_admits_the_extension_shapes() {
-    let mut chain = PASSTHRU.to_vec();
-    chain.extend_from_slice(
-        b"fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region {\n    let h = &uniq v;\n    let r = passthru(x: &uniq deref(h));\n    set deref(r) = 9_i32;\n  }\n  return exit_status(code: 0_u8);\n}\n",
-    );
-    with_semantics(&chain, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "the candidate child argument is admitted on the shipped path: {outcome:?}",
-        );
-    });
-    with_semantics(
-        b"fn source['r](x: &'r i32) -> result: &'r i32 pure {\n  return x;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region {\n    let h = &v;\n    let r = source(x: h);\n    let w = deref(r);\n  }\n  return exit_status(code: 0_u8);\n}\n",
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "the bound call-result holder is an ordinary borrow holder: {outcome:?}",
-            );
         },
     );
 }
@@ -1508,21 +1310,6 @@ fn declaration_provenance_rejects_every_undetermined_source_shape() {
         SemanticRule::Fn1,
         SemanticIssueKind::AmbiguousResultProvenance {
             mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
-        },
-    );
-}
-
-/// The named mechanical fix works: giving the second parameter its own
-/// region leaves exactly one candidate, and the boundary is then accepted
-/// with its result fully usable — bound, and written through.
-#[test]
-fn declaration_provenance_admits_distinct_region_sources_and_keeps_them_usable() {
-    with_semantics(
-        b"fn pick['r](a: &uniq 'r i32, b: &uniq i32) -> result: &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\nfn main() -> status: own ExitStatus pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    region {\n      let r = pick(a: &uniq 'a x, b: &uniq y);\n      set deref(r) = 9_i32;\n      let w = deref(r);\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
-        |outcome| {
-            let SemanticOutcome::Complete(_) = outcome else {
-                panic!("one candidate per region must check and stay usable: {outcome:?}");
-            };
         },
     );
 }
@@ -1832,158 +1619,5 @@ fn main() -> status: own ExitStatus pure {
 "#,
         SemanticRule::Own11,
         |_| true,
-    );
-}
-
-#[test]
-fn statement_children_resume_without_last_use_inference() {
-    // loop parent resumes
-    with_semantics(
-        br#"fn change(value: &uniq u64) -> result: own u64 writes(value) {
-  set deref(value) = 9_u64;
-  return 7_u64;
-}
-
-fn repeat(value: &uniq u64) -> result: own u64 reads(value), writes(value) {
-  let index = 0_u64;
-  loop @again {
-    if index == 2_u64 {
-      break @again;
-    }
-    let old = change(value: &uniq deref(value));
-    let current = deref(value);
-    set index = index +wrap 1_u64;
-  }
-  return deref(value);
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "loop_parent_resumes: {outcome:?}"
-            );
-        },
-    );
-    // siblings disjoint
-    with_semantics(br#"fn change(value: &uniq u64) -> result: own u64 writes(value) {
-  set deref(value) = 9_u64;
-  return 7_u64;
-}
-
-struct Pair {
-  left: u64;
-  right: u64;
-}
-
-fn apply(pair: &uniq Pair) -> result: own unit writes(pair.left, pair.right) {
-  let left = 0_u64;
-  let right = 0_u64;
-  region {
-    let marker = 0_u64;
-    set (left, right) = change(value: &uniq deref(pair).left), change(value: &uniq deref(pair).right);
-    set deref(pair).left = 11_u64;
-  }
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#, |outcome| {
-        assert!(matches!(outcome, SemanticOutcome::Complete(_)), "siblings_disjoint: {outcome:?}");
-    });
-    // view inner region ends
-    with_semantics(
-        br#"fn pause(view: &uniq MutSlice<u8>) -> result: own unit pure {
-  return unit;
-}
-
-fn good(view: &uniq MutSlice<u8>) -> result: own u8 reads(view), writes(view) contract {
-  requires len_of(deref(view)) == 1_u64;
-} {
-  region {
-    pause(view: &uniq deref(view));
-    let previous = 0_u8;
-    region {
-      let shared = slice_of(&deref(view));
-      set previous = shared[0_u64];
-    }
-    set deref(view)[0_u64] = 9_u8;
-    return previous;
-  }
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "view_inner_region_ends: {outcome:?}"
-            );
-        },
-    );
-    // earlier read ok
-    with_semantics(
-        br#"struct Pair {
-  left: u64;
-  right: u64;
-}
-
-fn use_pair(value: own u64, part: &uniq u64) -> result: own unit pure {
-  return unit;
-}
-
-fn good(pair: &uniq Pair) -> result: own unit reads(pair.right) {
-  region {
-    use_pair(value: deref(pair).right, part: &uniq deref(pair).left);
-  }
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "earlier_read_ok: {outcome:?}"
-            );
-        },
-    );
-    // shared parent ok
-    with_semantics(
-        br#"struct Pair {
-  left: u64;
-  right: u64;
-}
-
-fn use_pair(part: &u64, value: own u64) -> result: own unit pure {
-  return unit;
-}
-
-fn good(pair: &Pair) -> result: own unit reads(pair.right) {
-  region {
-    use_pair(part: &deref(pair).left, value: deref(pair).right);
-  }
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "shared_parent_ok: {outcome:?}"
-            );
-        },
     );
 }

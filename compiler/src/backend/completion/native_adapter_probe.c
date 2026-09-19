@@ -23,6 +23,7 @@
 #include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include "../runtime_test_guard.h"
 
 #define PROBE_CHECK(condition)                                                \
     do {                                                                      \
@@ -73,18 +74,19 @@ static void *probe_park_thread(void *opaque) {
     context->result = wf_linux_io_uring_park(
         context->adapter,
         context->epoch,
-        UINT32_MAX
+        5000u
     );
     return NULL;
 }
 
 static int probe_wait_until_announced(wf_completion_runtime *runtime) {
-    unsigned attempt;
-    for (attempt = 0; attempt < 1000000u; ++attempt) {
+    uint64_t deadline = wf_prim_monotonic_us() + 5000000u;
+    while (wf_prim_monotonic_us() < deadline) {
         if (wf_completion_parked_scheduler_count(runtime) != 0) {
             return 0;
         }
-        (void)sched_yield();
+        const struct timespec pause = {0, 1000000};
+        (void)nanosleep(&pause, NULL);
     }
     return 1;
 }
@@ -184,7 +186,7 @@ static void *probe_wait_for_own_record(void *opaque) {
             context->result = wf_linux_io_uring_park(
                 context->adapter,
                 epoch,
-                UINT32_MAX
+                5000u
             );
             if (context->result != 0) {
                 return NULL;
@@ -198,12 +200,13 @@ static int probe_wait_for_parked_count(
     wf_completion_runtime *runtime,
     unsigned expected
 ) {
-    unsigned attempt;
-    for (attempt = 0; attempt < 1000000u; ++attempt) {
+    uint64_t deadline = wf_prim_monotonic_us() + 5000000u;
+    while (wf_prim_monotonic_us() < deadline) {
         if (wf_completion_parked_scheduler_count(runtime) == expected) {
             return 0;
         }
-        (void)sched_yield();
+        const struct timespec pause = {0, 1000000};
+        (void)nanosleep(&pause, NULL);
     }
     return 1;
 }
@@ -216,15 +219,19 @@ static int probe_drive_to_terminal(
     wf_linux_io_uring_adapter *adapter,
     wf_completion_record *record
 ) {
-    unsigned attempt;
-    for (attempt = 0; attempt < 100000u; ++attempt) {
+    uint64_t deadline = wf_prim_monotonic_us() + 5000000u;
+    while (wf_prim_monotonic_us() < deadline) {
         size_t published = 0;
         if (probe_record_done(record)) {
             return 0;
         }
         PROBE_CHECK(
-            wf_linux_io_uring_progress(adapter, 4, 1, &published) == 0
+            wf_linux_io_uring_progress(adapter, 4, 0, &published) == 0
         );
+        if (!published) {
+            const struct timespec pause = {0, 1000000};
+            (void)nanosleep(&pause, NULL);
+        }
     }
     PROBE_CHECK(probe_record_done(record));
     return 0;
@@ -265,6 +272,7 @@ static int probe_open_and_close_cases(
     wf_linux_io_uring_adapter *adapter,
     const char *data_path
 ) {
+    wf_test_guard_phase("probe_open_and_close_cases");
     wf_completion_record record;
     char directory[512];
     char missing[512];
@@ -297,7 +305,17 @@ static int probe_open_and_close_cases(
 
     /* A regular file the operation asked for opens and closes on the ring. */
     probe_open_record(&record, data_path, WF_FILE_EXPECT_REGULAR);
-    PROBE_CHECK(probe_run_one(adapter, &record) == 0);
+    PROBE_CHECK(wf_linux_io_uring_submit(adapter, &record)
+                == WF_LINUX_IO_URING_TARGET_OWNS);
+    (void)pthread_mutex_lock(&adapter->submission_lock);
+    unsigned tail = __atomic_load_n(adapter->submission_tail, __ATOMIC_ACQUIRE);
+    struct io_uring_sqe submitted =
+        adapter->submission_entries[(tail - 1u) & *adapter->submission_mask];
+    (void)pthread_mutex_unlock(&adapter->submission_lock);
+    PROBE_CHECK(submitted.opcode == IORING_OP_OPENAT);
+    PROBE_CHECK(submitted.addr == (uint64_t)(uintptr_t)data_path);
+    PROBE_CHECK(submitted.user_data == (uint64_t)(uintptr_t)&record);
+    PROBE_CHECK(probe_drive_to_terminal(adapter, &record) == 0);
     PROBE_CHECK(record.result.kind == WF_FILE_OPEN_AT);
     PROBE_CHECK(record.result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
     PROBE_CHECK(record.result.error_code == 0);
@@ -361,43 +379,8 @@ static int probe_open_and_close_cases(
     return 0;
 }
 
-/* A submitted open resolves the submitting frame's own bytes.
- *
- * The SQE names the caller's buffer and the caller keeps it live until the
- * join, because the record belongs to that frame and the ordinary library
- * call does not return until the request is finished. The adapter does not
- * copy the component into a bounded pool entry or introduce another path
- * capacity refusal. This probe checks that the SQE names the request's
- * actual bytes throughout the native operation. */
-static int probe_open_names_the_submitters_bytes(
-    wf_linux_io_uring_adapter *adapter,
-    const char *data_path
-) {
-    wf_completion_record record;
-    char requested[512];
-
-    PROBE_CHECK(
-        (size_t)snprintf(requested, sizeof(requested), "%s", data_path)
-        < sizeof(requested)
-    );
-    probe_open_record(&record, requested, WF_FILE_EXPECT_REGULAR);
-    PROBE_CHECK(
-        wf_linux_io_uring_submit(adapter, &record)
-        == WF_LINUX_IO_URING_TARGET_OWNS
-    );
-    PROBE_CHECK(record.request.operation.open_at.path == requested);
-    PROBE_CHECK(probe_drive_to_terminal(adapter, &record) == 0);
-    PROBE_CHECK(record.result.kind == WF_FILE_OPEN_AT);
-    PROBE_CHECK(record.result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    PROBE_CHECK(record.result.error_code == 0 && record.result.value >= 0);
-
-    probe_close_record(&record, (int)record.result.value);
-    PROBE_CHECK(probe_run_one(adapter, &record) == 0);
-    PROBE_CHECK(record.result.value == 0 && record.result.error_code == 0);
-    return 0;
-}
-
-/* More operations in flight than the ring is deep.
+/* Admission and progress past the submission depth. Completions may already
+ * occur while later requests are being submitted.
  *
  * This is what replaces `probe_open_capacity_case`, whose WAIT_CAPACITY answer
  * and readmission-after-release are both gone: the ring's depth is a
@@ -406,10 +389,11 @@ static int probe_open_names_the_submitters_bytes(
  * (design §7).  So the property to test is the opposite one -- that submitting
  * more operations than the ring is deep is accepted and every one of them
  * completes. */
-static int probe_more_in_flight_than_the_ring_is_deep(
+static int probe_admission_past_the_submission_depth(
     wf_linux_io_uring_adapter *adapter,
     int descriptor
 ) {
+    wf_test_guard_phase("probe_admission_past_the_submission_depth");
     enum { OPERATIONS = 12 };
     wf_completion_record records[OPERATIONS];
     unsigned char bytes[OPERATIONS];
@@ -453,13 +437,14 @@ static int probe_completions_past_the_queue_are_flushed_from_the_kernel(
     wf_linux_io_uring_adapter *adapter,
     int descriptor
 ) {
+    wf_test_guard_phase("probe_completions_past_the_queue_are_flushed_from_the_kernel");
     enum { OPERATIONS = 24 };
     wf_completion_record records[OPERATIONS];
     unsigned char bytes[OPERATIONS];
     wf_linux_io_uring_statistics before;
     wf_linux_io_uring_statistics after;
     size_t published = 0;
-    unsigned attempt;
+    uint64_t deadline;
     unsigned index;
 
     PROBE_CHECK(*adapter->completion_count < OPERATIONS);
@@ -477,12 +462,17 @@ static int probe_completions_past_the_queue_are_flushed_from_the_kernel(
         );
     }
     PROBE_CHECK(wf_linux_io_uring_flush(adapter) == 0);
-    for (attempt = 0; attempt < 100000u && published < OPERATIONS; ++attempt) {
+    deadline = wf_prim_monotonic_us() + 5000000u;
+    while (published < OPERATIONS && wf_prim_monotonic_us() < deadline) {
         size_t step = 0;
         PROBE_CHECK(
             wf_linux_io_uring_progress(adapter, OPERATIONS, 0, &step) == 0
         );
         published += step;
+        if (!step) {
+            const struct timespec pause = {0, 1000000};
+            (void)nanosleep(&pause, NULL);
+        }
     }
     PROBE_CHECK(published == OPERATIONS);
     for (index = 0; index < OPERATIONS; ++index) {
@@ -510,6 +500,7 @@ static int probe_completions_past_the_queue_are_flushed_from_the_kernel(
  * connect completes only once something accepts, and the record is a block of
  * this frame either way. */
 static int probe_loopback_round_trip(wf_linux_io_uring_adapter *adapter) {
+    wf_test_guard_phase("probe_loopback_round_trip");
     wf_completion_record connecting;
     wf_completion_record accepting;
     wf_completion_record sending;
@@ -614,17 +605,15 @@ int main(int argc, char **argv) {
     wf_linux_io_uring_adapter adapter;
     wf_completion_record first;
     wf_completion_record second;
-    wf_completion_record third;
     unsigned char first_bytes[4] = {0};
     unsigned char second_bytes[4] = {0};
     const unsigned char seed[8] = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'};
-    const unsigned char suffix[2] = {'I', 'J'};
-    unsigned char final_bytes[10] = {0};
     size_t published = 0;
     int descriptor;
     int error;
 
     PROBE_CHECK(argc == 2);
+    wf_test_guard_start(180);
     PROBE_CHECK(wf_completion_runtime_init(&runtime) == 0);
     /* The ring is deliberately shallower than the number of operations this
      * probe puts in flight, so that the submitting call's own kick is what
@@ -637,6 +626,7 @@ int main(int argc, char **argv) {
             strerror(error)
         );
         PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+        wf_test_guard_finish();
         return 77;
     }
     probe_runtime = &runtime;
@@ -647,6 +637,7 @@ int main(int argc, char **argv) {
             &adapter
         ) == 0
     );
+    wf_test_guard_phase("native positioned reads");
     descriptor = open(argv[1], O_CREAT | O_TRUNC | O_RDWR, 0600);
     PROBE_CHECK(descriptor >= 0);
     PROBE_CHECK(pwrite(descriptor, seed, sizeof(seed), 0) == (ssize_t)sizeof(seed));
@@ -684,30 +675,8 @@ int main(int argc, char **argv) {
     PROBE_CHECK(memcmp(first_bytes, seed, 4) == 0);
     PROBE_CHECK(memcmp(second_bytes, seed + 4, 4) == 0);
 
-    probe_record_init(&third, WF_FILE_PWRITE);
-    third.request.operation.pwrite.descriptor = descriptor;
-    third.request.operation.pwrite.buffer = suffix;
-    third.request.operation.pwrite.count = sizeof(suffix);
-    third.request.operation.pwrite.offset = (int64_t)sizeof(seed);
     PROBE_CHECK(
-        wf_linux_io_uring_submit(&adapter, &third)
-        == WF_LINUX_IO_URING_TARGET_OWNS
-    );
-    published = 0;
-    while (published == 0) {
-        PROBE_CHECK(
-            wf_linux_io_uring_progress(&adapter, 1, 1, &published) == 0
-        );
-    }
-    PROBE_CHECK(probe_record_done(&third));
-    PROBE_CHECK(third.result.kind == WF_FILE_PWRITE);
-    PROBE_CHECK(third.result.value == 2 && third.result.error_code == 0);
-    PROBE_CHECK(pread(descriptor, final_bytes, sizeof(final_bytes), 0) == 10);
-    PROBE_CHECK(memcmp(final_bytes, seed, sizeof(seed)) == 0);
-    PROBE_CHECK(memcmp(final_bytes + sizeof(seed), suffix, sizeof(suffix)) == 0);
-
-    PROBE_CHECK(
-        probe_more_in_flight_than_the_ring_is_deep(&adapter, descriptor) == 0
+        probe_admission_past_the_submission_depth(&adapter, descriptor) == 0
     );
     PROBE_CHECK(
         probe_completions_past_the_queue_are_flushed_from_the_kernel(
@@ -718,6 +687,7 @@ int main(int argc, char **argv) {
 
     PROBE_CHECK(probe_loopback_round_trip(&adapter) == 0);
 
+    wf_test_guard_phase("native epoch and eventfd wake");
     /* An epoch change before sleep performs no explicit host wake while
      * nobody has announced one. The subsequent park observes the epoch and
      * returns without entering epoll. */
@@ -790,6 +760,7 @@ int main(int argc, char **argv) {
         }
     }
 
+    wf_test_guard_phase("native multi-waiter broadcast");
     /* Four lanes wait in place on four distinct records. Completions may race
      * and coalesce into one eventfd level, but no lane may consume that
      * broadcast fact before every already-announced waiter has left epoll. */
@@ -847,8 +818,8 @@ int main(int argc, char **argv) {
     }
 
     PROBE_CHECK(probe_open_and_close_cases(&adapter, argv[1]) == 0);
-    PROBE_CHECK(probe_open_names_the_submitters_bytes(&adapter, argv[1]) == 0);
 
+    wf_test_guard_phase("sticky native progress error and teardown");
     /* Once target ownership exists, a fatal progress condition is sticky and
      * observable by both progress and park. The production bridge fail-stops
      * on this result instead of falling back or waiting forever. */
@@ -874,6 +845,7 @@ int main(int argc, char **argv) {
     PROBE_CHECK(wf_linux_io_uring_destroy(&adapter) == 0);
     PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     PROBE_CHECK(close(descriptor) == 0);
+    wf_test_guard_finish();
     printf("native-adapter-probe target=linux-io-uring status=pass\n");
     return 0;
 }
@@ -887,13 +859,13 @@ int main(int argc, char **argv) {
 #define _WIN32_WINNT 0x0602
 #endif
 
-#include "native_contract.h"
 #include "windows_iocp.h"
 
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
+#include "../runtime_test_guard.h"
 
 #define PROBE_CHECK(condition)                                                \
     do {                                                                      \
@@ -936,9 +908,6 @@ int main(int argc, char **argv) {
     wf_completion_runtime runtime;
     wf_windows_iocp_adapter adapter;
     wf_completion_record record;
-    wf_completion_target_contract contract = wf_completion_target_contract_for(
-        WF_TARGET_WINDOWS_IOCP
-    );
     const unsigned char written[4] = {'i', 'o', 'c', 'p'};
     unsigned char read_back[4];
     HANDLE handle;
@@ -949,10 +918,7 @@ int main(int argc, char **argv) {
     if (argc != 2) {
         return 2;
     }
-    PROBE_CHECK(contract.implemented == 1);
-    PROBE_CHECK(contract.native_completion == 1);
-    PROBE_CHECK(contract.may_use_blocking_helpers == 0);
-    PROBE_CHECK(contract.supports_scheduler_progress == 1);
+    wf_test_guard_start(180);
 
     for (index = 0; index < MAX_PATH && argv[1][index] != 0; ++index) {
         path[index] = (WCHAR)(unsigned char)argv[1][index];
@@ -971,6 +937,7 @@ int main(int argc, char **argv) {
         ) == 0
     );
 
+    wf_test_guard_phase("empty IOCP helper wake");
     /* A helper completion has no kernel I/O packet. Exercise its explicit
      * wake on a fresh empty port before any file submission can mask a lost
      * notification. The existing wait counter selects the announced schedule;
@@ -989,6 +956,7 @@ int main(int argc, char **argv) {
                && GetTickCount64() < until) {
             (void)SwitchToThread();
         }
+        PROBE_CHECK(wf_windows_iocp_statistics_snapshot(&adapter).kernel_waits == 1u);
         completed.result.kind = WF_FILE_PREAD;
         completed.result.value = 37;
         wf_completion_record_complete(&completed);
@@ -1003,6 +971,7 @@ int main(int argc, char **argv) {
         PROBE_CHECK(wf_completion_parked_scheduler_count(&runtime) == 0u);
     }
 
+    wf_test_guard_phase("native IOCP positioned read and drain");
     /* The fixture is written first, through a synchronous handle of its own,
      * and only then opened for overlapped reading: the handle the port takes
      * is the one this probe submits on. */
@@ -1066,7 +1035,7 @@ int main(int argc, char **argv) {
         if (published != 0 || probe_state(&record) == WF_COMPLETION_DONE) {
             continue;
         }
-        PROBE_CHECK(wf_windows_iocp_park(&adapter, epoch, UINT32_MAX) == 0);
+        PROBE_CHECK(wf_windows_iocp_park(&adapter, epoch, 5000u) == 0);
     }
 
     PROBE_CHECK(record.result.kind == WF_FILE_PREAD);
@@ -1079,6 +1048,7 @@ int main(int argc, char **argv) {
     PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     probe_runtime = NULL;
     PROBE_CHECK(CloseHandle(handle) != FALSE);
+    wf_test_guard_finish();
     (void)printf("native-adapter-probe target=windows-iocp status=pass\n");
     return 0;
 }

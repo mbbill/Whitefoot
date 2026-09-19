@@ -99,45 +99,6 @@ fn group_contracts_publish_only_after_structurally_matched_actual_proofs() {
 }
 
 #[test]
-fn owned_function_formal_results_follow_ordinary_transfer() {
-    let source = r#"formal Factory<T: affine> {
-  fn make(value: own T) -> result: own T pure;
-}
-
-fn retain(value: own FixedVector<u8, 4>) -> result: own FixedVector<u8, 4> pure {
-  return move value;
-}
-
-actual Identity : Factory<FixedVector<u8, 4>> {
-  make = retain;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    // v0.58 removes FN-1 state routing and the derived FN-4 freshness
-    // ceiling. A same-signature actual can return the value it consumes.
-    with_semantics(source.as_bytes(), |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        );
-    });
-    with_semantics(
-        source
-            .replace("return move value;", "return fixed_vector::<u8, 4>();")
-            .as_bytes(),
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "{outcome:?}"
-            );
-        },
-    );
-}
-
-#[test]
 fn raw_function_binders_are_visible_and_emit_no_symbolic_hypotheses() {
     let source = br#"fn zero() -> result: own u64 pure {
   return 0_u64;
@@ -226,54 +187,6 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn function_arguments_do_not_masquerade_as_store_regions() {
-    let base = "fn spare() -> result: own unit pure {\n  return unit;\n}\n\n";
-    let main = "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-    for ty in [
-        "Holder<fn spare>",
-        "Box<fn spare>",
-        "FixedVector<fn spare, 4>",
-        "Vector<fn spare>",
-    ] {
-        let source = format!(
-            "struct Holder['s] {{\n  data: Box<'s, u64>;\n}}\n\n{base}fn inspect(value: &{ty}) -> result: own unit pure {{\n  return unit;\n}}\n\n{main}"
-        );
-        assert_behavior_rule(&source, SemanticRule::Type5);
-    }
-    let source = format!(
-        "formal Inspect<T: linear> {{\n  fn inspect(value: &T) -> result: own unit pure;\n}}\n\nfn ignore['s](value: &Box<'s, u64>) -> result: own unit pure {{\n  return unit;\n}}\n\nactual Bound['s] : Inspect<Box<'s, u64>> {{\n  inspect = ignore;\n}}\n\n{base}struct Holder<Inspect<T>> {{\n  value: T;\n}}\n\nfn inspect(value: &Holder<Bound<fn spare>>) -> result: own unit pure {{\n  return unit;\n}}\n\n{main}"
-    );
-    assert_behavior_rule(&source, SemanticRule::Fn2);
-    let source = format!(
-        "{base}fn main() -> status: own ExitStatus pure {{\n  let value = arena_new::<fn spare, u64>(1_u64);\n  return exit_status(code: 0_u8);\n}}\n"
-    );
-    assert_behavior_rule(&source, SemanticRule::Op1);
-}
-
-#[test]
-fn unused_formal_members_obey_ordinary_signature_formation() {
-    for (signature, rule) in [
-        (
-            "fn inspect(value: &u64) -> result: own unit writes(value);",
-            SemanticRule::Eff1,
-        ),
-        (
-            "fn inspect['r](left: &'r u64, right: &'r u64) -> result: &'r u64 pure;",
-            SemanticRule::Fn1,
-        ),
-        (
-            "fn inspect(value: own u64) -> result: own u64 pure contract {\n    requires value;\n  };",
-            SemanticRule::Op5,
-        ),
-    ] {
-        let source = format!(
-            "formal Invalid {{\n  {signature}\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
-        );
-        assert_behavior_rule(&source, rule);
-    }
-}
-
-#[test]
 fn member_regions_are_instantiated_per_call_and_never_on_the_formal_header() {
     let source = br#"formal Pass {
   fn pass['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure;
@@ -358,74 +271,6 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn actual_captured_region_bounds_are_checked_at_each_application() {
-    let source = r#"formal Inspect<T: linear> {
-  fn inspect(value: &T) -> result: own unit pure;
-}
-
-fn ignore['s](value: &Box<'s, u64>) -> result: own unit pure {
-  return unit;
-}
-
-actual ExtentOnly['b: affine] : Inspect<Box<'b, u64>> {
-  inspect = ignore;
-}
-
-fn apply<Inspect<T>>(value: &T) -> result: own unit pure {
-  return Inspect::inspect(value: value);
-}
-
-fn accepts['h: linear](value: &Box<'h, u64>) -> result: own unit pure {
-  return apply::<ExtentOnly<'h>>(value: value);
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    assert_behavior_rule(source, SemanticRule::Prov6);
-    let matching = source.replace("'h: linear", "'h: affine");
-    with_semantics(matching.as_bytes(), |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        );
-    });
-    let unbounded = source.replace("'h: linear", "'h");
-    assert_behavior_rule(&unbounded, SemanticRule::Prov6);
-}
-
-#[test]
-fn member_region_bounds_are_checked_before_an_actual_can_be_called() {
-    let source = r#"formal Inspect {
-  fn length['s: linear](values: &Vector<'s, u64>) -> result: own u64 reads(values);
-}
-
-fn shorter['t: affine](values: &Vector<'t, u64>) -> result: own u64 reads(values) {
-  return len_of(deref(values));
-}
-
-actual Narrow : Inspect {
-  length = shorter;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    assert_behavior_rule(source, SemanticRule::Fn4);
-    let matching = source.replace("'t: affine", "'t: linear");
-    with_semantics(matching.as_bytes(), |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        );
-    });
-    let unbounded = source.replace("'t: affine", "'t");
-    assert_behavior_rule(&unbounded, SemanticRule::Fn4);
-}
-
-#[test]
 fn actual_expansion_cycles_include_member_function_arguments() {
     let source = r#"formal Work {
   fn run() -> result: own unit pure;
@@ -450,36 +295,6 @@ fn main() -> status: own ExitStatus pure {
         };
         assert_eq!(issue.rule(), SemanticRule::Fn3);
         assert!(format!("{:?}", issue.kind()).contains("Recursive -> Recursive"));
-    });
-}
-
-#[test]
-fn captured_store_brands_are_bound_before_loan_region_alpha_matching() {
-    let source = r#"struct Item {
-  rank: u64;
-}
-
-formal Inspect<T: linear> {
-  fn inspect(value: &T) -> result: own unit pure;
-}
-
-fn ignore['store](value: &Box<'store, Item>) -> result: own unit pure {
-  return unit;
-}
-
-actual ItemInspect['s] : Inspect<Box<'s, Item>> {
-  inspect = ignore;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source.as_bytes(), |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        );
     });
 }
 
@@ -585,34 +400,6 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn qualified_function_formals_cannot_silently_drop_specialization_arguments() {
-    let source = r#"formal Work {
-  fn run() -> result: own unit pure;
-}
-
-fn recurse<Work>() -> result: own unit pure {
-  return recurse::<fn Work::run::<u64>>();
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    assert_behavior_rule(source, SemanticRule::Fn2);
-    with_semantics(
-        source
-            .replace("fn Work::run::<u64>", "fn Work::run")
-            .as_bytes(),
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "{outcome:?}"
-            );
-        },
-    );
-}
-
-#[test]
 fn instantiation_forwards_all_kinds_and_refuses_constructed_cycles_on_both_paths() {
     let forward = br#"fn task() -> result: own unit pure {
   return unit;
@@ -675,61 +462,6 @@ fn main() -> status: own ExitStatus pure {
     }
 }
 
-#[test]
-fn the_formal_row_survives_a_narrower_actual_and_the_containing_instance() {
-    let source = r#"struct Pair {
-  left: u64;
-  right: u64;
-}
-
-formal Inspect<T: affine> {
-  fn read(value: &T) -> result: own u64 reads(value);
-}
-
-fn left(input: &Pair) -> result: own u64 reads(input.left) {
-  return deref(input).left;
-}
-
-actual Left : Inspect<Pair> {
-  read = left;
-}
-
-fn outer<Inspect<T>>(value: &T) -> result: own u64 reads(value) {
-  return Inspect::read(value: value);
-}
-
-fn wrapper(value: &Pair) -> result: own u64 reads(value) {
-  return outer::<Left>(value: value);
-}
-
-fn main() -> status: own ExitStatus pure {
-  let pair = Pair(left: 3_u64, right: 5_u64);
-  region {
-    let observed = wrapper(value: &pair);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source.as_bytes(), |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("{outcome:?}");
-        };
-        lower_checked(*checked, OverlapLowering::Off)
-            .expect("covered actual lowers as a direct call");
-    });
-    // v0.58 EFF-2 projects the formal's root onto the resolved actual place,
-    // without value-history leaf expansion. The complete formal read remains
-    // exhibited; substituting the narrower actual would accept this wrapper
-    // incorrectly when it declares only the left field.
-    assert_behavior_rule(
-        &source.replace(
-            "fn wrapper(value: &Pair) -> result: own u64 reads(value)",
-            "fn wrapper(value: &Pair) -> result: own u64 reads(value.left)",
-        ),
-        SemanticRule::Eff2,
-    );
-}
-
 fn assert_issue_slice(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind, expected: &[u8]) {
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -742,24 +474,6 @@ fn assert_issue_slice(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind
         let end = usize::try_from(coordinate.end().value()).expect("test offset fits");
         assert_eq!(&source[start..end], expected);
     });
-}
-
-#[test]
-fn factored_member_call_grammar_preserves_constructor_boundaries() {
-    for (statement, rule) in [
-        ("let value = Empty::<u64>();", SemanticRule::Type5),
-        ("let value = True::<u64>();", SemanticRule::Type5),
-        ("let value = True<u64>();", SemanticRule::Type5),
-        ("let value = True(7_u64);", SemanticRule::Gram8),
-        ("let value = Empty(7_u64);", SemanticRule::Gram8),
-        ("Empty();", SemanticRule::Type5),
-        ("let (left, right) = Empty();", SemanticRule::Type5),
-    ] {
-        let source = format!(
-            "struct Empty {{\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  {statement}\n  return exit_status(code: 0_u8);\n}}\n"
-        );
-        assert_behavior_rule(&source, rule);
-    }
 }
 
 #[test]
@@ -1102,29 +816,6 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn formal_headers_are_generic_but_cannot_construct_other_groups() {
-    let source = br#"formal Generic<T: affine> {
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    // D7 deliberately admits this formerly rejected declaration: a formal
-    // header is the flat type/const part of its expansion.
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        );
-    });
-    let nested = String::from_utf8(source.to_vec())
-        .expect("ASCII fixture")
-        .replace("T: affine", "fn make() -> result: own u64 pure");
-    assert_behavior_rule(&nested, SemanticRule::Fn3);
-}
-
-#[test]
 fn repeated_member_points_at_the_later_signature() {
     let source = br#"formal Repeated {
   fn value() -> result: own i32 pure;
@@ -1181,31 +872,6 @@ fn main() -> status: own ExitStatus pure {
         ),
         b"Plain<i32>",
     );
-}
-
-#[test]
-fn different_actual_names_can_bind_the_same_formal_and_type() {
-    let source = br#"formal Marker<T: copy> {
-}
-
-actual First : Marker<i32> {
-}
-
-actual Second : Marker<i32> {
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    // D7 replaces the implicit (type, contract) uniqueness key with explicit
-    // argument-group names. Choosing between them is a call-site obligation.
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        );
-    });
 }
 
 #[test]
@@ -1364,30 +1030,6 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn positional_region_ordinal_swap_is_not_alpha_equal() {
-    let source = br#"formal FirstLength {
-  fn length(x: &FixedVector<u8, 4>, y: &FixedVector<u8, 4>) -> result: own u64 reads(x);
-}
-
-fn second_length(first: &FixedVector<u8, 4>, second: &FixedVector<u8, 4>) -> result: own u64 reads(second) {
-  return len_of(deref(second));
-}
-
-actual Wrong : FirstLength {
-  length = second_length;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    assert_behavior_rule(
-        std::str::from_utf8(source).expect("ASCII fixture"),
-        SemanticRule::Fn4,
-    );
-}
-
-#[test]
 fn formal_slice_results_share_function_signature_formation() {
     let source = br#"formal SlicePass {
   fn pass['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure;
@@ -1434,62 +1076,5 @@ fn main() -> status: own ExitStatus pure {
         SemanticIssueKind::BorrowedSliceResult {
             mechanical_fix: "return the direct own slice descriptor under its data region; do not return a borrow of a slice descriptor",
         },
-    );
-}
-
-#[test]
-fn contract_effect_paths_compare_parameter_and_field_ordinals() {
-    let accepted = br#"struct Pair {
-  left: u64;
-  right: u64;
-}
-
-formal Touch {
-  fn touch(value: &uniq Pair) -> result: own unit reads(value.left), writes(value.right);
-}
-
-fn apply(input: &uniq Pair) -> result: own unit reads(input.left), writes(input.right) {
-  let observed = deref(input).left;
-  set deref(input).right = observed;
-  return unit;
-}
-
-actual PairTouch : Touch {
-  touch = apply;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(accepted, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "contract paths must alpha-normalize parameter and field ordinals: {outcome:?}"
-        );
-    });
-
-    let mut wrong = accepted.to_vec();
-    let row = b"reads(input.left), writes(input.right)";
-    let at = wrong
-        .windows(row.len())
-        .position(|window| window == row)
-        .expect("fixture contains the implementation row");
-    wrong.splice(
-        at..at + row.len(),
-        b"reads(input.left), writes(input.left)".iter().copied(),
-    );
-    let assignment = b"set deref(input).right = observed;";
-    let at = wrong
-        .windows(assignment.len())
-        .position(|window| window == assignment)
-        .expect("fixture contains the implementation assignment");
-    wrong.splice(
-        at..at + assignment.len(),
-        b"set deref(input).left = observed;".iter().copied(),
-    );
-    assert_behavior_rule(
-        std::str::from_utf8(&wrong).expect("ASCII fixture"),
-        SemanticRule::Fn4,
     );
 }

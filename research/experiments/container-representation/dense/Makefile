@@ -11,7 +11,7 @@ case_flags = -DSIZE=$(call case_size,$(1)) -DLANES=$(call case_lanes,$(1))
 CFLAGS := -O2 -std=c17 -Wall -Wextra -Werror
 IRFLAGS := -O2 -Wno-override-module
 
-include ../native.mk
+include $(ROOT)/compiler/runtime.mk
 
 .PHONY: all check measure shape clean
 .PRECIOUS: $(BUILD)/dense%.wf $(BUILD)/raw%.ll $(BUILD)/linked%.ll \
@@ -69,9 +69,11 @@ shape: $(CASES:%=$(BUILD)/optimized%.ll) $(CASES:%=$(BUILD)/dense%.s) \
 
 shape: $(BUILD)/boundary256.ll
 
-check: all
+$(BUILD)/inline-view: inline-view.wf $(WHITEFOOTC) Makefile | $(BUILD)
+	$(WHITEFOOTC) -o $@ $<
+
+check: all $(BUILD)/inline-view
 	rustfmt --edition 2024 --check driver.rs
-	$(WHITEFOOTC) -o $(BUILD)/inline-view inline-view.wf
 	$(BUILD)/inline-view
 	@set -eu; for size in $(CASES); do \
 		$(BUILD)/smoke$$size; \

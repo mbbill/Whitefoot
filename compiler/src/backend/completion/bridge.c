@@ -519,7 +519,7 @@ static void wf_bridge_verify_required_ring(void) {
     if (statistics.submissions == 0
         || statistics.completions != statistics.submissions) {
         wf_bridge_fail(
-            "WF_REQUIRE_WINDOWS_IOCP was set and this run did not complete every operation it submitted to the port"
+            "WF_REQUIRE_WINDOWS_IOCP was set but native IOCP was unavailable, unused, or incomplete"
         );
     }
 }
@@ -535,6 +535,16 @@ static int wf_bridge_windows_ring_required(void) {
 }
 
 static int wf_bridge_ring_start(void) {
+    /* Register before refusal or initialization can select the adapter. A
+     * required-native run must fail even when no port was ever initialized. */
+    if (wf_bridge_windows_ring_required()) {
+        wf_bridge_windows_require_ring = 1u;
+        if (atexit(wf_bridge_verify_required_ring) != 0) {
+            wf_bridge_fail(
+                "the completion port's exit-time check could not be registered"
+            );
+        }
+    }
     if (wf_bridge_native_ring_refused()) {
         return 0;
     }
@@ -554,14 +564,6 @@ static int wf_bridge_ring_start(void) {
         return 0;
     }
     atomic_store_explicit(&wf_bridge_windows_ready, 1u, memory_order_release);
-    if (wf_bridge_windows_ring_required()) {
-        wf_bridge_windows_require_ring = 1u;
-        if (atexit(wf_bridge_verify_required_ring) != 0) {
-            wf_bridge_fail(
-                "the completion port's exit-time check could not be registered"
-            );
-        }
-    }
     return 1;
 }
 
@@ -1061,37 +1063,6 @@ void wf__completion_socket_accept_join(
     *peer_tag = held->request.operation.accept.peer.portable.port_and_family;
 }
 
-/* The status join copies nothing: the engine already wrote the bytes into the
- * destination the submit named, and the record carries how many (design §7). */
-void wf__completion_file_status_join(
-    const void *record,
-    int64_t *value,
-    int *error_code,
-    void *status,
-    uint64_t status_capacity,
-    uint64_t *status_size
-) {
-    wf_completion_record *held = wf_bridge_record_of(record);
-    if (value == NULL || error_code == NULL || status == NULL
-        || status_size == NULL
-        || (uint64_t)(size_t)status_capacity != status_capacity) {
-        wf_bridge_fail(
-            "a status join was given no place to publish its result"
-        );
-    }
-    wf_bridge_join(held);
-    if (held->result.kind != WF_FILE_STATUS
-        || held->request.operation.status.destination != status
-        || held->request.operation.status.capacity != (size_t)status_capacity) {
-        wf_bridge_fail(
-            "a status join was given a record that is not the status it submitted"
-        );
-    }
-    *value = held->result.value;
-    *error_code = held->result.error_code;
-    *status_size = (uint64_t)held->status_written;
-}
-
 /* ----------------------------------------------------------- the submits */
 
 /* Whether the operation has no external action at all, because its transfer
@@ -1417,26 +1388,6 @@ void wf__completion_file_open_at_submit(
 #if defined(_WIN32)
     held->request.operation.open_at.descriptor_class = descriptor_class;
 #endif
-    wf_bridge_dispatch(held);
-}
-
-void wf__completion_file_status_submit(
-    int descriptor,
-    void *status,
-    uint64_t status_capacity,
-    void *record
-) {
-    wf_completion_record *held = wf_bridge_begin(record);
-    if (status == NULL
-        || (uint64_t)(size_t)status_capacity != status_capacity) {
-        wf_bridge_fail(
-            "a status was submitted with no destination, or with a capacity out of range"
-        );
-    }
-    held->request.kind = WF_FILE_STATUS;
-    held->request.operation.status.descriptor = descriptor;
-    held->request.operation.status.destination = status;
-    held->request.operation.status.capacity = (size_t)status_capacity;
     wf_bridge_dispatch(held);
 }
 

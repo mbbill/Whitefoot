@@ -1,0 +1,38 @@
+fn decode_case(input: own Slice<u8>, out: &uniq MutSlice<u8>) -> result: own u64 reads(input, out), writes(out) {
+  region {
+    match inflate(out: &uniq deref(out), input: input) {
+      Ok(value: written) => {
+        return written;
+      }
+      Err(error: reason) => {
+        match reason {
+          Truncated() => {
+            return 18446744073709551615_u64;
+          }
+          InvalidStoredLength() => {
+            return 18446744073709551614_u64;
+          }
+          InvalidHuffmanTree() => {
+            return 18446744073709551613_u64;
+          }
+          InvalidHuffmanCode() => {
+            return 18446744073709551612_u64;
+          }
+          InvalidDistance() => {
+            return 18446744073709551611_u64;
+          }
+          InvalidBlockType() => {
+            return 18446744073709551610_u64;
+          }
+          OutputFull() => {
+            return 18446744073709551609_u64;
+          }
+        }
+      }
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

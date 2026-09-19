@@ -177,7 +177,13 @@ fn decode_fixed(state: &uniq InflateState, input: own Slice<u8>, out: &uniq MutS
         region {
           match read_bits(state: &uniq deref(state), input: input, count: 5_u32, mask: 31_u64) {
             Ok(value: distance_code) => {
-              set distance_symbol = distance_code;
+              let remaining = distance_code;
+              for (bit in 0_u64..5_u64) {
+                let shifted = ishl.wrap(distance_symbol, 1_u32);
+                let low_bit = iand(remaining, 1_u64);
+                set distance_symbol = ior(shifted, low_bit);
+                set remaining = ishr(remaining, 1_u32);
+              }
             }
             Err(error: distance_symbol_error) => {
               return Err<unit, InflateError>(error: distance_symbol_error);

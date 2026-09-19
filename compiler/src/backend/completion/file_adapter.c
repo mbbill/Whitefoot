@@ -35,10 +35,6 @@ int wf_file_request_valid(const wf_file_request *request) {
     case WF_FILE_PREAD:
         return request->operation.pread.buffer != NULL
             || request->operation.pread.count == 0;
-    case WF_FILE_PWRITE:
-        return request->operation.pwrite.buffer != NULL
-            || request->operation.pwrite.count == 0;
-    case WF_FILE_STATUS:
     case WF_FILE_CLOSE:
         return 1;
     /* A listen and a connect name an address and create their own socket, so
@@ -374,32 +370,11 @@ int wf_file_adapter_transfer_runs_on_caller(const wf_file_adapter *adapter) {
     return wf_file_adapter_queued(adapter) == 0;
 }
 
-/* Stores one execution's answer into the record and publishes it.
- *
- * Bytes first, head second, DONE last.  A submitted status writes into the
- * destination its own request named, because the record carries a size and
- * never the bytes (design §7); everything else has already written into
- * storage the caller named.  `wf_completion_record_complete` then stores the
- * result head's DONE through the scheduler core, which is the publisher's
- * last touch of a record that is a block of the joiner's frame. */
+/* Publishing DONE is the engine's last access to the caller's record. */
 void wf_file_complete_record(
     wf_completion_record *record,
     const wf_file_result *result
 ) {
-    if (record->request.kind == WF_FILE_STATUS
-        && result->status_size != 0
-        && record->request.operation.status.destination != NULL) {
-        size_t written = result->status_size;
-        if (written > record->request.operation.status.capacity) {
-            written = record->request.operation.status.capacity;
-        }
-        memcpy(
-            record->request.operation.status.destination,
-            result->status,
-            written
-        );
-        record->status_written = written;
-    }
     record->result = result->head;
     wf_completion_record_complete(record);
 }

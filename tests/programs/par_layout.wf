@@ -224,15 +224,22 @@ fn spell_hex(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> re
 }
 
 fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "Lays out one box tree many times, then publishes the exact bits of both folds as hexadecimal so any difference between two executions is a difference in the published bytes. The complete invocation count selects identical benchmark batches; an ordinary argument-free invocation has one batch.";
+  doc "Publishes both layout results once for correctness. Explicit extra arguments select 800 repetitions per batch for manual benchmarks; the complete invocation count selects the batch count. Both forms finish at the same seed and publish the same bits.";
   let Inputs(args: args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   region {
     close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
   }
   let batches = 1_u64;
+  let repetitions = 1_u64;
+  let initial_seed = 65.9375_f64;
   region {
     let invocation_count = args_count(args: &args);
     set batches = invocation_count;
+    let benchmark = invocation_count > 1_u64;
+    if benchmark {
+      set repetitions = 800_u64;
+      set initial_seed = 16.0_f64;
+    }
   }
   region {
     match build(store: &uniq heap, depth: 6_u64, w: 512.0_f64) {
@@ -270,9 +277,9 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
                   break @layout_batches;
                 }
                 let i = 0_u64;
-                let seed = 16.0_f64;
+                let seed = initial_seed;
                 loop @reps {
-                  let done = i == 800_u64;
+                  let done = i == repetitions;
                   if done {
                     break @reps;
                   }
@@ -295,9 +302,9 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
                   break @band_batches;
                 }
                 let j = 0_u64;
-                let band_seed = 16.0_f64;
+                let band_seed = initial_seed;
                 loop @band_reps {
-                  let done = j == 800_u64;
+                  let done = j == repetitions;
                   if done {
                     break @band_reps;
                   }

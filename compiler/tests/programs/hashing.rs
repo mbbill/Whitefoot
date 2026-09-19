@@ -1,4 +1,6 @@
-use super::support::{compile_and_run, compile_program, emitted_function};
+use super::support::{
+    build_program, compile_program, compile_program_with_overlap, emitted_function,
+};
 
 #[test]
 fn sha256_compression_executes_as_a_sustained_workload() {
@@ -9,8 +11,20 @@ fn sha256_compression_executes_as_a_sustained_workload() {
     assert!(!compression.contains("@wf_trap"));
     assert!(llvm.contains("i32 3128432319"));
 
-    let output = compile_and_run(&llvm);
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
+    // Retains the original missing-phi-predecessor regression in both worlds.
+    for (module, widths) in [
+        (llvm, &["1"][..]),
+        (
+            compile_program_with_overlap("sha256_abc.wf"),
+            &["1", "4"][..],
+        ),
+    ] {
+        let program = build_program(&module);
+        for width in widths {
+            let output = program.run_with_workers(Some(width));
+            assert!(output.status.success(), "{width}: {output:?}");
+            assert!(output.stdout.is_empty());
+            assert!(output.stderr.is_empty());
+        }
+    }
 }

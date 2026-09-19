@@ -29,14 +29,14 @@ use super::super::goal::{
 use super::super::model::expression_children;
 use super::super::model::{
     BindingId, CheckedAffineExpression, CheckedAffineExpressionKind, CheckedAffineRelation,
-    CheckedArrayRoot, CheckedBooleanOperation, CheckedCommitValues, CheckedConst,
-    CheckedConstructor, CheckedContainerRoot, CheckedEnumType, CheckedExpression,
-    CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation, CheckedLoopId,
-    CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominal,
-    CheckedNominalKind, CheckedNumericType, CheckedPlaceStep, CheckedProofMultiplicity,
-    CheckedProofUseSource, CheckedSetTarget, CheckedSliceSource, CheckedStatement, CheckedType,
-    CheckedValue, FloatType, IntegerType, LoanStrength, MeasureCell, MeasuredKind,
-    ValueInitializerKind,
+    CheckedArrayRoot, CheckedBooleanOperation, CheckedCommitConflict, CheckedCommitValues,
+    CheckedConst, CheckedConstructor, CheckedContainerRoot, CheckedDrop, CheckedEnumType,
+    CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
+    CheckedLoopId, CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure, CheckedMode,
+    CheckedNominal, CheckedNominalKind, CheckedNumericType, CheckedPlaceStep,
+    CheckedProofMultiplicity, CheckedProofUseSource, CheckedReleaseMode, CheckedSetTarget,
+    CheckedSliceSource, CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType,
+    LoanStrength, MeasureCell, MeasuredKind, ValueInitializerKind,
 };
 use super::super::places::{
     BindingSummary, PlaceMap, PlaceOffset, PlaceStep, RangeId, ResolvedPlace,
@@ -6415,6 +6415,125 @@ impl Analyzer<'_, '_> {
             .all(|outcome| outcome.discharged)
     }
 
+    /// [PROV-6, ENT-6] proves every empty-run release before the edge removes
+    /// the released binding from the fact state. Full release records carry
+    /// no proof obligation here.
+    fn judge_release_drops(&mut self, drops: &[CheckedDrop], states: &ProofFlowState) {
+        for drop in drops {
+            if drop.release != CheckedReleaseMode::EmptyRun {
+                continue;
+            }
+            self.judge_empty_run_release(
+                drop.binding,
+                &drop.fields,
+                drop.ty,
+                drop.source_edge.clone(),
+                states,
+            );
+        }
+    }
+
+    fn judge_empty_run_release(
+        &mut self,
+        binding: BindingId,
+        fields: &[u32],
+        ty: CheckedType,
+        node_path: crate::NodePath,
+        states: &ProofFlowState,
+    ) {
+        let measured = match ty {
+            CheckedType::FixedVector { .. } => MeasuredKind::FixedVector,
+            CheckedType::Vector { .. } => MeasuredKind::Vector,
+            _ => return,
+        };
+        let place = projected_place(PlaceTerm {
+            root: PlaceRoot::Binding(binding),
+            deref: self.is_holder(binding),
+            fields: fields.to_vec(),
+        });
+        let length = self.place_measure_term(CheckedMeasure::Length, place.clone(), measured, None);
+        let request = BoundsRequest {
+            left: Some(length),
+            right: ZERO,
+            bound: 0,
+            distinct: false,
+        };
+        let length_affine = self.measure_atom(length, &states.affine);
+        let zero_affine = AffineForm::constant(0);
+        let direct_affine = AffineInequality::from_bounded_forms(
+            &length_affine,
+            &zero_affine,
+            0,
+            &mut AffineCheckState::new(),
+        )
+        .ok();
+        let proof = self.prove(
+            ProofContext::new(&states.facts, &states.affine),
+            ProofGoal::BoundedRelation(BoundedRelationGoal {
+                canonical: None,
+                request: Some(request),
+                direct_affine: direct_affine.as_ref(),
+                fixed_affine_bridge: None,
+                affine_left: None,
+            }),
+        );
+        let discharged = proof.disposition == ProofDisposition::Proved;
+        let refuted = proof.disposition == ProofDisposition::Refuted;
+        let contradictory = proof.route == Some(ProofRoute::Contradiction);
+        let derivation = proof.derivation;
+        let residual = (!discharged)
+            .then(|| format!("len_of({}) <= 0_u64", self.render_projected_place(&place)));
+        let ordinal = u32::try_from(self.obligations.len())
+            .expect("ENT obligation-root ordinal exceeds the u32 identity space");
+        if let Some(root) = derivation {
+            self.derivations
+                .add_root(DerivationRootKind::EmptyRunRelease(ordinal), root);
+        }
+        self.obligations.push(ObligationOutcome {
+            node_path,
+            family: ObligationFamily::EmptyRunRelease,
+            conjunct: 0,
+            canonical_goal: None,
+            components: vec![request],
+            discharged,
+            refuted,
+            contradictory,
+            residual,
+            overlap_targets: None,
+            derivation,
+            allocation_length_upper_bound: None,
+            allocation_length_upper_bound_derivation: None,
+            affine_index_maps: Vec::new(),
+            kernel_row: None,
+            formed_range_separation: None,
+            range_partitions: Vec::new(),
+        });
+    }
+
+    fn judge_dispose_release(
+        &mut self,
+        value: &CheckedExpression,
+        drops: &[super::super::model::CheckedProjectedDrop],
+        node_path: &crate::NodePath,
+        states: &ProofFlowState,
+    ) {
+        let Some(drop) = drops
+            .iter()
+            .find(|drop| drop.release == CheckedReleaseMode::EmptyRun)
+        else {
+            return;
+        };
+        let (binding, mut fields) = match value {
+            CheckedExpression::Binding { binding, .. } => (*binding, Vec::new()),
+            CheckedExpression::Project {
+                binding, fields, ..
+            } => (*binding, fields.clone()),
+            _ => return,
+        };
+        fields.extend_from_slice(&drop.fields);
+        self.judge_empty_run_release(binding, &fields, drop.ty, node_path.clone(), states);
+    }
+
     fn judge_expression(
         &mut self,
         expression: &CheckedExpression,
@@ -6980,6 +7099,7 @@ impl Analyzer<'_, '_> {
             refuted: disposition == CallGoalDisposition::Refuted,
             contradictory: false,
             residual: (!discharged).then_some(rendered),
+            overlap_targets: None,
             derivation,
             allocation_length_upper_bound: None,
             allocation_length_upper_bound_derivation: None,
@@ -8393,6 +8513,7 @@ impl Analyzer<'_, '_> {
             refuted,
             contradictory,
             residual,
+            overlap_targets: None,
             derivation,
             allocation_length_upper_bound: None,
             allocation_length_upper_bound_derivation: None,
@@ -8862,6 +8983,7 @@ impl Analyzer<'_, '_> {
             refuted,
             contradictory,
             residual: (!discharged).then(|| rendered.clone()),
+            overlap_targets: None,
             derivation,
             allocation_length_upper_bound,
             allocation_length_upper_bound_derivation,
@@ -8999,6 +9121,7 @@ impl Analyzer<'_, '_> {
             canonical_goal, components: Vec::new(), discharged, refuted: false,
             contradictory: proof.is_some_and(|proof| proof.route == Some(ProofRoute::Contradiction)),
             residual: (!discharged).then(|| "the captured view ranges are disjoint (one ends before the other starts, or one is empty)".to_owned()),
+            overlap_targets: None,
             derivation, allocation_length_upper_bound: None, allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(), kernel_row: None,
             formed_range_separation,
@@ -9112,6 +9235,7 @@ impl Analyzer<'_, '_> {
             refuted,
             contradictory,
             residual: (!discharged).then(|| residual.clone()),
+            overlap_targets: None,
             derivation,
             allocation_length_upper_bound: None,
             allocation_length_upper_bound_derivation: None,
@@ -9289,6 +9413,7 @@ impl Analyzer<'_, '_> {
             refuted,
             contradictory,
             residual: (!discharged).then_some(residual),
+            overlap_targets: None,
             derivation: outcome.derivation,
             allocation_length_upper_bound: None,
             allocation_length_upper_bound_derivation: None,
@@ -11164,6 +11289,15 @@ impl Analyzer<'_, '_> {
     }
 
     fn walk_block(&mut self, statements: &[CheckedStatement], state: &mut ProofFlowState) -> bool {
+        self.walk_block_with_releases(statements, &[], state)
+    }
+
+    fn walk_block_with_releases(
+        &mut self,
+        statements: &[CheckedStatement],
+        fallthrough_drops: &[CheckedDrop],
+        state: &mut ProofFlowState,
+    ) -> bool {
         self.scopes.push(Vec::new());
         let mut continues = true;
         for statement in statements {
@@ -11174,6 +11308,7 @@ impl Analyzer<'_, '_> {
         }
         if continues {
             let depth = self.scopes.len() - 1;
+            self.judge_release_drops(fallthrough_drops, state);
             self.exit_scopes_to(state, depth);
         }
         self.scopes.pop();
@@ -13252,6 +13387,102 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// [LIV-2, OWN-7] proves that each structurally overlapping target pair
+    /// selects different storage. A path is separated when any corresponding
+    /// subscript pair is unequal, so the fixed search tries both strict orders
+    /// for each pair and succeeds on the first completed proof.
+    fn judge_commit_index_conflicts(
+        &mut self,
+        conflicts: &[CheckedCommitConflict],
+        state: &ProofFlowState,
+    ) -> bool {
+        let mut all_discharged = true;
+        for conflict in conflicts {
+            let mut canonical_alternatives = Vec::new();
+            let mut proofs = Vec::new();
+            for (left, right) in &conflict.alternatives {
+                let Some(left) = self.direct_goal_expression(left) else {
+                    continue;
+                };
+                let Some(right) = self.direct_goal_expression(right) else {
+                    continue;
+                };
+                for (left, right) in [(left.clone(), right.clone()), (right, left)] {
+                    let ordering = GoalExpression::Operation {
+                        row: GoalOperation::Integer {
+                            operation: CheckedIntegerOperation::Less,
+                            operand_type: CheckedType::Integer(IntegerType::U64),
+                        },
+                        type_arguments: Vec::new(),
+                        const_arguments: Vec::new(),
+                        result: CheckedType::Bool,
+                        arguments: vec![left, right],
+                    };
+                    if let Some(target) = self.affine_signed_goal_ordering_target(
+                        &ordering,
+                        &state.affine,
+                        GoalSign::Positive,
+                    ) {
+                        proofs.push(self.prove(
+                            ProofContext::new(&state.facts, &state.affine),
+                            ProofGoal::Affine {
+                                inequality: &target,
+                            },
+                        ));
+                    }
+                    canonical_alternatives.push(ordering);
+                }
+            }
+            let canonical_goal = canonical_alternatives.into_iter().reduce(|left, right| {
+                GoalExpression::Operation {
+                    row: GoalOperation::Boolean(CheckedBooleanOperation::Or),
+                    type_arguments: Vec::new(),
+                    const_arguments: Vec::new(),
+                    result: CheckedType::Bool,
+                    arguments: vec![left, right],
+                }
+            });
+            let proof = proofs
+                .into_iter()
+                .find(|proof| proof.disposition == ProofDisposition::Proved);
+            let discharged = proof.is_some();
+            all_discharged &= discharged;
+            let derivation = proof.as_ref().and_then(|proof| proof.derivation);
+            let ordinal =
+                u32::try_from(self.obligations.len()).expect("ENT obligation ordinal exceeds u32");
+            if let Some(root) = derivation {
+                self.derivations
+                    .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
+            }
+            self.obligations.push(ObligationOutcome {
+                node_path: conflict.site.clone(),
+                family: ObligationFamily::IndexSeparation,
+                conjunct: 0,
+                canonical_goal,
+                components: Vec::new(),
+                discharged,
+                refuted: false,
+                contradictory: proof
+                    .is_some_and(|proof| proof.route == Some(ProofRoute::Contradiction)),
+                residual: (!discharged).then(|| {
+                    format!(
+                        "{} and {} select different elements",
+                        conflict.first, conflict.second
+                    )
+                }),
+                overlap_targets: Some((conflict.first.clone(), conflict.second.clone())),
+                derivation,
+                allocation_length_upper_bound: None,
+                allocation_length_upper_bound_derivation: None,
+                affine_index_maps: Vec::new(),
+                kernel_row: None,
+                formed_range_separation: None,
+                range_partitions: Vec::new(),
+            });
+        }
+        all_discharged
+    }
+
     /// [GRAM-4, SET-1, CALL-4, LIV-2] one `set` target list.
     ///
     /// Every target is judged, then the whole right-hand side is judged — the
@@ -13265,8 +13496,13 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         targets: &[CheckedSetTarget],
         values: &CheckedCommitValues,
+        index_conflicts: &[CheckedCommitConflict],
         state: &mut ProofFlowState,
     ) {
+        // [LIV-2, OWN-7] targets are formed before the right-hand side. Judge
+        // their captured index values in that entering state so a later RHS
+        // effect cannot retarget the separation proof.
+        let indices_reached = self.judge_commit_index_conflicts(index_conflicts, state);
         // [MSR-3] the [LIV-2] `set`-target placement, per ordinal: a written
         // value list commits value i into target i, so ordinal i carries
         // exactly what a single-target `set` carries.
@@ -13298,7 +13534,7 @@ impl Analyzer<'_, '_> {
             CheckedCommitValues::Written(_) => None,
         };
         let ranges_reached = self.judge_range_conflicts(node_path, state);
-        let commit_reached = target_reached && value_reached && ranges_reached;
+        let commit_reached = indices_reached && target_reached && value_reached && ranges_reached;
         for target in targets {
             invalidate_goal_origin_for_set(&mut state.facts, target);
         }
@@ -13742,14 +13978,16 @@ impl Analyzer<'_, '_> {
                 node_path,
                 targets,
                 values,
+                index_conflicts,
             } => {
-                self.walk_set_list(node_path, targets, values, state);
+                self.walk_set_list(node_path, targets, values, index_conflicts, state);
                 true
             }
             CheckedStatement::PropagateLet {
                 binding,
                 scrutinee,
                 ok_type,
+                error_drops,
                 ..
             } => {
                 // The Err edge leaves the function; the normal continuation
@@ -13757,6 +13995,10 @@ impl Analyzer<'_, '_> {
                 // call's own kill events, and the binder gains no fact
                 // [ENT-5].
                 let _ = self.expression_effects(scrutinee, state);
+                // The Err projection leaves the function after this common
+                // evaluation point; its derived releases must be provable on
+                // that edge even though the Ok continuation remains here.
+                self.judge_release_drops(error_drops, state);
                 self.declare(*binding);
                 if self.affine_binding_type(*binding).is_some()
                     && let Some(value) = self.affine_unknown_integer(*ok_type)
@@ -13824,9 +14066,16 @@ impl Analyzer<'_, '_> {
                 }
                 true
             }
-            CheckedStatement::Evaluate(value)
-            | CheckedStatement::Dispose { value, .. }
-            | CheckedStatement::DropExpression { value, .. } => {
+            CheckedStatement::Evaluate(value) | CheckedStatement::DropExpression { value, .. } => {
+                let _ = self.expression_effects(value, state);
+                true
+            }
+            CheckedStatement::Dispose {
+                node_path,
+                value,
+                drops,
+            } => {
+                self.judge_dispose_release(value, drops, node_path, state);
                 let _ = self.expression_effects(value, state);
                 true
             }
@@ -14045,7 +14294,9 @@ impl Analyzer<'_, '_> {
                 true
             }
             CheckedStatement::Return {
-                node_path, value, ..
+                node_path,
+                value,
+                drops,
             } => {
                 let affine_result = self.affine_pure_expression_form(value, &mut state.affine);
                 // [FN-9] the relation is queried "immediately before return
@@ -14064,12 +14315,16 @@ impl Analyzer<'_, '_> {
                     judgment.reached,
                 );
                 self.apply_kills(state, &events);
+                self.judge_release_drops(drops, state);
                 false
             }
             CheckedStatement::Give {
-                node_path, value, ..
+                node_path,
+                value,
+                drops,
             } => {
                 let judgment = self.expression_effects(value, state);
+                self.judge_release_drops(drops, state);
                 if let Some((scope_depth, loop_depth, kind, binding, result_type)) =
                     self.gives.last().map(|frame| {
                         (
@@ -14114,7 +14369,8 @@ impl Analyzer<'_, '_> {
                 }
                 false
             }
-            CheckedStatement::Break { target, .. } => {
+            CheckedStatement::Break { target, drops } => {
+                self.judge_release_drops(drops, state);
                 if let Some(position) = self.loops.iter().rposition(|frame| frame.id == *target) {
                     let depth = self.loops[position].scope_depth;
                     let mut exit = state.clone();
@@ -14224,7 +14480,7 @@ impl Analyzer<'_, '_> {
                 id,
                 invariants,
                 body,
-                ..
+                backedge_drops,
             } => {
                 for invariant in invariants {
                     self.judge_affine_relation_subscripts(&invariant.relation, state);
@@ -14260,7 +14516,8 @@ impl Analyzer<'_, '_> {
                     breaks: Vec::new(),
                 });
                 let mut body_state = state.clone();
-                let body_falls_through = self.walk_block(body, &mut body_state);
+                let body_falls_through =
+                    self.walk_block_with_releases(body, backedge_drops, &mut body_state);
 
                 let mut step = vec![None; invariants.len()];
                 if body_falls_through {
@@ -14310,7 +14567,7 @@ impl Analyzer<'_, '_> {
                 upper,
                 invariants,
                 body,
-                ..
+                backedge_drops,
             } => {
                 let occurrence = self.encountered_counted;
                 self.encountered_counted = self
@@ -14444,7 +14701,8 @@ impl Analyzer<'_, '_> {
                     body_event,
                 );
                 self.retain_counted_derivations(occurrence, counted);
-                let body_falls_through = self.walk_block(body, &mut body_state);
+                let body_falls_through =
+                    self.walk_block_with_releases(body, backedge_drops, &mut body_state);
 
                 let mut step = vec![None; invariants.len()];
                 let mut hidden_update = !body_falls_through;
@@ -14570,7 +14828,11 @@ impl Analyzer<'_, '_> {
                 *state = self.join_flows(&exits);
                 true
             }
-            CheckedStatement::Region { body, .. } => self.walk_block(body, state),
+            CheckedStatement::Region {
+                body,
+                fallthrough_drops,
+                ..
+            } => self.walk_block_with_releases(body, fallthrough_drops, state),
         }
     }
 
@@ -14686,6 +14948,7 @@ impl Analyzer<'_, '_> {
         }
         if continues {
             let depth = self.scopes.len() - 1;
+            self.judge_release_drops(&arm.fallthrough_drops, &state);
             self.exit_scopes_to(&mut state, depth);
         }
         self.scopes.pop();

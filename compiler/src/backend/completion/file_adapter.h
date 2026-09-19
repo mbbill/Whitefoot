@@ -39,8 +39,6 @@
 extern "C" {
 #endif
 
-#define WF_FILE_STATUS_CAPACITY 192u
-
 /* The most helpers one adapter may ever hold.
  *
  * It is here rather than at the caller because it sizes storage this record
@@ -51,16 +49,10 @@ extern "C" {
  * than this adapter can hold is asking for a pool it will not get. */
 #define WF_FILE_MAX_HELPERS 8u
 
-/* What one execution of a typed request produced.
- *
- * The head is what a completion record carries and what a join reads back.
- * The status bytes below it are the direct executor's alone: a submitted
- * status writes them into the destination its request names, so no frame pays
- * 192 bytes per operation for a facility one direct call uses (design §7). */
+/* A target execution produces the result head published into its record.
+ * Transfer bytes already occupy storage named by the request. */
 typedef struct wf_file_result {
     wf_file_result_head head;
-    size_t status_size;
-    unsigned char status[WF_FILE_STATUS_CAPACITY];
 } wf_file_result;
 
 enum wf_file_submit_result {

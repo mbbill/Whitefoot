@@ -1,0 +1,15 @@
+formal FirstLength {
+  fn length(x: &FixedVector<u8, 4>, y: &FixedVector<u8, 4>) -> result: own u64 reads(x);
+}
+
+fn second_length(first: &FixedVector<u8, 4>, second: &FixedVector<u8, 4>) -> result: own u64 reads(second) {
+  return len_of(deref(second));
+}
+
+actual Wrong : FirstLength {
+  length = second_length;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
