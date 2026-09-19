@@ -260,6 +260,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
 
+        // [TYPE-10] a measure is never a write target and a window part is
+        // never a written name at all, so one of the eight reserved
+        // spellings in a target path is that rule's refusal rather than a
+        // struct field the base does not declare.
+        for &suffix in &suffixes {
+            if self.subscript_offset(suffix)?.is_some() {
+                continue;
+            }
+            let name = self
+                .deferred_use_at(suffix, DeferredUseRole::ProjectedField)?
+                .spelling()
+                .to_owned();
+            self.reject_reserved_pseudo_field(suffix, &name)?;
+        }
+        // [TYPE-9] a target below a `Box`'s member `inner` writes the box
+        // content, which is a dereference step the field walk cannot take;
+        // the explicit-place target resolver takes it for a bare IDENT base
+        // exactly as it does for a written `deref` chain.
+        if self.place_path_reaches_box_content(&suffixes, local.ty)? {
+            return self.check_dereferenced_set_target(function, node, bindings);
+        }
         let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
         if local.mode != CheckedMode::Own {
             return self.issue_node(
@@ -429,58 +450,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     _ => name,
                 }
             }
+            // [TYPE-9]'s own spellings: the constant-capacity placement
+            // writes its capacity and the runtime-capacity one writes only
+            // its element.
             CheckedType::Array { element, length } => {
                 let length = self.checked_const_name(length)?;
                 format!(
-                    "array<{}, {length}>",
+                    "Array<{}, {length}>",
                     self.checked_type_name(self.element_type(element)?)?
                 )
-            }
-            CheckedType::Slice {
-                region,
-                element,
-                strength,
-            } => {
-                let element = self.checked_type_name(element.ty())?;
-                let view = strength.spelling();
-                match self.region_spelling(region).as_str() {
-                    "" => format!("{view}<{element}>"),
-                    region => format!("{view}<{region}, {element}>"),
-                }
             }
             CheckedType::Buffer { element } => {
-                format!("buffer<{}>", self.checked_type_name(element.ty())?)
+                format!("Array<{}>", self.checked_type_name(element.ty())?)
             }
-            CheckedType::FixedVector { element, length } => {
-                let length = self.checked_const_name(length)?;
-                format!(
-                    "FixedVector<{}, {length}>",
-                    self.checked_type_name(self.element_type(element)?)?
-                )
-            }
-            CheckedType::Vector {
-                region, element, ..
+            CheckedType::Window {
+                shape,
+                element,
+                capacity,
             } => {
                 let element = self.checked_type_name(self.element_type(element)?)?;
-                match self.region_spelling(region).as_str() {
-                    "" => format!("Vector<{element}>"),
-                    region => format!("Vector<{region}, {element}>"),
-                }
-            }
-            CheckedType::Heap { region } => match self.region_spelling(region).as_str() {
-                "" => "Heap".to_owned(),
-                region => format!("Heap<{region}>"),
-            },
-            CheckedType::Extent {
-                region,
-                bytes,
-                align,
-            } => {
-                let bytes = self.checked_const_name(bytes)?;
-                let align = self.checked_const_name(align)?;
-                match self.region_spelling(region).as_str() {
-                    "" => format!("Arena<{bytes}, {align}>"),
-                    region => format!("Arena<{region}, {bytes}, {align}>"),
+                let shape = shape.spelling();
+                match capacity {
+                    Some(capacity) => {
+                        let capacity = self.checked_const_name(capacity)?;
+                        format!("{shape}<{element}, {capacity}>")
+                    }
+                    None => format!("{shape}<{element}>"),
                 }
             }
         })
@@ -1134,7 +1129,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 function, use_node, node, &suffixes, subscript, bindings, options,
             );
         }
-        if self.has_fixed(pbase, FixedTerminal::Deref)? {
+        // [OP-15] a measure is read as a member of the measured place, so
+        // `a.len` is a place form and not a call. The written base decides
+        // nothing about that read: the explicit-place walker resolves a bare
+        // IDENT base exactly as it resolves a `deref` chain, so routing every
+        // measure member there keeps one implementation of [MSR-1]'s rows,
+        // [MSR-2]'s descriptor-only support and [EFF-2]'s attribution.
+        if self.has_fixed(pbase, FixedTerminal::Deref)?
+            || self.trailing_measure_member(&suffixes)?.is_some()
+        {
             return self.check_dereferenced_place_use(use_node, node, pbase, bindings, options);
         }
         if !self.tree.children(pbase)?.is_empty() {
@@ -1190,7 +1193,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
                             ty: local.ty,
-                            slice_origins: Vec::new(),
                             consume_root: false,
                         },
                         mode: local.mode,
@@ -1201,6 +1203,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         effects: EffectSet::NONE,
                         accesses: Vec::new(),
                     });
+                }
+                // [TYPE-9] a `Box`'s content is its member `inner`, reached
+                // by the ordinary member step and never by `deref`. The step
+                // below that member is a dereference, which the field walk
+                // has no step for, so the explicit-place walker resolves the
+                // whole place; it takes a bare IDENT base exactly as it takes
+                // a `deref` chain, which keeps one implementation of the box
+                // content step for both spellings.
+                if self.place_path_reaches_box_content(&suffixes, local.ty)? {
+                    return self
+                        .check_dereferenced_place_use(use_node, node, pbase, bindings, options);
                 }
                 let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
                 let copy = self.is_copy_type(ty)?;
@@ -1312,7 +1325,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
                             ty,
-                            slice_origins: Vec::new(),
                             consume_root: !copy,
                         },
                         effects,
@@ -1400,8 +1412,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if matches!(
                     constant.ty,
                     CheckedType::Array { .. }
-                        | CheckedType::Slice { .. }
                         | CheckedType::Buffer { .. }
+                        | CheckedType::Window { .. }
                 ) {
                     return self.issue_node(
                         SemanticRule::Own1,
@@ -1541,9 +1553,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         UnsupportedSemanticFeature::BorrowedBufferDescriptorMutation,
                     ));
                 }
-                CheckedType::Array { element, .. }
-                | CheckedType::FixedVector { element, .. }
-                | CheckedType::Vector { element, .. } => pending.push(self.element_type(element)?),
+                CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+                    pending.push(self.element_type(element)?);
+                }
                 CheckedType::Nominal(id) if visited.insert(id) => match &self.nominal(id)?.kind {
                     CheckedNominalKind::Struct { fields } => {
                         pending.extend(fields.iter().map(|field| field.ty));
@@ -1729,6 +1741,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<TypedExpression, CheckStop> {
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
         let constructor_name = usage.spelling().to_owned();
+        // [TYPE-9] each of the three storage shapes contributes one nominal
+        // entry and one constructor entry of the same spelling, and the
+        // constructor entry exists to be refused: a shape is built by a
+        // construction function [OP-13], never by a `construct`. A `Box`
+        // constructor is refused by [TYPE-2] in the same words, its content
+        // being supplied by `box_new` and its friends.
+        if let ResolvedTarget::Container(id) = usage.target() {
+            let nominal =
+                crate::container_nominal(id).ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let rule = match nominal.shape {
+                crate::ContainerShape::Array
+                | crate::ContainerShape::Slots
+                | crate::ContainerShape::Ring => SemanticRule::Type9,
+                crate::ContainerShape::Box => SemanticRule::Type2,
+            };
+            return self.issue_node(
+                rule,
+                node,
+                SemanticIssueKind::ContainerConstruction {
+                    nominal: constructor_name,
+                    mechanical_fix: "build it with a construction function [OP-13]",
+                },
+            );
+        }
+
         // GRAM-5 factors constructor and qualified-member prefixes through
         // one call node. Constructors still write nominal arguments directly
         // after the TYPEID, and every field remains named [TYPE-5, GRAM-8].
@@ -1802,32 +1839,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 EffectSet::NONE,
             ));
         }
-        // [TYPE-9] each of the three storage shapes contributes one nominal
-        // entry and one constructor entry of the same spelling, and the
-        // constructor entry exists to be refused: a shape is built by a
-        // construction function [OP-13], never by a `construct`. A `Box`
-        // constructor is refused by [TYPE-2] in the same words, its content
-        // being supplied by `box_new` and its friends.
-        if let ResolvedTarget::Container(id) = usage.target() {
-            let nominal =
-                crate::container_nominal(id).ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let rule = match nominal.shape {
-                crate::ContainerShape::Array
-                | crate::ContainerShape::Slots
-                | crate::ContainerShape::Ring => SemanticRule::Type9,
-                crate::ContainerShape::Box => SemanticRule::Type2,
-            };
-            return self.issue_node(
-                rule,
-                node,
-                SemanticIssueKind::ContainerConstruction {
-                    nominal: constructor_name,
-                    mechanical_fix: "build it with a construction function [OP-13]",
-                },
-            );
-        }
         let constructor = match usage.target() {
             ResolvedTarget::Source { declaration, .. } => {
+                // [TYPE-2] an opaque struct has fields and no usable
+                // constructor: the entry its declaration contributes exists
+                // to be refused, and the refusal is sited at the complete
+                // `call`.
+                if self.is_opaque_struct_declaration(declaration)? {
+                    return self.issue_node(
+                        SemanticRule::Type2,
+                        node,
+                        SemanticIssueKind::ContainerConstruction {
+                            nominal: constructor_name,
+                            mechanical_fix: "build it with a construction function [OP-13, PRE-1]",
+                        },
+                    );
+                }
                 // [FORM-8] a nominal carrying `region_params` has its region
                 // arguments determined by its field operands, so its
                 // instance is formed after they are checked and not before.

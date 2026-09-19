@@ -219,7 +219,7 @@ impl ReferenceInfo {
         self.refinements = self
             .paths
             .iter()
-            .flat_map(|path| refinement_dependencies(path))
+            .flat_map(refinement_dependencies)
             .collect();
     }
 
@@ -947,7 +947,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ty,
                 CheckedType::Array { .. }
                     | CheckedType::Buffer { .. }
-                    | CheckedType::FixedVector { .. }
+                    | CheckedType::Window { .. }
             ),
         })
     }
@@ -979,5 +979,135 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(None);
         };
         Ok(fields.get(field as usize).map(|field| field.ty))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InvalidationEvent, ReferenceInfo, ReferenceKind, ReferenceValidity};
+    use crate::semantic::model::BindingId;
+    use crate::semantic::places::{PlaceStep, ResolvedPlace};
+
+    /// This module is the only place [REF-2]'s validity lattice can be read
+    /// directly: `ReferenceInfo` is `pub(super)` inside
+    /// `crate::semantic::check`, so `crate::semantic::tests` cannot name it.
+    /// The source-level half of the same judgment — which programs the
+    /// invalidation events actually reject — is in
+    /// `crate::semantic::tests::references`.
+    fn reference(binding: u32) -> ReferenceInfo {
+        ReferenceInfo::formed(
+            ReferenceKind::Single,
+            ResolvedPlace::binding(BindingId(binding)),
+        )
+    }
+
+    /// [REF-2] a freshly formed reference is valid, and validity is
+    /// re-established only by forming the reference again: a second
+    /// invalidating event does not overwrite the first, because the
+    /// diagnostic names the event that made the reference invalid.
+    #[test]
+    fn invalidation_is_sticky_and_keeps_the_first_event() {
+        let mut info = reference(0);
+        assert!(info.is_valid());
+        info.invalidate(InvalidationEvent::PrefixWritten);
+        assert_eq!(
+            info.validity,
+            ReferenceValidity::Invalid(InvalidationEvent::PrefixWritten)
+        );
+        info.invalidate(InvalidationEvent::RootScopeEnded);
+        assert_eq!(
+            info.validity,
+            ReferenceValidity::Invalid(InvalidationEvent::PrefixWritten),
+            "a second event must not relabel an already invalid reference"
+        );
+    }
+
+    /// [REF-2] every one of the seven enumerated events, and no other, carries
+    /// its own phrase into the diagnostic. The phrases are distinct, so a
+    /// rejection names which event happened.
+    #[test]
+    fn every_invalidation_event_has_its_own_phrase() {
+        let events = [
+            InvalidationEvent::PrefixWritten,
+            InvalidationEvent::PrefixMoved,
+            InvalidationEvent::PrefixReleased,
+            InvalidationEvent::CallWrite,
+            InvalidationEvent::RootScopeEnded,
+            InvalidationEvent::RefinementLost,
+            InvalidationEvent::WindowBoundaryMoved,
+        ];
+        let mut phrases: Vec<&'static str> = events.iter().map(InvalidationEvent::phrase).collect();
+        let written = phrases.len();
+        phrases.sort_unstable();
+        phrases.dedup();
+        assert_eq!(phrases.len(), written, "two events share one phrase");
+    }
+
+    /// [REF-1] the join of two incoming edges is the union of the path sets
+    /// and the meet of the validity facts, because every check on the binding
+    /// must hold on every incoming edge.
+    #[test]
+    fn a_join_unions_the_paths_and_meets_the_validity() {
+        let mut left = reference(0);
+        let right = reference(1);
+        left.join(&right);
+        assert_eq!(
+            left.paths.len(),
+            2,
+            "the join is the union of the path sets"
+        );
+        assert!(left.is_valid(), "two valid edges join to a valid reference");
+
+        let mut valid = reference(0);
+        let mut invalid = reference(1);
+        invalid.invalidate(InvalidationEvent::CallWrite);
+        valid.join(&invalid);
+        assert_eq!(
+            valid.validity,
+            ReferenceValidity::Invalid(InvalidationEvent::CallWrite),
+            "one invalid edge makes the joined reference invalid"
+        );
+    }
+
+    /// [REF-1] a join does not duplicate a path both edges already name.
+    #[test]
+    fn a_join_keeps_one_copy_of_a_shared_path() {
+        let mut left = reference(0);
+        let right = reference(0);
+        left.join(&right);
+        assert_eq!(left.paths.len(), 1);
+    }
+
+    /// [REF-1] a path has a static shape: a loop-carried rebinding may change
+    /// only the index values inside the path, and may never extend the path
+    /// through itself.
+    #[test]
+    fn the_static_shape_admits_a_moved_index_and_refuses_a_longer_path() {
+        let indexed = |capture: u32, value: u64| {
+            let mut place = ResolvedPlace::binding(BindingId(0));
+            place.push_subscript(crate::semantic::places::CapturedValue::new(
+                crate::semantic::places::CaptureId(capture),
+                crate::semantic::places::CapturedTerm::Literal(value),
+            ));
+            ReferenceInfo::formed(ReferenceKind::Single, place)
+        };
+        let first = indexed(0, 1);
+        let moved = indexed(1, 2);
+        assert!(
+            first.shape_agrees_with(&moved),
+            "a rebinding may move the captured index value"
+        );
+
+        let mut longer = ResolvedPlace::binding(BindingId(0));
+        longer.push_subscript(crate::semantic::places::CapturedValue::new(
+            crate::semantic::places::CaptureId(2),
+            crate::semantic::places::CapturedTerm::Literal(1),
+        ));
+        longer.path.push(PlaceStep::Field(0));
+        let extended = ReferenceInfo::formed(ReferenceKind::Single, longer);
+        assert!(
+            !first.shape_agrees_with(&extended),
+            "a rebinding may not extend the path through itself"
+        );
     }
 }

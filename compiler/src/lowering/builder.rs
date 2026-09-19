@@ -6,7 +6,6 @@ mod probe;
 mod results;
 mod runs;
 mod scalar_grain;
-mod slices;
 mod split;
 mod storage;
 mod targets;
@@ -365,6 +364,18 @@ fn lower_function<'program>(
     permissions: Option<&'program FunctionPermissions>,
     overlap: OverlapLowering,
 ) -> Result<IrFunction, LoweringFailure> {
+    // TEMPORARY capability stop, made where the missing body would be built:
+    // one of the compiler-owned [PRE-1] records this version does not lower
+    // yet. Only a program that called the row reaches here, because a generic
+    // row has no instance until a call selects one, and the host rows are not
+    // on that list at all.
+    if function.body.is_none()
+        && let Some(row) = crate::lowering::UNIMPLEMENTED_PRELUDE_ROWS
+            .iter()
+            .find(|row| **row == function.name)
+    {
+        return Err(LoweringFailure::UnimplementedPreludeRow(row));
+    }
     let uninhabited = matches!(
         function.body_disposition,
         crate::semantic::CheckedBodyDisposition::Uninhabited { .. }
@@ -424,8 +435,8 @@ fn lower_function<'program>(
 const fn lower_source_mode(mode: CheckedMode) -> IrSourceMode {
     match mode {
         CheckedMode::Own => IrSourceMode::Own,
-        CheckedMode::Shared(_) => IrSourceMode::Shared,
-        CheckedMode::Unique(_) => IrSourceMode::Unique,
+        CheckedMode::Reference => IrSourceMode::Reference,
+        CheckedMode::Range => IrSourceMode::Range,
     }
 }
 
@@ -445,7 +456,6 @@ fn lower_source_argument(argument: &CheckedExpression) -> IrSourceArgument {
         | CheckedExpression::DerefAddressed { .. }
         | CheckedExpression::ArrayIndex { .. }
         | CheckedExpression::BufferIndex { .. }
-        | CheckedExpression::SliceIndex { .. }
         | CheckedExpression::BoxDeref { .. }
         | CheckedExpression::ArenaDeref { .. } => IrSourceArgument::PlaceRead,
         _ => IrSourceArgument::Value,
@@ -470,7 +480,7 @@ fn lower_borrow_mode_type(
     ty: IrType,
     nominals: &[IrNominal],
 ) -> Result<IrType, LoweringFailure> {
-    if mode == CheckedMode::Own || matches!(ty, IrType::Buffer { .. } | IrType::Slice { .. }) {
+    if mode == CheckedMode::Own || matches!(ty, IrType::Buffer { .. } | IrType::Range { .. }) {
         return Ok(ty);
     }
     let Some(referent) = IrAddressed::of(ty) else {
@@ -797,7 +807,16 @@ impl<'program> IrBuilder<'program> {
             let mut members = Vec::new();
             let mut home = None;
             for site in &run.sites {
-                let Some((block, value)) = self.call_results.get(&site.call).copied() else {
+                // [PAR-1] judges every adjacent statement pair, so a run's
+                // members include statements that are not calls. The hand-out
+                // lowering has no form for one, so a non-call member ends the
+                // group here rather than being silently skipped over — which
+                // would claim an overlap [PAR-1] never judged for the pair
+                // that would then become adjacent.
+                let Some(call) = &site.call else {
+                    break;
+                };
+                let Some((block, value)) = self.call_results.get(call).copied() else {
                     break;
                 };
                 if *home.get_or_insert(block) != block {
@@ -1508,7 +1527,7 @@ impl<'program> IrBuilder<'program> {
                 root,
                 length,
             } => {
-                if let Some(constant) = fixed_measure(*measure, MeasuredKind::Array) {
+                if let Some(constant) = fixed_measure(*measure, MeasuredKind::ConstantArray) {
                     return self.lower_fixed_measure(constant);
                 }
                 let (_, ty) = self.array_root(root)?;
@@ -1607,7 +1626,7 @@ impl<'program> IrBuilder<'program> {
                 )
             }
             CheckedExpression::BufferMeasure { measure, root } => {
-                match fixed_measure(*measure, MeasuredKind::Buffer) {
+                match fixed_measure(*measure, MeasuredKind::RuntimeArray) {
                     Some(constant) => self.lower_fixed_measure(constant),
                     None => self.lower_buffer_length(root),
                 }
@@ -1624,37 +1643,12 @@ impl<'program> IrBuilder<'program> {
                 let address = self.lower_place_address(root)?;
                 self.load_storage_value(address)
             }
-            CheckedExpression::KernelCall {
-                row,
-                instance,
-                arguments,
-                result,
-                ..
-            } => self.lower_kernel_call(*row, instance, arguments, *result),
             CheckedExpression::BufferIndex {
                 root,
                 offset,
                 target_domain,
                 ..
             } => self.lower_buffer_index(root, offset, *target_domain),
-            CheckedExpression::SliceOf {
-                source,
-                range,
-                element,
-                ..
-            } => self.lower_slice_of(source, range.as_ref(), *element),
-            CheckedExpression::SliceMeasure { measure, root } => {
-                match fixed_measure(*measure, MeasuredKind::Slice) {
-                    Some(constant) => self.lower_fixed_measure(constant),
-                    None => self.lower_slice_length(root),
-                }
-            }
-            CheckedExpression::SliceIndex {
-                root,
-                offset,
-                target_domain,
-                ..
-            } => self.lower_slice_index(root, offset, *target_domain),
             CheckedExpression::BoxNew { nominal, value, .. } => {
                 let value = self.expression(value)?;
                 let nominal = self.erased(*nominal);

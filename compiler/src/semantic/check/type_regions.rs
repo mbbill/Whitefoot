@@ -191,26 +191,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 vec![],
                 vec![self.element_type(element)?],
             ),
-            CheckedType::FixedVector { element, .. } => (
+            CheckedType::Window { element, .. } => (
                 TypeConstructor::FixedVector,
                 vec![],
-                vec![self.element_type(element)?],
-            ),
-            CheckedType::Vector {
-                region, element, ..
-            } => (
-                TypeConstructor::Vector,
-                brand(region),
                 vec![self.element_type(element)?],
             ),
             CheckedType::Buffer { element } => {
                 (TypeConstructor::Buffer, vec![], vec![element.ty()])
             }
-            CheckedType::Slice {
-                region, element, ..
-            } => (TypeConstructor::Slice, loan(region), vec![element.ty()]),
-            CheckedType::Heap { region } => (TypeConstructor::Heap, brand(region), vec![]),
-            CheckedType::Extent { region, .. } => (TypeConstructor::Extent, brand(region), vec![]),
             _ => (TypeConstructor::Leaf, vec![], vec![]),
         };
         Ok(axes)

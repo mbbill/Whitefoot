@@ -20,7 +20,8 @@ use crate::{
 };
 
 use super::super::super::model::{
-    CheckedContainerRoot, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedType,
+    CheckedContainerRoot, CheckedExpression, CheckedMeasure, CheckedMode, CheckedNominalKind,
+    CheckedType,
 };
 use super::super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
 use super::super::references::{AccessKind, WIN3_NO_TAKE};
@@ -42,6 +43,16 @@ pub(super) struct ExplicitPlace {
     pub(super) mode: CheckedMode,
     pub(super) expression: CheckedExpression,
     pub(super) resolved: ResolvedPlace,
+    /// [OP-15, MSR-1] the measure a trailing `.len`, `.cap`, `.room` or
+    /// `.head` reads. A measure selects no storage below itself, so it is
+    /// always the last written suffix and the place it is read over is the
+    /// one this record otherwise describes.
+    pub(super) measure: Option<super::super::super::model::CheckedMeasure>,
+    /// Whether the written base was `deref` of a `&[T]` range reference
+    /// [REF-4]. [MSR-1] gives `&[T]` its own row, whose one cell is the
+    /// range's element count, and the referent type the deref selects is the
+    /// element type, so the row cannot be recovered from that type.
+    pub(super) range_referent: bool,
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -56,6 +67,37 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<TypedExpression, CheckStop> {
         let place = self.resolve_explicit_place(use_node, node, bindings)?;
         self.check_commit_place_live(&place.resolved, use_node, false)?;
+        // [OP-15, MSR-1] a measure is a read-only `own u64` member of the
+        // measured place: it reads that place's descriptor storage and
+        // nothing below it, so it is neither a copy nor an affine use of the
+        // value itself.
+        if let Some(measure) = place.measure {
+            let mut effects = EffectSet::NONE;
+            for path in
+                self.effect_paths_for_descriptor(use_node, &place.resolved, bindings, measure)?
+            {
+                effects.add_read(path);
+            }
+            let (binding, path) = self.explicit_container_path(&place.expression, node)?;
+            return Ok(TypedExpression {
+                expression: CheckedExpression::ContainerMeasure {
+                    measure,
+                    root: CheckedContainerRoot {
+                        root: PlaceRoot::Binding(binding),
+                        path,
+                        ty: place.ty,
+                    },
+                },
+                mode: CheckedMode::Own,
+                reference: None,
+                reference_value: false,
+                effects,
+                accesses: vec![PlaceAccess {
+                    place: place.resolved,
+                    kind: AccessKind::Read,
+                }],
+            });
+        }
         let copy = self.is_copy_type(place.ty)?;
         let read_out = !copy && options.explicit_move && self.take_commit_read_out(&place.resolved);
         if !copy && !read_out {
@@ -172,14 +214,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
                     ty: local.ty,
-                    slice_origins: Vec::new(),
                     consume_root: false,
                 },
                 resolved: ResolvedPlace::binding(local.binding),
+                measure: None,
+                range_referent: false,
             }
         };
 
         for suffix in self.tree.children_with(node, Production::Psuffix)? {
+            // [OP-15] a measure is read as a member of the measured place,
+            // and [MSR-1] gives it no storage below itself, so it ends the
+            // written path. [TYPE-10] refuses a write of one and a read of a
+            // window part; a read of a measure is exactly this form.
+            if place.measure.is_some() {
+                return self.issue_node(
+                    SemanticRule::Type10,
+                    suffix,
+                    SemanticIssueKind::ReservedPseudoField {
+                        spelling: self
+                            .deferred_use_at(suffix, DeferredUseRole::ProjectedField)?
+                            .spelling()
+                            .to_owned(),
+                        mechanical_fix: "a measure selects no member of its own [MSR-1]",
+                    },
+                );
+            }
             // A subscript selects a composite element value, which this
             // version does not implement for explicit deref chains; the
             // indexed path in `flat_storage` owns [OP-4].
@@ -208,6 +268,38 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // read is [OP-15]'s place form and is resolved by the measure
             // path before this walker sees it, so a spelling arriving here is
             // one of the positions TYPE-10 refuses.
+            if let Some(measure) = super::super::types::measure_named(&name) {
+                let measured = if place.range_referent {
+                    Some(super::super::super::model::MeasuredKind::Range)
+                } else {
+                    super::super::expressions::flat_storage::measured_kind_of(place.ty)
+                };
+                let Some(measured) = measured else {
+                    return self.issue_node(
+                        SemanticRule::Type5,
+                        suffix,
+                        SemanticIssueKind::type_mismatch(
+                            "a measured place [MSR-1]",
+                            self.checked_type_name(place.ty)?,
+                        ),
+                    );
+                };
+                if matches!(
+                    measure.cell(measured),
+                    super::super::super::model::MeasureCell::Absent
+                ) {
+                    return self.issue_node(
+                        SemanticRule::Type5,
+                        suffix,
+                        SemanticIssueKind::type_mismatch(
+                            "a measured place whose measure table has this row",
+                            self.checked_type_name(place.ty)?,
+                        ),
+                    );
+                }
+                place.measure = Some(measure);
+                continue;
+            }
             self.reject_reserved_pseudo_field(suffix, &name)?;
             // [TYPE-9] a `Box`'s content is its field `inner`, reached by the
             // ordinary field step and never by `deref`.
@@ -331,9 +423,66 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             binding,
             ty: inner.ty,
         };
+        inner.range_referent = inner.mode == CheckedMode::Range;
         inner.mode = CheckedMode::Own;
         inner.resolved = path.clone();
         Ok(inner)
+    }
+
+    /// The measure a written `psuffix` run ends with [OP-15, MSR-1], if any.
+    ///
+    /// [MSR-1] gives a measure no storage below itself, so only the last
+    /// suffix can name one and a subscript never does. The spelling decides
+    /// this without a type because [FORM-3] reserves the four names from
+    /// every field, parameter, binder and result binding.
+    pub(in crate::semantic::check) fn trailing_measure_member(
+        &self,
+        suffixes: &[NodeId],
+    ) -> Result<Option<CheckedMeasure>, CheckStop> {
+        let Some(&last) = suffixes.last() else {
+            return Ok(None);
+        };
+        if self.subscript_offset(last)?.is_some() {
+            return Ok(None);
+        }
+        let name = self
+            .deferred_use_at(last, DeferredUseRole::ProjectedField)?
+            .spelling()
+            .to_owned();
+        Ok(super::super::types::measure_named(&name))
+    }
+
+    /// Whether a written `psuffix` run reaches a [TYPE-9] `Box`'s content.
+    ///
+    /// A `Box`'s one member `inner` *is* that content, so the place below it
+    /// is the dereference the content already is and not a field selection.
+    /// The ordinary field walk has no step for that and the explicit-place
+    /// walker does, so this decides which of the two resolves the place. A
+    /// path this walk cannot follow reaches no box content: the ordinary walk
+    /// then reports its own rejection at the suffix that failed, which is the
+    /// diagnostic the writer needs.
+    pub(in crate::semantic::check) fn place_path_reaches_box_content(
+        &self,
+        suffixes: &[NodeId],
+        mut ty: CheckedType,
+    ) -> Result<bool, CheckStop> {
+        for (position, &suffix) in suffixes.iter().enumerate() {
+            if self.subscript_offset(suffix)?.is_some() {
+                return Ok(false);
+            }
+            if let CheckedType::Nominal(nominal) = ty
+                && matches!(self.nominal(nominal)?.kind, CheckedNominalKind::Box { .. })
+            {
+                return Ok(true);
+            }
+            let Ok((_, selected)) =
+                self.resolve_struct_path(&suffixes[position..=position], ty)
+            else {
+                return Ok(false);
+            };
+            ty = selected;
+        }
+        Ok(false)
     }
 
     /// [TYPE-10] the eight measure and window-part spellings are names, not

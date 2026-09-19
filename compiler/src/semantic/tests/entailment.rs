@@ -15,16 +15,19 @@ use super::super::entailment::{
     CountedCaptureSide, CountedDerivationSet, CountedProofPoint, CountedRootAtom, DerivationId,
     DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind, FunctionEntailment,
     GoalId, GoalSign, ImplicitBoundKind, JoinParent, MeasureBound, ObligationFamily,
-    ObligationOutcome, PlaceProjection, PlaceRoot, PostconditionCallDetail,
-    PostconditionDeliveryJoinDetail, PostconditionDisposition, Relation, RemainderEndpoint,
-    S7Derivation, S7DerivationKind, S7Subject, ShiftOneIdentity, SourceAffineFactRef, TermId,
-    TermKind, ZERO, type_range,
+    ObligationOutcome, PlaceRoot, PostconditionCallDetail, PostconditionDeliveryJoinDetail,
+    PostconditionDisposition, Relation, RemainderEndpoint, S7Derivation, S7DerivationKind,
+    S7Subject, ShiftOneIdentity, SourceAffineFactRef, TermId, TermKind, ZERO, type_range,
 };
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
     CheckedBodyDisposition, CheckedExpression, CheckedIntegerOperation, CheckedMeasure,
     CheckedProgramData, CheckedStatement, CheckedValue, FunctionId, IntegerType,
 };
+// [REF-1] the v0.59 `PlaceProjection` is retired; one resolved path step is a
+// `PlaceStep`, and a term's place carries the whole resolved path rather than
+// a separate deref flag and field list.
+use super::super::places::PlaceStep;
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
@@ -218,8 +221,7 @@ fn s7_result_names_subject(
             retained_term(summary, result),
             TermKind::Place(place, row)
                 if place.root == PlaceRoot::Binding(*binding)
-                    && !place.deref
-                    && place.fields.is_empty()
+                    && place.path.is_empty()
                     && *row == source.row
         ),
         S7Subject::Commit(commit) => matches!(
@@ -246,8 +248,7 @@ fn relation_has_bare_binding(
             retained_term(summary, term),
             TermKind::Place(place, _)
                 if place.root == PlaceRoot::Binding(binding)
-                    && !place.deref
-                    && place.fields.is_empty()
+                    && place.path.is_empty()
         )
     })
 }
@@ -472,9 +473,8 @@ fn assert_join_parents(
 
 fn term_integer_range(kind: &TermKind) -> Option<(i128, i128)> {
     match kind {
-        TermKind::Place(_, ty) | TermKind::ProjectedPlace(_, ty) => Some(type_range(*ty)),
+        TermKind::Place(_, ty) => Some(type_range(*ty)),
         TermKind::Measure(..)
-        | TermKind::ProjectedMeasure(..)
         | TermKind::CountedCapture { .. }
         | TermKind::EntryDatum { .. }
         | TermKind::MeasureDatum { .. } => Some(type_range(IntegerType::U64)),
@@ -495,11 +495,9 @@ fn assert_run_length_bound(summary: &FunctionEntailment, left: TermId, right: Te
         }
     };
     let matched = [left, right].into_iter().any(|candidate| {
-        matches!(
-            retained_term(summary, candidate),
-            TermKind::Measure(..) | TermKind::ProjectedMeasure(..)
-        ) && summary.inventory.measure_bounds[candidate.0 as usize]
-            .is_some_and(|measure_bound| relation_matches(candidate, measure_bound))
+        matches!(retained_term(summary, candidate), TermKind::Measure(..))
+            && summary.inventory.measure_bounds[candidate.0 as usize]
+                .is_some_and(|measure_bound| relation_matches(candidate, measure_bound))
     });
     assert!(matched, "run-length implicit bound must resolve exactly");
 }
@@ -834,8 +832,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         panic!("entry equality must name an immutable entry datum");
                     };
                     assert!(matches!(retained_term(summary, *right),
-                        TermKind::Measure(actual, _) | TermKind::ProjectedMeasure(actual, _)
-                            if actual == measure));
+                        TermKind::Measure(actual, _) if actual == measure));
                 } else {
                     assert_source_event(summary, *event, &mut used_events);
                 }
@@ -929,22 +926,17 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ImplicitBoundKind::StandingMeasure => {
                         assert_run_length_bound(summary, *left, *right, *bound);
                     }
-                    // [MSR-2] `len_of(P) <= limit(P)` and `front(P) <= limit(P)`,
+                    // [MSR-2] `P.len <= P.cap` and `P.head <= P.cap`,
                     // emitted from the capacity term of one place.
                     ImplicitBoundKind::MeasureOrdering => {
                         assert_eq!(*bound, 0);
                         assert!(matches!(
                             retained_term(summary, *right),
                             TermKind::Measure(CheckedMeasure::Capacity, _)
-                                | TermKind::ProjectedMeasure(CheckedMeasure::Capacity, _)
                         ));
                         assert!(matches!(
                             retained_term(summary, *left),
                             TermKind::Measure(CheckedMeasure::Length | CheckedMeasure::Head, _)
-                                | TermKind::ProjectedMeasure(
-                                    CheckedMeasure::Length | CheckedMeasure::Head,
-                                    _
-                                )
                         ));
                     }
                 }
@@ -1778,20 +1770,19 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert!(!seen_obligations[ordinal], "one exact root per obligation");
                 seen_obligations[ordinal] = true;
                 assert!(outcome.discharged);
+                // Retired with [BLK-0]: the KernelRequirement obligation family had the kernel declaration domain as its subject and has no v0.60 one; its successor is the ordinary PRE-1 record call and the UndischargedCallRequirement it submits under FN-8.
+                // Retired with [LIV-2]: the IndexSeparation obligation family judged one multi-target commit's element positions and has no v0.60 subject; its successor is SET-1's one written place per `set` together with EFF-5's RangeSeparation at a call.
                 match outcome.family {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::EmptyRunRelease => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
+                    // [EFF-5] a range separation submits its four orderings as
+                    // one occurrence and never carries a conjunct of its own.
                     ObligationFamily::RangeSeparation => assert_eq!(outcome.conjunct, 0),
-                    ObligationFamily::IndexSeparation => assert_eq!(outcome.conjunct, 0),
-                    ObligationFamily::ViewRange => {
+                    // [REF-4] the two formation goals `lo <= hi` and
+                    // `hi <= x.len` are conjuncts zero and one.
+                    ObligationFamily::RangeFormation => {
                         assert!(outcome.conjunct <= 1)
-                    }
-                    // [BLK-0]: one root per declared requirement of the row,
-                    // whose conjunct is that requirement's position in the
-                    // row's own list.
-                    ObligationFamily::KernelRequirement => {
-                        assert!(outcome.kernel_row.is_some());
                     }
                     ObligationFamily::IntegerDomain => {
                         panic!("integer-domain roots use their own root class")
@@ -1799,16 +1790,17 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 }
                 assert_eq!(outcome.derivation, Some(root.node));
                 assert!(!outcome.node_path.components().is_empty());
-                // [BLK-0] a row requirement whose instantiated goal is closed
-                // by the operand's own standing facts normalizes to no
-                // relation at all — the difference bound has nothing to
-                // request — so a kernel requirement is the one family whose
-                // component list may be empty. B7c4b-1 is where these frozen
-                // sources first carry one, because their runs now come from a
-                // store or an extent.
+                // [EFF-5] a range separation is discharged by one of the four
+                // non-strict orderings and retains no single normalized
+                // component of its own, so it is the one live family whose
+                // component list is empty; every other family normalizes to
+                // exactly one requested relation.
                 if outcome.components.is_empty() {
-                    assert_eq!(outcome.family, ObligationFamily::KernelRequirement);
-                    assert!(!outcome.contradictory);
+                    assert_eq!(outcome.family, ObligationFamily::RangeSeparation);
+                    assert!(matches!(
+                        conclusion,
+                        DerivationConclusion::Relation(_) | DerivationConclusion::Contradiction
+                    ));
                 } else {
                     let [requested] = outcome.components.as_slice() else {
                         panic!("a bounds obligation has one normalized relation");
@@ -1842,7 +1834,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                             sign: GoalSign::Positive,
                         } if matches!(
                             outcome.family,
-                            ObligationFamily::AllocationFit | ObligationFamily::ViewRange
+                            ObligationFamily::AllocationFit | ObligationFamily::RangeFormation
                         ) =>
                         {
                             assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
@@ -1865,7 +1857,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 base,
             } => {
                 let outcome = &summary.obligations[obligation as usize];
-                assert_eq!(outcome.family, ObligationFamily::ViewRange);
+                assert_eq!(outcome.family, ObligationFamily::RangeFormation);
                 assert!(outcome.discharged);
                 let partition = &outcome.range_partitions[partition as usize];
                 assert_eq!(
@@ -2443,7 +2435,7 @@ fn projected_call_parent(summary: &FunctionEntailment, ordinal: usize) -> Deriva
 fn accepted_transitive_bounds_and_discharged_calls_retain_exact_parent_roots() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 struct Pair {
   count: u64;
@@ -2455,7 +2447,7 @@ fn below(value: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-fn read(p: own Pair, i: own u64) -> result: own i32 reads(p.count) {
+fn read(p: own Pair, i: own u64) -> result: own i32 pure {
   if i <= p.count {
     if p.count < 4_u64 {
       let item = values[i];
@@ -2510,7 +2502,7 @@ fn main() -> status: own ExitStatus pure {
 fn normalized_derivations_are_byte_identical_across_twenty_analyses() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64, left: own Bool) -> result: own i32 pure {
   if left {
@@ -2558,7 +2550,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_dominating_branch_discharges_the_guarded_index_and_not_the_other_arm() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   if i < 4_u64 {
@@ -2593,7 +2585,7 @@ fn need_ready(value: own Bool) -> result: own unit pure contract {
   return unit;
 }
 
-fn caller(flags: own Flags) -> result: own unit reads(flags.ready) {
+fn caller(flags: own Flags) -> result: own unit pure {
   if flags.ready {
     need_ready(value: flags.ready);
   } else {
@@ -2691,7 +2683,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_constant_offset_discharges_against_a_const_run_and_a_too_large_one_reports() {
     let source = br#"const count: u64 = 4_u64;
 
-const table: FixedVector<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
+const table: Array<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 fn read() -> result: own u8 pure {
   let inside = table[2_u64];
@@ -2762,7 +2754,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_bool_binding_carries_its_comparison_to_the_match_when_no_kill_intervenes() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   let flag = i < 4_u64;
@@ -2784,7 +2776,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_set_between_initializer_and_use_invalidates_the_comparison_origin() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   let flag = i < 4_u64;
@@ -2816,14 +2808,14 @@ fn main() -> status: own ExitStatus pure {
 fn transitivity_composes_branch_facts_through_a_middle_term() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 struct Pair {
   count: u64;
   other: u64;
 }
 
-fn read(p: own Pair, i: own u64) -> result: own i32 reads(p.count) {
+fn read(p: own Pair, i: own u64) -> result: own i32 pure {
   if i <= p.count {
     if p.count < 4_u64 {
       return values[i];
@@ -2842,7 +2834,7 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![true],
-        "i <= p.count and p.count < 4 compose to i < len_of(values)"
+        "i <= p.count and p.count < 4 compose to i < values.len"
     );
 }
 
@@ -2850,7 +2842,7 @@ fn main() -> status: own ExitStatus pure {
 fn disequality_strengthens_a_weak_bound_to_a_strict_one() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   if i <= 4_u64 {
@@ -2871,7 +2863,7 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![true],
-        "i <= 4 with i != 4 strengthens to i <= 3 < len_of(values)"
+        "i <= 4 with i != 4 strengthens to i <= 3 < values.len"
     );
 }
 
@@ -2946,7 +2938,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_contradictory_state_discharges_every_obligation() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn below_minimum(i: own u64) -> result: own i32 pure {
   if i < 0_u64 {
@@ -2999,7 +2991,7 @@ fn consuming_a_middle_vertex_preserves_its_survivor_consequence() {
     // deliberate capability increase over query-only closure.
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 struct Pair {
   count: u64;
@@ -3010,7 +3002,7 @@ fn eat(p: own Pair) -> result: own unit pure {
   return unit;
 }
 
-fn read(p: own Pair, i: own u64) -> result: own i32 reads(p.count) {
+fn read(p: own Pair, i: own u64) -> result: own i32 pure {
   if i <= p.count {
     if p.count < 4_u64 {
       eat(p: move p);
@@ -3108,8 +3100,11 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn projection_does_not_preserve_a_bound_through_a_moved_alias_write_to_its_endpoint() {
-    let source = br#"fn overwrite(value: &uniq u8) -> result: own unit writes(value) {
+fn projection_does_not_preserve_a_bound_through_an_aliasing_write_to_its_endpoint() {
+    // [REF-1] the alias is a local name for the path `x`, and [EFF-5]
+    // substitutes the callee row's `writes(value)` onto that path, so the
+    // call kills every fact supported by x itself.
+    let source = br#"fn overwrite(value: &u8) -> result: own unit writes(value) {
   set deref(value) = 255_u8;
   return unit;
 }
@@ -3118,10 +3113,8 @@ fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {
   requires x <= middle;
   requires middle <= 254_u8;
 } {
-  region {
-    let holder = &uniq x;
-    overwrite(value: move holder);
-  }
+  let holder = &x;
+  overwrite(value: holder);
   let result = x + 1_u8;
   return result;
 }
@@ -3133,7 +3126,7 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "increment"),
         vec![false],
-        "the moved writable alias resolves to and kills x itself, so no survivor endpoint exists"
+        "the aliasing reference resolves to and kills x itself, so no survivor endpoint exists"
     );
 }
 
@@ -3141,14 +3134,14 @@ fn main() -> status: own ExitStatus pure {
 fn an_assignment_to_a_sibling_field_keeps_facts_and_to_the_fact_field_kills_them() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 struct Pair {
   count: u64;
   other: u64;
 }
 
-fn read(p: own Pair) -> result: own i32 reads(p.count), writes(p.count, p.other) {
+fn read(p: own Pair) -> result: own i32 pure {
   if p.count < 4_u64 {
     set p.other = 9_u64;
     let kept = values[p.count];
@@ -3180,21 +3173,19 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_callee_writing_through_a_unique_borrow_kills_facts_on_that_place() {
+fn a_callee_writing_through_a_reference_kills_facts_on_that_place() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
-fn bump(p: &uniq u64) -> result: own unit writes(p) {
+fn bump(p: &u64) -> result: own unit writes(p) {
   set deref(p) = 9_u64;
   return unit;
 }
 
 fn read(i: own u64) -> result: own i32 pure {
   if i < 4_u64 {
-    region {
-      bump(p: &uniq i);
-    }
+    bump(p: &i);
     return values[i];
   } else {
     return 0_i32;
@@ -3214,7 +3205,7 @@ fn main() -> status: own ExitStatus pure {
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
         vec![false],
-        "the callee's writes row projects onto the unique actual's place"
+        "the callee's writes row projects onto the reference actual's path"
     );
     assert!(summary.obligations[0].derivation.is_none());
 }
@@ -3223,7 +3214,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_callee_with_no_writes_row_kills_nothing() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn peek(p: &u64) -> result: own u64 reads(p) {
   return deref(p);
@@ -3231,9 +3222,7 @@ fn peek(p: &u64) -> result: own u64 reads(p) {
 
 fn read(i: own u64) -> result: own i32 pure {
   if i < 4_u64 {
-    region {
-      let seen = peek(p: &i);
-    }
+    let seen = peek(p: &i);
     return values[i];
   } else {
     return 0_i32;
@@ -3268,9 +3257,9 @@ fn a_join_keeps_the_weakest_bound_held_on_every_continuing_arm() {
 
 const count: u64 = 4_u64;
 
-const wide: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const wide: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
-const narrow: FixedVector<i32, two> =[0_i32, 0_i32];
+const narrow: Array<i32, two> =[0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   if i < 2_u64 {
@@ -3847,7 +3836,7 @@ fn main() -> status: own ExitStatus pure {
 fn an_arm_that_leaves_by_return_contributes_nothing_to_the_join() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   if i < 4_u64 {
@@ -3875,7 +3864,7 @@ fn a_fresh_binding_reusing_an_expired_spelling_inherits_no_stale_fact() {
     // established for the first may attach to it.
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(pick: own Bool) -> result: own i32 pure {
   if pick {
@@ -3911,17 +3900,20 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_fact_about_an_outer_binding_survives_a_region_exit() {
+fn a_fact_about_an_outer_binding_survives_an_inner_block_exit() {
+    // The v0.59 vehicle was a `region` block, which v0.60 does not have; the
+    // subject is [ENT-5] scope exit, so the inner scope is now the `if`
+    // block whose own binding dies at the edge while the outer binding's
+    // branch fact survives it.
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
-  region {
-    if i < 4_u64 {
-    } else {
-      return 0_i32;
-    }
+  if i < 4_u64 {
+    let scoped = i;
+  } else {
+    return 0_i32;
   }
   return values[i];
 }
@@ -3952,7 +3944,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_break_edge_carries_surviving_facts_to_the_loop_continuation() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   loop @l {
@@ -3980,7 +3972,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_kill_before_the_break_edge_leaves_the_continuation_unproved() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   loop @l {
@@ -4009,7 +4001,7 @@ fn main() -> status: own ExitStatus pure {
 fn give_edges_join_at_the_value_match_continuation_with_arm_facts_dead() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   let picked = if i < 4_u64 {
@@ -4156,8 +4148,7 @@ fn main() -> status: own ExitStatus pure {
         retained_term(&summary, left),
         TermKind::Place(place, IntegerType::I32)
             if place.root == PlaceRoot::Binding(receiver)
-                && !place.deref
-                && place.fields.is_empty()
+                && place.path.is_empty()
     ));
     assert_eq!(parents.len(), 2);
     let mut edge_bounds = parents
@@ -4448,7 +4439,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_local_invariant_does_not_discard_an_unrelated_no_ensures_value_if_delivery() {
-    let source = br#"const values: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+    let source = br#"const values: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
 fn choose(value: own i32, side: own Bool) -> result: own i32 pure {
   if value < 128_i32 {
@@ -4490,7 +4481,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_propagate_continuation_keeps_prior_facts_when_the_call_writes_nothing() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 enum Fail {
   Bad();
@@ -4534,7 +4525,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_loop_body_kill_removes_the_fact_from_every_iteration_head() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   if i < 4_u64 {
@@ -4576,7 +4567,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_kill_free_loop_body_keeps_the_entry_fact_at_the_head() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   if i < 4_u64 {
@@ -4605,7 +4596,7 @@ fn main() -> status: own ExitStatus pure {
 fn d1h_and_d1i_distinguish_a_return_inside_the_loop_from_one_after_it() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn return_inside(i: own u64, stop: own Bool) -> result: own i32 pure {
   if i < 4_u64 {
@@ -4657,7 +4648,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_kill_followed_only_by_the_current_loop_break_does_not_poison_the_head() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   if i < 4_u64 {
@@ -4687,7 +4678,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_kill_followed_only_by_an_enclosing_break_does_not_poison_the_inner_head() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64, leave_outer: own Bool, leave_inner: own Bool) -> result: own i32 pure {
   if i < 4_u64 {
@@ -4725,7 +4716,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_propagate_error_edge_does_not_poison_the_loop_head() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 enum Fail {
   Bad();
@@ -4769,7 +4760,7 @@ fn main() -> status: own ExitStatus pure {
 fn an_else_free_continuing_kill_still_poisons_the_loop_head() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64, mutate: own Bool, leave: own Bool) -> result: own i32 pure {
   if i < 4_u64 {
@@ -4803,7 +4794,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_give_to_an_initializer_inside_the_loop_carries_its_kill_to_the_head() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64, mutate: own Bool, leave: own Bool) -> result: own i32 pure {
   if i < 4_u64 {
@@ -4840,9 +4831,9 @@ fn main() -> status: own ExitStatus pure {
 fn a_mixed_branch_ignores_the_return_only_kill_but_keeps_the_continuing_one() {
     let source = br#"const count: u64 = 4_u64;
 
-const left: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const left: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
-const right: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const right: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64, j: own u64, stop: own Bool, leave: own Bool) -> result: own i32 pure {
   if i < 4_u64 {
@@ -4884,7 +4875,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_nested_loop_own_break_carries_kills_to_the_outer_loop_head() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64, leave_outer: own Bool) -> result: own i32 pure {
   if i < 4_u64 {
@@ -4923,7 +4914,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_counted_range_discharges_its_binder_and_safe_predecessor_indices() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read() -> result: own i32 pure {
   let total = 0_i32;
@@ -4952,7 +4943,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_counted_range_does_not_prove_the_next_index_or_an_unrelated_carried_index() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(j: own u64) -> result: own i32 pure {
   let total = 0_i32;
@@ -4983,7 +4974,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_counted_upper_needs_an_independent_relation_to_the_storage_length() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(upper: own u64) -> result: own i32 pure {
   let total = 0_i32;
@@ -5001,7 +4992,7 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![false],
-        "i < captured upper does not imply upper <= len_of(values)"
+        "i < captured upper does not imply upper <= values.len"
     );
 }
 
@@ -5009,7 +5000,7 @@ fn main() -> status: own ExitStatus pure {
 fn killed_middles_preserve_survivor_consequences_in_counted_and_ordinary_flow() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read() -> result: own i32 pure {
   let upper = 4_u64;
@@ -5101,7 +5092,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_write_preserves_a_survivor_bound_derived_through_disequality_strengthening() {
     let source = br#"const count: u64 = 3_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32];
 
 fn read(index: own u64, middle: own u64) -> result: own i32 pure contract {
   requires index <= middle;
@@ -5281,7 +5272,7 @@ fn main() -> status: own ExitStatus pure {
 fn counted_roots_cover_contradictory_preheaders_and_neutral_join_predecessors() {
     let source = br#"const count: u64 = 1_u64;
 
-const values: FixedVector<i32, count> =[0_i32];
+const values: Array<i32, count> =[0_i32];
 
 fn contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
@@ -5461,8 +5452,8 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
-    let source = br#"fn ranges<const n: u64>(values: own FixedVector<u8, n>) -> result: own unit reads(values) {
-  let upper = len_of(values);
+    let source = br#"fn ranges<const n: u64>(values: own Slots<u8, n>) -> result: own unit pure {
+  let upper = values.len;
   for @first (i in 0_u64..upper) {
   }
   for @second (j in 1_u64..upper) {
@@ -5471,37 +5462,16 @@ fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let small_empty = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq small_empty, value: 0_u8);
-  }
-  let small_head = move small_empty;
-  region {
-    place_back(vector: &uniq small_head, value: 0_u8);
-  }
-  let small = move small_head;
+  let small = slots_new::<u8, 2>();
+  place_back(window: &small, value: 0_u8);
+  place_back(window: &small, value: 0_u8);
   ranges::<2>(values: move small);
-  let large_empty = fixed_vector::<u8, 5>();
-  region {
-    place_back(vector: &uniq large_empty, value: 0_u8);
-  }
-  let large_one = move large_empty;
-  region {
-    place_back(vector: &uniq large_one, value: 0_u8);
-  }
-  let large_two = move large_one;
-  region {
-    place_back(vector: &uniq large_two, value: 0_u8);
-  }
-  let large_three = move large_two;
-  region {
-    place_back(vector: &uniq large_three, value: 0_u8);
-  }
-  let large_four = move large_three;
-  region {
-    place_back(vector: &uniq large_four, value: 0_u8);
-  }
-  let large = move large_four;
+  let large = slots_new::<u8, 5>();
+  place_back(window: &large, value: 0_u8);
+  place_back(window: &large, value: 0_u8);
+  place_back(window: &large, value: 0_u8);
+  place_back(window: &large, value: 0_u8);
+  place_back(window: &large, value: 0_u8);
   ranges::<5>(values: move large);
   return exit_status(code: 0_u8);
 }
@@ -5521,12 +5491,13 @@ fn main() -> status: own ExitStatus pure {
                     .all(|term| !matches!(term, TermKind::ConstParameter(_))),
                 "concrete instances retain no symbolic const term"
             );
-            // [MSR-1] the run place carries four measures, and this
-            // version's table fixes a constant for exactly one of them: the
-            // type constant `n` for `cap_of`, which is the instance's own N
-            // and identifies it. The retired `array<T, N>` place also fixed
-            // zero for `room` and `head`; a run carries those as descriptor
-            // words, so they are no longer constants of the type [BLK-1].
+            // [MSR-1] the window place carries four measures, and [MSR-2]'s
+            // table fixes a constant for exactly one of them on a
+            // constant-capacity `Slots<T, n>`: `cap` is the type constant
+            // `n`, which is the instance's own N and identifies it. An
+            // `Array<T, N>` place would also fix `room` at zero; a window
+            // carries `len`, `room` and `head` as descriptor words, so they
+            // are not constants of the type [WIN-1, MSR-2].
             let mut constants: Vec<_> = summary
                 .inventory
                 .measure_bounds
@@ -5565,7 +5536,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_break_free_zero_trip_counted_continuation_is_reachable_not_contradictory() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read() -> result: own i32 pure {
   for @empty (i in 4_u64..4_u64) {
@@ -5589,7 +5560,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_counted_body_fact_does_not_escape_through_the_zero_trip_edge() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   for @maybe (n in 0_u64..1_u64) {
@@ -5617,7 +5588,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_nested_counted_loop_kill_can_reach_an_outer_ordinary_loop_head() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64, leave: own Bool) -> result: own i32 pure {
   if i < 4_u64 {
@@ -5657,10 +5628,10 @@ fn a_struct_field_base_renders_its_canonical_place_in_the_residual() {
     let source = br#"const count: u64 = 4_u64;
 
 struct Holder {
-  data: FixedVector<u8, count>;
+  data: Array<u8, count>;
 }
 
-fn read(h: own Holder, i: own u64) -> result: own u8 reads(h.data) {
+fn read(h: own Holder, i: own u64) -> result: own u8 pure {
   return h.data[i];
 }
 
@@ -5678,9 +5649,9 @@ fn main() -> status: own ExitStatus pure {
 fn a_nested_index_offset_is_no_term_and_renders_its_canonical_bytes() {
     let source = br#"const count: u64 = 4_u64;
 
-const lens: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
+const lens: Array<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-const order: FixedVector<u64, count> =[0_u64, 0_u64, 0_u64, 0_u64];
+const order: Array<u64, count> =[0_u64, 0_u64, 0_u64, 0_u64];
 
 fn read(j: own u64) -> result: own u8 pure {
   if j < 4_u64 {
@@ -5714,9 +5685,9 @@ fn main() -> status: own ExitStatus pure {
 fn a_failed_inner_index_prevents_the_unreached_outer_bounds_obligation() {
     let source = br#"const count: u64 = 4_u64;
 
-const lens: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
+const lens: Array<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-const order: FixedVector<u64, count> =[0_u64, 0_u64, 0_u64, 0_u64];
+const order: Array<u64, count> =[0_u64, 0_u64, 0_u64, 0_u64];
 
 fn read(j: own u64) -> result: own u8 pure {
   return lens[order[j]];
@@ -5737,8 +5708,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_failed_boolean_index_publishes_no_admitted_goal_origin() {
-    let source =
-        br#"fn remember(flags: own FixedVector<Bool, 1>) -> result: own unit reads(flags) {
+    let source = br#"fn remember(flags: own Array<Bool, 1>) -> result: own unit pure {
   let observed = flags[1_u64];
   return unit;
 }
@@ -5769,50 +5739,54 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_buffer_offset_renders_the_outer_subscript_and_a_failed_slice_offset_stops_there() {
+fn a_window_offset_renders_the_outer_subscript_and_a_failed_range_offset_stops_there() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
+const values: Array<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn from_buffer() -> result: own u8 pure {
-  let b = buffer_new(4_u64, 0_u64);
+fn from_window() -> result: own u8 pure {
+  let filled = array_filled::<u64, 4>(value: 0_u64);
+  let b = slots_from_array::<u64, 4>(values: move filled);
   return values[b[0_u64]];
 }
 
-fn from_slice(order: own Slice<u64>) -> result: own u8 reads(order) {
-  return values[order[0_u64]];
+fn from_range(order: &[u64]) -> result: own u8 reads(order) {
+  return values[deref(order)[0_u64]];
 }
 
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let buffer = obligations(source, "from_buffer")
+    let window = obligations(source, "from_window")
         .into_iter()
         .filter(|outcome| outcome.family == ObligationFamily::Bounds)
         .collect::<Vec<_>>();
-    assert_eq!(buffer.len(), 2, "inner offset first, then the outer site");
+    assert_eq!(window.len(), 2, "inner offset first, then the outer site");
     assert!(
-        buffer[0].discharged,
-        "the S6 allocation equality proves the inner offset"
+        window[0].discharged,
+        "the declared construction length proves the inner offset [ENT-3.S12]"
     );
     assert_eq!(
-        buffer[1].residual.as_deref(),
+        window[1].residual.as_deref(),
         Some("b[0_u64] < len_of(values)")
     );
 
-    let slice = obligations(source, "from_slice");
+    let ranged = obligations(source, "from_range")
+        .into_iter()
+        .filter(|outcome| outcome.family == ObligationFamily::Bounds)
+        .collect::<Vec<_>>();
     assert_eq!(
-        slice.len(),
+        ranged.len(),
         1,
-        "the failed inner slice index prevents the outer site from being reached"
+        "the failed inner range index prevents the outer site from being reached"
     );
-    assert_eq!(slice[0].residual.as_deref(), Some("0_u64 < len_of(order)"));
+    assert_eq!(ranged[0].residual.as_deref(), Some("0_u64 < len_of(order)"));
 }
 
 #[test]
 fn failed_partial_operations_do_not_create_parent_or_downstream_domain_authority() {
-    let source = br#"const values: FixedVector<u8, 1> =[0_u8];
+    let source = br#"const values: Array<u8, 1> =[0_u8];
 
 fn add_after_index() -> result: own u8 pure {
   let result = values[1_u64] + 1_u8;
@@ -5924,16 +5898,18 @@ fn main() -> status: own ExitStatus pure {
 // ---------------------------------------------------------------------
 
 #[test]
-fn an_allocation_length_equality_proves_a_constant_offset_and_a_runtime_length_does_not() {
+fn a_declared_construction_length_proves_a_constant_offset_and_an_unknown_one_does_not() {
+    // [ENT-3.S6] carries no construction row in v0.60: a construction
+    // function's length and capacity facts are the `ensures` of its [PRE-1]
+    // record and reach the caller through [ENT-3.S12] like any other declared
+    // relation, so the proving half now descends from that call's S13 event.
     let source = br#"fn sized() -> result: own u8 pure {
-  let b = buffer_new(4_u64, 0_u8);
+  let filled = array_filled::<u8, 4>(value: 0_u8);
+  let b = slots_from_array::<u8, 4>(values: move filled);
   return b[3_u64];
 }
 
-fn runtime(n: own u64) -> result: own u8 pure contract {
-  requires buffer_fits::<u8>(n);
-} {
-  let b = buffer_new(n, 0_u8);
+fn unknown(b: own Slots<u8, 4>) -> result: own u8 pure {
   return b[3_u64];
 }
 
@@ -5947,10 +5923,11 @@ fn main() -> status: own ExitStatus pure {
         sized
             .obligations
             .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::Bounds)
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
-        vec![true, true],
-        "len_of(b) = 4 makes 3 < len_of(b) derivable [ENT-3] S6"
+        vec![true],
+        "the declared b.len = 4 makes 3 < b.len derivable [ENT-3] S12"
     );
     let sized_bounds = sized
         .obligations
@@ -5960,32 +5937,30 @@ fn main() -> status: own ExitStatus pure {
     assert_root_has_event_kind(
         &sized,
         obligation_root(&sized, sized_bounds),
-        FlowEventKind::S6,
+        FlowEventKind::S13,
     );
-    let runtime = obligations(source, "runtime");
-    let runtime_bounds = runtime
+    let unknown = obligations(source, "unknown");
+    let unknown_bounds = unknown
         .iter()
         .find(|outcome| outcome.family == ObligationFamily::Bounds)
-        .expect("the runtime subscript carries one bounds obligation");
+        .expect("the unknown-length subscript carries one bounds obligation");
     assert!(
-        !runtime_bounds.discharged,
-        "len_of(b) = n bounds nothing without a fact about n"
+        !unknown_bounds.discharged,
+        "a capacity of four bounds nothing about the window's own length"
     );
     assert_eq!(
-        runtime_bounds.residual.as_deref(),
+        unknown_bounds.residual.as_deref(),
         Some("3_u64 < len_of(b)")
     );
 }
 
 #[test]
-fn an_allocation_length_binding_carries_the_length_into_a_branch() {
-    // `let m = len::<T>(P)` establishes m = len_of(P), so a branch over m is a
-    // branch over the length itself [ENT-3] S6.
-    let source = br#"fn read(n: own u64, i: own u64) -> result: own u8 pure contract {
-  requires buffer_fits::<u8>(n);
-} {
-  let b = buffer_new(n, 0_u8);
-  let m = len_of(b);
+fn a_measure_binding_carries_the_length_into_a_branch() {
+    // [ENT-3.S6] `let m = P.len;` establishes m = P.len, so a branch over m is
+    // a branch over the length itself. The measure is a member read [OP-15]
+    // and no longer a former call.
+    let source = br#"fn read(b: own Slots<u8, 4>, i: own u64) -> result: own u8 pure {
+  let m = b.len;
   if i < m {
     return b[i];
   } else {
@@ -5997,20 +5972,21 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_eq!(discharge_flags(source, "read"), vec![true, true]);
+    assert_eq!(discharge_flags(source, "read"), vec![true]);
 }
 
 #[test]
-fn a_slice_of_carries_its_source_length() {
+fn a_range_reference_carries_its_formed_length() {
+    // [ENT-3.S6] `let part = &P[lo..hi];` establishes `deref(part).len = hi -
+    // lo` over the captured endpoint values, which is the successor of the
+    // retired whole-run `slice_of` former [REF-4].
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
+const values: Array<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
 fn read() -> result: own u8 pure {
-  region {
-    let window = slice_of(&values);
-    return window[3_u64];
-  }
+  let window = &values[0_u64..4_u64];
+  return deref(window)[3_u64];
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -6018,22 +5994,25 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
     assert_eq!(
-        discharge_flags(source, "read"),
+        obligations(source, "read")
+            .into_iter()
+            .filter(|outcome| outcome.family == ObligationFamily::Bounds)
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true],
-        "len_of(window) = len_of(values) = 4 [ENT-3] S6"
+        "deref(window).len = 4 - 0 = 4 [ENT-3] S6"
     );
 }
 
 #[test]
-fn buffer_bounds_survive_writes_that_only_kill_their_establishment_middle() {
-    // [ENT-5]: a buffer's length is fixed at allocation, so an element write
-    // never kills its length fact. Writing n kills facts that still mention n,
-    // but first projects the already true 3 < len_of(b) consequence whose two
-    // endpoints survive the write.
-    let source = br#"fn kept(n: own u64) -> result: own u8 pure contract {
-  requires buffer_fits::<u8>(n);
+fn window_bounds_survive_writes_that_only_kill_their_establishment_middle() {
+    // [ENT-5, MSR-2]: an element write reaches the element's own storage and
+    // not the window's descriptor, so it never kills the length fact. Writing
+    // n kills facts that still mention n, but first projects the already true
+    // 3 < b.len consequence whose two endpoints survive the write.
+    let source = br#"fn kept(b: own Slots<u8, 4>, n: own u64) -> result: own u8 pure contract {
+  requires b.len == n;
 } {
-  let b = buffer_new(n, 0_u8);
   if 3_u64 < n {
     set b[0_u64] = 1_u8;
     return b[3_u64];
@@ -6042,10 +6021,9 @@ fn buffer_bounds_survive_writes_that_only_kill_their_establishment_middle() {
   }
 }
 
-fn killed(n: own u64) -> result: own u8 pure contract {
-  requires buffer_fits::<u8>(n);
+fn killed(b: own Slots<u8, 4>, n: own u64) -> result: own u8 pure contract {
+  requires b.len == n;
 } {
-  let b = buffer_new(n, 0_u8);
   if 3_u64 < n {
     set n = 0_u64;
     return b[3_u64];
@@ -6064,10 +6042,10 @@ fn main() -> status: own ExitStatus pure {
         kept.obligations
             .last()
             .is_some_and(|outcome| outcome.discharged),
-        "an element write leaves len_of(b) = n alive"
+        "an element write leaves b.len = n alive"
     );
     let kept_root = obligation_root(&kept, kept.obligations.len() - 1);
-    assert_root_has_event_kind(&kept, kept_root, FlowEventKind::S6);
+    assert_root_has_event_kind(&kept, kept_root, FlowEventKind::S4);
 
     let killed = entailment(source, "killed");
     validate_derivations(&killed);
@@ -6076,7 +6054,7 @@ fn main() -> status: own ExitStatus pure {
             .obligations
             .last()
             .is_some_and(|outcome| outcome.discharged),
-        "writing n preserves the already established 3 < len_of(b) consequence"
+        "writing n preserves the already established 3 < b.len consequence"
     );
     assert_root_contains(
         &killed,
@@ -6098,41 +6076,43 @@ fn main() -> status: own ExitStatus pure {
                     (
                         TermKind::Constant(3),
                         TermKind::Place(n, IntegerType::U64),
-                        TermKind::Measure(CheckedMeasure::Length, buffer),
-                    ) if n.root == PlaceRoot::Binding(BindingId(0))
-                        && buffer.root == PlaceRoot::Binding(BindingId(1))
+                        TermKind::Measure(CheckedMeasure::Length, window),
+                    ) if n.root == PlaceRoot::Binding(BindingId(1))
+                        && window.root == PlaceRoot::Binding(BindingId(0))
                 )
             }
             _ => false,
         },
-        "the exact 3 - n <= -1 plus n - len_of(b) <= 0 projection",
+        "the exact 3 - n <= -1 plus n - b.len <= 0 projection",
     );
 }
 
 #[test]
-fn consuming_the_buffer_projects_its_copied_length_before_the_root_dies() {
-    // The support of len_of(b) is b's root binding, so the length term dies with
+fn consuming_the_window_projects_its_copied_length_before_the_root_dies() {
+    // The support of b.len is b's root binding, so the measure term dies with
     // the move. Its already copied mathematical value m does not: projecting
-    // m = len_of(b) = 4 before the kill soundly preserves m < 8.
+    // m = b.len = 4 before the kill soundly preserves m < 8.
     let source = br#"const wide: u64 = 8_u64;
 
-const other: FixedVector<u8, wide> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+const other: Array<u8, wide> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
 
-fn eat(b: own buffer<u8>) -> result: own unit pure {
+fn eat(b: own Slots<u8, 4>) -> result: own unit pure {
   return unit;
 }
 
 fn kept() -> result: own u8 pure {
-  let b = buffer_new(4_u64, 0_u8);
-  let m = len_of(b);
+  let filled = array_filled::<u8, 4>(value: 0_u8);
+  let b = slots_from_array::<u8, 4>(values: move filled);
+  let m = b.len;
   let sample = other[m];
   eat(b: move b);
   return sample;
 }
 
 fn killed() -> result: own u8 pure {
-  let b = buffer_new(4_u64, 0_u8);
-  let m = len_of(b);
+  let filled = array_filled::<u8, 4>(value: 0_u8);
+  let b = slots_from_array::<u8, 4>(values: move filled);
+  let m = b.len;
   eat(b: move b);
   let sample = other[m];
   return sample;
@@ -6151,7 +6131,7 @@ fn main() -> status: own ExitStatus pure {
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
         vec![true],
-        "m = len_of(b) = 4 < 8 while b is live"
+        "m = b.len = 4 < 8 while b is live"
     );
     let kept_bounds = kept
         .obligations
@@ -6193,8 +6173,8 @@ fn main() -> status: own ExitStatus pure {
 fn set_targets_carry_the_same_obligation_in_target_position() {
     let source = br#"const count: u64 = 4_u64;
 
-fn write(values: own FixedVector<u16, count>, i: own u64) -> result: own u16 writes(values) contract {
-  requires len_of(values) == count;
+fn write(values: own Slots<u16, count>, i: own u64) -> result: own u16 pure contract {
+  requires values.len == count;
 } {
   if i < 4_u64 {
     set values[i] = 9_u16;
@@ -6225,7 +6205,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_true_guard_establishes_its_comparison_on_the_selected_edge() {
-    let source = br#"const values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+    let source = br#"const values: Array<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn clamp_three(value: own u64) -> result: own u64 pure {
   return imin(value, 3_u64);
@@ -6282,9 +6262,9 @@ fn main() -> status: own ExitStatus pure {
 fn a_true_band_guard_establishes_its_conjuncts_not_a_whole_tree_relation() {
     // Each conjunct is consumed by a distinct bounds obligation on the true
     // edge of the same Boolean guard.
-    let source = br#"const left_values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+    let source = br#"const left_values: Array<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
 
-const right_values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+const right_values: Array<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn clamp_three(value: own u64) -> result: own u64 pure {
   return imin(value, 3_u64);
@@ -6336,7 +6316,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_literal_a_copy_and_a_total_conversion_carry_the_value_forward() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read() -> result: own i32 pure {
   let k = 2_u64;
@@ -6361,7 +6341,7 @@ fn main() -> status: own ExitStatus pure {
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
         vec![true, true],
-        "j = k = 2 and widened = narrow = 3, both below len_of(values)"
+        "j = k = 2 and widened = narrow = 3, both below values.len"
     );
     for ordinal in 0..2 {
         assert_root_has_event_kind(
@@ -6376,8 +6356,8 @@ fn main() -> status: own ExitStatus pure {
 fn a_set_commit_from_a_term_publishes_its_post_commit_value() {
     // The RHS value is read before the write. After the target's stale facts
     // are killed, S5 publishes `start = back`; no runtime check is needed.
-    let source = br#"fn tail_byte(data: &buffer<u8>) -> result: own u8 reads(data) {
-  let n = len_of(deref(data));
+    let source = br#"fn tail_byte(data: &[u8]) -> result: own u8 reads(data) {
+  let n = deref(data).len;
   let have_room = n >= 8_u64;
   let start = 0_u64;
   let out = 0_u8;
@@ -6391,10 +6371,9 @@ fn a_set_commit_from_a_term_publishes_its_post_commit_value() {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let input = buffer_new(4096_u64, 7_u8);
-  region {
-    let byte = tail_byte(data: &input);
-  }
+  let input = array_filled::<u8, 4096>(value: 7_u8);
+  let window = &input[0_u64..4096_u64];
+  let byte = tail_byte(data: window);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6418,7 +6397,7 @@ fn a_scope_exit_keeps_a_closed_consequence_that_does_not_name_the_local() {
     // materialized before the arm-local binding is killed.
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   let out = 0_u64;
@@ -6454,7 +6433,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_set_commit_kills_the_old_target_fact_before_publishing_the_new_copy() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(replacement: own u64) -> result: own i32 pure {
   let offset = 0_u64;
@@ -6492,7 +6471,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_wrapping_offset_commit_publishes_the_image_its_let_spelling_publishes() {
     let direct = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(replacement: own u64) -> result: own i32 pure {
   if replacement < 4_u64 {
@@ -6510,7 +6489,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     let through_let = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(replacement: own u64) -> result: own i32 pure {
   if replacement < 4_u64 {
@@ -6546,7 +6525,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_set_right_hand_side_outside_every_value_source_publishes_no_image() {
     let direct = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(replacement: own u64) -> result: own i32 pure {
   if replacement < 4_u64 {
@@ -6564,7 +6543,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     let through_let = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(replacement: own u64) -> result: own i32 pure {
   if replacement < 4_u64 {
@@ -6603,7 +6582,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_wrapping_subtraction_commit_publishes_no_post_write_image() {
     let direct = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(replacement: own u64) -> result: own i32 pure {
   if replacement < 4_u64 {
@@ -6621,7 +6600,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     let through_let = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(replacement: own u64) -> result: own i32 pure {
   if replacement < 4_u64 {
@@ -6656,7 +6635,7 @@ fn a_narrowing_conversion_carries_no_equality_into_its_ok_arm() {
     // the `Ok` binder inherits only its own type range.
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(n: own u64) -> result: own i32 pure {
   if n < 4_u64 {
@@ -6917,7 +6896,7 @@ fn main() -> status: own ExitStatus pure {
 fn one_ineligible_bit_and_operand_does_not_hide_the_other_s7_bound() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<u32, count> =[0_u32, 0_u32, 0_u32, 0_u32];
+const values: Array<u32, count> =[0_u32, 0_u32, 0_u32, 0_u32];
 
 fn independent(admitted: own u32) -> result: own u32 pure {
   let masked = iand(values[0_u64], admitted);
@@ -7266,7 +7245,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_proved_exact_offset_establishes_its_equality_unconditionally() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure {
   if i < 3_u64 {
@@ -7313,7 +7292,7 @@ fn a_wrapping_offset_establishes_only_where_the_range_is_already_proved() {
     // closed state already proves the unwrapped result stays in range.
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn guarded(p: own u64) -> result: own i32 pure {
   if p < 4_u64 {
@@ -7357,7 +7336,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_checked_offset_establishes_in_the_ok_arm_only_and_dies_with_its_base() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn direct(i: own u64) -> result: own i32 pure {
   if i < 3_u64 {
@@ -7429,14 +7408,14 @@ fn main() -> status: own ExitStatus pure {
 // ---------------------------------------------------------------------
 
 #[test]
-fn a_const_run_element_carries_its_declared_value_range() {
+fn a_const_array_element_carries_its_declared_value_range() {
     let source = br#"const count: u64 = 4_u64;
 
-const inside: FixedVector<u64, count> =[0_u64, 1_u64, 3_u64, 2_u64];
+const inside: Array<u64, count> =[0_u64, 1_u64, 3_u64, 2_u64];
 
-const outside: FixedVector<u64, count> =[0_u64, 1_u64, 4_u64, 2_u64];
+const outside: Array<u64, count> =[0_u64, 1_u64, 4_u64, 2_u64];
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn low(i: own u64) -> result: own i32 pure {
   if i < 4_u64 {
@@ -7473,25 +7452,25 @@ fn main() -> status: own ExitStatus pure {
     );
     assert!(
         low.obligations[1].discharged,
-        "every declared element is at most 3 < len_of(values)"
+        "every declared element is at most 3 < values.len"
     );
     assert_root_has_event_kind(&low, obligation_root(&low, 1), FlowEventKind::S9);
     let high = obligations(source, "high");
     assert!(
         !high[1].discharged,
-        "a declared element of 4 reaches len_of(values)"
+        "a declared element of 4 reaches values.len"
     );
 }
 
 #[test]
 fn a_projected_const_array_does_not_gain_a_bare_constant_element_range() {
     let source = br#"struct Indices {
-  entries: array<u64, 2>;
+  entries: Array<u64, 2>;
 }
 
 const table: Indices = Indices(entries:[0_u64, 1_u64]);
 
-const values: array<i32, 2> =[7_i32, 9_i32];
+const values: Array<i32, 2> =[7_i32, 9_i32];
 
 fn bound_read(i: own u64) -> result: own i32 pure {
   if i < 2_u64 {
@@ -7545,7 +7524,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_requirement_establishes_its_substituted_relation_at_body_entry() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure contract {
   define ok = i < 4_u64;
@@ -7573,13 +7552,13 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_requires_chain_substitutes_repeatedly_and_reads_a_length_call() {
+fn a_requires_chain_substitutes_repeatedly_and_reads_a_measure_member() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure contract {
-  define n = len_of(values);
+  define n = values.len;
   define ok = i < n;
   requires ok;
 } {
@@ -7593,7 +7572,7 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![true],
-        "ok substitutes to the comparison, then n to the length term itself"
+        "ok substitutes to the comparison, then n to the measure term itself"
     );
 }
 
@@ -7601,13 +7580,13 @@ fn main() -> status: own ExitStatus pure {
 fn every_occurrence_of_a_requires_local_substitutes() {
     // Both operands name the same clause local. Expanding only one would
     // leave a non-term operand and establish nothing; expanding both derives
-    // len_of(values) < len_of(values), a contradictory entry state [ENT-4].
+    // values.len < values.len, a contradictory entry state [ENT-4].
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read() -> result: own i32 pure contract {
-  define n = len_of(values);
+  define n = values.len;
   define ok = n < n;
   requires ok;
 } {
@@ -7631,7 +7610,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_band_s4_goal_establishes_its_conjuncts_at_body_entry() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(i: own u64) -> result: own i32 pure contract {
   define low = i < 4_u64;
@@ -7661,7 +7640,7 @@ fn main() -> status: own ExitStatus pure {
 
 fn range_contract_source(contract: &str, body: &str) -> String {
     format!(
-        "const endpoints: FixedVector<u64, 2> =[0_u64, 0_u64];\n\nfn publish(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>, start: own u64, end: own u64) -> result: own unit reads(factory, output, source), writes(factory, output){contract} {{\n{body}  return unit;\n}}\n"
+        "const endpoints: Array<u64, 2> =[0_u64, 0_u64];\n\nfn publish(factory: &HandleFactory, output: &OutputStream, source: &[u8], start: own u64, end: own u64) -> result: own unit reads(source), writes(factory), writes(output){contract} {{\n{body}  return unit;\n}}\n"
     )
 }
 
@@ -7669,7 +7648,7 @@ fn range_contract_source(contract: &str, body: &str) -> String {
 fn a_failed_endpoint_expression_prevents_unreached_call_requirements() {
     let source = range_contract_source(
         "",
-        "  region {\n    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: 0_u64, end: endpoints[2_u64]);\n  }\n",
+        "  let outcome = write_once(factory: factory, output: output, source: source, start: 0_u64, end: endpoints[2_u64]);\n",
     );
     let outcomes = obligations(source.as_bytes(), "publish");
     let [endpoint_index] = outcomes.as_slice() else {
@@ -7687,7 +7666,7 @@ fn a_failed_endpoint_expression_prevents_unreached_call_requirements() {
 fn one_ordinary_call_retains_two_independent_ordered_range_requirements() {
     let source = range_contract_source(
         "",
-        "  region {\n    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: start, end: end);\n  }\n",
+        "  let outcome = write_once(factory: factory, output: output, source: source, start: start, end: end);\n",
     );
     let outcomes = call_goals(source.as_bytes(), "publish");
     assert_eq!(outcomes.len(), 2);
@@ -7713,8 +7692,8 @@ fn one_ordinary_call_retains_two_independent_ordered_range_requirements() {
 #[test]
 fn ordinary_source_relations_discharge_both_signature_ranges() {
     let source = range_contract_source(
-        " contract {\n  requires start <= end;\n  requires end <= len_of(deref(source));\n}",
-        "  region {\n    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: start, end: end);\n  }\n",
+        " contract {\n  requires start <= end;\n  requires end <= deref(source).len;\n}",
+        "  let outcome = write_once(factory: factory, output: output, source: source, start: start, end: end);\n",
     );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -7761,7 +7740,7 @@ fn ordinary_source_relations_discharge_both_signature_ranges() {
 fn indexed_guards_discharge_structurally_identical_signature_ranges() {
     let source = range_contract_source(
         "",
-        "  let capacity = len_of(deref(source));\n  if endpoints[0_u64] <= endpoints[1_u64] {\n    if endpoints[1_u64] <= capacity {\n      region {\n        let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: endpoints[0_u64], end: endpoints[1_u64]);\n      }\n    }\n  }\n",
+        "  let capacity = deref(source).len;\n  if endpoints[0_u64] <= endpoints[1_u64] {\n    if endpoints[1_u64] <= capacity {\n      let outcome = write_once(factory: factory, output: output, source: source, start: endpoints[0_u64], end: endpoints[1_u64]);\n    }\n  }\n",
     );
     let ranges = call_goals(source.as_bytes(), "publish");
     assert_eq!(ranges.len(), 2);
@@ -7805,7 +7784,7 @@ fn indexed_guards_discharge_structurally_identical_signature_ranges() {
 fn a_nonterm_endpoint_is_never_replaced_by_the_zero_term() {
     let source = range_contract_source(
         "",
-        "  region {\n    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: 1_u64, end: endpoints[0_u64]);\n  }\n",
+        "  let outcome = write_once(factory: factory, output: output, source: source, start: 1_u64, end: endpoints[0_u64]);\n",
     );
     let ranges = call_goals(source.as_bytes(), "publish");
     assert_eq!(ranges.len(), 2);
@@ -7826,36 +7805,32 @@ fn a_transfer_endpoint_is_bounded_by_end_and_not_beyond_it() {
     // so an endpoint equal to the table length proves nothing.
     let source = br#"const count: u64 = 4_u64;
 
-const table: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
+const table: Array<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn under(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>) -> result: own unit reads(factory, output, source), writes(factory, output) {
-  let source_length = len_of(deref(source));
+fn under(factory: &HandleFactory, output: &OutputStream, source: &[u8]) -> result: own unit reads(source), writes(factory), writes(output) {
+  let source_length = deref(source).len;
   let enough = 3_u64 <= source_length;
   if enough {
-    region {
-      match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: 0_u64, end: 3_u64) {
-        Ok(value: next) => {
-          let sample = table[next];
-        }
-        Err(error: problem) => {
-        }
+    match write_once(factory: factory, output: output, source: source, start: 0_u64, end: 3_u64) {
+      Ok(value: next) => {
+        let sample = table[next];
+      }
+      Err(error: problem) => {
       }
     }
   }
   return unit;
 }
 
-fn exact(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>) -> result: own unit reads(factory, output, source), writes(factory, output) {
-  let source_length = len_of(deref(source));
+fn exact(factory: &HandleFactory, output: &OutputStream, source: &[u8]) -> result: own unit reads(source), writes(factory), writes(output) {
+  let source_length = deref(source).len;
   let enough = 4_u64 <= source_length;
   if enough {
-    region {
-      match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: 0_u64, end: 4_u64) {
-        Ok(value: next) => {
-          let sample = table[next];
-        }
-        Err(error: problem) => {
-        }
+    match write_once(factory: factory, output: output, source: source, start: 0_u64, end: 4_u64) {
+      Ok(value: next) => {
+        let sample = table[next];
+      }
+      Err(error: problem) => {
       }
     }
   }
@@ -7871,7 +7846,7 @@ fn exact(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slic
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
         vec![true],
-        "next <= 3 < len_of(table) discharges after both ordinary requires"
+        "next <= 3 < table.len discharges after both ordinary requires"
     );
     let indexed = under
         .obligations
@@ -7890,7 +7865,7 @@ fn exact(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slic
     assert_eq!(
         discharge_flags(source, "exact"),
         vec![false],
-        "next <= 4 admits next = len_of(table)"
+        "next <= 4 admits next = table.len"
     );
 }
 
@@ -7898,21 +7873,19 @@ fn exact(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slic
 fn a_transfer_endpoint_bound_enters_the_observing_arm_only() {
     // `Ok(value: next)` observes the endpoint bound; the error arm's own u64
     // payload is an unrelated required size and gains nothing [ENT-3.S12].
-    let source = br#"const table: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+    let source = br#"const table: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main(text: &HostString, destination: &uniq MutSlice<u8>) -> result: own unit reads(text, destination), writes(destination) contract {
-  requires 3_u64 <= len_of(deref(destination));
+fn main(text: &HostString, destination: &[u8]) -> result: own unit reads(text), writes(destination) contract {
+  requires 3_u64 <= deref(destination).len;
 } {
-  region {
-    match host_copy_bytes(value: text, destination: &uniq deref(destination), start: 0_u64, end: 3_u64) {
-      Ok(value: copied) => {
-        let good = table[copied];
-      }
-      Err(error: problem) => {
-        match problem {
-          CopyTooSmall(required: needed) => {
-            let bad = table[needed];
-          }
+  match host_copy_bytes(value: text, destination: destination, start: 0_u64, end: 3_u64) {
+    Ok(value: copied) => {
+      let good = table[copied];
+    }
+    Err(error: problem) => {
+      match problem {
+        CopyTooSmall(required: needed) => {
+          let bad = table[needed];
         }
       }
     }
@@ -7934,19 +7907,17 @@ fn main(text: &HostString, destination: &uniq MutSlice<u8>) -> result: own unit 
 #[test]
 fn a_host_copy_utf8_success_endpoint_is_bounded_by_end() {
     // The UTF-8 copy producer carries the same ordinary ensures success-endpoint bound as
-    // the byte-preserving copy producer: copied <= 3 < len_of(table).
-    let source = br#"const table: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+    // the byte-preserving copy producer: copied <= 3 < table.len.
+    let source = br#"const table: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main(text: &HostString, destination: &uniq MutSlice<u8>) -> result: own unit reads(text, destination), writes(destination) contract {
-  requires 3_u64 <= len_of(deref(destination));
+fn main(text: &HostString, destination: &[u8]) -> result: own unit reads(text), writes(destination) contract {
+  requires 3_u64 <= deref(destination).len;
 } {
-  region {
-    match host_copy_utf8(value: text, destination: &uniq deref(destination), start: 0_u64, end: 3_u64) {
-      Ok(value: copied) => {
-        let good = table[copied];
-      }
-      Err(error: problem) => {
-      }
+  match host_copy_utf8(value: text, destination: destination, start: 0_u64, end: 3_u64) {
+    Ok(value: copied) => {
+      let good = table[copied];
+    }
+    Err(error: problem) => {
     }
   }
   return unit;
@@ -7971,38 +7942,34 @@ fn a_let_bound_numeric_outcome_does_not_gain_a_special_endpoint_route() {
     // destination and is covered alongside this negative.
     let source = br#"const count: u64 = 4_u64;
 
-const table: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
+const table: Array<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn deferred(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>, limit: own u64) -> result: own unit reads(factory, output, source), writes(factory, output) contract {
-  define capacity = len_of(deref(source));
+fn deferred(factory: &HandleFactory, output: &OutputStream, source: &[u8], limit: own u64) -> result: own unit reads(source), writes(factory), writes(output) contract {
+  define capacity = deref(source).len;
   requires 3_u64 <= capacity;
 } {
-  region {
-    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: 0_u64, end: 3_u64);
-    match outcome {
-      Ok(value: written) => {
-        let sample = table[written];
-      }
-      Err(error: problem) => {
-      }
+  let outcome = write_once(factory: factory, output: output, source: source, start: 0_u64, end: 3_u64);
+  match outcome {
+    Ok(value: written) => {
+      let sample = table[written];
+    }
+    Err(error: problem) => {
     }
   }
   return unit;
 }
 
-fn killed(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>, limit: own u64) -> result: own unit reads(factory, output, source), writes(factory, output) contract {
-  define capacity = len_of(deref(source));
+fn killed(factory: &HandleFactory, output: &OutputStream, source: &[u8], limit: own u64) -> result: own unit reads(source), writes(factory), writes(output) contract {
+  define capacity = deref(source).len;
   requires limit <= capacity;
 } {
-  region {
-    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: 0_u64, end: limit);
-    set limit = 9_u64;
-    match outcome {
-      Ok(value: written) => {
-        let sample = table[written];
-      }
-      Err(error: problem) => {
-      }
+  let outcome = write_once(factory: factory, output: output, source: source, start: 0_u64, end: limit);
+  set limit = 9_u64;
+  match outcome {
+    Ok(value: written) => {
+      let sample = table[written];
+    }
+    Err(error: problem) => {
     }
   }
   return unit;
@@ -8031,18 +7998,16 @@ fn killed(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Sli
 #[test]
 fn a_read_at_endpoint_is_observed_on_its_own_outcome_variant() {
     // PRE-1 read_at uses Result and an ordinary selected ensures.
-    let source = br#"const table: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+    let source = br#"const table: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main(factory: &uniq HandleFactory, file: &uniq ReadFile, destination: &uniq MutSlice<u8>) -> result: own unit reads(factory, file, destination), writes(factory, file, destination) contract {
-  requires 3_u64 <= len_of(deref(destination));
+fn main(factory: &HandleFactory, file: &ReadFile, destination: &[u8]) -> result: own unit writes(factory), writes(file), writes(destination) contract {
+  requires 3_u64 <= deref(destination).len;
 } {
-  region {
-    match read_at(factory: &uniq deref(factory), file: &uniq deref(file), destination: &uniq deref(destination), file_offset: 0_u64, start: 0_u64, end: 3_u64) {
-      Ok(value: next) => {
-        let sample = table[next];
-      }
-      Err(error: problem) => {
-      }
+  match read_at(factory: factory, file: file, destination: destination, file_offset: 0_u64, start: 0_u64, end: 3_u64) {
+    Ok(value: next) => {
+      let sample = table[next];
+    }
+    Err(error: problem) => {
     }
   }
   return unit;
@@ -8104,7 +8069,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_counted_loop_body_bound_reaches_only_its_dominated_obligation() {
-    let source = br#"const values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+    let source = br#"const values: Array<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(leave: own Bool) -> result: own i32 pure {
   for (index in 0_u64..4_u64) {
@@ -8143,8 +8108,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_undischarged_subscript_is_an_op4_rejection_with_the_exact_residual() {
-    let source =
-        br#"fn read(values: own buffer<i32>, i: own u64) -> result: own i32 reads(values) {
+    let source = br#"fn read(values: own Slots<i32, 4>, i: own u64) -> result: own i32 pure {
   return values[i];
 }
 
@@ -8164,7 +8128,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_closed_opposite_bound_marks_the_subscript_obligation_refuted() {
-    let source = br#"const values: FixedVector<i32, 2> =[0_i32, 0_i32];
+    let source = br#"const values: Array<i32, 2> =[0_i32, 0_i32];
 
 fn read() -> result: own i32 pure {
   return values[2_u64];
@@ -8182,7 +8146,7 @@ fn main() -> status: own ExitStatus pure {
     assert!(!bounds.discharged);
     assert!(
         bounds.refuted,
-        "the implicit len_of(values) = 2 relation proves the negation of 2 < len_of(values)"
+        "the implicit values.len = 2 relation proves the negation of 2 < values.len"
     );
 }
 
@@ -8190,7 +8154,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_discharged_program_accepts_and_retains_its_derivations() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read() -> result: own i32 pure {
   return values[2_u64];
@@ -8220,7 +8184,7 @@ fn main() -> status: own ExitStatus pure {
 fn counted_flow_publishes_one_exact_originating_outcome_shape() {
     let source = br#"const count: u64 = 4_u64;
 
-const values: FixedVector<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
+const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read() -> result: own i32 pure {
   let total = 0_i32;
@@ -8516,8 +8480,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                                 kind,
                                 TermKind::Place(place, IntegerType::U64)
                                     if place.root == PlaceRoot::Binding(binding)
-                                        && !place.deref
-                                        && place.fields.is_empty()
+                                        && place.path.is_empty()
                             )
                         })
                     }
@@ -8747,8 +8710,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
             retained_term(summary, *left),
             TermKind::Place(place, IntegerType::U64)
                 if place.root == PlaceRoot::Binding(row.2)
-                    && !place.deref
-                    && place.fields.is_empty()
+                    && place.path.is_empty()
         ));
         assert_eq!(
             retained_term(summary, *right),
@@ -8975,13 +8937,16 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
 }
 
 #[test]
-fn counted_range_reads_a_dereferenced_projected_endpoint_as_an_s11_term() {
+fn counted_range_reads_a_box_content_endpoint_as_an_s11_term() {
+    // [TYPE-9] a `Box`'s content is its field `inner`, so the endpoint is
+    // written `holder.value.inner`; the resolved path is still the field step
+    // followed by the content step [REF-1].
     let source = br#"struct Holder {
-  value: box<u64>;
+  value: Box<u64>;
 }
 
-fn probe(holder: own Holder) -> result: own unit reads(holder.value) {
-  for @items (i in deref(holder.value)..1_u64) {
+fn probe(holder: own Holder) -> result: own unit pure {
+  for @items (i in holder.value.inner..1_u64) {
   }
   return unit;
 }
@@ -8999,14 +8964,10 @@ fn main() -> status: own ExitStatus pure {
     else {
         panic!("the lower capture identity must be an equality");
     };
-    let TermKind::ProjectedPlace(endpoint, IntegerType::U64) = retained_term(&summary, right)
-    else {
-        panic!("deref(holder.value) must retain its exact projected-place endpoint identity");
+    let TermKind::Place(endpoint, IntegerType::U64) = retained_term(&summary, right) else {
+        panic!("holder.value.inner must retain its exact resolved-path endpoint identity");
     };
-    assert_eq!(
-        endpoint.projections,
-        vec![PlaceProjection::Field(0), PlaceProjection::Deref]
-    );
+    assert_eq!(endpoint.path, vec![PlaceStep::Field(0), PlaceStep::Deref]);
 }
 
 #[test]
@@ -9021,13 +8982,11 @@ fn need(index: own u64, upper: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-fn probe(limit: own Limit) -> result: own unit reads(limit.upper), writes(limit.upper) {
-  region {
-    let holder = &uniq limit;
-    for @items (i in 0_u64..deref(holder).upper) {
-      set deref(holder).upper = 0_u64;
-      need(index: i, upper: deref(holder).upper);
-    }
+fn probe(limit: own Limit) -> result: own unit pure {
+  let holder = &limit;
+  for @items (i in 0_u64..deref(holder).upper) {
+    set deref(holder).upper = 0_u64;
+    need(index: i, upper: deref(holder).upper);
   }
   return unit;
 }
@@ -9049,9 +9008,9 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn counted_range_preserves_multiple_deref_projections_in_one_endpoint_term() {
-    let source = br#"fn probe(holder: own box<box<u64>>) -> result: own unit reads(holder) {
-  for @items (i in deref(deref(holder))..1_u64) {
+fn counted_range_preserves_multiple_box_content_steps_in_one_endpoint_term() {
+    let source = br#"fn probe(holder: own Box<Box<u64>>) -> result: own unit pure {
+  for @items (i in holder.inner.inner..1_u64) {
   }
   return unit;
 }
@@ -9069,20 +9028,16 @@ fn main() -> status: own ExitStatus pure {
     else {
         panic!("the lower capture identity must be an equality");
     };
-    let TermKind::ProjectedPlace(endpoint, IntegerType::U64) = retained_term(&summary, right)
-    else {
-        panic!("the nested box endpoint must remain a projected place");
+    let TermKind::Place(endpoint, IntegerType::U64) = retained_term(&summary, right) else {
+        panic!("the nested box endpoint must keep both content steps");
     };
-    assert_eq!(
-        endpoint.projections,
-        vec![PlaceProjection::Deref, PlaceProjection::Deref]
-    );
+    assert_eq!(endpoint.path, vec![PlaceStep::Deref, PlaceStep::Deref]);
 }
 
 #[test]
-fn counted_range_restores_a_borrow_holder_deref_before_nested_box_derefs() {
-    let source = br#"fn probe(holder: &box<box<u64>>) -> result: own unit reads(holder) {
-  for @items (i in deref(deref(deref(holder)))..1_u64) {
+fn counted_range_restores_a_reference_deref_before_nested_box_content_steps() {
+    let source = br#"fn probe(holder: &Box<Box<u64>>) -> result: own unit reads(holder) {
+  for @items (i in deref(holder).inner.inner..1_u64) {
   }
   return unit;
 }
@@ -9098,24 +9053,19 @@ fn main() -> status: own ExitStatus pure {
     else {
         panic!("the lower capture identity must be an equality");
     };
-    let TermKind::ProjectedPlace(endpoint, IntegerType::U64) = retained_term(&summary, right)
-    else {
-        panic!("the borrowed nested endpoint must remain a projected place");
+    let TermKind::Place(endpoint, IntegerType::U64) = retained_term(&summary, right) else {
+        panic!("the referenced nested endpoint must keep all three content steps");
     };
     assert_eq!(
-        endpoint.projections,
-        vec![
-            PlaceProjection::Deref,
-            PlaceProjection::Deref,
-            PlaceProjection::Deref,
-        ]
+        endpoint.path,
+        vec![PlaceStep::Deref, PlaceStep::Deref, PlaceStep::Deref]
     );
 }
 
 #[test]
-fn counted_range_does_not_treat_a_read_only_box_deref_as_a_consume() {
-    let source = br#"fn probe(holder: own box<u64>) -> result: own unit reads(holder) {
-  for @items (i in deref(holder)..1_u64) {
+fn counted_range_does_not_treat_a_read_only_box_content_read_as_a_consume() {
+    let source = br#"fn probe(holder: own Box<u64>) -> result: own unit pure {
+  for @items (i in holder.inner..1_u64) {
   }
   return unit;
 }
@@ -9131,18 +9081,17 @@ fn main() -> status: own ExitStatus pure {
     else {
         panic!("the lower capture identity must be an equality");
     };
-    let TermKind::ProjectedPlace(endpoint, IntegerType::U64) = retained_term(&summary, right)
-    else {
-        panic!("the read-only box endpoint must remain a projected place");
+    let TermKind::Place(endpoint, IntegerType::U64) = retained_term(&summary, right) else {
+        panic!("the read-only box endpoint must keep its content step");
     };
-    assert_eq!(endpoint.projections, vec![PlaceProjection::Deref]);
+    assert_eq!(endpoint.path, vec![PlaceStep::Deref]);
 }
 
 #[test]
-fn counted_range_does_not_duplicate_the_deref_of_a_let_bound_owning_box() {
+fn counted_range_does_not_duplicate_the_content_step_of_a_let_bound_owning_box() {
     let source = br#"fn probe() -> result: own unit pure {
-  let holder = box_new(0_u64);
-  for @items (i in deref(holder)..1_u64) {
+  let holder = box_new::<u64>(value: 0_u64);
+  for @items (i in holder.inner..1_u64) {
   }
   return unit;
 }
@@ -9158,11 +9107,10 @@ fn main() -> status: own ExitStatus pure {
     else {
         panic!("the lower capture identity must be an equality");
     };
-    let TermKind::ProjectedPlace(endpoint, IntegerType::U64) = retained_term(&summary, right)
-    else {
-        panic!("the owning box endpoint must remain a projected place");
+    let TermKind::Place(endpoint, IntegerType::U64) = retained_term(&summary, right) else {
+        panic!("the owning box endpoint must keep its content step");
     };
-    assert_eq!(endpoint.projections, vec![PlaceProjection::Deref]);
+    assert_eq!(endpoint.path, vec![PlaceStep::Deref]);
 }
 
 // ---------------------------------------------------------------------
@@ -9577,25 +9525,23 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_copy_referent_read_through_an_affine_box_is_an_exact_goal_origin() {
-    let source = br#"fn observe(value: &box<i32>) -> result: own unit reads(value) contract {
-  define positive = deref(deref(value)) > 0_i32;
-  define small = deref(deref(value)) < 10_i32;
+    let source = br#"fn observe(value: &Box<i32>) -> result: own unit reads(value) contract {
+  define positive = deref(value).inner > 0_i32;
+  define small = deref(value).inner < 10_i32;
   define complete = band(positive, small);
   requires complete;
 } {
-  let seen = deref(deref(value));
+  let seen = deref(value).inner;
   return unit;
 }
 
 fn caller() -> result: own unit pure {
-  let owner = box_new(5_i32);
-  let positive = deref(owner) > 0_i32;
-  let small = deref(owner) < 10_i32;
+  let owner = box_new::<i32>(value: 5_i32);
+  let positive = owner.inner > 0_i32;
+  let small = owner.inner < 10_i32;
   let complete = band(positive, small);
   if complete {
-    region {
-      observe(value: &owner);
-    }
+    observe(value: &owner);
   } else {
     return unit;
   }
@@ -9659,17 +9605,15 @@ fn resolved_writes_stop_future_expansion_of_the_written_origin_binding() {
   return unit;
 }
 
-fn mutate(value: &uniq Bool) -> result: own unit writes(value) {
+fn mutate(value: &Bool) -> result: own unit writes(value) {
   set deref(value) = False();
   return unit;
 }
 
 fn through_holder(first: own Bool, second: own Bool) -> result: own unit pure {
   let source = band(first, second);
-  region {
-    let holder = &uniq source;
-    set deref(holder) = False();
-  }
+  let holder = &source;
+  set deref(holder) = False();
   let alias = source;
   if alias {
     need(first: first, second: second);
@@ -9681,9 +9625,7 @@ fn through_holder(first: own Bool, second: own Bool) -> result: own unit pure {
 
 fn through_call(first: own Bool, second: own Bool) -> result: own unit pure {
   let source = band(first, second);
-  region {
-    mutate(value: &uniq source);
-  }
+  mutate(value: &source);
   let alias = source;
   if alias {
     need(first: first, second: second);
@@ -9777,7 +9719,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn contradiction_survives_effectful_prepared_call_writes_before_fn8() {
-    let source = br#"fn rewrite(out: &uniq i32) -> result: own i32 writes(out) contract {
+    let source = br#"fn rewrite(out: &i32) -> result: own i32 writes(out) contract {
   ensures result == 0_i32;
 } {
   set deref(out) = 0_i32;
@@ -9793,9 +9735,7 @@ fn need_negative(value: own i32) -> result: own unit pure contract {
 fn caller(slot: own i32) -> result: own unit pure {
   if slot < 5_i32 {
     if slot >= 5_i32 {
-      region {
-        let rewritten = rewrite(out: &uniq slot);
-      }
+      let rewritten = rewrite(out: &slot);
       need_negative(value: slot);
     } else {
       return unit;
@@ -9972,7 +9912,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn actual_obligations_precede_fn8_and_admitted_index_goals_use_the_source_fix() {
-    let admitted_actual = br#"const values: FixedVector<u8, 2> =[3_u8, 3_u8];
+    let admitted_actual = br#"const values: Array<u8, 2> =[3_u8, 3_u8];
 
 fn positive(value: own u8) -> result: own unit pure contract {
   requires value < 10_u8;
@@ -10033,7 +9973,7 @@ fn main() -> status: own ExitStatus pure {
     );
     assert!(admitted.call_goals[0].derivation.is_none());
 
-    let failed_actual = br#"const values: FixedVector<u8, 2> =[3_u8, 3_u8];
+    let failed_actual = br#"const values: Array<u8, 2> =[3_u8, 3_u8];
 
 fn positive(value: own u8) -> result: own unit pure contract {
   requires value < 10_u8;
@@ -10073,8 +10013,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_call_is_judged_before_its_callee_write_and_that_write_kills_the_second_call() {
-    let source =
-        br#"fn update(value: &uniq u64) -> result: own unit reads(value), writes(value) contract {
+    let source = br#"fn update(value: &u64) -> result: own unit writes(value) contract {
   requires deref(value) < 10_u64;
 } {
   let old = deref(value);
@@ -10085,12 +10024,8 @@ fn a_call_is_judged_before_its_callee_write_and_that_write_kills_the_second_call
 fn caller(value: own u64) -> result: own unit pure {
   let small = value < 10_u64;
   if small {
-    region {
-      update(value: &uniq value);
-    }
-    region {
-      update(value: &uniq value);
-    }
+    update(value: &value);
+    update(value: &value);
   } else {
     return unit;
   }
@@ -10132,17 +10067,13 @@ fn writing_back_an_independent_copy_preserves_the_call_precondition() {
   return unit;
 }
 
-fn update(value: &uniq u64) -> result: own unit reads(value), writes(value) contract {
+fn update(value: &u64) -> result: own unit writes(value) contract {
   requires deref(value) < 10_u64;
 } {
-  region {
-    observe(value: &deref(value));
-  }
+  observe(value: value);
   let old = deref(value);
   set deref(value) = old;
-  region {
-    observe(value: &deref(value));
-  }
+  observe(value: value);
   return unit;
 }
 
@@ -10186,7 +10117,7 @@ fn main() -> status: own ExitStatus pure {
                     ),
                     (
                         TermKind::Place(old, IntegerType::U64),
-                        TermKind::ProjectedPlace(value, IntegerType::U64),
+                        TermKind::Place(value, IntegerType::U64),
                         TermKind::Constant(10),
                     ) if old.root == PlaceRoot::Binding(BindingId(1))
                         && value.root == PlaceRoot::Binding(BindingId(0))
@@ -10200,8 +10131,8 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_element_write_keeps_a_whole_goal_supported_only_by_length() {
-    let source = br#"fn sized(values: own FixedVector<u8, 2>) -> result: own unit pure contract {
-  define size = len_of(values);
+    let source = br#"fn sized(values: own Slots<u8, 2>) -> result: own unit pure contract {
+  define size = values.len;
   define exact = size == 2_u64;
   define complete = band(exact, exact);
   requires complete;
@@ -10209,8 +10140,8 @@ fn an_element_write_keeps_a_whole_goal_supported_only_by_length() {
   return unit;
 }
 
-fn caller(values: own FixedVector<u8, 2>) -> result: own unit reads(values), writes(values) {
-  let size = len_of(values);
+fn caller(values: own Slots<u8, 2>) -> result: own unit pure {
+  let size = values.len;
   let exact = size == 2_u64;
   let complete = band(exact, exact);
   if complete {
@@ -10240,7 +10171,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_run_measure_participates_only_in_body_origin_expansion() {
-    let source = br#"const values: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+    let source = br#"const values: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
 fn need_true(value: own Bool) -> result: own unit pure contract {
   requires value;
@@ -10249,11 +10180,11 @@ fn need_true(value: own Bool) -> result: own unit pure contract {
 }
 
 fn probe() -> result: own unit pure {
-  let first_size = len_of(values);
+  let first_size = values.len;
   let first_exact = first_size == 4_u64;
   let first = band(first_exact, first_exact);
   if first {
-    let second_size = len_of(values);
+    let second_size = values.len;
     let second_exact = second_size == 4_u64;
     let second = band(second_exact, second_exact);
     if second {
@@ -10363,44 +10294,24 @@ fn guarded<T: Int>(value: own T) -> result: own T pure contract {
 
 #[test]
 fn concrete_const_instances_keep_function_local_derivation_inventories() {
-    let source = br#"fn first<const n: u64>(values: own FixedVector<u8, n>) -> result: own u8 reads(values) contract {
-  requires len_of(values) == n;
+    let source =
+        br#"fn first<const n: u64>(values: own Slots<u8, n>) -> result: own u8 pure contract {
+  requires values.len == n;
 } {
   return values[0_u64];
 }
 
 fn main() -> status: own ExitStatus pure {
-  let small_empty = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq small_empty, value: 7_u8);
-  }
-  let small_head = move small_empty;
-  region {
-    place_back(vector: &uniq small_head, value: 7_u8);
-  }
-  let small = move small_head;
+  let small = slots_new::<u8, 2>();
+  place_back(window: &small, value: 7_u8);
+  place_back(window: &small, value: 7_u8);
   let small_first = first::<2>(values: move small);
-  let large_empty = fixed_vector::<u8, 5>();
-  region {
-    place_back(vector: &uniq large_empty, value: 9_u8);
-  }
-  let large_one = move large_empty;
-  region {
-    place_back(vector: &uniq large_one, value: 9_u8);
-  }
-  let large_two = move large_one;
-  region {
-    place_back(vector: &uniq large_two, value: 9_u8);
-  }
-  let large_three = move large_two;
-  region {
-    place_back(vector: &uniq large_three, value: 9_u8);
-  }
-  let large_four = move large_three;
-  region {
-    place_back(vector: &uniq large_four, value: 9_u8);
-  }
-  let large = move large_four;
+  let large = slots_new::<u8, 5>();
+  place_back(window: &large, value: 9_u8);
+  place_back(window: &large, value: 9_u8);
+  place_back(window: &large, value: 9_u8);
+  place_back(window: &large, value: 9_u8);
+  place_back(window: &large, value: 9_u8);
   let large_first = first::<5>(values: move large);
   return exit_status(code: 0_u8);
 }
@@ -10425,11 +10336,11 @@ fn main() -> status: own ExitStatus pure {
             let root = obligation_root(summary, 0);
             // The written `0_u64` index is the zero term itself, so each
             // instance proves its own subscript from its own length bound
-            // against Z. Where that bound comes from moved with the surface:
-            // the retired `array<T, N>` had a standing `len_of = N` off its
-            // type, and a `FixedVector<T, n>` has a length descriptor word, so
-            // the bound is the declared requirement instantiated at the
-            // instance's own `n` [BLK-1, MSR-1]. It is still each instance's
+            // against Z. Where that bound comes from depends on the shape: an
+            // `Array<T, N>` carries a standing `len = N` off its type, while a
+            // `Slots<T, n>` window keeps its length in a descriptor word, so
+            // the bound here is the declared requirement instantiated at the
+            // instance's own `n` [WIN-1, MSR-1]. It is still each instance's
             // own — the requirement mentions `n`, and the two instances
             // instantiate it at two constants — which is what this test asks.
             assert_root_contains(
@@ -10438,11 +10349,11 @@ fn main() -> status: own ExitStatus pure {
                 |node| matches!(node, DerivationNode::SourceBound { .. }),
                 "the concrete const instance's own declared length bound",
             );
-            // [MSR-1] the run place carries all four measures, and exactly one
-            // cell of this version's table fixes a constant: `cap_of` is the
-            // type constant `n`, so it is the instance's own N, while `len_of`,
-            // `room_of` and `head_of` are descriptor words of the value rather
-            // than facts of the type [BLK-1].
+            // [MSR-1] the window place carries all four measures, and exactly
+            // one cell of [MSR-2]'s table fixes a constant: `cap` is the type
+            // constant `n`, so it is the instance's own N, while `len`, `room`
+            // and `head` are descriptor words of the value rather than facts
+            // of the type [WIN-1].
             let mut constants: Vec<_> = summary
                 .inventory
                 .measure_bounds
@@ -10462,14 +10373,15 @@ fn main() -> status: own ExitStatus pure {
 }
 
 /// The companion boundary: re-closing a state that lost facts must not
-/// resurrect an *established* one. A `buffer` length carries no [ENT-2]
-/// constant, so once the commit kills the checked-branch bound on `offset`
-/// the only surviving relation is `offset = start` over an unbounded
-/// argument, and [OP-4] still rejects the subscript.
+/// resurrect an *established* one. A window's `len` is a descriptor word and
+/// carries no [ENT-2] constant of its own [MSR-2], so once the commit kills
+/// the checked-branch bound on `offset` the only surviving relation is
+/// `offset = start` over an unbounded argument, and [OP-4] still rejects the
+/// subscript.
 #[test]
 fn a_write_still_kills_an_established_bound_on_its_target() {
-    let source = br#"fn get(b: own buffer<u8>, start: own u64) -> result: own u8 reads(b) {
-  let spare = len_of(b);
+    let source = br#"fn get(b: own Slots<u8, 4>, start: own u64) -> result: own u8 pure {
+  let spare = b.len;
   let offset = 0_u64;
   let inside = offset < spare;
   if inside {

@@ -34,8 +34,8 @@ use super::super::model::{
     CheckedLoopId, CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure, CheckedMode,
     CheckedNominal, CheckedNominalKind, CheckedNumericType, CheckedPlaceStep,
     CheckedProofMultiplicity, CheckedProofUseSource, CheckedReleaseMode, CheckedSetTarget,
-    CheckedSliceSource, CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType,
-    LoanStrength, MeasureCell, MeasuredKind, ValueInitializerKind,
+    CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType, MeasureCell,
+    MeasuredKind, ValueInitializerKind,
 };
 use super::super::places::{
     BindingSummary, CaptureId, CapturedRange, CapturedTerm, CapturedValue, PlaceMap, PlaceStep,
@@ -2189,7 +2189,7 @@ impl Analyzer<'_, '_> {
         Some(self.measure_term(
             measure,
             ResolvedPlace {
-                root: root,
+                root,
                 path: projections,
             },
             measured,
@@ -2328,9 +2328,6 @@ impl Analyzer<'_, '_> {
             }
             CheckedExpression::BorrowBuffer { root, .. }
             | CheckedExpression::BufferMeasure { root, .. } => {
-                self.append_holder_chain(root.binding, holders);
-            }
-            CheckedExpression::SliceMeasure { root, .. } => {
                 self.append_holder_chain(root.binding, holders);
             }
             CheckedExpression::ArrayMeasure {
@@ -3670,10 +3667,6 @@ impl Analyzer<'_, '_> {
                     .places
                     .overlaps(&self.separations, &self.container_root_place(target), place);
             }
-            // A view element store writes the origin's storage and not the
-            // descriptor's [PROV-3], and the origin is not this place term's
-            // root, so the descriptor place is what the term names.
-            CheckedSetTarget::SliceIndex(target) => ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), Vec::new()),
         };
         self.places.overlaps(&self.separations, &self.resolve(&target), place)
     }
@@ -5225,47 +5218,6 @@ impl Analyzer<'_, '_> {
                 CheckedType::Bool,
                 vec![self.goal_expression(length, admitted_partial)?],
             ),
-            CheckedExpression::SliceMeasure { measure, root } => {
-                let ty = self.summary(root.binding)?.ty?;
-                let CheckedType::Slice {
-                    region, element, ..
-                } = ty
-                else {
-                    return None;
-                };
-                let argument = self.goal_binding_place(root.binding, std::iter::empty(), ty);
-                build_operation(
-                    GoalOperation::SliceMeasure {
-                        measure: *measure,
-                        region,
-                        element,
-                    },
-                    Vec::new(),
-                    Vec::new(),
-                    CheckedType::Integer(IntegerType::U64),
-                    vec![argument],
-                )
-            }
-            CheckedExpression::SliceIndex { root, offset, .. } if admitted_partial => {
-                let ty = self.summary(root.binding)?.ty?;
-                let CheckedType::Slice {
-                    region, element, ..
-                } = ty
-                else {
-                    return None;
-                };
-                if element != root.element {
-                    return None;
-                }
-                let collection = self.goal_binding_place(root.binding, std::iter::empty(), ty);
-                build_operation(
-                    GoalOperation::SliceIndex { region, element },
-                    Vec::new(),
-                    Vec::new(),
-                    element.ty(),
-                    vec![collection, self.goal_expression(offset, admitted_partial)?],
-                )
-            }
             CheckedExpression::Binding { .. }
             | CheckedExpression::Project { .. }
             | CheckedExpression::DerefAddressed { .. }
@@ -5278,8 +5230,6 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::BufferFill { .. }
             | CheckedExpression::BufferVacant { .. }
             | CheckedExpression::BufferIndex { .. }
-            | CheckedExpression::SliceOf { .. }
-            | CheckedExpression::SliceIndex { .. }
             | CheckedExpression::BoxNew { .. }
             | CheckedExpression::ArenaNew { .. }
             | CheckedExpression::ArenaDeref { .. }
@@ -5937,16 +5887,7 @@ impl Analyzer<'_, '_> {
             GoalExpression::Datum(datum) => {
                 let fragment = fragment_type(datum.ty())?;
                 let path = self.goal_place_path(datum)?;
-                let kind = if path
-                    .path
-                    .iter()
-                    .all(|projection| matches!(projection, PlaceStep::Field(_)))
-                {
-                    TermKind::Place(path, fragment)
-                } else {
-                    TermKind::Place(path, fragment)
-                };
-                Some(self.terms.intern(kind))
+                Some(self.terms.intern(TermKind::Place(path, fragment)))
             }
             GoalExpression::Operation { row, arguments, .. }
                 if matches!(
@@ -5967,12 +5908,12 @@ impl Analyzer<'_, '_> {
                 let (measure, measured, array_length) = match row {
                     GoalOperation::ArrayMeasure {
                         measure, length, ..
-                    } => (*measure, MeasuredKind::Array, Some(*length)),
+                    } => (*measure, MeasuredKind::ConstantArray, Some(*length)),
                     GoalOperation::BufferMeasure { measure, .. } => {
-                        (*measure, MeasuredKind::Buffer, None)
+                        (*measure, MeasuredKind::RuntimeArray, None)
                     }
                     GoalOperation::SliceMeasure { measure, .. } => {
-                        (*measure, MeasuredKind::Slice, None)
+                        (*measure, MeasuredKind::Range, None)
                     }
                     // [MSR-1]'s row for a run or a bump extent. The written
                     // constant is what `measure_term` reads for a cell the
@@ -6009,7 +5950,7 @@ impl Analyzer<'_, '_> {
             | GoalDatum::Literal(_) => return None,
         };
         Some(ResolvedPlace {
-                root: root,
+                root,
                 path: projections
                 .iter()
                 .map(|projection| match projection {
@@ -6205,7 +6146,7 @@ impl Analyzer<'_, '_> {
                     // exclusive view is affine, so without this the ordinary
                     // affine kill would end every fact about a view the
                     // moment it is handed to a call that only borrows it.
-                    && (*consume_root || !matches!(ty, CheckedType::Slice { .. }))
+                    && *consume_root
                 {
                     events.push(KillEvent::Consume {
                         binding: *binding,
@@ -6369,10 +6310,8 @@ impl Analyzer<'_, '_> {
         node_path: crate::NodePath,
         states: &ProofFlowState,
     ) {
-        let measured = match ty {
-            CheckedType::FixedVector { .. } => MeasuredKind::FixedVector,
-            CheckedType::Vector { .. } => MeasuredKind::Vector,
-            _ => return,
+        let Some(measured) = ty.measured() else {
+            return;
         };
         let place = ResolvedPlace::spelled(PlaceRoot::Binding(binding), self.is_holder(binding), fields.to_vec());
         let length = self.place_measure_term(CheckedMeasure::Length, place.clone(), measured, None);
@@ -6578,7 +6517,7 @@ impl Analyzer<'_, '_> {
                     let base = self.array_root_place(root);
                     self.judge_obligation(
                         base,
-                        MeasuredKind::Array,
+                        MeasuredKind::ConstantArray,
                         Some(*length),
                         offset,
                         obligation.clone(),
@@ -6603,7 +6542,7 @@ impl Analyzer<'_, '_> {
                     let base = ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone());
                     self.judge_obligation(
                         base,
-                        MeasuredKind::Buffer,
+                        MeasuredKind::RuntimeArray,
                         None,
                         offset,
                         obligation.clone(),
@@ -6615,128 +6554,11 @@ impl Analyzer<'_, '_> {
                     reached: reaches_index && self.obligations_since_discharged(obligation_start),
                 }
             }
-            CheckedExpression::SliceIndex {
-                root,
-                offset,
-                obligation,
-                ..
-            } => {
-                let reaches_index =
-                    self.judge_children_reach_parent(std::iter::once(offset.as_ref()), states);
-                let obligation_start = self.obligations.len();
-                if reaches_index {
-                    let base = ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), Vec::new());
-                    self.judge_obligation(
-                        base,
-                        MeasuredKind::Slice,
-                        None,
-                        offset,
-                        obligation.clone(),
-                        states,
-                    );
-                }
-                ExpressionJudgment {
-                    prepared_call: None,
-                    reached: reaches_index && self.obligations_since_discharged(obligation_start),
-                }
-            }
-            // [MSR-1] a measure over a subscripted place is a term only where
             // that place's own subscripts are discharged [OP-4].
             CheckedExpression::ContainerMeasure { root, .. }
             | CheckedExpression::BorrowAddressed { root, .. } => {
                 let obligation_start = self.obligations.len();
                 let reached = self.judge_place_subscripts(root, states);
-                ExpressionJudgment {
-                    prepared_call: None,
-                    reached: reached && self.obligations_since_discharged(obligation_start),
-                }
-            }
-            // [VIEW-2] a view formed over a run submits that row's own
-            // declared requirement here, judged under [MSR-4] exactly as
-            // every other consumer's obligation is. The clause is
-            // `head_of(vector) <= room_of(vector)`, which is what makes the
-            // viewed window one contiguous range: a wrapped window is two,
-            // and a view of one would reach storage the run does not own.
-            // The two retiring operand types carry the same clause and
-            // discharge it from their own measure-table row, whose `head`
-            // and `room` cells are both the constant zero [MSR-1].
-            CheckedExpression::SliceOf {
-                carrier,
-                capture,
-                source,
-                range,
-                ..
-            } => {
-                let obligation_start = self.obligations.len();
-                let mut reached = match source {
-                    CheckedSliceSource::Run(root) => self.judge_place_subscripts(root, states),
-                    _ => true,
-                };
-                if let Some(range) = range {
-                    reached &= self.judge_children_reach_parent(
-                        [range.start.as_ref(), range.end.as_ref()],
-                        states,
-                    );
-                }
-                if reached && let Some(range) = range {
-                    let length = Self::slice_source_length(source);
-                    self.judge_view_range(carrier, &range.start, &range.end, &length, states);
-                }
-                if reached && self.obligations_since_discharged(obligation_start) {
-                    let images = if let Some(range) = range {
-                        self.affine_expression_form(&range.start, &mut states.affine)
-                            .zip(self.affine_expression_form(&range.end, &mut states.affine))
-                    } else {
-                        let length = Self::slice_source_length(source);
-                        self.measure_operand(&length).map(|term| {
-                            (
-                                AffineForm::constant(0),
-                                self.measure_atom(term, &states.affine),
-                            )
-                        })
-                    };
-                    if let Some((start, end)) = images {
-                        if range.is_some() {
-                            let partitions =
-                                self.proved_range_partitions(*capture, &start, &end, states);
-                            if let Some(index) = self.obligations[obligation_start..]
-                                .iter()
-                                .position(|outcome| {
-                                    outcome.family == ObligationFamily::RangeFormation
-                                        && outcome.conjunct == 1
-                                })
-                            {
-                                let obligation = obligation_start + index;
-                                for (index, partition) in partitions.iter().enumerate() {
-                                    for (base, parent) in [
-                                        (false, partition.stride_nonnegative),
-                                        (true, partition.base_nonnegative),
-                                    ] {
-                                        self.derivations.add_root(
-                                            DerivationRootKind::RangePartition {
-                                                obligation: u32::try_from(obligation)
-                                                    .expect("obligation identity fits u32"),
-                                                partition: u32::try_from(index)
-                                                    .expect("partition identity fits u32"),
-                                                base,
-                                            },
-                                            parent,
-                                        );
-                                    }
-                                }
-                                self.obligations[obligation].range_partitions = partitions;
-                            }
-                        }
-                        states.affine.ranges.insert(
-                            *capture,
-                            AffineRangeImage {
-                                source: carrier.clone(),
-                                start,
-                                end,
-                            },
-                        );
-                    }
-                }
                 ExpressionJudgment {
                     prepared_call: None,
                     reached: reached && self.obligations_since_discharged(obligation_start),
@@ -7892,9 +7714,7 @@ impl Analyzer<'_, '_> {
             }
             // No flat element domain names the offset its commit wrote, so
             // none has an element place a measure could be stated over.
-            CheckedSetTarget::ArrayIndex(_)
-            | CheckedSetTarget::BufferIndex(_)
-            | CheckedSetTarget::SliceIndex(_) => None,
+            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => None,
         }
     }
 
@@ -8818,48 +8638,6 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn slice_source_length(source: &CheckedSliceSource) -> CheckedExpression {
-        let measure = CheckedMeasure::Length;
-        match source {
-            CheckedSliceSource::Array { root, length } => CheckedExpression::ArrayMeasure {
-                measure,
-                root: root.clone(),
-                length: *length,
-            },
-            CheckedSliceSource::Buffer(root) => CheckedExpression::BufferMeasure {
-                measure,
-                root: root.clone(),
-            },
-            CheckedSliceSource::Run(root) => CheckedExpression::ContainerMeasure {
-                measure,
-                root: root.clone(),
-            },
-            CheckedSliceSource::ViewHolder { binding, element } => {
-                CheckedExpression::SliceMeasure {
-                    measure,
-                    root: super::super::model::CheckedSliceRoot {
-                        binding: *binding,
-                        element: *element,
-                        strength: LoanStrength::Shared,
-                    },
-                }
-            }
-            CheckedSliceSource::ArenaContent {
-                binding,
-                fields,
-                length,
-            } => CheckedExpression::ArrayMeasure {
-                measure,
-                root: CheckedArrayRoot::Binding {
-                    binding: *binding,
-                    fields: fields.clone(),
-                },
-                length: *length,
-            },
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
     fn judge_exact_relation_obligation(
         &mut self,
         family: ObligationFamily,
@@ -9975,7 +9753,6 @@ impl Analyzer<'_, '_> {
         match expression {
             CheckedExpression::ArrayMeasure { .. }
             | CheckedExpression::BufferMeasure { .. }
-            | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. } => self
                 .checked_measure_term(expression)
                 .map(|term| self.measure_atom(term, state)),
@@ -10120,7 +9897,7 @@ impl Analyzer<'_, '_> {
                     let base = ResolvedPlace::spelled(PlaceRoot::Binding(target.binding), self.is_holder(target.binding), target.fields.clone());
                     self.judge_obligation(
                         base,
-                        MeasuredKind::Array,
+                        MeasuredKind::ConstantArray,
                         Some(target.length),
                         &target.offset,
                         target.obligation.clone(),
@@ -10137,26 +9914,7 @@ impl Analyzer<'_, '_> {
                     let base = ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), target.root.fields.clone());
                     self.judge_obligation(
                         base,
-                        MeasuredKind::Buffer,
-                        None,
-                        &target.offset,
-                        target.obligation.clone(),
-                        states,
-                    );
-                }
-                reaches_target && self.obligations_since_discharged(obligation_start)
-            }
-            // [OP-4] a view element target owes the same bound its read owes:
-            // `i < len_of(view)`, over the view's own measure row [MSR-1].
-            CheckedSetTarget::SliceIndex(target) => {
-                let reaches_target =
-                    self.judge_children_reach_parent(std::iter::once(&target.offset), states);
-                let obligation_start = self.obligations.len();
-                if reaches_target {
-                    let base = ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), Vec::new());
-                    self.judge_obligation(
-                        base,
-                        MeasuredKind::Slice,
+                        MeasuredKind::RuntimeArray,
                         None,
                         &target.offset,
                         target.obligation.clone(),
@@ -11173,7 +10931,6 @@ impl Analyzer<'_, '_> {
         let formed = match expression {
             CheckedExpression::ArrayMeasure { .. }
             | CheckedExpression::BufferMeasure { .. }
-            | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. } => self
                 .checked_measure_term(expression)
                 .map(|term| self.measure_atom(term, state)),
@@ -11520,9 +11277,6 @@ impl Analyzer<'_, '_> {
             } => (*measure, *binding, fields.clone()),
             CheckedExpression::BufferMeasure { measure, root } => {
                 (*measure, root.binding, root.fields.clone())
-            }
-            CheckedExpression::SliceMeasure { measure, root } => {
-                (*measure, root.binding, Vec::new())
             }
             // [MSR-1] a measured place may carry a subscript, so this one is
             // rendered from the same source-order path every other consumer
@@ -12959,17 +12713,6 @@ impl Analyzer<'_, '_> {
                     source: node_path.clone(),
                 });
             }
-            // [MSR-2] a view element store writes one element of the view's
-            // own range, and a view's element is flat [TYPE-2], so the kill
-            // is the same element write a buffer's is.
-            CheckedSetTarget::SliceIndex(target) => {
-                let spelled = ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), Vec::new());
-                target_kills.push(KillEvent::Write {
-                    place: element_write_place(self.resolve(&spelled), CapturedValue::unknown()),
-                    element: true,
-                    source: node_path.clone(),
-                });
-            }
             // [MSR-2] an element store into a run overlaps the descriptor
             // storage of `v[i]` and none of `v`'s own, so it kills the
             // measures of the element and none of the run's.
@@ -13086,8 +12829,7 @@ impl Analyzer<'_, '_> {
             )),
             CheckedSetTarget::ArrayIndex(_)
             | CheckedSetTarget::BufferIndex(_)
-            | CheckedSetTarget::Storage(_)
-            | CheckedSetTarget::SliceIndex(_) => None,
+            | CheckedSetTarget::Storage(_) => None,
         };
         match values {
             CheckedCommitValues::ResultList { value, .. } => {
@@ -13322,18 +13064,6 @@ impl Analyzer<'_, '_> {
                 value,
             } => {
                 let affine_value = self.affine_expression_form(value, &mut state.affine);
-                let range_length = if let CheckedExpression::SliceOf {
-                    range: Some(range), ..
-                } = value
-                {
-                    self.affine_expression_form(&range.start, &mut state.affine)
-                        .zip(self.affine_expression_form(&range.end, &mut state.affine))
-                        .and_then(|(start, end)| {
-                            end.subtract(&start, &mut AffineCheckState::new()).ok()
-                        })
-                } else {
-                    None
-                };
                 // [MSR-3] the rebind placement is minted before the
                 // initializer's own kills, because the datum it forms is the
                 // value the transferred place had immediately before them.
@@ -13411,16 +13141,6 @@ impl Analyzer<'_, '_> {
                             value,
                             &mut state.affine,
                         );
-                    }
-                    if let Some(length) = range_length {
-                        let place = self.bound_place(*binding);
-                        let term = self.place_measure_term(
-                            CheckedMeasure::Length,
-                            place,
-                            MeasuredKind::Slice,
-                            None,
-                        );
-                        state.affine.measure_atoms.borrow_mut().insert(term, length);
                     }
                 }
                 true
@@ -14830,14 +14550,6 @@ impl Analyzer<'_, '_> {
                     source: node_path.clone(),
                 });
             }
-            CheckedSetTarget::SliceIndex(target) => {
-                let spelled = ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), Vec::new());
-                events.push(KillEvent::Write {
-                    place: element_write_place(self.resolve(&spelled), CapturedValue::unknown()),
-                    element: true,
-                    source: node_path.clone(),
-                });
-            }
             CheckedSetTarget::Storage(target) => {
                 events.push(KillEvent::Write {
                     place: self.container_root_place(target),
@@ -15339,11 +15051,6 @@ impl Analyzer<'_, '_> {
                 measure.spelling(),
                 self.render_place(&ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone())),
             ),
-            CheckedExpression::SliceMeasure { measure, root } => format!(
-                "{}({})",
-                measure.spelling(),
-                self.binding_name(root.binding),
-            ),
             CheckedExpression::ArrayMeasure { measure, root, .. } => format!(
                 "{}({})",
                 measure.spelling(),
@@ -15389,14 +15096,6 @@ impl Analyzer<'_, '_> {
             CheckedExpression::ReadStorage { root, .. } => self.render_storage_place(root),
             CheckedExpression::BufferIndex { root, offset, .. } => {
                 let base = ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone());
-                format!(
-                    "{}[{}]",
-                    self.render_place(&base),
-                    self.render_expression(offset)
-                )
-            }
-            CheckedExpression::SliceIndex { root, offset, .. } => {
-                let base = ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), Vec::new());
                 format!(
                     "{}[{}]",
                     self.render_place(&base),
@@ -15461,10 +15160,9 @@ fn invalidate_goal_origin_for_set(state: &mut FactState, target: &CheckedSetTarg
 fn element_type(input: CheckedType, elements: &[CheckedType]) -> Option<CheckedType> {
     match input {
         CheckedType::Buffer { element } => Some(element.ty()),
-        CheckedType::Slice { element, .. } => Some(element.ty()),
-        CheckedType::Array { element, .. }
-        | CheckedType::FixedVector { element, .. }
-        | CheckedType::Vector { element, .. } => elements.get(element.0 as usize).copied(),
+        CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+            elements.get(element.0 as usize).copied()
+        }
         _ => None,
     }
 }
@@ -15818,20 +15516,12 @@ mod affine_pair_tests {
 /// [MSR-1] row is that constant [MSR-2].
 const fn type_constant(ty: CheckedType) -> Option<CheckedConst> {
     match ty {
-        CheckedType::Array { length, .. } | CheckedType::FixedVector { length, .. } => Some(length),
-        CheckedType::Extent { bytes, .. } => Some(bytes),
+        CheckedType::Array { length, .. } => Some(length),
+        CheckedType::Window { capacity, .. } => capacity,
         _ => None,
     }
 }
 
 const fn measured_kind(ty: CheckedType) -> Option<MeasuredKind> {
-    match ty {
-        CheckedType::Array { .. } => Some(MeasuredKind::Array),
-        CheckedType::Buffer { .. } => Some(MeasuredKind::Buffer),
-        CheckedType::FixedVector { .. } => Some(MeasuredKind::FixedVector),
-        CheckedType::Vector { .. } => Some(MeasuredKind::Vector),
-        CheckedType::Extent { .. } => Some(MeasuredKind::Extent),
-        CheckedType::Slice { .. } => Some(MeasuredKind::Slice),
-        _ => None,
-    }
+    ty.measured()
 }

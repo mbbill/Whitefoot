@@ -12,68 +12,17 @@ fn derived_drop<'module>(llvm: &'module str, prefix: &str) -> &'module str {
     &llvm[start..end]
 }
 
-fn search_layer_with_entry() -> String {
-    let source = include_str!("../../../../tests/programs/byte_string.wf");
-    let start = source
-        .find("enum Grown['heap] {")
-        .expect("byte-string growth outcome");
-    let end = source
-        .find("\nfn bs_push_decimal")
-        .expect("search-layer end");
-    let layer = &source[start..end];
-    format!(
-        "{layer}
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {{
-  region {{
-    match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {{
-      None() => {{
-        return exit_status(code: 70_u8);
-      }}
-      Some(value: fresh) => {{
-        let subject = move fresh;
-        region {{
-          place_back(vector: &uniq subject, value: 7_u8);
-        }}
-        region {{
-          match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {{
-            None() => {{
-              return exit_status(code: 70_u8);
-            }}
-            Some(value: other) => {{
-              let needle = move other;
-              region {{
-                place_back(vector: &uniq needle, value: 7_u8);
-              }}
-              region {{
-                match bs_find(haystack: &subject, needle: &needle) {{
-                  Some(value: at) => {{
-                  }}
-                  None() => {{
-                  }}
-                }}
-              }}
-            }}
-          }}
-        }}
-      }}
-    }}
-  }}
-  return exit_status(code: 0_u8);
-}}
-"
-    )
-}
-
 #[test]
-fn affine_slot_buffers_fill_replace_vacate_and_drop_per_element() {
+fn affine_slot_windows_fill_overwrite_empty_and_release_per_element() {
     let llvm = compile(include_bytes!("../../../../tests/programs/option_slots.wf"));
-    // B7c4b-1: the two slot runs are `FixedVector<Option<T>, n>`s built by the
-    // library's own `vacant` generic, so there is no `buffer_vacant` head to
-    // name and no per-buffer drop helper. What the row still owes is the
-    // release of the one `Some` cell the program leaves in a slot: the run is
-    // frame-resident, its element drop is derived over the slots, and the cell
-    // it holds is freed to the general store.
-    assert!(!llvm.contains("buffer.vacant.head"));
+    // The two slot runs are `Slots<Option<T>, n>` windows built by
+    // `slots_new` [OP-13]; the `buffer.vacant.head` tripwire this case once
+    // carried retired with the `buffer` storage class and `buffer_vacant`
+    // [BLK-2, TYPE-9], and v0.60 has no spelling for it to guard. What the
+    // release walk still owes is the one `Some` cell the program leaves in a
+    // slot: the window is frame-resident [STOR-1], its element release is
+    // derived over the slots in ascending logical index order, and the `Box`
+    // it holds is freed after its content [PROV-6, STOR-3, WIN-3].
     assert!(llvm.contains("call ptr @malloc"));
     let helper = derived_drop(&llvm, "define private void @wf.drop.t");
     assert!(helper.contains("call void @free"));
@@ -118,14 +67,45 @@ fn recursively_boxed_tree_executes_with_derived_cleanup() {
     assert!(output.stderr.is_empty());
 }
 
+/// [OP-4] a byte accessor whose length branch no longer proves the strict
+/// bound is a rejection, and the diagnostic renders the residual over the
+/// [OP-15] measure read of the range reference the accessor was handed.
+///
+/// The accessor is written here rather than extracted from
+/// `tests/programs/byte_string.wf` by string anchors. v0.60 growth cannot
+/// fail [STOR-8], so that program's `Grown` outcome enum and its
+/// store-parameter search layer - the two anchors this case used to cut on -
+/// have no successor to cut at. The subject is the accessor's obligation, and
+/// an inline accessor states it without depending on another package's file.
 #[test]
 fn the_byte_accessor_without_its_length_branch_is_an_op4_rejection() {
+    let source = br#"fn byte_at(s: &[u8], index: own u64) -> result: own u8 reads(s) {
+  let stored = deref(s).len;
+  let within = index < stored;
+  if within {
+    let value = deref(s)[index];
+    return value;
+  } else {
+    return 0_u8;
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  let bytes = array_filled::<u8, 4>(value: 7_u8);
+  let whole = &bytes[0_u64..4_u64];
+  let first = byte_at(s: whole, index: 0_u64);
+  if first != 7_u8 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
     let guarded = "  let within = index < stored;";
     let unguarded = "  let within = index <= stored;";
-    let source = search_layer_with_entry();
+    let source = String::from_utf8(source.to_vec()).expect("test source is UTF-8");
     let stripped = source.replace(guarded, unguarded);
     assert_ne!(stripped, source, "the length branch must have been found");
     let failure = compile_rejection(stripped.as_bytes()).to_string();
     assert!(failure.contains("[OP-4]"), "{failure}");
-    assert!(failure.contains("index < len_of(deref(s))"), "{failure}");
+    assert!(failure.contains("index < deref(s).len"), "{failure}");
 }

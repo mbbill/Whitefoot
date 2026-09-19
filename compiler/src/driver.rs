@@ -589,7 +589,15 @@ fn compile_selected(
     let ir = lower_checked(checked, overlap).map_err(|failure: LoweringFailure| {
         CompilationFailure::new(
             CompilationStage::Lowering,
-            CompilationFailureKind::Lowering,
+            // A [PRE-1] record whose compiler-owned body this version does not
+            // build yet is an unimplemented capability, not a broken lowering
+            // invariant and never a source verdict.
+            match failure {
+                LoweringFailure::UnimplementedPreludeRow(_) => CompilationFailureKind::Unsupported,
+                LoweringFailure::InvalidCheckedProgram | LoweringFailure::CounterOverflow => {
+                    CompilationFailureKind::Lowering
+                }
+            },
             failure,
         )
     })?;

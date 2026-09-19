@@ -5,30 +5,43 @@ use super::super::entailment::{CallGoalDisposition, CallGoalEvidence};
 use super::super::goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
     CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedNominalKind, CheckedStatement,
-    CheckedType, CheckedValue, IntegerType, MeasuredKind,
+    CheckedType, CheckedValue, IntegerType, MeasuredKind, WindowShape,
 };
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
+/// A reference is a local name for a path and its validity is a fact [REF-1,
+/// REF-2]; the value fact a requirement needs is killed exactly when a write
+/// reaches that path [EFF-5, ENT-5]. Without the intervening write the entry
+/// requirement carries to the inner call; with it the inner requirement is
+/// undischarged.
+///
+/// This is the v0.60 statement of what the retiring `&uniq` whole-result case
+/// stated: v0.59 routed the referent through a region-parameterized function
+/// returning `&uniq 'r u64`, which [REF-3] now forbids outright, so the write
+/// is exhibited by an ordinary callee whose row declares it.
 #[test]
-fn whole_unique_result_preserves_location_but_not_prewrite_value_facts() {
-    for actual in ["deref(chosen)", "&deref(chosen)"] {
-        let (mode, term, read, effects) = if actual.starts_with('&') {
-            ("&", "deref(value)", "deref(value)", "reads(value)")
+fn a_write_through_a_reference_kills_the_value_fact_a_requirement_needs() {
+    for borrowed in [false, true] {
+        let (mode, term, read, effects, actual) = if borrowed {
+            ("&", "deref(value)", "deref(value)", "reads(value)", "value")
         } else {
-            ("own ", "value", "value", "pure")
+            ("own ", "value", "value", "pure", "seen")
+        };
+        let bind = if borrowed {
+            String::new()
+        } else {
+            "  let seen = deref(value);\n".to_owned()
         };
         for changed in [false, true] {
-            let (select_effect, write, forward_effect) = if changed {
-                (
-                    "writes(value)",
-                    "  set deref(value) = 9_u64;\n",
-                    "reads(value), writes(value)",
-                )
+            // [EFF-1] `writes(p)` subsumes `reads(p)`, so the pair is never
+            // written for one path: the writing row declares the write alone.
+            let (write, forward_effect) = if changed {
+                ("  overwrite(cell: value);\n", "writes(value)")
             } else {
-                ("pure", "", "reads(value)")
+                ("", "reads(value)")
             };
             let source = format!(
-                "fn select['r](value: &uniq 'r u64) -> result: &uniq 'r u64 {select_effect} {{\n{write}  return move value;\n}}\n\nfn indexed(value: {mode}u64) -> result: own u64 {effects} contract {{\n  requires {term} < 1_u64;\n}} {{\n  let rows = array_new::<u64, 1>(7_u64);\n  let index = {read};\n  return rows[index];\n}}\n\nfn forward(value: &uniq u64) -> result: own u64 {forward_effect} contract {{\n  requires deref(value) < 1_u64;\n}} {{\n  let chosen = select(value: move value);\n  region {{\n    return indexed(value: {actual});\n  }}\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+                "fn overwrite(cell: &u64) -> result: own unit writes(cell) {{\n  set deref(cell) = 9_u64;\n  return unit;\n}}\n\nfn indexed(value: {mode}u64) -> result: own u64 {effects} contract {{\n  requires {term} < 1_u64;\n}} {{\n  let rows = array_filled::<u64, 1>(value: 7_u64);\n  let index = {read};\n  return rows[index];\n}}\n\nfn forward(value: &u64) -> result: own u64 {forward_effect} contract {{\n  requires deref(value) < 1_u64;\n}} {{\n{write}{bind}  return indexed(value: {actual});\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
             );
             if changed {
                 super::assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
@@ -38,7 +51,7 @@ fn whole_unique_result_preserves_location_but_not_prewrite_value_facts() {
                 with_semantics(source.as_bytes(), |outcome| {
                     assert!(
                         matches!(outcome, SemanticOutcome::Complete(_)),
-                        "unchanged unique whole location preserves its established fact: {outcome:?}"
+                        "an unwritten referent preserves its established fact: {outcome:?}"
                     );
                 });
             }
@@ -46,73 +59,12 @@ fn whole_unique_result_preserves_location_but_not_prewrite_value_facts() {
     }
 }
 
-/// FN-1's candidate is a loan ceiling. A shared result may instead point to
-/// immutable static storage, so the input's predicate is not a predicate of
-/// the delivered referent [ENT-2]. These sources must fail before lowering.
-#[test]
-fn borrow_result_loan_ceilings_do_not_transfer_value_requirements() {
-    for actual in ["chosen", "&deref(chosen)", "alias"] {
-        let alias = if actual == "alias" {
-            "  let alias = chosen;\n"
-        } else {
-            ""
-        };
-        let source = format!(
-            "const alternative: u64 = 9_u64;\n\nfn select['r](value: &'r u64) -> result: &'r u64 pure {{\n  return &'r alternative;\n}}\n\nfn indexed(value: &u64) -> result: own u64 reads(value) contract {{\n  requires deref(value) < 1_u64;\n}} {{\n  let rows = array_new::<u64, 1>(7_u64);\n  let index = deref(value);\n  return rows[index];\n}}\n\nfn forward(value: &u64) -> result: own u64 reads(value) contract {{\n  requires deref(value) < 1_u64;\n}} {{\n  let chosen = select(value: value);\n{alias}  region {{\n    return indexed(value: {actual});\n  }}\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
-        );
-        super::assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
-            matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
-        });
-    }
-    for scalar in [false, true] {
-        let (declarations, ty, alternative, input, projected, effect) = if scalar {
-            ("", "u64", "9_u64", "deref(value)", "deref(chosen)", "value")
-        } else {
-            (
-                "struct Entry {\n  offset: u64;\n}\n\n",
-                "Entry",
-                "Entry(offset: 9_u64)",
-                "deref(value).offset",
-                "deref(chosen).offset",
-                "value.offset",
-            )
-        };
-        let source = format!(
-            "{declarations}const alternative: {ty} = {alternative};\n\nfn select['r](value: &'r {ty}) -> result: &'r {ty} pure {{\n  return &'r alternative;\n}}\n\nfn indexed(value: own u64) -> result: own u64 pure contract {{\n  requires value < 1_u64;\n}} {{\n  let rows = array_new::<u64, 1>(7_u64);\n  return rows[value];\n}}\n\nfn forward(value: &{ty}) -> result: own u64 reads({effect}) contract {{\n  requires {input} < 1_u64;\n}} {{\n  let chosen = select(value: value);\n  return indexed(value: {projected});\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
-        );
-        super::assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
-            matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
-        });
-    }
-    super::assert_rule_kind(
-        br#"const zero: u64 = 0_u64;
-
-const alternative: u64 = 9_u64;
-
-fn select['r](value: &'r u64) -> result: &'r u64 pure {
-  return &'r alternative;
-}
-
-fn indexed(value: &u64) -> result: own u64 reads(value) contract {
-  requires deref(value) < 1_u64;
-} {
-  let rows = array_new::<u64, 1>(7_u64);
-  let index = deref(value);
-  return rows[index];
-}
-
-fn main() -> status: own ExitStatus pure {
-  region {
-    let chosen = select(value: &zero);
-    let value = indexed(value: chosen);
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Fn8,
-        |kind| matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_)),
-    );
-}
+// Retired with v0.59's loans and regions: `borrow_result_loan_ceilings_do_not_transfer_value_requirements`
+// had FN-1's borrow-result loan ceiling as its subject, and every source it
+// wrote returned a reference from `select`. [REF-3] now refuses a returned
+// reference outright: "a `return_stmt` whose selected expression is a
+// reference is that violation, and [FN-1] forms no candidate there", so no
+// v0.60 source can form the transfer this case refused.
 
 #[test]
 fn a_non_bool_requires_predicate_cites_op5() {
@@ -356,7 +308,7 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     );
     // Reached only through the infix tail's own atom, never the expr's.
     assert_rule(
-        b"fn f(xs: own FixedVector<u64, 4>, a: own u64) -> result: own u64 pure contract {\n  \
+        b"fn f(xs: own Slots<u64, 4>, a: own u64) -> result: own u64 pure contract {\n  \
           define sum = a +wrap xs[1_u64];\n  \
           requires sum <= 8_u64;\n} {\n  \
           return a;\n}\n\n\
@@ -386,11 +338,12 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
 /// and the value it yields is still not a copy type.
 #[test]
 fn requires_holds_a_clause_local_to_a_copy_type() {
-    // Non-copy by shape: `fixed_vector` is the reachable aggregate row, since
-    // `slice_of` needs a borrow operand the clause subset already rejects.
+    // Non-copy by shape: `slots_new` is the reachable aggregate [OP-13] row,
+    // since a range reference is formed by a `borrow_expr` the clause subset
+    // already rejects [REF-4].
     assert_rule(
         b"fn f(a: own u64) -> result: own u64 pure contract {\n  \
-          define xs = fixed_vector::<i32, 4>();\n  \
+          define xs = slots_new::<i32, 4>();\n  \
           requires a < 8_u64;\n} {\n  \
           return a;\n}\n\n\
           fn main() -> status: own ExitStatus pure {\n  \
@@ -605,11 +558,12 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn goal_cell_deref_projection_retains_the_selected_referent_type() {
-    // The holder is a store cell [S39] where it was the retiring `box<i32>`.
-    // A cell carries no measure and its referent read is the same `deref`
-    // projection, so the retained goal datum is unchanged.
-    let source = br#"fn positive['heap](owner: own Box<'heap, i32>) -> result: own Box<'heap, i32> pure contract {
-  requires deref(owner) > 0_i32;
+    // [TYPE-9] a `Box` carries no brand and no measure, and its content is the
+    // field `inner` rather than a `deref` spelling; the content step still
+    // resolves to the one dereference projection, so the retained goal datum
+    // is unchanged.
+    let source = br#"fn positive(owner: own Box<i32>) -> result: own Box<i32> pure contract {
+  requires owner.inner > 0_i32;
 } {
   return move owner;
 }
@@ -645,11 +599,11 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn goal_field_projection_retains_the_selected_run_type() {
     let source = br#"struct Envelope {
-  values: FixedVector<u8, 2>;
+  values: Slots<u8, 2>;
 }
 
 fn measured(envelope: own Envelope) -> result: own Envelope pure contract {
-  define size = len_of(envelope.values);
+  define size = envelope.values.len;
   requires size == size;
 } {
   return move envelope;
@@ -686,10 +640,16 @@ fn main() -> status: own ExitStatus pure {
             panic!("projected run must remain the formal datum");
         };
         assert_eq!(projections, &[GoalProjection::Field(0)]);
-        let CheckedType::FixedVector { element, length } = *ty else {
-            panic!("projected type must remain a fixed run");
+        let CheckedType::Window {
+            shape,
+            element,
+            capacity,
+        } = *ty
+        else {
+            panic!("projected type must remain a constant-capacity window");
         };
-        assert_eq!(length, CheckedConst::Value(2));
+        assert_eq!(shape, WindowShape::Slots);
+        assert_eq!(capacity, Some(CheckedConst::Value(2)));
         assert_eq!(
             checked.element_type(element),
             Some(CheckedType::Integer(IntegerType::U8))
@@ -700,37 +660,37 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn concrete_equal_const_arguments_produce_equal_goal_templates() {
     let source =
-        br#"fn left<const n: u64>(value: own FixedVector<u8, n>) -> result: own FixedVector<u8, n> pure contract {
-  define size = len_of(value);
+        br#"fn left<const n: u64>(value: own Slots<u8, n>) -> result: own Slots<u8, n> pure contract {
+  define size = value.len;
   requires size == size;
 } {
   return move value;
 }
 
-fn right<const count: u64>(input: own FixedVector<u8, count>) -> result: own FixedVector<u8, count> pure contract {
-  define extent = len_of(input);
+fn right<const count: u64>(input: own Slots<u8, count>) -> result: own Slots<u8, count> pure contract {
+  define extent = input.len;
   requires extent == extent;
 } {
   return move input;
 }
 
-fn different<const width: u64>(items: own FixedVector<u8, width>) -> result: own FixedVector<u8, width> pure contract {
-  define amount = len_of(items);
+fn different<const width: u64>(items: own Slots<u8, width>) -> result: own Slots<u8, width> pure contract {
+  define amount = items.len;
   requires amount == amount;
 } {
   return move items;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let left_input = fixed_vector::<u8, 2>();
+  let left_input = slots_new::<u8, 2>();
   let left_output = left::<2>(value: move left_input);
-  let right_input = fixed_vector::<u8, 2>();
+  let right_input = slots_new::<u8, 2>();
   let right_output = right::<2>(input: move right_input);
-  let different_input = fixed_vector::<u8, 3>();
+  let different_input = slots_new::<u8, 3>();
   let different_output = different::<3>(items: move different_input);
-  let left_size = len_of(left_output);
-  let right_size = len_of(right_output);
-  let different_size = len_of(different_output);
+  let left_size = left_output.len;
+  let right_size = right_output.len;
+  let different_size = different_output.len;
   return exit_status(code: 0_u8);
 }
 "#;
@@ -797,13 +757,17 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_nominal_bearing_generic_requirement_survives_the_symbolic_checkpoint_as_metadata() {
+    // v0.59 reached the symbolic nominal through `buffer_fits::<Pair<T>>(n)`.
+    // [OP-9]'s allocation-size predicate "has no writer-callable spelling" in
+    // v0.60, so the requirement reaches `Pair<T>` the way any other clause
+    // reaches a nominal: as the parameter whose fields it projects.
     let source = br#"struct Pair<T: Int> {
   left: T;
   right: T;
 }
 
-fn need<T: Int>(length: own u64) -> result: own unit pure contract {
-  requires buffer_fits::<Pair<T>>(length);
+fn need<T: Int>(pair: own Pair<T>) -> result: own unit pure contract {
+  requires pair.left < pair.right;
 } {
   return unit;
 }
@@ -819,21 +783,33 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(checked.data.generic_requirements.len(), 1);
         let requirement = &checked.data.generic_requirements[0].requirement;
         let GoalExpression::Operation {
-            row: GoalOperation::BufferFits { element, .. },
+            row:
+                GoalOperation::Integer {
+                    operand_type: CheckedType::GenericInt(_),
+                    ..
+                },
+            arguments,
             ..
         } = &requirement.template.root
         else {
-            panic!("the retained requirement must preserve its exact buffer_fits goal");
+            panic!("the retained requirement must preserve its exact symbolic goal");
         };
-        let CheckedType::Nominal(pair) = element else {
-            panic!("Pair<T> remains a symbolic nominal goal argument");
+        let GoalExpression::Datum(GoalDatum::Parameter { projections, .. }) = &arguments[0] else {
+            panic!("the projected field must remain the formal datum");
         };
+        assert_eq!(projections, &[GoalProjection::Field(0)]);
+        let (index, retained) = checked
+            .data
+            .nominals
+            .iter()
+            .enumerate()
+            .find(|(_, nominal)| nominal.name.starts_with("Pair<"))
+            .expect("Pair<T> remains a symbolic nominal of the checked program");
         assert!(
-            pair.0 as usize >= checked.data.executable_nominal_count,
+            index >= checked.data.executable_nominal_count,
             "metadata-only symbolic nominals must follow the executable prefix"
         );
-        let CheckedNominalKind::Struct { fields } = &checked.data.nominals[pair.0 as usize].kind
-        else {
+        let CheckedNominalKind::Struct { fields } = &retained.kind else {
             panic!("Pair<T> must retain its checked struct shape");
         };
         assert_eq!(fields.len(), 2);
@@ -849,8 +825,8 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_derived_const_in_generic_requirement_has_checked_program_owned_structure() {
-    let source = br#"fn need<const n: u64>(value: own FixedVector<u8, n + 1>) -> result: own FixedVector<u8, n + 1> pure contract {
-  define size = len_of(value);
+    let source = br#"fn need<const n: u64>(value: own Slots<u8, n + 1>) -> result: own Slots<u8, n + 1> pure contract {
+  define size = value.len;
   requires size == size;
 } {
   return move value;
@@ -1123,7 +1099,7 @@ fn below(value: own u64) -> result: own u64 pure contract {
 
 #[test]
 fn call_front_end_captures_a_subscript_until_entailment_admits_its_identity() {
-    let source = br#"const values: FixedVector<u8, 2> =[3_u8, 3_u8];
+    let source = br#"const values: Array<u8, 2> =[3_u8, 3_u8];
 
 fn positive(value: own u8) -> result: own unit pure contract {
   requires value < 10_u8;
@@ -1216,7 +1192,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn proved_subscript_actual_reuses_its_stable_goal_identity_at_fn8() {
-    let source = br#"const values: FixedVector<u8, 2> =[3_u8, 3_u8];
+    let source = br#"const values: Array<u8, 2> =[3_u8, 3_u8];
 
 fn positive(value: own u8) -> result: own unit pure contract {
   requires value < 10_u8;
@@ -1268,17 +1244,13 @@ fn borrow_substitution_removes_callee_deref_and_retains_caller_opaque_deref() {
 }
 
 fn proxy(value: &u64) -> result: own unit reads(value) {
-  region {
-    observe(value: &deref(value));
-  }
+  observe(value: &deref(value));
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
   let local = 1_u64;
-  region {
-    observe(value: &local);
-  }
+  observe(value: &local);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1292,13 +1264,10 @@ fn main() -> status: own ExitStatus pure {
             .iter()
             .find(|function| function.name == "proxy")
             .expect("proxy function");
-        let CheckedStatement::Region { body, .. } = &proxy.body.as_deref().expect("WF body")[0]
+        let CheckedStatement::Evaluate(CheckedExpression::UserCall { requirements, .. }) =
+            &proxy.body.as_deref().expect("WF body")[0]
         else {
-            panic!("proxy must retain child region");
-        };
-        let CheckedStatement::Evaluate(CheckedExpression::UserCall { requirements, .. }) = &body[0]
-        else {
-            panic!("proxy child must retain its call requirement");
+            panic!("proxy must retain its call requirement");
         };
         let [requirement] = requirements.as_slice() else {
             panic!("proxy call must retain exactly one requirement");
@@ -1329,11 +1298,8 @@ fn main() -> status: own ExitStatus pure {
         else {
             panic!("main local binding");
         };
-        let CheckedStatement::Region { body, .. } = &main.body.as_deref().expect("WF body")[1]
-        else {
-            panic!("main direct region");
-        };
-        let CheckedStatement::Evaluate(CheckedExpression::UserCall { requirements, .. }) = &body[0]
+        let CheckedStatement::Evaluate(CheckedExpression::UserCall { requirements, .. }) =
+            &main.body.as_deref().expect("WF body")[1]
         else {
             panic!("main direct call requirement");
         };
@@ -1360,20 +1326,16 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// The slice half of this case is retired with v0.59's regions: it asserted
+/// that a `Slice<'r, T>` formal region and its caller's region substitute to
+/// two distinct regions, and v0.60 has no region parameter and no view type at
+/// all ([REF-4]'s `&[T]` carries no brand). The type-and-const substitution
+/// half is unchanged and is what this case now states.
 #[test]
-fn call_goal_substitutes_type_const_and_slice_region_arguments() {
-    let source = br#"const bytes: FixedVector<u8, 2> =[4_u8, 9_u8];
-
-fn inspect(values: own Slice<u8>) -> result: own unit pure contract {
-  define size = len_of(values);
-  requires size == size;
-} {
-  return unit;
-}
-
-fn guarded<T: Int, const n: u64>(value: own T, values: own FixedVector<u8, n>) -> result: own T pure contract {
+fn call_goal_substitutes_type_and_const_arguments() {
+    let source = br#"fn guarded<T: Int, const n: u64>(value: own T, values: own Slots<u8, n>) -> result: own T pure contract {
   define positive = value > 0_T;
-  define size = len_of(values);
+  define size = values.len;
   define exact = size == size;
   define complete = band(positive, exact);
   requires complete;
@@ -1382,31 +1344,14 @@ fn guarded<T: Int, const n: u64>(value: own T, values: own FixedVector<u8, n>) -
 }
 
 fn main() -> status: own ExitStatus pure {
-  region {
-    let view = slice_of(&bytes);
-    inspect(values: view);
-  }
-  let values = fixed_vector::<u8, 3>();
+  let values = slots_new::<u8, 3>();
   let result = guarded::<i32, 3>(value: 4_i32, values: move values);
   return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("concrete generic and region substitutions must check: {outcome:?}");
-        };
-        let inspect = checked
-            .data
-            .functions
-            .iter()
-            .find(|function| function.name == "inspect")
-            .expect("inspect function");
-        let CheckedType::Slice {
-            region: inspect_formal_region,
-            ..
-        } = inspect.parameters[0].ty
-        else {
-            panic!("inspect parameter must be a slice");
+            panic!("concrete generic substitutions must check: {outcome:?}");
         };
         let main = checked
             .data
@@ -1414,49 +1359,6 @@ fn main() -> status: own ExitStatus pure {
             .iter()
             .find(|function| function.name == "main")
             .expect("main function");
-        let CheckedStatement::Region { body, .. } = &main.body.as_deref().expect("WF body")[0]
-        else {
-            panic!("main view region");
-        };
-        let CheckedStatement::Evaluate(CheckedExpression::UserCall {
-            goal_arguments,
-            requirements,
-            ..
-        }) = &body[1]
-        else {
-            panic!("inspect call metadata");
-        };
-        let [requirement] = requirements.as_slice() else {
-            panic!("inspect call must retain exactly one requirement");
-        };
-        let GoalExpression::Datum(GoalDatum::Place {
-            ty:
-                CheckedType::Slice {
-                    region: caller_region,
-                    ..
-                },
-            ..
-        }) = &goal_arguments[0]
-        else {
-            panic!("slice actual image");
-        };
-        assert_ne!(*caller_region, inspect_formal_region);
-        let GoalExpression::Operation { arguments, .. } = &requirement.goal.root else {
-            panic!("slice equality goal");
-        };
-        for length in arguments {
-            let GoalExpression::Operation {
-                row: GoalOperation::SliceMeasure { region, .. },
-                arguments,
-                ..
-            } = length
-            else {
-                panic!("expanded slice length goal");
-            };
-            assert_eq!(*region, *caller_region);
-            assert_eq!(&arguments[0], &goal_arguments[0]);
-        }
-
         let CheckedStatement::Let {
             value:
                 CheckedExpression::UserCall {
@@ -1467,7 +1369,7 @@ fn main() -> status: own ExitStatus pure {
                     ..
                 },
             ..
-        } = &main.body.as_deref().expect("WF body")[2]
+        } = &main.body.as_deref().expect("WF body")[1]
         else {
             panic!("guarded call metadata");
         };
@@ -1480,8 +1382,9 @@ fn main() -> status: own ExitStatus pure {
         assert_ne!(*call, argument_nodes[1]);
         assert!(matches!(
             goal_arguments[1].ty(),
-            CheckedType::FixedVector {
-                length: CheckedConst::Value(3),
+            CheckedType::Window {
+                shape: WindowShape::Slots,
+                capacity: Some(CheckedConst::Value(3)),
                 ..
             }
         ));
@@ -1525,7 +1428,7 @@ fn main() -> status: own ExitStatus pure {
                 length,
                 GoalExpression::Operation {
                     row: GoalOperation::ContainerMeasure {
-                        measured: MeasuredKind::FixedVector,
+                        measured: MeasuredKind::ConstantSlots,
                         constant: Some(CheckedConst::Value(3)),
                         ..
                     },
@@ -1533,21 +1436,13 @@ fn main() -> status: own ExitStatus pure {
                 }
             ));
         }
-        assert_eq!(main.entailment.call_goals.len(), 2);
+        assert_eq!(main.entailment.call_goals.len(), 1);
         assert_eq!(
             main.entailment.call_goals[0].disposition,
             CallGoalDisposition::Discharged
         );
         assert_eq!(
             main.entailment.call_goals[0].evidence,
-            vec![CallGoalEvidence::ExactL0Projection]
-        );
-        assert_eq!(
-            main.entailment.call_goals[1].disposition,
-            CallGoalDisposition::Discharged
-        );
-        assert_eq!(
-            main.entailment.call_goals[1].evidence,
             vec![CallGoalEvidence::BooleanIntroductionPositive]
         );
     });
@@ -1677,7 +1572,13 @@ fn affine_requirement_images_keep_copies_but_do_not_retarget_replaced_scalars() 
 fn affine_requirement_measure_observations_survive_as_values_without_retargeting() {
     for (observed, accepted) in [("old", true), ("current", false)] {
         let source = format!(
-            "fn room(values: own buffer<u64>, extra: own u64, limit: own u64) -> result: own u64 reads(values), writes(values) contract {{\n  requires len_of(values) <= 16_u64;\n  requires extra <= 16_u64;\n  requires len_of(values) + extra <= limit;\n}} {{\n  let old = len_of(values);\n  let replaced = replace values = buffer_new(32_u64, 0_u64);\n  let current = len_of(values);\n  let total = {observed} + extra;\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            // [OP-15] the measure is a member read, [SET-1] with [WIN-3]'s
+            // disposition is the statement that replaces the window, and an
+            // `own` parameter carries no effect entry [EFF-1], so the row is
+            // `pure`. The subject is unchanged: the scalar copied before the
+            // write keeps the bound the requirement gave it, and the measure
+            // read after the write does not inherit it.
+            "fn room(values: own Slots<u64, 16>, extra: own u64, limit: own u64) -> result: own u64 pure contract {{\n  requires values.len <= 16_u64;\n  requires extra <= 16_u64;\n  requires values.len + extra <= limit;\n}} {{\n  let old = values.len;\n  let seed = array_filled::<u64, 16>(value: 0_u64);\n  let fresh = slots_from_array::<u64, 16>(values: move seed);\n  set values = move fresh;\n  let current = values.len;\n  let total = {observed} + extra;\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_semantics(source.as_bytes(), |outcome| {
             if accepted {

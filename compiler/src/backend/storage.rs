@@ -28,7 +28,10 @@ pub(super) fn is_stored_aggregate(
     ty: IrType,
 ) -> Result<bool, BackendFailure> {
     Ok(match ty {
-        IrType::Array { .. } | IrType::FixedVector { .. } => true,
+        IrType::Array { .. }
+        | IrType::Window {
+            capacity: Some(_), ..
+        } => true,
         IrType::Nominal(nominal) => {
             let nominal = program.nominal(nominal).ok_or(BackendFailure::InvalidIr)?;
             match nominal.kind() {
@@ -44,9 +47,8 @@ pub(super) fn is_stored_aggregate(
         | IrType::Integer { .. }
         | IrType::Float { .. }
         | IrType::Buffer { .. }
-        | IrType::Vector { .. }
-        | IrType::Provider
-        | IrType::Slice { .. }
+        | IrType::Window { capacity: None, .. }
+        | IrType::Range { .. }
         | IrType::Address(_) => false,
     })
 }
@@ -903,8 +905,7 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
     match operation {
         IrOperation::Constant(_)
         | IrOperation::ConstantAddress { .. }
-        | IrOperation::FixedVector
-        | IrOperation::ArenaFrame { .. }
+        | IrOperation::Window
         | IrOperation::ArenaListNew => Vec::new(),
         IrOperation::Call { arguments, .. }
         | IrOperation::Integer { arguments, .. }
@@ -931,8 +932,6 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
         IrOperation::BufferMeasure { buffer } | IrOperation::SliceFromBuffer { buffer } => {
             vec![*buffer]
         }
-        IrOperation::StoreTake(take) => vec![take.store, take.count],
-        IrOperation::StoreBox(cell) => vec![cell.store, cell.value],
         IrOperation::ContainerMeasure { container, .. } => vec![*container],
         IrOperation::RunIndex { run, offset, .. } => vec![*run, *offset],
         IrOperation::RunBoundary { run, value, .. } => {

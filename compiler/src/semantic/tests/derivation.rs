@@ -87,7 +87,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
     let source = br#"fn main() -> status: own ExitStatus pure {
-  let absent = None<FixedVector<u8, 2>>();
+  let absent = None<Array<u8, 2>>();
   let present = Some<i32>(value: 7_i32);
   return exit_status(code: 0_u8);
 }
@@ -102,7 +102,7 @@ fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
             .iter()
             .map(|nominal| nominal.name.as_str())
             .collect::<Vec<_>>();
-        for expected in ["Option<FixedVector<u8, 2>>", "Option<i32>"] {
+        for expected in ["Option<Array<u8, 2>>", "Option<i32>"] {
             assert!(
                 names.contains(&expected),
                 "missing instance {expected} derived from written arguments: {names:?}"
@@ -208,29 +208,7 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// [STOR-5] the written referent type used to carry the box-content
-/// judgment. With it deleted the derived referent carries it, cited at the
-/// operand that supplied it. The cell is taken from a store [S39] rather than
-/// from the retiring ambient `box_new`, which is why the function receives the
-/// store's provider and declares the write the allocation spends; the referent
-/// judgment and its citation are unchanged.
-#[test]
-fn cell_content_that_bears_a_region_still_rejects_under_stor5() {
-    assert_rule_at(
-        br#"fn invalid['heap](value: own Slice<u8>, store: &uniq Heap<'heap>) -> result: own unit writes(store) {
-  region {
-    heap_box(store: &uniq deref(store), value: value);
-  }
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Stor5,
-        // [S27] the shared view is copy, so the operand that supplies the
-        // derived referent is written bare and the citation lands on it.
-        "value",
-    );
-}
+// Retired with v0.59's regions: `cell_content_that_bears_a_region_still_rejects_under_stor5`
+// had a region-bearing `Box` content as its subject, and v0.60 [STOR-5] states
+// the reference-free-storage rule instead, whose successor witnesses belong to
+// the reference suites.

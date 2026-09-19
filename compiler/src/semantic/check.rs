@@ -810,6 +810,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// The exhibited categories the declaration is missing, and the declared
     /// categories the body does not exhibit, each in the spelling the writer
     /// would have to add or delete.
+    /// Whether `entry` is `access` or a proper prefix of it [EFF-1].
+    ///
+    /// [EFF-2] states the relation as "the body accesses storage at or below
+    /// its path", and an effect path is a root formal plus a complete step
+    /// list, so "below" is exactly the prefix order on those steps.
+    fn effect_path_covers(
+        entry: &super::model::CheckedStatePath,
+        access: &super::model::CheckedStatePath,
+    ) -> bool {
+        entry.root == access.root && access.steps.starts_with(&entry.steps)
+    }
+
+    /// [EFF-2]'s two-way judgment over a complete row.
+    ///
+    /// "Rows are checked both ways against this complete exhibited set --
+    /// every declared entry is exhibited in that sense, and every exhibited
+    /// access lies under some declared entry." That is a covering relation
+    /// and not equality of path sets: a row declaring a whole reference
+    /// parameter covers the measure read `deref(p).len` below it [OP-15],
+    /// while a row declaring only a field is not covered by an access to the
+    /// whole.
+    ///
+    /// The two categories are not independent. [EFF-1] states that
+    /// "`writes(p)` subsumes `reads(p)`, so the pair is never written for one
+    /// path", so a declared write covers an exhibited read at or below its
+    /// path and an exhibited write answers for a declared read. A declared
+    /// write is answered only by an exhibited write: nothing subsumes a write
+    /// the body never makes.
+    fn effect_row_matches(declared: &EffectSet, exhibited: &EffectSet) -> bool {
+        exhibited.reads.iter().all(|access| {
+            declared
+                .reads
+                .iter()
+                .chain(&declared.writes)
+                .any(|entry| Self::effect_path_covers(entry, access))
+        }) && exhibited.writes.iter().all(|access| {
+            declared
+                .writes
+                .iter()
+                .any(|entry| Self::effect_path_covers(entry, access))
+        }) && declared.reads.iter().all(|entry| {
+            exhibited
+                .reads
+                .iter()
+                .chain(&exhibited.writes)
+                .any(|access| Self::effect_path_covers(entry, access))
+        }) && declared.writes.iter().all(|entry| {
+            exhibited
+                .writes
+                .iter()
+                .any(|access| Self::effect_path_covers(entry, access))
+        })
+    }
+
     fn effect_row_difference(
         &self,
         exhibited: &EffectSet,
@@ -818,25 +872,57 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(Vec<String>, Vec<String>), CheckStop> {
         let mut missing = Vec::new();
         let mut extra = Vec::new();
-        for (left, right, out) in [
-            (exhibited, declared, &mut missing),
-            (declared, exhibited, &mut extra),
-        ] {
-            for path in &left.reads {
-                if !right.reads.contains(path) {
-                    out.push(format!(
-                        "reads({})",
-                        self.render_effect_path(path, signature)?
-                    ));
-                }
+        // `missing` names each exhibited access lying under no declared
+        // entry; `extra` names each declared entry the body never accesses at
+        // or below. Both are [EFF-2]'s own two failures.
+        for path in &exhibited.reads {
+            if !declared
+                .reads
+                .iter()
+                .chain(&declared.writes)
+                .any(|entry| Self::effect_path_covers(entry, path))
+            {
+                missing.push(format!(
+                    "reads({})",
+                    self.render_effect_path(path, signature)?
+                ));
             }
-            for path in &left.writes {
-                if !right.writes.contains(path) {
-                    out.push(format!(
-                        "writes({})",
-                        self.render_effect_path(path, signature)?
-                    ));
-                }
+        }
+        for path in &exhibited.writes {
+            if !declared
+                .writes
+                .iter()
+                .any(|entry| Self::effect_path_covers(entry, path))
+            {
+                missing.push(format!(
+                    "writes({})",
+                    self.render_effect_path(path, signature)?
+                ));
+            }
+        }
+        for entry in &declared.reads {
+            if !exhibited
+                .reads
+                .iter()
+                .chain(&exhibited.writes)
+                .any(|path| Self::effect_path_covers(entry, path))
+            {
+                extra.push(format!(
+                    "reads({})",
+                    self.render_effect_path(entry, signature)?
+                ));
+            }
+        }
+        for entry in &declared.writes {
+            if !exhibited
+                .writes
+                .iter()
+                .any(|path| Self::effect_path_covers(entry, path))
+            {
+                extra.push(format!(
+                    "writes({})",
+                    self.render_effect_path(entry, signature)?
+                ));
             }
         }
         Ok((missing, extra))
@@ -851,13 +937,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let spelling = self.declaration_spelling(region)?;
         Ok((!spelling.starts_with("'0_")).then_some(spelling))
     }
-
-    /// One region as a diagnostic names it.
-    ///
-    /// A region [FORM-8] leaves unwritten has no source spelling: resolution
-    /// mints it under a name no source token can form, and printing that name
-    /// would name a region the writer cannot write. Diagnostics that quote a
-    /// region go through this instead of the raw spelling.
 
     /// [OWN-1, FORM-1, FN-2] whether this body is the authority on the one
     /// spelling [FORM-1] keys on a value's copy/affine class.
@@ -896,6 +975,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .find(|record| record.id() == declaration)
             .map(|record| record.spelling().to_owned())
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    /// [OP-10] whether this type parameter is a compiler-owned window type
+    /// parameter: the `W` or `X` of a [PRE-1] record, supplied by an operand
+    /// and never written.
+    ///
+    /// The spelling alone cannot decide it, because a source declaration may
+    /// name a parameter `W`; the rule's own sentence is that no source
+    /// declaration can write such a parameter, so the prelude origin of the
+    /// declaration that introduces it is the other half of the test.
+    pub(in crate::semantic::check) fn is_window_type_parameter(
+        &self,
+        declaration: DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        let Some(record) = self.resolved.declaration(declaration) else {
+            return Ok(false);
+        };
+        if !matches!(record.spelling(), "W" | "X") {
+            return Ok(false);
+        }
+        Ok(self
+            .resolved
+            .syntax()
+            .classified_bundle()
+            .source_bundle()
+            .file(record.origin().coordinate().source())
+            .is_some_and(|file| file.prelude().is_some()))
     }
 
     fn written_body_effects(
@@ -1465,6 +1571,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         outcome
     }
 
+    /// [OP-10] whether this instance still carries a compiler-owned window
+    /// type parameter unsubstituted, which is exactly the symbolic instance
+    /// of a window row.
+    fn has_unsupplied_window_type_parameter(
+        &self,
+        signature: &FunctionSignature,
+    ) -> Result<bool, CheckStop> {
+        for (key, argument) in signature.substitution.entries() {
+            let generics::GenericParameterKey::Source(declaration) = key else {
+                continue;
+            };
+            let generics::GenericArgument::Type(ty) = argument else {
+                continue;
+            };
+            if ty.is_concrete(&self.elements.borrow()) {
+                continue;
+            }
+            if self.is_window_type_parameter(*declaration)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn check_function_signature_body(
         &self,
         signature: &FunctionSignature,
@@ -1504,9 +1634,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             binding_names: &mut binding_names,
         };
         let parameter_bindings = bindings.clone();
+        // [OP-10] a compiler-owned window type parameter is supplied by the
+        // operand and never written, so a row carrying one has no symbolic
+        // instance any call can name: `deref(window).room` names a measure of
+        // the shape the operand supplies, and the unsubstituted parameter is
+        // not one of [MSR-1]'s measured types. Such a row's clauses are the
+        // substituted clauses of each concrete instance, which the ordinary
+        // judgment below reaches once an operand fixes W. Every other generic
+        // row, prelude or source, keeps its symbolic judgment.
+        let unsupplied_window_row = self.has_unsupplied_window_type_parameter(signature)?;
         let requirements = if let Some(node) = self
             .tree
             .first_child_with(signature.node, Production::ContractBlock)?
+            .filter(|_| !unsupplied_window_row)
         {
             let mut requires_bindings = parameter_bindings.clone();
             self.check_requires(signature, node, &mut requires_bindings, &mut counters)?
@@ -1515,7 +1655,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Vec::new()
         };
 
-        let postcondition_selectors = self.postcondition_selectors_for_signature(signature)?;
+        let postcondition_selectors = if unsupplied_window_row {
+            Vec::new()
+        } else {
+            self.postcondition_selectors_for_signature(signature)?
+        };
         let mut postcondition_relations = Vec::with_capacity(postcondition_selectors.len());
         for selector in &postcondition_selectors {
             let mut postcondition_bindings = parameter_bindings.clone();
@@ -1561,7 +1705,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let mut exhibited = self.written_body_effects(signature, checked.effects.clone());
         self.collect_release_effects(signature, &checked.statements, &mut exhibited)?;
-        if exhibited != signature.declared_effects {
+        // [EFF-1] the row has exactly two categories, and [STOR-8] gives
+        // allocation no entry in it, so [EFF-2]'s judgment is over `reads`
+        // and `writes` alone. The allocation fact is [EFF-3] checked-program
+        // metadata that no declaration can write, so comparing it here would
+        // reject every `pure` function that calls a construction row against
+        // a row it had no way to declare.
+        //
+        // Each category is judged by [EFF-2]'s own two-way covering relation
+        // rather than by set equality.
+        if !Self::effect_row_matches(&signature.declared_effects, &exhibited) {
             let (missing, extra) =
                 self.effect_row_difference(&exhibited, &signature.declared_effects, signature)?;
             return self.issue_node(
@@ -1635,7 +1788,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             result_mode: signature.result_mode,
             result: signature.result,
             declared_state_writes: signature.declared_effects.writes.clone(),
-            allocates: signature.declared_effects.allocates,
+            // [EFF-3] the boundary's allocation fact is what the body
+            // exhibits, not what the declaration wrote: no declaration can
+            // write it [EFF-1, STOR-8], and for a body-less row the exhibited
+            // set is the declared one, so a construction row still reports
+            // its own allocation here.
+            allocates: exhibited.allocates,
             requirements,
             postconditions,
             body: (!declaration_only).then_some(checked.statements),
@@ -1986,11 +2144,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     )?;
                                 }
                             }
-                            CheckedSetTarget::SliceIndex(target) => self
-                                .install_expression_call_requirements(
-                                    &mut target.offset,
-                                    requirements,
-                                )?,
                         }
                     }
                     for value in values.expressions_mut() {
@@ -2016,11 +2169,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 self.install_expression_call_requirements(offset, requirements)?;
                             }
                         }
-                        CheckedSetTarget::SliceIndex(target) => self
-                            .install_expression_call_requirements(
-                                &mut target.offset,
-                                requirements,
-                            )?,
                     }
                     self.install_expression_call_requirements(value, requirements)?;
                 }
@@ -2121,8 +2269,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
-            | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::SliceIndex { offset, .. } => {
+            | CheckedExpression::BufferIndex { offset, .. } => {
                 self.install_expression_call_requirements(offset, requirements)?;
             }
             CheckedExpression::BufferFill { length, value, .. } => {
@@ -2140,8 +2287,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::SliceOf { .. }
-            | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
@@ -2220,12 +2365,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     Self::install_expression_allocation_bounds(offset, bounds)?;
                                 }
                             }
-                            CheckedSetTarget::SliceIndex(target) => {
-                                Self::install_expression_allocation_bounds(
-                                    &mut target.offset,
-                                    bounds,
-                                )?;
-                            }
                         }
                     }
                     for value in values.expressions_mut() {
@@ -2246,9 +2385,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             for offset in target.offsets_mut() {
                                 Self::install_expression_allocation_bounds(offset, bounds)?;
                             }
-                        }
-                        CheckedSetTarget::SliceIndex(target) => {
-                            Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
                         }
                     }
                     Self::install_expression_allocation_bounds(value, bounds)?;
@@ -2344,8 +2480,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
-            | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::SliceIndex { offset, .. } => {
+            | CheckedExpression::BufferIndex { offset, .. } => {
                 Self::install_expression_allocation_bounds(offset, bounds)?;
             }
             CheckedExpression::BufferFits { length, .. } => {
@@ -2358,8 +2493,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::SliceOf { .. }
-            | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
@@ -2600,46 +2733,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.instantiate_goal_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
-            CheckedType::Slice {
-                region,
-                element,
-                strength,
-            } => CheckedType::Slice {
-                region: self.instantiate_goal_region(region, signature, regions)?,
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
-                strength,
-            },
             CheckedType::Buffer { element } => CheckedType::Buffer {
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
-            CheckedType::FixedVector { element, length } => CheckedType::FixedVector {
+            CheckedType::Window {
+                shape,
+                element,
+                capacity,
+            } => CheckedType::Window {
+                shape,
                 element: self.instantiate_goal_element(element, signature, regions)?,
-                length: self.instantiate_goal_const(length, signature)?,
-            },
-            CheckedType::Vector {
-                region, element, ..
-            } => {
-                let region = self.instantiate_goal_region(region, signature, regions)?;
-                CheckedType::Vector {
-                    region,
-                    element: self.instantiate_goal_element(element, signature, regions)?,
-                    // [PROV-6, STOR-3] no v0.60 declaration is a region, so
-                    // the release class of a store-branded run is the general
-                    // one wherever such a run still appears.
-                    release: super::model::CheckedReleaseClass::General,
-                }
-            }
-            CheckedType::Heap { region } => CheckedType::Heap {
-                region: self.instantiate_goal_region(region, signature, regions)?,
-            },
-            CheckedType::Extent {
-                region,
-                bytes,
-                align,
-            } => CheckedType::Extent {
-                region: self.instantiate_goal_region(region, signature, regions)?,
-                bytes: self.instantiate_goal_const(bytes, signature)?,
-                align: self.instantiate_goal_const(align, signature)?,
+                capacity: capacity
+                    .map(|capacity| self.instantiate_goal_const(capacity, signature))
+                    .transpose()?,
             },
             CheckedType::Nominal(id) => self.instantiate_goal_nominal(id, signature, regions)?,
             CheckedType::Unit
@@ -2699,12 +2805,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedType::Generic(_)
             | CheckedType::Array { .. }
-            | CheckedType::Slice { .. }
             | CheckedType::Buffer { .. }
-            | CheckedType::FixedVector { .. }
-            | CheckedType::Vector { .. }
-            | CheckedType::Heap { .. }
-            | CheckedType::Extent { .. } => {
+            | CheckedType::Window { .. } => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         })

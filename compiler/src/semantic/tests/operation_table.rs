@@ -43,8 +43,9 @@ struct OpsRow {
 
 impl OpsRow {
     /// The parameter list of the `signature` cell, `(T, u32)` for
-    /// `` `(T, u32) -> own T` ``. A nullary row writes `()`, and the two place
-    /// rows write no parameter list at all.
+    /// `` `(T, u32) -> own T` ``. A nullary row writes `()`. Every v0.60 row
+    /// writes one: the measure readers that wrote none are retired, a measure
+    /// being a place form [OP-15] and not a table row.
     fn parameters(&self) -> Option<Vec<&str>> {
         let list = self.signature.strip_prefix('(')?.split_once(')')?.0;
         Some(if list.is_empty() {
@@ -109,9 +110,8 @@ fn ops_rows() -> Vec<OpsRow> {
             OpsRow {
                 ops,
                 domain: (*domain).to_owned(),
-                // The two place rows carry a parenthesised gloss after the
-                // backticked signature; the cell's signature is the backticked
-                // span, and the gloss is prose.
+                // A signature cell's signature is its backticked span; any
+                // surrounding prose is a gloss and not part of the cell.
                 signature: signature
                     .split('`')
                     .nth(1)
@@ -252,29 +252,24 @@ const BOOLEAN_SPELLINGS: [(&str, usize); 4] = [("band", 2), ("bor", 2), ("bxor",
 /// The table spellings no scalar-operation model covers.
 ///
 /// Each is checked by its own rule's tests rather than by a scalar-operation
-/// accessor: the conversions carry written type pairs, the storage operations
-/// carry allocation effects, and the place operations take a place rather than
-/// value operands. Listing them explicitly is what makes the coverage
-/// assertion below two-sided — a new row is a failure unless someone decides
-/// which side it belongs on.
-const UNMODELLED_ROW_SPELLINGS: [&str; 16] = [
-    "buffer_fits",
-    "buffer_vacant",
-    "eeq",
-    "ene",
-    "cvt",
-    "reinterpret",
-    "len_of",
-    "cap_of",
-    "room_of",
-    "head_of",
-    "slice_of",
-    "mut_slice_of",
-    "box_new",
-    "arena_new",
-    "array_new",
-    "buffer_new",
-];
+/// accessor: the conversions carry written type pairs, and the two tag
+/// comparisons take one exact nominal tag-only enum rather than a numeric
+/// domain. Listing them explicitly is what makes the coverage assertion below
+/// two-sided — a new row is a failure unless someone decides which side it
+/// belongs on.
+///
+/// v0.60 removed twelve of the sixteen rows this list used to carry. The
+/// measure readers `len_of`, `cap_of`, `room_of` and `head_of` are retired:
+/// a measure is a `psuffix` field selection on a measured place and is not a
+/// call [OP-15, TYPE-10]. The views `slice_of` and `mut_slice_of` are retired
+/// with views, a range reference being formed by `&x[lo..hi]` [REF-4]. The
+/// constructions `box_new`, `arena_new`, `array_new` and `buffer_new`, and
+/// the allocation-fit predicates `buffer_fits` and `buffer_vacant`, are
+/// retired from the table: construction is the closed set of [PRE-1]
+/// construction functions [OP-13], which are ordinary records and not
+/// operation-table rows, and allocation is total so no source predicate
+/// decides it [STOR-8].
+const UNMODELLED_ROW_SPELLINGS: [&str; 4] = ["eeq", "ene", "cvt", "reinterpret"];
 
 const ALL_INTEGER_TYPES: [IntegerType; 8] = [
     IntegerType::I8,
@@ -549,7 +544,7 @@ fn measure_rows() -> Vec<MeasureRow> {
             .split('|')
             .map(str::trim)
             .collect::<Vec<_>>(),
-        vec!["measured type", "len_of", "cap_of", "room_of", "head_of"],
+        vec!["measured type", "len", "cap", "room", "head"],
         "the first row of a wf-measures fence is its column schema"
     );
     lines
@@ -577,16 +572,18 @@ fn measure_rows() -> Vec<MeasureRow> {
 #[test]
 fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
     let rows = measure_rows();
+    // [MSR-1]'s seven rows are seven identities: the two placements of one
+    // shape answer `cap` differently, so a constant-capacity row and a
+    // runtime-capacity row of the same shape are two rows and two kinds
+    // [TYPE-9].
     let expected = [
-        (MeasuredKind::Array, "array<T, N>"),
-        (MeasuredKind::Buffer, "buffer<T>"),
-        (MeasuredKind::Slice, "Slice<'r, T>"),
-        // [VIEW-1] the two views are one measured kind and two rows: the
-        // strength separates the types and no cell of the table reads it.
-        (MeasuredKind::Slice, "MutSlice<'r, T>"),
-        (MeasuredKind::FixedVector, "FixedVector<T, n>"),
-        (MeasuredKind::Vector, "Vector<'s, T>"),
-        (MeasuredKind::Extent, "Arena<'s, bytes, align>"),
+        (MeasuredKind::ConstantArray, "Array<T, N>"),
+        (MeasuredKind::RuntimeArray, "Array<T>"),
+        (MeasuredKind::ConstantSlots, "Slots<T, N>"),
+        (MeasuredKind::RuntimeSlots, "Slots<T>"),
+        (MeasuredKind::ConstantRing, "Ring<T, N>"),
+        (MeasuredKind::RuntimeRing, "Ring<T>"),
+        (MeasuredKind::Range, "&[T]"),
     ];
     assert_eq!(
         rows.iter()
@@ -602,7 +599,7 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
         CheckedMeasure::Head,
     ];
     // [MSR-1]: exactly one cell class is *bounded* anywhere, and it is the one
-    // cell the two run rows share.
+    // cell the two `Ring` rows share.
     let mut bounded = 0_usize;
     for (row, (measured, name)) in rows.iter().zip(expected) {
         for (cell, measure) in row.cells.iter().zip(measures) {
@@ -623,32 +620,34 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
                     "{name}'s {} cell is the constant the compiler folds",
                     measure.spelling()
                 ),
-                MeasureCell::ExactExtent => assert!(
-                    matches!(
-                        written,
-                        "N" | "allocated slots" | "viewed elements" | "len_of"
-                    ),
-                    "{name}'s {} cell is the measured value's own extent, written {written}",
+                MeasureCell::ExactTypeConstant => assert_eq!(
+                    written,
+                    "N",
+                    "{name}'s {} cell is the type's own written constant",
                     measure.spelling()
                 ),
-                MeasureCell::ExactTypeConstant => assert!(
-                    matches!(written, "n" | "bytes"),
-                    "{name}'s {} cell is the type's own written constant, written {written}",
-                    measure.spelling()
-                ),
-                MeasureCell::ExactRuntime => assert!(
+                // No v0.60 row reads a measured value's own extent as a
+                // separate class, so `ExactExtent` shares the runtime arm:
+                // a row that reaches it still has to write one of these
+                // runtime quantities.
+                MeasureCell::ExactExtent | MeasureCell::ExactRuntime => assert!(
                     matches!(
                         written,
-                        "initialized slots" | "slots taken" | "cursor bytes" | "cap_of - len_of"
+                        "allocated slots"
+                            | "len"
+                            | "initialized slots"
+                            | "slots taken"
+                            | "cap - len"
+                            | "range elements"
                     ),
-                    "{name}'s {} cell is a runtime quantity of the descriptor, written {written}",
+                    "{name}'s {} cell is a runtime quantity of the block, written {written}",
                     measure.spelling()
                 ),
                 MeasureCell::Bounded => {
                     bounded += 1;
                     assert_eq!(
                         written, "window origin",
-                        "the one bounded cell class is a run's window origin"
+                        "the one bounded cell class is a Ring's window origin"
                     );
                 }
                 MeasureCell::Absent => assert_eq!(
@@ -662,6 +661,6 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
     }
     assert_eq!(
         bounded, 2,
-        "the two run rows share the one bounded cell and nothing else is bounded"
+        "the two Ring rows share the one bounded cell and nothing else is bounded"
     );
 }

@@ -12,7 +12,7 @@ use crate::{
 use super::super::goal::{CheckedRequirement, GoalDatum, GoalExpression, GoalOperation};
 use super::super::model::{
     CheckedConst, CheckedElement, CheckedFlatElement, CheckedGenericRequirement,
-    CheckedNominalKind, CheckedType, CheckedValue, FloatType, IntegerType, LoanStrength, NominalId,
+    CheckedNominalKind, CheckedType, CheckedValue, FloatType, IntegerType, NominalId,
 };
 use super::{CheckStop, Checker, FunctionSignature, FunctionTemplate, PreludeType};
 
@@ -133,29 +133,13 @@ enum StableCheckedType {
         element: StableElement,
         length: CheckedConst,
     },
-    Slice {
-        region: DeclarationId,
-        element: StableFlatElement,
-        strength: LoanStrength,
-    },
     Buffer {
         element: StableFlatElement,
     },
-    FixedVector {
+    Window {
+        shape: super::super::model::WindowShape,
         element: StableElement,
-        length: CheckedConst,
-    },
-    Vector {
-        region: DeclarationId,
-        element: StableElement,
-    },
-    Heap {
-        region: DeclarationId,
-    },
-    Extent {
-        region: DeclarationId,
-        bytes: CheckedConst,
-        align: CheckedConst,
+        capacity: Option<CheckedConst>,
     },
 }
 
@@ -395,24 +379,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.substitute_stable_type_regions(content, regions)?;
             }
             StableCheckedType::Array { element, .. }
-            | StableCheckedType::FixedVector { element, .. } => {
+            | StableCheckedType::Window { element, .. } => {
                 self.substitute_stable_type_regions(&mut element.0, regions)?
-            }
-            StableCheckedType::Vector { region, element } => {
-                *region = Self::substituted_region(regions, *region);
-                self.substitute_stable_type_regions(&mut element.0, regions)?;
-            }
-            StableCheckedType::Slice {
-                region, element, ..
-            } => {
-                *region = Self::substituted_region(regions, *region);
-                self.substitute_stable_element_regions(element, regions)?;
             }
             StableCheckedType::Buffer { element } => {
                 self.substitute_stable_element_regions(element, regions)?
-            }
-            StableCheckedType::Heap { region } | StableCheckedType::Extent { region, .. } => {
-                *region = Self::substituted_region(regions, *region)
             }
         }
         Ok(())
@@ -1536,26 +1507,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 StableCheckedType::Array { element, length }
             }
-            CheckedType::Slice {
-                region,
-                element,
-                strength,
-            } => {
-                let Some(element) = self.stabilize_flat_element(
-                    element,
-                    nominal_checkpoint,
-                    visiting,
-                    allow_symbolic,
-                )?
-                else {
-                    return Ok(None);
-                };
-                StableCheckedType::Slice {
-                    region,
-                    element,
-                    strength,
-                }
-            }
             CheckedType::Buffer { element } => {
                 let Some(element) = self.stabilize_flat_element(
                     element,
@@ -1568,43 +1519,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 StableCheckedType::Buffer { element }
             }
-            CheckedType::FixedVector { element, length } => {
-                let Some(element) =
-                    self.stabilize_element(element, nominal_checkpoint, visiting, allow_symbolic)?
-                else {
-                    return Ok(None);
-                };
-                if !allow_symbolic && !length.is_concrete() {
-                    return Ok(None);
-                }
-                StableCheckedType::FixedVector { element, length }
-            }
-            CheckedType::Vector {
-                region, element, ..
+            CheckedType::Window {
+                shape,
+                element,
+                capacity,
             } => {
                 let Some(element) =
                     self.stabilize_element(element, nominal_checkpoint, visiting, allow_symbolic)?
                 else {
                     return Ok(None);
                 };
-                StableCheckedType::Vector { region, element }
-            }
-            CheckedType::Heap { region } => StableCheckedType::Heap { region },
-            CheckedType::Extent {
-                region,
-                bytes,
-                align,
-            } => {
-                if !allow_symbolic && !bytes.is_concrete() {
+                if !allow_symbolic && capacity.is_some_and(|capacity| !capacity.is_concrete()) {
                     return Ok(None);
                 }
-                if !allow_symbolic && !align.is_concrete() {
-                    return Ok(None);
-                }
-                StableCheckedType::Extent {
-                    region,
-                    bytes,
-                    align,
+                StableCheckedType::Window {
+                    shape,
+                    element,
+                    capacity,
                 }
             }
         };
@@ -1797,38 +1728,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.reify_element(element)?,
                 length: *length,
             },
-            StableCheckedType::Slice {
-                region,
-                element,
-                strength,
-            } => CheckedType::Slice {
-                region: *region,
-                element: self.reify_flat_element(element)?,
-                strength: *strength,
-            },
             StableCheckedType::Buffer { element } => CheckedType::Buffer {
                 element: self.reify_flat_element(element)?,
             },
-            StableCheckedType::FixedVector { element, length } => CheckedType::FixedVector {
+            StableCheckedType::Window {
+                shape,
+                element,
+                capacity,
+            } => CheckedType::Window {
+                shape: *shape,
                 element: self.reify_element(element)?,
-                length: *length,
-            },
-            StableCheckedType::Vector { region, element } => CheckedType::Vector {
-                region: *region,
-                element: self.reify_element(element)?,
-                // [PROV-6] a window's release follows its element class and
-                // no longer follows a region's declared store bound.
-                release: super::super::model::CheckedReleaseClass::General,
-            },
-            StableCheckedType::Heap { region } => CheckedType::Heap { region: *region },
-            StableCheckedType::Extent {
-                region,
-                bytes,
-                align,
-            } => CheckedType::Extent {
-                region: *region,
-                bytes: *bytes,
-                align: *align,
+                capacity: *capacity,
             },
         })
     }
@@ -2477,12 +2387,10 @@ impl Checker<'_, '_, '_, '_> {
     ) -> Result<(), CheckStop> {
         match ty {
             CheckedType::Nominal(id) => output.push(id),
-            CheckedType::Slice { element, .. } | CheckedType::Buffer { element } => {
+            CheckedType::Buffer { element } => {
                 self.collect_flat_element_nominals(element, output)?
             }
-            CheckedType::Array { element, .. }
-            | CheckedType::FixedVector { element, .. }
-            | CheckedType::Vector { element, .. } => {
+            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 self.collect_element_nominals(element, output)?;
             }
             CheckedType::Unit
@@ -2491,9 +2399,7 @@ impl Checker<'_, '_, '_, '_> {
             | CheckedType::Float(_)
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_)
-            | CheckedType::Heap { .. }
-            | CheckedType::Extent { .. } => {}
+            | CheckedType::GenericFloat(_) => {}
         };
         Ok(())
     }
@@ -2647,12 +2553,10 @@ impl Checker<'_, '_, '_, '_> {
                     .get(id)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             }
-            CheckedType::Slice { element, .. } | CheckedType::Buffer { element } => {
+            CheckedType::Buffer { element } => {
                 self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
             }
-            CheckedType::Array { element, .. }
-            | CheckedType::FixedVector { element, .. }
-            | CheckedType::Vector { element, .. } => {
+            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 self.rewrite_element_nominals(element, checkpoint, replacements)?;
             }
             CheckedType::Unit
@@ -2662,8 +2566,6 @@ impl Checker<'_, '_, '_, '_> {
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_)
-            | CheckedType::Heap { .. }
-            | CheckedType::Extent { .. }
             | CheckedType::Nominal(_) => {}
         }
         Ok(())

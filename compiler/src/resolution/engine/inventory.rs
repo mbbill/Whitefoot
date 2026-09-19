@@ -31,6 +31,7 @@ pub(super) fn check_declaration_inventory(
     index: &DeclarationIndex,
     declaration_by_role: &[Option<usize>],
     prelude_origins: &[super::super::PreludeDeclarationId],
+    is_prelude_source: &dyn Fn(crate::SourceId) -> bool,
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
     check_inventory(
         topology,
@@ -41,6 +42,7 @@ pub(super) fn check_declaration_inventory(
         index,
         declaration_by_role,
         prelude_origins,
+        is_prelude_source,
         |_| true,
     )
 }
@@ -55,6 +57,7 @@ fn check_inventory(
     index: &DeclarationIndex,
     declaration_by_role: &[Option<usize>],
     prelude_origins: &[super::super::PreludeDeclarationId],
+    is_prelude_source: &dyn Fn(crate::SourceId) -> bool,
     include: impl Fn(&ClassifiedRole) -> bool,
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
     if declarations.len() != metas.len()
@@ -76,7 +79,17 @@ fn check_inventory(
         if !include(role) {
             continue;
         }
+        // [FORM-3] reserves the eight measure and window-part names from
+        // "No source declaration or FN-9 result-datum candidate in this
+        // closed list". A [PRE-1] record is not a source declaration, and
+        // the rule's own fence writes `next` as the payload binder of
+        // `host_copy_bytes`, `host_copy_utf8`, `read_at`, `write_once` and
+        // `receive_next`, and as a result binding of `directory_next`. Read
+        // against every declaration role the prelude would reject itself
+        // before any source file is read, so the refusal skips a
+        // prelude-origin role exactly as [STOR-8]'s two refusals do.
         if let Some((reserved_role, checked_spelling)) = reserved_role(topology, role)
+            && !is_prelude_source(role.origin.coordinate.source())
             && let Some((class, inventory_ordinal)) = reserved_name(checked_spelling)
         {
             return Ok(Some(ResolutionIssue {

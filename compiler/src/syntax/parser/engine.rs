@@ -409,6 +409,22 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
         }
     }
 
+    /// Begins one [PRE-1] declaration record: a `fn_sig` that may carry a
+    /// generic header.
+    ///
+    /// The spliced child sequence and the specification defect behind it are
+    /// stated at `grammar::prelude_signature_children`.
+    fn begin_prelude_signature(&mut self) -> Result<(), Stop> {
+        let children = crate::syntax::grammar::prelude_signature_children()
+            .ok_or(Stop::Compiler(ParseCompilerFailure::InvalidGrammarData))?;
+        self.push_frame(Production::FnSig, false)?;
+        self.push_task(Task::Finish(Production::FnSig))?;
+        for child in children.iter().rev() {
+            self.push_task(Task::Execute(*child))?;
+        }
+        Ok(())
+    }
+
     fn parse_source(
         &mut self,
         source: SourceId,
@@ -422,7 +438,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
             self.push_task(Task::Match(TerminalPredicate::Fixed(
                 FixedTerminal::Semicolon,
             )))?;
-            self.begin_production(Production::FnSig, false)?;
+            self.begin_prelude_signature()?;
         } else {
             self.push_task(Task::Execute(Production::Program.root()))?;
         }

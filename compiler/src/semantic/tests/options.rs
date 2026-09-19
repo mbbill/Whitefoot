@@ -54,24 +54,24 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// The payload is a store-backed run rather than the retiring `buffer<u8>`.
-/// A run's release spends its store's provider capability [PROV-6], so the
-/// scope has to hold that capability: `abandon` receives it as `&uniq
-/// Heap<'s>` and declares the `writes(store)` the release spends. The subject
-/// is unchanged — one `Option` instance carrying a payload whose drop is
+/// The payload is a `Box` cell rather than the retired store-backed
+/// `Vector<'s, u8>`. There is one heap [STOR-8], so a cell carries no store
+/// brand, no provider parameter and no `allocates` row; its release is the
+/// compiler-derived free at owner scope exit [STOR-1, STOR-3]. The subject is
+/// unchanged: one `Option` instance carrying a payload whose release is
 /// variant-dependent, and one drop on the return edge.
 #[test]
 fn option_of_a_resource_bearing_payload_uses_variant_dependent_cleanup() {
-    let source = b"fn abandon['s](value: own Option<Vector<'s, u8>>, store: &uniq Heap<'s>) -> result: own unit writes(store) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"fn abandon(value: own Option<Box<u64>>) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("Option<Vector<'s, u8>> must check: {outcome:?}");
+            panic!("Option<Box<u64>> must check: {outcome:?}");
         };
         let nominal = checked
             .data
             .nominals
             .iter()
-            .find(|nominal| nominal.name == "Option<Vector<'s, u8>>")
+            .find(|nominal| nominal.name.starts_with("Option<"))
             .expect("concrete Option instance must be interned");
         let super::super::model::CheckedStatement::Return { drops, .. } =
             &checked.data.functions[0].body.as_deref().expect("WF body")[0]

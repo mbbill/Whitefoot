@@ -13,9 +13,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let source_type = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
         let (element, length, to_array) = match (source_type, ty) {
             (
-                IrType::FixedVector {
+                IrType::Window {
                     element: source,
-                    length: source_length,
+                    capacity: Some(source_length),
+                    ..
                 },
                 IrType::Array { element, length },
             ) if source == element && source_length == length => (element, length, true),
@@ -24,7 +25,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     element: source,
                     length: source_length,
                 },
-                IrType::FixedVector { element, length },
+                IrType::Window {
+                    element,
+                    capacity: Some(length),
+                    ..
+                },
             ) if source == element && source_length == length => (element, length, false),
             _ => return Err(BackendFailure::InvalidIr),
         };

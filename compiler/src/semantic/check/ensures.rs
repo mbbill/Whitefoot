@@ -173,6 +173,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Some(match ty {
             CheckedType::Integer(ty) => CheckedValue::Integer { ty, bits: 0 },
             CheckedType::GenericInt(_) => CheckedValue::NumericIdentity { ty, one: false },
+            // [OP-15, MSR-1] a measure is a read-only `own u64` member of the
+            // measured place, so a selector atom that reads one stands for a
+            // u64 whatever the measured result's own type is. [CALL-4]
+            // already admits a result of measured type as an operand; the
+            // placeholder has to agree with the measure's type and not with
+            // the place's.
+            _ if self.selector_atom_reads_a_measure(atom)? => CheckedValue::Integer {
+                ty: super::super::model::IntegerType::U64,
+                bits: 0,
+            },
             _ => {
                 return self.issue_origin(
                     SemanticRule::Fn9,
@@ -181,6 +191,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
         }))
+    }
+
+    /// Whether this selector atom is a `place` whose trailing `psuffix` names
+    /// one of [MSR-1]'s four measures.
+    fn selector_atom_reads_a_measure(&self, atom: NodeId) -> Result<bool, CheckStop> {
+        let place = if self.tree.production(atom)? == Production::Place {
+            atom
+        } else {
+            let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
+                return Ok(false);
+            };
+            place
+        };
+        let suffixes = self.tree.children_with(place, Production::Psuffix)?;
+        Ok(self.trailing_measure_member(&suffixes)?.is_some())
     }
 
     /// Performs the one semantic subjudgment that DIAG-1 interleaves into
@@ -289,12 +314,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &mut self,
         record: &PostconditionResolutionRecord,
     ) -> Result<Option<FunctionSignature>, CheckStop> {
+        // A `fn_sig` is both [FN-3]'s function-kind generic parameter and,
+        // since [PRE-1] declares its records as `fn_sig`s, an ordinary
+        // top-level declaration. Only the first carries a
+        // `FunctionParameter` declaration, so the node is asked rather than
+        // assumed; a prelude record falls through to the ordinary template
+        // path below, exactly as a `fn_decl` does.
         if let Some(node) = self.tree.node_with_path(&record.function)
             && self.tree.production(node)? == Production::FnSig
+            && let Some(declaration) = self
+                .declarations_at(node, crate::DeclarationRole::FunctionParameter)?
+                .first()
+                .map(|declaration| declaration.id())
         {
-            let declaration = self
-                .declaration_at(node, crate::DeclarationRole::FunctionParameter)?
-                .id();
             return self.symbolic_behavior_signature(declaration).map(Some);
         }
         let Some(template) = self
@@ -609,7 +641,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     definition,
                     expression,
                 )? {
-                    return self.invalid_clause(ClauseKind::Postcondition(record), definition);
+                    self.validate_clause_definition_datum(
+                        ClauseKind::Postcondition(record),
+                        definition,
+                        expression,
+                    )?;
                 }
                 let checked = self.check_statement(
                     function,
@@ -976,12 +1012,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         expanded: &ExpandedClauseExpression,
     ) -> Option<RelationDatum> {
         match expanded {
-            ExpandedClauseExpression::Datum(ExpandedClauseDatum::Result { ordinal, ty }) => {
-                Some(RelationDatum::Result {
-                    ordinal: *ordinal,
-                    ty: *ty,
-                })
-            }
+            // A result datum is a relation term as itself. A member path
+            // below one names storage inside the result rather than the
+            // result [CALL-4], and only [MSR-1]'s measure members are
+            // admitted terms over such a place; the measure arm below is
+            // where those arrive.
+            ExpandedClauseExpression::Datum(ExpandedClauseDatum::Result {
+                ordinal,
+                projections,
+                ty,
+            }) if projections.is_empty() => Some(RelationDatum::Result {
+                ordinal: *ordinal,
+                ty: *ty,
+            }),
             ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
                 ordinal,
                 projections,
@@ -1037,9 +1080,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         projections.clone(),
                         *ty,
                     ),
-                    ExpandedClauseDatum::Result { ordinal, ty } => (
+                    ExpandedClauseDatum::Result {
+                        ordinal,
+                        projections,
+                        ty,
+                    } => (
                         PostconditionPlaceRoot::Result { ordinal: *ordinal },
-                        Vec::new(),
+                        projections.clone(),
                         *ty,
                     ),
                     ExpandedClauseDatum::NamedConst { .. }
@@ -1054,7 +1101,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 ))
             }
-            ExpandedClauseExpression::Operation { .. }
+            ExpandedClauseExpression::Datum(ExpandedClauseDatum::Result { .. })
+            | ExpandedClauseExpression::Operation { .. }
             | ExpandedClauseExpression::InvalidSelectorUse { .. } => None,
         }
     }
@@ -1597,21 +1645,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
             }
-            CheckedExpression::SliceMeasure { measure, root } => {
-                let Some(
-                    place @ PostconditionReturnPlace {
-                        ty: CheckedType::Slice { element, .. },
-                        ..
-                    },
-                ) = self.postcondition_binding_place(root.binding, &[], statement, binding_info)?
-                else {
-                    return Ok(None);
-                };
-                if element != root.element {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                }
-                Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
-            }
             _ => Ok(None),
         }
     }
@@ -1848,6 +1881,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         atom: NodeId,
     ) -> Result<Option<(u32, CheckedType)>, CheckStop> {
+        let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
+            return Ok(None);
+        };
+        if !self
+            .tree
+            .children_with(place, Production::Psuffix)?
+            .is_empty()
+        {
+            return Ok(None);
+        }
+        self.postcondition_selector_place_base(place)
+    }
+
+    /// The result ordinal and datum type one clause `place` is rooted at,
+    /// whatever `psuffix` path is written below it [FN-9, CALL-4].
+    ///
+    /// [OP-15] reads a measure as a member of the measured place, so
+    /// `result.len` is one place whose base is the clause's own result datum
+    /// rather than a call over it. The base still has to be exactly that
+    /// datum: a `deref` around it, or any other `pbase` shape, names no
+    /// result.
+    pub(super) fn postcondition_selector_place_base(
+        &self,
+        place: NodeId,
+    ) -> Result<Option<(u32, CheckedType)>, CheckStop> {
         let Some(context) = self.active_postcondition.get() else {
             return Ok(None);
         };
@@ -1856,22 +1914,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .postconditions()
             .get(context.record)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
-            return Ok(None);
-        };
         let pbase = self
             .tree
             .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let pbase_path = self.tree.path(pbase)?;
-        if !self.tree.children(pbase)?.is_empty()
-            || !self
-                .tree
-                .children_with(place, Production::Psuffix)?
-                .is_empty()
-        {
+        if !self.tree.children(pbase)?.is_empty() {
             return Ok(None);
         }
+        let pbase_path = self.tree.path(pbase)?;
         Ok(record
             .selector_uses
             .iter()
@@ -1936,6 +1986,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    /// Whether this nominal is a `Box` whose content the measure table gives
+    /// a row [TYPE-9, MSR-1].
+    fn boxed_measured_content(&self, nominal: super::super::model::NominalId) -> Result<bool, CheckStop> {
+        let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind else {
+            return Ok(false);
+        };
+        Ok(referent.measured().is_some())
+    }
+
     /// Whether one declared result type can carry a route in this version:
     /// exactly `own Result<T, E>` with T a fragment integer [FN-9, CALL-4].
     fn postcondition_route_carrier(&self, ty: CheckedType, symbolic: bool) -> bool {
@@ -1994,6 +2053,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     if self.postcondition_fragment_type(value, symbolic) =>
                 {
                     (SelectorAdmissionType::ResultFragment, value)
+                }
+                // [MSR-1] admits a measure place formed with field-selection
+                // steps, and [TYPE-9] reaches a `Box`'s content by exactly
+                // one such step, `b.inner`. A `Box` result whose content is
+                // measured therefore supplies the same measured datum a
+                // directly measured result does, which is what every boxed
+                // construction record's `ensures result.inner.len` reads.
+                _ if self.boxed_measured_content(nominal)? => {
+                    (SelectorAdmissionType::Measured, declared.ty)
                 }
                 _ => (SelectorAdmissionType::Invalid, declared.ty),
             },

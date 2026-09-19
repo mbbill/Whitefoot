@@ -107,17 +107,6 @@ impl IrBuilder<'_> {
                     target_domain,
                 }
             }
-            CheckedSetTarget::SliceIndex(target) => {
-                let slice = self.slice_root(&target.root)?;
-                let index = self.expression(&target.offset)?;
-                let target_domain = target.target_domain.into();
-                self.check_target_offset(index, target_domain)?;
-                TargetStorage::Slice {
-                    slice,
-                    index,
-                    target_domain,
-                }
-            }
         };
         Ok(PreparedTarget { ty, kind })
     }

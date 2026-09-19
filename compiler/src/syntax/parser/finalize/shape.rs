@@ -206,6 +206,7 @@ pub(crate) enum ShapeResult {
 
 fn verify(
     production: Production,
+    prelude_signature: bool,
     children: &[Completed],
     source_tokens: &[ClassifiedToken<'_>],
     tasks: &mut Vec<ShapeTask>,
@@ -221,7 +222,17 @@ fn verify(
     .map_err(|_| FinalizeCompilerFailure::CounterOverflow)?;
     let mut child_cursor = 0_usize;
     tasks.clear();
-    push_task(tasks, ShapeTask::Execute(production.root()), limits)?;
+    // One [PRE-1] record is `fn_sig` with a generic header the production
+    // itself has no node for; see `grammar::prelude_signature_children`.
+    if prelude_signature {
+        let spliced = crate::syntax::grammar::prelude_signature_children()
+            .ok_or(FinalizeCompilerFailure::InvalidGrammarData)?;
+        for child in spliced.iter().rev() {
+            push_task(tasks, ShapeTask::Execute(*child), limits)?;
+        }
+    } else {
+        push_task(tasks, ShapeTask::Execute(production.root()), limits)?;
+    }
     while let Some(task) = tasks.pop() {
         work.spend(1)?;
         match task {
@@ -356,13 +367,22 @@ fn verify(
 
 pub(crate) fn verify_production_shape(
     production: Production,
+    prelude_signature: bool,
     children: &[Completed],
     source_tokens: &[ClassifiedToken<'_>],
     tasks: &mut Vec<ShapeTask>,
     limits: FinalizeLimits,
     work: &mut FinalizeWork,
 ) -> ShapeResult {
-    match verify(production, children, source_tokens, tasks, limits, work) {
+    match verify(
+        production,
+        prelude_signature,
+        children,
+        source_tokens,
+        tasks,
+        limits,
+        work,
+    ) {
         Ok(()) => ShapeResult::Complete,
         Err(ShapeFailure::Resource(failure)) => ShapeResult::Resource(failure),
         Err(ShapeFailure::Compiler(failure)) => ShapeResult::Compiler(failure),

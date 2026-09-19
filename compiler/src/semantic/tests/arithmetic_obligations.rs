@@ -361,7 +361,7 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
 /// makes the operand a term, mirroring the subscript-offset fallback.
 #[test]
 fn a_subscripted_class_operand_is_underivable_and_rejects() {
-    let source = br#"const a: FixedVector<u8, 2> =[7_u8, 7_u8];
+    let source = br#"const a: Array<u8, 2> =[7_u8, 7_u8];
 
 fn main() -> status: own ExitStatus pure {
   let y = a[0_u64] + 1_u8;
@@ -384,12 +384,16 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [TYPE-9] a `Box`'s content is its field `inner`, reached by the ordinary
+/// field step. The resolved place carries that step as a dereference, so the
+/// residual still renders the content as `deref(boxed)` although the writer
+/// wrote `boxed.inner`; the indexed operand remains no term either way.
 #[test]
-fn an_owning_box_index_renders_only_its_written_dereference() {
+fn an_owning_box_index_renders_its_content_step_as_a_dereference() {
     let source = br#"fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(7_u8);
-  let boxed = box_new(move values);
-  let result = deref(boxed)[0_u64] + 1_u8;
+  let values = array_filled::<u8, 2>(value: 7_u8);
+  let boxed = box_new::<Array<u8, 2>>(value: move values);
+  let result = boxed.inner[0_u64] + 1_u8;
   return exit_status(code: 0_u8);
 }
 "#;
@@ -409,9 +413,14 @@ fn an_owning_box_index_renders_only_its_written_dereference() {
     });
 }
 
+/// [REF-1] a reference is a local name for a path, and resolving a `deref`
+/// step replaces it with the path the reference names. Inside the callee that
+/// path is the parameter itself, so the residual renders the indexed operand
+/// at the parameter and not at the `deref` spelling; the operand is still no
+/// term, which is what the rejection states.
 #[test]
-fn a_borrowed_array_index_preserves_its_holder_dereference() {
-    let source = br#"fn increment(values: &array<u8, 2>) -> result: own u8 reads(values) {
+fn a_reference_parameter_index_renders_at_the_path_the_reference_names() {
+    let source = br#"fn increment(values: &Array<u8, 2>) -> result: own u8 reads(values) {
   return deref(values)[0_u64] + 1_u8;
 }
 
@@ -427,7 +436,7 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(
             issue.kind(),
             &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "deref(values)[0_u64] +defined 1_u8".to_owned(),
+                residual: "values[0_u64] +defined 1_u8".to_owned(),
                 disposition: StaticObligationDisposition::Unproved,
                 mechanical_fix: OVERFLOW_FIX,
             },
@@ -435,13 +444,17 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// Rule precedence is stable on the default semantic path: an unexhibited
-/// allocation effect rejects under EFF-2 before an unproved exact-site
-/// obligation, while the matching `pure` row reaches OP-2.
+/// Rule precedence is stable on the default semantic path: a declared effect
+/// entry the body does not exhibit rejects under EFF-2 before an unproved
+/// exact-site obligation, while the matching `pure` row reaches OP-2.
+///
+/// v0.59 wrote that unexhibited entry as `allocates(heap)`. There is no
+/// allocation category in v0.60: allocation and release carry no effect entry
+/// at all [EFF-1, STOR-8], so the unexhibited entry is an ordinary
+/// `writes(cell)` of a reference parameter the body never writes.
 #[test]
 fn effect_mismatch_precedes_static_integer_domain_rejection() {
-    let extra_effect_row =
-        br#"fn bump['heap](heap: &uniq Heap<'heap>, x: own u64) -> result: own u64 allocates(heap) {
+    let extra_effect_row = br#"fn bump(cell: &u64, x: own u64) -> result: own u64 writes(cell) {
   let y = x + 1_u64;
   return y;
 }
@@ -452,7 +465,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(extra_effect_row, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("an exact site does not exhibit allocation: {outcome:?}");
+            panic!("an exact site does not exhibit the declared write: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
         assert!(

@@ -37,7 +37,7 @@ use crate::{
     IrDropSubject, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction,
     IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind, IrOperation,
     IrOverlap, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator,
-    IrType, IrValueId,
+    IrType, IrValueId, IrWindowShape,
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
@@ -872,19 +872,6 @@ impl FunctionFramePlan {
                         TargetStorageType::pointer(),
                         None,
                     )?,
-                    // [BLK-2] the reserved extent itself. Its alignment is
-                    // the store's own type constant, which is what makes the
-                    // bump cursor a multiple of it at every program point.
-                    IrOperation::ArenaFrame { bytes, align } => {
-                        if ordered.contains(&FunctionSlot::ExtentStorage(*result)) {
-                            return Err(BackendFailure::InvalidIr);
-                        }
-                        specifications.push(TargetFrameSlot::aligned(
-                            TargetStorageType::bytes(*bytes),
-                            *align,
-                        ));
-                        ordered.push(FunctionSlot::ExtentStorage(*result));
-                    }
                     _ => {}
                 }
             }
@@ -1686,12 +1673,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 maximum_length,
             } => self.emit_buffer_fits(result, ty, *length, *maximum_length),
             IrOperation::BufferMeasure { buffer } => self.emit_buffer_length(result, ty, *buffer),
-            IrOperation::FixedVector => self.emit_fixed_vector(result, ty),
-            IrOperation::ArenaFrame { bytes, align } => {
-                self.emit_arena_frame(result, ty, *bytes, *align)
-            }
-            IrOperation::StoreTake(take) => self.emit_store_take(result, ty, *take),
-            IrOperation::StoreBox(cell) => self.emit_store_box(result, ty, *cell),
+            IrOperation::Window => self.emit_fixed_vector(result, ty),
             IrOperation::ContainerMeasure { measure, container } => {
                 self.emit_container_measure(result, ty, *measure, *container)
             }
@@ -1952,11 +1934,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         let reads_content = match drop.ty() {
-            IrType::Slice { .. } => false,
-            IrType::Array { .. }
-            | IrType::FixedVector { .. }
-            | IrType::Vector { .. }
-            | IrType::Provider => type_requires_cleanup(self.program, drop.ty())?,
+            IrType::Range { .. } => false,
+            IrType::Array { .. } | IrType::Window { .. } => {
+                type_requires_cleanup(self.program, drop.ty())?
+            }
             IrType::Buffer { .. } => true,
             IrType::Nominal(nominal) if !self.nominal(nominal)?.is_tag_only_enum() => {
                 match self.nominal(nominal)?.kind() {
@@ -2129,20 +2110,43 @@ pub(crate) fn llvm_type(
                 program.element(element).ok_or(BackendFailure::InvalidIr)?
             )?
         )),
-        IrType::Buffer { .. } | IrType::Slice { .. } => Ok("{ ptr, i64 }".to_owned()),
-        // A `Vector` descriptor is `{ pointer, cap, len, head }`; a
-        // `FixedVector` is its slots followed by `len` and `head`; a provider
-        // is proof-only and carries at most its own base and cursor
-        // [BLK-1, PROV-1, OP-9].
-        IrType::Vector { .. } => Ok("{ ptr, i64, i64, i64 }".to_owned()),
-        IrType::FixedVector { element, length } => Ok(format!(
-            "{{ [{length} x {}], i64, i64 }}",
-            llvm_type(
+        // A runtime-capacity `Array<T>` block and a `&[T]` range reference
+        // are both a pointer and one count [TYPE-9, REF-4].
+        IrType::Buffer { .. } | IrType::Range { .. } => Ok("{ ptr, i64 }".to_owned()),
+        // compiler/storage-representation: header first, so the inline and
+        // the boxed placement of one shape share one address computation. A
+        // `Slots` carries `len` alone and a `Ring` carries `len` and `head`;
+        // a constant capacity is the type constant and is stored nowhere.
+        IrType::Window {
+            shape,
+            element,
+            capacity: Some(length),
+        } => {
+            let element = llvm_type(
                 program,
-                program.element(element).ok_or(BackendFailure::InvalidIr)?
-            )?
-        )),
-        IrType::Provider => Ok("{ ptr, i64 }".to_owned()),
+                program.element(element).ok_or(BackendFailure::InvalidIr)?,
+            )?;
+            Ok(match shape {
+                IrWindowShape::Slots => format!("{{ i64, [{length} x {element}] }}"),
+                IrWindowShape::Ring => format!("{{ i64, i64, [{length} x {element}] }}"),
+            })
+        }
+        // A runtime-capacity block is reached only through the `Box` that
+        // owns it [TYPE-9], so its own type never names its element count.
+        IrType::Window {
+            shape,
+            element,
+            capacity: None,
+        } => {
+            let element = llvm_type(
+                program,
+                program.element(element).ok_or(BackendFailure::InvalidIr)?,
+            )?;
+            Ok(match shape {
+                IrWindowShape::Slots => format!("{{ i64, i64, [0 x {element}] }}"),
+                IrWindowShape::Ring => format!("{{ i64, i64, i64, [0 x {element}] }}"),
+            })
+        }
         IrType::Address(_) => Ok("ptr".to_owned()),
         IrType::Nominal(id) => {
             let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
@@ -2304,13 +2308,6 @@ fn definition_exit_label(
             operation: IrOperation::BoxNew { .. },
             ..
         } => *label = box_new_ready_label(*result),
-        // S39 a cell formation branches on the store's answer and joins,
-        // so the block a successor's phi names is that join.
-        IrInstruction::Define {
-            result,
-            operation: IrOperation::StoreBox { .. },
-            ..
-        } => *label = store_box_join_label(*result),
         IrInstruction::Define {
             result,
             operation: IrOperation::ArenaNew { .. },

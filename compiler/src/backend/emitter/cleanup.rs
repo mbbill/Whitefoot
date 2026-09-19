@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write;
 
-use crate::{IrFlatElement, IrReleaseClass, IrVariant};
+use crate::{IrFlatElement, IrReleaseClass, IrVariant, IrWindowShape};
 
 use super::super::target::TargetLayout;
 use super::{
@@ -111,19 +111,23 @@ fn emit_run_drop_helper(
         }
         // A frame-resident run's slots are inside its own value, so the walk
         // needs an address for it; its capacity is the type constant.
-        IrType::FixedVector { element, length } => {
+        // compiler/storage-representation: the header is first and the
+        // slots follow it in the same block, so one address computation
+        // serves the inline window; a `Slots` window begins at slot zero.
+        IrType::Window {
+            shape,
+            element,
+            capacity: Some(length),
+        } => {
+            let slots = if shape == IrWindowShape::Ring { 2 } else { 1 };
+            let origin = if shape == IrWindowShape::Ring {
+                "extractvalue {run_llvm} %value, 1".to_owned()
+            } else {
+                "add i64 0, 0".to_owned()
+            };
             writeln!(
                 output,
-                "  %storage = alloca {run_llvm}\n  store {run_llvm} %value, ptr %storage\n  %pointer = getelementptr inbounds {run_llvm}, ptr %storage, i64 0, i32 0, i64 0\n  %capacity = add i64 {length}, 0\n  %length = extractvalue {run_llvm} %value, 1\n  %origin = extractvalue {run_llvm} %value, 2"
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-            element
-        }
-        // A store-resident run's slots are behind its descriptor pointer.
-        IrType::Vector { element, .. } => {
-            writeln!(
-                output,
-                "  %pointer = extractvalue {run_llvm} %value, 0\n  %capacity = extractvalue {run_llvm} %value, 1\n  %length = extractvalue {run_llvm} %value, 2\n  %origin = extractvalue {run_llvm} %value, 3"
+                "  %storage = alloca {run_llvm}\n  store {run_llvm} %value, ptr %storage\n  %pointer = getelementptr inbounds {run_llvm}, ptr %storage, i64 0, i32 {slots}, i64 0\n  %capacity = add i64 {length}, 0\n  %length = extractvalue {run_llvm} %value, 0\n  %origin = {origin}"
             )
             .map_err(|_| BackendFailure::TextEmission)?;
             element
@@ -155,9 +159,7 @@ fn emit_run_drop_helper(
 fn cleanup_run_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, BackendFailure> {
     let mut needed = Vec::new();
     for ty in program_types(program)? {
-        let (IrType::Array { element, .. }
-        | IrType::FixedVector { element, .. }
-        | IrType::Vector { element, .. }) = ty
+        let (IrType::Array { element, .. } | IrType::Window { element, .. }) = ty
         else {
             continue;
         };
@@ -230,12 +232,10 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
         }
         types.push(ty);
         match ty {
-            IrType::Array { element, .. }
-            | IrType::FixedVector { element, .. }
-            | IrType::Vector { element, .. } => {
+            IrType::Array { element, .. } | IrType::Window { element, .. } => {
                 pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?);
             }
-            IrType::Buffer { element } | IrType::Slice { element } => pending.push(element.ty()),
+            IrType::Buffer { element } | IrType::Range { element } => pending.push(element.ty()),
             IrType::Address(referent) => pending.push(referent.ty()),
             IrType::Nominal(id) => {
                 let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
@@ -259,8 +259,7 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
             IrType::Unit
             | IrType::Bool
             | IrType::Integer { .. }
-            | IrType::Float { .. }
-            | IrType::Provider => {}
+            | IrType::Float { .. } => {}
         }
     }
     Ok(types)
@@ -279,10 +278,7 @@ pub(super) fn program_has_general_run(
     Ok(program_types(program)?.into_iter().any(|ty| {
         matches!(
             ty,
-            IrType::Vector {
-                release: IrReleaseClass::General,
-                ..
-            }
+            IrType::Buffer { .. } | IrType::Window { capacity: None, .. }
         )
     }))
 }
@@ -458,7 +454,11 @@ fn emit_cleanup_jobs(
                 // own reset [BLK-2]; a general store's run spends that
                 // store's capability, and its backing action is the free
                 // emitted here, after the window walk.
-                IrType::Vector { element, release } => {
+                IrType::Window {
+                    element,
+                    capacity: None,
+                    ..
+                } => {
                     let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
                     if type_requires_cleanup(program, element)? {
                         let symbol =
@@ -467,7 +467,7 @@ fn emit_cleanup_jobs(
                         writeln!(output, "  call void @{symbol}({run_llvm} {operand})")
                             .map_err(|_| BackendFailure::TextEmission)?;
                     }
-                    if release == IrReleaseClass::General {
+                    {
                         let run_llvm = llvm_type(program, ty)?;
                         let pointer = next_temporary(temporary)?;
                         writeln!(
@@ -477,7 +477,12 @@ fn emit_cleanup_jobs(
                         .map_err(|_| BackendFailure::TextEmission)?;
                     }
                 }
-                IrType::Array { element, .. } | IrType::FixedVector { element, .. } => {
+                IrType::Array { element, .. }
+                | IrType::Window {
+                    element,
+                    capacity: Some(_),
+                    ..
+                } => {
                     let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
                     if type_requires_cleanup(program, element)? {
                         let symbol =
@@ -491,8 +496,7 @@ fn emit_cleanup_jobs(
                 | IrType::Bool
                 | IrType::Integer { .. }
                 | IrType::Float { .. }
-                | IrType::Slice { .. }
-                | IrType::Provider
+                | IrType::Range { .. }
                 | IrType::Address(_) => {}
             },
         }

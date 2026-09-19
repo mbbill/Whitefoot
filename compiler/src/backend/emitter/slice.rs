@@ -7,7 +7,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         ty: IrType,
         array: IrArrayRoot,
     ) -> Result<(), BackendFailure> {
-        let IrType::Slice { element } = ty else {
+        let IrType::Range { element } = ty else {
             return Err(BackendFailure::InvalidIr);
         };
         let array_type = match array {
@@ -45,7 +45,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         ty: IrType,
         buffer: IrValueId,
     ) -> Result<(), BackendFailure> {
-        let IrType::Slice { element } = ty else {
+        let IrType::Range { element } = ty else {
             return Err(BackendFailure::InvalidIr);
         };
         let buffer_type = IrType::Buffer { element };
@@ -74,7 +74,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         start: IrValueId,
         end: IrValueId,
     ) -> Result<(), BackendFailure> {
-        let IrType::Slice { element } = ty else {
+        let IrType::Range { element } = ty else {
             return Err(BackendFailure::InvalidIr);
         };
         let index_type = Some(IrType::Integer {
@@ -114,7 +114,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 width: 64,
                 signed: false,
             })
-            || !matches!(self.value_type(slice), Some(IrType::Slice { .. }))
+            || !matches!(self.value_type(slice), Some(IrType::Range { .. }))
         {
             return Err(BackendFailure::InvalidIr);
         }
@@ -147,7 +147,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if target_domain != IrTargetDomainObligation::ElementAddress {
             return Err(BackendFailure::InvalidIr);
         }
-        let Some(slice_type @ IrType::Slice { element }) = self.value_type(slice) else {
+        let Some(slice_type @ IrType::Range { element }) = self.value_type(slice) else {
             return Err(BackendFailure::InvalidIr);
         };
         if element.ty() != ty
@@ -183,7 +183,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         index: IrValueId,
         value: IrValueId,
     ) -> Result<(), BackendFailure> {
-        let Some(slice_type @ IrType::Slice { element }) = self.value_type(slice) else {
+        let Some(slice_type @ IrType::Range { element }) = self.value_type(slice) else {
             return Err(BackendFailure::InvalidIr);
         };
         if self.value_type(index)

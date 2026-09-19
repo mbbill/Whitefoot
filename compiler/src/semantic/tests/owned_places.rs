@@ -1,334 +1,94 @@
-//! Typed owned-storage paths retain their owner, complete projection, and
-//! ordinary bounds and loan restrictions.
+//! [WIN-3] owned places: there is no take operation and no hole.
+//!
+//! The v0.59 subject of this module was the `box` referent read-out, the
+//! multi-target commit `set (a, b) = ...;`, and holder suspension. All three
+//! are retired in v0.60, and so are the `replace` statement and the inline
+//! view the module's remaining cases rested on. Each retirement has a named
+//! successor:
+//!
+//! - [LIV-2]'s `box` referent read-out retires. The successor is [WIN-3] with
+//!   [TYPE-9]: a `Box`'s content is its field `inner`, `let n = move b.inner;`
+//!   consumes the whole cell rather than reading one referent out of a live
+//!   owner, the owner's other affine parts take their compiler-derived release
+//!   [STOR-3], and a remaining linear part is the partial-consume refusal
+//!   exercised in `a_partial_consume_that_abandons_a_linear_part_is_refused`
+//!   below.
+//! - [LIV-2]'s multi-target commit retires with [GRAM-4]'s `set_stmt`, which
+//!   writes exactly one place. The successor spelling is one `set` per place,
+//!   and `swap(first: &a, second: &b)` [OP-11] for a two-place exchange.
+//! - [OWN-5]'s loan-conflict matrix and holder suspension retire with the
+//!   loans. The successor is [REF-2] reference validity together with
+//!   [EFF-5]'s clause 3, whose coverage is `tests/references.rs`.
+//! - [SET-2]'s `replace` statement and its affine element exchange retire. The
+//!   successor is [WIN-3]'s commit disposition: assigning over an owned place
+//!   releases an affine old value and is a hard error when the old value is
+//!   linear, exercised in `assigning_over_a_linear_owned_place_is_refused`
+//!   below.
+//! - [VIEW-2] retires with the views; the successor is [REF-4]'s range
+//!   reference `&v[lo..hi]`, whose coverage is `tests/references.rs`.
+//! - [STOR-4] retires with regions and arenas; there is no successor and no
+//!   replacement spelling.
+//! - The `BoxReferentMove` and `BorrowedBufferDescriptorMutation` capability
+//!   stops retire with their subjects: an affine referent moved out of a live
+//!   owning indirection, and rebinding a borrowed buffer descriptor, are both
+//!   v0.59 mechanisms v0.60 does not have.
+//!
+//! What survives is the part of this module that was never about the read-out:
+//! [OWN-1]'s whole-binding kill, which no index separation keeps alive, and
+//! the terminal type a field step selects from an element. Both are retargeted
+//! below onto the already-ported v0.60 conformance cases and v0.60 spellings.
 
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
+// One-line record of each retired test of this module, naming the rule it
+// exercised and that rule's successor:
+//
+// Retired with [LIV-2]: `box_referent_read_out_spends_the_selected_storage_once` had the referent read-out and the multi-target commit as its whole subject; the successor is [WIN-3]'s whole-owner consume `let n = move b.inner;` and [GRAM-4]'s one place per `set_stmt`.
+// Retired with [LIV-2]: `box_referent_target_does_not_turn_an_owner_move_into_a_read_out` distinguished a read-out from an owner move; v0.60 has no read-out to distinguish, the successor being [WIN-3]'s single consume rule.
+// Retired with [OWN-5]: `box_referent_read_out_preserves_shared_and_non_target_boundaries` asserted the loan-conflict matrix and the `BoxReferentMove` capability stop; the successor is [REF-2] validity plus [EFF-5] clause 3.
+// Retired with [OWN-5]: `box_referent_read_out_preserves_holder_suspension` had holder suspension as its subject; the successor is [REF-2] validity plus [EFF-5] clause 3.
+// Retired with [OWN-5]: `box_referent_descendant_extraction_keeps_its_cleanup_capability_boundary` asserted the `BoxReferentMove` capability stop over a descendant read-out; the successor is [WIN-3]'s whole-owner consume with [PROV-6]'s partial-consume refusal.
+// Retired with [LIV-2]: `box_referent_read_out_rejects_a_later_reborrow_at_its_use` asserted a reborrow at a spent read-out target; the successor is [REF-2]'s use of an invalidated reference.
+// Retired with [LIV-2]: `direct_field_index_reads_and_scalar_commits_use_the_terminal_type` paired the multi-target commit with an [OP-4] bound; the successor is [GRAM-4]'s one place per `set_stmt`, and [OP-4]'s subscript obligation keeps its own coverage in `tests/arrays.rs`.
+// Retired with [LIV-2]: `proved_dynamic_indices_separate_one_commit_targets` separated two targets of one commit; the successor is [GRAM-4]'s one place per `set_stmt` and `swap` [OP-11] for a two-place exchange, with [OWN-7]'s index-step separation now answered at a call by [EFF-5].
+// Retired with [OWN-5]: `a_rhs_cannot_mutate_an_index_captured_by_dynamic_commit_targets` asserted a loan conflict between a commit's captured indices and its right-hand side; the successor is [SET-1]'s target evaluation before the right-hand side, with [REF-2] deciding the reference half.
+// Retired with [LIV-2]: `repeated_affine_element_read_out_keeps_type2_diagnostic_priority` ordered two diagnostics of one multi-target commit; the successor is [WIN-3], which owns the element move-out on its own.
+// Retired with [SET-2]: `affine_nested_fields_are_exchanged_or_read_out_once` had `replace` and the multi-target commit as its subject; the successor is [WIN-3]'s commit disposition.
+// Retired with [VIEW-2]: `exclusive_inline_view_retains_bounds_and_owner_loan` had the exclusive inline view and its owner loan as its subject; the successor is [REF-4]'s range reference with [REF-2] validity.
+// Retired with [SET-2]: `borrowed_buffer_descriptor_replacement_is_an_explicit_capability_stop` asserted the `BorrowedBufferDescriptorMutation` stop over a `replace` through a borrow; the successor is [WIN-3]'s commit disposition, there being no borrowed descriptor to rebind.
+// Retired with [SET-2]: `borrowed_aggregate_buffer_replacement_cannot_bypass_the_capability_stop` asserted the same stop through an aggregate; the successor is the same [WIN-3] commit disposition.
 
-use super::{assert_rule_at, assert_rule_kind, assert_unsupported, with_semantics};
+use crate::{SemanticIssueKind, SemanticRule};
 
-const ROWS: &str = r#"struct Row {
-  left: u64;
-  right: u64;
-}
+use super::assert_rule_kind;
 
-fn identity['r](value: &'r Row) -> result: &'r Row pure {
-  return value;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<Row, 4>();
-  let first = Row(left: 3_u64, right: 4_u64);
-  region {
-    place_back(vector: &uniq empty, value: move first);
-  }
-  let prefix = move empty;
-  let second = Row(left: 5_u64, right: 6_u64);
-  region {
-    place_back(vector: &uniq prefix, value: move second);
-  }
-  let rows = move prefix;
-"#;
-
-fn rows(body: &str) -> String {
-    format!("{ROWS}{body}  return exit_status(code: 0_u8);\n}}\n")
-}
-
-fn accepts(source: &str) {
-    with_semantics(source.as_bytes(), |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        );
-    });
-}
-
-const BOX_READ_OUT: &str = r#"struct Payload {
-  value: u64;
-}
-
-struct Pair {
-  left: Payload;
-  right: Payload;
-}
-
-fn fresh['s](owner: own Box<'s, Payload>, store: &uniq Heap<'s>) -> result: own Payload writes(store) {
-  return Payload(value: 7_u64);
-}
-
-"#;
-
-fn box_read_out(body: &str) -> String {
-    let body = body.trim().replace("}\nfn", "}\n\nfn");
-    format!(
-        "{}\n\n{body}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n",
-        BOX_READ_OUT.trim()
-    )
-}
-
+/// [OWN-1] one consuming use kills the whole binding that rooted the place, so
+/// a proved-distinct candidate index pair does not keep a later subscript
+/// live. This is the v0.60 form of the cross-path case: the pair is separated
+/// by [OWN-7] and the second read is still rooted in a dead binding.
 #[test]
-fn box_referent_read_out_spends_the_selected_storage_once() {
-    for statement in [
-        "set (deref(owner).left, deref(owner).right) = move deref(owner).left, move deref(owner).left;",
-        "set (deref(owner).left, scalar) = move deref(owner).left, deref(owner).left.value;",
-        "set (deref(owner).left, moved) = move deref(owner).left, move owner;",
-    ] {
-        let source = box_read_out(&format!(
-            r#"
-fn repeat['s](owner: own Box<'s, Pair>) -> result: own Box<'s, Pair> reads(owner), writes(owner) {{
-  let scalar = 0_u64;
-  {statement}
-  return move owner;
-}}
-"#
-        ));
-        assert_rule_kind(source.as_bytes(), SemanticRule::Own1, |kind| {
-            matches!(kind, SemanticIssueKind::UseAfterMove { .. })
-        });
-    }
-}
-
-#[test]
-fn box_referent_target_does_not_turn_an_owner_move_into_a_read_out() {
-    let source = box_read_out(
-        r#"
-fn outer['s](owner: own Box<'s, Payload>, store: &uniq Heap<'s>) -> result: own unit writes(owner, store) {
-  set deref(owner) = fresh(owner: move owner, store: move store);
-  return unit;
-}
-"#,
+fn a_consuming_use_kills_the_whole_binding_a_separated_index_pair_included() {
+    let source = include_bytes!(
+        "../../../../tests/conformance/cases/own1-neg-an-unproved-candidate-index-pair-does-not-separate-a-cross-path.wf"
     );
-    assert_rule_kind(source.as_bytes(), SemanticRule::Own1, |kind| {
-        matches!(kind, SemanticIssueKind::UseAfterMove { .. })
-    });
-}
-
-#[test]
-fn box_referent_read_out_preserves_shared_and_non_target_boundaries() {
-    let source = box_read_out(
-        r#"
-fn shared['heap](owner: &Box<'heap, Payload>) -> result: own unit reads(owner) {
-  set deref(deref(owner)) = move deref(deref(owner));
-  return unit;
-}
-
-"#,
-    );
-    assert_rule_kind(source.as_bytes(), SemanticRule::Own5, |kind| {
-        matches!(kind, SemanticIssueKind::BorrowConflict)
-    });
-    for body in [
-        "let value = move deref(owner);",
-        "set deref(owner) = move deref(other);",
-    ] {
-        let source = box_read_out(&format!(
-            r#"
-fn extract['s](owner: own Box<'s, Payload>, other: own Box<'s, Payload>) -> result: own unit reads(owner, other), writes(owner) {{
-  {body}
-  return unit;
-}}
-"#
-        ));
-        assert_unsupported(
-            source.as_bytes(),
-            UnsupportedSemanticFeature::BoxReferentMove,
-        );
-    }
-}
-
-#[test]
-fn box_referent_read_out_preserves_holder_suspension() {
-    let source = box_read_out(
-        r#"
-fn identity_box['r, 's](value: &uniq 'r Box<'s, Payload>) -> result: &uniq 'r Box<'s, Payload> pure {
-  return &uniq 'r deref(value);
-}
-
-fn suspended['heap](owner: &uniq Box<'heap, Payload>) -> result: own unit reads(owner), writes(owner) {
-  region {
-    let child = identity_box(value: &uniq deref(owner));
-    set deref(deref(owner)) = move deref(deref(owner));
-  }
-  return unit;
-}
-"#,
-    );
-    assert_rule_kind(source.as_bytes(), SemanticRule::Own5, |kind| {
-        matches!(kind, SemanticIssueKind::BorrowConflict)
-    });
-}
-
-#[test]
-fn box_referent_descendant_extraction_keeps_its_cleanup_capability_boundary() {
-    let source = box_read_out(
-        r#"
-fn rebuild(value: own Payload) -> result: own Pair pure {
-  let other = Payload(value: 9_u64);
-  return Pair(left: move value, right: move other);
-}
-
-fn descendant['s](owner: own Box<'s, Pair>) -> result: own Box<'s, Pair> reads(owner), writes(owner) {
-  set deref(owner) = rebuild(value: move deref(owner).left);
-  return move owner;
-}
-"#,
-    );
-    assert_unsupported(
-        source.as_bytes(),
-        UnsupportedSemanticFeature::BoxReferentMove,
-    );
-}
-
-#[test]
-fn box_referent_read_out_rejects_a_later_reborrow_at_its_use() {
-    let source = box_read_out(
-        r#"
-fn keep['heap](value: own Payload, alias: &uniq Box<'heap, Payload>) -> result: own Payload pure {
-  return move value;
-}
-
-fn late['heap](owner: &uniq Box<'heap, Payload>) -> result: own unit reads(owner), writes(owner) {
-  region {
-    set deref(deref(owner)) = keep(value: move deref(deref(owner)), alias: &uniq deref(owner));
-  }
-  return unit;
-}
-"#,
-    );
-    // [LIV-2] the target is spent during RHS evaluation. Its later borrow
-    // fails at that use, before post-RHS writability can fail at the target.
-    assert_rule_at(source.as_bytes(), SemanticRule::Own1, "&uniq deref(owner)");
-}
-
-fn rejects(source: &str, rule: SemanticRule) {
-    let kind: fn(&SemanticIssueKind) -> bool = match rule {
-        SemanticRule::Own5 => |kind| matches!(kind, SemanticIssueKind::BorrowConflict),
-        SemanticRule::Op4 => {
-            |kind| matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
-        }
-        _ => panic!("this suite pairs bounds and loan restrictions"),
-    };
-    assert_rule_kind(source.as_bytes(), rule, kind);
-}
-
-#[test]
-fn direct_field_index_reads_and_scalar_commits_use_the_terminal_type() {
-    let source = rows(
-        r#"  let saved = rows[0_u64].left;
-  set (rows[0_u64].left, rows[1_u64].right) = rows[1_u64].right, saved;
-  let observed = rows[0_u64].left;
-"#,
-    );
-    accepts(&source);
-    rejects(
-        &source.replace("let saved = rows[0_u64]", "let saved = rows[2_u64]"),
-        SemanticRule::Op4,
-    );
-    assert_rule_kind(
-        source
-            .replace("rows[1_u64].right)", "rows[0_u64].left)")
-            .as_bytes(),
-        SemanticRule::Liv2,
-        |kind| matches!(kind, SemanticIssueKind::OverlappingCommitTargets { .. }),
-    );
-}
-
-#[test]
-fn proved_dynamic_indices_separate_one_commit_targets() {
-    let scalar = rows(
-        r#"  let left = 0_u64;
-  let right = 1_u64;
-  if left < right {
-    set (rows[left].left, rows[right].left) = rows[right].left, rows[left].left;
-  }
-"#,
-    );
-    accepts(&scalar);
-    assert_rule_kind(
-        rows(
-            r#"  let left = 0_u64;
-  let right = 0_u64;
-  set (rows[left].left, rows[right].left) = rows[right].left, rows[left].left;
-"#,
-        )
-        .as_bytes(),
-        SemanticRule::Liv2,
-        |kind| matches!(kind, SemanticIssueKind::OverlappingCommitTargets { .. }),
-    );
-
-    accepts(&rows(
-        r#"  let left = 0_u64;
-  let right = 1_u64;
-  if left < right {
-    set (rows[left], rows[right]) = move rows[right], move rows[left];
-  }
-"#,
-    ));
-
-    let named_const = rows("  set rows[first_index] = move rows[first_index];\n")
-        .replace("fn main()", "const first_index: u64 = 0_u64;\n\nfn main()");
-    accepts(&named_const);
-}
-
-#[test]
-fn a_rhs_cannot_mutate_an_index_captured_by_dynamic_commit_targets() {
-    let source = rows(
-        r#"  let left = 0_u64;
-  let right = 1_u64;
-  if left < right {
-    region {
-      set (rows[left], rows[right]) = change_index(index: &uniq left), move rows[left];
-    }
-  }
-"#,
-    )
-    .replace(
-        "fn main()",
-        "fn change_index(index: &uniq u64) -> result: own Row writes(index) {\n  set deref(index) = 1_u64;\n  return Row(left: 7_u64, right: 8_u64);\n}\n\nfn main()",
-    );
-    assert_rule_kind(source.as_bytes(), SemanticRule::Own5, |kind| {
-        matches!(kind, SemanticIssueKind::BorrowConflict)
-    });
-}
-
-#[test]
-fn an_unproved_candidate_index_pair_does_not_separate_a_cross_path() {
-    let source = br#"struct Cell {
-  payload: box<u64>;
-  tag: u64;
-}
-
-fn retag(taken: own Cell, tag: own u64) -> result: own Cell pure {
-  let Cell(payload: payload, tag: unused_tag) = move taken;
-  return Cell(payload: move payload, tag: tag);
-}
-
-fn invalid(values: &uniq FixedVector<array<Cell, 2>, 2>, i: own u64, j: own u64, k: own u64, l: own u64) -> result: own unit reads(values), writes(values) contract {
-  requires i < len_of(deref(values));
-  requires k < len_of(deref(values));
-  requires j < 2_u64;
-  requires l < 2_u64;
-  requires i < k;
-} {
-  set (deref(values)[i][j], deref(values)[k][l]) = move deref(values)[i][j], retag(taken: move deref(values)[k][l], tag: deref(values)[i][l].tag);
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
     assert_rule_kind(source, SemanticRule::Own1, |kind| {
         matches!(kind, SemanticIssueKind::UseAfterMove { .. })
     });
 }
 
+/// [TYPE-5] a field step selects a declared field of its base's terminal type.
+/// A subscript selects the element type, so a field written on a scalar
+/// element selects nothing, in read position and at a `set` target alike.
+///
+/// The v0.59 source built its storage with `buffer_new(1_u64, 0_u8)`; the
+/// v0.60 spelling is `array_filled::<u8, n>(value: v)` [OP-13], whose result
+/// is the constant-capacity `Array<u8, n>` [TYPE-9].
 #[test]
-fn scalar_element_field_selection_keeps_its_type_error_on_legacy_storage() {
+fn a_field_step_on_a_scalar_element_selects_no_declared_field() {
     for body in [
         "  let value = values[0_u64].missing;\n",
         "  set values[0_u64].missing = 1_u8;\n",
     ] {
         let source = format!(
-            "fn main() -> status: own ExitStatus pure {{\n  let values = buffer_new(1_u64, 0_u8);\n{body}  return exit_status(code: 0_u8);\n}}\n"
+            "fn main() -> status: own ExitStatus pure {{\n  let values = array_filled::<u8, 2>(value: 0_u8);\n{body}  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Type5, |kind| {
             matches!(kind, SemanticIssueKind::TypeMismatch { .. })
@@ -336,200 +96,52 @@ fn scalar_element_field_selection_keeps_its_type_error_on_legacy_storage() {
     }
 }
 
+/// [WIN-3] assigning over any owned place releases the old value when it is
+/// affine and is a hard error at the target `place` when it is linear: a
+/// linear value has no release, so the writer takes it out and consumes it
+/// first.
+///
+/// This is the successor of the `replace` cases above. v0.59 stated the demand
+/// over the *new* value and the target's region-freedom; v0.60 states it over
+/// the old value's linearity alone.
 #[test]
-fn repeated_affine_element_read_out_keeps_type2_diagnostic_priority() {
-    let source = rows("  set (rows[0_u64], rows[1_u64]) = move rows[1_u64], move rows[0_u64];\n");
-    accepts(&source);
-    assert_rule_kind(
-        source
-            .replace("move rows[0_u64];", "move rows[1_u64];")
-            .as_bytes(),
-        SemanticRule::Type2,
-        |kind| matches!(kind, SemanticIssueKind::AffineElementMove { .. }),
-    );
+fn assigning_over_a_linear_owned_place_is_refused() {
+    let source =
+        include_bytes!("../../../../tests/conformance/cases/win3-neg-overwrite-linear-place.wf");
+    assert_rule_kind(source, SemanticRule::Win3, |kind| {
+        matches!(kind, SemanticIssueKind::LinearAssignmentTarget { .. })
+    });
 }
 
+/// [WIN-3, PROV-6] a move out of a field consumes the whole owner, so a
+/// consume of a proper sub-place of a value one of whose remaining parts is
+/// linear abandons a residual no compiler-derived release reclaims. The
+/// refusal cites PROV-6 at the consumed `place` and its restructuring is the
+/// destructuring consume of the whole value.
+///
+/// This is the successor of the referent read-out cases: v0.59 let an affine
+/// part leave a live owner through the read-out, and v0.60 has one consume
+/// rule for a field and for `Box` content alike.
 #[test]
-fn affine_nested_fields_are_exchanged_or_read_out_once() {
-    let source = r#"struct Payload {
+fn a_partial_consume_that_abandons_a_linear_part_is_refused() {
+    let source = br#"linear struct Token {
   value: u64;
 }
 
-struct Entry {
-  payload: Payload;
-  other: u64;
+struct Pair {
+  kept: Token;
+  spare: Token;
 }
 
-fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<Entry, 2>();
-  let payload = Payload(value: 3_u64);
-  let stored_entry = Entry(payload: move payload, other: 5_u64);
-  region {
-    place_back(vector: &uniq empty, value: move stored_entry);
-  }
-  let entries = move empty;
-  let replacement = Payload(value: 7_u64);
-  let old = replace entries[0_u64].payload = move replacement;
-  set entries[0_u64].payload = move entries[0_u64].payload;
-  let observed = entries[0_u64].payload.value;
-  return exit_status(code: 0_u8);
-}
-"#;
-    accepts(source);
-    assert_rule_kind(
-        source
-            .replace(
-                "  set entries[0_u64].payload = move entries[0_u64].payload;",
-                "  let moved = move entries[0_u64].payload;",
-            )
-            .as_bytes(),
-        SemanticRule::Type2,
-        |kind| matches!(kind, SemanticIssueKind::AffineElementMove { .. }),
-    );
-    assert_rule_kind(
-        source.replace("set entries[0_u64].payload = move entries[0_u64].payload;", "set (entries[0_u64].payload, entries[0_u64].other) = move entries[0_u64].payload, entries[0_u64].payload.value;").as_bytes(),
-        SemanticRule::Own1,
-        |kind| matches!(kind, SemanticIssueKind::UseAfterMove { .. }),
-    );
-}
-
-const INLINE_VIEW: &str = r#"fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 7_u8);
-  }
-  let built = move empty;
-  region {
-    let view = mut_slice_of(&uniq built);
-    set view[0_u64] = 9_u8;
-  }
-  let observed = built[0_u64];
-  let result = observed -wrap 9_u8;
-  return exit_status(code: result);
-}
-"#;
-
-#[test]
-fn exclusive_inline_view_retains_bounds_and_owner_loan() {
-    accepts(INLINE_VIEW);
-    rejects(
-        &INLINE_VIEW.replace("view[0_u64]", "view[1_u64]"),
-        SemanticRule::Op4,
-    );
-    rejects(
-        &INLINE_VIEW.replace("set view[0_u64]", "set built[0_u64]"),
-        SemanticRule::Own5,
-    );
-    assert_rule_kind(
-        INLINE_VIEW
-            .replace("set view[0_u64] = 9_u8;", "let moved = move built;")
-            .as_bytes(),
-        SemanticRule::Own5,
-        |kind| matches!(kind, SemanticIssueKind::BorrowConflict),
-    );
-}
-
-const BORROWED_BUFFER_REPLACEMENT: &str = r#"fn renew(values: &uniq buffer<u64>, replacement: own buffer<u64>) -> result: own u64 reads(values), writes(values) {
-  let previous = replace deref(values) = move replacement;
-  return 11_u64;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let first = buffer_new(1_u64, 3_u64);
-  let second = buffer_new(1_u64, 7_u64);
-  region {
-    set first[0_u64] = renew(values: &uniq first, replacement: move second);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-
-#[test]
-fn borrowed_buffer_descriptor_replacement_is_an_explicit_capability_stop() {
-    assert_unsupported(
-        BORROWED_BUFFER_REPLACEMENT.as_bytes(),
-        UnsupportedSemanticFeature::BorrowedBufferDescriptorMutation,
-    );
-    rejects(
-        &BORROWED_BUFFER_REPLACEMENT
-            .replace("values: &uniq buffer", "values: &buffer")
-            .replace("reads(values), writes(values)", "reads(values)"),
-        SemanticRule::Own5,
-    );
-    assert_rule_kind(
-        BORROWED_BUFFER_REPLACEMENT
-            .replace("let previous = replace deref(values)", "set deref(values)")
-            .as_bytes(),
-        SemanticRule::Stor1,
-        |kind| matches!(kind, SemanticIssueKind::AffineSetTarget { .. }),
-    );
-    assert_rule_kind(
-        BORROWED_BUFFER_REPLACEMENT
-            .replace(
-                "  let previous =",
-                "  let consumed = move replacement;\n  let previous =",
-            )
-            .as_bytes(),
-        SemanticRule::Own1,
-        |kind| matches!(kind, SemanticIssueKind::UseAfterMove { .. }),
-    );
-    accepts(
-        r#"fn main() -> status: own ExitStatus pure {
-  let first = buffer_new(1_u64, 3_u64);
-  let second = buffer_new(1_u64, 7_u64);
-  let previous = replace first = move second;
-  return exit_status(code: 0_u8);
-}
-"#,
-    );
-}
-
-#[test]
-fn borrowed_aggregate_buffer_replacement_cannot_bypass_the_capability_stop() {
-    let source = r#"struct Holder {
-  values: buffer<u64>;
-  count: u64;
-}
-
-fn renew(holder: &uniq Holder, replacement: own buffer<u64>) -> result: own unit reads(holder.values), writes(holder.values) {
-  let previous = replace deref(holder).values = move replacement;
-  return unit;
+fn split(pair: own Pair) -> result: own Token pure {
+  return move pair.kept;
 }
 
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_unsupported(
-        source.as_bytes(),
-        UnsupportedSemanticFeature::BorrowedBufferDescriptorMutation,
-    );
-    assert_unsupported(
-        source
-            .replace("replacement: own buffer<u64>", "replacement: own Holder")
-            .replace("deref(holder).values =", "deref(holder) =")
-            .replace(
-                "reads(holder.values), writes(holder.values)",
-                "reads(holder), writes(holder)",
-            )
-            .as_bytes(),
-        UnsupportedSemanticFeature::BorrowedBufferDescriptorMutation,
-    );
-    accepts(
-        &source
-            .replace(
-                "let previous = replace deref(holder).values = move replacement;",
-                "set deref(holder).count = 11_u64;",
-            )
-            .replace(
-                "reads(holder.values), writes(holder.values)",
-                "writes(holder.count)",
-            ),
-    );
-    accepts(
-        &source.replace(
-            "  let previous = replace deref(holder).values = move replacement;",
-            "  let count = len_of(deref(holder).values);\n  if count > 0_u64 {\n    set deref(holder).values[0_u64] = 11_u64;\n  }",
-        ),
-    );
+    assert_rule_kind(source, SemanticRule::Prov6, |kind| {
+        matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. })
+    });
 }

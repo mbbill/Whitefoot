@@ -74,7 +74,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } if !self.overlap_handed_out.contains(&result) => {
                 self.emit_call(result, ty, *function, arguments)?;
             }
-            IrOperation::FixedVector => self.emit_fixed_vector(result, ty)?,
+            IrOperation::Window => self.emit_fixed_vector(result, ty)?,
             IrOperation::ArrayFill {
                 value,
                 target_domain,

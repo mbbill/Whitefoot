@@ -654,7 +654,7 @@ impl FunctionEmitter<'_, '_> {
             }
             IrWorkEstimate::Length(value) => {
                 let ty = self.value_type(*value).ok_or(BackendFailure::InvalidIr)?;
-                if !matches!(ty, IrType::Buffer { .. } | IrType::Slice { .. }) {
+                if !matches!(ty, IrType::Buffer { .. } | IrType::Range { .. }) {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let result = format!("%{}", self.next_temporary()?);

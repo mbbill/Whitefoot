@@ -11,7 +11,8 @@ use crate::{
 use super::super::model::{
     CheckedConst, CheckedConstant, CheckedConstantId, CheckedEffectStep, CheckedElement,
     CheckedFlatElement, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedStatePath,
-    CheckedType, CheckedValue, ConstOperation, FloatType, IntegerType, evaluate_const_operation,
+    CheckedType, CheckedValue, ConstOperation, FloatType, IntegerType, WindowShape,
+    evaluate_const_operation,
 };
 use super::super::places::WindowPart;
 use super::floats::parse_float_literal;
@@ -43,8 +44,10 @@ const OPTION_TARGS_EXPECTED: &str = "Option with its type argument written: as a
 /// sites, so five conditions cover six rejections.
 const EFF1_SHARED_WRITE: &str = "a `writes` path is rooted at a shared borrow parameter, which grants no exclusive access to that state";
 const EFF1_SHARED_WRITE_FIX: &str = "declare that parameter `&uniq` or `own`, or drop the path from `writes`; an effect path grants no permission of its own";
-const EFF1_CATEGORY_ONCE: &str = "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates";
-const EFF1_CATEGORY_ONCE_FIX: &str = "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates";
+const EFF1_CATEGORY_ORDER: &str = "a row is written in the canonical order, every `reads` entry before every `writes` entry";
+const EFF1_CATEGORY_ORDER_FIX: &str = "move every `reads` entry ahead of the first `writes` entry; a category may appear more than once";
+const EFF1_REPEATED_PATH: &str = "a row lists each path at most once per category, and this entry repeats one";
+const EFF1_REPEATED_PATH_FIX: &str = "delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path";
 const EFF1_NON_PARAMETER_ROOT: &str = "every effect path is rooted at one formal value parameter of the same callable, and this root is not one";
 const EFF1_NON_PARAMETER_ROOT_FIX: &str = "root the path at a parameter of this function; a local, a result binder, a region, and an unrelated declaration are never effect roots";
 const EFF1_FIELD_OF_NON_STRUCT: &str = "each effect-path suffix selects one statically known field of a source struct, and this prefix is not a source struct";
@@ -447,23 +450,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Some(element) => Ok(CheckedType::Buffer { element }),
                 None => self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node),
             },
-            // A `Slots` is a window whose filled prefix is `r.len` [WIN-1].
-            (crate::ContainerShape::Slots, Some(length)) => Ok(CheckedType::FixedVector {
+            // The two window shapes in both placements [WIN-1]: the filled
+            // prefix is `r.len` and a `Ring` additionally carries the window
+            // origin `head`.
+            (crate::ContainerShape::Slots, capacity) => Ok(CheckedType::Window {
+                shape: WindowShape::Slots,
                 element: self.intern_element(element_type)?,
-                length,
+                capacity,
             }),
-            // The remaining cells of [TYPE-9]'s table — a runtime-capacity
-            // `Slots` and a `Ring` in either placement — have no checked
-            // representation at this stage of the port: a `Ring` carries the
-            // window origin `head` no current variant holds, and the
-            // runtime-capacity block's header is the storage decision
-            // compiler/storage-representation states and a later package
-            // lands. An unimplemented representation is a compiler capability
-            // and never a source rejection, so this stops rather than
-            // refusing the program.
-            (crate::ContainerShape::Slots | crate::ContainerShape::Ring, _) => {
-                self.unsupported(UnsupportedSemanticFeature::CompositeValues, node)
-            }
+            (crate::ContainerShape::Ring, capacity) => Ok(CheckedType::Window {
+                shape: WindowShape::Ring,
+                element: self.intern_element(element_type)?,
+                capacity,
+            }),
             (crate::ContainerShape::Box, _) => {
                 Err(SemanticCompilerFailure::InvalidResolution.into())
             }
@@ -529,8 +528,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(None)
     }
 
-    /// [EFF-1] one written row: `reads` entries before `writes` entries, each
-    /// category at most once, each naming one path.
+    /// [EFF-1] one written row: every `reads` entry before every `writes`
+    /// entry, each entry naming exactly one path, and each path written at
+    /// most once per category.
     ///
     /// `pure` is the unique spelling of the empty row. Allocation and release
     /// carry no effect entry at all [STOR-8], so the row has exactly these two
@@ -546,31 +546,50 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let effects = self.tree.children_with(node, Production::Effect)?;
         let mut previous = None;
         let mut declared = EffectSet::NONE;
+        let mut written = [Vec::new(), Vec::new()];
         for effect in effects {
             let ordinal = if self.has_fixed(effect, FixedTerminal::Reads)? {
-                for path in self.effect_paths(effect, parameters)? {
-                    declared.add_read(path);
-                }
-                0
+                0_usize
             } else if self.has_fixed(effect, FixedTerminal::Writes)? {
-                for path in self.effect_paths(effect, parameters)? {
-                    declared.add_write(path);
-                }
                 1
             } else {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             };
-            if previous.is_some_and(|last| last >= ordinal) {
+            // [EFF-1] "A category may appear more than once in one row, and
+            // the canonical order is every `reads` entry before every
+            // `writes` entry"; only a descending step is the rejection.
+            if previous.is_some_and(|last| last > ordinal) {
                 return self.issue_node(
                     SemanticRule::Eff1,
                     node,
                     SemanticIssueKind::InvalidEffectRow {
-                        reason: EFF1_CATEGORY_ONCE,
-                        mechanical_fix: EFF1_CATEGORY_ONCE_FIX,
+                        reason: EFF1_CATEGORY_ORDER,
+                        mechanical_fix: EFF1_CATEGORY_ORDER_FIX,
                     },
                 );
             }
             previous = Some(ordinal);
+            for path in self.effect_paths(effect, parameters)? {
+                // [EFF-1] "A row lists each path at most once per category,
+                // and a repeated entry is an EFF-1 rejection at that
+                // `effect`."
+                if written[ordinal].contains(&path) {
+                    return self.issue_node(
+                        SemanticRule::Eff1,
+                        effect,
+                        SemanticIssueKind::InvalidEffectRow {
+                            reason: EFF1_REPEATED_PATH,
+                            mechanical_fix: EFF1_REPEATED_PATH_FIX,
+                        },
+                    );
+                }
+                written[ordinal].push(path.clone());
+                if ordinal == 0 {
+                    declared.add_read(path);
+                } else {
+                    declared.add_write(path);
+                }
+            }
         }
         Ok(declared)
     }
@@ -857,7 +876,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// is not one.
     fn container_element_type(&self, ty: CheckedType) -> Result<Option<CheckedType>, CheckStop> {
         Ok(match ty {
-            CheckedType::Array { element, .. } | CheckedType::FixedVector { element, .. } => {
+            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 Some(self.element_type(element)?)
             }
             CheckedType::Buffer { element } => Some(element.ty()),
@@ -1108,7 +1127,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::InvalidConstValue,
             );
         }
-        if matches!(expected, CheckedType::FixedVector { .. }) {
+        if matches!(expected, CheckedType::Window { .. }) {
             // Top-level constant runs use dense array storage. A run nested
             // in another constant needs the same normalization at its field
             // or element position; that representation path is not wired yet.
@@ -1261,7 +1280,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [CONST-1, CONST-2, S34] a top-level fixed-run constant occupies only
         // dense element storage. Its four measures are materialized from the
         // type rather than stored in a window descriptor.
-        if let CheckedType::FixedVector { element, length } = ty {
+        if let CheckedType::Window {
+            shape: WindowShape::Slots,
+            element,
+            capacity: Some(length),
+        } = ty
+        {
             let Some(_) = self.flat_element(self.element_type(element)?)? else {
                 return self.issue_node(
                     SemanticRule::Const2,
@@ -1382,7 +1406,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Array { element, .. } => {
                     pending.push(self.element_type(element)?);
                 }
-                CheckedType::FixedVector { element, .. } => {
+                CheckedType::Window { element, .. } => {
                     let element = self.element_type(element)?;
                     if self.flat_element(element)?.is_none() {
                         return Ok(false);
@@ -1403,11 +1427,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedType::Generic(_)
                 | CheckedType::GenericInt(_)
                 | CheckedType::GenericFloat(_)
-                | CheckedType::Slice { .. }
-                | CheckedType::Buffer { .. }
-                | CheckedType::Vector { .. }
-                | CheckedType::Heap { .. }
-                | CheckedType::Extent { .. } => return Ok(false),
+                | CheckedType::Buffer { .. } => return Ok(false),
             }
         }
         Ok(true)
@@ -1461,6 +1481,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | super::super::model::CheckedNominalKind::ArenaStorage => None,
                 _ => Some(CheckedFlatElement::Nominal(id)),
             },
+            // [FN-2] the one source-canonical symbolic instance of a generic
+            // record carries its unsubstituted element; every concrete
+            // instance re-reads this position with its own substitution, so
+            // this variant reaches no lowering.
+            CheckedType::Generic(declaration) => Some(CheckedFlatElement::Generic(declaration)),
             _ => None,
         })
     }
@@ -1486,12 +1511,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Generic(_)
             | CheckedType::Nominal(_)
             | CheckedType::Array { .. }
-            | CheckedType::Slice { .. }
             | CheckedType::Buffer { .. }
-            | CheckedType::FixedVector { .. }
-            | CheckedType::Vector { .. }
-            | CheckedType::Heap { .. }
-            | CheckedType::Extent { .. } => None,
+            | CheckedType::Window { .. } => None,
         })
     }
 

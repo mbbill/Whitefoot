@@ -62,23 +62,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<bool, CheckStop> {
         Ok(match ty {
             CheckedType::Buffer { .. } => true,
-            // [PROV-1] a run branded to a general store is released to that
-            // store; a bump extent's run is reclaimed by its region's own
-            // reset and spends nothing.
-            CheckedType::Vector { release, .. } => {
-                release == super::super::model::CheckedReleaseClass::General
+            // [STOR-8] there is one heap and a `Box` carries no brand, so a
+            // cell's release names no provider value.
+            CheckedType::Nominal(id) => {
+                matches!(self.nominal(id)?.kind, CheckedNominalKind::Box { .. })
             }
-            // A cell is released to the store its own region names S39: a
-            // general store's cell frees, a bump extent's is reclaimed by
-            // its region's own reset, and the ambient heap's `box<T>` is
-            // released to a store that is not a value at all.
-            CheckedType::Nominal(id) => matches!(
-                self.nominal(id)?.kind,
-                CheckedNominalKind::Box {
-                    release: super::super::model::CheckedReleaseClass::General,
-                    ..
-                }
-            ),
             _ => false,
         })
     }
@@ -96,11 +84,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         visited: &mut HashSet<NominalId>,
     ) -> Result<bool, CheckStop> {
         match ty {
-            CheckedType::Slice { .. } => Ok(true),
             CheckedType::Buffer { element } => self.loan_bearing_with(element.ty(), visited),
-            CheckedType::Array { element, .. }
-            | CheckedType::FixedVector { element, .. }
-            | CheckedType::Vector { element, .. } => {
+            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 self.loan_bearing_with(self.element_type(element)?, visited)
             }
             CheckedType::Nominal(id) => {
@@ -164,9 +149,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 // A run owns the elements of its window [BLK-1], so its
                 // element is a sub-node exactly as a field is.
-                CheckedType::Array { element, .. }
-                | CheckedType::FixedVector { element, .. }
-                | CheckedType::Vector { element, .. } => {
+                CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                     pending.push(self.element_type(element)?);
                 }
                 CheckedType::Nominal(id) => pending.extend(self.owned_components(id)?),
@@ -184,12 +167,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ty: CheckedType,
         release: CheckedReleaseMode,
     ) -> Result<Vec<CheckedType>, CheckStop> {
-        if release == CheckedReleaseMode::EmptyRun
-            && matches!(
-                ty,
-                CheckedType::FixedVector { .. } | CheckedType::Vector { .. }
-            )
-        {
+        if release == CheckedReleaseMode::EmptyRun && matches!(ty, CheckedType::Window { .. }) {
             return Ok(vec![ty]);
         }
         self.release_graph_nodes(ty)
@@ -262,40 +240,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ty: CheckedType,
         release: CheckedReleaseMode,
     ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
-        let mut stores = Vec::new();
-        for node in self.release_graph_nodes_for(ty, release)? {
-            let store = match node {
-                CheckedType::Vector {
-                    region,
-                    release: super::super::model::CheckedReleaseClass::General,
-                    ..
-                } => Some(region),
-                // S39 a cell branded to a general store spends that
-                // store's capability exactly as a run branded to it does.
-                CheckedType::Nominal(id) => match self.nominal(id)?.kind {
-                    CheckedNominalKind::Box {
-                        region: Some(region),
-                        release: super::super::model::CheckedReleaseClass::General,
-                        ..
-                    } => Some(region),
-                    _ => None,
-                },
-                _ => None,
-            };
-            if let Some(store) = store
-                && !stores.contains(&store)
-            {
-                stores.push(store);
-            }
-        }
-        Ok(stores)
+        // [STOR-8] one heap, provided by the trusted base: no value provides
+        // storage, so no release spends a provider a parameter supplies and
+        // no release-graph node names one. The graph is still walked, so a
+        // type whose release graph this version cannot build is reported here
+        // rather than answered with an empty set.
+        self.release_graph_nodes_for(ty, release)?;
+        Ok(Vec::new())
     }
 
     fn direct_run(&self, ty: CheckedType) -> bool {
-        matches!(
-            ty,
-            CheckedType::FixedVector { .. } | CheckedType::Vector { .. }
-        )
+        matches!(ty, CheckedType::Window { .. })
     }
 
     fn linear_release_obligation(&self, ty: CheckedType) -> Result<Option<String>, CheckStop> {
@@ -365,7 +320,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         store: crate::DeclarationId,
     ) -> bool {
         bindings.values().any(|local| {
-            local.live && matches!(local.ty, CheckedType::Heap { region } if region == store)
+            local.live && false
         })
     }
 
@@ -647,7 +602,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .into_iter()
             .find(|store| {
                 !function.parameters.iter().any(
-                    |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == *store),
+                    |parameter| false,
                 )
             });
         let root_missing = if self.direct_run(ty) {
@@ -655,7 +610,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .into_iter()
                 .find(|store| {
                     !function.parameters.iter().any(
-                        |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == *store),
+                        |parameter| false,
                     )
                 })
         } else {
@@ -671,7 +626,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .into_iter()
                 .any(|store| {
                     !function.parameters.iter().any(
-                        |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store),
+                        |parameter| false,
                     )
                 });
             if root_has_capability && !root_provider_missing {
@@ -746,7 +701,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut writes = Vec::new();
         for store in self.capability_released_stores_for(ty, release)? {
             if let Some(parameter) = function.parameters.iter().find(
-                |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store),
+                |parameter| false,
             ) {
                 writes.push(super::super::model::CheckedStatePath {
                     root: parameter.declaration,
@@ -768,7 +723,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         for store in self.capability_released_stores_for(ty, release)? {
             if function.parameters.iter().any(
-                |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store),
+                |parameter| false,
             ) {
                 continue;
             }

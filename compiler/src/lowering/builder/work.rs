@@ -288,7 +288,7 @@ impl<'ir> Environment<'ir> {
             Work::Constant(_) => true,
             Work::Value(value) => self.function.parameters().contains(&(*value, U64)),
             Work::Length(value) => self.function.parameters().iter().any(|(parameter, ty)| {
-                parameter == value && matches!(ty, IrType::Buffer { .. } | IrType::Slice { .. })
+                parameter == value && matches!(ty, IrType::Buffer { .. } | IrType::Range { .. })
             }),
             Work::Sum(parts) => parts.iter().all(|part| self.available(part)),
             Work::Product(left, right) | Work::Difference(left, right) => {

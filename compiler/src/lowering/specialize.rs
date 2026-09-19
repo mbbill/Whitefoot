@@ -49,7 +49,12 @@ impl PhysicalFunctions {
             .iter()
             .map(FunctionDependencies::collect)
             .collect::<Vec<_>>();
-        let mut defaults = program.region_release_defaults.clone();
+        // [STOR-8] gives the language one heap and no region parameters, so
+        // no checked type names a store and no call carries a region
+        // argument. The environment therefore starts empty and stays empty;
+        // what remains of this pass is the call table it interns, which is
+        // one variant per source function.
+        let mut defaults: Vec<(DeclarationId, CheckedReleaseClass)> = Vec::new();
         let mut regions = Vec::with_capacity(dependencies.len());
         for dependency in &dependencies {
             let mut selected = BTreeSet::new();
@@ -304,13 +309,7 @@ fn collect_regions(
                 CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
             }
         }
-        CheckedType::Vector {
-            region,
-            element,
-            release,
-        } => {
-            regions.insert(region);
-            insert_default(defaults, region, release);
+        CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
             collect_regions(
                 program,
                 *program
@@ -322,27 +321,7 @@ fn collect_regions(
                 defaults,
             )?;
         }
-        CheckedType::Heap { region } => {
-            regions.insert(region);
-            insert_default(defaults, region, CheckedReleaseClass::General);
-        }
-        CheckedType::Extent { region, .. } => {
-            regions.insert(region);
-            insert_default(defaults, region, CheckedReleaseClass::Extent);
-        }
-        CheckedType::Array { element, .. } | CheckedType::FixedVector { element, .. } => {
-            collect_regions(
-                program,
-                *program
-                    .elements
-                    .get(element.index())
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-                regions,
-                visited,
-                defaults,
-            )?;
-        }
-        CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
+        CheckedType::Buffer { element } => {
             collect_regions(program, element.ty(), regions, visited, defaults)?;
         }
         CheckedType::Unit
@@ -517,10 +496,6 @@ impl FunctionDependencies {
                     regions: goal_regions.clone(),
                 });
             }
-            CheckedExpression::KernelCall { instance, .. } => {
-                self.types.push(instance.element);
-                self.types.extend(instance.run);
-            }
             CheckedExpression::BoxDeref { nominal, .. }
             | CheckedExpression::ArenaDeref { nominal, .. }
             | CheckedExpression::ProjectValue { nominal, .. } => {
@@ -532,12 +507,6 @@ impl FunctionDependencies {
             CheckedExpression::ContainerMeasure { root, .. }
             | CheckedExpression::ReadStorage { root, .. }
             | CheckedExpression::BorrowAddressed { root, .. } => self.root_types(root),
-            CheckedExpression::SliceOf {
-                source: crate::semantic::CheckedSliceSource::Run(root),
-                ..
-            } => {
-                self.root_types(root);
-            }
             CheckedExpression::BufferFits { element, .. } => self.types.push(*element),
             _ => {}
         }
@@ -555,7 +524,6 @@ impl FunctionDependencies {
                 self.expression(&target.offset);
             }
             CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
-            CheckedSetTarget::SliceIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::Storage(root) => {
                 self.root_types(root);
                 for offset in root.offsets() {

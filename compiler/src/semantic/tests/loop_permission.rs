@@ -1,4 +1,4 @@
-//! The loop permission judgment over counted `for` statements.
+//! The loop permission judgment over counted `for` statements [PAR-2].
 //!
 //! Each grant fixture is a shape a real program writes; each denial fixture
 //! violates exactly one numbered condition and asserts *that* condition, so a
@@ -7,6 +7,15 @@
 //! risk of a rule that lets an implementation choose a combination tree is a
 //! loop that should have been refused and was not. Design:
 //! `research/investigations/proof-derived-parallelism/loop/DESIGN.md`.
+//!
+//! v0.60 keeps the accumulator condition and the body's exit refusals and
+//! replaces the view-formation family by [REF-4]'s proved range reference
+//! `&r[s*i+b..s*i+b+s]`. `LoopDenial::Loan` is gone with [CAP-1]: there is one
+//! reference kind, and what a callee reaches through one is its declared row
+//! projected onto the actual's path, which condition 2 already judges. Every
+//! fixture that used to name a loan therefore names the shared write or the
+//! uncovered read the row actually exhibits, and the read-only borrows v0.59
+//! refused by their exclusivity are now permitted.
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
@@ -85,6 +94,9 @@ fn permitted(source: &[u8], function: &str) -> LoopPermission {
     judged
 }
 
+/// The compute programs under `tests/programs/compute` are not owned by this
+/// module; they carry the whole-program shapes the judgment was designed
+/// against, and their port to v0.60 lands with those files.
 #[test]
 fn bfs_pull_is_permitted_while_sparse_discovery_remains_source_ordered() {
     let source = include_bytes!("../../../../tests/programs/compute/bfs.wf");
@@ -104,15 +116,20 @@ fn bfs_pull_is_permitted_while_sparse_discovery_remains_source_ordered() {
 // Grants
 // ----------------------------------------------------------------------
 
-const RUNTIME_PARTITION_SOURCE: &str = r#"fn paint(output: own MutSlice<u64>) -> result: own u64 reads(output), writes(output) {
-  let count = len_of(output);
+/// The runtime-stride partition: one range reference per iteration over one
+/// runtime-capacity origin, with the endpoint proof written as an explicit
+/// local invariant. This is the shape [PAR-2]'s proved range family exists
+/// for, and the derived fixtures below change exactly one thing about it
+/// each.
+const RUNTIME_PARTITION_SOURCE: &str = r#"fn paint(output: &[u64]) -> result: own u64 writes(output) {
+  let count = deref(output).len;
   for (x in 0_u64..count) {
-    set output[x] = 1_u64;
+    set deref(output)[x] = 1_u64;
   }
   return count;
 }
 
-fn partition(width: own u64, padding: own u64, base: own u64) -> result: own buffer<u64> pure contract {
+fn partition(width: own u64, padding: own u64, base: own u64) -> result: own Box<Array<u64>> pure contract {
   requires width <= 8_u64;
   requires padding <= 8_u64;
   requires base <= 8_u64;
@@ -120,7 +137,7 @@ fn partition(width: own u64, padding: own u64, base: own u64) -> result: own buf
   let stride = width + padding;
   let cells = 6_u64 * stride;
   let total = cells + base;
-  let values = buffer_new(total, 0_u64);
+  let values = box_array_filled::<u64>(count: total, value: 0_u64);
   for (i in 0_u64..4_u64) {
     let offset = i * stride;
     let start = offset + base;
@@ -128,12 +145,8 @@ fn partition(width: own u64, padding: own u64, base: own u64) -> result: own buf
     invariant bounded: end <= total {
       use stride times (i + 1_u64 <= 6_u64);
     }
-    region {
-      let row = mut_slice_of(&uniq values, start, end);
-      let count = len_of(row);
-      let child = mut_slice_of(&uniq row, 0_u64, count);
-      let painted = paint(output: move child);
-    }
+    let row = &values.inner[start..end];
+    let painted = paint(output: row);
   }
   return move values;
 }
@@ -144,12 +157,22 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
 
+/// An element write reached through `deref` of a reference parameter whose row
+/// declares the write is one of the four places [PAR-2] admits.
+///
+/// v0.59 refused this: a view element store had no map family of its own and
+/// needed the caller to hand down a range assignment. v0.60 names the shape
+/// outright — "one direct `Array` or `Slots` subscript rooted in an own
+/// binding declared outside L or reached through `deref` of a reference
+/// parameter whose row declares the write" — so the helper's own loop is the
+/// ordinary single-binder affine element map.
 #[test]
-fn direct_view_element_writes_need_a_range_assignment() {
-    assert!(matches!(
-        denied(RUNTIME_PARTITION_SOURCE.as_bytes(), "paint", 2),
-        LoopDenial::SharedWrite { .. }
-    ));
+fn a_reference_parameter_element_write_is_an_admitted_element_map() {
+    let judged = permitted(RUNTIME_PARTITION_SOURCE.as_bytes(), "paint");
+    assert_eq!(
+        judged.actualization,
+        Some(LoopActualization::IndependentMap)
+    );
 }
 
 #[test]
@@ -169,74 +192,132 @@ fn runtime_stride_sum_base_and_descendant_helper_calls_are_permitted() {
     );
 }
 
+/// The same partition with its two endpoints bound through different exact
+/// products and its domain established by ordinary guards rather than by the
+/// written proof. [PAR-2] consumes the retained exact images, not the
+/// spelling, so the range family must still recognize it.
 #[test]
 fn equivalent_product_endpoints_use_checked_images() {
-    // The existing source-certificate family does not derive the order of
-    // these two separately bound products. Explicit source guards establish
-    // VIEW-2's domain; PAR-2 must still recognize the exact product images.
-    let source = RUNTIME_PARTITION_SOURCE.replace("    let end = start + stride;", "    let after = i + 1_u64;\n    let limit = after * stride;\n    let end = limit + base;")
-        .replace("    invariant bounded: end <= total {\n      use stride times (i + 1_u64 <= 6_u64);\n    }\n", "");
-    let begin = source.find("    region {").unwrap();
-    let finish = source.find("  return move values;").unwrap();
-    let body = source[begin..finish].strip_suffix("  }\n").unwrap();
-    let guarded = body
-        .lines()
-        .map(|line| format!("    {line}\n"))
-        .collect::<String>();
-    let source = format!(
-        "{}    if start <= end {{\n      if end <= total {{\n{guarded}      }}\n    }}\n  }}\n{}",
-        &source[..begin],
-        &source[finish..]
-    );
-    let judged = permitted(source.as_bytes(), "partition");
+    let source = br#"fn paint(output: &[u64]) -> result: own u64 writes(output) {
+  let count = deref(output).len;
+  for (x in 0_u64..count) {
+    set deref(output)[x] = 1_u64;
+  }
+  return count;
+}
+
+fn partition(width: own u64, padding: own u64, base: own u64) -> result: own Box<Array<u64>> pure contract {
+  requires width <= 8_u64;
+  requires padding <= 8_u64;
+  requires base <= 8_u64;
+} {
+  let stride = width + padding;
+  let cells = 6_u64 * stride;
+  let total = cells + base;
+  let values = box_array_filled::<u64>(count: total, value: 0_u64);
+  for (i in 0_u64..4_u64) {
+    let offset = i * stride;
+    let start = offset + base;
+    let after = i + 1_u64;
+    let limit = after * stride;
+    let end = limit + base;
+    if start <= end {
+      if end <= total {
+        let row = &values.inner[start..end];
+        let painted = paint(output: row);
+      }
+    }
+  }
+  return move values;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = partition(width: 3_u64, padding: 2_u64, base: 1_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    let judged = permitted(source, "partition");
     assert_eq!(
         judged.actualization,
         Some(LoopActualization::IndependentMap)
     );
 }
 
+/// Two range references of one origin carrying different bases. Their
+/// per-iteration extents interleave across iterations, and "all proved range
+/// references whose resolved origins overlap must name the same origin place
+/// and carry identical s and b images", so the second one denies.
 #[test]
 fn disjoint_siblings_with_shifted_partitions_can_cross_between_iterations() {
-    let source = RUNTIME_PARTITION_SOURCE.replace("      let painted = paint(output: move child);", "      let painted = paint(output: move child);\n      let shifted = end + stride;\n      invariant room: shifted <= total {\n        use stride times (i + 2_u64 <= 6_u64);\n      }\n      let other = mut_slice_of(&uniq values, end, shifted);\n      let second = paint(output: move other);");
+    let source = RUNTIME_PARTITION_SOURCE.replace(
+        "    let painted = paint(output: row);",
+        "    let painted = paint(output: row);\n    let shifted = end + stride;\n    invariant room: shifted <= total {\n      use stride times (i + 2_u64 <= 6_u64);\n    }\n    let other = &values.inner[end..shifted];\n    let second = paint(output: other);",
+    );
     assert!(matches!(
         denied(source.as_bytes(), "partition", 2),
         LoopDenial::SharedWrite { .. }
     ));
 }
 
+/// "A whole-origin access ... denies." The guarded element read reaches the
+/// origin outside every iteration's own tile.
 #[test]
 fn a_whole_origin_read_outside_the_tile_denies_overlap() {
-    let source = RUNTIME_PARTITION_SOURCE.replace("      let painted = paint(output: move child);\n    }", "      let painted = paint(output: move child);\n    }\n    if 0_u64 < total {\n      let outside = values[0_u64];\n    }");
+    let source = RUNTIME_PARTITION_SOURCE.replace(
+        "    let painted = paint(output: row);\n  }",
+        "    let painted = paint(output: row);\n    if 0_u64 < total {\n      let outside = values.inner[0_u64];\n    }\n  }",
+    );
     assert!(matches!(
         denied(source.as_bytes(), "partition", 2),
         LoopDenial::SharedWrite { .. }
     ));
 }
 
+/// A constant offset gives every iteration the same extent, so the retained
+/// endpoint images are not `[s*i+b, s*i+b+s)` for any fixed s and b and no
+/// proved range reference exists. The helper's declared write of the origin
+/// is then an ordinary shared write.
 #[test]
 fn a_constant_nonempty_range_is_not_an_iteration_partition() {
-    let source = RUNTIME_PARTITION_SOURCE.replace(
-        "    let offset = i * stride;",
-        "    let offset = 0_u64 * stride;",
-    ).replace("    invariant bounded: end <= total {\n      use stride times (i + 1_u64 <= 6_u64);\n    }", "    invariant bounded: end <= total;");
+    let source = RUNTIME_PARTITION_SOURCE
+        .replace("    let offset = i * stride;", "    let offset = 0_u64 * stride;")
+        .replace(
+            "    invariant bounded: end <= total {\n      use stride times (i + 1_u64 <= 6_u64);\n    }",
+            "    invariant bounded: end <= total;",
+        );
     assert!(matches!(
         denied(source.as_bytes(), "partition", 2),
-        LoopDenial::Loan { .. }
+        LoopDenial::SharedWrite { .. }
     ));
 }
 
+/// A stride recomputed from the current index is not fixed throughout L, so
+/// the endpoint images are not affine in the binder and the family refuses
+/// rather than starting a search.
 #[test]
 fn a_stride_computed_from_the_current_index_is_not_loop_invariant() {
     let source = RUNTIME_PARTITION_SOURCE
-        .replace("  let stride = width + padding;\n  let cells = 6_u64 * stride;", "  let cells = 96_u64;")
-        .replace("    let offset = i * stride;", "    let stride = 4_u64 - i;\n    let offset = i * stride;")
-        .replace("    invariant bounded: end <= total {\n      use stride times (i + 1_u64 <= 6_u64);\n    }", "    invariant bounded: end <= total;");
+        .replace(
+            "  let stride = width + padding;\n  let cells = 6_u64 * stride;\n  let total = cells + base;",
+            "  let cells = 96_u64;\n  let total = cells + base;",
+        )
+        .replace(
+            "    let offset = i * stride;",
+            "    let stride = 4_u64 - i;\n    let offset = i * stride;",
+        )
+        .replace(
+            "    invariant bounded: end <= total {\n      use stride times (i + 1_u64 <= 6_u64);\n    }",
+            "    invariant bounded: end <= total;",
+        );
     assert!(matches!(
         denied(source.as_bytes(), "partition", 2),
-        LoopDenial::Loan { .. }
+        LoopDenial::SharedWrite { .. }
     ));
 }
 
+/// The compute programs under `tests/programs/compute` are not owned by this
+/// module; they carry the whole-program shapes the judgment was designed
+/// against, and their port to v0.60 lands with those files.
 #[test]
 fn runtime_stencil_rows_retain_adjacent_range_permission() {
     let source = include_bytes!("../../../../tests/programs/compute/stencil.wf");
@@ -250,6 +331,8 @@ fn runtime_stencil_rows_retain_adjacent_range_permission() {
     assert!(matches!(rows[1].verdict, LoopVerdict::Denied(_)));
 }
 
+/// As above: the blocked compute helpers are whole-program evidence owned by
+/// `tests/programs/compute`.
 #[test]
 fn blocked_compute_helpers_retain_partition_permission_around_local_recurrences() {
     let prefix = permission_of(include_bytes!(
@@ -320,7 +403,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 /// A checked local invariant is erased before execution. It contributes no
-/// read, write, loan, accumulator, or exit to the loop permission survey.
+/// read, write, accumulator, or exit to the loop permission survey.
 #[test]
 fn a_local_invariant_in_the_body_has_no_runtime_footprint() {
     let source = br#"fn main() -> status: own ExitStatus pure {
@@ -423,7 +506,7 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// A callee that writes through a `&uniq` parameter into storage the
+/// A callee that writes through a reference parameter into storage the
 /// *iteration* introduced is permitted.
 ///
 /// The row says the callee writes; the projection says what it writes, and a
@@ -433,20 +516,21 @@ fn main() -> status: own ExitStatus pure {
 /// judgment holds the resolved places a diagnostic cannot rebuild.
 #[test]
 fn a_callee_writing_iteration_own_storage_is_permitted() {
-    let source =
-        b"fn bump(slot: &uniq u64, x: own u64) -> result: own u64 reads(slot), writes(slot) {
-  set deref(slot) = deref(slot) +wrap x;
-  return deref(slot);
+    let source = b"struct Cell {
+  value: u64;
+}
+
+fn bump(slot: &Cell, x: own u64) -> result: own u64 writes(slot.value) {
+  set deref(slot).value = deref(slot).value +wrap x;
+  return deref(slot).value;
 }
 
 fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
-    let scratch = 0_u64;
-    region {
-      let got = bump(slot: &uniq scratch, x: i);
-      set total = total +wrap got;
-    }
+    let scratch = Cell(value: 0_u64);
+    let got = bump(slot: &scratch, x: i);
+    set total = total +wrap got;
   }
   return exit_status(code: 0_u8);
 }
@@ -455,15 +539,18 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(judged.combines, vec!["+wrap"]);
 }
 
-/// A `replace` whose target the iteration introduced is permitted: the value
-/// it reads out is this iteration's, not the previous one's.
+/// A whole-binding `set` whose target the iteration introduced is permitted:
+/// the value [WIN-3] releases is this iteration's, not the previous one's.
+///
+/// v0.59 spelled this `let previous = replace held = move fresh;`; the
+/// `replace` statement is gone and `set p = e;` is its successor.
 #[test]
-fn a_replace_of_iteration_own_storage_is_permitted() {
+fn a_set_of_iteration_own_storage_is_permitted() {
     let source = b"fn main() -> status: own ExitStatus pure {
   for @swap (i in 0_u64..8_u64) {
-    let held = buffer_new(4_u64, 0_u64);
-    let fresh = buffer_new(4_u64, i);
-    let previous = replace held = move fresh;
+    let held = array_filled::<u64, 4>(value: 0_u64);
+    let fresh = array_filled::<u64, 4>(value: i);
+    set held = move fresh;
   }
   return exit_status(code: 0_u8);
 }
@@ -505,7 +592,7 @@ fn nested_counted_loops_are_each_judged_on_their_own_terms() {
 #[test]
 fn a_nested_map_is_granted_only_to_the_binder_in_its_retained_image() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(8_u64, 0_u64);
+  let out = array_filled::<u64, 8>(value: 0_u64);
   for @rows (r in 0_u64..8_u64) {
     for @cols (c in 0_u64..4_u64) {
       set out[r] = c;
@@ -532,8 +619,8 @@ fn a_nested_map_is_granted_only_to_the_binder_in_its_retained_image() {
 /// source before loop permission can observe the unproved subscript.
 #[test]
 fn an_unproved_source_premise_cannot_authorize_a_loop_subscript() {
-    let source = br#"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
-  let spare = len_of(deref(src));
+    let source = br#"fn tally(src: &Slots<u64, 64>, limit: own u64) -> result: own u64 reads(src) {
+  let spare = deref(src).len;
   invariant scaled_limit_fits: 4_u64 * limit <= 4_u64 * spare {
     use 4 times (limit <= spare);
   }
@@ -546,10 +633,9 @@ fn an_unproved_source_premise_cannot_authorize_a_loop_subscript() {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(64_u64, 1_u64);
-  region {
-    let t = tally(src: &data, limit: 64_u64);
-  }
+  let values = array_filled::<u64, 64>(value: 1_u64);
+  let data = slots_from_array::<u64, 64>(values: move values);
+  let t = tally(src: &data, limit: 64_u64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -565,13 +651,13 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// A dominating branch establishes the same `limit <= len_of(src)` fact. The
-/// loop remains eligible because permission reads the checked body footprint,
-/// not the proof route for its subscript.
+/// A dominating branch establishes the same `limit <= src.len` fact. The loop
+/// remains eligible because permission reads the checked body footprint, not
+/// the proof route for its subscript.
 #[test]
 fn a_dominating_bound_outside_the_loop_leaves_it_eligible() {
-    let source = br#"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
-  let spare = len_of(deref(src));
+    let source = br#"fn tally(src: &Slots<u64, 64>, limit: own u64) -> result: own u64 reads(src) {
+  let spare = deref(src).len;
   let total = 0_u64;
   let fits = limit <= spare;
   if fits {
@@ -584,10 +670,9 @@ fn a_dominating_bound_outside_the_loop_leaves_it_eligible() {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(64_u64, 1_u64);
-  region {
-    let t = tally(src: &data, limit: 64_u64);
-  }
+  let values = array_filled::<u64, 64>(value: 1_u64);
+  let data = slots_from_array::<u64, 64>(values: move values);
+  let t = tally(src: &data, limit: 64_u64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -700,15 +785,19 @@ fn carried_state_that_is_no_reduction_is_denied_by_condition_one() {
     ));
 }
 
-/// A `replace` of enclosing storage reads the previous value out [SET-2], so
-/// the destination is carried state no operation combines.
+/// A whole-binding `set` of enclosing storage carries state across iterations
+/// that no operation combines, so which iteration wrote last is observable.
+///
+/// v0.59 spelled the same hazard `let previous = replace held = move fresh;`
+/// and cited the value `replace` read out. `set p = e;` is its successor and
+/// releases the old affine value in place [WIN-3].
 #[test]
-fn a_replace_of_enclosing_storage_is_denied_by_condition_one() {
+fn a_set_of_enclosing_storage_is_denied_by_condition_one() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let held = buffer_new(4_u64, 0_u64);
+  let held = array_filled::<u64, 4>(value: 0_u64);
   for @swap (i in 0_u64..8_u64) {
-    let fresh = buffer_new(4_u64, i);
-    let previous = replace held = move fresh;
+    let fresh = array_filled::<u64, 4>(value: i);
+    set held = move fresh;
   }
   return exit_status(code: 0_u8);
 }
@@ -748,7 +837,7 @@ fn an_accumulator_read_outside_its_combine_is_denied_by_condition_one() {
 #[test]
 fn an_accumulator_read_in_a_write_subscript_is_denied_by_condition_one() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let table = buffer_new(64_u64, 0_u64);
+  let table = array_filled::<u64, 64>(value: 0_u64);
   let cursor = 0_u64;
   for @fill (i in 0_u64..8_u64) {
     let spare = cursor < 64_u64;
@@ -766,43 +855,41 @@ fn an_accumulator_read_in_a_write_subscript_is_denied_by_condition_one() {
     assert_eq!(reads, 3, "the guard, the subscript, and the combine");
 }
 
-/// A borrow of the accumulator formed in the body: the body refuses every
-/// borrow-forming statement outright, so a value read through such a holder
-/// can never reach the count in the first place.
+/// A reference to the accumulator formed in the body is an occurrence of that
+/// accumulator like any other, so the read count refuses the reduction.
+///
+/// v0.59 refused every borrow-forming body statement as a form, because the
+/// checked tree erased the borrow's shared-or-uniq mode and an unloaned borrow
+/// would widen permission. v0.60 has no mode to erase: forming the reference
+/// names the accumulator's path, and the ordinary count is what denies.
 #[test]
-fn a_borrow_of_the_accumulator_is_refused_as_a_borrow_forming_statement() {
+fn a_reference_to_the_accumulator_is_a_read_of_it() {
     let source = b"fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
-    region {
-      let view = &total;
-      let seen = deref(view);
-      let bumped = seen +wrap i;
-    }
+    let view = &total;
+    let seen = deref(view);
+    let bumped = seen +wrap i;
     set total = total +wrap i;
   }
   return exit_status(code: 0_u8);
 }
 ";
-    assert!(matches!(
-        denied(source, "main", 2),
-        LoopDenial::BodyForm {
-            form: "a statement that forms a borrow of storage the iteration does not introduce"
-        }
-    ));
+    let LoopDenial::AccumulatorRead { reads, .. } = denied(source, "main", 1) else {
+        panic!("expected a read-count denial");
+    };
+    assert_eq!(reads, 2, "the formation and the combine");
 
-    // A borrow taken *after* the loop is outside the body, so the same
-    // reduction stays permitted: the refusal is per body, never per function.
+    // A reference taken *after* the loop is outside the body, so the same
+    // reduction stays permitted: the count is per body, never per function.
     let after = b"fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     set total = total +wrap i;
   }
-  region {
-    let view = &total;
-    let seen = deref(view);
-    let bumped = seen +wrap 1_u64;
-  }
+  let view = &total;
+  let seen = deref(view);
+  let bumped = seen +wrap 1_u64;
   return exit_status(code: 0_u8);
 }
 ";
@@ -871,7 +958,7 @@ fn a_nested_endpoint_reading_the_accumulator_denies_only_the_outer_loop() {
 #[test]
 fn a_proven_counted_binder_element_map_is_permitted() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(64_u64, 0_u64);
+  let out = array_filled::<u64, 64>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     set out[i] = i *wrap i;
   }
@@ -893,7 +980,7 @@ fn a_proven_counted_binder_element_map_is_permitted() {
 #[test]
 fn a_copied_affine_binder_element_map_is_permitted() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(128_u64, 0_u64);
+  let out = array_filled::<u64, 128>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let step = i;
     let slot = step * 2_u64;
@@ -915,7 +1002,7 @@ fn a_copied_affine_binder_element_map_is_permitted() {
 #[test]
 fn op4_retains_the_affine_index_map_consumed_by_parallel_permission() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(128_u64, 0_u64);
+  let out = array_filled::<u64, 128>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let step = i;
     let slot = step * 2_u64;
@@ -949,12 +1036,13 @@ fn op4_retains_the_affine_index_map_consumed_by_parallel_permission() {
         assert_eq!(map.constant, 0);
     });
 }
+
 /// A constant image has coefficient zero and is not injective. OP-4 proves
 /// the element access itself, but PAR-2 correctly keeps the whole-root write.
 #[test]
 fn a_zero_coefficient_element_map_is_denied() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(64_u64, 0_u64);
+  let out = array_filled::<u64, 64>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let slot = i - i;
     set out[slot] = i;
@@ -974,7 +1062,7 @@ fn a_zero_coefficient_element_map_is_denied() {
 #[test]
 fn two_different_affine_maps_of_one_root_are_denied() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(128_u64, 0_u64);
+  let out = array_filled::<u64, 128>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let even = i * 2_u64;
     let odd = even + 1_u64;
@@ -996,7 +1084,7 @@ fn two_different_affine_maps_of_one_root_are_denied() {
 #[test]
 fn repeated_writes_with_the_same_affine_map_are_permitted() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(128_u64, 0_u64);
+  let out = array_filled::<u64, 128>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let slot = i * 2_u64;
     set out[slot] = i;
@@ -1014,11 +1102,11 @@ fn repeated_writes_with_the_same_affine_map_are_permitted() {
 
 /// Reading and writing the same proved affine element keeps every iteration
 /// inside its own disjoint cell. The read-side OP-4 image is compared with the
-/// write image; this is not treated as a whole-buffer dependence.
+/// write image; this is not treated as a whole-run dependence.
 #[test]
 fn a_same_index_read_modify_write_is_permitted() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(64_u64, 0_u8);
+  let out = array_filled::<u8, 64>(value: 0_u8);
   for @update (i in 0_u64..64_u64) {
     let old = out[i];
     let next = old +wrap 1_u8;
@@ -1040,9 +1128,9 @@ fn a_same_index_read_modify_write_is_permitted() {
 #[test]
 fn a_whole_collection_read_still_denies_a_same_map_update() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(64_u64, 0_u8);
+  let out = array_filled::<u8, 64>(value: 0_u8);
   for @update (i in 0_u64..64_u64) {
-    let spare = len_of(out);
+    let spare = out.len;
     let old = out[i];
     set out[i] = old +wrap 1_u8;
   }
@@ -1055,14 +1143,15 @@ fn a_whole_collection_read_still_denies_a_same_map_update() {
     ));
 }
 
-/// A writable unique buffer parameter is one exclusive source place. Once
-/// OP-4 proves `i` is in range, the same affine-map rule can divide that place
-/// into disjoint per-iteration elements; ownership does not require copying
-/// the buffer into the callee.
+/// A writable reference parameter is one source place. Once OP-4 proves `i` is
+/// in range, the same affine-map rule divides that place into disjoint
+/// per-iteration elements; ownership does not require copying the run into the
+/// callee.
 #[test]
-fn a_unique_borrowed_output_accepts_a_proved_element_map() {
-    let source = br#"fn fill(out: &uniq buffer<u8>, count: own u64) -> result: own unit writes(out) contract {
-  define spare = len_of(deref(out));
+fn a_reference_output_accepts_a_proved_element_map() {
+    let source =
+        br#"fn fill(out: &Slots<u8, 64>, count: own u64) -> result: own unit writes(out) contract {
+  define spare = deref(out).len;
   requires count <= spare;
 } {
   for @fill (i in 0_u64..count) {
@@ -1072,10 +1161,9 @@ fn a_unique_borrowed_output_accepts_a_proved_element_map() {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(64_u64, 0_u8);
-  region {
-    let filled = fill(out: &uniq out, count: 64_u64);
-  }
+  let values = array_filled::<u8, 64>(value: 0_u8);
+  let out = slots_from_array::<u8, 64>(values: move values);
+  let filled = fill(out: &out, count: 64_u64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1091,8 +1179,8 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn different_owned_roots_may_use_different_affine_maps() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let evens = buffer_new(128_u64, 0_u64);
-  let shifted = buffer_new(65_u64, 0_u64);
+  let evens = array_filled::<u64, 128>(value: 0_u64);
+  let shifted = array_filled::<u64, 65>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let even = i * 2_u64;
     let next = i + 1_u64;
@@ -1116,13 +1204,13 @@ fn different_owned_roots_may_use_different_affine_maps() {
 #[test]
 fn sibling_collection_roots_may_read_and_write_their_own_maps() {
     let source = b"struct Columns {
-  left: array<u64, 64>;
-  right: array<u64, 64>;
+  left: Array<u64, 64>;
+  right: Array<u64, 64>;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let left = array_new::<u64, 64>(0_u64);
-  let right = array_new::<u64, 64>(0_u64);
+  let left = array_filled::<u64, 64>(value: 0_u64);
+  let right = array_filled::<u64, 64>(value: 0_u64);
   let columns = Columns(left: move left, right: move right);
   for @update (i in 0_u64..63_u64) {
     let next = i + 1_u64;
@@ -1140,13 +1228,14 @@ fn main() -> status: own ExitStatus pure {
         Some(LoopActualization::IndependentMap)
     );
 }
+
 /// A map may coexist with one admitted reduction. The map supplies the
 /// disjoint writes while the real accumulator supplies the recombination
 /// payload; no synthetic map accumulator is introduced.
 #[test]
 fn an_exact_map_with_a_reduction_uses_reduction_actualization() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(64_u64, 0_u64);
+  let out = array_filled::<u64, 64>(value: 0_u64);
   let total = 0_u64;
   for @fill (i in 0_u64..64_u64) {
     set out[i] = i *wrap i;
@@ -1170,8 +1259,8 @@ fn an_exact_map_with_a_reduction_uses_reduction_actualization() {
 /// available to affine-map permission. PRF-1 rejects it first.
 #[test]
 fn an_unproved_source_premise_is_rejected_before_affine_map_permission() {
-    let source = br#"fn fill(output: own buffer<u64>, limit: own u64) -> result: own buffer<u64> reads(output), writes(output) {
-  let spare = len_of(output);
+    let source = br#"fn fill(output: own Array<u64, 64>, limit: own u64) -> result: own Array<u64, 64> pure {
+  let spare = output.len;
   invariant limit_fits: limit <= spare {
     use (limit <= spare);
   }
@@ -1182,7 +1271,7 @@ fn an_unproved_source_premise_is_rejected_before_affine_map_permission() {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let output = buffer_new(64_u64, 0_u64);
+  let output = array_filled::<u64, 64>(value: 0_u64);
   let filled = fill(output: move output, limit: 64_u64);
   return exit_status(code: 0_u8);
 }
@@ -1199,27 +1288,32 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// A shared call loan is harmless beside another shared call, but not beside
-/// another iteration's write to the same mapped root. The loan is checked
-/// explicitly rather than relying on the argument also appearing as a read.
+/// A read row on the mapped root is an access overlapping that root, and it
+/// descends from no proved element map, so the read counts do not balance and
+/// condition 2 denies.
+///
+/// v0.59 cited a shared call loan here. [CAP-1] leaves no loan: "the [EFF-2]
+/// projection of a helper's declared row counts as an access on its actual
+/// range", and this row's access is the whole run.
 #[test]
-fn a_shared_call_loan_on_the_mapped_root_is_denied() {
-    let source = b"fn observe(value: &buffer<u64>) -> result: own unit pure {
-  return unit;
+fn a_read_row_on_the_mapped_root_is_denied() {
+    let source = b"fn observe(value: &Array<u64, 64>) -> result: own u64 reads(value) {
+  return deref(value).len;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(64_u64, 0_u64);
+  let out = array_filled::<u64, 64>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
-    region {
-      let seen = observe(value: &out);
-    }
+    let seen = observe(value: &out);
     set out[i] = i;
   }
   return exit_status(code: 0_u8);
 }
 ";
-    assert!(matches!(denied(source, "main", 2), LoopDenial::Loan { .. }));
+    assert!(matches!(
+        denied(source, "main", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
 }
 
 /// An exact affine value is insufficient when OP-4 cannot prove the subscript
@@ -1228,7 +1322,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_unproved_counted_binder_element_map_remains_denied() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(64_u64, 0_u64);
+  let out = array_filled::<u64, 64>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let slot = i + 1_u64;
     set out[slot] = i;
@@ -1250,7 +1344,7 @@ fn an_unproved_counted_binder_element_map_remains_denied() {
 #[test]
 fn a_non_injective_element_write_is_denied_by_condition_two() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(64_u64, 0_u64);
+  let out = array_filled::<u64, 64>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let slot = iand(i, 7_u64);
     set out[slot] = i;
@@ -1264,13 +1358,13 @@ fn a_non_injective_element_write_is_denied_by_condition_two() {
     assert_eq!(judged.actualization, None);
 }
 
-/// A stencil writes one element and reads another of the same buffer, which is
-/// a dependence across iterations. Its read and write maps differ, so the
-/// fixed same-map refinement refuses it.
+/// A stencil writes one element and reads another of the same run, which is a
+/// dependence across iterations. Its read and write maps differ, so the fixed
+/// same-map refinement refuses it.
 #[test]
 fn a_stencil_is_denied_by_condition_two() {
     let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(64_u64, 1_u64);
+  let out = array_filled::<u64, 64>(value: 1_u64);
   for @fill (i in 1_u64..64_u64) {
     let prior = i -wrap 1_u64;
     set out[i] = out[prior];
@@ -1290,24 +1384,30 @@ fn a_stencil_is_denied_by_condition_two() {
 /// onto the actual is what tells this apart from the iteration-own grant.
 #[test]
 fn a_callee_writing_enclosing_storage_is_denied_by_condition_two() {
-    let source =
-        b"fn accum(slot: &uniq f64, x: own f64) -> result: own u64 reads(slot), writes(slot) {
-  set deref(slot) = fadd.strict(deref(slot), x);
-  let bits = reinterpret::<f64, u64>(deref(slot));
+    let source = b"struct Holder {
+  value: f64;
+}
+
+fn accum(slot: &Holder, x: own f64) -> result: own u64 writes(slot.value) {
+  set deref(slot).value = fadd.strict(deref(slot).value, x);
+  let bits = reinterpret::<f64, u64>(deref(slot).value);
   return iand(bits, 1_u64);
 }
 
 fn main() -> status: own ExitStatus pure {
-  let total = 0.0_f64;
+  let total = Holder(value: 0.0_f64);
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    let one = accum(slot: &uniq total, x: 0.5_f64);
+    let one = accum(slot: &total, x: 0.5_f64);
     set count = count +wrap one;
   }
   return exit_status(code: 0_u8);
 }
 ";
-    assert!(matches!(denied(source, "main", 2), LoopDenial::Loan { .. }));
+    assert!(matches!(
+        denied(source, "main", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
 }
 
 /// An expression statement is a call whose reach no row projects onto an
@@ -1337,59 +1437,66 @@ fn main() -> status: own ExitStatus pure {
 }
 
 // ----------------------------------------------------------------------
-// Ordinary callable loan boundary
+// The ordinary callable boundary [CAP-1]
 // ----------------------------------------------------------------------
 
-/// An ordinary helper keeps its unique factory loan until return. PRE-1
-/// open/close declarations and a WF wrapper obey the same PAR-2 condition.
+/// An ordinary helper writes the factory its caller handed it, and that
+/// storage outlives the iteration. PRE-1 open/close declarations and a WF
+/// wrapper obey the same PAR-2 condition.
+///
+/// v0.59 cited the unique factory loan the helper held to return. v0.60 has
+/// no loan: the helper's declared `writes(factory)` projects onto the caller's
+/// path, and that place is neither iteration-own nor a proved range.
 #[test]
-fn an_ordinary_directory_wrapper_keeps_its_unique_loan() {
-    let source = br#"fn probe(factory: &uniq HandleFactory, root: &DirectoryRead) -> result: own u64 reads(factory, root), writes(factory) {
-  region {
-    match open_directory_source(factory: &uniq deref(factory), directory: root) {
-      Ok(value: listing) => {
-        region {
-          let closed = close_directory_source(factory: &uniq deref(factory), source: move listing);
-        }
-        return 1_u64;
-      }
-      Err(error: refused) => {
-        return 0_u64;
-      }
+fn an_ordinary_directory_wrapper_writes_enclosing_storage() {
+    let source = br#"fn probe(factory: &HandleFactory, root: &DirectoryRead) -> result: own u64 reads(root), writes(factory) {
+  match open_directory_source(factory: factory, directory: root) {
+    Ok(value: listing) => {
+      let closed = close_directory_source(factory: factory, source: move listing);
+      return 1_u64;
+    }
+    Err(error: refused) => {
+      return 0_u64;
     }
   }
 }
 
-fn main(root: &DirectoryRead, factory: &uniq HandleFactory) -> result: own unit reads(root, factory), writes(factory) {
+fn main(factory: &HandleFactory, root: &DirectoryRead) -> result: own unit reads(root), writes(factory) {
   let total = 0_u64;
   for @scan (i in 0_u64..4_u64) {
-    let seen = probe(factory: &uniq deref(factory), root: root);
+    let seen = probe(factory: factory, root: root);
     set total = total +wrap seen;
   }
   return unit;
 }
 "#;
-    assert!(matches!(denied(source, "main", 2), LoopDenial::Loan { .. }));
+    assert!(matches!(
+        denied(source, "main", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
 }
 
-/// The direct declaration's ordinary unique factory, source and destination
-/// loans prevent loop-iteration overlap under the same condition. v0.58
+/// The direct PRE-1 declaration's ordinary factory, input and destination
+/// writes prevent loop-iteration overlap under the same condition. v0.58
 /// directory_next returns multiple results, outside PAR-2's direct-let shape;
-/// read_next preserves this test's single-result loan trigger.
+/// read_next preserves this test's single-result trigger.
 #[test]
-fn a_direct_read_state_transition_keeps_its_unique_loan() {
-    let source = br#"fn main(factory: &uniq HandleFactory, input: &uniq InputStream, destination: &uniq MutSlice<u8>) -> result: own unit reads(factory, input, destination), writes(factory, input, destination) contract {
-  requires 1_u64 <= len_of(deref(destination));
+fn a_direct_read_state_transition_writes_enclosing_storage() {
+    let source = br#"fn main(factory: &HandleFactory, input: &InputStream, destination: &[u8]) -> result: own unit writes(factory), writes(input), writes(destination) contract {
+  requires 1_u64 <= deref(destination).len;
 } {
   let total = 0_u64;
   for @scan (i in 0_u64..4_u64) {
-    let outcome = read_next(factory: &uniq deref(factory), input: &uniq deref(input), destination: &uniq deref(destination), start: 0_u64, end: 1_u64);
+    let outcome = read_next(factory: factory, input: input, destination: destination, start: 0_u64, end: 1_u64);
     set total = total +wrap 1_u64;
   }
   return unit;
 }
 "#;
-    assert!(matches!(denied(source, "main", 2), LoopDenial::Loan { .. }));
+    assert!(matches!(
+        denied(source, "main", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
 }
 
 // ----------------------------------------------------------------------
@@ -1523,8 +1630,8 @@ fn a_give_delivering_inside_the_body_is_permitted() {
 #[test]
 fn a_give_in_the_body_is_denied_by_condition_four() {
     let source =
-        b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
-  let count = len_of(deref(src));
+        b"fn scan_until(src: &Array<u64, 64>, needle: own u64) -> result: own u64 reads(src) {
+  let count = deref(src).len;
   let acc = 0_u64;
   let always = True();
   let answer = if always {
@@ -1544,12 +1651,10 @@ fn a_give_in_the_body_is_denied_by_condition_four() {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(64_u64, 1_u64);
+  let data = array_filled::<u64, 64>(value: 1_u64);
   set data[10_u64] = 7_u64;
-  region {
-    let t = scan_until(src: &data, needle: 7_u64);
-    return exit_status(code: 0_u8);
-  }
+  let t = scan_until(src: &data, needle: 7_u64);
+  return exit_status(code: 0_u8);
 }
 ";
     let LoopDenial::Exit { edge } = denied(source, "scan_until", 4) else {
@@ -1560,8 +1665,8 @@ fn main() -> status: own ExitStatus pure {
     // The same loop with the give removed is permitted, so the refusal is
     // about the edge and not about the shape.
     let contained =
-        b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
-  let count = len_of(deref(src));
+        b"fn scan_until(src: &Array<u64, 64>, needle: own u64) -> result: own u64 reads(src) {
+  let count = deref(src).len;
   let acc = 0_u64;
   let always = True();
   let answer = if always {
@@ -1577,12 +1682,10 @@ fn main() -> status: own ExitStatus pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(64_u64, 1_u64);
+  let data = array_filled::<u64, 64>(value: 1_u64);
   set data[10_u64] = 7_u64;
-  region {
-    let t = scan_until(src: &data, needle: 7_u64);
-    return exit_status(code: 0_u8);
-  }
+  let t = scan_until(src: &data, needle: 7_u64);
+  return exit_status(code: 0_u8);
 }
 ";
     assert_eq!(permitted(contained, "scan_until").combines, vec!["+wrap"]);
@@ -1625,8 +1728,7 @@ fn main() -> status: own ExitStatus pure {
 /// independent reduction remains eligible.
 #[test]
 fn an_automatic_remainder_bound_in_the_body_preserves_reduction_permission() {
-    let source =
-        br#"const values: FixedVector<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+    let source = br#"const values: Array<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
 
 fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
@@ -1653,11 +1755,10 @@ fn main() -> status: own ExitStatus pure {
 /// and the loop's independent reduction remains eligible and actualized.
 #[test]
 fn a_branch_proved_subscript_in_the_body_is_permitted() {
-    let source =
-        br#"const values: FixedVector<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+    let source = br#"const values: Array<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
 
 fn main() -> status: own ExitStatus pure {
-  let size = len_of(values);
+  let size = values.len;
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let bounded = imin(i, 7_u64);
@@ -1688,10 +1789,10 @@ fn main() -> status: own ExitStatus pure {
 /// reads and refuse the reduction.
 #[test]
 fn a_guard_reading_the_accumulator_is_still_a_read() {
-    let source = br#"const values: FixedVector<u8, 128> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
+    let source = br#"const values: Array<u8, 128> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
 
 fn main() -> status: own ExitStatus pure {
-  let size = len_of(values);
+  let size = values.len;
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let inside = total < size;
@@ -1722,10 +1823,11 @@ fn main() -> status: own ExitStatus pure {
 /// actualization.
 #[test]
 fn a_proof_complete_call_closure_is_permitted() {
-    let source = br#"const values: FixedVector<u64, 8> =[1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64];
+    let source =
+        br#"const values: Array<u64, 8> =[1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64];
 
 fn narrow(v: own u64) -> result: own u64 pure {
-  let size = len_of(values);
+  let size = values.len;
   if v < size {
     return values[v];
   }
@@ -1766,8 +1868,8 @@ fn main() -> status: own ExitStatus pure {
 /// identical.
 #[test]
 fn the_loop_verdict_is_the_same_under_every_route_to_the_same_fact() {
-    let structural = b"fn tally(src: &buffer<u64>) -> result: own u64 reads(src) {
-  let count = len_of(deref(src));
+    let structural = b"fn tally(src: &Slots<u64, 64>) -> result: own u64 reads(src) {
+  let count = deref(src).len;
   let total = 0_u64;
   for @sum (i in 0_u64..count) {
     let v = deref(src)[i];
@@ -1777,20 +1879,19 @@ fn the_loop_verdict_is_the_same_under_every_route_to_the_same_fact() {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(64_u64, 1_u64);
-  region {
-    let t = tally(src: &data);
-  }
+  let values = array_filled::<u64, 64>(value: 1_u64);
+  let data = slots_from_array::<u64, 64>(values: move values);
+  let t = tally(src: &data);
   return exit_status(code: 0_u8);
 }
 ";
     let invariant_source =
-        br#"fn tally(src: &buffer<u64>, bounded_limit: own u64, limit: own u64) -> result: own u64 reads(src) contract {
-  define capacity = len_of(deref(src));
+        br#"fn tally(src: &Slots<u64, 64>, bounded_limit: own u64, limit: own u64) -> result: own u64 reads(src) contract {
+  define capacity = deref(src).len;
   requires bounded_limit <= limit;
   requires limit <= capacity;
 } {
-  let spare = len_of(deref(src));
+  let spare = deref(src).len;
   invariant limit_fits: bounded_limit <= spare;
   let total = 0_u64;
   for @sum (i in 0_u64..bounded_limit) {
@@ -1801,15 +1902,15 @@ fn main() -> status: own ExitStatus pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(64_u64, 1_u64);
-  region {
-    let t = tally(src: &data, bounded_limit: 64_u64, limit: 64_u64);
-  }
+  let values = array_filled::<u64, 64>(value: 1_u64);
+  let data = slots_from_array::<u64, 64>(values: move values);
+  let t = tally(src: &data, bounded_limit: 64_u64, limit: 64_u64);
   return exit_status(code: 0_u8);
 }
 "#;
-    let dominating = b"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
-  let spare = len_of(deref(src));
+    let dominating =
+        b"fn tally(src: &Slots<u64, 64>, limit: own u64) -> result: own u64 reads(src) {
+  let spare = deref(src).len;
   let total = 0_u64;
   if limit <= spare {
     for @sum (i in 0_u64..limit) {
@@ -1821,15 +1922,14 @@ fn main() -> status: own ExitStatus pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(64_u64, 1_u64);
-  region {
-    let t = tally(src: &data, limit: 64_u64);
-  }
+  let values = array_filled::<u64, 64>(value: 1_u64);
+  let data = slots_from_array::<u64, 64>(values: move values);
+  let t = tally(src: &data, limit: 64_u64);
   return exit_status(code: 0_u8);
 }
 ";
-    let branched = b"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
-  let spare = len_of(deref(src));
+    let branched = b"fn tally(src: &Slots<u64, 64>, limit: own u64) -> result: own u64 reads(src) {
+  let spare = deref(src).len;
   let total = 0_u64;
   for @sum (i in 0_u64..limit) {
     let inside = i < spare;
@@ -1842,10 +1942,9 @@ fn main() -> status: own ExitStatus pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(64_u64, 1_u64);
-  region {
-    let t = tally(src: &data, limit: 64_u64);
-  }
+  let values = array_filled::<u64, 64>(value: 1_u64);
+  let data = slots_from_array::<u64, 64>(values: move values);
+  let t = tally(src: &data, limit: 64_u64);
   return exit_status(code: 0_u8);
 }
 ";
@@ -1879,37 +1978,19 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// The loans half of condition 2: every iteration takes `&uniq` of one outer
-/// cell while the callee's row declares `reads` only, so the written half is
-/// empty and the old judgment permitted — and actually split — a loop whose
-/// iterations each hold an exclusive loan on the one place. The loan, not a
-/// write, is what denies it.
-#[test]
-fn a_read_only_unique_borrow_of_outer_storage_is_denied_by_its_loan() {
-    let source = br#"fn peek_uniq(cell: &uniq u64) -> result: own u64 reads(cell) {
-  return deref(cell);
-}
+// Retired with the exclusive/shared distinction of v0.59's loans half:
+// `a_read_only_unique_borrow_of_outer_storage_is_denied_by_its_loan` wrote
+// `&uniq cell` where v0.60 writes `&cell`, so it is now the same program as
+// the grant below, whose successor assertion covers it.
 
-fn main() -> status: own ExitStatus pure {
-  let cell = 21_u64;
-  let acc = 0_u64;
-  for @sum (i in 0_u64..8_u64) {
-    let v = peek_uniq(cell: &uniq cell);
-    set acc = acc +wrap v;
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    assert!(matches!(denied(source, "main", 2), LoopDenial::Loan { .. }));
-}
-
-/// The shared control for the loan above: a `&'i` borrow of the same outer
-/// cell holds a shared loan, which coexists with itself and conflicts only
-/// with writes, so the loop stays permitted. This is the boundary the loans
-/// half must not cross — read-only sharing across iterations is the point of
-/// a reduction.
+/// Read-only sharing across iterations is the point of a reduction: a
+/// reference to one outer cell carries no write, and every iteration reads it.
+///
+/// This is also what became of v0.59's exclusive borrow of the same cell.
+/// [CAP-1] leaves one reference kind, so `&cell` at a `reads` row is the only
+/// spelling and the loop is permitted whichever marker v0.59 would have used.
 #[test]
-fn a_shared_borrow_of_outer_storage_stays_permitted() {
+fn a_reference_to_outer_storage_at_a_read_row_stays_permitted() {
     let source = br#"fn peek(cell: &u64) -> result: own u64 reads(cell) {
   return deref(cell);
 }
@@ -1927,76 +2008,49 @@ fn main() -> status: own ExitStatus pure {
     permitted(source, "main");
 }
 
-/// A bare borrow bound in the body: no call carries it, so no parameter mode
-/// states its loan, and the checked tree erases whether it is shared or
-/// exclusive. The body refuses as a form — before this refusal existed, every
-/// iteration of this loop held what the source spells as an exclusive borrow
-/// of the one outer cell, and the loop was permitted and split.
+/// A reference bound in the body is an ordinary member of the survey.
+///
+/// v0.59 refused every borrow-forming body statement as a form: no call
+/// carried the borrow, so no parameter mode stated its loan, and the checked
+/// tree erased whether it was shared or exclusive. v0.60 has one reference
+/// kind and no loan, so the statement is judged like any other and a body that
+/// only reads outer storage through it is permitted.
 #[test]
-fn a_body_statement_forming_a_borrow_is_refused() {
+fn a_body_statement_forming_a_reference_is_an_ordinary_member() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   let cell = 21_u64;
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    let g = &uniq cell;
+    let g = &cell;
     let v = deref(g);
     set acc = acc +wrap v;
   }
   return exit_status(code: 0_u8);
 }
 "#;
-    assert!(matches!(
-        denied(source, "main", 2),
-        LoopDenial::BodyForm {
-            form: "a statement that forms a borrow of storage the iteration does not introduce"
-        }
-    ));
+    assert_eq!(permitted(source, "main").combines, vec!["+wrap"]);
 }
 
-/// The admissible side of the body borrow guard: a `let`-bound borrow of
-/// storage the iteration itself creates. Each iteration borrows its own
-/// instance, so no loan is needed and the loop stays permitted — the guard
-/// refuses borrows of enclosing storage, not borrowing as such.
+// Retired with the same distinction: `a_body_shared_borrow_of_outer_storage_
+// is_knowingly_denied` was the shared spelling of the fixture above, and the
+// mode it was knowingly denied for no longer exists, so the two programs are
+// one and the grant above is its successor.
+
+/// The admissible side of the body reference guard remains admissible: a
+/// `let`-bound reference to storage the iteration itself creates. Each
+/// iteration names its own instance.
 #[test]
-fn a_body_borrow_of_iteration_own_storage_stays_permitted() {
+fn a_body_reference_to_iteration_own_storage_stays_permitted() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    let local = buffer_new(4_u64, 7_u8);
-    region {
-      let h = &local;
-      let v = len_of(deref(h));
-      set acc = acc +wrap v;
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    permitted(source, "main");
-}
-
-/// The knowingly-denied shape: a shared borrow of enclosing storage bound in
-/// the body. Sequentially sound and read-only, but the checked tree erases
-/// the borrow's shared-or-uniq mode, so the guard cannot tell it from an
-/// exclusive one and fails closed. Restoring it needs the mode carried into
-/// the checked borrow forms, recorded as future work in the batch record.
-#[test]
-fn a_body_shared_borrow_of_outer_storage_is_knowingly_denied() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  let shared = 21_u64;
-  let acc = 0_u64;
-  for @sum (i in 0_u64..8_u64) {
-    let h = &shared;
-    let v = deref(h);
+    let local = array_filled::<u8, 4>(value: 7_u8);
+    let h = &local;
+    let v = deref(h).len;
     set acc = acc +wrap v;
   }
   return exit_status(code: 0_u8);
 }
 "#;
-    assert!(matches!(
-        denied(source, "main", 2),
-        LoopDenial::BodyForm {
-            form: "a statement that forms a borrow of storage the iteration does not introduce"
-        }
-    ));
+    permitted(source, "main");
 }

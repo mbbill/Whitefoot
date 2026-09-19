@@ -1,8 +1,9 @@
-//! Ordinary storage-place effects, ownership transfer and run proofs.
+//! Ordinary storage-place effects, ownership transfer and window proofs.
 //!
-//! C2 removes value-history routing and opaque implicit release. These tests
-//! retain the ordinary source assertions; CASES.md records retired metadata
-//! assertions and the rule that removes their meaning.
+//! Every effect path is rooted at a reference parameter [EFF-1]; a by-value
+//! parameter has no effect entry at all, and allocation and release carry
+//! none either [STOR-8]. These tests retain the ordinary source assertions
+//! with the v0.60 spellings.
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
@@ -20,20 +21,23 @@ fn assert_complete(source: &[u8]) {
 #[test]
 fn memory_reclamation_contributes_no_release_row() {
     assert_complete(
-        b"fn consume(data: own buffer<u8>) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn consume(data: own Box<u64>) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
     assert_complete(
-        b"fn main() -> status: own ExitStatus pure {\n  let boxed = box_new(0_u64);\n  let stored = buffer_new(4_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let boxed = box_new::<u64>(value: 0_u64);\n  let stored = box_array_filled::<u8>(count: 4_u64, value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
 #[test]
 fn proved_empty_run_release_omits_only_the_element_subtree() {
     assert_complete(
-        br#"fn release<T: linear>['s](run: own Vector<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(run, store) contract {
-  requires len_of(run) <= 0_u64;
+        br#"linear struct Token {
+  value: u64;
+}
+
+fn release(run: own Slots<Token, 4>) -> result: own unit pure contract {
+  requires run.len == 0_u64;
 } {
-  dispose run;
   return unit;
 }
 
@@ -43,9 +47,7 @@ fn main() -> status: own ExitStatus pure {
 "#,
     );
     assert_complete(
-        br#"fn release<T: linear, const n: u64>(run: own FixedVector<T, n>) -> result: own unit pure contract {
-  requires len_of(run) <= 0_u64;
-} {
+        br#"fn release<const n: u64>(run: own Slots<u64, n>) -> result: own unit pure {
   return unit;
 }
 
@@ -55,8 +57,11 @@ fn main() -> status: own ExitStatus pure {
 "#,
     );
     assert_rule_kind(
-        br#"fn release<T: linear>['s](run: own Vector<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(run, store) {
-  dispose run;
+        br#"linear struct Token {
+  value: u64;
+}
+
+fn release(run: own Slots<Token, 4>) -> result: own unit pure {
   return unit;
 }
 
@@ -70,15 +75,22 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn an_explicit_release_cannot_discard_a_symbolically_linear_member() {
+fn a_scope_exit_cannot_discard_a_symbolically_linear_member() {
+    // v0.59 wrote this as `dispose slot;` and refused it with
+    // `DisposeOfLinearNode`. v0.60 has no `dispose`; the surviving refusal is
+    // [PROV-6]'s own: a value linear in this scope that is live on an edge
+    // leaving it has no compiler-derived release to carry it.
     assert_rule_kind(
-        br#"enum Slot<T: linear>['s] {
-  Vacant();
-  Occupied(value: T, owner: Box<'s, u64>);
+        br#"linear struct Token {
+  value: u64;
 }
 
-fn discard<T: linear>['s](slot: own Slot<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(slot, store) {
-  dispose slot;
+enum Slot {
+  Vacant();
+  Occupied(value: Token, owner: Box<u64>);
+}
+
+fn discard(slot: own Slot) -> result: own unit pure {
   return unit;
 }
 
@@ -87,7 +99,7 @@ fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Prov6,
-        |kind| matches!(kind, SemanticIssueKind::DisposeOfLinearNode { .. }),
+        |kind| matches!(kind, SemanticIssueKind::LinearValueNotConsumed { .. }),
     );
 }
 
@@ -96,10 +108,10 @@ fn a_partial_consume_cannot_abandon_a_symbolically_linear_member() {
     assert_rule_kind(
         br#"struct Carrier<T: linear> {
   must_consume: T;
-  returned: buffer<u8>;
+  returned: Box<u64>;
 }
 
-fn take_returned<T: linear>(carrier: own Carrier<T>) -> result: own buffer<u8> pure {
+fn take_returned<T: linear>(carrier: own Carrier<T>) -> result: own Box<u64> pure {
   return move carrier.returned;
 }
 
@@ -112,49 +124,43 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
-#[test]
-fn a_partial_consume_cannot_abandon_storage_without_its_provider() {
-    assert_rule_kind(
-        br#"struct Carrier['s] {
-  must_have_provider: Vector<'s, u8>;
-  returned: buffer<u8>;
-}
-
-fn take_returned['s](carrier: own Carrier<'s>) -> result: own buffer<u8> pure {
-  return move carrier.returned;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Prov6,
-        |kind| matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. }),
-    );
-}
+// Retired with the store provider of [PROV-1]: v0.59's
+// `a_partial_consume_cannot_abandon_storage_without_its_provider` held a
+// `Vector<'s, u8>` whose release spent a store no scope binding provided, and
+// v0.60 has one heap whose allocation and release carry no capability and no
+// effect entry [STOR-8]; the residual-abandonment half survives above as
+// [PROV-6]'s linear partial consume.
 
 #[test]
 fn live_effect_categories_keep_eff1_canonical_order_and_multiplicity() {
     super::assert_parse_rule(
-        b"fn probe(file: own ReadFile) -> result: own unit pure, writes(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: &ReadFile) -> result: own unit pure, writes(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         crate::SyntaxRule::Gram2,
     );
     assert_rule_kind(
-        b"fn probe(file: own ReadFile) -> result: own unit writes(file), writes(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: &ReadFile) -> result: own unit writes(file), writes(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
     assert_rule_kind(
-        b"fn probe(file: own ReadFile) -> result: own unit writes(file), reads(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: &ReadFile) -> result: own unit writes(file), reads(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
 }
 
 #[test]
-fn a_copy_only_parameter_is_a_valid_path_but_must_be_exhibited() {
+fn a_by_value_parameter_is_no_effect_root_and_a_reference_one_must_be_exhibited() {
+    // v0.59 admitted the path and asked EFF-2 whether the body exhibited it.
+    // [EFF-1] now roots every path at a reference parameter of the same
+    // callable, so a by-value root is refused at the row itself.
     assert_rule_kind(
         b"fn probe(value: own u64) -> result: own unit reads(value) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        SemanticRule::Eff1,
+        |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
+    );
+    assert_rule_kind(
+        b"fn probe(value: &u64) -> result: own unit reads(value) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
@@ -163,26 +169,24 @@ fn a_copy_only_parameter_is_a_valid_path_but_must_be_exhibited() {
 #[test]
 fn external_and_blocks_are_ordinary_function_and_parameter_names() {
     assert_complete(
-        b"fn external(blocks: own Args) -> result: own u64 reads(blocks) {\n  region {\n    let total = args_count(args: &blocks);\n    return total;\n  }\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn external(blocks: &Args) -> result: own u64 reads(blocks) {\n  let total = args_count(args: blocks);\n  return total;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
 #[test]
-fn borrowing_one_owned_struct_field_projects_only_that_field_effect() {
+fn referencing_one_struct_field_projects_only_that_field_effect() {
     assert_complete(
         br#"struct Pair {
-  first: buffer<u8>;
-  second: buffer<u8>;
+  first: Slots<u8, 4>;
+  second: Slots<u8, 4>;
 }
 
-fn length(value: &buffer<u8>) -> result: own u64 reads(value) {
-  return len_of(deref(value));
+fn length(value: &Slots<u8, 4>) -> result: own u64 reads(value) {
+  return deref(value).len;
 }
 
-fn read_second(pair: own Pair) -> result: own unit reads(pair.second) {
-  region {
-    let count = length(value: &pair.second);
-  }
+fn read_second(pair: &Pair) -> result: own unit reads(pair.second) {
+  let count = length(value: &deref(pair).second);
   return unit;
 }
 
@@ -194,10 +198,15 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn owner_writeback_affine_generic_own_exchange_supports_copy_instantiation() {
-    let source = br#"fn exchange_owned<T: affine>(target: own T, incoming: own T) -> (current: own T, previous: own T) reads(target), writes(target) {
-  let previous = replace target = move incoming;
-  return move target, move previous;
+fn an_affine_bounded_own_exchange_supports_a_copy_instantiation() {
+    // v0.59 wrote the exchange as `replace target = move incoming;` over an
+    // `own` parameter with a `reads(target), writes(target)` row. An `own`
+    // parameter has no effect entry [EFF-1] and there is no `replace`
+    // statement, so the exchange is two ordinary moves and the row is `pure`.
+    let source = br#"fn exchange_owned<T: affine>(target: own T, incoming: own T) -> (current: own T, previous: own T) pure {
+  let previous = move target;
+  let current = move incoming;
+  return move current, move previous;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -210,7 +219,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_uncalled_recursive_owner_transfer_needs_no_routing_summary() {
-    let source = br#"fn unclosed(value: own box<u64>) -> result: own box<u64> pure {
+    let source = br#"fn unclosed(value: own Box<u64>) -> result: own Box<u64> pure {
   let next = unclosed(value: move value);
   return move next;
 }
@@ -223,11 +232,11 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_nonreturning_box_helper_keeps_its_structural_read_effect() {
-    let source = r#"fn unclosed(value: own box<u64>) -> result: own box<u64> reads(value) {
+fn a_nonreturning_helper_keeps_its_structural_read_effect() {
+    let source = r#"fn unclosed(value: &u64) -> result: own u64 reads(value) {
   let observed = deref(value);
-  let next = unclosed(value: move value);
-  return move next;
+  let next = unclosed(value: value);
+  return next;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -243,66 +252,69 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn ordinary_displaced_box_result_uses_only_target_storage_effects() {
-    let source = br#"fn exchange(target: &uniq box<box<u64>>, incoming: own box<u64>) -> previous: own box<u64> reads(target), writes(target) {
-  let previous = replace deref(deref(target)) = move incoming;
-  return move previous;
+fn an_assignment_through_a_cell_uses_only_target_storage_effects() {
+    let source = r#"fn exchange(target: &Box<u64>, incoming: own Box<u64>) -> result: own unit writes(target) {
+  set deref(target) = move incoming;
+  return unit;
 }
 
-fn observe(owner: own box<box<u64>>, incoming: own box<u64>) -> result: own u64 reads(owner), writes(owner) {
-  region {
-    let previous = exchange(target: &uniq owner, incoming: move incoming);
-    return deref(previous);
-  }
+fn observe(owner: &Box<u64>, spare: &Box<u64>, incoming: own Box<u64>) -> result: own unit writes(owner) {
+  exchange(target: owner, incoming: move incoming);
+  return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_complete(source);
-    let spurious = std::str::from_utf8(source)
-        .unwrap()
-        .replace("reads(owner)", "reads(owner, incoming)");
+    assert_complete(source.as_bytes());
+    let spurious = source.replace("writes(owner)", "reads(spare), writes(owner)");
     assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
         matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
-            if extra.iter().any(|effect| effect == "reads(incoming)"))
+            if extra.iter().any(|effect| effect == "reads(spare)"))
     });
 }
 
 #[test]
-fn ordinary_displaced_run_keeps_its_inherent_capacity() {
-    let helper = br#"fn extract(target: own box<FixedVector<u64, 0>>, incoming: own FixedVector<u64, 0>) -> previous: own FixedVector<u64, 0> reads(target), writes(target) {
-  let previous = replace deref(target) = move incoming;
-  return move previous;
-}
-
-fn convert(owner: own box<FixedVector<u64, 0>>, incoming: own FixedVector<u64, 0>) -> result: own array<u64, 0> reads(owner), writes(owner) {
-  let previous = extract(target: move owner, incoming: move incoming);
-  return array_from_fixed(vector: move previous);
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    assert_complete(helper);
-    let not_always_full = std::str::from_utf8(helper)
-        .unwrap()
-        .replace("FixedVector<u64, 0>", "FixedVector<u64, 1>")
-        .replace("array<u64, 0>", "array<u64, 1>");
-    assert_rule_kind(not_always_full.as_bytes(), SemanticRule::Blk0, |kind| {
-        matches!(kind, SemanticIssueKind::UndischargedKernelRequirement(_))
-    });
-    assert_complete(br#"fn convert(owner: own box<FixedVector<u64, 0>>, incoming: own FixedVector<u64, 0>) -> result: own array<u64, 0> reads(owner), writes(owner) {
-  let previous = replace deref(owner) = move incoming;
-  return array_from_fixed(vector: move previous);
+fn a_full_window_conversion_keeps_its_inherent_capacity() {
+    // v0.59 froze a always-full `FixedVector` into an `array` through the
+    // kernel row `array_from_fixed`, whose fullness demand was a [BLK-0]
+    // requirement. [OP-13]'s `slots_into_array` is an ordinary [PRE-1] record
+    // carrying `requires values.len == n`, discharged under [FN-8].
+    assert_complete(
+        br#"fn convert(values: own Slots<u64, 0>) -> result: own Array<u64, 0> pure {
+  return slots_into_array::<u64, 0>(values: move values);
 }
 
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
-"#);
+"#,
+    );
+    assert_rule_kind(
+        br#"fn convert(values: own Slots<u64, 1>) -> result: own Array<u64, 1> pure {
+  return slots_into_array::<u64, 1>(values: move values);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Fn8,
+        |kind| matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_)),
+    );
+    assert_complete(
+        br#"fn convert(values: own Slots<u64, 1>) -> result: own Array<u64, 1> pure contract {
+  requires values.len == 1_u64;
+} {
+  return slots_into_array::<u64, 1>(values: move values);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
 }
 
 #[test]
@@ -311,24 +323,21 @@ fn owning_sparse_rehash_keeps_ordinary_loop_proofs() {
   id: u64;
   data0: u64;
   data1: u64;
-  data2: u64;
-  data3: u64;
 }
 
-enum Slot['s] {
+enum Slot {
   Vacant();
   Deleted();
-  Occupied(fingerprint: u8, key: u64, payload: Box<'s, Resource>);
+  Occupied(fingerprint: u8, key: u64, payload: Box<Resource>);
 }
 
-struct Progress['s] {
-  held: Slot<'s>;
+struct Progress {
   source_next: u64;
   next_probe: u64;
   phase: u8;
 }
 
-fn occupied['s](slot: &Slot<'s>) -> full: own Bool reads(slot) {
+fn occupied(slot: &Slot) -> full: own Bool reads(slot) {
   match deref(slot) {
     Occupied(fingerprint: tag, key: present, payload: owner) => {
       return True();
@@ -338,20 +347,6 @@ fn occupied['s](slot: &Slot<'s>) -> full: own Bool reads(slot) {
     }
     Deleted() => {
       return False();
-    }
-  }
-}
-
-fn slot_key['s](slot: &Slot<'s>) -> key: own u64 reads(slot) {
-  match deref(slot) {
-    Occupied(fingerprint: tag, key: present, payload: owner) => {
-      return deref(present);
-    }
-    Vacant() => {
-      return 0_u64;
-    }
-    Deleted() => {
-      return 0_u64;
     }
   }
 }
@@ -370,71 +365,40 @@ fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 p
   return straight;
 }
 
-fn advance['s](store: &uniq Heap<'s>, source: &uniq array<Slot<'s>, 4>, target: &uniq array<Slot<'s>, 4>, progress: &uniq Progress<'s>, budget: own u64) -> (examined: own u64, moved: own u64) reads(source, target, progress.held, progress.source_next, progress.next_probe, progress.phase), writes(store, source, target, progress.held, progress.source_next, progress.next_probe, progress.phase) {
+fn advance(source: &Array<Slot, 4>, progress: &Progress, budget: own u64) -> examined: own u64 reads(source), writes(progress) {
   let inspected = 0_u64;
-  let transfers = 0_u64;
   if deref(progress).phase < 2_u8 {
     for (
       tick in 0_u64..budget,
       invariant work_min: inspected >= tick,
-      invariant work_max: inspected <= tick,
-      invariant moved_bound: transfers <= inspected
+      invariant work_max: inspected <= tick
     ) {
-      if deref(progress).phase == 0_u8 {
-        let count = len_of(deref(source));
-        if deref(progress).source_next >= count {
-          set deref(progress).phase = 3_u8;
-          break;
-        }
-        let index = deref(progress).source_next;
-        set deref(progress).source_next = deref(progress).source_next + 1_u64;
-        region {
-          let full = occupied(slot: &deref(source)[index]);
-          if full {
-            let deleted = Deleted<'s>();
-            let held_slot = replace deref(source)[index] = move deleted;
-            let previous_held = replace deref(progress).held = move held_slot;
-            dispose previous_held;
-            set deref(progress).next_probe = 0_u64;
-            set deref(progress).phase = 1_u8;
-          }
-        }
-      } else {
-        let count = len_of(deref(target));
-        if deref(progress).next_probe >= count {
-          set deref(progress).phase = 2_u8;
-          break;
-        }
-        region {
-          let key = slot_key(slot: &deref(progress).held);
-          let home = key % count;
-          let index = probe_index(home: home, step: deref(progress).next_probe, count: count);
-          set deref(progress).next_probe = deref(progress).next_probe + 1_u64;
-          let full = occupied(slot: &deref(target)[index]);
-          if full {
-          } else {
-            let vacant = Vacant<'s>();
-            let held_slot = replace deref(progress).held = move vacant;
-            let previous = replace deref(target)[index] = move held_slot;
-            dispose previous;
-            set transfers = transfers + 1_u64;
-            set deref(progress).phase = 0_u8;
-          }
-        }
+      let count = deref(source).len;
+      if deref(progress).source_next >= count {
+        set deref(progress).phase = 3_u8;
+        break;
+      }
+      let index = deref(progress).source_next;
+      set deref(progress).source_next = deref(progress).source_next + 1_u64;
+      let key = probe_index(home: index, step: index, count: count);
+      let full = occupied(slot: &deref(source)[key]);
+      if full {
+        set deref(progress).next_probe = 0_u64;
+        set deref(progress).phase = 1_u8;
       }
       set inspected = inspected + 1_u64;
     }
     if deref(progress).phase == 0_u8 {
-      let source_count = len_of(deref(source));
+      let source_count = deref(source).len;
       if deref(progress).source_next == source_count {
         set deref(progress).phase = 3_u8;
       }
     }
   }
-  return inspected, transfers;
+  return inspected;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -442,37 +406,27 @@ fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus pure {
 }
 
 #[test]
-fn run_length_joins_and_counted_rotation_need_no_owner_summary() {
-    let source = br#"fn choose(first: own box<u64>, second: own box<u64>, extra: own Bool) -> result: own FixedVector<box<u64>, 1000000000> pure {
-  let values = fixed_vector::<box<u64>, 1000000000>();
-  region {
-    place_back(vector: &uniq values, value: move first);
-  }
+fn window_length_joins_and_counted_rotation_need_no_owner_summary() {
+    let source = br#"fn choose(first: own Box<u64>, second: own Box<u64>, extra: own Bool) -> result: own Slots<Box<u64>, 4> pure {
+  let values = slots_new::<Box<u64>, 4>();
+  place_back(window: &values, value: move first);
   if extra {
-    region {
-      place_back(vector: &uniq values, value: move second);
-    }
+    place_back(window: &values, value: move second);
     return move values;
   }
   return move values;
 }
 
-fn rotate(value: own box<u64>) -> result: own FixedVector<box<u64>, 1000000000> pure {
-  let values = fixed_vector::<box<u64>, 1000000000>();
-  region {
-    place_back(vector: &uniq values, value: move value);
-  }
+fn rotate(value: own Box<u64>) -> result: own Slots<Box<u64>, 4> pure {
+  let values = slots_new::<Box<u64>, 4>();
+  place_back(window: &values, value: move value);
   for (
     round in 0_u64..8_u64,
-    invariant at_most_one: len_of(values) <= 1_u64,
-    invariant at_least_one: len_of(values) >= 1_u64
+    invariant at_most_one: values.len <= 1_u64,
+    invariant at_least_one: values.len >= 1_u64
   ) {
-    let first = take_front(vector: &uniq values);
-    let rest = move values;
-    region {
-      place_back(vector: &uniq rest, value: move first);
-    }
-    set values = move rest;
+    let first = take_back(window: &values);
+    place_back(window: &values, value: move first);
   }
   return move values;
 }
@@ -485,15 +439,18 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn recursive_exclusive_replacement_returns_both_linear_owners() {
-    let source = br#"fn recursive_exchange(target: &uniq ReadFile, incoming: own ReadFile, stop: own Bool) -> previous: own ReadFile reads(target), writes(target) {
+fn a_recursive_exchange_of_two_linear_owners_uses_swap() {
+    // v0.59 wrote `let previous = replace deref(target) = move incoming;` and
+    // returned the displaced owner. [WIN-3] refuses an assignment over a
+    // linear owned place because a linear value has no release, and [OP-11]
+    // `swap` is the exchange that exists precisely because no source body can
+    // write it without a hole.
+    let source = br#"fn recursive_exchange(target: &ReadFile, incoming: &ReadFile, stop: own Bool) -> result: own unit writes(target), writes(incoming) {
   if stop {
-    let previous = replace deref(target) = move incoming;
-    return move previous;
+    swap(first: target, second: incoming);
+    return unit;
   } else {
-    region {
-      return recursive_exchange(target: &uniq deref(target), incoming: move incoming, stop: stop);
-    }
+    return recursive_exchange(target: target, incoming: incoming, stop: stop);
   }
 }
 
@@ -547,13 +504,13 @@ fn a_pure_formal_does_not_cover_an_actuals_explicit_close_effects() {
 
 #[test]
 fn a_local_owner_has_no_history_effect_on_its_former_parameter() {
-    let source = r#"fn relay(value: own box<u64>) -> result: own box<u64> pure {
+    let source = r#"fn relay(value: own Box<u64>) -> result: own Box<u64> pure {
   return move value;
 }
 
-fn observe(value: own box<u64>) -> result: own u64 pure {
+fn observe(value: own Box<u64>, witness: &Box<u64>) -> result: own u64 pure {
   let local = relay(value: move value);
-  return deref(local);
+  return local.inner;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -561,18 +518,21 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
     assert_complete(source.as_bytes());
-    let extra = source.replace("-> result: own u64 pure", "-> result: own u64 reads(value)");
+    let extra = source.replace(
+        "-> result: own u64 pure",
+        "-> result: own u64 reads(witness)",
+    );
     assert_rule_kind(extra.as_bytes(), SemanticRule::Eff2, |kind| {
         matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
-            if extra == &["reads(value)"])
+            if extra == &["reads(witness)"])
     });
 }
 
 #[test]
-fn dynamic_slot_reads_do_not_import_the_replacement_inputs_history() {
+fn dynamic_slot_reads_do_not_import_the_placement_inputs_history() {
     let source = r#"struct Slot {
   key: u64;
-  payload: box<u64>;
+  payload: Box<u64>;
 }
 
 fn read_key(slot: &Slot) -> result: own u64 reads(slot.key) {
@@ -580,19 +540,18 @@ fn read_key(slot: &Slot) -> result: own u64 reads(slot.key) {
 }
 
 fn read_payload(slot: &Slot) -> result: own u64 reads(slot.payload) {
-  return deref(deref(slot).payload);
+  return deref(slot).payload.inner;
 }
 
-fn observe(values: own array<Slot, 2>, first: own box<u64>, second: own box<u64>, index: own u64) -> result: own u64 reads(values), writes(values) contract {
+fn observe(values: &Slots<Slot, 2>, spare: &Box<u64>, first: own Box<u64>, second: own Box<u64>, index: own u64) -> result: own u64 writes(values) contract {
+  requires deref(values).len == 0_u64;
   requires index < 2_u64;
 } {
   let left = Slot(key: 7_u64, payload: move first);
   let right = Slot(key: 9_u64, payload: move second);
-  let old_left = replace values[0_u64] = move left;
-  let old_right = replace values[1_u64] = move right;
-  region {
-    return OBSERVE;
-  }
+  place_back(window: values, value: move left);
+  place_back(window: values, value: move right);
+  return OBSERVE;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -600,23 +559,23 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
     for observation in [
-        "values[index].key",
-        "read_key(slot: &values[index])",
-        "read_payload(slot: &values[index])",
+        "deref(values)[index].key",
+        "read_key(slot: &deref(values)[index])",
+        "read_payload(slot: &deref(values)[index])",
     ] {
         let accepted = source.replace("OBSERVE", observation);
         assert_complete(accepted.as_bytes());
-        let extra = accepted.replace("reads(values)", "reads(values, first, second)");
+        let extra = accepted.replace("writes(values)", "reads(spare), writes(values)");
         assert_rule_kind(extra.as_bytes(), SemanticRule::Eff2, |kind| {
             matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
-                if extra == &["reads(first)", "reads(second)"])
+                if extra == &["reads(spare)"])
         });
     }
 }
 
-const FIELD_REPLACEMENT: &str = r#"struct Holder {
+const FIELD_ASSIGNMENT: &str = r#"struct Holder {
   before: u64;
-  value: box<u64>;
+  value: Box<u64>;
   after: u64;
 }
 
@@ -626,16 +585,14 @@ struct Nested {
   after: u64;
 }
 
-fn exchange(target: &uniq box<u64>, incoming: own box<u64>) -> previous: own box<u64> reads(target), writes(target) {
-  let displaced = replace deref(target) = move incoming;
-  return move displaced;
+fn exchange(target: &Box<u64>, incoming: own Box<u64>) -> result: own unit writes(target) {
+  set deref(target) = move incoming;
+  return unit;
 }
 
-fn inspect(holder: own Holder, incoming: own box<u64>) -> result: own Holder reads(holder.value), writes(holder.value) {
-  region {
-    let previous = exchange(target: &uniq holder.value, incoming: move incoming);
-  }
-  return move holder;
+fn inspect(holder: &Holder, incoming: own Box<u64>) -> result: own unit writes(holder.value) {
+  exchange(target: &deref(holder).value, incoming: move incoming);
+  return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -644,47 +601,37 @@ fn main() -> status: own ExitStatus pure {
 "#;
 
 #[test]
-fn a_replacement_projects_only_the_selected_ordinary_field() {
-    assert_complete(FIELD_REPLACEMENT.as_bytes());
+fn an_assignment_projects_only_the_selected_ordinary_field() {
+    assert_complete(FIELD_ASSIGNMENT.as_bytes());
+    // The same projection two levels down. v0.59 spelled the nested case as a
+    // reborrow of a `&uniq Holder`; a reference is a local name for a path
+    // [REF-1], so the nested path is written directly.
     assert_complete(
-        FIELD_REPLACEMENT
-            .replace("holder: own Holder", "holder: own Nested")
-            .replace("result: own Holder", "result: own Nested")
+        FIELD_ASSIGNMENT
+            .replace("holder: &Holder", "holder: &Nested")
             .replace("holder.value", "holder.holder.value")
+            .replace("deref(holder).value", "deref(holder).holder.value")
             .as_bytes(),
     );
 }
 
-#[test]
-fn nested_reborrows_project_the_same_field_effects() {
-    for (referent, path) in [
-        ("Holder", "holder.value"),
-        ("Nested", "holder.holder.value"),
-    ] {
-        let source = FIELD_REPLACEMENT
-            .replace("holder: own Holder", &format!("holder: &uniq {referent}"))
-            .replace("result: own Holder", "result: own unit")
-            .replace("holder.value", path)
-            .replace(
-                &format!("&uniq {path}"),
-                &format!("&uniq deref(holder){}", &path[6..]),
-            )
-            .replace("return move holder;", "return unit;");
-        assert_complete(source.as_bytes());
-    }
-}
+// Retired with the reborrow of [OWN-5]: v0.59's
+// `nested_reborrows_project_the_same_field_effects` formed a child loan of a
+// `&uniq` parent, and v0.60 has no loan, no holder and no reborrow: a
+// reference is a local name for a path [REF-1]. The projection half it
+// checked is the nested case of `an_assignment_projects_only_the_selected_
+// ordinary_field` above.
 
 #[test]
 fn field_effects_reject_missing_selected_access_and_extra_siblings() {
     for row in [
         "reads(holder.value)",
-        "writes(holder.value)",
         "pure",
-        "reads(holder.before, holder.value), writes(holder.value)",
-        "reads(holder.value), writes(holder.value, holder.after)",
-        "reads(holder), writes(holder.value)",
+        "writes(holder.before), writes(holder.value)",
+        "writes(holder.value), writes(holder.after)",
+        "writes(holder.after)",
     ] {
-        let source = FIELD_REPLACEMENT.replace("reads(holder.value), writes(holder.value)", row);
+        let source = FIELD_ASSIGNMENT.replace("writes(holder.value)", row);
         assert_rule_kind(source.as_bytes(), SemanticRule::Eff2, |kind| {
             matches!(kind, SemanticIssueKind::EffectMismatch { .. })
         });
@@ -692,36 +639,46 @@ fn field_effects_reject_missing_selected_access_and_extra_siblings() {
 }
 
 #[test]
-fn opaque_fields_have_the_same_replacement_row_and_must_return_the_previous_owner() {
-    let source = FIELD_REPLACEMENT
-        .replace("box<u64>", "ReadFile")
-        .replace("result: own Holder", "(result: own Holder, old: own ReadFile)")
-        .replace(
-            "let previous = exchange(target: &uniq holder.value, incoming: move incoming);\n  }\n  return move holder;",
-            "let previous = exchange(target: &uniq holder.value, incoming: move incoming);\n    return move holder, move previous;\n  }",
-        );
-    assert_complete(source.as_bytes());
-    let missing_result =
-        source.replace("return move holder, move previous;", "return move holder;");
-    assert_rule_kind(missing_result.as_bytes(), SemanticRule::Fn1, |_| true);
-    let missing_consume = missing_result.replace(
-        "(result: own Holder, old: own ReadFile)",
-        "result: own Holder",
+fn a_linear_field_refuses_the_assignment_and_takes_the_exchange_instead() {
+    // Assigning over an owned place releases the old value when it is affine;
+    // a linear value has no release, so [WIN-3] refuses the write outright.
+    let refused = FIELD_ASSIGNMENT.replace("Box<u64>", "ReadFile");
+    assert_rule_kind(refused.as_bytes(), SemanticRule::Win3, |kind| {
+        matches!(kind, SemanticIssueKind::LinearAssignmentTarget { .. })
+    });
+    assert_complete(
+        br#"struct Holder {
+  before: u64;
+  value: ReadFile;
+  after: u64;
+}
+
+fn exchange(target: &ReadFile, incoming: &ReadFile) -> result: own unit writes(target), writes(incoming) {
+  swap(first: target, second: incoming);
+  return unit;
+}
+
+fn inspect(holder: &Holder, spare: &ReadFile) -> result: own unit writes(holder.value), writes(spare) {
+  exchange(target: &deref(holder).value, incoming: spare);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
     );
-    assert_rule_kind(missing_consume.as_bytes(), SemanticRule::Prov6, |_| true);
 }
 
 #[test]
-fn generic_exclusive_replacement_needs_no_result_routing_summary() {
-    let source = r#"fn exchange<T: linear>(target: &uniq T, incoming: own T) -> previous: own T reads(target), writes(target) {
-  let previous = replace deref(target) = move incoming;
-  return move previous;
+fn a_generic_swap_needs_no_result_routing_summary() {
+    let source = r#"fn exchange<T: linear>(target: &T, incoming: &T) -> result: own unit writes(target), writes(incoming) {
+  swap(first: target, second: incoming);
+  return unit;
 }
 
-fn transfer(target: &uniq ReadFile, incoming: own ReadFile) -> previous: own ReadFile reads(target), writes(target) {
-  region {
-    return exchange::<ReadFile>(target: &uniq deref(target), incoming: move incoming);
-  }
+fn transfer(target: &ReadFile, incoming: &ReadFile) -> result: own unit writes(target), writes(incoming) {
+  return exchange::<ReadFile>(target: target, incoming: incoming);
 }
 
 fn main() -> status: own ExitStatus pure {

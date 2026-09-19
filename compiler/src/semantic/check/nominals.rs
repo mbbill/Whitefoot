@@ -4,7 +4,7 @@ use crate::{BuiltinPreludeId, SemanticCompilerFailure, UnsupportedSemanticFeatur
 
 use super::super::model::{
     CheckedConst, CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind,
-    CheckedType, CheckedVariant, LoanStrength, NominalId,
+    CheckedType, CheckedVariant, NominalId,
 };
 use super::{CheckStop, Checker, PendingNominal, PreludeType};
 
@@ -82,7 +82,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Array { element, length } if length != CheckedConst::Value(0) => {
                     pending.push(self.element_type(element)?);
                 }
-                CheckedType::FixedVector { element, .. } => {
+                CheckedType::Window { element, .. } => {
                     pending.push(self.element_type(element)?);
                 }
                 // The target spells an empty array as [0 x i8], independently
@@ -136,13 +136,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // limit, and a loan-bearing value owns nothing [PROV-3], so it
             // has nothing to release twice. The exclusive view stays affine
             // because [OWN-5] refuses two exclusive loans on one range.
-            CheckedType::Slice { strength, .. } => strength == LoanStrength::Shared,
             CheckedType::Array { .. }
             | CheckedType::Buffer { .. }
-            | CheckedType::FixedVector { .. }
-            | CheckedType::Vector { .. }
-            | CheckedType::Heap { .. }
-            | CheckedType::Extent { .. } => false,
+            | CheckedType::Window { .. } => false,
         })
     }
 
@@ -171,10 +167,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     CheckedNominalKind::Opaque => Vec::new(),
                     CheckedNominalKind::ArenaStorage => return Ok(false),
                 },
-                CheckedType::Array { element, .. }
-                | CheckedType::FixedVector { element, .. }
-                | CheckedType::Vector { element, .. } => vec![self.element_type(element)?],
-                CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
+                CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+                    vec![self.element_type(element)?]
+                }
+                CheckedType::Buffer { element } => {
                     vec![element.ty()]
                 }
                 CheckedType::Generic(_)
@@ -183,9 +179,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Unit
                 | CheckedType::Bool
                 | CheckedType::Integer(_)
-                | CheckedType::Float(_)
-                | CheckedType::Heap { .. }
-                | CheckedType::Extent { .. } => Vec::new(),
+                | CheckedType::Float(_) => Vec::new(),
             };
             for child in children {
                 if child == ty {

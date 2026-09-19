@@ -17,7 +17,21 @@ use super::{
 };
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// [TYPE-2] whether this `struct_decl` carries the `opaque` modifier.
+    ///
+    /// The modifier is a written one, and [GRAM-2] admits it on a source
+    /// `struct_decl` exactly as on the prelude's own opaque structs, so the
+    /// written token decides it first. The prelude-file test stays beside it
+    /// because the prelude's opaque declarations are read through a record
+    /// reader that fixes the modifier by its phase rather than by a token.
     fn is_opaque_declaration(&self, node: NodeId) -> Result<bool, CheckStop> {
+        if self
+            .tree
+            .direct_token_with(node, TerminalPredicate::Fixed(crate::FixedTerminal::Opaque))?
+            .is_some()
+        {
+            return Ok(true);
+        }
         let source = self.tree.coordinate(node)?.source();
         Ok(self
             .resolved
@@ -399,10 +413,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .is_some_and(|entry| entry.shape == crate::ContainerShape::Box)
         {
             // [TYPE-9] `Box<T>`: one written type argument, its content.
-            let referent_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            // The argument is reached the way every other `targs` argument
+            // is -- the argument list, then its one `targ`, then that
+            // argument's `type` -- because `type := TYPEID targs?` puts no
+            // `type` among the head's own children.
+            let Some(targs) = self.tree.argument_list(node)? else {
+                return Ok(());
+            };
+            let arguments = self.tree.children_with(targs, Production::Targ)?;
+            let [referent] = arguments.as_slice() else {
+                return Ok(());
+            };
+            let Some(referent_node) = self.tree.first_child_with(*referent, Production::Type)?
+            else {
+                return Ok(());
+            };
+            self.ensure_nominals_in_node(referent_node, substitution)?;
             let referent = self.parse_type_with(referent_node, substitution)?;
             self.intern_box_nominal(referent)?;
             return Ok(());
@@ -476,6 +502,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let ResolvedTarget::Source { declaration, .. } = usage.target() else {
             return Ok(());
         };
+        // [TYPE-2] an opaque struct has no usable constructor and contributes
+        // no constructor template, so no instance is ever named through its
+        // entry; this pre-scan interns nothing for it and leaves the refusal
+        // to the ordinary construct judgment, which is where the rule sites
+        // its hard error.
+        if self.is_opaque_struct_declaration(declaration)? {
+            return Ok(());
+        }
         // [FORM-8] a construct whose field operands determine a region
         // parameter does not write it, so this pre-scan cannot read the
         // instance off the written list: it is formed while the operands are
@@ -1097,43 +1131,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.substitute_element_regions(element, regions)?,
                 length,
             },
-            CheckedType::Slice {
-                region,
-                element,
-                strength,
-            } => CheckedType::Slice {
-                region: Self::substituted_region(regions, region),
-                element: self.substitute_flat_element_regions(element, regions)?,
-                strength,
-            },
             CheckedType::Buffer { element } => CheckedType::Buffer {
                 element: self.substitute_flat_element_regions(element, regions)?,
             },
-            CheckedType::FixedVector { element, length } => CheckedType::FixedVector {
+            CheckedType::Window {
+                shape,
+                element,
+                capacity,
+            } => CheckedType::Window {
+                shape,
                 element: self.substitute_element_regions(element, regions)?,
-                length,
-            },
-            CheckedType::Vector {
-                region, element, ..
-            } => {
-                let region = Self::substituted_region(regions, region);
-                CheckedType::Vector {
-                    region,
-                    element: self.substitute_element_regions(element, regions)?,
-                    release: super::super::model::CheckedReleaseClass::General,
-                }
-            }
-            CheckedType::Heap { region } => CheckedType::Heap {
-                region: Self::substituted_region(regions, region),
-            },
-            CheckedType::Extent {
-                region,
-                bytes,
-                align,
-            } => CheckedType::Extent {
-                region: Self::substituted_region(regions, region),
-                bytes,
-                align,
+                capacity,
             },
         })
     }
@@ -1361,32 +1369,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         &mut pending,
                     )?,
                 (
-                    CheckedType::Vector {
+                    CheckedType::Window {
+                        shape: left_shape,
                         element: left,
-                        release: left_release,
-                        ..
+                        capacity: left_capacity,
                     },
-                    CheckedType::Vector {
+                    CheckedType::Window {
+                        shape: right_shape,
                         element: right,
-                        release: right_release,
-                        ..
+                        capacity: right_capacity,
                     },
                 ) => {
                     pending.push((self.element_type(left)?, self.element_type(right)?));
-                    !release_sensitive || left_release == right_release
-                }
-                (
-                    CheckedType::FixedVector {
-                        element: left,
-                        length: left_length,
-                    },
-                    CheckedType::FixedVector {
-                        element: right,
-                        length: right_length,
-                    },
-                ) => {
-                    pending.push((self.element_type(left)?, self.element_type(right)?));
-                    left_length == right_length
+                    left_shape == right_shape && left_capacity == right_capacity
                 }
                 (
                     CheckedType::Array {
@@ -1405,34 +1400,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     pending.push((left.ty(), right.ty()));
                     true
                 }
-                (
-                    CheckedType::Slice {
-                        element: left,
-                        strength: left_strength,
-                        ..
-                    },
-                    CheckedType::Slice {
-                        element: right,
-                        strength: right_strength,
-                        ..
-                    },
-                ) => {
-                    pending.push((left.ty(), right.ty()));
-                    left_strength == right_strength
-                }
-                (CheckedType::Heap { .. }, CheckedType::Heap { .. }) => true,
-                (
-                    CheckedType::Extent {
-                        bytes: left_bytes,
-                        align: left_align,
-                        ..
-                    },
-                    CheckedType::Extent {
-                        bytes: right_bytes,
-                        align: right_align,
-                        ..
-                    },
-                ) => left_bytes == right_bytes && left_align == right_align,
                 _ => false,
             };
             if !same {
@@ -1649,6 +1616,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .flatten()
             .find(|instance| instance.substitution == *substitution)
             .map(|instance| instance.id)
+    }
+
+    /// [TYPE-2] whether this declaration is an `opaque struct`, whose
+    /// constructor entry exists only to be refused.
+    ///
+    /// An opaque struct contributes no constructor template at all, so the
+    /// refusal has to be made from the nominal template before the ordinary
+    /// constructor lookup, which would otherwise report a missing entry as a
+    /// resolution failure rather than as the rule's own hard error.
+    pub(super) fn is_opaque_struct_declaration(
+        &self,
+        declaration: crate::DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        let Some(&index) = self.nominal_templates_by_declaration.get(&declaration) else {
+            return Ok(false);
+        };
+        let template = self
+            .nominal_templates
+            .get(index)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(template.role == DeclarationRole::Struct && self.is_opaque_declaration(template.node)?)
     }
 
     pub(super) fn source_constructor(

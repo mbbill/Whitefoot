@@ -1,18 +1,73 @@
+//! [TYPE-9]'s `Array` as the backend emits it: constant array globals,
+//! filled and converted construction [OP-13], the discharged subscript
+//! [OP-4], indexed assignment [SET-1], the measure member reads [OP-15], and
+//! the owning element's compiler-derived release [STOR-3, WIN-3].
+//!
+//! [TYPE-9] keeps `Array`, so this module's subject survives the v0.60
+//! storage redesign and almost every case was retargeted rather than retired.
+//! What moved in the sources:
+//!
+//! - `array<T, N>` is `Array<T, n>`; `FixedVector<T, N>` is `Slots<T, n>`;
+//!   `box<T>` and `Box<'s, T>` are `Box<T>`, whose content is the ordinary
+//!   field `inner` and never `deref` [TYPE-9]. `array_new::<T, n>(v)` is
+//!   `array_filled::<T, n>(value: v)`, `fixed_vector::<T, n>()` is
+//!   `slots_new::<T, n>()`, and `array_from_fixed` / `fixed_from_array` are
+//!   `slots_into_array` / `slots_from_array` [OP-13].
+//! - The `len_of` / `cap_of` / `room_of` / `head_of` former family retires.
+//!   The successor is [OP-15]: `a.len`, `a.cap` and `a.room` are place forms,
+//!   not calls. An `Array` has no `head` cell at all [MSR-1], so the two
+//!   standing `head_of` checks below went with the measure rather than being
+//!   weakened into something the table still answers.
+//! - `let old = replace a[i] = e;` retires with [SET-2] and [LIV-2]. Where the
+//!   displaced value is observed the successor is [OP-11] `swap`, which
+//!   exchanges two owned places without a hole and leaves both roots live;
+//!   where it is not, it is the ordinary `set a[i] = e;` taking [WIN-3]'s
+//!   disposition of the old value.
+//! - `region { .. }`, region parameters, `arena_frame` and `arena_box` retire
+//!   with [OWN-3], [OWN-4] and [STOR-4]. Allocation is total over one heap
+//!   [STOR-8], so every `heap_box` / `heap_vector` refusal arm and every
+//!   refusing allocation ledger below went with the `Result` the source can
+//!   no longer write.
+//! - `place_front` admits `Ring` alone [OP-10]. A front insertion into a
+//!   `Slots` is `insert_at(window: &r, index: 0_u64, value: v)`, which moves
+//!   the same boundary and produces the same order.
+//!
+//! Two subjects retired outright, each recorded beside what replaced it:
+//!
+//! - `general_run_elements_preserve_box_brands_across_region_polymorphic_calls`
+//!   retired with [OWN-3], [OWN-4] and [STOR-4]. Its whole subject was that a
+//!   heap `Box<'h, u64>` and an arena `Box<'a, u64>` nested three run layers
+//!   deep keep two different release classes across a region-polymorphic
+//!   call. [TYPE-9] gives `Box<T>` no brand and [STOR-8] gives the language
+//!   one heap, so there is no second class to separate and no region to be
+//!   polymorphic over. The three-layer nesting and the generic handoff that
+//!   case also covered are kept by
+//!   `general_run_elements_preserve_nested_owners_across_generic_calls`.
+//! - `constant_typed_places_execute_shared_calls_and_nested_projections` kept
+//!   its subject but lost its `retain` helper and that helper's
+//!   returned-pointer ABI assertion, which retired with [OWN-6] and [OWN-14]:
+//!   `fn retain<'r>(values: &'r T) -> result: &'r T` handed a region-tied
+//!   loan back to its caller. The successor is [REF-1], which makes a
+//!   reference a local name for a path, and [REF-3], which refuses a returned
+//!   reference outright with the restructuring `return an index and let the
+//!   caller form the reference`. The shared-reference call boundary that case
+//!   observed is kept by the three reading helpers that remain.
+
 use super::owned_places::retain_calls;
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
 #[test]
-fn ordinary_generic_brand_readers_execute_inline_heap_and_extent_values() {
-    let source = br#"enum SmallBytes<const n: u64>['s] {
-  Inline(values: FixedVector<u8, n>);
-  Spilled(values: Vector<'s, u8>);
+fn ordinary_generic_readers_execute_inline_and_boxed_window_values() {
+    let source = br#"enum SmallBytes<const n: u64> {
+  Inline(values: Slots<u8, n>);
+  Spilled(values: Box<Slots<u8>>);
 }
 
-fn checksum<const n: u64>['s](bytes: &SmallBytes<'s, n>) -> result: own u64 reads(bytes) {
+fn checksum<const n: u64>(bytes: &SmallBytes<n>) -> result: own u64 reads(bytes) {
   let result = 0_u64;
   match deref(bytes) {
     Inline(values: run) => {
-      let length = len_of(deref(run));
+      let length = deref(run).len;
       for (index in 0_u64..length) {
         let byte = deref(run)[index];
         let word = cvt::<u8, u64>(byte);
@@ -21,9 +76,9 @@ fn checksum<const n: u64>['s](bytes: &SmallBytes<'s, n>) -> result: own u64 read
       }
     }
     Spilled(values: run) => {
-      let length = len_of(deref(run));
+      let length = deref(run).inner.len;
       for (index in 0_u64..length) {
-        let byte = deref(run)[index];
+        let byte = deref(run).inner[index];
         let word = cvt::<u8, u64>(byte);
         let prefix = result *wrap 31_u64;
         set result = prefix +wrap word;
@@ -33,81 +88,28 @@ fn checksum<const n: u64>['s](bytes: &SmallBytes<'s, n>) -> result: own u64 read
   return result;
 }
 
-fn read<const n: u64>['s](bytes: &SmallBytes<'s, n>) -> result: own u64 reads(bytes) {
+fn read<const n: u64>(bytes: &SmallBytes<n>) -> result: own u64 reads(bytes) {
   return checksum::<n>(bytes: bytes);
 }
 
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+fn main() -> status: own ExitStatus pure {
+  let cell = box_slots_new::<u8>(capacity: 4_u64);
+  place_back(window: &cell.inner, value: 7_u8);
+  place_back(window: &cell.inner, value: 11_u8);
+  let spilled = Spilled<4>(values: move cell);
+  let observed = read::<4>(bytes: &spilled);
+  if observed != 228_u64 {
+    return exit_status(code: 1_u8);
   }
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: run) => {
-        region {
-          place_back(vector: &uniq run, value: 7_u8);
-        }
-        region {
-          place_back(vector: &uniq run, value: 11_u8);
-        }
-        let spilled = Spilled<4>(values: move run);
-        region {
-          let observed = read::<4>(bytes: &spilled);
-          if observed != 228_u64 {
-            return exit_status(code: 1_u8);
-          }
-        }
-      }
-    }
-  }
-  region 'a {
-    let store = arena_frame::<32, 8, 'a>();
-    region {
-      match arena_vector::<u8>(store: &uniq store, count: 4_u64) {
-        None() => {
-          return exit_status(code: 71_u8);
-        }
-        Some(value: run) => {
-          region {
-            place_back(vector: &uniq run, value: 13_u8);
-          }
-          region {
-            place_back(vector: &uniq run, value: 17_u8);
-          }
-          let spilled = Spilled<4>(values: move run);
-          let inline = fixed_vector::<u8, 4>();
-          region {
-            place_back(vector: &uniq inline, value: 19_u8);
-          }
-          region {
-            place_back(vector: &uniq inline, value: 23_u8);
-          }
-          region {
-            let first = take_front(vector: &uniq inline);
-            let rest = move inline;
-            region {
-              place_back(vector: &uniq rest, value: first);
-            }
-            let rotated = move rest;
-            let small = Inline<'a, 4>(values: move rotated);
-            region {
-              let observed = read::<4>(bytes: &spilled);
-              let local = read::<4>(bytes: &small);
-              if observed != 420_u64 {
-                return exit_status(code: 2_u8);
-              }
-              if local != 732_u64 {
-                return exit_status(code: 3_u8);
-              }
-            }
-          }
-        }
-      }
-    }
+  let inline_window = slots_new::<u8, 4>();
+  place_back(window: &inline_window, value: 19_u8);
+  place_back(window: &inline_window, value: 23_u8);
+  let rotated = remove_at(window: &inline_window, index: 0_u64);
+  place_back(window: &inline_window, value: rotated);
+  let small = Inline<4>(values: move inline_window);
+  let local = read::<4>(bytes: &small);
+  if local != 732_u64 {
+    return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
 }
@@ -118,6 +120,10 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
         let module = retain_calls(&super::emit_lowered(source, overlap))
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
+        // KEPT AS WRITTEN for the lowering port: the `$` marks the emitted
+        // instantiation suffix of a generic source helper. The two helpers
+        // lost their region parameter but keep their one const argument, so
+        // the mangling to re-derive is the const-only instance name.
         for helper in [" @wf_read$", " @wf_checksum$"] {
             let headers: Vec<_> = module
                 .lines()
@@ -129,6 +135,8 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
         let observer = super::owned_places::allocation_observer(1, 0);
         let output = super::compile_link_and_run(&module, Some(&observer), &[]);
         assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
+        // KEPT AS WRITTEN for the lowering port: the one boxed window is the
+        // only heap object the program owns, and it is released exactly once.
         assert_eq!(output.stdout, b"A1;F1;", "{overlap:?}: {output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
     }
@@ -138,18 +146,14 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
 fn constant_typed_places_execute_shared_calls_and_nested_projections() {
     let source = br#"struct Entry {
   tag: u64;
-  samples: array<array<u64, 2>, 2>;
+  samples: Array<Array<u64, 2>, 2>;
 }
 
-const entries: array<Entry, 2> =[Entry(tag: 17_u64, samples:[[19_u64, 23_u64],[29_u64, 31_u64]]), Entry(tag: 37_u64, samples:[[41_u64, 43_u64],[47_u64, 53_u64]])];
+const entries: Array<Entry, 2> =[Entry(tag: 17_u64, samples:[[19_u64, 23_u64],[29_u64, 31_u64]]), Entry(tag: 37_u64, samples:[[41_u64, 43_u64],[47_u64, 53_u64]])];
 
 const stored_entry: Entry = Entry(tag: 59_u64, samples:[[61_u64, 67_u64],[71_u64, 73_u64]]);
 
-fn retain['r](values: &'r array<Entry, 2>) -> result: &'r array<Entry, 2> pure {
-  return values;
-}
-
-fn read(values: &array<Entry, 2>, outer: own u64, row: own u64, column: own u64) -> result: own u64 reads(values) contract {
+fn read(values: &Array<Entry, 2>, outer: own u64, row: own u64, column: own u64) -> result: own u64 reads(values) contract {
   requires outer < 2_u64;
   requires row < 2_u64;
   requires column < 2_u64;
@@ -157,7 +161,7 @@ fn read(values: &array<Entry, 2>, outer: own u64, row: own u64, column: own u64)
   return deref(values)[outer].samples[row][column];
 }
 
-fn read_row(values: &array<u64, 2>, index: own u64) -> result: own u64 reads(values) contract {
+fn read_row(values: &Array<u64, 2>, index: own u64) -> result: own u64 reads(values) contract {
   requires index < 2_u64;
 } {
   return deref(values)[index];
@@ -174,41 +178,42 @@ fn main() -> status: own ExitStatus pure {
   if stored_entry.tag != 59_u64 {
     return exit_status(code: 2_u8);
   }
-  let length = len_of(stored_entry.samples[1_u64]);
+  let length = stored_entry.samples[1_u64].len;
   if length != 2_u64 {
     return exit_status(code: 3_u8);
   }
-  region 'outer {
-    region {
-      let shared = retain(values: &'outer entries);
-      let first = read(values: shared, outer: 0_u64, row: 0_u64, column: 1_u64);
-      let last = read(values: shared, outer: 1_u64, row: 1_u64, column: 1_u64);
-      if first != 23_u64 {
-        return exit_status(code: 4_u8);
-      }
-      if last != 53_u64 {
-        return exit_status(code: 5_u8);
-      }
-      let projected = read_row(values: &stored_entry.samples[1_u64], index: 0_u64);
-      if projected != 71_u64 {
-        return exit_status(code: 6_u8);
-      }
-      let tag = read_entry(value: &stored_entry);
-      if tag != 59_u64 {
-        return exit_status(code: 7_u8);
-      }
-    }
+  let first = read(values: &entries, outer: 0_u64, row: 0_u64, column: 1_u64);
+  let last = read(values: &entries, outer: 1_u64, row: 1_u64, column: 1_u64);
+  if first != 23_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if last != 53_u64 {
+    return exit_status(code: 5_u8);
+  }
+  let projected = read_row(values: &stored_entry.samples[1_u64], index: 0_u64);
+  if projected != 71_u64 {
+    return exit_status(code: 6_u8);
+  }
+  let tag = read_entry(value: &stored_entry);
+  if tag != 59_u64 {
+    return exit_status(code: 7_u8);
   }
   return exit_status(code: 0_u8);
 }
 "#;
     // Independent calls with storage unavailable to the WF optimizer retain
-    // even the identity helper's returned-pointer ABI. The WF caller above
-    // separately supplies actual immutable globals through the same helpers.
+    // the shared-reference argument ABI. The WF caller above separately
+    // supplies actual immutable globals through the same helpers.
+    //
+    // The fourth helper of the v0.59 fixture, `retain`, returned its own
+    // `&'r` argument so the host could compare the returned pointer with the
+    // one it passed. That helper and its pointer-identity check retired with
+    // [OWN-6] and [OWN-14]: the successor is [REF-1]'s path naming and
+    // [REF-3]'s outright refusal of a returned reference, carrying the
+    // restructuring `return an index and let the caller form the reference`.
     let observer = r#"#include <stdint.h>
 #include <stdlib.h>
 struct Entry { uint64_t tag; uint64_t samples[2][2]; };
-extern const struct Entry *wf_retain(const struct Entry *);
 extern uint64_t wf_read(const struct Entry *, uint64_t, uint64_t, uint64_t);
 extern uint64_t wf_read_row(const uint64_t *, uint64_t);
 extern uint64_t wf_read_entry(const struct Entry *);
@@ -217,9 +222,7 @@ __attribute__((constructor)) static void check_shared_abi(void) {
         {101, {{103, 107}, {109, 113}}},
         {127, {{131, 137}, {139, 149}}}
     };
-    const struct Entry *retained = wf_retain(values);
-    if (retained != values) exit(81);
-    if (wf_read(retained, 1, 1, 0) != 139) exit(82);
+    if (wf_read(values, 1, 1, 0) != 139) exit(82);
     if (wf_read_row(values[0].samples[1], 1) != 113) exit(83);
     if (wf_read_entry(&values[1]) != 127) exit(84);
 }
@@ -229,7 +232,7 @@ __attribute__((constructor)) static void check_shared_abi(void) {
         // noinline alone still lets IPSCCP specialize an internal helper to
         // this caller's one constant global and remove its pointer argument.
         let module = retain_calls(&super::emit_lowered(source, overlap));
-        for helper in ["retain", "read", "read_row", "read_entry"] {
+        for helper in ["read", "read_row", "read_entry"] {
             assert!(
                 emitted_function(&module, helper)
                     .lines()
@@ -249,12 +252,12 @@ __attribute__((constructor)) static void check_shared_abi(void) {
 fn nested_constant_arrays_emit_complete_recursive_global_layouts() {
     let source = br#"struct Entry {
   tag: u64;
-  samples: array<u64, 2>;
+  samples: Array<u64, 2>;
 }
 
-const rows: array<array<u64, 2>, 2> =[[7_u64, 9_u64],[11_u64, 13_u64]];
+const rows: Array<Array<u64, 2>, 2> =[[7_u64, 9_u64],[11_u64, 13_u64]];
 
-const entries: array<Entry, 2> =[Entry(tag: 17_u64, samples:[19_u64, 23_u64]), Entry(tag: 29_u64, samples:[31_u64, 37_u64])];
+const entries: Array<Entry, 2> =[Entry(tag: 17_u64, samples:[19_u64, 23_u64]), Entry(tag: 29_u64, samples:[31_u64, 37_u64])];
 
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
@@ -262,6 +265,10 @@ fn main() -> status: own ExitStatus pure {
 "#;
     // This observes recursive global layout independently of the WF access
     // test above, using the host's ordinary C array and struct layout.
+    //
+    // KEPT AS WRITTEN for the lowering port: `@.wf_const.N` in declaration
+    // order and `private unnamed_addr constant` are the emitted constant-pool
+    // spelling the rename below depends on.
     let module = compile(source)
         .replace("@.wf_const.0", "@wf_test_rows")
         .replace("@.wf_const.1", "@wf_test_entries")
@@ -285,30 +292,37 @@ __attribute__((constructor)) static void check_global_layout(void) {
     assert!(output.stderr.is_empty(), "{output:?}");
 }
 
+/// The v0.59 case placed its third record with `place_front` on a
+/// `FixedVector`. [OP-10] admits `place_front` on a `Ring` alone; the same
+/// boundary move on a `Slots` is `insert_at(index: 0_u64)`, which produces the
+/// same element order, so the observed order is unchanged.
+///
+/// Its element exchange was `let old = replace values[1_u64] = e;`. [SET-2]
+/// retires; [OP-11] `swap` is the successor that still hands the displaced
+/// owner back, exchanging two owned places with no hole and no dead root.
 #[test]
-fn full_owning_arrays_preserve_wrapped_order_replacement_and_exact_cleanup() {
+fn full_owning_arrays_preserve_insert_order_exchange_and_exact_cleanup() {
     let source = br#"struct Record {
-  payload: array<u64, 16>;
-  owner: box<u64>;
+  payload: Array<u64, 16>;
+  owner: Box<u64>;
 }
 
 fn make_record(tag: own u64) -> result: own Record pure {
-  let payload = array_new::<u64, 16>(tag);
-  let owner = box_new(tag);
+  let payload = array_filled::<u64, 16>(value: tag);
+  let owner = box_new::<u64>(value: tag);
   return Record(payload: move payload, owner: move owner);
 }
 
-fn seal(values: own FixedVector<Record, 3>) -> result: own array<Record, 3> reads(values) contract {
-  requires len_of(values) == 3_u64;
+fn seal(values: own Slots<Record, 3>) -> result: own Array<Record, 3> pure contract {
+  requires values.len == 3_u64;
 } {
-  return array_from_fixed(vector: move values);
+  return slots_into_array::<Record, 3>(values: move values);
 }
 
-fn reopen(values: own array<Record, 3>) -> result: own FixedVector<Record, 3> pure contract {
-  ensures len_of(result) == 3_u64;
-  ensures head_of(result) == 0_u64;
+fn reopen(values: own Array<Record, 3>) -> result: own Slots<Record, 3> pure contract {
+  ensures result.len == 3_u64;
 } {
-  let full = fixed_from_array(values: move values);
+  let full = slots_from_array::<Record, 3>(values: move values);
   return move full;
 }
 
@@ -316,7 +330,7 @@ fn relay<T: affine>(values: own T) -> result: own T pure {
   return move values;
 }
 
-fn read(values: &array<Record, 3>, index: own u64) -> result: own u64 reads(values) contract {
+fn read(values: &Array<Record, 3>, index: own u64) -> result: own u64 reads(values) contract {
   requires index < 3_u64;
 } {
   return deref(values)[index].payload[7_u64];
@@ -328,58 +342,46 @@ fn main() -> status: own ExitStatus pure {
   let second = make_record(tag: second_tag);
   let third_tag = second.payload[0_u64] +wrap 11_u64;
   let third = make_record(tag: third_tag);
-  let empty = fixed_vector::<Record, 3>();
-  region {
-    place_back(vector: &uniq empty, value: move first);
+  let built = slots_new::<Record, 3>();
+  place_back(window: &built, value: move first);
+  place_back(window: &built, value: move second);
+  insert_at(window: &built, index: 0_u64, value: move third);
+  let values = seal(values: move built);
+  let a = read(values: &values, index: 0_u64);
+  let b = read(values: &values, index: 1_u64);
+  let c = read(values: &values, index: 2_u64);
+  if a != 33_u64 {
+    return exit_status(code: 1_u8);
   }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: move second);
+  if b != 11_u64 {
+    return exit_status(code: 1_u8);
   }
-  let two = move one;
-  region {
-    place_front(vector: &uniq two, value: move third);
+  if c != 22_u64 {
+    return exit_status(code: 1_u8);
   }
-  let wrapped = move two;
-  let values = seal(values: move wrapped);
-  region {
-    let a = read(values: &values, index: 0_u64);
-    let b = read(values: &values, index: 1_u64);
-    let c = read(values: &values, index: 2_u64);
-    if a != 33_u64 {
-      return exit_status(code: 1_u8);
-    }
-    if b != 11_u64 {
-      return exit_status(code: 1_u8);
-    }
-    if c != 22_u64 {
-      return exit_status(code: 1_u8);
-    }
-  }
-  let old = replace values[1_u64] = make_record(tag: 99_u64);
-  let Record(payload: old_payload, owner: old_owner) = move old;
+  let fresh = make_record(tag: 99_u64);
+  swap(first: &values[1_u64], second: &fresh);
+  let Record(payload: old_payload, owner: old_owner) = move fresh;
   if old_payload[7_u64] != 11_u64 {
     return exit_status(code: 2_u8);
   }
-  if deref(old_owner) != 11_u64 {
+  if old_owner.inner != 11_u64 {
     return exit_status(code: 2_u8);
   }
-  let passed = relay::<array<Record, 3>>(values: move values);
+  let passed = relay::<Array<Record, 3>>(values: move values);
   let full = reopen(values: move passed);
   let dense = seal(values: move full);
-  region {
-    let a = read(values: &dense, index: 0_u64);
-    let b = read(values: &dense, index: 1_u64);
-    let c = read(values: &dense, index: 2_u64);
-    if a != 33_u64 {
-      return exit_status(code: 3_u8);
-    }
-    if b != 99_u64 {
-      return exit_status(code: 3_u8);
-    }
-    if c != 22_u64 {
-      return exit_status(code: 3_u8);
-    }
+  let a_again = read(values: &dense, index: 0_u64);
+  let b_again = read(values: &dense, index: 1_u64);
+  let c_again = read(values: &dense, index: 2_u64);
+  if a_again != 33_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if b_again != 99_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if c_again != 22_u64 {
+    return exit_status(code: 3_u8);
   }
   return exit_status(code: 0_u8);
 }
@@ -392,6 +394,10 @@ fn main() -> status: own ExitStatus pure {
         let host = super::owned_places::allocation_observer(4, 0);
         let output = super::compile_link_and_run(&observed, Some(&host), &[]);
         assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
+        // KEPT AS WRITTEN for the lowering port: the four cells are the three
+        // records and the exchanged one. `swap` leaves the array holding
+        // A3, A4, A2 and the destructured `fresh` holding A1, and reverse
+        // declaration order releases the array's slots before that owner.
         assert_eq!(
             output.stdout, b"A1;A2;A3;A4;F3;F4;F2;F1;",
             "{overlap:?}: {output:?}"
@@ -400,93 +406,105 @@ fn main() -> status: own ExitStatus pure {
     }
 }
 
+/// The v0.59 case drove the abandonment with a refused `heap_box`: each
+/// `Result` arm returned the store's refusal and the partly built window had
+/// to release exactly the prefix it held. [STOR-8] makes allocation total in
+/// the source: it never returns a failure and no allocating operation
+/// carries a `Result`, so the refusal half retired with [BLK-2]'s fallible
+/// store take and there is no `X` marker left to observe.
+///
+/// The surviving half is the one this case was really about: the compiler
+/// derived release [STOR-3] of a partly built owning window on an early
+/// leaving edge frees each initialized element exactly once and nothing else.
+/// An ordinary source-written failure arm reaches the same edges.
 #[test]
-fn fallible_full_array_construction_releases_each_initialized_prefix_once() {
-    let source = br#"struct Record['s] {
+fn abandoned_full_array_construction_releases_each_initialized_prefix_once() {
+    let source = br#"struct Record {
   tag: u64;
-  owner: Box<'s, u64>;
+  owner: Box<u64>;
 }
 
 fn relay<T: affine>(value: own T) -> result: own T pure {
   return move value;
 }
 
-fn build['s](store: &uniq Heap<'s>) -> result: own Result<array<Record<'s>, 3>, u64> reads(store), writes(store), allocates(store) {
-  let empty = fixed_vector::<Record<'s>, 3>();
-  region {
-    match heap_box(store: &uniq deref(store), value: 11_u64) {
-      Err(error: back) => {
-        return Err<array<Record<'s>, 3>, u64>(error: back);
-      }
-      Ok(value: first) => {
-        let first_record = Record(tag: 11_u64, owner: move first);
-        place_back(vector: &uniq empty, value: move first_record);
-        let one = move empty;
-        region {
-          match heap_box(store: &uniq deref(store), value: 22_u64) {
-            Err(error: back) => {
-              return Err<array<Record<'s>, 3>, u64>(error: back);
-            }
-            Ok(value: second) => {
-              let second_record = Record(tag: 22_u64, owner: move second);
-              place_back(vector: &uniq one, value: move second_record);
-              let two = move one;
-              region {
-                match heap_box(store: &uniq deref(store), value: 33_u64) {
-                  Err(error: back) => {
-                    return Err<array<Record<'s>, 3>, u64>(error: back);
-                  }
-                  Ok(value: third) => {
-                    let third_record = Record(tag: 33_u64, owner: move third);
-                    place_back(vector: &uniq two, value: move third_record);
-                    let full = move two;
-                    let values = array_from_fixed(vector: move full);
-                    let passed = relay::<array<Record<'s>, 3>>(value: move values);
-                    return Ok<array<Record<'s>, 3>, u64>(value: move passed);
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+fn build(stop: own u64) -> result: own Result<Array<Record, 3>, u64> pure {
+  let empty = slots_new::<Record, 3>();
+  let first_owner = box_new::<u64>(value: 11_u64);
+  let first_record = Record(tag: 11_u64, owner: move first_owner);
+  place_back(window: &empty, value: move first_record);
+  if stop == 1_u64 {
+    return Err<Array<Record, 3>, u64>(error: 11_u64);
   }
+  let second_owner = box_new::<u64>(value: 22_u64);
+  let second_record = Record(tag: 22_u64, owner: move second_owner);
+  place_back(window: &empty, value: move second_record);
+  if stop == 2_u64 {
+    return Err<Array<Record, 3>, u64>(error: 22_u64);
+  }
+  let third_owner = box_new::<u64>(value: 33_u64);
+  let third_record = Record(tag: 33_u64, owner: move third_owner);
+  place_back(window: &empty, value: move third_record);
+  if stop == 3_u64 {
+    return Err<Array<Record, 3>, u64>(error: 33_u64);
+  }
+  let values = slots_into_array::<Record, 3>(values: move empty);
+  let passed = relay::<Array<Record, 3>>(value: move values);
+  return Ok<Array<Record, 3>, u64>(value: move passed);
 }
 
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  region {
-    match build(store: &uniq heap) {
-      Err(error: refused) => {
-        if refused == 11_u64 {
-          return exit_status(code: 71_u8);
-        }
-        if refused == 22_u64 {
-          return exit_status(code: 72_u8);
-        }
-        if refused == 33_u64 {
-          return exit_status(code: 73_u8);
-        }
-        return exit_status(code: 74_u8);
-      }
-      Ok(value: values) => {
-        if values[0_u64].tag != 11_u64 {
-          return exit_status(code: 1_u8);
-        }
-        if values[1_u64].tag != 22_u64 {
-          return exit_status(code: 2_u8);
-        }
-        if values[2_u64].tag != 33_u64 {
-          return exit_status(code: 3_u8);
-        }
-        return exit_status(code: 0_u8);
+fn main() -> status: own ExitStatus pure {
+  let one = build(stop: 1_u64);
+  match move one {
+    Ok(value: unexpected_one) => {
+      return exit_status(code: 71_u8);
+    }
+    Err(error: refused_one) => {
+      if refused_one != 11_u64 {
+        return exit_status(code: 61_u8);
       }
     }
   }
+  let two = build(stop: 2_u64);
+  match move two {
+    Ok(value: unexpected_two) => {
+      return exit_status(code: 72_u8);
+    }
+    Err(error: refused_two) => {
+      if refused_two != 22_u64 {
+        return exit_status(code: 62_u8);
+      }
+    }
+  }
+  let three = build(stop: 3_u64);
+  match move three {
+    Ok(value: unexpected_three) => {
+      return exit_status(code: 73_u8);
+    }
+    Err(error: refused_three) => {
+      if refused_three != 33_u64 {
+        return exit_status(code: 63_u8);
+      }
+    }
+  }
+  let complete = build(stop: 0_u64);
+  match move complete {
+    Ok(value: values) => {
+      if values[0_u64].tag != 11_u64 {
+        return exit_status(code: 1_u8);
+      }
+      if values[1_u64].tag != 22_u64 {
+        return exit_status(code: 2_u8);
+      }
+      if values[2_u64].tag != 33_u64 {
+        return exit_status(code: 3_u8);
+      }
+    }
+    Err(error: unexpected_complete) => {
+      return exit_status(code: 74_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
 }
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
@@ -494,24 +512,22 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
-        // Every next allocation uses the same exclusive provider after the
-        // preceding result is matched, so allocation IDs identify source slots.
-        for (refused, status, ledger) in [
-            (0, 0, b"A1;A2;A3;F1;F2;F3;".as_slice()),
-            (1, 71, b"X1;".as_slice()),
-            (2, 72, b"A1;X2;F1;".as_slice()),
-            (3, 73, b"A1;A2;X3;F1;F2;".as_slice()),
-        ] {
-            let host = super::owned_places::allocation_observer(3, refused);
-            let output = super::compile_link_and_run(&observed, Some(&host), &[]);
-            assert_eq!(
-                output.status.code(),
-                Some(status),
-                "{overlap:?}: {output:?}"
-            );
-            assert_eq!(output.stdout, ledger, "{overlap:?}: {output:?}");
-            assert!(output.stderr.is_empty(), "{overlap:?}: {output:?}");
-        }
+        // Each abandoned prefix is released before the next build allocates,
+        // so allocation IDs identify source slots. The observer aborts on a
+        // duplicate or unknown release, so the ledger also pins "once".
+        let host = super::owned_places::allocation_observer(9, 0);
+        let output = super::compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
+        // KEPT AS WRITTEN for the lowering port: the release order inside one
+        // abandoned window, and inside the completed array, is logical index
+        // order. The completed run's `A7;A8;A9;F7;F8;F9;` is the v0.59
+        // ledger's own success row unchanged.
+        assert_eq!(
+            output.stdout,
+            b"A1;F1;A2;A3;F2;F3;A4;A5;A6;F4;F5;F6;A7;A8;A9;F7;F8;F9;".as_slice(),
+            "{overlap:?}: {output:?}"
+        );
+        assert!(output.stderr.is_empty(), "{overlap:?}: {output:?}");
     }
 }
 
@@ -543,72 +559,44 @@ fn slot_declarations(function: &str) -> (usize, usize) {
     (total, outside_entry)
 }
 
+/// The v0.59 case carried a heap `Box<'h, u64>` and an arena `Box<'a, u64>`
+/// through the same helpers so the two release classes could be separated.
+/// Regions and arenas retire with [OWN-3], [OWN-4] and [STOR-4], and [TYPE-9]
+/// gives `Box<T>` no brand, so one owner over the one heap [STOR-8] is the
+/// whole population now.
 #[test]
-fn full_arrays_preserve_heap_and_arena_element_ownership_through_generic_helpers() {
-    let source = br#"struct Record['s] {
+fn full_arrays_preserve_boxed_element_ownership_through_generic_helpers() {
+    let source = br#"struct Record {
   tag: u64;
-  owner: Box<'s, u64>;
+  owner: Box<u64>;
 }
 
 fn pass<T: linear>(value: own T) -> result: own T pure {
   return move value;
 }
 
-fn make['s](owner: own Box<'s, u64>, tag: own u64) -> result: own array<Record<'s>, 1> pure {
+fn make(owner: own Box<u64>, tag: own u64) -> result: own Array<Record, 1> pure {
   let record = Record(tag: tag, owner: move owner);
-  let empty = fixed_vector::<Record<'s>, 1>();
-  region {
-    place_back(vector: &uniq empty, value: move record);
-  }
-  let full = move empty;
-  return array_from_fixed(vector: move full);
+  let empty = slots_new::<Record, 1>();
+  place_back(window: &empty, value: move record);
+  return slots_into_array::<Record, 1>(values: move empty);
 }
 
-fn relay['s](values: own array<Record<'s>, 1>) -> result: own array<Record<'s>, 1> pure {
-  let passed = pass::<array<Record<'s>, 1>>(value: move values);
-  let full = fixed_from_array(values: move passed);
-  return array_from_fixed(vector: move full);
+fn relay(values: own Array<Record, 1>) -> result: own Array<Record, 1> pure {
+  let passed = pass::<Array<Record, 1>>(value: move values);
+  let full = slots_from_array::<Record, 1>(values: move passed);
+  return slots_into_array::<Record, 1>(values: move full);
 }
 
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+fn main() -> status: own ExitStatus pure {
+  let owner = box_new::<u64>(value: 17_u64);
+  let held = make(owner: move owner, tag: 17_u64);
+  let returned = relay(values: move held);
+  let tag = returned[0_u64].tag;
+  if tag != 17_u64 {
+    return exit_status(code: 1_u8);
   }
-  region 'a {
-    let store = arena_frame::<8, 8, 'a>();
-    region {
-      match heap_box(store: &uniq heap, value: 17_u64) {
-        Err(error: back) => {
-          return exit_status(code: 70_u8);
-        }
-        Ok(value: general) => {
-          match arena_box(store: &uniq store, value: 29_u64) {
-            Err(error: back) => {
-              return exit_status(code: 71_u8);
-            }
-            Ok(value: extent) => {
-              let heap_array = make(owner: move general, tag: 17_u64);
-              let arena_array = make(owner: move extent, tag: 29_u64);
-              let heap_returned = relay(values: move heap_array);
-              let arena_returned = relay(values: move arena_array);
-              region {
-                let heap_tag = heap_returned[0_u64].tag;
-                let arena_tag = arena_returned[0_u64].tag;
-                if heap_tag != 17_u64 {
-                  return exit_status(code: 1_u8);
-                }
-                if arena_tag != 29_u64 {
-                  return exit_status(code: 2_u8);
-                }
-              }
-              return exit_status(code: 0_u8);
-            }
-          }
-        }
-      }
-    }
-  }
+  return exit_status(code: 0_u8);
 }
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
@@ -616,24 +604,29 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
-        for (refused, status, ledger) in [(0, 0, b"A1;F1;".as_slice()), (1, 70, b"X1;".as_slice())]
-        {
-            let host = super::owned_places::allocation_observer(1, refused);
-            let output = super::compile_link_and_run(&observed, Some(&host), &[]);
-            assert_eq!(output.status.code(), Some(status), "{output:?}");
-            assert_eq!(output.stdout, ledger, "{output:?}");
-            assert!(output.stderr.is_empty(), "{output:?}");
-        }
+        let host = super::owned_places::allocation_observer(1, 0);
+        let output = super::compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        // KEPT AS WRITTEN for the lowering port: the element owner crosses
+        // two generic boundaries and both window conversions, and is released
+        // exactly once when the returned array dies.
+        assert_eq!(output.stdout, b"A1;F1;", "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
     }
 }
 
+/// The v0.59 case also read out the displaced element with
+/// `let previous = replace empty_returned[1_u64] = Empty();`. [SET-2] retires
+/// and nothing here observes the old value, so the successor is the ordinary
+/// `set` whose old occupant takes [WIN-3]'s disposition, an empty action for
+/// a zero-byte element.
 #[test]
 fn full_array_zero_extents_and_zero_byte_elements_execute_without_payload_access() {
     let source = br#"struct Empty {
 }
 
 struct Recursive {
-  children: array<Recursive, 0>;
+  children: Array<Recursive, 0>;
 }
 
 fn relay<T: affine>(value: own T) -> result: own T pure {
@@ -641,33 +634,27 @@ fn relay<T: affine>(value: own T) -> result: own T pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let none = fixed_vector::<box<u64>, 0>();
-  let zero_owners = array_from_fixed(vector: move none);
-  let zero_returned = relay::<array<box<u64>, 0>>(value: move zero_owners);
-  let zero_run = fixed_from_array(values: move zero_returned);
-  let zero_again = array_from_fixed(vector: move zero_run);
+  let none = slots_new::<Box<u64>, 0>();
+  let zero_owners = slots_into_array::<Box<u64>, 0>(values: move none);
+  let zero_returned = relay::<Array<Box<u64>, 0>>(value: move zero_owners);
+  let zero_run = slots_from_array::<Box<u64>, 0>(values: move zero_returned);
+  let zero_again = slots_into_array::<Box<u64>, 0>(values: move zero_run);
   let first = Empty();
   let second = Empty();
-  let empty = fixed_vector::<Empty, 2>();
-  region {
-    place_back(vector: &uniq empty, value: move first);
-  }
-  let one = move empty;
-  region {
-    place_front(vector: &uniq one, value: move second);
-  }
-  let wrapped = move one;
-  let empty_values = array_from_fixed(vector: move wrapped);
-  let empty_returned = relay::<array<Empty, 2>>(value: move empty_values);
-  let previous = replace empty_returned[1_u64] = Empty();
-  let empty_run = fixed_from_array(values: move empty_returned);
-  let empty_again = array_from_fixed(vector: move empty_run);
-  let recursion = fixed_vector::<Recursive, 0>();
-  let children = array_from_fixed(vector: move recursion);
+  let empty = slots_new::<Empty, 2>();
+  place_back(window: &empty, value: move first);
+  insert_at(window: &empty, index: 0_u64, value: move second);
+  let empty_values = slots_into_array::<Empty, 2>(values: move empty);
+  let empty_returned = relay::<Array<Empty, 2>>(value: move empty_values);
+  set empty_returned[1_u64] = Empty();
+  let empty_run = slots_from_array::<Empty, 2>(values: move empty_returned);
+  let empty_again = slots_into_array::<Empty, 2>(values: move empty_run);
+  let recursion = slots_new::<Recursive, 0>();
+  let children = slots_into_array::<Recursive, 0>(values: move recursion);
   let node = Recursive(children: move children);
   let carried = relay::<Recursive>(value: move node);
-  let zero_length = len_of(zero_again);
-  let empty_length = len_of(empty_again);
+  let zero_length = zero_again.len;
+  let empty_length = empty_again.len;
   if zero_length != 0_u64 {
     return exit_status(code: 1_u8);
   }
@@ -691,6 +678,8 @@ fn const_runs_are_immutable_globals_and_execute_through_index_and_len() {
     let llvm = compile(include_bytes!(
         "../../../../tests/conformance/cases/const2-pos-array-lookup.wf"
     ));
+    // KEPT AS WRITTEN for the lowering port: the constant pool's LLVM type and
+    // element spelling for a four-byte `Array<u8, 4>` global.
     assert!(llvm.contains(
         "@.wf_const.0 = private unnamed_addr constant [4 x i8] [i8 10, i8 20, i8 30, i8 40]"
     ));
@@ -708,13 +697,14 @@ fn const_runs_are_immutable_globals_and_execute_through_index_and_len() {
     assert!(output.stderr.is_empty());
 }
 
-/// Copy-fill remains a distinct array operation. Its emitted fill region and
-/// the proved read across retained source function boundaries are both checked;
-/// owning-element construction instead uses the consuming full-run conversion.
+/// Copy-fill remains a distinct array operation [OP-13]. Its emitted fill
+/// region and the proved read across retained source function boundaries are
+/// both checked; owning-element construction instead uses the consuming
+/// full-window conversion `slots_into_array`.
 #[test]
 fn filled_arrays_cross_function_boundaries_and_keep_a_checked_read() {
-    let source = br#"fn make() -> result: own array<u16, 4> pure {
-  return array_new::<u16, 4>(42_u16);
+    let source = br#"fn make() -> result: own Array<u16, 4> pure {
+  return array_filled::<u16, 4>(value: 42_u16);
 }
 
 fn clamp_three(value: own u64) -> result: own u64 pure contract {
@@ -727,7 +717,7 @@ fn clamp_three(value: own u64) -> result: own u64 pure contract {
   }
 }
 
-fn read(values: own array<u16, 4>, offset: own u64) -> result: own u16 reads(values) {
+fn read(values: own Array<u16, 4>, offset: own u64) -> result: own u16 pure {
   let bounded = clamp_three(value: offset);
   let value = values[bounded];
   return value;
@@ -735,7 +725,7 @@ fn read(values: own array<u16, 4>, offset: own u64) -> result: own u16 reads(val
 
 fn main() -> status: own ExitStatus pure {
   let values = make();
-  let length = len_of(values);
+  let length = values.len;
   if length != 4_u64 {
     return exit_status(code: 1_u8);
   }
@@ -752,6 +742,9 @@ fn main() -> status: own ExitStatus pure {
     // caller emits no runtime fallback and no second bounds branch.
     assert!(!read.contains("icmp ult i64"));
     assert!(!read.contains("call void @wf_trap"));
+    // KEPT AS WRITTEN for the lowering port: the emitted element address type
+    // for an inline `Array<u16, 4>`, and the two labels the copy-fill region
+    // emits.
     assert!(read.contains("getelementptr inbounds [4 x i16]"));
     assert!(llvm.contains("array.fill.head"));
     assert!(llvm.contains("array.fill.done"));
@@ -766,8 +759,8 @@ fn main() -> status: own ExitStatus pure {
 fn an_out_of_bounds_run_read_is_an_op4_compile_rejection() {
     // Under discharge-or-reject [OP-4] no runtime bounds trap exists: the
     // underivable obligation rejects at compile time with the exact
-    // [ENT-6] residual.
-    let source = br#"const values: FixedVector<u8, 2> =[7_u8, 7_u8];
+    // [ENT-6] residual, rendered in [OP-15]'s measure member form.
+    let source = br#"const values: Array<u8, 2> =[7_u8, 7_u8];
 
 fn main() -> status: own ExitStatus pure {
   let value = values[2_u64];
@@ -776,7 +769,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     let failure = compile_rejection(source);
     assert_eq!(failure.rule_id(), Some("OP-4"));
-    assert!(failure.detail().contains("2_u64 < len_of(values)"));
+    assert!(failure.detail().contains("2_u64 < values.len"));
 }
 
 #[test]
@@ -786,15 +779,9 @@ fn indexed_set_checks_before_rhs_and_updates_the_run() {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0_u8);
-  }
-  let values = move one;
+  let values = slots_new::<u8, 2>();
+  place_back(window: &values, value: 0_u8);
+  place_back(window: &values, value: 0_u8);
   set values[1_u64] = replacement();
   let stored = values[1_u64];
   if stored != 9_u8 {
@@ -808,6 +795,9 @@ fn main() -> status: own ExitStatus pure {
     // The discharged target carries no bounds branch [OP-4]; SET-1's order
     // remains: the RHS call is emitted after target formation and the store
     // after the RHS.
+    //
+    // KEPT AS WRITTEN for the lowering port: the RHS call and the element
+    // store are matched by their emitted spellings.
     let rhs = main
         .find("call i8 @wf_replacement")
         .expect("RHS must be emitted after target evaluation");
@@ -836,22 +826,16 @@ fn an_out_of_bounds_indexed_set_is_an_op4_compile_rejection() {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0_u8);
-  }
-  let values = move one;
+  let values = slots_new::<u8, 2>();
+  place_back(window: &values, value: 0_u8);
+  place_back(window: &values, value: 0_u8);
   set values[2_u64] = replacement();
   return exit_status(code: 0_u8);
 }
 "#;
     let failure = compile_rejection(source);
     assert_eq!(failure.rule_id(), Some("OP-4"));
-    assert!(failure.detail().contains("2_u64 < len_of(values)"));
+    assert!(failure.detail().contains("2_u64 < values.len"));
 }
 
 #[test]
@@ -861,36 +845,37 @@ fn a_long_loop_over_a_dynamically_indexed_run_keeps_the_frame_bounded() {
     // promoted away. The structural half is what discriminates: no slot may be
     // declared outside the entry block, so a frame that grew once per
     // iteration fails here whatever it would survive. The run is a
-    // corroboration rather than the measurement — 200000 iterations of a
+    // corroboration rather than the measurement; 200000 iterations of a
     // 64-byte slot is about 12 MB, which used to be past a default 8 MB limit
     // and now fits inside the 1 GiB stack the runtime gives every thread. A
-    // run's length is not a fact of its type [BLK-1], so the two loops carry
-    // the `len_of` invariant the array place had standing.
+    // window's length is not a fact of its type [WIN-1], so the two loops
+    // carry the `len` invariant the array place had standing. The fill loop's
+    // third v0.59 invariant, `head_of(built) <= 0_u64`, retired with the
+    // measure: [MSR-1] gives `Slots` no `head` cell at all, and the window it
+    // would have pinned to zero begins at slot zero by [WIN-1].
     let source = br#"fn main() -> status: own ExitStatus pure {
   doc "Nested counted loops read and write one fixed run for two hundred thousand iterations.";
-  let built = fixed_vector::<u64, 8>();
+  let built = slots_new::<u64, 8>();
   for @fill (
     at in 0_u64..8_u64,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= 8_u64,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len >= at,
+    invariant spare: built.room + at >= 8_u64
   ) {
-    place_back(vector: &uniq built, value: 1_u64);
+    place_back(window: &built, value: 1_u64);
   }
-  let window = move built;
   let completed = 0_u64;
   let total = 0_u64;
   for @outer (
     batch in 0_u64..25000_u64,
-    invariant held: len_of(window) >= 8_u64
+    invariant held: built.len >= 8_u64
   ) {
     for @inner (
       cursor in 0_u64..8_u64,
-      invariant still: len_of(window) >= 8_u64
+      invariant still: built.len >= 8_u64
     ) {
-      let previous = window[cursor];
+      let previous = built[cursor];
       let mixed = ixor(previous, completed);
-      set window[cursor] = mixed *wrap 1099511628211_u64;
+      set built[cursor] = mixed *wrap 1099511628211_u64;
       set total = total +wrap previous;
       set completed = completed +wrap 1_u64;
     }
@@ -926,7 +911,7 @@ fn a_long_loop_over_a_dynamically_indexed_run_keeps_the_frame_bounded() {
 #[test]
 fn nested_struct_run_update_uses_the_element_address_prepared_before_the_rhs() {
     let source = br#"struct Inner {
-  values: FixedVector<u8, 2>;
+  values: Slots<u8, 2>;
   sibling: u16;
 }
 
@@ -940,15 +925,8 @@ fn replacement() -> result: own u8 pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0_u8);
-  }
-  let values = move one;
+  let base = array_filled::<u8, 2>(value: 0_u8);
+  let values = slots_from_array::<u8, 2>(values: move base);
   let inner = Inner(values: move values, sibling: 77_u16);
   let outer = Outer(prefix: 123_u32, inner: move inner);
   set outer.inner.values[1_u64] = replacement();
@@ -968,6 +946,11 @@ fn main() -> status: own ExitStatus pure {
     let llvm = compile(source);
     let main = emitted_function(&llvm, "main");
     // The discharged projected target carries no bounds branch [OP-4].
+    //
+    // KEPT AS WRITTEN for the lowering port: the RHS call spelling, the
+    // `getelementptr` that prepares the complete element address once, the
+    // `store i8` of the RHS result, and the `store %wf.t` shape that would
+    // mark a rebuilt enclosing struct.
     let rhs = main
         .find("call i8 @wf_replacement")
         .expect("RHS must follow projected target evaluation");
@@ -1009,19 +992,20 @@ fn main() -> status: own ExitStatus pure {
     assert!(output.stderr.is_empty());
 }
 
+/// The v0.59 case also read `head_of(rows[0_u64])` and required it to be zero.
+/// [MSR-1]'s table gives `Array<T, N>` no `head` cell at all, since only a `Ring`
+/// has a window origin, so that reader and its check retired with the
+/// measure rather than being restated against a cell the table answers
+/// `absent`. The three cells an `Array` does have are all still observed.
 #[test]
 fn general_run_elements_preserve_array_places_and_standing_extents() {
     let source = br#"fn main() -> status: own ExitStatus pure {
-  let row = array_new::<u64, 2>(7_u64);
-  let empty = fixed_vector::<array<u64, 2>, 2>();
-  region {
-    place_back(vector: &uniq empty, value: move row);
-  }
-  let rows = move empty;
-  let width = len_of(rows[0_u64]);
-  let capacity = cap_of(rows[0_u64]);
-  let head = head_of(rows[0_u64]);
-  let room = room_of(rows[0_u64]);
+  let row = array_filled::<u64, 2>(value: 7_u64);
+  let rows = slots_new::<Array<u64, 2>, 2>();
+  place_back(window: &rows, value: move row);
+  let width = rows[0_u64].len;
+  let capacity = rows[0_u64].cap;
+  let room = rows[0_u64].room;
   set rows[0_u64][1_u64] = 9_u64;
   if rows[0_u64][0_u64] != 7_u64 {
     return exit_status(code: 1_u8);
@@ -1034,9 +1018,6 @@ fn general_run_elements_preserve_array_places_and_standing_extents() {
   }
   if capacity != 2_u64 {
     return exit_status(code: 4_u8);
-  }
-  if head != 0_u64 {
-    return exit_status(code: 5_u8);
   }
   if room != 0_u64 {
     return exit_status(code: 6_u8);
@@ -1063,24 +1044,16 @@ fn general_run_elements_preserve_nested_owners_across_generic_calls() {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let first = box_new(17_u64);
-  let second = box_new(29_u64);
-  let leaf = fixed_vector::<box<u64>, 2>();
-  region {
-    place_back(vector: &uniq leaf, value: move first);
-  }
-  region {
-    place_back(vector: &uniq leaf, value: move second);
-  }
-  let middle = fixed_vector::<FixedVector<box<u64>, 2>, 1>();
-  region {
-    place_back(vector: &uniq middle, value: move leaf);
-  }
-  let outer = fixed_vector::<FixedVector<FixedVector<box<u64>, 2>, 1>, 1>();
-  region {
-    place_back(vector: &uniq outer, value: move middle);
-  }
-  let carried = pass::<FixedVector<FixedVector<FixedVector<box<u64>, 2>, 1>, 1>>(value: move outer);
+  let first = box_new::<u64>(value: 17_u64);
+  let second = box_new::<u64>(value: 29_u64);
+  let leaf = slots_new::<Box<u64>, 2>();
+  place_back(window: &leaf, value: move first);
+  place_back(window: &leaf, value: move second);
+  let middle = slots_new::<Slots<Box<u64>, 2>, 1>();
+  place_back(window: &middle, value: move leaf);
+  let outer = slots_new::<Slots<Slots<Box<u64>, 2>, 1>, 1>();
+  place_back(window: &outer, value: move middle);
+  let carried = pass::<Slots<Slots<Slots<Box<u64>, 2>, 1>, 1>>(value: move outer);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1092,68 +1065,52 @@ fn main() -> status: own ExitStatus pure {
         let host = super::owned_places::allocation_observer(2, 0);
         let output = super::compile_link_and_run(&observed, Some(&host), &[]);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
+        // KEPT AS WRITTEN for the lowering port: the two cells three window
+        // layers down are released in logical index order after the generic
+        // handoff returns.
         assert_eq!(output.stdout, b"A1;A2;F1;F2;", "{output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
     }
 }
 
-/// The same unconstrained region and captured generic call must preserve the
-/// different release classes inside three inline run layers.
+// Retired with [OWN-3], [OWN-4] and [STOR-4]:
+// `general_run_elements_preserve_box_brands_across_region_polymorphic_calls`
+// had the region-tied brand as its whole subject: a heap `Box<'h, u64>` and
+// an arena `Box<'a, u64>` nested three run layers deep, carried through one
+// region-polymorphic helper, keeping two different release classes.
+// v0.60 has no regions, no arenas and no brand: [TYPE-9] states that a `Box`
+// carries none and [STOR-8] gives the language one heap, so the two classes
+// this case separated are now one. The three-layer nesting and the generic
+// handoff it shared with the case above are kept by
+// `general_run_elements_preserve_nested_owners_across_generic_calls`.
+
+/// A window's descriptor has finite layout even when its elements own another
+/// window of the same node type, because a runtime-capacity shape lives only
+/// as the content of a `Box` [TYPE-9] and a cell is one pointer. The release
+/// graph follows actual initialized windows.
+///
+/// The v0.59 case drove two refused `heap_vector` takes to observe cleanup of
+/// the already constructed child. [STOR-8] makes allocation total and no
+/// construction returns a `Result` [OP-13], so the two refusal rows retired
+/// with [BLK-2]'s fallible store take.
 #[test]
-fn general_run_elements_preserve_box_brands_across_region_polymorphic_calls() {
-    let source = br#"fn pass<T: linear>(value: own T) -> result: own T pure {
-  return move value;
+fn general_run_elements_close_recursive_descriptor_layout_and_cleanup() {
+    let source = br#"struct Tree {
+  children: Box<Slots<Tree>>;
 }
 
-fn nest['s](value: own Box<'s, u64>) -> result: own FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1> pure {
-  let leaf = fixed_vector::<Box<'s, u64>, 1>();
-  region {
-    place_back(vector: &uniq leaf, value: move value);
-  }
-  let middle = fixed_vector::<FixedVector<Box<'s, u64>, 1>, 1>();
-  region {
-    place_back(vector: &uniq middle, value: move leaf);
-  }
-  let outer = fixed_vector::<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1>();
-  region {
-    place_back(vector: &uniq outer, value: move middle);
-  }
-  return move outer;
+fn build() -> result: own Tree pure {
+  let empty_children = box_slots_new::<Tree>(capacity: 1_u64);
+  let child = Tree(children: move empty_children);
+  let parent_children = box_slots_new::<Tree>(capacity: 1_u64);
+  place_back(window: &parent_children.inner, value: move child);
+  let root = Tree(children: move parent_children);
+  return move root;
 }
 
-fn carry['s](value: own FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1>) -> result: own FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1> pure {
-  return pass::<FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1>>(value: move value);
-}
-
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  region 'a {
-    let store = arena_frame::<8, 8, 'a>();
-    region {
-      match heap_box(store: &uniq heap, value: 17_u64) {
-        Err(error: back) => {
-          return exit_status(code: 70_u8);
-        }
-        Ok(value: general) => {
-          match arena_box(store: &uniq store, value: 29_u64) {
-            Err(error: back) => {
-              return exit_status(code: 70_u8);
-            }
-            Ok(value: extent) => {
-              let general_nested = nest(value: move general);
-              let extent_nested = nest(value: move extent);
-              let general_carried = carry(value: move general_nested);
-              let extent_carried = carry(value: move extent_nested);
-              return exit_status(code: 0_u8);
-            }
-          }
-        }
-      }
-    }
-  }
+fn main() -> status: own ExitStatus pure {
+  let tree = build();
+  return exit_status(code: 0_u8);
 }
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
@@ -1161,99 +1118,37 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
-        let host = super::owned_places::allocation_observer(1, 0);
+        let host = super::owned_places::allocation_observer(2, 0);
         let output = super::compile_link_and_run(&observed, Some(&host), &[]);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
-        // The arena cell remains owned by its extent. Only the heap cell may
-        // reach the host allocator, exactly once after the returned run dies.
-        assert_eq!(output.stdout, b"A1;F1;", "{output:?}");
+        // KEPT AS WRITTEN for the lowering port: the child's cell is
+        // allocated first and released first, the recursive walk reaching it
+        // through the parent's one initialized slot.
+        assert_eq!(output.stdout, b"A1;A2;F1;F2;", "{output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
     }
 }
 
-/// Vector's descriptor has finite layout even when its elements own another
-/// Vector of the same node type. The release graph follows actual initialized
-/// windows, and refusal must clean up the already constructed child.
+/// A complete owning array can reside in a `Box` while its element owners
+/// survive helper calls, shared reads and an exchange.
+///
+/// The v0.59 case placed the array with a fallible `heap_box` and observed the
+/// returned array on refusal; [STOR-8] makes allocation total, so that arm
+/// retired with the `Result` the source can no longer write. Its exchange was
+/// `let previous = replace deref(storage)[0_u64] = e;` delivered through a
+/// two-place `set`. [SET-2] and [LIV-2] both retire, because [SET-1] writes exactly
+/// one place, and [OP-11] `swap` is the successor that still hands the
+/// displaced owner back.
 #[test]
-fn general_run_elements_close_recursive_descriptor_layout_and_cleanup() {
-    let source = br#"struct Tree['s] {
-  children: Vector<'s, Tree<'s>>;
-}
-
-fn build['s](store: &uniq Heap<'s>) -> result: own Option<Tree<'s>> reads(store), writes(store), allocates(store) {
-  region {
-    match heap_vector::<Tree<'s>>(store: &uniq deref(store), count: 1_u64) {
-      None() => {
-        return None<Tree<'s>>();
-      }
-      Some(value: empty_children) => {
-        let child = Tree(children: move empty_children);
-        region {
-          match heap_vector::<Tree<'s>>(store: &uniq deref(store), count: 1_u64) {
-            None() => {
-              return None<Tree<'s>>();
-            }
-            Some(value: parent_children) => {
-              region {
-                place_back(vector: &uniq parent_children, value: move child);
-              }
-              let populated = move parent_children;
-              let root = Tree(children: move populated);
-              return Some<Tree<'s>>(value: move root);
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  region {
-    match build(store: &uniq heap) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: tree) => {
-        return exit_status(code: 0_u8);
-      }
-    }
-  }
-}
-"#;
-    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
-        let module = super::emit_lowered(source, overlap);
-        let observed = retain_calls(&module)
-            .replace("@malloc(", "@wf_test_allocate(")
-            .replace("@free(", "@wf_test_release(");
-        for (refused, status, expected) in
-            [(0, 0, "A1;A2;F1;F2;"), (1, 70, "X1;"), (2, 70, "A1;X2;F1;")]
-        {
-            let host = super::owned_places::allocation_observer(2, refused);
-            let output = super::compile_link_and_run(&observed, Some(&host), &[]);
-            assert_eq!(output.status.code(), Some(status), "{output:?}");
-            assert_eq!(output.stdout, expected.as_bytes(), "{output:?}");
-            assert!(output.stderr.is_empty(), "{output:?}");
-        }
-    }
-}
-
-/// A complete owning array can reside in a store-owned Box while its element
-/// owners survive helper calls, borrowed reads, replacement, and refusal.
-#[test]
-fn heap_full_arrays_preserve_elements_across_calls_replacement_and_refusal() {
+fn heap_full_arrays_preserve_elements_across_calls_and_exchange() {
     let source = br#"struct Record {
-  payload: array<u64, 16>;
-  owner: box<u64>;
+  payload: Array<u64, 16>;
+  owner: Box<u64>;
 }
 
 fn make_record(tag: own u64) -> result: own Record pure {
-  let payload = array_new::<u64, 16>(tag);
-  let owner = box_new(tag);
+  let payload = array_filled::<u64, 16>(value: tag);
+  let owner = box_new::<u64>(value: tag);
   return Record(payload: move payload, owner: move owner);
 }
 
@@ -1261,82 +1156,51 @@ fn relay<T: affine>(value: own T) -> result: own T pure {
   return move value;
 }
 
-fn place['s](store: &uniq Heap<'s>, values: own array<Record, 2>) -> result: own Result<Box<'s, array<Record, 2>>, array<Record, 2>> reads(store), writes(store), allocates(store) {
-  region {
-    return heap_box(store: &uniq deref(store), value: move values);
-  }
-}
-
-fn read['s](storage: &Box<'s, array<Record, 2>>, index: own u64) -> result: own u64 reads(storage) contract {
+fn read(storage: &Box<Array<Record, 2>>, index: own u64) -> result: own u64 reads(storage) contract {
   requires index < 2_u64;
 } {
-  return deref(deref(storage))[index].payload[7_u64];
+  return deref(storage).inner[index].payload[7_u64];
 }
 
-fn pass_box['s](value: own Box<'s, array<Record, 2>>) -> result: own Box<'s, array<Record, 2>> pure {
-  return relay::<Box<'s, array<Record, 2>>>(value: move value);
+fn pass_box(value: own Box<Array<Record, 2>>) -> result: own Box<Array<Record, 2>> pure {
+  return relay::<Box<Array<Record, 2>>>(value: move value);
 }
 
-fn update['s](storage: own Box<'s, array<Record, 2>>) -> (result: own Box<'s, array<Record, 2>>, old: own Record) reads(storage), writes(storage) {
-  let previous = replace deref(storage)[0_u64] = make_record(tag: 99_u64);
-  return move storage, move previous;
+fn update(storage: &Box<Array<Record, 2>>, index: own u64, replacement: &Record) -> result: own unit writes(storage.inner[index]), writes(replacement) contract {
+  requires index < 2_u64;
+} {
+  swap(first: &deref(storage).inner[index], second: replacement);
+  return unit;
 }
 
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
+fn main() -> status: own ExitStatus pure {
   let first = make_record(tag: 11_u64);
   let second_tag = first.payload[0_u64] +wrap 11_u64;
   let second = make_record(tag: second_tag);
-  let empty = fixed_vector::<Record, 2>();
-  region {
-    place_back(vector: &uniq empty, value: move first);
+  let built = slots_new::<Record, 2>();
+  place_back(window: &built, value: move first);
+  place_back(window: &built, value: move second);
+  let values = slots_into_array::<Record, 2>(values: move built);
+  let storage = box_new::<Array<Record, 2>>(value: move values);
+  let passed = pass_box(value: move storage);
+  let before = read(storage: &passed, index: 0_u64);
+  if before != 11_u64 {
+    return exit_status(code: 1_u8);
   }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: move second);
+  let replacement = make_record(tag: 99_u64);
+  update(storage: &passed, index: 0_u64, replacement: &replacement);
+  if replacement.payload[7_u64] != 11_u64 {
+    return exit_status(code: 4_u8);
   }
-  let two = move one;
-  let values = array_from_fixed(vector: move two);
-  region {
-    match place(store: &uniq heap, values: move values) {
-      Err(error: returned) => {
-        if returned[0_u64].payload[7_u64] != 11_u64 {
-          return exit_status(code: 71_u8);
-        }
-        if returned[1_u64].payload[7_u64] != 22_u64 {
-          return exit_status(code: 72_u8);
-        }
-        return exit_status(code: 70_u8);
-      }
-      Ok(value: storage) => {
-        let passed = pass_box(value: move storage);
-        region {
-          let before = read(storage: &passed, index: 0_u64);
-          if before != 11_u64 {
-            return exit_status(code: 1_u8);
-          }
-        }
-        let (updated, previous) = update(storage: move passed);
-        if previous.payload[7_u64] != 11_u64 {
-          return exit_status(code: 4_u8);
-        }
-        region {
-          let first_tag = read(storage: &updated, index: 0_u64);
-          let remaining_tag = read(storage: &updated, index: 1_u64);
-          if first_tag != 99_u64 {
-            return exit_status(code: 2_u8);
-          }
-          if remaining_tag != 22_u64 {
-            return exit_status(code: 3_u8);
-          }
-        }
-        return exit_status(code: 0_u8);
-      }
-    }
+  let first_tag = read(storage: &passed, index: 0_u64);
+  let remaining_tag = read(storage: &passed, index: 1_u64);
+  if first_tag != 99_u64 {
+    return exit_status(code: 2_u8);
   }
+  if remaining_tag != 22_u64 {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
 }
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
@@ -1344,22 +1208,19 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
-        // The second record depends on the first, and the outer allocation
-        // consumes both, so allocation IDs identify these source owners.
-        // Refusing that outer allocation must return the original full array.
-        for (refused, status, ledger) in [
-            (0, 0, b"A1;A2;A3;A4;F1;F4;F2;F3;".as_slice()),
-            (3, 70, b"A1;A2;X3;F1;F2;".as_slice()),
-        ] {
-            let host = super::owned_places::allocation_observer(4, refused);
-            let output = super::compile_link_and_run(&observed, Some(&host), &[]);
-            assert_eq!(
-                output.status.code(),
-                Some(status),
-                "{overlap:?}: {output:?}"
-            );
-            assert_eq!(output.stdout, ledger, "{overlap:?}: {output:?}");
-            assert!(output.stderr.is_empty(), "{overlap:?}: {output:?}");
-        }
+        // The second record depends on the first, and the cell consumes both,
+        // so allocation IDs identify these source owners.
+        let host = super::owned_places::allocation_observer(4, 0);
+        let output = super::compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
+        // KEPT AS WRITTEN for the lowering port: after the exchange the local
+        // `replacement` holds A1 and the cell's array holds A4 then A2, and
+        // reverse declaration order releases that local before the cell.
+        assert_eq!(
+            output.stdout,
+            b"A1;A2;A3;A4;F1;F4;F2;F3;".as_slice(),
+            "{overlap:?}: {output:?}"
+        );
+        assert!(output.stderr.is_empty(), "{overlap:?}: {output:?}");
     }
 }

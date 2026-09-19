@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     IrArrayRoot, IrElement, IrFlatElement, IrFunction, IrInstruction, IrNominalId, IrNominalKind,
-    IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId,
+    IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId, IrWindowShape,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -787,97 +787,7 @@ fn validate_target_obligation(
         // constant. The scaling is still checked for representability, because
         // that is the joint fact [OP-9]'s obligation and this qualification
         // establish together and neither establishes alone.
-        IrOperation::StoreTake(take) => {
-            let actual = layouts.layout(take.element)?;
-            let stride = align_up(
-                layouts.target,
-                actual.size,
-                actual.align,
-                TargetObject::Representation,
-            )?;
-            if !take.layout_ceiling.size.permits(actual.size)
-                || actual.align > take.layout_ceiling.align
-                || !take.layout_ceiling.stride.permits(stride)
-            {
-                return Err(TargetLayoutFailure::Unrepresentable(
-                    TargetObject::Representation,
-                ));
-            }
-            match take.extent {
-                // A bump extent hands out storage at its own alignment
-                // constant, which [BLK-2] requires to be at least the
-                // element's language ceiling; the actual alignment must fit
-                // the same constant before a cursor advance can carry it.
-                Some(extent) => {
-                    if actual.align > extent.align.max(1) {
-                        return Err(TargetLayoutFailure::Unrepresentable(
-                            TargetObject::Representation,
-                        ));
-                    }
-                }
-                None => {
-                    if actual.align > layouts.target.runtime_allocation_alignment() {
-                        return Err(TargetLayoutFailure::Unrepresentable(
-                            TargetObject::RuntimeSizedAllocation,
-                        ));
-                    }
-                }
-            }
-            if function.value_type(take.count)
-                != Some(IrType::Integer {
-                    width: 64,
-                    signed: false,
-                })
-            {
-                return Err(TargetLayoutFailure::InvalidIr);
-            }
-            let count_upper_bound = integer_upper_bounds
-                .get(&take.count)
-                .copied()
-                .map_or(take.count_upper_bound, |target_upper_bound| {
-                    take.count_upper_bound.min(target_upper_bound)
-                });
-            // Mathematical arithmetic, and only the wrap is a stop: the
-            // address-index domain is what a *materialized* run's own element
-            // addressing is judged against, and every run that exists at all
-            // came back through the row's `Some` arm [BLK-2, STOR-6].
-            if count_upper_bound.checked_mul(stride).is_none() {
-                return Err(TargetLayoutFailure::Unrepresentable(
-                    TargetObject::RuntimeSizedAllocation,
-                ));
-            }
-        }
-        // S39 the cell's own take. Its size is one referent and is fixed at
-        // compile time, so the ceiling comparison is the whole of it; the
-        // refusal arm carries a store that cannot satisfy it, exactly as the
-        // run's does.
-        IrOperation::StoreBox(cell) => {
-            let actual = layouts.layout(cell.element)?;
-            if !cell.layout_ceiling.size.permits(actual.size)
-                || actual.align > cell.layout_ceiling.align
-            {
-                return Err(TargetLayoutFailure::Unrepresentable(
-                    TargetObject::Representation,
-                ));
-            }
-            match cell.extent {
-                Some(extent) => {
-                    if actual.align > extent.align.max(1) {
-                        return Err(TargetLayoutFailure::Unrepresentable(
-                            TargetObject::Representation,
-                        ));
-                    }
-                }
-                None => {
-                    if actual.align > layouts.target.runtime_allocation_alignment() {
-                        return Err(TargetLayoutFailure::Unrepresentable(
-                            TargetObject::RuntimeSizedAllocation,
-                        ));
-                    }
-                }
-            }
-        }
-        IrOperation::ArrayIndex {
+                        IrOperation::ArrayIndex {
             root,
             target_domain,
             ..
@@ -990,25 +900,33 @@ impl LayoutComputer<'_, '_, '_, '_> {
                 self.flat_element(element)?;
                 Ok(Layout { size: 16, align: 8 })
             }
-            IrType::Slice { element } => {
+            IrType::Range { element } => {
                 self.flat_element(element)?;
                 Ok(Layout { size: 16, align: 8 })
             }
-            // A `Vector` descriptor is a pointer, a capacity, a length, and a
-            // window origin [BLK-1]; a provider is proof-only and carries at
-            // most its own cursor.
-            IrType::Vector { element, .. } => {
-                self.program
-                    .element(element)
-                    .ok_or(TargetLayoutFailure::InvalidIr)?;
-                Ok(Layout { size: 32, align: 8 })
-            }
-            IrType::Provider => Ok(Layout { size: 16, align: 8 }),
-            IrType::FixedVector { length: 0, element } => {
+            // [TYPE-9] a runtime-capacity block is reached only through the
+            // `Box` that owns it, so it never occupies inline storage.
+            IrType::Window { capacity: None, .. } => Ok(Layout { size: 8, align: 8 }),
+            // compiler/storage-representation: header first, `len` always,
+            // `head` only for a `Ring`, and no capacity word where the type
+            // constant already fixes it.
+            IrType::Window {
+                shape,
+                element,
+                capacity: Some(0),
+            } => {
                 self.element(element)?;
-                Ok(Layout { size: 16, align: 8 })
+                let header = if shape == IrWindowShape::Ring { 16 } else { 8 };
+                Ok(Layout {
+                    size: header,
+                    align: 8,
+                })
             }
-            IrType::FixedVector { element, length } => {
+            IrType::Window {
+                shape,
+                element,
+                capacity: Some(length),
+            } => {
                 let element = self.element(element)?;
                 let stride = align_up(
                     self.target,
@@ -1018,10 +936,11 @@ impl LayoutComputer<'_, '_, '_, '_> {
                 )?;
                 let slots = checked_mul(stride, length, self.target, TargetObject::Representation)?;
                 let align = element.align.max(8);
-                let body = align_up(self.target, slots, 8, TargetObject::Representation)?;
+                let header = if shape == IrWindowShape::Ring { 16 } else { 8 };
+                let body = align_up(self.target, header, element.align, TargetObject::Representation)?;
                 let size = align_up(
                     self.target,
-                    body.checked_add(16)
+                    body.checked_add(slots)
                         .ok_or(TargetLayoutFailure::Unrepresentable(
                             TargetObject::Representation,
                         ))?,

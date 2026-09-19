@@ -49,9 +49,6 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                             bindings.extend(root.binding());
                             collect_place(root, bindings);
                         }
-                        CheckedSetTarget::SliceIndex(target) => {
-                            collect_expression(&target.offset, bindings);
-                        }
                     }
                 }
                 for value in values.expressions() {
@@ -72,9 +69,6 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                     CheckedSetTarget::Storage(root) => {
                         bindings.extend(root.binding());
                         collect_place(root, bindings);
-                    }
-                    CheckedSetTarget::SliceIndex(target) => {
-                        collect_expression(&target.offset, bindings);
                     }
                 }
                 collect_expression(value, bindings);
@@ -153,19 +147,8 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
             bindings.extend(root.binding());
             collect_place(root, bindings);
         }
-        CheckedExpression::SliceOf { source, range, .. } => {
-            if let crate::semantic::CheckedSliceSource::Run(root) = source {
-                bindings.extend(root.binding());
-                collect_place(root, bindings);
-            }
-            if let Some(range) = range {
-                collect_expression(&range.start, bindings);
-                collect_expression(&range.end, bindings);
-            }
-        }
         CheckedExpression::ContainerMeasure { root, .. } => collect_place(root, bindings),
         CheckedExpression::UserCall { arguments, .. }
-        | CheckedExpression::KernelCall { arguments, .. }
         | CheckedExpression::IntegerOperation { arguments, .. }
         | CheckedExpression::FloatOperation { arguments, .. }
         | CheckedExpression::BooleanOperation { arguments, .. }
@@ -189,8 +172,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => collect_expression(value, bindings),
         CheckedExpression::ArrayIndex { offset, .. }
-        | CheckedExpression::BufferIndex { offset, .. }
-        | CheckedExpression::SliceIndex { offset, .. } => collect_expression(offset, bindings),
+        | CheckedExpression::BufferIndex { offset, .. } => collect_expression(offset, bindings),
         CheckedExpression::BufferFill { length, value, .. } => {
             collect_expression(length, bindings);
             collect_expression(value, bindings);
@@ -203,7 +185,6 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::ArrayMeasure { .. }
         | CheckedExpression::BufferMeasure { .. }
         | CheckedExpression::PostconditionResultMeasure { .. }
-        | CheckedExpression::SliceMeasure { .. }
         | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::ReborrowAddressed { .. }
         | CheckedExpression::DerefAddressed { .. }
@@ -433,7 +414,7 @@ impl IrBuilder<'_> {
                             offset,
                             target_domain: subscript.target_domain.into(),
                         },
-                        IrType::FixedVector { .. } | IrType::Vector { .. } => {
+                        IrType::Window { .. } => {
                             IrPlaceStep::RunElement {
                                 offset,
                                 target_domain: subscript.target_domain.into(),

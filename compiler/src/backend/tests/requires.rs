@@ -1,27 +1,35 @@
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
+/// A reference delivered by a `value_if` is checked against every path its
+/// incoming edges may name, and the guard on it still holds at the call that
+/// consumes it.
+///
+/// The case was retargeted off the returned borrow it used to carry: [REF-3]
+/// refuses a returned reference outright, and its own restructuring is
+/// "return an index and let the caller form the reference". The successor
+/// delivery form is [REF-1]'s - a `let` binder whose initializer is a
+/// `value_if` every branch of which delivers a reference is itself a
+/// reference variable, and at that join its target is the union of the path
+/// sets the branches name, with every check holding for every member.
 #[test]
-fn returned_borrow_guards_check_the_delivered_value_across_retained_calls() {
+fn delivered_reference_guards_check_every_named_path_across_retained_calls() {
     let source = br#"const alternative: u64 = 9_u64;
-
-fn select['r](value: &'r u64) -> result: &'r u64 reads(value) {
-  if deref(value) == 0_u64 {
-    return &'r alternative;
-  } else {
-    return value;
-  }
-}
 
 fn indexed(value: &u64) -> result: own u64 reads(value) contract {
   requires deref(value) < 2_u64;
 } {
-  let rows = array_new::<u64, 2>(7_u64);
+  let rows = array_filled::<u64, 2>(value: 7_u64);
   let index = deref(value);
   return rows[index];
 }
 
 fn forward(value: &u64) -> result: own u64 reads(value) {
-  let chosen = select(value: value);
+  let seen = deref(value);
+  let chosen = if seen == 0_u64 {
+    give &alternative;
+  } else {
+    give value;
+  }
   if deref(chosen) < 2_u64 {
     return indexed(value: chosen);
   } else {
@@ -32,15 +40,13 @@ fn forward(value: &u64) -> result: own u64 reads(value) {
 fn main() -> status: own ExitStatus pure {
   let zero = 0_u64;
   let one = 1_u64;
-  region {
-    let refused = forward(value: &zero);
-    let accepted = forward(value: &one);
-    if refused != 99_u64 {
-      return exit_status(code: 1_u8);
-    }
-    if accepted != 7_u64 {
-      return exit_status(code: 2_u8);
-    }
+  let refused = forward(value: &zero);
+  let accepted = forward(value: &one);
+  if refused != 99_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if accepted != 7_u64 {
+    return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
 }
@@ -66,77 +72,51 @@ fn main() -> status: own ExitStatus pure {
     }
 }
 
-const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes['heap](out: &uniq MutSlice<u8>, source: own Vector<'heap, u8>, store: &uniq Heap<'heap>) -> written: own u64 reads(source), writes(out, store) contract {
-  define out_length = len_of(deref(out));
-  define source_length = len_of(source);
+const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &[u8], source: own Box<Slots<u8>>) -> written: own u64 writes(out) contract {
+  define out_length = deref(out).len;
+  define source_length = source.inner.len;
   requires source_length <= out_length;
 } {
-  let length = len_of(source);
+  let length = source.inner.len;
   for (offset in 0_u64..length) {
-    let value = source[offset];
+    let value = source.inner[offset];
     set deref(out)[offset] = value;
   }
   return length;
 }
 
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
+fn main() -> status: own ExitStatus pure {
   let length = 4_u64;
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: length) {
-      None() => {
-        return exit_status(code: 4_u8);
-      }
-      Some(value: blank) => {
-        let output = move blank;
-        for @clear (
-          at in 0_u64..4_u64,
-          invariant grown: len_of(output) >= at,
-          invariant spare: room_of(output) + at >= 4_u64,
-          invariant flat: head_of(output) <= 0_u64
-        ) {
-          place_back(vector: &uniq output, value: 0_u8);
-        }
-        match heap_vector::<u8>(store: &uniq heap, count: length) {
-          None() => {
-            return exit_status(code: 3_u8);
-          }
-          Some(value: fresh) => {
-            let source = move fresh;
-            for @fill (
-              at in 0_u64..4_u64,
-              invariant grown: len_of(source) >= at,
-              invariant spare: room_of(source) + at >= 4_u64,
-              invariant flat: head_of(source) <= 0_u64
-            ) {
-              place_back(vector: &uniq source, value: 7_u8);
-            }
-            region {
-              let destination = mut_slice_of(&uniq output);
-              let room = len_of(destination);
-              let held = len_of(source);
-              if held <= room {
-              } else {
-                return exit_status(code: 5_u8);
-              }
-              region {
-                let written = copy_bytes(out: &uniq destination, source: move source, store: &uniq heap);
-                if written != length {
-                  return exit_status(code: 1_u8);
-                }
-              }
-            }
-            let last = output[3_u64];
-            if last != 7_u8 {
-              return exit_status(code: 2_u8);
-            }
-          }
-        }
-      }
-    }
+  let output = box_slots_new::<u8>(capacity: length);
+  for @clear (
+    at in 0_u64..4_u64,
+    invariant grown: output.inner.len >= at,
+    invariant spare: output.inner.room + at >= 4_u64
+  ) {
+    place_back(window: &output.inner, value: 0_u8);
+  }
+  let source = box_slots_new::<u8>(capacity: length);
+  for @fill (
+    at in 0_u64..4_u64,
+    invariant grown: source.inner.len >= at,
+    invariant spare: source.inner.room + at >= 4_u64
+  ) {
+    place_back(window: &source.inner, value: 7_u8);
+  }
+  let destination = &output.inner[0_u64..4_u64];
+  let room = deref(destination).len;
+  let held = source.inner.len;
+  if held <= room {
+  } else {
+    return exit_status(code: 5_u8);
+  }
+  let written = copy_bytes(out: destination, source: move source);
+  if written != length {
+    return exit_status(code: 1_u8);
+  }
+  let last = output.inner[3_u64];
+  if last != 7_u8 {
+    return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
 }
@@ -315,9 +295,10 @@ fn borrowed_output_capacity_contract_informs_the_body_without_a_callee_prologue(
     assert_eq!(copy.matches("call void @wf_trap").count(), 0);
     assert!(copy.contains("load i8"));
     assert!(copy.contains("store i8"));
-    // One release, for the reason the buffer's free had: the callee holds
-    // the store's provider, so the run it was handed is affine there and its
-    // release is derived on the return edge [PROV-1, BLK-1, STOR-3].
+    // One release: the callee receives the cell by value, so the
+    // `Box<Slots<u8>>` it was handed is its own affine owner there and the
+    // compiler-derived free of that one heap object is on its return edge
+    // [STOR-1, STOR-3, LIV-1].
     assert_eq!(copy.matches("call void @free").count(), 1);
     assert!(!copy.contains("llvm.assume"));
 

@@ -1,10 +1,18 @@
 #![allow(clippy::panic)]
 
-mod arenas;
+// Retired with [STOR-4]: the `arenas` module's three tests all had the
+// region-tied bump extent as their subject - `arena_new`, the `{ ptr, i8 }`
+// arena node's layout qualification and `malloc` size expression, the
+// `region 'r { .. }` block, and the `stor4-pos-arena-confined` conformance
+// case the last of them read. v0.60 has no regions, no arenas and no [BLK-2]
+// reservation, and that conformance case left the corpus with the rule. The
+// successor is ordinary `Slots` storage built by the construction functions
+// [OP-13] over the one heap [STOR-8]: a `Box` cell's own layout qualification
+// and emission belong with the other storage shapes, and a frame-resident
+// constant-capacity `Slots` [TYPE-9] needs no reservation of its own.
 mod arithmetic_obligations;
 mod arrays;
 mod base64;
-mod buffers;
 mod checked_division;
 mod completion;
 mod containers;
@@ -27,14 +35,44 @@ mod integer_negation;
 mod loop_split;
 mod owned_places;
 mod parallel;
-mod reborrows;
+/// Range references over the three storage origins [REF-4, STOR-1], and the
+/// compute kernels that take a range of work.
+///
+/// This module was `slices`. `Slice<T>` and `MutSlice<T>` are not types in
+/// v0.60 - [REF-4]'s `&[T]` is a reference kind admitted only in parameter
+/// position - so the name went with them, and four of its tests went with the
+/// rules [VIEW-1], [VIEW-4] and [VIEW-6] gave them. Each retirement is
+/// recorded beside the tests that replace it inside the module.
+mod ranges;
+// Retired with [OWN-6] and [OWN-14]: the `reborrows` module's four tests all
+// had the reborrow as their subject - a callee taking `&uniq 'r T` and
+// returning `&uniq 'r deref(target)`, the child chain through a `box<u64>`
+// field, and the test-only reborrow-extension checker entry
+// `emit_reborrow_extension` the last of them read. v0.60 has no permission
+// markers, no region parameters and no loan extension: [REF-1] makes a
+// reference a local name for a path and a step below it another path, so
+// there is nothing to reborrow and nothing to emit, and [REF-3] refuses a
+// returned reference outright with the restructuring `return an index and let
+// the caller form the reference`. The write-back these cases observed is
+// [EFF-5]'s substituted `writes` through an ordinary `&T` parameter, covered
+// by `owned_places` and by the `references` semantic suite; the `replace`
+// exchange they used is [SET-1] with [WIN-3]'s disposition, or [OP-11]'s
+// `swap`.
 mod reinterpret;
 mod requires;
 mod resource_enums;
-mod slices;
 mod stack_ledger;
 mod system;
 mod target_frame;
+/// [TYPE-9]'s storage shapes and the cell as the backend emits them: their
+/// construction [OP-13], target qualification [STOR-6, OP-9] and
+/// compiler-derived release [STOR-3, WIN-3].
+///
+/// This module was `buffers`. The `buffer<T>` storage class and its
+/// `buffer_new` / `buffer_vacant` heads have no v0.60 spelling, and two of its
+/// tests retired with the fallible store take [BLK-2] and the vacant run;
+/// each retirement is recorded inside the module.
+mod windows;
 // Runtime source-claim tests were retired with the source-claim instruction:
 // proofs are checked before lowering, so no backend latch or IR-mutation
 // path exists for them. Resource-record latch coverage remains in `exhaustion`.
@@ -257,59 +295,10 @@ fn compile(source: &[u8]) -> String {
     compile_sources(&[("test.wf", source)])
 }
 
-/// [`emit`] through the test-only reborrow-extension checker [OWN-6,
-/// OWN-14]. The shipped switch admits the same chains, so this entry emits
-/// from the same judgment as [`emit`] and records which judgment its callers
-/// mean.
-fn emit_reborrow_extension(source: &[u8]) -> String {
-    let inputs = [SourceInput::new("test.wf", source)];
-    let bundle = SourceBundle::with_prelude(&inputs, SOURCE_LIMITS).expect("valid test bundle");
-    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
-        panic!("backend test source must lex");
-    };
-    let TerminalOutcome::Complete(classified) = classify_terminals(
-        &lexed,
-        ACTIVE_KERNEL_SPEC_HASH,
-        TerminalLimits {
-            max_tokens: LEX_LIMITS.max_tokens,
-        },
-    ) else {
-        panic!("backend test source must classify");
-    };
-    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
-        panic!("backend test source must parse");
-    };
-    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
-        panic!("backend test source must finalize");
-    };
-    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
-        panic!("backend test source must be canonical");
-    };
-    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
-        panic!("backend test source must resolve");
-    };
-    let checked = match crate::semantic::check_semantics(resolved) {
-        SemanticOutcome::Complete(checked) => checked,
-        outcome => {
-            panic!("backend test source must check under the reborrow extension: {outcome:?}")
-        }
-    };
-    assert!(
-        checked
-            .data
-            .functions
-            .iter()
-            .filter(|function| function.name == "main")
-            .all(|function| function.requirements.is_empty()),
-        "the test build caller must discharge every selected precondition"
-    );
-    let ir = lower_checked(*checked, OverlapLowering::Off).expect("checked program must lower");
-    let mut llvm = emit_llvm(&ir)
-        .expect("lowered program must emit")
-        .into_string();
-    llvm.push_str(&crate::driver::launcher::render(&ir, "main").expect("ordinary test launcher"));
-    llvm
-}
+// `emit_reborrow_extension` retired with the `reborrows` module above: it was
+// the test-only entry for the [OWN-6, OWN-14] reborrow-extension checker, and
+// v0.60 has no loan extension for a second checker entry to name. The ordinary
+// `emit` is the only judgment left for a reference-carrying source.
 
 /// Compiles a source that must be rejected, returning the failure for rule
 /// and detail assertions.

@@ -54,13 +54,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     )?;
                                 }
                             }
-                            CheckedSetTarget::SliceIndex(target) => {
-                                self.collect_expression_release_effects(
-                                    function,
-                                    &target.offset,
-                                    effects,
-                                )?;
-                            }
                         }
                     }
                     for value in values.expressions() {
@@ -100,13 +93,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             for offset in target.offsets() {
                                 self.collect_expression_release_effects(function, offset, effects)?;
                             }
-                        }
-                        CheckedSetTarget::SliceIndex(target) => {
-                            self.collect_expression_release_effects(
-                                function,
-                                &target.offset,
-                                effects,
-                            )?;
                         }
                     }
                     self.collect_expression_release_effects(function, value, effects)?;
@@ -242,8 +228,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
-            | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::SliceIndex { offset, .. } => {
+            | CheckedExpression::BufferIndex { offset, .. } => {
                 self.collect_expression_release_effects(function, offset, effects)?;
             }
             CheckedExpression::BufferFill { length, value, .. } => {
@@ -254,11 +239,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferFits { length, .. } => {
                 self.collect_expression_release_effects(function, length, effects)?;
             }
-            CheckedExpression::SliceOf { .. } => {
-                for child in super::super::model::expression_children(expression) {
-                    self.collect_expression_release_effects(function, child, effects)?;
-                }
-            }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
@@ -266,7 +246,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
@@ -295,15 +274,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedType::GenericInt(_)
                 | CheckedType::GenericFloat(_)
                 | CheckedType::Generic(_) => {}
-                // A `Heap` is dropped with the empty row and an `Arena` is
-                // released with its own region, so neither derives an owner-
-                // scope drop [STOR-3, BLK-2].
-                CheckedType::Heap { .. } | CheckedType::Extent { .. } => {}
                 CheckedType::Array { .. }
-                | CheckedType::Slice { .. }
                 | CheckedType::Buffer { .. }
-                | CheckedType::FixedVector { .. }
-                | CheckedType::Vector { .. } => {
+                | CheckedType::Window { .. } => {
                     drops.push((path, current));
                 }
                 CheckedType::Nominal(id) => {
@@ -372,12 +345,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedType::GenericFloat(_)
                 | CheckedType::Generic(_)
                 | CheckedType::Array { .. }
-                | CheckedType::Slice { .. }
                 | CheckedType::Buffer { .. }
-                | CheckedType::FixedVector { .. }
-                | CheckedType::Vector { .. }
-                | CheckedType::Heap { .. }
-                | CheckedType::Extent { .. }
+                | CheckedType::Window { .. }
                     if selected =>
                 {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
@@ -389,15 +358,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedType::GenericInt(_)
                 | CheckedType::GenericFloat(_)
                 | CheckedType::Generic(_) => {}
-                // A `Heap` is dropped with the empty row and an `Arena` is
-                // released with its own region, so neither derives an owner-
-                // scope drop [STOR-3, BLK-2].
-                CheckedType::Heap { .. } | CheckedType::Extent { .. } => {}
                 CheckedType::Array { .. }
-                | CheckedType::Slice { .. }
                 | CheckedType::Buffer { .. }
-                | CheckedType::FixedVector { .. }
-                | CheckedType::Vector { .. } => {
+                | CheckedType::Window { .. } => {
                     drops.push((path, current));
                 }
                 CheckedType::Nominal(id) => {

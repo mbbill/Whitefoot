@@ -1,29 +1,41 @@
-//! The permission judgment P over sibling call statements.
+//! The permission judgment P over adjacent statements of one block [PAR-1].
 //!
 //! Each grant fixture is a shape a real program writes; each denial fixture
 //! violates exactly one numbered condition and asserts *that* condition, so a
 //! denial arriving for the wrong reason fails the test. Design:
 //! `research/investigations/proof-derived-parallelism/DESIGN.md` section 3.
 //!
-//! The window fixtures at the end put statements *between* the two calls. They
-//! are deliberately weighted toward denials: widening the judged set is the
-//! easy half, and the whole risk of the widening is a window that should have
-//! been refused and was not. Each of those names the clause that refuses it,
-//! and one grant fixture pins the single obligation the rule deliberately does
-//! *not* carry, so making the rule symmetric would fail a test rather than
-//! pass silently.
+//! v0.60 judges two *adjacent* statements. There is no interposed window and
+//! no `PairSide::Between`: a statement written between two calls is judged
+//! against each of its two neighbours on its own, and what lets all three
+//! overlap together is the run. The fixtures that used to put a statement
+//! between two calls therefore assert the adjacency that carries the hazard,
+//! or the run the three statements form. Loans, arenas, and the
+//! exclusive/shared distinction are gone with [CAP-1], so every interference
+//! denial is one `Denial::Footprint` over `own`, `&`, path overlap and the
+//! effect row; dataflow is a footprint conflict too, because "a `let`'s
+//! defined binding is a write path".
+//!
+//! Because every adjacency of a block is judged, a fixture's trailing
+//! `return` forms a pair of its own with the last call it follows. The
+//! helpers below therefore name the two members of the adjacency under test
+//! rather than assuming a function has exactly one pair.
 
 use crate::{SemanticOutcome, SemanticRule};
 
 use super::super::permission::{
     ConflictKind, Denial, ExitKind, FootprintHalf, FunctionPermissions, PairSide,
-    PermissionMetadata, PermissionPair, PermissionVerdict,
+    PermissionMetadata, PermissionPair, PermissionRun, PermissionVerdict,
 };
+use super::super::places::ResolvedPlace;
 use super::with_semantics;
 
-// Scalar state keeps the ordinary window tests independent of a library API.
-// The shared-factory tests below exercise the linked declarations separately.
-const MARKER: &str = "fn write_marker(output: &uniq u64, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) {\n  let previous = deref(output);\n  let length = len_of(deref(source));\n  set deref(output) = previous +wrap start;\n  return Ok<u64, IoError>(value: end);\n}\n\n";
+// Scalar state keeps the ordinary adjacency tests independent of a library
+// API. The shared-factory tests below exercise the linked declarations
+// separately. `writes(p)` subsumes `reads(p)` [EFF-1], so the write row is
+// written once and the read entry of v0.59's row is gone with the permission
+// marker on `output`.
+const MARKER: &str = "fn write_marker(output: &u64, source: &[u8], start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(source), writes(output) {\n  let previous = deref(output);\n  let length = deref(source).len;\n  set deref(output) = previous +wrap start;\n  return Ok<u64, IoError>(value: end);\n}\n\n";
 
 fn permission_of(source: &[u8]) -> PermissionMetadata {
     let combined = [MARKER.as_bytes(), source].concat();
@@ -44,9 +56,8 @@ fn function_table<'table>(
         .unwrap_or_else(|| panic!("no permission table for {name}"))
 }
 
-/// The only analyzed pair of one function. Every fixture below keeps its
-/// interesting block to a single pair so the assertion cannot drift onto a
-/// neighbour.
+/// The only analyzed pair of one function, for a fixture whose block really
+/// does hold exactly one.
 fn only_pair<'table>(table: &'table PermissionMetadata, name: &str) -> &'table PermissionPair {
     let permissions = function_table(table, name);
     assert_eq!(
@@ -56,6 +67,71 @@ fn only_pair<'table>(table: &'table PermissionMetadata, name: &str) -> &'table P
         permissions.pairs
     );
     &permissions.pairs[0]
+}
+
+/// Every analyzed pair of one function whose two members carry the given
+/// ledger names. A call member is named by its callee; every other member is
+/// named by its statement form, so `("bump", "a set statement")` picks the
+/// adjacency a fixture is about without depending on how many other
+/// adjacencies the block has.
+fn pairs_of<'table>(
+    table: &'table PermissionMetadata,
+    function: &str,
+    first: &str,
+    second: &str,
+) -> Vec<&'table PermissionPair> {
+    function_table(table, function)
+        .pairs
+        .iter()
+        .filter(|pair| pair.first.callee_name == first && pair.second.callee_name == second)
+        .collect()
+}
+
+/// The one analyzed pair of `function` whose members are named `first` and
+/// `second`.
+fn pair_of<'table>(
+    table: &'table PermissionMetadata,
+    function: &str,
+    first: &str,
+    second: &str,
+) -> &'table PermissionPair {
+    let found = pairs_of(table, function, first, second);
+    let [pair] = found.as_slice() else {
+        panic!(
+            "{function} must have exactly one ({first}, {second}) pair: {:?}",
+            function_table(table, function).pairs
+        );
+    };
+    *pair
+}
+
+/// The one run of `function` whose members carry exactly these ledger names,
+/// in order.
+fn run_of<'table>(
+    table: &'table PermissionMetadata,
+    function: &str,
+    names: &[&str],
+) -> &'table PermissionRun {
+    let permissions = function_table(table, function);
+    let found = permissions
+        .runs
+        .iter()
+        .filter(|run| {
+            run.sites.len() == names.len()
+                && run
+                    .sites
+                    .iter()
+                    .zip(names)
+                    .all(|(site, name)| site.callee_name == *name)
+        })
+        .collect::<Vec<_>>();
+    let [run] = found.as_slice() else {
+        panic!(
+            "{function} must have exactly one run {names:?}: {:?}",
+            permissions.runs
+        );
+    };
+    *run
 }
 
 fn denial(pair: &PermissionPair, condition: u8) -> &Denial {
@@ -70,6 +146,51 @@ fn denial(pair: &PermissionPair, condition: u8) -> &Denial {
     denial
 }
 
+/// The scalar cell, the writing call, the reading call, and the by-value call
+/// every ordinary adjacency fixture below is built from. A field row keeps
+/// the write precise, which is what lets the disjoint-field grant and the
+/// overlapping-place denial be told apart by the same relation.
+const CELLS: &str = r#"struct Cell {
+  value: u64;
+}
+
+fn bump(slot: &Cell) -> result: own u64 writes(slot.value) {
+  set deref(slot).value = 7_u64;
+  return 1_u64;
+}
+
+fn peek(slot: &Cell) -> result: own u64 reads(slot.value) {
+  return deref(slot).value;
+}
+
+fn take(v: own u64) -> result: own u64 pure {
+  return v;
+}
+
+"#;
+
+/// The recursive tree the fold fixtures walk. A `Box` payload makes the enum
+/// finite [TYPE-9] and its content is the field `inner`.
+const TREE: &str = r#"enum Node {
+  Leaf(w: u64);
+  Branch(left: Box<Node>, right: Box<Node>, w: u64);
+}
+
+"#;
+
+fn cells(body: &str) -> Vec<u8> {
+    format!("{CELLS}{body}").into_bytes()
+}
+
+fn tree(body: &str) -> Vec<u8> {
+    format!("{TREE}{body}").into_bytes()
+}
+
+/// A fixture body written as raw bytes, for the `cells`/`tree` prefixes.
+fn text(source: &[u8]) -> &str {
+    std::str::from_utf8(source).expect("every fixture is UTF-8")
+}
+
 // ----------------------------------------------------------------------
 // Grants
 // ----------------------------------------------------------------------
@@ -78,46 +199,40 @@ fn denial(pair: &PermissionPair, condition: u8) -> &Denial {
 #[test]
 fn writes_to_independent_scalar_places_are_permitted() {
     let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
-  let bytes = buffer_new(2_u64, 65_u8);
-  region 'out {
-    region 'err {
-      region {
-        let first = write_marker(output: &uniq 'out out, source: &bytes, start: 0_u64, end: 1_u64);
-        let second = write_marker(output: &uniq 'err err, source: &bytes, start: 1_u64, end: 2_u64);
-      }
-    }
-  }
+  let values = array_filled::<u8, 2>(value: 65_u8);
+  let bytes = slots_from_array::<u8, 2>(values: move values);
+  let window = &bytes[0_u64..2_u64];
+  let first = write_marker(output: &out, source: window, start: 0_u64, end: 1_u64);
+  let second = write_marker(output: &err, source: window, start: 1_u64, end: 2_u64);
   return exit_status(code: 0_u8);
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    assert_eq!(pair.first.callee_name, "write_marker");
-    assert_eq!(pair.second.callee_name, "write_marker");
+    let pair = pair_of(&table, "main", "write_marker", "write_marker");
     assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
 }
 
-/// One u64 is an ordinary mutable state object. Two loans covering the
-/// same named region therefore fail before overlap permission is considered.
+/// Two calls writing one and the same scalar place. v0.59 refused this as two
+/// exclusive loans of one region; [CAP-1] has no loan and no exclusive/shared
+/// distinction, so the successor is the ordinary write/write footprint
+/// conflict on the place both rows reach.
 #[test]
-fn two_unique_loans_of_one_scalar_deny_overlap() {
+fn two_writes_of_one_scalar_deny_overlap() {
     let source = br#"fn main(out: own u64) -> status: own ExitStatus pure {
-  let bytes = buffer_new(2_u64, 65_u8);
-  region 'out {
-    region {
-      let first = write_marker(output: &uniq 'out out, source: &bytes, start: 0_u64, end: 1_u64);
-      let second = write_marker(output: &uniq 'out out, source: &bytes, start: 1_u64, end: 2_u64);
-    }
-  }
+  let values = array_filled::<u8, 2>(value: 65_u8);
+  let bytes = slots_from_array::<u8, 2>(values: move values);
+  let window = &bytes[0_u64..2_u64];
+  let first = write_marker(output: &out, source: window, start: 0_u64, end: 1_u64);
+  let second = write_marker(output: &out, source: window, start: 1_u64, end: 2_u64);
   return exit_status(code: 0_u8);
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
-        panic!("expected an ordinary loan conflict, got {:?}", pair.verdict);
+    let pair = pair_of(&table, "main", "write_marker", "write_marker");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
-    assert_eq!(kind.halves(), ("exclusive loan", "exclusive loan"));
+    assert_eq!(kind.halves(), ("write", "write"));
     assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
@@ -129,27 +244,39 @@ fn two_opens_through_one_factory_are_ordinary_conflicting_calls() {
     let pair = only_pair(&table, "open_two");
     assert_eq!(pair.first.callee_name, "open_directory_source");
     assert_eq!(pair.second.callee_name, "open_directory_source");
-    denial(pair, 2);
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
+    };
+    assert_eq!(
+        kind.halves(),
+        ("write", "write"),
+        "both calls write the one factory the writer handed each of them"
+    );
 }
 
+/// Disjoint destinations do not save two calls that also write one shared
+/// cursor: the substituted rows meet on that one path whatever else they
+/// reach.
 #[test]
-fn reads_through_one_factory_and_file_conflict_despite_disjoint_destinations() {
-    let source = br#"fn probe(factory: &uniq HandleFactory, file: &uniq ReadFile, left: &uniq MutSlice<u8>, right: &uniq MutSlice<u8>) -> result: own unit reads(factory, file, left, right), writes(factory, file, left, right) contract {
-  requires 1_u64 <= len_of(deref(left));
-  requires 1_u64 <= len_of(deref(right));
-} {
-  region {
-    let first = read_at(factory: &uniq deref(factory), file: &uniq deref(file), destination: &uniq deref(left), file_offset: 0_u64, start: 0_u64, end: 1_u64);
-    let second = read_at(factory: &uniq deref(factory), file: &uniq deref(file), destination: &uniq deref(right), file_offset: 1_u64, start: 0_u64, end: 1_u64);
-  }
-  return unit;
+fn writes_through_one_shared_cursor_conflict_despite_disjoint_destinations() {
+    let source = br#"fn stamp(cursor: &Cell, destination: &Cell) -> result: own u64 writes(cursor.value), writes(destination.value) {
+  set deref(cursor).value = deref(cursor).value +wrap 1_u64;
+  set deref(destination).value = 5_u64;
+  return 1_u64;
+}
+
+fn probe(cursor: &Cell, left: &Cell, right: &Cell) -> result: own u64 writes(cursor.value), writes(left.value), writes(right.value) {
+  let first = stamp(cursor: cursor, destination: left);
+  let second = stamp(cursor: cursor, destination: right);
+  return 0_u64;
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "probe");
-    assert_eq!(pair.first.callee_name, "read_at");
-    assert_eq!(pair.second.callee_name, "read_at");
-    denial(pair, 2);
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "probe", "stamp", "stamp");
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
 }
 
 #[test]
@@ -161,287 +288,232 @@ fn direct_prelude_calls_form_an_eligible_pair() {
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "main");
+    let pair = pair_of(&table, "main", "exit_status", "exit_status");
     assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
 }
 
-/// The two-child unique tree fold: each recursive sibling reaches storage
-/// only through its own `&uniq` payload binder, and [OWN-13] makes the two
-/// binders disjoint. This is the shape a parallel fold is written in.
+/// The two-child tree fold: each recursive sibling reaches storage only
+/// through its own payload step, and [OWN-7] separates two payload steps of
+/// one variant that select different fields. This is the shape a parallel
+/// fold is written in.
 #[test]
-fn two_child_unique_sibling_calls_are_permitted_and_eligible() {
-    let source = br#"enum BoxNode {
-  Leaf(w: u64);
-  Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
-}
-
-fn boxed_leaf(w: own u64) -> result: own box<BoxNode> pure {
-  let leaf = Leaf(w: w);
-  return box_new(move leaf);
-}
-
-fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> pure {
-  let branch = Branch(left: move left, right: move right, w: 0_u64);
-  return box_new(move branch);
-}
-
-fn fold(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {
-  match deref(deref(node)) {
-    Leaf(w: leaf_w) => {
-      return deref(leaf_w);
+fn two_child_sibling_calls_are_permitted_and_eligible() {
+    let source = br#"fn fold(node: &Node) -> result: own u64 writes(node) {
+  match deref(node) {
+    Leaf(w: leaf) => {
+      return deref(leaf);
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = fold(node: move l);
-      let b = fold(node: move r);
+      let a = fold(node: &deref(l).inner);
+      let b = fold(node: &deref(r).inner);
       let total = imax(a, b);
       set deref(slot) = total;
       return total;
     }
   }
 }
-
-fn main() -> status: own ExitStatus pure {
-  let leaf0 = boxed_leaf(w: 3_u64);
-  let leaf1 = boxed_leaf(w: 4_u64);
-  let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
-  region {
-    let total = fold(node: &uniq branch0);
-  }
-  return exit_status(code: 0_u8);
-}
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "fold");
-    assert_eq!(pair.first.callee_name, "fold");
-    assert_eq!(pair.second.callee_name, "fold");
+    let table = permission_of(&tree(text(source)));
+    let pair = pair_of(&table, "fold", "fold", "fold");
     assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
-    let runs = &function_table(&table, "fold").runs;
-    assert_eq!(runs.len(), 1);
-    assert_eq!(runs[0].sites.len(), 2);
+    let run = run_of(&table, "fold", &["fold", "fold"]);
+    assert_eq!(run.sites.len(), 2);
 }
 
+/// Two calls whose rows name two different fields of one object are
+/// permitted.
+///
+/// v0.59 refused this pair: both actuals were `&uniq pair`, and a
+/// whole-object exclusive loan was coarser than the rows it carried. [CAP-1]
+/// leaves only `own`, `&`, path overlap and the effect row, so the rows now
+/// decide it and the two disjoint field paths overlap nothing.
 #[test]
-fn disjoint_effect_fields_do_not_shrink_a_whole_object_unique_loan() {
+fn disjoint_effect_fields_of_one_object_are_permitted() {
     let source = br#"struct Pair {
   left: u64;
   right: u64;
 }
 
-fn set_left(pair: &uniq Pair) -> result: own unit writes(pair.left) {
+fn set_left(pair: &Pair) -> result: own unit writes(pair.left) {
   set deref(pair).left = 1_u64;
   return unit;
 }
 
-fn set_right(pair: &uniq Pair) -> result: own unit writes(pair.right) {
+fn set_right(pair: &Pair) -> result: own unit writes(pair.right) {
   set deref(pair).right = 2_u64;
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
   let pair = Pair(left: 0_u64, right: 0_u64);
-  region {
-    let first = set_left(pair: &uniq pair);
-    let second = set_right(pair: &uniq pair);
-  }
+  let first = set_left(pair: &pair);
+  let second = set_right(pair: &pair);
   return exit_status(code: 0_u8);
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Loan { kind, .. } = denial(pair, 2) else {
-        panic!("the whole-object unique loans must remain independent of effect precision");
-    };
-    assert_eq!(kind.halves(), ("exclusive loan", "exclusive loan"));
+    let pair = pair_of(&table, "main", "set_left", "set_right");
+    assert_eq!(
+        pair.verdict,
+        PermissionVerdict::PermittedEligible,
+        "the two rows name two fields, and [OWN-7] separates two field steps"
+    );
 }
 
-/// Read-only sibling recursion. Nothing is written at all, so condition 2 is
-/// satisfied by an empty write footprint rather than by disjointness.
+/// Read-only sibling recursion. Nothing is written at all, so the
+/// disjointness clause is satisfied by an empty write footprint rather than
+/// by separation.
 #[test]
 fn read_only_sibling_recursion_is_permitted_and_eligible() {
-    let source = br#"enum BoxNode {
-  Leaf(w: u64);
-  Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
-}
-
-fn depth(node: &box<BoxNode>) -> result: own u64 reads(node) {
-  match deref(deref(node)) {
-    Leaf(w: leaf_w) => {
+    let source = br#"fn depth(node: &Node) -> result: own u64 reads(node) {
+  match deref(node) {
+    Leaf(w: leaf) => {
       return 1_u64;
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = depth(node: l);
-      let b = depth(node: r);
+      let a = depth(node: &deref(l).inner);
+      let b = depth(node: &deref(r).inner);
       return imax(a, b);
     }
   }
 }
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "depth");
+    let table = permission_of(&tree(text(source)));
+    let pair = pair_of(&table, "depth", "depth", "depth");
     assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
 }
 
-/// Three `reads`-only calls over one and the same buffer. Shared reads of
-/// overlapping storage conflict with nothing [OWN-5], so all three pairs hold
-/// and the adjacent statements form one chain — the bisection shape, where
-/// every lane views the same immutable input.
+/// Three `reads`-only calls over one and the same run. Read/read overlap is
+/// admitted, so all three pairs hold and the adjacent statements form one
+/// run — the bisection shape, where every lane views the same immutable
+/// input.
 #[test]
 fn reads_only_siblings_over_one_place_form_one_eligible_chain() {
-    let source = br#"fn width(data: &buffer<u64>) -> result: own u64 reads(data) {
-  return len_of(deref(data));
+    let source = br#"fn width(data: &Slots<u64, 8>) -> result: own u64 reads(data) {
+  return deref(data).len;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let buf = buffer_new(8_u64, 1_u64);
-  region {
-    let lo = width(data: &buf);
-    let mid = width(data: &buf);
-    let hi = width(data: &buf);
-    let part = imax(mid, hi);
-    let total = imax(lo, part);
-  }
+  let values = array_filled::<u64, 8>(value: 1_u64);
+  let buf = slots_from_array::<u64, 8>(values: move values);
+  let lo = width(data: &buf);
+  let mid = width(data: &buf);
+  let hi = width(data: &buf);
+  let part = imax(mid, hi);
+  let total = imax(lo, part);
   return exit_status(code: 0_u8);
 }
 "#;
     let table = permission_of(source);
-    let permissions = function_table(&table, "main");
-    assert_eq!(permissions.pairs.len(), 2);
-    for pair in &permissions.pairs {
+    let judged = pairs_of(&table, "main", "width", "width");
+    assert_eq!(judged.len(), 2, "lo/mid and mid/hi: {judged:?}");
+    for pair in judged {
         assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
     }
-    assert_eq!(permissions.runs.len(), 1);
-    assert_eq!(permissions.runs[0].sites.len(), 3);
+    let run = run_of(&table, "main", &["width", "width", "width"]);
+    assert_eq!(run.sites.len(), 3);
 }
 
-/// A chain is not implied by its adjacent pairs. Here s1 and s2 are disjoint
-/// and s2 and s3 are disjoint, but s1 and s3 write the same cell, so the
-/// chain stops at two members even though both adjacent pairs hold.
+/// A run is not implied by its adjacent pairs. Here s1 and s2 are disjoint
+/// and s2 and s3 are disjoint, but s1 and s3 write the same cell, so the run
+/// stops at two members even though both adjacent pairs hold.
 #[test]
-fn a_chain_stops_where_a_nonadjacent_pair_conflicts() {
-    let source = br#"fn bump(slot: &uniq u64) -> result: own u64 reads(slot), writes(slot) {
-  let seen = deref(slot);
-  set deref(slot) = 7_u64;
-  return seen;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let first = 1_u64;
-  let second = 2_u64;
-  region {
-    let a = bump(slot: &uniq first);
-    let b = bump(slot: &uniq second);
-    let c = bump(slot: &uniq first);
-    let part = imax(b, c);
-    let total = imax(a, part);
-  }
+fn a_run_stops_where_a_nonadjacent_pair_conflicts() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let first = Cell(value: 1_u64);
+  let second = Cell(value: 2_u64);
+  let a = bump(slot: &first);
+  let b = bump(slot: &second);
+  let c = bump(slot: &first);
+  let part = imax(b, c);
+  let total = imax(a, part);
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let permissions = function_table(&table, "main");
-    assert_eq!(permissions.pairs.len(), 2);
-    for pair in &permissions.pairs {
+    let table = permission_of(&cells(text(source)));
+    let judged = pairs_of(&table, "main", "bump", "bump");
+    assert_eq!(judged.len(), 2, "a/b and b/c: {judged:?}");
+    for pair in judged {
         assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
     }
-    assert_eq!(permissions.runs.len(), 1);
-    assert_eq!(permissions.runs[0].sites.len(), 2);
+    let run = run_of(&table, "main", &["bump", "bump"]);
+    assert_eq!(
+        run.sites.len(),
+        2,
+        "the running union carries s1's write into the test s3 fails"
+    );
 }
 
 // ----------------------------------------------------------------------
 // Denials, each by its own condition
 // ----------------------------------------------------------------------
 
-/// Condition 1. The second sibling passes the first's result, so the two
-/// cannot overlap however small the dataflow value is.
+/// The second statement reads the binding the first defines.
+///
+/// v0.59 called this a dataflow denial of its own. v0.60 states that "a
+/// `let`'s defined binding is a write path", so the link is an ordinary
+/// footprint conflict between s1's write of that binding and s2's operand
+/// read of it, and `Denial::Dataflow` is gone.
 #[test]
-fn a_dataflow_link_between_siblings_is_denied_by_condition_one() {
-    let source = br#"enum BoxNode {
-  Leaf(w: u64);
-  Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
-}
-
-fn fold_shift(node: &uniq box<BoxNode>, shift: own u64) -> result: own u64 reads(node), writes(node) {
-  let base = fold(node: move node);
-  return imax(base, shift);
-}
-
-fn fold(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {
-  match deref(deref(node)) {
-    Leaf(w: leaf_w) => {
-      return deref(leaf_w);
-    }
-    Branch(left: l, right: r, w: slot) => {
-      let a = fold(node: move l);
-      let b = fold_shift(node: move r, shift: a);
-      let total = imax(a, b);
-      set deref(slot) = total;
-      return total;
-    }
-  }
-}
-
-fn main() -> status: own ExitStatus pure {
+fn a_dataflow_link_between_siblings_is_a_footprint_conflict() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let left = Cell(value: 1_u64);
+  let a = bump(slot: &left);
+  let b = take(v: a);
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "fold");
-    let Denial::Dataflow {
-        binding,
-        definer,
-        reader,
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "main", "bump", "take");
+    let Denial::Footprint {
+        kind, left, sides, ..
     } = denial(pair, 1)
     else {
-        panic!("expected a dataflow denial, got {:?}", pair.verdict);
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
     assert_eq!(
-        Some(*binding),
-        pair.first.binding,
-        "cited the wrong binding"
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::Write,
+            later: FootprintHalf::OperandRead
+        }
     );
     assert_eq!(
-        (*definer, *reader),
+        left.place,
+        ResolvedPlace::binding(pair.first.binding.expect("s1 defines a binding")),
+        "the cited write is s1's own defined binding"
+    );
+    assert_eq!(
+        *sides,
         (PairSide::First, PairSide::Second),
         "the link runs from s1 to s2, with nothing between them"
     );
 }
 
-/// Condition 2. Two `&uniq` actuals resolve to one and the same place, so the
-/// two write footprints overlap under [OWN-7].
+/// Two reference actuals resolve to one and the same place, so the two write
+/// footprints overlap under [OWN-7].
 #[test]
-fn overlapping_unique_arguments_are_denied_by_condition_two() {
-    let source = br#"fn bump(slot: &uniq u64) -> result: own u64 reads(slot), writes(slot) {
-  let seen = deref(slot);
-  set deref(slot) = 7_u64;
-  return seen;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let cell = 1_u64;
-  region {
-    let lo = bump(slot: &uniq cell);
-    let hi = bump(slot: &uniq cell);
-    let total = imax(lo, hi);
-  }
+fn overlapping_reference_arguments_are_denied_by_their_footprints() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 1_u64);
+  let lo = bump(slot: &cell);
+  let hi = bump(slot: &cell);
+  let total = imax(lo, hi);
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
-        panic!("expected a loan denial, got {:?}", pair.verdict);
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "main", "bump", "bump");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
     assert_eq!(
         *kind,
         ConflictKind {
-            earlier: FootprintHalf::ExclusiveLoan,
-            later: FootprintHalf::ExclusiveLoan
+            earlier: FootprintHalf::Write,
+            later: FootprintHalf::Write
         },
-        "each actual is a `&uniq` borrow of the one cell, and the loan is the cause the row write is downstream of"
+        "there is one reference kind, so the two rows are the whole story"
     );
     assert_eq!(
         *sides,
@@ -450,41 +522,27 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// Condition 2, the caller-side half. `take`'s row is `pure` and reaches no
-/// caller storage at all, but its own operand reads the cell `bump` writes,
-/// and the overlap moves exactly that read across `bump`'s call. Before this
-/// condition existed the pair was permitted, eligible, and produced the
-/// pre-write value with no runtime linked.
+/// The caller-side half. `take`'s row is `pure` and reaches no caller storage
+/// at all, but its own operand reads the cell `bump` writes, and the overlap
+/// moves exactly that read across `bump`'s call.
 #[test]
-fn an_operand_read_of_written_storage_is_denied_by_condition_two() {
-    let source = br#"fn bump(slot: &uniq u64) -> result: own u64 writes(slot) {
-  set deref(slot) = 15_u64;
-  return 1_u64;
-}
-
-fn take(v: own u64) -> result: own u64 pure {
-  return v;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let cell = 1_u64;
-  region {
-    let a = bump(slot: &uniq cell);
-    let b = take(v: cell);
-    let total = imax(a, b);
-  }
+fn an_operand_read_of_written_storage_is_denied() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 1_u64);
+  let a = bump(slot: &cell);
+  let b = take(v: cell.value);
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
-        panic!("expected a loan denial, got {:?}", pair.verdict);
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "main", "bump", "take");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
     assert_eq!(
         *kind,
         ConflictKind {
-            earlier: FootprintHalf::ExclusiveLoan,
+            earlier: FootprintHalf::Write,
             later: FootprintHalf::OperandRead
         }
     );
@@ -492,28 +550,14 @@ fn main() -> status: own ExitStatus pure {
 }
 
 /// The same hazard through a subscript rather than a whole binding: the
-/// element read is rooted at the storage the first call writes through.
-///
-/// The read is the earlier of the two statements. It used to be the later one,
-/// and under [CALL-5] a `&uniq buffer<u64>` destination selects no transport,
-/// so the write costs the caller the length the read's own [OP-4] bound needs —
-/// a question about the fact state, not about the permission judgment this
-/// fixture is evidence for. Ordering the read first keeps the footprints and
-/// the condition and puts that question outside the fixture.
+/// element read is rooted at the storage the later call writes through.
 #[test]
-fn an_operand_element_read_of_a_written_buffer_is_denied_by_condition_two() {
+fn an_operand_element_read_of_a_written_run_is_denied() {
     let source =
-        br#"fn fill(dst: &uniq buffer<u64>, mark: own u64) -> result: own u64 reads(dst), writes(dst) {
-  let spare = len_of(deref(dst));
-  let k = 0_u64;
-  loop @go {
-    let done = k >= spare;
-    if done {
-      break @go;
-    }
-    set deref(dst)[k] = mark;
-    set k = k +wrap 1_u64;
-  }
+        br#"fn fill(dst: &Slots<u64, 4>, mark: own u64) -> result: own u64 writes(dst) contract {
+  requires 1_u64 <= deref(dst).len;
+} {
+  set deref(dst)[0_u64] = mark;
   return mark;
 }
 
@@ -522,25 +566,23 @@ fn take(v: own u64) -> result: own u64 pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let buf = buffer_new(4_u64, 1_u64);
-  region {
-    let b = take(v: buf[0_u64]);
-    let a = fill(dst: &uniq buf, mark: 9_u64);
-    let total = imax(a, b);
-  }
+  let values = array_filled::<u64, 4>(value: 1_u64);
+  let buf = slots_from_array::<u64, 4>(values: move values);
+  let b = take(v: buf[0_u64]);
+  let a = fill(dst: &buf, mark: 9_u64);
   return exit_status(code: 0_u8);
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Loan { kind, .. } = denial(pair, 2) else {
-        panic!("expected a loan denial, got {:?}", pair.verdict);
+    let pair = pair_of(&table, "main", "take", "fill");
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
     assert_eq!(
         *kind,
         ConflictKind {
             earlier: FootprintHalf::OperandRead,
-            later: FootprintHalf::ExclusiveLoan
+            later: FootprintHalf::Write
         }
     );
 }
@@ -550,148 +592,104 @@ fn main() -> status: own ExitStatus pure {
 /// choice, so permission may not depend on it and both directions are judged.
 #[test]
 fn an_operand_read_by_the_first_call_of_storage_the_second_writes_is_denied() {
-    let source = br#"fn take(v: own u64) -> result: own u64 pure {
-  return v;
-}
-
-fn bump(slot: &uniq u64) -> result: own u64 writes(slot) {
-  set deref(slot) = 7_u64;
-  return 1_u64;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let cell = 1_u64;
-  region {
-    let a = take(v: cell);
-    let b = bump(slot: &uniq cell);
-    let total = imax(a, b);
-  }
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 1_u64);
+  let a = take(v: cell.value);
+  let b = bump(slot: &cell);
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Loan { kind, .. } = denial(pair, 2) else {
-        panic!("expected a loan denial, got {:?}", pair.verdict);
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "main", "take", "bump");
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
     assert_eq!(
         *kind,
         ConflictKind {
             earlier: FootprintHalf::OperandRead,
-            later: FootprintHalf::ExclusiveLoan
+            later: FootprintHalf::Write
         }
     );
 }
 
-/// Condition 2 in its other direction: s1 only reads, s2 writes the same
-/// place. The judgment's first conflict loop never sees this pair, so the
-/// second one has to.
+/// The disjointness clause in its other direction: s1 only reads, s2 writes
+/// the same place. The judgment's first conflict loop never sees this pair,
+/// so the second one has to.
 #[test]
-fn a_write_by_the_second_call_over_a_read_by_the_first_is_denied_by_condition_two() {
-    let source = br#"fn peek(v: &u64) -> result: own u64 reads(v) {
-  return deref(v);
-}
-
-fn bump(slot: &uniq u64) -> result: own u64 writes(slot) {
-  set deref(slot) = 7_u64;
-  return 1_u64;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let cell = 1_u64;
-  region {
-    let a = peek(v: &cell);
-    let b = bump(slot: &uniq cell);
-    let total = imax(a, b);
-  }
+fn a_write_by_the_second_call_over_a_read_by_the_first_is_denied() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 1_u64);
+  let a = peek(slot: &cell);
+  let b = bump(slot: &cell);
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
-        panic!("expected a loan denial, got {:?}", pair.verdict);
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "main", "peek", "bump");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
     assert_eq!(
         *kind,
         ConflictKind {
-            earlier: FootprintHalf::SharedLoan,
-            later: FootprintHalf::ExclusiveLoan
-        },
-        "s1's shared borrow and s2's `&uniq` of the one cell conflict as loans before either row is consulted"
+            earlier: FootprintHalf::Read,
+            later: FootprintHalf::Write
+        }
     );
     assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
-/// A propagating statement is not an ordinary-call window member [PAR-1].
+/// A propagating first statement carries an `Err` edge to the function-return
+/// sink [ERR-3], so the statement after it need not execute at all.
+///
+/// v0.59 removed such a statement from the candidate enumeration, so the pair
+/// did not exist and nothing was reported. v0.60 judges every adjacency, so
+/// the pair exists and is refused with the edge that costs it.
 #[test]
-fn a_propagating_first_statement_forms_no_pair() {
+fn a_propagating_first_statement_is_denied_by_its_exit() {
     let source = br#"fn narrow(v: own u32) -> result: own Result<u8, NarrowError> pure {
   return cvt::<u32, u8>(v);
 }
 
-fn stamp(slot: &uniq u8) -> result: own u64 writes(slot) {
-  set deref(slot) = 9_u8;
-  return 1_u64;
-}
-
-fn probe(v: own u32, slot: &uniq u8) -> result: own Result<unit, NarrowError> writes(slot) {
+fn probe(v: own u32, slot: &Cell) -> result: own Result<unit, NarrowError> writes(slot.value) {
   let narrowed = propagate narrow(v: v);
-  let stamped = stamp(slot: move slot);
+  let stamped = bump(slot: slot);
   return Ok<unit, NarrowError>(value: unit);
 }
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
 "#;
-    let table = permission_of(source);
-    let permissions = function_table(&table, "probe");
-    assert!(
-        permissions.pairs.is_empty(),
-        "a propagating first statement is never a candidate, so probe has no analyzed pair: {:?}",
-        permissions.pairs
-    );
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "probe", "a propagate statement", "bump");
+    let Denial::SkippingExit { side, kind } = denial(pair, 2) else {
+        panic!("expected a skipping-exit denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(*kind, ExitKind::PropagateError);
+    assert_eq!(*side, PairSide::First);
 }
 
-/// [PAR-1] excludes a `propagate` second member on the same terms as a first
-/// one: `let narrowed = propagate narrow(v: v);` selects `propagate_let_rhs`,
-/// not `ordinary_let_rhs`, so `candidate_of` never admits it, whichever side
-/// of a pair it would write. Before this exclusion, the exit condition
-/// check read only the first member's exit and never the second's, so this
-/// exact shape — an ordinary call followed by a `propagate` — reached
-/// `PermittedEligible` without checking its own exit. With the propagating
-/// statement no longer a candidate, `stamped` is the block's only one and
-/// the pair it would have formed with `narrowed` does not exist to receive a
-/// verdict.
+/// The same exclusion for a propagating second member. v0.59's exit condition
+/// read only the first member's edge, so an ordinary call followed by a
+/// `propagate` once reached `PermittedEligible` without checking its own
+/// exit; the judgment refuses both sides.
 #[test]
-fn a_propagating_second_statement_forms_no_pair() {
+fn a_propagating_second_statement_is_denied_by_its_exit() {
     let source = br#"fn narrow(v: own u32) -> result: own Result<u8, NarrowError> pure {
   return cvt::<u32, u8>(v);
 }
 
-fn stamp(slot: &uniq u8) -> result: own u64 writes(slot) {
-  set deref(slot) = 9_u8;
-  return 1_u64;
-}
-
-fn probe(v: own u32, slot: &uniq u8) -> result: own Result<unit, NarrowError> writes(slot) {
-  let stamped = stamp(slot: move slot);
+fn probe(v: own u32, slot: &Cell) -> result: own Result<unit, NarrowError> writes(slot.value) {
+  let stamped = bump(slot: slot);
   let narrowed = propagate narrow(v: v);
   return Ok<unit, NarrowError>(value: unit);
 }
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
 "#;
-    let table = permission_of(source);
-    let permissions = function_table(&table, "probe");
-    assert!(
-        permissions.pairs.is_empty(),
-        "a propagating second statement is never a candidate, so probe has no analyzed pair: {:?}",
-        permissions.pairs
-    );
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "probe", "bump", "a propagate statement");
+    let Denial::SkippingExit { side, kind } = denial(pair, 2) else {
+        panic!("expected a skipping-exit denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(*kind, ExitKind::PropagateError);
+    assert_eq!(*side, PairSide::Second);
 }
 
 // ----------------------------------------------------------------------
@@ -703,177 +701,102 @@ fn main() -> status: own ExitStatus pure {
 /// sibling pair and makes only that helper total with a dominating branch.
 #[test]
 fn a_recursive_closure_requires_source_proof_and_then_is_eligible() {
-    let source = br#"enum BoxNode {
-  Leaf(w: u64);
-  Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
-}
-
-fn boxed_leaf(w: own u64) -> result: own box<BoxNode> pure {
-  let leaf = Leaf(w: w);
-  return box_new(move leaf);
-}
-
-fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> pure {
-  let branch = Branch(left: move left, right: move right, w: 0_u64);
-  return box_new(move branch);
-}
-
-fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 reads(values) {
+    let unproved = r#"fn scaled(values: own Array<u8, 8>, index: own u64) -> result: own u8 pure {
   return values[index];
 }
 
-fn bubble(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {
-  match deref(deref(node)) {
-    Leaf(w: leaf_w) => {
-      let w = deref(leaf_w);
-      let values = array_new::<u8, 8>(0_u8);
+fn bubble(node: &Node) -> result: own u64 writes(node) {
+  match deref(node) {
+    Leaf(w: leaf) => {
+      let w = deref(leaf);
+      let values = array_filled::<u8, 8>(value: 0_u8);
       let touched = scaled(values: move values, index: w);
       return w;
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = bubble(node: move l);
-      let b = bubble(node: move r);
+      let a = bubble(node: &deref(l).inner);
+      let b = bubble(node: &deref(r).inner);
       let total = a +wrap b;
       set deref(slot) = total;
       return total;
     }
   }
 }
-
-fn main() -> status: own ExitStatus pure {
-  let leaf0 = boxed_leaf(w: 3_u64);
-  let leaf1 = boxed_leaf(w: 4_u64);
-  let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
-  region {
-    let total = bubble(node: &uniq branch0);
-    if total == 7_u64 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-  }
-  return exit_status(code: 0_u8);
-}
 "#;
-    with_semantics(source, |outcome| {
+    with_semantics(&tree(unproved), |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("the unproved closure must reject before permission: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op4);
     });
 
-    let proved_source = br#"enum BoxNode {
-  Leaf(w: u64);
-  Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
-}
-
-fn boxed_leaf(w: own u64) -> result: own box<BoxNode> pure {
-  let leaf = Leaf(w: w);
-  return box_new(move leaf);
-}
-
-fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> pure {
-  let branch = Branch(left: move left, right: move right, w: 0_u64);
-  return box_new(move branch);
-}
-
-fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 reads(values) {
-  let size = len_of(values);
+    let proved = r#"fn scaled(values: own Array<u8, 8>, index: own u64) -> result: own u8 pure {
+  let size = values.len;
   if index < size {
     return values[index];
   }
   return 0_u8;
 }
 
-fn bubble(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {
-  match deref(deref(node)) {
-    Leaf(w: leaf_w) => {
-      let w = deref(leaf_w);
-      let values = array_new::<u8, 8>(0_u8);
+fn bubble(node: &Node) -> result: own u64 writes(node) {
+  match deref(node) {
+    Leaf(w: leaf) => {
+      let w = deref(leaf);
+      let values = array_filled::<u8, 8>(value: 0_u8);
       let touched = scaled(values: move values, index: w);
       return w;
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = bubble(node: move l);
-      let b = bubble(node: move r);
+      let a = bubble(node: &deref(l).inner);
+      let b = bubble(node: &deref(r).inner);
       let total = a +wrap b;
       set deref(slot) = total;
       return total;
     }
   }
 }
-
-fn main() -> status: own ExitStatus pure {
-  let leaf0 = boxed_leaf(w: 3_u64);
-  let leaf1 = boxed_leaf(w: 4_u64);
-  let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
-  region {
-    let total = bubble(node: &uniq branch0);
-    if total == 7_u64 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-  }
-  return exit_status(code: 0_u8);
-}
 "#;
-    let table = permission_of(proved_source);
-    let pair = only_pair(&table, "bubble");
+    let table = permission_of(&tree(proved));
+    let pair = pair_of(&table, "bubble", "bubble", "bubble");
     assert_eq!(
         pair.verdict,
         PermissionVerdict::PermittedEligible,
         "the proof-complete recursive closure must remain eligible"
     );
-    let runs = &function_table(&table, "bubble").runs;
+    let run = run_of(&table, "bubble", &["bubble", "bubble"]);
     assert_eq!(
-        runs.len(),
-        1,
-        "an eligible pair forms its chain like any other: {runs:?}"
+        run.sites.len(),
+        2,
+        "an eligible pair forms its run like any other"
     );
-
-    // The branch-proved helper really is in the closure of the judged pair:
-    // `bubble` calls itself and its leaf arm calls `scaled`.
-    assert_eq!(pair.first.callee_name, "bubble");
-    assert_eq!(pair.second.callee_name, "bubble");
     assert!(
-        std::str::from_utf8(proved_source)
-            .expect("the fixture is UTF-8")
-            .contains("if index < size"),
+        proved.contains("if index < size"),
         "the fixture must keep the dominating source proof in its closure"
     );
-
-    // main's next pair feeds both leaves into one branch and is still denied
-    // by condition 1: widening actualization moved no condition.
-    let outer = function_table(&table, "main");
-    assert_eq!(outer.pairs.len(), 2);
-    assert_eq!(outer.pairs[0].verdict, PermissionVerdict::PermittedEligible);
-    assert_eq!(outer.pairs[1].verdict.denied_condition(), Some(1));
 }
 
 // ----------------------------------------------------------------------
-// The window: statements written between the two calls
+// Statements written between two calls
 // ----------------------------------------------------------------------
 
 /// The F3 shape. One pure builtin between the two recursive calls, reading a
 /// local the calls do not reach and defining a binding neither of them reads.
-/// Before the window rule this ended the enumeration: no pair, no verdict, no
-/// ledger line — so the same fold with the operation wrapped in a function
-/// kept a parallel chain and this one silently did not.
+///
+/// v0.59 judged the two calls across an interposed window. v0.60 has no
+/// window: the builtin forms an ordinary adjacency with each neighbour, both
+/// hold, and the composition clause — "any run of adjacent statements that
+/// pairwise may overlap may all overlap" — is what puts all three in one run.
 #[test]
-fn a_pure_builtin_between_two_calls_keeps_the_pair() {
-    let source = br#"enum BoxNode {
-  Leaf(w: u64);
-  Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
-}
-
-fn fold(node: &uniq box<BoxNode>, seed: own u64) -> result: own u64 reads(node), writes(node) {
-  match deref(deref(node)) {
-    Leaf(w: leaf_w) => {
-      return deref(leaf_w);
+fn a_pure_builtin_between_two_calls_keeps_one_run() {
+    let source = r#"fn fold(node: &Node, seed: own u64) -> result: own u64 writes(node) {
+  match deref(node) {
+    Leaf(w: leaf) => {
+      return deref(leaf);
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = fold(node: move l, seed: seed);
+      let a = fold(node: &deref(l).inner, seed: seed);
       let gap = seed +wrap 1_u64;
-      let b = fold(node: move r, seed: seed);
+      let b = fold(node: &deref(r).inner, seed: seed);
       let kids = imax(a, b);
       let total = imax(kids, gap);
       set deref(slot) = total;
@@ -881,169 +804,133 @@ fn fold(node: &uniq box<BoxNode>, seed: own u64) -> result: own u64 reads(node),
     }
   }
 }
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "fold");
-    assert_eq!(pair.first.callee_name, "fold");
-    assert_eq!(pair.second.callee_name, "fold");
-    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
-    let runs = &function_table(&table, "fold").runs;
+    let table = permission_of(&tree(source));
+    let pairs = &function_table(&table, "fold").pairs;
     assert_eq!(
-        runs.len(),
-        1,
-        "the two calls form one chain across the builtin"
+        pairs.len(),
+        3,
+        "the arm's three reported adjacencies, in source order: {pairs:?}"
     );
-    assert_eq!(runs[0].sites.len(), 2);
+    assert_eq!(pairs[0].verdict, PermissionVerdict::PermittedEligible);
+    assert_eq!(pairs[1].verdict, PermissionVerdict::PermittedEligible);
+    let run = run_of(&table, "fold", &["fold", "a let statement", "fold"]);
+    assert_eq!(
+        run.sites.len(),
+        3,
+        "the two calls and the builtin form one run"
+    );
 }
 
 /// A local invariant between two calls is a compile-time statement, not a
-/// runtime window member. It neither splits the pair nor contributes a
-/// footprint or exit edge.
+/// runtime member. It contributes no footprint and no exit edge, so it joins
+/// the run without changing it.
 #[test]
-fn a_local_invariant_between_two_calls_keeps_the_pair() {
-    let source = br#"fn peek(value: &u64) -> result: own u64 reads(value) {
-  return deref(value);
-}
-
-fn main() -> status: own ExitStatus pure {
-  let left = 1_u64;
-  let right = 2_u64;
-  region {
-    let a = peek(value: &left);
-    invariant two_steps: 0_u64 <= 2_u64;
-    let b = peek(value: &right);
-    let total = a +wrap b;
-  }
+fn a_local_invariant_between_two_calls_keeps_one_run() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let left = Cell(value: 1_u64);
+  let right = Cell(value: 2_u64);
+  let a = peek(slot: &left);
+  invariant two_steps: 0_u64 <= 2_u64;
+  let b = peek(slot: &right);
+  let total = a +wrap b;
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
-    assert_eq!(function_table(&table, "main").runs.len(), 1);
+    let table = permission_of(&cells(text(source)));
+    assert_eq!(
+        pair_of(&table, "main", "peek", "a proof statement").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+    assert_eq!(
+        pair_of(&table, "main", "a proof statement", "peek").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+    let run = run_of(&table, "main", &["peek", "a proof statement", "peek"]);
+    assert_eq!(run.sites.len(), 3);
 }
 
-/// Condition 2, clause 2c. The interposed `set` writes the storage s2's callee
-/// reads through its actual. Under the schedule that hands s2 to a lane, that
-/// read races the store and takes the pre-`set` value where source order
-/// requires the post-`set` one.
+/// A `set` writes the storage the next call's callee reads through its
+/// actual. Under the schedule that hands that call to a lane, the read races
+/// the store and takes the pre-`set` value where source order requires the
+/// post-`set` one.
+///
+/// v0.59 reported this as the interposed side of a wider window; v0.60
+/// reports the adjacency that carries it.
 #[test]
-fn an_interposed_write_into_the_second_callees_read_is_denied_by_condition_two() {
-    let source = br#"fn peek(v: &u64) -> result: own u64 reads(v) {
-  return deref(v);
-}
-
-fn main() -> status: own ExitStatus pure {
-  let cell = 1_u64;
-  let other = 2_u64;
-  region {
-    let a = peek(v: &other);
-    set cell = 5_u64;
-    let b = peek(v: &cell);
-    let total = imax(a, b);
-  }
+fn a_write_into_the_next_callees_read_is_denied() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 1_u64);
+  let other = Cell(value: 2_u64);
+  let a = peek(slot: &other);
+  set cell.value = 5_u64;
+  let b = peek(slot: &cell);
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
-        panic!("expected a loan denial, got {:?}", pair.verdict);
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "main", "a set statement", "peek");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
     assert_eq!(
         *kind,
         ConflictKind {
             earlier: FootprintHalf::Write,
-            later: FootprintHalf::SharedLoan
+            later: FootprintHalf::Read
         }
     );
-    assert_eq!(
-        *sides,
-        (PairSide::Between(0), PairSide::Second),
-        "the interposed write, not s1, is what conflicts with s2"
-    );
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
-/// Condition 2, clause 2a. The interposed `set` writes the storage s1's callee
-/// writes through its actual. Under the schedule that hands s1 out this is a
-/// live store/store race between the lane and the calling thread.
+/// A `set` writes the storage the previous call's callee writes through its
+/// actual. Under the schedule that hands that call out this is a live
+/// store/store race between the lane and the calling thread.
 #[test]
-fn an_interposed_write_over_the_first_callees_write_is_denied_by_condition_two() {
-    let source = br#"fn bump(slot: &uniq u64) -> result: own u64 writes(slot) {
-  set deref(slot) = 7_u64;
-  return 1_u64;
-}
-
-fn peek(v: &u64) -> result: own u64 reads(v) {
-  return deref(v);
-}
-
-fn main() -> status: own ExitStatus pure {
-  let cell = 1_u64;
-  let other = 2_u64;
-  region {
-    let a = bump(slot: &uniq cell);
-    set cell = 5_u64;
-    let b = peek(v: &other);
-    let total = imax(a, b);
-  }
+fn a_write_over_the_previous_callees_write_is_denied() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 1_u64);
+  let other = Cell(value: 2_u64);
+  let a = bump(slot: &cell);
+  set cell.value = 5_u64;
+  let b = peek(slot: &other);
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
-        panic!("expected a loan denial, got {:?}", pair.verdict);
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "main", "bump", "a set statement");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
     assert_eq!(
         *kind,
         ConflictKind {
-            earlier: FootprintHalf::ExclusiveLoan,
+            earlier: FootprintHalf::Write,
             later: FootprintHalf::Write
         }
     );
-    assert_eq!(
-        *sides,
-        (PairSide::First, PairSide::Between(0)),
-        "the conflict is s1 against the interposed write"
-    );
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
-/// Condition 2, clause 2c's operand half — the obligation the window adds that
-/// no pair rule has. `take`'s row is `pure` and reaches no caller storage at
-/// all, but the schedule that hands s2 to a lane evaluates its operands at the
-/// hand-out point, above the interposed `set`, so it reads 1 where source
-/// order gives 15. No callee row is involved on either side.
+/// The operand half of the same hazard. `take`'s row is `pure` and reaches no
+/// caller storage at all, but the schedule that hands it to a lane evaluates
+/// its operands at the hand-out point, above the `set`, so it reads 1 where
+/// source order gives 15. No callee row is involved on either side.
 #[test]
-fn an_interposed_write_under_the_second_calls_operand_read_is_denied_by_condition_two() {
-    let source = br#"fn peek(v: &u64) -> result: own u64 reads(v) {
-  return deref(v);
-}
-
-fn take(v: own u64) -> result: own u64 pure {
-  return v;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let cell = 1_u64;
-  let other = 2_u64;
-  region {
-    let a = peek(v: &other);
-    set cell = 15_u64;
-    let b = take(v: cell);
-    let total = imax(a, b);
-  }
+fn a_write_under_the_next_calls_operand_read_is_denied() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 1_u64);
+  let other = Cell(value: 2_u64);
+  let a = peek(slot: &other);
+  set cell.value = 15_u64;
+  let b = take(v: cell.value);
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Footprint { kind, sides, .. } = denial(pair, 2) else {
-        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "main", "a set statement", "take");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
     assert_eq!(
         *kind,
@@ -1052,69 +939,57 @@ fn main() -> status: own ExitStatus pure {
             later: FootprintHalf::OperandRead
         }
     );
-    assert_eq!(*sides, (PairSide::Between(0), PairSide::Second));
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
-/// The mirror of the fixture above, and the one obligation the window rule
-/// deliberately does **not** carry: an interposed write over *s1's* operand
-/// read is permitted.
+/// The mirror of the fixture above, and an obligation v0.59's window rule
+/// deliberately did **not** carry: a write placed after a call's operand read
+/// was permitted there, because neither realizable schedule of an interposed
+/// window let the store move above the read.
 ///
-/// Both realizable schedules agree. Where s1 takes the lane, its operands are
-/// evaluated before the fork, so the lane already holds the value 1 and the
-/// later store cannot reach it. Where s2 takes the lane, s1 has run to
-/// completion before the interposed statement executes at all. Neither
-/// schedule lets the store move above the read, so the operand half is
-/// one-sided for s1 and two-sided for s2.
-///
-/// This fixture exists to fail if that asymmetry is ever "tidied" into a
-/// symmetric rule: the widening would still be sound, but it would silently
-/// stop admitting the shape the asymmetry was derived to admit.
+/// v0.60 states the operand half symmetrically — "each statement's write
+/// paths must also be disjoint from the places the other statement's argument
+/// expressions read" — so the same program is denied, and the asymmetry this
+/// fixture used to pin is gone.
 #[test]
-fn an_interposed_write_over_the_first_calls_operand_read_is_permitted() {
-    let source = br#"fn peek(v: &u64) -> result: own u64 reads(v) {
-  return deref(v);
-}
-
-fn take(v: own u64) -> result: own u64 pure {
-  return v;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let cell = 1_u64;
-  let other = 2_u64;
-  region {
-    let a = take(v: cell);
-    set cell = 15_u64;
-    let b = peek(v: &other);
-    let total = imax(a, b);
-  }
+fn a_write_over_the_previous_calls_operand_read_is_denied() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 1_u64);
+  let other = Cell(value: 2_u64);
+  let a = take(v: cell.value);
+  set cell.value = 15_u64;
+  let b = peek(slot: &other);
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "main", "take", "a set statement");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
+    };
+    assert_eq!(
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::OperandRead,
+            later: FootprintHalf::Write
+        }
+    );
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
-/// Condition 1, clause 1b. The interposed statement reads the binding s1
-/// defines. Under the schedule that hands s1 out that value does not exist
-/// until the join, which is after every interposed statement has run.
+/// The statement after a call reads the binding that call defines. Under the
+/// schedule that hands the call out that value does not exist until the join.
 #[test]
-fn an_interposed_read_of_the_first_calls_result_is_denied_by_condition_one() {
-    let source = br#"enum BoxNode {
-  Leaf(w: u64);
-  Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
-}
-
-fn fold(node: &uniq box<BoxNode>, seed: own u64) -> result: own u64 reads(node), writes(node) {
-  match deref(deref(node)) {
-    Leaf(w: leaf_w) => {
-      return deref(leaf_w);
+fn a_read_of_the_previous_calls_result_is_a_footprint_conflict() {
+    let source = r#"fn fold(node: &Node, seed: own u64) -> result: own u64 writes(node) {
+  match deref(node) {
+    Leaf(w: leaf) => {
+      return deref(leaf);
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = fold(node: move l, seed: seed);
+      let a = fold(node: &deref(l).inner, seed: seed);
       let gap = a +wrap 1_u64;
-      let b = fold(node: move r, seed: seed);
+      let b = fold(node: &deref(r).inner, seed: seed);
       let kids = imax(a, b);
       let total = imax(kids, gap);
       set deref(slot) = total;
@@ -1122,429 +997,383 @@ fn fold(node: &uniq box<BoxNode>, seed: own u64) -> result: own u64 reads(node),
     }
   }
 }
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "fold");
-    let Denial::Dataflow {
-        binding,
-        definer,
-        reader,
-    } = denial(pair, 1)
-    else {
-        panic!("expected a dataflow denial, got {:?}", pair.verdict);
+    let table = permission_of(&tree(source));
+    let pairs = &function_table(&table, "fold").pairs;
+    let pair = &pairs[0];
+    let Denial::Footprint { kind, left, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
     assert_eq!(
-        Some(*binding),
-        pair.first.binding,
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::Write,
+            later: FootprintHalf::OperandRead
+        }
+    );
+    assert_eq!(
+        left.place,
+        ResolvedPlace::binding(pair.first.binding.expect("s1 defines a binding")),
         "s1's own result is the link"
     );
-    assert_eq!((*definer, *reader), (PairSide::First, PairSide::Between(0)));
 }
 
-/// Condition 1, clause 1c, and the one real cost of taking the
-/// schedule-independent rule: s2 reads a binding an interposed statement
-/// defines. Under the schedule that hands s2 out, its operands are evaluated
-/// before that statement runs, so the value it would read does not exist yet.
-/// The backend's current schedule would survive this window; the rule may not
-/// be stated in terms of a schedule, so it denies.
+/// A call reading a binding the statement before it defines. Under the
+/// schedule that hands that call to a lane its operands are evaluated before
+/// the defining statement runs, so the value it would read does not exist
+/// yet.
 #[test]
-fn a_second_call_reading_an_interposed_binding_is_denied_by_condition_one() {
-    let source = br#"fn peek(v: &u64) -> result: own u64 reads(v) {
-  return deref(v);
-}
-
-fn take(v: own u64) -> result: own u64 pure {
-  return v;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let other = 2_u64;
-  region {
-    let a = peek(v: &other);
-    let seed = 7_u64;
-    let b = take(v: seed);
-    let total = imax(a, b);
-  }
+fn a_call_reading_the_previous_statements_binding_is_a_footprint_conflict() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let other = Cell(value: 2_u64);
+  let a = peek(slot: &other);
+  let seed = 7_u64;
+  let b = take(v: seed);
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Dataflow {
-        definer, reader, ..
-    } = denial(pair, 1)
-    else {
-        panic!("expected a dataflow denial, got {:?}", pair.verdict);
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "main", "a let statement", "take");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
     assert_eq!(
-        (*definer, *reader),
-        (PairSide::Between(0), PairSide::Second)
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::Write,
+            later: FootprintHalf::OperandRead
+        }
     );
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
-/// Condition 4 through the window. The interposed `propagate` has an `Err`
-/// edge to the function-return sink [ERR-3], so on that edge s2 never runs and
-/// the function returns while s1's lane is still executing against a frame the
+/// The exit clause beside an ordinary call. The `propagate` has an `Err` edge
+/// to the function-return sink [ERR-3], so on that edge the function returns
+/// while the previous statement's lane is still executing against a frame the
 /// return is about to destroy. That is a use-after-return, not a value
-/// difference, and before the window rule it was not even reported.
+/// difference.
 #[test]
-fn an_interposed_propagate_is_denied_by_condition_four() {
-    let source = br#"fn peek(slot: &u8) -> result: own u64 reads(slot) {
-  return cvt::<u8, u64>(deref(slot));
-}
-
-fn stamp(slot: &uniq u8) -> result: own u64 writes(slot) {
-  set deref(slot) = 9_u8;
-  return 1_u64;
-}
-
-fn probe['o](outcome: own Result<u8, NarrowError>, a: &uniq 'o u8, b: &'o u8) -> result: own Result<unit, NarrowError> reads(b), writes(a) {
+fn a_propagate_beside_a_call_is_denied_by_its_exit() {
+    let source = br#"fn probe(outcome: own Result<u8, NarrowError>, a: &Cell, b: &Cell) -> result: own Result<unit, NarrowError> reads(b.value), writes(a.value) {
   let seen = peek(slot: b);
   let narrowed = propagate outcome;
-  let stamped = stamp(slot: move a);
+  let stamped = bump(slot: a);
   return Ok<unit, NarrowError>(value: unit);
 }
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "probe");
-    let Denial::SkippingExit { side, kind } = denial(pair, 4) else {
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "probe", "peek", "a propagate statement");
+    let Denial::SkippingExit { side, kind } = denial(pair, 2) else {
         panic!("expected a skipping-exit denial, got {:?}", pair.verdict);
     };
     assert_eq!(*kind, ExitKind::PropagateError);
-    assert_eq!(*side, PairSide::Between(0));
+    assert_eq!(*side, PairSide::Second);
 }
 
 #[test]
-fn a_proved_interposed_subscript_creates_no_exit() {
-    let source = br#"fn peek(v: &u64) -> result: own u64 reads(v) {
-  return deref(v);
-}
-
-fn probe['r](values: own array<u8, 8>, cell: &'r u64, other: &'r u64) -> result: own u64 reads(values, cell, other) {
-  let a = peek(v: other);
+fn a_proved_subscript_between_two_calls_creates_no_exit() {
+    let source = br#"fn probe(values: own Array<u8, 8>, cell: &Cell, other: &Cell) -> result: own u64 reads(cell.value), reads(other.value) {
+  let a = peek(slot: other);
   let picked = values[3_u64];
-  let b = peek(v: cell);
+  let b = peek(slot: cell);
   return imax(a, b);
 }
-
-fn main() -> status: own ExitStatus pure {
-  let cell = 1_u64;
-  let other = 2_u64;
-  let table = array_new::<u8, 8>(0_u8);
-  region {
-    let total = probe(values: move table, cell: &cell, other: &other);
-  }
-  return exit_status(code: 0_u8);
-}
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "probe");
-    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
+    let table = permission_of(&cells(text(source)));
     assert_eq!(
-        function_table(&table, "probe").runs.len(),
-        1,
-        "the proof-complete interposed operation must retain the eligible run"
+        pair_of(&table, "probe", "peek", "a let statement").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+    assert_eq!(
+        pair_of(&table, "probe", "a let statement", "peek").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+    let run = run_of(&table, "probe", &["peek", "a let statement", "peek"]);
+    assert_eq!(
+        run.sites.len(),
+        3,
+        "the proof-complete operation must retain the eligible run"
     );
 }
 
-/// A form the window rule does not account for is refused **with a report**.
-/// This is the half of F3 that a verdict-only suite is blind to: before the
-/// window rule this program produced no pair at all, so nothing was wrong with
-/// any verdict — there was no verdict. Fail-closed and silent are different
-/// defects, and only the second one is fixed by denying.
+/// A `match` statement carries its own control flow and its own arm drops,
+/// and the checked model gives it no statement node of its own, so it is
+/// never a member of an adjacency and it ends the run it interrupts.
+///
+/// v0.59 reported this as an interposed-form refusal of a wider window. v0.60
+/// has no window, and the honest report is that the two calls the `match`
+/// separates are not adjacent and never share a run.
 #[test]
-fn an_interposed_match_is_denied_by_condition_two() {
+fn a_match_statement_is_no_member_of_any_adjacency() {
     let source = br#"enum Choice {
   Low(w: u64);
   High(w: u64);
 }
 
-fn peek(v: &u64) -> result: own u64 reads(v) {
-  return deref(v);
-}
-
 fn main() -> status: own ExitStatus pure {
-  let cell = 1_u64;
-  let other = 2_u64;
+  let cell = Cell(value: 1_u64);
+  let other = Cell(value: 2_u64);
   let which = Low(w: 3_u64);
-  region {
-    let a = peek(v: &other);
-    match which {
-      Low(w: lw) => {
-        let seen = lw;
-      }
-      High(w: hw) => {
-        let seen = hw;
-      }
+  let a = peek(slot: &other);
+  match which {
+    Low(w: lw) => {
+      let seen = lw;
     }
-    let b = peek(v: &cell);
-    let total = imax(a, b);
+    High(w: hw) => {
+      let seen = hw;
+    }
   }
+  let b = peek(slot: &cell);
+  let total = imax(a, b);
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::InterposedForm { side, form } = denial(pair, 2) else {
+    let table = permission_of(&cells(text(source)));
+    assert!(
+        pairs_of(&table, "main", "peek", "peek").is_empty(),
+        "the two calls the match separates are not adjacent"
+    );
+    assert!(
+        !function_table(&table, "main").runs.iter().any(|run| {
+            run.sites
+                .iter()
+                .filter(|site| site.callee_name == "peek")
+                .count()
+                > 1
+        }),
+        "an unclassified statement ends the run before it"
+    );
+}
+
+/// A form the judgment does not account for is refused **with a report**. A
+/// counted `for` carries a node of its own, so the adjacency exists and the
+/// refusal names the form rather than passing over it silently. Fail-closed
+/// and silent are different defects, and only the second is fixed by denying.
+#[test]
+fn a_counted_loop_beside_a_call_is_an_unclassified_form() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 1_u64);
+  let a = peek(slot: &cell);
+  for @scan (i in 0_u64..4_u64) {
+    let seen = i;
+  }
+  let b = peek(slot: &cell);
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "main", "peek", "a for loop");
+    let Denial::UnclassifiedForm { side, form } = denial(pair, 1) else {
         panic!(
-            "a match between the calls must be reported, not silently unjudged: {:?}",
+            "a loop beside a call must be reported, not silently unjudged: {:?}",
             pair.verdict
         );
     };
-    assert_eq!(*side, PairSide::Between(0));
-    assert_eq!(*form, "a match statement");
+    assert_eq!(*side, PairSide::Second);
+    assert_eq!(*form, "a for loop");
+
+    let mirrored = pair_of(&table, "main", "a for loop", "peek");
+    let Denial::UnclassifiedForm { side, .. } = denial(mirrored, 1) else {
+        panic!("the other side is refused for the same reason");
+    };
+    assert_eq!(*side, PairSide::First);
 }
 
 // ----------------------------------------------------------------------
-// Condition 2, the loans half [OWN-5, OWN-12]
+// What replaced the loans half [CAP-1]
 // ----------------------------------------------------------------------
 
-/// The pointed case of the loans half: both callees declare `reads` only, so
-/// the row projection alone sees read against read and would permit — but each
-/// actual is a `&uniq` borrow of the one cell, and an overlap would hold two
-/// usable exclusive loans on one place, which [OWN-5] never admits at one
-/// program point. Before the loans half existed this pair was permitted.
+/// The pointed case of v0.59's loans half: both callees declare `reads` only,
+/// and each actual was a `&uniq` borrow of one cell, which v0.59 refused
+/// because two usable exclusive loans never coexist on one place.
+///
+/// v0.60 has one reference kind and no permission marker; whether a callee
+/// may write through a reference is stated by its row alone [REF-1, EFF-1].
+/// Two read rows over one place are read/read overlap, which [PAR-1] admits.
 #[test]
-fn read_only_unique_borrows_of_one_place_are_denied_by_their_loans() {
-    let source = br#"fn peek_uniq(cell: &uniq u64) -> result: own u64 reads(cell) {
-  return deref(cell);
-}
-
-fn main() -> status: own ExitStatus pure {
-  let cell = 21_u64;
-  region {
-    let a = peek_uniq(cell: &uniq cell);
-    let b = peek_uniq(cell: &uniq cell);
-    let both = a +wrap b;
-  }
+fn two_references_to_one_place_with_read_only_rows_are_permitted() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 21_u64);
+  let a = peek(slot: &cell);
+  let b = peek(slot: &cell);
+  let both = a +wrap b;
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
-        panic!("expected a loan denial, got {:?}", pair.verdict);
-    };
-    assert_eq!(
-        *kind,
-        ConflictKind {
-            earlier: FootprintHalf::ExclusiveLoan,
-            later: FootprintHalf::ExclusiveLoan
-        }
-    );
-    assert_eq!(*sides, (PairSide::First, PairSide::Second));
+    let table = permission_of(&cells(text(source)));
+    let pair = pair_of(&table, "main", "peek", "peek");
+    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
 }
 
-/// A shared loan against a consuming `move`: s1 holds `&'c` of the box while
-/// its row is `pure`, and s2 consumes the box, whose drop frees the heap
-/// block. The row projection sees nothing on s1's side at all; the loan is
-/// the only thing standing between the overlap and a read of freed storage.
+/// v0.59 refused a shared borrow beside a consuming `move` by its loan, with
+/// the callee's row `pure` and contributing nothing.
+///
+/// v0.60 has no loan: a reference names a path and reads no content, and what
+/// a callee reaches through one is exactly its declared row. So the `pure`
+/// callee reaches nothing and the adjacency holds, while the same call with a
+/// `reads` row meets the consumption's write of that place and denies. Both
+/// halves are asserted here so the boundary is pinned in one fixture.
 #[test]
-fn a_pure_shared_borrow_against_a_consuming_move_is_denied_by_its_loan() {
-    let source = br#"fn ignore_box(node: &box<u64>) -> result: own u64 pure {
+fn a_pure_row_reaches_nothing_through_a_reference_and_a_reading_row_denies() {
+    let source = br#"fn ignore_node(node: &Box<u64>) -> result: own u64 pure {
   return 7_u64;
 }
 
-fn eat_box(node: own box<u64>) -> result: own u64 pure {
+fn read_node(node: &Box<u64>) -> result: own u64 reads(node) {
+  return deref(node).inner;
+}
+
+fn eat_node(node: own Box<u64>) -> result: own u64 pure {
   return 9_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
-  let node = box_new(41_u64);
-  region {
-    let a = ignore_box(node: &node);
-    let b = eat_box(node: move node);
-    let both = a +wrap b;
-  }
-  return exit_status(code: 0_u8);
+fn quiet(node: own Box<u64>) -> result: own u64 pure {
+  let a = ignore_node(node: &node);
+  let b = eat_node(node: move node);
+  return a +wrap b;
+}
+
+fn loud(node: own Box<u64>) -> result: own u64 pure {
+  let a = read_node(node: &node);
+  let b = eat_node(node: move node);
+  return a +wrap b;
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
-        panic!("expected a loan denial, got {:?}", pair.verdict);
+    assert_eq!(
+        pair_of(&table, "quiet", "ignore_node", "eat_node").verdict,
+        PermissionVerdict::PermittedEligible,
+        "a pure row reaches nothing through the reference it was handed"
+    );
+    let pair = pair_of(&table, "loud", "read_node", "eat_node");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
     assert_eq!(
         *kind,
         ConflictKind {
-            earlier: FootprintHalf::SharedLoan,
+            earlier: FootprintHalf::Read,
             later: FootprintHalf::Write
-        }
+        },
+        "a by-value consumption counts as a write of the argument's place"
     );
     assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
-/// An interposed statement that forms a borrow is refused as a form: the
-/// checked tree erases a written borrow's shared-or-uniq mode, so the loan it
-/// would hold across the window cannot be stated, and an unloaned borrow
-/// would widen permission. The refusal, not an empty footprint, is what the
-/// window reports.
+/// A `let`-bound reference is an ordinary member, and reading through it is a
+/// read of the path it names.
+///
+/// v0.59 refused any statement that formed a borrow, because the checked tree
+/// erased the borrow's shared-or-uniq mode and an unloaned borrow would widen
+/// permission. v0.60 has no mode to erase: forming the reference reads no
+/// content and is permitted beside a write of the same storage, while the
+/// later `deref` resolves to that storage and conflicts with it.
 #[test]
-fn an_interposed_borrow_binding_refuses_the_window() {
-    let source = br#"fn bump(cell: &uniq u64) -> result: own u64 reads(cell), writes(cell) {
-  let was = deref(cell);
-  set deref(cell) = was +wrap 1_u64;
-  return was;
-}
-
-fn takeval(v: own u64) -> result: own u64 pure {
-  return v;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let cell = 1_u64;
-  region {
-    let a = bump(cell: &uniq cell);
-    let g = &cell;
-    let b = takeval(v: 5_u64);
-    let seen = deref(g);
-    let sum = a +wrap b;
-  }
+fn a_read_through_a_reference_is_a_read_of_the_path_it_names() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 1_u64);
+  let g = &cell;
+  let a = bump(slot: &cell);
+  let seen = deref(g).value;
   return exit_status(code: 0_u8);
 }
 "#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::InterposedForm { form, .. } = denial(pair, 2) else {
-        panic!("expected an interposed-form denial, got {:?}", pair.verdict);
+    let table = permission_of(&cells(text(source)));
+    assert_eq!(
+        pair_of(&table, "main", "a let statement", "bump").verdict,
+        PermissionVerdict::PermittedEligible,
+        "forming a reference names a path and reads no content"
+    );
+    let pair = pair_of(&table, "main", "bump", "a let statement");
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
     };
-    assert_eq!(*form, "a statement that forms a borrow");
+    assert_eq!(
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::Write,
+            later: FootprintHalf::OperandRead
+        }
+    );
 }
 
-/// A returned view remains unresolved by the structural permission prepass.
-/// Its loan must fail closed even when both callees are pure. Formal views
-/// now have incoming origins so recursive children retain their source; using
-/// a returned view preserves this test's unknown-origin rejection boundary.
+// Retired with v0.59's loans half: `an_unresolvable_loan_actual_denies_rather_
+// than_dropping_the_loan` handed a returned `Slice<'r, u8>` to two calls, and
+// a range reference [REF-4] is never a result, so the program has no v0.60
+// spelling; the fail-closed successor is `Denial::UnresolvedFootprint`, which
+// no source form now reaches because every footprint element the judgment
+// builds resolves.
+
+/// v0.59 kept a shared and an exclusive formal view apart by their loans.
+/// v0.60 has one reference kind, so the rows decide: two `pure` calls over one
+/// range reference are permitted, and two writing calls over the same one meet
+/// on that path.
 #[test]
-fn an_unresolvable_loan_actual_denies_rather_than_dropping_the_loan() {
-    let source = br#"fn relay['r](input: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
-  return input;
-}
-
-fn touch_slice(v: &Slice<u8>) -> result: own u64 pure {
-  return 3_u64;
-}
-
-fn a_pure_uniqslice(handed: own Slice<u8>) -> result: own u64 pure {
-  let returned = relay(input: handed);
-  region {
-    let a = touch_slice(v: &returned);
-    let b = touch_slice(v: &returned);
-    let s = a +wrap b;
-    return s;
-  }
-}
-
-fn main() -> status: own ExitStatus pure {
-  let backing = fixed_vector::<u8, 8>();
-  let p = 0_u64;
-  region {
-    let v = slice_of(&backing);
-    region {
-      set p = a_pure_uniqslice(handed: v);
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let table = permission_of(source);
-    let pair = only_pair(&table, "a_pure_uniqslice");
-    let Denial::UnresolvedFootprint { .. } = denial(pair, 2) else {
-        panic!("expected an unresolved denial, got {:?}", pair.verdict);
-    };
-}
-
-#[test]
-fn formal_view_origins_keep_both_shared_and_exclusive_call_loans() {
-    let source = br#"fn read_only(view: &Slice<u8>) -> result: own u64 pure {
+fn the_row_not_the_reference_kind_decides_two_range_reference_calls() {
+    let source = br#"fn read_only(view: &[u8]) -> result: own u64 pure {
   return 0_u64;
 }
 
-fn exclusive(view: &uniq MutSlice<u8>) -> result: own u64 pure {
+fn write_through(view: &[u8]) -> result: own u64 writes(view) contract {
+  requires 1_u64 <= deref(view).len;
+} {
+  set deref(view)[0_u64] = 1_u8;
   return 0_u64;
 }
 
-fn shared_formal(handed: own Slice<u8>) -> result: own u64 pure {
-  region {
-    let a = read_only(view: &handed);
-    let b = read_only(view: &handed);
-    return a +wrap b;
-  }
+fn shared(handed: &[u8]) -> result: own u64 pure {
+  let a = read_only(view: handed);
+  let b = read_only(view: handed);
+  return a +wrap b;
 }
 
-fn exclusive_formal(handed: own MutSlice<u8>) -> result: own u64 pure {
-  region {
-    let a = exclusive(view: &uniq handed);
-    let b = exclusive(view: &uniq handed);
-    return a +wrap b;
-  }
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn exclusive(handed: &[u8]) -> result: own u64 writes(handed) contract {
+  requires 1_u64 <= deref(handed).len;
+} {
+  let a = write_through(view: handed);
+  let b = write_through(view: handed);
+  return a +wrap b;
 }
 "#;
     let table = permission_of(source);
     assert_eq!(
-        only_pair(&table, "shared_formal").verdict,
+        pair_of(&table, "shared", "read_only", "read_only").verdict,
         PermissionVerdict::PermittedEligible
     );
-    assert!(matches!(
-        denial(only_pair(&table, "exclusive_formal"), 2),
-        Denial::Loan { .. }
-    ));
+    let pair = pair_of(&table, "exclusive", "write_through", "write_through");
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
 }
 
 /// Prelude calls use the ordinary call permission judgment. This pure call
-/// forms the two adjacent eligible pairs rather than becoming opaque
-/// interposition.
+/// forms the two adjacent eligible pairs rather than becoming an opaque
+/// statement the judgment passes over.
 #[test]
-fn an_inline_prelude_call_forms_ordinary_adjacent_windows() {
-    let source = br#"fn quiet(cell: &uniq u64) -> result: own u64 pure {
+fn an_inline_prelude_call_forms_ordinary_adjacent_pairs() {
+    let source = br#"fn quiet(cell: &Cell) -> result: own u64 pure {
   return 3_u64;
 }
 
-fn interposed_pure_syscall(x: own u64, name: own HostString) -> result: own u64 pure {
-  let p = x;
-  let r = x;
-  region {
-    let a = quiet(cell: &uniq p);
-    let path = relative_path(value: move name);
-    let b = quiet(cell: &uniq r);
-    let s = a +wrap b;
-    match path {
-      Ok(value: good) => {
-        return s;
-      }
-      Err(error: bad) => {
-        return s +wrap 1_u64;
-      }
-    }
-  }
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn probe(x: own u64, name: own HostString) -> result: own u64 pure {
+  let p = Cell(value: x);
+  let r = Cell(value: x);
+  let a = quiet(cell: &p);
+  let path = relative_path(value: move name);
+  let b = quiet(cell: &r);
+  let s = a +wrap b;
+  return s;
 }
 "#;
-    let table = permission_of(source);
-    let permissions = function_table(&table, "interposed_pure_syscall");
-    assert_eq!(permissions.pairs.len(), 2);
-    assert_eq!(permissions.pairs[0].second.callee_name, "relative_path");
-    assert_eq!(permissions.pairs[1].first.callee_name, "relative_path");
-    assert!(
-        permissions
-            .pairs
-            .iter()
-            .all(|pair| pair.verdict == PermissionVerdict::PermittedEligible)
+    let table = permission_of(&cells(text(source)));
+    assert_eq!(
+        pair_of(&table, "probe", "quiet", "relative_path").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+    assert_eq!(
+        pair_of(&table, "probe", "relative_path", "quiet").verdict,
+        PermissionVerdict::PermittedEligible
     );
 }
 
@@ -1552,82 +1381,61 @@ fn main() -> status: own ExitStatus pure {
 // Call position
 // ----------------------------------------------------------------------
 
-/// A call is a candidate wherever it is written in call position.
+/// A call written in `match` scrutinee position is not a member of any
+/// adjacency.
 ///
-/// [PAR-1] judges calls, and a `match` scrutinee is a call. Reaching it only
-/// through a `let` made one written spelling of the same two operations
-/// invisible to the judgment: with one candidate there is no window, so no
-/// pair was judged, no chain was formed, and the ledger reported nothing at
-/// all about a program that plainly performs two independent operations.
+/// v0.59 admitted a scrutinee call as a candidate so that one written
+/// spelling of two independent operations was not invisible to the judgment.
+/// v0.60 refuses a `match` statement outright — its arms are statements this
+/// walk does not fold into the statement's own footprint — and the checked
+/// model gives that statement no node, so the pair it would have formed does
+/// not exist to receive a verdict.
 #[test]
-fn a_call_in_scrutinee_position_is_judged_as_the_bound_form_is() {
+fn a_scrutinee_call_forms_no_pair() {
     let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
-  let bytes = buffer_new(2_u64, 65_u8);
-  region 'out {
-    region 'err {
-      region {
-        let first = write_marker(output: &uniq 'out out, source: &bytes, start: 0_u64, end: 1_u64);
-        match write_marker(output: &uniq 'err err, source: &bytes, start: 1_u64, end: 2_u64) {
-          Ok(value: written) => {
-          }
-          Err(error: problem) => {
-          }
-        }
-      }
+  let values = array_filled::<u8, 2>(value: 65_u8);
+  let bytes = slots_from_array::<u8, 2>(values: move values);
+  let window = &bytes[0_u64..2_u64];
+  let first = write_marker(output: &out, source: window, start: 0_u64, end: 1_u64);
+  match write_marker(output: &err, source: window, start: 1_u64, end: 2_u64) {
+    Ok(value: written) => {
+    }
+    Err(error: problem) => {
     }
   }
   return exit_status(code: 0_u8);
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    assert_eq!(
-        pair.verdict,
-        PermissionVerdict::PermittedEligible,
-        "two independent outputs are eligible in either written position"
-    );
     assert!(
-        pair.second.binding.is_none(),
-        "a scrutinee call defines no binding; the call occurrence is its identity"
+        pairs_of(&table, "main", "write_marker", "write_marker").is_empty(),
+        "a scrutinee call is no member: {:?}",
+        function_table(&table, "main").pairs
     );
 }
 
-/// The same two calls with the scrutinee written first, which must deny.
-///
-/// The match's dispatch and the arm it selects read the scrutinee's result, so
-/// the rest of that statement runs between the call and everything after it.
-/// The window therefore contains the match statement itself, and a match
-/// statement is a form this judgment does not project — the same refusal a
-/// match written *between* two bound calls already gets.
+/// The same two calls with the scrutinee written first, which is refused for
+/// the same reason and by the same absence of a node.
 #[test]
-fn a_scrutinee_call_denies_against_a_later_call_it_is_read_before() {
+fn a_scrutinee_call_written_first_forms_no_pair() {
     let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
-  let bytes = buffer_new(2_u64, 65_u8);
-  region 'out {
-    region 'err {
-      region {
-        match write_marker(output: &uniq 'out out, source: &bytes, start: 0_u64, end: 1_u64) {
-          Ok(value: written) => {
-          }
-          Err(error: problem) => {
-          }
-        }
-        let second = write_marker(output: &uniq 'err err, source: &bytes, start: 1_u64, end: 2_u64);
-      }
+  let values = array_filled::<u8, 2>(value: 65_u8);
+  let bytes = slots_from_array::<u8, 2>(values: move values);
+  let window = &bytes[0_u64..2_u64];
+  match write_marker(output: &out, source: window, start: 0_u64, end: 1_u64) {
+    Ok(value: written) => {
+    }
+    Err(error: problem) => {
     }
   }
+  let second = write_marker(output: &err, source: window, start: 1_u64, end: 2_u64);
   return exit_status(code: 0_u8);
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "main");
-    let Denial::InterposedForm { side, form } = denial(pair, 2) else {
-        panic!("expected an interposed-form denial, got {:?}", pair.verdict);
-    };
-    assert_eq!(
-        *side,
-        PairSide::Between(0),
-        "s1's own statement stands there"
+    assert!(
+        pairs_of(&table, "main", "write_marker", "write_marker").is_empty(),
+        "a scrutinee call is no member: {:?}",
+        function_table(&table, "main").pairs
     );
-    assert_eq!(*form, "a match statement");
 }

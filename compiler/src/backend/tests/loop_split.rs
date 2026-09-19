@@ -11,6 +11,37 @@
 //! A run at `WF_WORKERS=1` proves nothing about overlapping — it takes the
 //! sequential world — so the cases that need real overlap read the runtime's
 //! own grant count and refuse a repeat that never actually handed anything out.
+//!
+//! # Kernel spec v0.60
+//!
+//! No test in this module retired. Every subject here is [PAR-2]'s counted
+//! permission and the lowering that actualizes it, and [PAR-2] survives the
+//! amendment: what changed under it is how a statement's footprint is spelled,
+//! not which loops may split. The `.wf` fixtures were retargeted:
+//!
+//! - `region { .. }` wrappers are gone with regions themselves [OWN-3, OWN-4,
+//!   OWN-10, FORM-8]; their statements stay in the enclosing block. Nothing is
+//!   lost, because loans and arenas contribute no footprint any more and
+//!   [STOR-8] gives allocation and release no effect entry at all, so neither
+//!   can stop two statements from overlapping [PAR-1].
+//! - `buffer_new(count, value)` became [OP-13]'s `box_array_filled` over the
+//!   one heap [STOR-8], and `array_new` became `array_filled`.
+//! - `slice_of` / `mut_slice_of` and the types `Slice<T>` / `MutSlice<T>`
+//!   retired with [VIEW-1] and [VIEW-4]. The successor is [REF-4]'s range
+//!   reference `&x[lo..hi]` carried by the parameter kind `&[T]`, whose
+//!   disjointness is [OWN-7]'s four non-strict range orderings - the same
+//!   judgment [PAR-1] and [PAR-2] now name directly.
+//! - `len_of(p)` became [OP-15]'s measure member read `p.len`, a place form
+//!   and not a call.
+//! - `&uniq p` became the one reference spelling `&p`; whether a callee writes
+//!   through it is stated by its effect row [EFF-1], and `writes` subsumes
+//!   `reads` for one path, so `reads(d), writes(d)` collapses to `writes(d)`.
+//!
+//! [`map_and_reduction_source`] now takes its eight-byte speller from
+//! [`COMBINE_PRELUDE`] instead of splicing it out of the `range_fold.wf`
+//! program fixture. The two were byte-identical; taking the one this module
+//! owns keeps the generated fixture on the spec version the module is written
+//! against.
 
 use std::process::Command;
 
@@ -247,7 +278,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &[u8], at: own u64, value: own u64) -> result: own u64 writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -256,7 +287,7 @@ fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result
     if done {
       break @octets;
     }
-    let spare = len_of(deref(destination));
+    let spare = deref(destination).len;
     let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
@@ -281,32 +312,17 @@ fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pu
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
-  let report = buffer_new(8_u64, 0_u8);
-  region {
-    let window = mut_slice_of(&uniq report);
-    region {
-      let filled = spell(destination: &uniq window, at: 0_u64, value: value);
+  let report = box_array_filled::<u8>(count: 8_u64, value: 0_u8);
+  let window = &report.inner[0_u64..8_u64];
+  let filled = spell(destination: window, at: 0_u64, value: value);
+  match write_once(factory: &entry_factory, output: &out, source: window, start: 0_u64, end: 8_u64) {
+    Ok(value: next) => {
+      return exit_status(code: 0_u8);
     }
-  }
-  region {
-    region {
-      region {
-        let native_window_2 = slice_of(&report);
-        region {
-          match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_2, start: 0_u64, end: 8_u64) {
-            Ok(value: next) => {
-              return exit_status(code: 0_u8);
-            }
-            Err(error: problem) => {
-              return exit_status(code: 1_u8);
-            }
-          }
-        }
-      }
+    Err(error: problem) => {
+      return exit_status(code: 1_u8);
     }
   }
 }
@@ -345,36 +361,30 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn mapped() -> result: own buffer<u8> pure {
-  let out = buffer_new(400000_u64, 0_u8);
+fn mapped() -> result: own Box<Array<u8>> pure {
+  let out = box_array_filled::<u8>(count: 400000_u64, value: 0_u8);
   for @fill (i in 0_u64..400000_u64) {
     let copied = i;
     let slot = copied * 1_u64;
     let mixed = mix(seed: i);
     let byte = low_byte(v: mixed);
-    set out[slot] = byte;
+    set out.inner[slot] = byte;
   }
   return move out;
 }
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
   let report = mapped();
-  let size = len_of(report);
-  region {
-    let source = slice_of(&report);
-    region {
-      match write_once(factory: &uniq entry_factory, output: &uniq out, source: &source, start: 0_u64, end: size) {
-        Ok(value: next) => {
-          return exit_status(code: 0_u8);
-        }
-        Err(error: problem) => {
-          return exit_status(code: 1_u8);
-        }
-      }
+  let size = report.inner.len;
+  let source = &report.inner[0_u64..size];
+  match write_once(factory: &entry_factory, output: &out, source: source, start: 0_u64, end: size) {
+    Ok(value: next) => {
+      return exit_status(code: 0_u8);
+    }
+    Err(error: problem) => {
+      return exit_status(code: 1_u8);
     }
   }
 }
@@ -382,44 +392,43 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 
 /// Preserve the entire map and append all eight checksum bytes, so a defect in
 /// any reduction bit is visible without overwriting the map's first element.
+///
+/// The speller is taken from [`COMBINE_PRELUDE`], which this module owns, so
+/// the generated fixture is on the same spec version as the rest of the file.
 fn map_and_reduction_source() -> Vec<u8> {
     let source = std::str::from_utf8(INDEPENDENT_MAP).expect("UTF-8 fixture");
-    let fold = std::str::from_utf8(PERMITTED_FOLD).expect("UTF-8 fixture");
-    let spell = fold
-        .split("fn spell(")
-        .nth(1)
-        .unwrap()
-        .split("fn folded(")
-        .next()
-        .unwrap();
+    let (_, spell) = COMBINE_PRELUDE
+        .split_once("fn spell(")
+        .expect("the shared prelude defines the eight-byte speller");
     format!("fn spell({spell}{source}")
-        .replacen("buffer_new(400000_u64, 0_u8)", "buffer_new(400008_u64, 0_u8)", 1)
+        .replacen("count: 400000_u64", "count: 400008_u64", 1)
         .replacen("  for @fill", "  let checksum = 0_u64;\n  for @fill", 1)
-        .replacen("    set out[slot] = byte;", "    set out[slot] = byte;\n    set checksum = checksum +wrap mixed;", 1)
-        .replacen("  return move out;", "  region {\n    let tail = mut_slice_of(&uniq out);\n    region {\n      let end = spell(destination: &uniq tail, at: 400000_u64, value: checksum);\n    }\n  }\n  return move out;", 1)
+        .replacen("    set out.inner[slot] = byte;", "    set out.inner[slot] = byte;\n    set checksum = checksum +wrap mixed;", 1)
+        .replacen("  return move out;", "  let tail = &out.inner[0_u64..400008_u64];\n  let end = spell(destination: tail, at: 400000_u64, value: checksum);\n  return move out;", 1)
         .into_bytes()
 }
 
-/// The same work as [`INDEPENDENT_MAP`], expressed through a unique output
-/// parameter and a same-index read-modify-write. This keeps the result bytes
-/// unchanged while exercising both read-side map evidence and holder capture.
+/// The same work as [`INDEPENDENT_MAP`], expressed through a range-reference
+/// output parameter and a same-index read-modify-write. This keeps the result
+/// bytes unchanged while exercising both read-side map evidence and holder
+/// capture.
 fn borrowed_read_modify_map_source() -> Vec<u8> {
     let source = std::str::from_utf8(INDEPENDENT_MAP).expect("the fixture is UTF-8");
     source
         .replacen(
-            "fn mapped() -> result: own buffer<u8> pure {\n  let out = buffer_new(400000_u64, 0_u8);\n",
-            "fn mapped(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define spare = len_of(deref(out));\n  requires 400000_u64 <= spare;\n} {\n",
+            "fn mapped() -> result: own Box<Array<u8>> pure {\n  let out = box_array_filled::<u8>(count: 400000_u64, value: 0_u8);\n",
+            "fn mapped(out: &[u8]) -> result: own unit writes(out) contract {\n  define spare = deref(out).len;\n  requires 400000_u64 <= spare;\n} {\n",
             1,
         )
         .replacen(
-            "    set out[slot] = byte;\n",
+            "    set out.inner[slot] = byte;\n",
             "    let old = deref(out)[slot];\n    let next = old +wrap byte;\n    set deref(out)[slot] = next;\n",
             1,
         )
         .replacen("  return move out;\n", "  return unit;\n", 1)
         .replacen(
             "  let report = mapped();\n",
-            "  let report = buffer_new(400000_u64, 173_u8);\n  region {\n    let done = mapped(out: &uniq report);\n  }\n",
+            "  let report = box_array_filled::<u8>(count: 400000_u64, value: 173_u8);\n  let target = &report.inner[0_u64..400000_u64];\n  let done = mapped(out: target);\n",
             1,
         )
         .into_bytes()
@@ -611,6 +620,10 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
         "the fixture's loop must actually split, or this checks nothing:\n{split}"
     );
     // Three captures, so the chunk takes the seed, both endpoints, and them.
+    // KEPT AS WRITTEN for the lowering port: the count is the chunk's emitted
+    // parameter ABI. The source still declares exactly three captures, so if
+    // the split lowering changes how a capture is passed, re-derive the count
+    // rather than the fixture.
     let chunk = function_body(&split, &synthesized(&split, "@wf__par_chunk_"));
     let signature = chunk.lines().next().expect("a definition has a signature");
     assert_eq!(
@@ -680,6 +693,11 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
         splitter.starts_with("define i8 "),
         "an independent map splitter must return the Unit token:\n{splitter}"
     );
+    // KEPT AS WRITTEN for the lowering port: `{ ptr, i64 }` is the emitted
+    // descriptor of the mapped run, whose source spelling moved from
+    // `buffer<u8>` to `Box<Array<u8>>` [TYPE-9, OP-13]. If the runtime-count
+    // run's physical type changes, re-derive the literal here; the property -
+    // the chunk captures the descriptor rather than copying the run - does not.
     assert!(
         chunk
             .lines()
@@ -706,6 +724,10 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
     // Captures are proof-scoped aliases, not source owners. Neither helper may
     // release the captured descriptor, while each selectable outer main owns
     // and frees exactly the buffer returned after the joined loop.
+    //
+    // KEPT AS WRITTEN for the lowering port: the `@free` counts are the
+    // emitted release shape of one `Box<Array<u8>>` per return path [STOR-3].
+    // If the release lowering of a boxed run changes, re-derive the counts.
     assert!(!chunk.contains("call void @free("), "{chunk}");
     assert!(!splitter.contains("call void @free("), "{splitter}");
     for outer in ["@wf_main", "@wf__par_seq_main"] {
@@ -822,6 +844,8 @@ fn a_map_and_reduction_preserves_both_results() {
         splitter.starts_with("define i64 "),
         "the combined loop must retain its real reduction result:\n{splitter}"
     );
+    // KEPT AS WRITTEN for the lowering port: the same emitted run descriptor
+    // as in `an_independent_map_joins_and_preserves_its_outer_buffer`.
     assert!(
         chunk
             .lines()
@@ -1114,7 +1138,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &[u8], at: own u64, value: own u64) -> result: own u64 writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -1123,7 +1147,7 @@ fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result
     if done {
       break @octets;
     }
-    let spare = len_of(deref(destination));
+    let spare = deref(destination).len;
     let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
@@ -1174,28 +1198,25 @@ fn admitted_combine_source() -> Vec<u8> {
     let width = 8 * ADMITTED_COMBINES.len();
     source.push_str(&format!(
         "\nfn main(inputs: own Inputs) -> status: own ExitStatus pure {{\n  \
-         let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;\n  region {{\n    \
-         close_directory(factory: &uniq factory, directory: move cwd);\n  }}\n  \
-         let report = buffer_new({width}_u64, 0_u8);\n  region {{\n    \
-         let window = mut_slice_of(&uniq report);\n"
+         let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;\n  \
+         close_directory(factory: &factory, directory: move cwd);\n  \
+         let report = box_array_filled::<u8>(count: {width}_u64, value: 0_u8);\n  \
+         let window = &report.inner[0_u64..{width}_u64];\n"
     ));
     let mut at = "0_u64".to_owned();
     for (index, combine) in ADMITTED_COMBINES.iter().enumerate() {
         let name = combine.name;
         source.push_str(&format!(
-            "    let v{index} = value_{name}(after: {at});\n    \
-             let a{index} = 0_u64;\n    region {{\n      \
-             set a{index} = spell(destination: &uniq window, at: {at}, value: v{index});\n    \
-             }}\n"
+            "  let v{index} = value_{name}(after: {at});\n  \
+             let a{index} = spell(destination: window, at: {at}, value: v{index});\n"
         ));
         at = format!("a{index}");
     }
     source.push_str(&format!(
-        "  }}\n  region {{\n    let source = slice_of(&report);\n    region {{\n      \
-         match write_once(factory: &uniq factory, output: &uniq out, source: &source, start: 0_u64, \
-         end: {width}_u64) {{\n        Ok(value: next) => {{\n          \
-         return exit_status(code: 0_u8);\n        }}\n        Err(error: problem) => {{\n          \
-         return exit_status(code: 1_u8);\n        }}\n      }}\n    }}\n  }}\n}}\n"
+        "  match write_once(factory: &factory, output: &out, source: window, start: 0_u64, \
+         end: {width}_u64) {{\n    Ok(value: next) => {{\n      \
+         return exit_status(code: 0_u8);\n    }}\n    Err(error: problem) => {{\n      \
+         return exit_status(code: 1_u8);\n    }}\n  }}\n}}\n"
     ));
     source.into_bytes()
 }
@@ -1217,6 +1238,11 @@ fn admitted_combine_source() -> Vec<u8> {
 #[test]
 fn every_admitted_combine_splits_and_publishes_the_unsplit_bytes() {
     let source = admitted_combine_source();
+    // KEPT AS WRITTEN for the lowering port: the ledger row spellings
+    // (`PAR split`, `fold_NAME  loop at `, `split under OP over`) are the
+    // permission reporter's own text. The subject - every admitted combine
+    // reaches a real split - is unchanged; re-derive the strings if the
+    // reporter's wording moves.
     let ledger = super::compile_permission_ledger(&source);
     for combine in ADMITTED_COMBINES {
         let expected = format!("fold_{}  loop at ", combine.name);
@@ -1407,6 +1433,8 @@ __attribute__((constructor)) static void register_report(void) { atexit(report);
 /// report. Declining here converts that into a line naming the width.
 #[test]
 fn a_loop_whose_frame_is_too_wide_declines_and_says_so() {
+    // KEPT AS WRITTEN for the lowering port: `declined:` and `lane frame` are
+    // the permission reporter's own words for the capacity refusal.
     let ledger = super::compile_permission_ledger(WIDE_FRAME);
     let declined = ledger
         .iter()

@@ -240,7 +240,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 goal_regions: Vec::new(),
                 requirements: Vec::new(),
                 result,
-                slice_origins: Vec::new(),
                 result_borrow: None,
             },
             mode: result_mode,
@@ -333,7 +332,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     place: place.clone(),
                     // A `move` empties the place, which [EFF-1] classes with
                     // the writes; a copy argument observes it.
-                    write: self.is_copy_place_type(signature, index).map_or(true, |copy| !copy),
+                    write: self.is_copy_place_type(signature, index).is_none_or(|copy| !copy),
                     argument: index,
                 });
             }

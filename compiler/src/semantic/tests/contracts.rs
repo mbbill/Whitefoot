@@ -3,7 +3,6 @@ use crate::{
     lower_checked,
 };
 
-use super::super::model::CheckedSliceOrigin;
 use super::{assert_parse_rule, assert_rule, with_semantics};
 
 fn assert_behavior_rule(source: &str, rule: SemanticRule) {
@@ -186,54 +185,14 @@ fn main() -> status: own ExitStatus pure {
     assert_behavior_site(source, SemanticRule::Fn4, "fn bad");
 }
 
-#[test]
-fn member_regions_are_instantiated_per_call_and_never_on_the_formal_header() {
-    let source = br#"formal Pass {
-  fn pass['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure;
-}
-
-fn identity['s](value: own Slice<'s, u8>) -> result: own Slice<'s, u8> pure {
-  return value;
-}
-
-actual SharedPass : Pass {
-  pass = identity;
-}
-
-fn both<Pass>['a, 'b](left: own Slice<'a, u8>, left_peer: own Slice<'a, u8>, right: own Slice<'b, u8>, right_peer: own Slice<'b, u8>) -> result: own unit pure {
-  let first = Pass::pass(value: left);
-  let first_peer = Pass::pass(value: left_peer);
-  let second = Pass::pass(value: right);
-  let second_peer = Pass::pass(value: right_peer);
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let first = array_new::<u8, 2>(0_u8);
-  let second = array_new::<u8, 3>(0_u8);
-  region {
-    let left = slice_of(&first);
-    let left_peer = slice_of(&first);
-    region {
-      let right = slice_of(&second);
-      let right_peer = slice_of(&second);
-      both::<SharedPass>(left: left, left_peer: left_peer, right: right, right_peer: right_peer);
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    for mode in [OverlapLowering::Off, OverlapLowering::On] {
-        with_semantics(source, |outcome| {
-            let SemanticOutcome::Complete(checked) = outcome else {
-                panic!("{outcome:?}");
-            };
-            lower_checked(*checked, mode)
-                .expect("each member call uses its own ordinary loan regions");
-        });
-    }
-    assert_parse_rule(b"formal Pass['r] {\n}\n", crate::SyntaxRule::Gram2);
-}
+// Retired with the region parameter of [FN-2, FORM-8]: v0.59's
+// `member_regions_are_instantiated_per_call_and_never_on_the_formal_header`
+// instantiated a formal member's `['r]` at each call and refused a region
+// list on the formal header. v0.60 has no region parameter and no `Slice`
+// type, so a formal member has no per-call region left to instantiate; the
+// surviving FN-4 signature check over reference parameters is
+// `formal_row_comparison_uses_parameter_ordinals_not_binder_spellings` and
+// `formal_range_reference_parameters_compare_by_ordinal` below.
 
 #[test]
 fn a_bound_call_cannot_drop_part_of_a_vector_on_a_written_cycle() {
@@ -432,7 +391,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     assert_behavior_rule(wrapped, SemanticRule::Fn6);
     let growing = r#"struct Grow<T: affine> {
-  next: box<Grow<box<T>>>;
+  next: Box<Grow<Box<T>>>;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -447,7 +406,7 @@ fn main() -> status: own ExitStatus pure {
 
 "#;
     // Resolution's FN-9 selector preflight and ordinary complete-unit
-    // checking must both refuse before materializing Grow<box<...>>.
+    // checking must both refuse before materializing Grow<Box<...>>.
     for source in [growing.to_owned(), format!("{selector}{growing}")] {
         with_semantics(source.as_bytes(), |outcome| {
             let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -478,9 +437,9 @@ fn assert_issue_slice(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind
 
 #[test]
 fn missing_entry_diagnostic_salvage_checks_instantiation_before_discovery() {
-    let source = "struct Grow<T: affine> {\n  next: box<Grow<box<T>>>;\n}\n";
+    let source = "struct Grow<T: affine> {\n  next: Box<Grow<Box<T>>>;\n}\n";
     assert_behavior_rule(source, SemanticRule::Fn6);
-    let source = "fn repeat<T: affine>(value: own T) -> result: own unit pure {\n  let boxed = box_new(move value);\n  repeat::<box<T>>(value: move boxed);\n  return unit;\n}\n";
+    let source = "fn repeat<T: affine>(value: own T) -> result: own unit pure {\n  let boxed = box_new::<T>(value: move value);\n  repeat::<Box<T>>(value: move boxed);\n  return unit;\n}\n";
     assert_behavior_rule(source, SemanticRule::Fn6);
 }
 
@@ -650,14 +609,8 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn retired_owned_law_identity_syntax_is_not_admitted() {
-    let source = br#"const zero: FixedVector<u8, 1> =[0_u8];
-
-const x: FixedVector<u8, 1> =[0_u8];
-
-const y: FixedVector<u8, 1> =[0_u8];
-
-contract InvalidIdentity {
-  fn combine() -> result: own FixedVector<u8, 1> pure;
+    let source = br#"contract InvalidIdentity {
+  fn combine() -> result: own Slots<u8, 1> pure;
   law identity(combine, zero);
 }
 
@@ -958,14 +911,18 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn positional_region_alpha_equality_covers_modes_and_normalized_effect_sets() {
+fn formal_row_comparison_uses_parameter_ordinals_not_binder_spellings() {
+    // v0.59 compared positional regions here. [FN-4] still normalizes the two
+    // rows by parameter ordinal before comparing them, and [EFF-1] now writes
+    // one path per entry, so the formal's `x, y` and the actual's
+    // `first, second` are the same row.
     let source = br#"formal LengthSum {
-  fn sum(x: &FixedVector<u8, 4>, y: &FixedVector<u8, 4>) -> result: own u64 reads(x, y);
+  fn sum(x: &Slots<u8, 4>, y: &Slots<u8, 4>) -> result: own u64 reads(x), reads(y);
 }
 
-fn add_lengths(first: &FixedVector<u8, 4>, second: &FixedVector<u8, 4>) -> result: own u64 reads(second, first) {
-  let first_length = len_of(deref(first));
-  let second_length = len_of(deref(second));
+fn add_lengths(first: &Slots<u8, 4>, second: &Slots<u8, 4>) -> result: own u64 reads(first), reads(second) {
+  let first_length = deref(first).len;
+  let second_length = deref(second).len;
   return first_length +wrap second_length;
 }
 
@@ -979,7 +936,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("positional region alpha equality must check: {outcome:?}");
+            panic!("ordinal-normalized rows must check: {outcome:?}");
         };
         assert!(
             checked
@@ -992,16 +949,19 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn positional_region_alpha_equality_includes_slice_type_regions() {
+fn formal_range_reference_parameters_compare_by_ordinal() {
+    // v0.59 wrote this operand as `own Slice<u8>`. `&[T]` is a reference kind
+    // admitted only in parameter position [TYPE-8, REF-4]; the FN-4 ordinal
+    // comparison over it is unchanged.
     let source = br#"formal ByteReader {
-  fn first(values: own Slice<u8>) -> result: own u8 reads(values);
+  fn first(values: &[u8]) -> result: own u8 reads(values);
 }
 
-fn read_first(bytes: own Slice<u8>) -> result: own u8 reads(bytes) {
-  let spare = len_of(bytes);
+fn read_first(bytes: &[u8]) -> result: own u8 reads(bytes) {
+  let spare = deref(bytes).len;
   let ok = 0_u64 < spare;
   if ok {
-    return bytes[0_u64];
+    return deref(bytes)[0_u64];
   } else {
     return 0_u8;
   }
@@ -1017,7 +977,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("slice regions must compare by parameter ordinal: {outcome:?}");
+            panic!("range-reference parameters must compare by ordinal: {outcome:?}");
         };
         assert!(
             checked
@@ -1029,52 +989,12 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-#[test]
-fn formal_slice_results_share_function_signature_formation() {
-    let source = br#"formal SlicePass {
-  fn pass['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure;
-}
-
-fn preserve['s](bytes: own Slice<'s, u8>) -> result: own Slice<'s, u8> pure {
-  return bytes;
-}
-
-actual Bytes : SlicePass {
-  pass = preserve;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("own direct-slice contract result must check: {outcome:?}");
-        };
-        let ceiling = &checked
-            .data
-            .functions
-            .iter()
-            .find(|function| function.name == "preserve")
-            .expect("bound implementation")
-            .slice_return_ceiling;
-        assert_eq!(ceiling.len(), 2);
-        assert!(matches!(ceiling[0], CheckedSliceOrigin::ImmutableConst));
-        assert!(matches!(ceiling[1], CheckedSliceOrigin::FormalSlice { .. }));
-    });
-
-    assert_rule(
-        br#"formal Invalid {
-  fn borrowed['descriptor, 'data](value: &uniq 'descriptor Slice<'data, u8>) -> result: &uniq 'descriptor Slice<'data, u8> pure;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Fn1,
-        SemanticIssueKind::BorrowedSliceResult {
-            mechanical_fix: "return the direct own slice descriptor under its data region; do not return a borrow of a slice descriptor",
-        },
-    );
-}
+// Retired with the slice return ceiling of [VIEW-6] and the borrow-mode
+// result of [FN-1]: v0.59's `formal_slice_results_share_function_signature_
+// formation` read `CheckedFunction::slice_return_ceiling` for an `own
+// Slice<'r, u8>` result and refused a `&uniq 'descriptor Slice<..>` result
+// with `BorrowedSliceResult`. v0.60 has no slice type and no borrow-mode
+// result: `rtype := "own" type` leaves nothing for a signature to return but
+// an owned value, and [REF-3]'s `EscapingReference` is the successor refusal
+// for a body that tries to return a reference, kept as the conformance case
+// `ref3-neg-returned-reference`.

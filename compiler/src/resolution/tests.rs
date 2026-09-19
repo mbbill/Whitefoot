@@ -2587,6 +2587,24 @@ fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_cou
     assert_eq!(first[354].1, "swap");
     assert_eq!(first[358].1, "free_empty");
     assert_eq!(first.len(), 361);
+    // This pin is against the prelude the front end actually declares. The
+    // later specification amendment that made `Box<T>` and the fourteen host
+    // handles `opaque struct` declarations has not reached `prelude.rs` or
+    // `resolution/engine.rs` yet, so the inventory below is still the one
+    // this compiler builds:
+    //   - `prelude.rs` declares the fourteen handles without the `opaque`
+    //     modifier and does not declare `Box` at all; `Box` is a
+    //     compiler-owned `CONTAINER_NOMINALS` row (`resolution/kernel.rs`).
+    //   - `resolution/engine.rs` removes the `StructConstructor` class from a
+    //     `PreludeSource::Opaque` struct, where [TYPE-2] now says that entry
+    //     "exists to be refused".
+    // When that lands, [PRE-1]'s preorder — "each opaque struct above in
+    // written order with its refused constructor and its fields in
+    // declaration order" — puts `opaque struct Box<T> { inner: T; }` first
+    // and gives each handle a constructor record, so the count rises by the
+    // fourteen handle constructors plus `Box`'s own records and every ordinal
+    // asserted above shifts. Update this pin and the ordinals in the same
+    // change as that front-end work, not before it.
     // `free_empty`'s own value parameter is the last record of the preorder.
     assert_eq!(first.last().map(|record| record.1.as_str()), Some("window"));
     assert!(

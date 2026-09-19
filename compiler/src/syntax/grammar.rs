@@ -3,7 +3,7 @@
 //! This crate contains no parser and grants no syntax or semantic authority.
 //! Cargo derives its arrays from the active specification's normative EBNF.
 
-use crate::syntax::terminal::TerminalPredicate;
+use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::{ACTIVE_KERNEL_SPEC_HASH, SpecHash};
 
 mod generated {
@@ -395,6 +395,76 @@ pub fn grammar_node(node: GrammarNodeId) -> Option<GrammarNode> {
 #[must_use]
 pub const fn diagnostic_terminal_order() -> &'static [LookaheadPredicate] {
     &generated::DIAGNOSTIC_ORDER
+}
+
+/// The child sequence of one [PRE-1] declaration record: `fn_sig`'s own
+/// sequence with `fn_decl`'s own `generics?` node spliced in after the
+/// leading `"fn" IDENT`.
+///
+/// [PRE-1] calls its records "ordinary GRAM-2 `fn_sig` records" and then
+/// writes generic parameters on eleven of them, naming them in its own
+/// prose: "The type parameters `W` and `X` of the window operations are the
+/// compiler-owned window type parameter OP-10 fixes". [GRAM-2]'s `fn_sig` is
+/// `"fn" IDENT "(" param_list? ")" ...` and has no `generics?`, while the
+/// `fn_decl` written beside it has one. The two sentences cannot both hold,
+/// and as written no prelude record carrying a type parameter parses, which
+/// stops every compilation before any source file is read.
+///
+/// Both nodes returned here are the generated ones and the decision that
+/// selects the header is `fn_decl`'s own, so no grammar datum is invented.
+/// Only the prelude record reader uses this sequence, so a writer's `fn_sig`
+/// inside a `formal_decl` still admits no generic header. When [GRAM-2]
+/// gives `fn_sig` a `generics?`, this function and its two callers collapse
+/// back into the ordinary `Production::FnSig` path.
+pub(crate) fn prelude_signature_children() -> Option<Vec<GrammarNodeId>> {
+    let signature = grammar_node(Production::FnSig.root())?;
+    if !matches!(signature.kind(), GrammarNodeKind::Sequence) {
+        return None;
+    }
+    let [name, identifier, rest @ ..] = signature.children() else {
+        return None;
+    };
+    if !is_terminal(*name, TerminalPredicate::Fixed(FixedTerminal::Fn))
+        || !is_terminal(*identifier, TerminalPredicate::Identifier)
+    {
+        return None;
+    }
+    let header = optional_generics_node()?;
+    let mut children = vec![*name, *identifier, header];
+    children.extend_from_slice(rest);
+    Some(children)
+}
+
+/// Whether this node is exactly the one generated occurrence of `predicate`.
+fn is_terminal(node: GrammarNodeId, predicate: TerminalPredicate) -> bool {
+    grammar_node(node).is_some_and(|node| {
+        matches!(node.kind(), GrammarNodeKind::TerminalSequence)
+            && node.terminals() == [LookaheadPredicate::Terminal(predicate)]
+    })
+}
+
+/// `fn_decl`'s own `generics?` node, found in the generated tables rather
+/// than written down, so a grammar amendment moves it without editing this.
+fn optional_generics_node() -> Option<GrammarNodeId> {
+    grammar_node(Production::FnDecl.root())?
+        .children()
+        .iter()
+        .copied()
+        .find(|child| {
+            grammar_node(*child).is_some_and(|node| {
+                matches!(node.kind(), GrammarNodeKind::Optional)
+                    && node
+                        .children()
+                        .first()
+                        .and_then(|inner| grammar_node(*inner))
+                        .is_some_and(|inner| {
+                            matches!(
+                                inner.kind(),
+                                GrammarNodeKind::Production(Production::Generics)
+                            )
+                        })
+            })
+        })
 }
 
 #[cfg(test)]

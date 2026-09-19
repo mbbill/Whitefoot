@@ -3,95 +3,47 @@ use crate::{
     lowering::OverlapLowering,
 };
 
-use super::super::model::{CheckedConst, CheckedNominalKind, CheckedType, IntegerType};
+use super::super::model::{
+    CheckedConst, CheckedNominalKind, CheckedType, IntegerType, WindowShape,
+};
 use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 
-#[test]
-fn brand_parameters_do_not_change_single_loan_spelling_or_legacy_arena_support() {
-    assert_rule_kind(
-        br#"fn read['r](value: &'r u64) -> result: own u64 pure {
-  return 0_u64;
-}
+// Retired with the region parameter of [FORM-8] and the arena of [STOR-4]:
+// v0.59's `brand_parameters_do_not_change_single_loan_spelling_or_legacy_
+// arena_support` refused `&'r u64` at FORM-8's canonical region spelling and
+// stopped `arena<u64>` as the unimplemented `RegionsAndBorrows` capability.
+// v0.60 has no region, no loan and no arena: a reference is written `&T` and
+// carries nothing [REF-1], so neither spelling exists to judge.
 
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Form8,
-        |kind| matches!(kind, SemanticIssueKind::RegionSpelling { .. }),
-    );
-    assert_unsupported(
-        br#"fn read(value: &arena<u64>) -> result: own u64 pure {
-  return 0_u64;
-}
+// Retired with the nominal region default of [PROV-1, FORM-8]: v0.59's
+// `brand_parameters_do_not_leak_nominal_defaults_into_nested_declarations`
+// asked which store a nested nominal's `Vector` field took its brand from.
+// v0.60 has one heap [STOR-8], `Box<T>` carries no brand, and a nominal has
+// no region parameter to leak.
 
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        UnsupportedSemanticFeature::RegionsAndBorrows,
-    );
-}
+// Retired with the region argument of [FORM-8, TYPE-5]: v0.59's
+// `brand_parameters_reject_different_actuals_inside_one_operand` compared two
+// region actuals written inside one operand type. v0.60 has no region
+// argument; the exact type agreement it rode on survives in
+// `source_nominal_argument_arity_and_kinds_are_exact` below.
 
 #[test]
-fn brand_parameters_do_not_leak_nominal_defaults_into_nested_declarations() {
-    // v0.58 PROV-1 removes the hidden entry-heap brand. A zero-/two-region
-    // nested nominal must write its store argument instead of borrowing the
-    // enclosing nominal's single-brand context.
-    for (field, region_parameters) in [("Inner<u64>", ""), ("Inner<'s, 's, u64>", "['a, 'b]")] {
-        let source = format!(
-            "struct Inner<T: affine>{region_parameters} {{\n  values: Vector<u8>;\n  payload: T;\n}}\n\nstruct Outer['s] {{\n  inner: {field};\n}}\n"
-        );
-        assert_rule_kind(source.as_bytes(), SemanticRule::Form8, |kind| {
-            matches!(kind, SemanticIssueKind::RegionSpelling { .. })
-        });
-    }
-}
-
-#[test]
-fn brand_parameters_reject_different_actuals_inside_one_operand() {
-    for (declarations, expected, actual) in [
-        (
-            "struct Pair['a, 'b] {\n  value: u64;\n}\n\n",
-            "Pair<'s, 's>",
-            "Pair<'a, 'b>",
-        ),
-        (
-            "",
-            "FixedVector<Vector<'s, Box<'s, u8>>, 2>",
-            "FixedVector<Vector<'a, Box<'b, u8>>, 2>",
-        ),
-    ] {
-        let source = format!(
-            "{declarations}fn inspect['s](value: &{expected}) -> result: own u64 pure {{\n  return 0_u64;\n}}\n\nfn caller['a, 'b](value: &{actual}) -> result: own u64 pure {{\n  return inspect(value: value);\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
-        );
-        assert_rule_kind(source.as_bytes(), SemanticRule::Type5, |kind| {
-            matches!(kind, SemanticIssueKind::TypeMismatch { .. })
-        });
-    }
-}
-
-#[test]
-fn brand_parameters_keep_opaque_type_arguments_out_of_region_inference() {
-    let source = br#"struct Mark['s] {
+fn explicit_type_arguments_keep_their_written_order_and_kind() {
+    let source = br#"struct Mark {
   value: u64;
 }
 
-struct Wrap<T: affine>['s] {
+struct Wrap<T: affine> {
   payload: T;
 }
 
-fn pack<T: affine>['s](value: own T) -> result: own Wrap<'s, T> pure {
-  return Wrap<'s, T>(payload: move value);
+fn pack<T: affine>(value: own T) -> result: own Wrap<T> pure {
+  return Wrap<T>(payload: move value);
 }
 
 fn main() -> status: own ExitStatus pure {
-  region 'outer {
-    let value = Mark<'outer>(value: 9_u64);
-    region 'inner {
-      let wrapped = pack::<'inner, Mark<'outer>>(value: move value);
-    }
-  }
+  let value = Mark(value: 9_u64);
+  let wrapped = pack::<Mark>(value: move value);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -101,46 +53,29 @@ fn main() -> status: own ExitStatus pure {
             "{outcome:?}"
         )
     });
-    let trailing = std::str::from_utf8(source).unwrap().replace(
-        "pack::<'inner, Mark<'outer>>",
-        "pack::<Mark<'outer>, 'inner>",
-    );
+    let trailing = std::str::from_utf8(source)
+        .unwrap()
+        .replace("pack::<Mark>", "pack::<Mark, 2>");
     assert_rule_kind(trailing.as_bytes(), SemanticRule::Fn2, |kind| {
         matches!(kind, SemanticIssueKind::TypeMismatch { .. })
     });
 }
 
-#[test]
-fn brand_parameters_cannot_be_shortened_by_a_mode_loan_in_either_order() {
-    for reversed in [false, true] {
-        let (parameters, arguments) = if reversed {
-            (
-                "loan: &'s u64, marker: own Mark<'s>",
-                "loan: &number, marker: move marker",
-            )
-        } else {
-            (
-                "marker: own Mark<'s>, loan: &'s u64",
-                "marker: move marker, loan: &number",
-            )
-        };
-        let source = format!(
-            "struct Mark['s] {{\n  value: u64;\n}}\n\nfn carry['s]({parameters}) -> result: own Mark<'s> pure {{\n  return move marker;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  region 'outer {{\n    let marker = Mark<'outer>(value: 7_u64);\n    let number = 9_u64;\n    region {{\n      let result = carry({arguments});\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
-        );
-        assert_rule_kind(source.as_bytes(), SemanticRule::Own4, |kind| {
-            matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. })
-        });
-    }
-}
+// Retired with the loan lifetime of [OWN-4]: v0.59's
+// `brand_parameters_cannot_be_shortened_by_a_mode_loan_in_either_order`
+// refused a `&'s u64` argument whose loan was shorter than the region an
+// `own Mark<'s>` operand fixed, citing `InvalidBorrowLifetime`. v0.60 has no
+// loan and no region: reference validity is a fact [REF-2] and interference
+// is decided by the effect rows at the call [EFF-5].
 
 #[test]
-fn leading_call_regions_do_not_change_generic_cycle_judgments() {
-    let source = br#"struct Mark<T: affine>['s] {
+fn a_generic_cycle_judgment_reads_the_complete_argument_vector() {
+    let source = br#"struct Mark<T: affine> {
   value: T;
 }
 
-fn recur<T: affine, const n: u64>['s](value: own T) -> result: own Mark<'s, T> pure {
-  return recur::<'s, T, n>(value: move value);
+fn recur<T: affine, const n: u64>(value: own T) -> result: own Mark<T> pure {
+  return recur::<T, n>(value: move value);
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -155,30 +90,18 @@ fn main() -> status: own ExitStatus pure {
     });
     let expanded = std::str::from_utf8(source)
         .unwrap()
-        .replace("recur::<'s, T, n>", "recur::<'s, FixedVector<T, n>, n>");
+        .replace("recur::<T, n>", "recur::<Slots<T, n>, n>");
     assert_rule_kind(expanded.as_bytes(), SemanticRule::Fn6, |kind| {
         matches!(kind, SemanticIssueKind::PolymorphicRecursion { .. })
     });
 }
 
-#[test]
-fn a_captured_generic_box_brand_does_not_infer_a_different_store() {
-    let source = br#"fn pass<T: linear>(value: own T) -> result: own T pure {
-  return move value;
-}
-
-fn wrong['a, 'b](wanted: &Box<'a, u64>, given: own Box<'b, u64>, witness: &Box<'b, u64>) -> result: own Box<'a, u64> pure {
-  return pass::<Box<'a, u64>>(value: move given);
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    assert_rule_kind(source, SemanticRule::Type5, |kind| {
-        matches!(kind, SemanticIssueKind::TypeMismatch { .. })
-    });
-}
+// Retired with the `Box` store brand of [PROV-1]: v0.59's
+// `a_captured_generic_box_brand_does_not_infer_a_different_store` required
+// the checker to refuse a `Box<'b, u64>` argument at a `Box<'a, u64>`
+// position. There is one heap in v0.60 and `Box<T>` carries no brand
+// [STOR-8], so two boxes of one referent type are one type and there is no
+// store to confuse.
 
 #[test]
 fn explicit_int_generic_function_builds_each_reachable_concrete_instance() {
@@ -401,7 +324,7 @@ fn polymorphic_recursion_is_rejected_at_the_call_that_leaves_the_caller_paramete
     // instance would demand a strictly larger one.
     assert_rule(
         br#"fn poly<T: affine>(x: own T) -> result: own T pure {
-  let y = poly::<FixedVector<T, 2>>(x: x);
+  let y = poly::<Slots<T, 2>>(x: x);
   return x;
 }
 
@@ -542,25 +465,25 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn const_parameters_forward_symbolically_and_instantiate_at_reachable_sizes() {
     let source =
-        br#"fn preserve<const n: u64>(value: own FixedVector<u8, n>) -> result: own FixedVector<u8, n> reads(value) {
-  let size = len_of(value);
+        br#"fn preserve<const n: u64>(value: own Slots<u8, n>) -> result: own Slots<u8, n> pure {
+  let size = value.len;
   return move value;
 }
 
-fn forward<const n: u64>(value: own FixedVector<u8, n>) -> result: own FixedVector<u8, n> reads(value) {
+fn forward<const n: u64>(value: own Slots<u8, n>) -> result: own Slots<u8, n> pure {
   return preserve::<n>(value: move value);
 }
 
 fn main() -> status: own ExitStatus pure {
-  let small_input = fixed_vector::<u8, 2>();
+  let small_input = slots_new::<u8, 2>();
   let small = forward::<2>(value: move small_input);
-  let large_input = fixed_vector::<u8, 5>();
+  let large_input = slots_new::<u8, 5>();
   let large = forward::<5>(value: move large_input);
-  let small_held = len_of(small);
+  let small_held = small.len;
   if 1_u64 < small_held {
     let first = small[1_u64];
   }
-  let large_held = len_of(large);
+  let large_held = large.len;
   if 4_u64 < large_held {
     let second = large[4_u64];
   }
@@ -727,7 +650,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn const_and_nested_source_nominal_instances_are_fully_substituted() {
     let source = br#"struct Packet<const n: u64> {
-  bytes: FixedVector<u8, n>;
+  bytes: Slots<u8, n>;
 }
 
 struct Holder<T: affine> {
@@ -735,9 +658,9 @@ struct Holder<T: affine> {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let short_bytes = fixed_vector::<u8, 2>();
+  let short_bytes = slots_new::<u8, 2>();
   let short = Packet<2>(bytes: move short_bytes);
-  let long_bytes = fixed_vector::<u8, 5>();
+  let long_bytes = slots_new::<u8, 5>();
   let long = Packet<5>(bytes: move long_bytes);
   let held = Holder<Packet<2>>(value: move short);
   return exit_status(code: 0_u8);
@@ -754,11 +677,12 @@ fn main() -> status: own ExitStatus pure {
             .filter(|nominal| nominal.name.starts_with("Packet<"))
             .map(|nominal| match &nominal.kind {
                 CheckedNominalKind::Struct { fields } => match fields[0].ty {
-                    CheckedType::FixedVector {
-                        length: CheckedConst::Value(length),
+                    CheckedType::Window {
+                        shape: WindowShape::Slots,
+                        capacity: Some(CheckedConst::Value(length)),
                         ..
                     } => length,
-                    other => panic!("Packet field must be a concrete array: {other:?}"),
+                    other => panic!("Packet field must be a concrete window: {other:?}"),
                 },
                 other => panic!("Packet must remain a struct: {other:?}"),
             })
@@ -777,93 +701,22 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// The same declaration still writes its region-parameter list in first-use
-/// order. Swapping the list is a FORM-8 rejection even though the result
-/// ordinals themselves intentionally reverse the value flow.
-#[test]
-fn multi_result_region_spelling_keeps_first_occurrence_order() {
-    assert_rule_kind(
-        br#"struct Holder['s] {
-  cell: Box<'s, u64>;
-}
+// Retired with the region-parameter list of [FORM-8]: v0.59's
+// `multi_result_region_spelling_keeps_first_occurrence_order` required a
+// declaration's `['right, 'left]` list to follow first-use order. v0.60 has
+// no region list on a declaration, so there is no spelling order to keep.
 
-fn reverse['right, 'left](left: own Holder<'left>, right: own Holder<'right>) -> (first: own Holder<'right>, second: own Holder<'left>) pure {
-  return move right, move left;
-}
+// Retired with the inferred call region of [FORM-8]: v0.59's
+// `nested_nominal_parameter_regions_are_inferred_at_calls` refused a region
+// written at a call position the argument already fixed. v0.60 writes every
+// type, const and function argument explicitly [FN-2] and has no region
+// argument at all.
 
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Form8,
-        |kind| matches!(kind, SemanticIssueKind::RegionSpelling { .. }),
-    );
-}
-
-/// The same recursive position is an input position for [FORM-8], so its
-/// region is inferred from the argument and writing it at the call is the
-/// ordinary canonical-spelling rejection.
-#[test]
-fn nested_nominal_parameter_regions_are_inferred_at_calls() {
-    assert_rule_kind(
-        br#"struct Entry['s] {
-  payload: Box<'s, u64>;
-}
-
-fn pass['s](slots: own FixedVector<Option<Entry<'s>>, 1>) -> result: own FixedVector<Option<Entry<'s>>, 1> pure {
-  return move slots;
-}
-
-fn caller['s](slots: own FixedVector<Option<Entry<'s>>, 1>) -> result: own FixedVector<Option<Entry<'s>>, 1> pure {
-  return pass::<'s>(slots: move slots);
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Form8,
-        |kind| matches!(kind, SemanticIssueKind::RegionSpelling { .. }),
-    );
-}
-
-/// An independent anchor fixes the relationship between the nested brands.
-/// Swapping the owners cannot relabel them: exact [TYPE-5] rejects the handoff.
-#[test]
-fn nested_results_reject_crossed_region_handoffs() {
-    assert_rule_kind(
-        br#"struct Pair['left, 'right] {
-  left: Box<'left, u64>;
-  right: Box<'right, u64>;
-}
-
-fn build['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>) -> slots: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
-  let pair = Pair(left: move left, right: move right);
-  let occupied = Some<Pair<'left, 'right>>(value: move pair);
-  let slots = fixed_vector::<Option<Pair<'left, 'right>>, 1>();
-  region {
-    place_back(vector: &uniq slots, value: move occupied);
-  }
-  return move slots;
-}
-
-fn pass['left, 'right](slots: own FixedVector<Option<Pair<'left, 'right>>, 1>, anchor: &Box<'left, u64>) -> result: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
-  return move slots;
-}
-
-fn crossed['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>, witness: &Box<'left, u64>) -> slots: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
-  let slots = build(left: move right, right: move left);
-  return pass(slots: move slots, anchor: witness);
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Type5,
-        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
-    );
-}
+// Retired with the crossed region handoff of [FORM-8, TYPE-5]: v0.59's
+// `nested_results_reject_crossed_region_handoffs` relabelled two nested
+// brands through an anchor parameter. v0.60 has no brand; the exact type
+// agreement the test rode on survives in
+// `source_nominal_argument_arity_and_kinds_are_exact` below.
 
 #[test]
 fn source_nominal_argument_arity_and_kinds_are_exact() {
@@ -882,11 +735,11 @@ fn main() -> status: own ExitStatus pure {
     );
     assert_rule_kind(
         br#"struct Packet<const n: u64> {
-  bytes: FixedVector<u8, n>;
+  bytes: Slots<u8, n>;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let bytes = fixed_vector::<u8, 1>();
+  let bytes = slots_new::<u8, 1>();
   let invalid = Packet<u8>(bytes: move bytes);
   return exit_status(code: 0_u8);
 }
@@ -949,158 +802,63 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn numeric_and_const_parameters_flow_through_container_operations() {
-    let source = br#"fn filled_run<T: Int, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
-  ensures len_of(result) >= n;
+fn numeric_and_const_parameters_flow_through_window_operations() {
+    // v0.59 also drove two store-resident `Vector` runs through `heap_vector`
+    // under an `allocates(store)` row. There is one heap in v0.60, allocation
+    // carries no effect entry [STOR-8], and the store provider is gone, so the
+    // surviving subject is the constant-capacity window the [OP-10] rows move.
+    let source = br#"fn filled_run<T: Int, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+  ensures result.len >= n;
 } {
-  let built = fixed_vector::<T, n>();
+  let built = slots_new::<T, n>();
   for @fill (
     at in 0_u64..n,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= n,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len >= at,
+    invariant spare: built.room + at >= n
   ) {
-    place_back(vector: &uniq built, value: value);
+    place_back(window: &built, value: value);
   }
   return move built;
 }
 
-fn filled_float_run<T: Float, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
-  ensures len_of(result) >= n;
+fn filled_float_run<T: Float, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+  ensures result.len >= n;
 } {
-  let built = fixed_vector::<T, n>();
+  let built = slots_new::<T, n>();
   for @fill (
     at in 0_u64..n,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= n,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len >= at,
+    invariant spare: built.room + at >= n
   ) {
-    place_back(vector: &uniq built, value: value);
+    place_back(window: &built, value: value);
   }
   return move built;
 }
 
-fn store_run<T: Int>['heap](store: &uniq Heap<'heap>, length: own u64) -> result: own u64 reads(store), writes(store), allocates(store) contract {
-  requires buffer_fits::<T>(length);
-} {
-  region {
-    match heap_vector::<T>(store: &uniq deref(store), count: length) {
-      Some(value: fresh) => {
-        return cap_of(fresh);
-      }
-      None() => {
-        return 0_u64;
-      }
-    }
-  }
-}
-
-fn float_store_run<T: Float>['heap](store: &uniq Heap<'heap>, length: own u64) -> result: own u64 reads(store), writes(store), allocates(store) contract {
-  requires buffer_fits::<T>(length);
-} {
-  region {
-    match heap_vector::<T>(store: &uniq deref(store), count: length) {
-      Some(value: fresh) => {
-        return cap_of(fresh);
-      }
-      None() => {
-        return 0_u64;
-      }
-    }
-  }
-}
-
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main() -> status: own ExitStatus pure {
   let bytes = filled_run::<u8, 2>(value: 7_u8);
   let words = filled_run::<i64, 3>(value: -5_i64);
   let byte = bytes[1_u64];
   let word = words[2_u64];
   let samples = filled_float_run::<f32, 2>(value: 1.5_f32);
   let sample = samples[1_u64];
-  region {
-    let storage_room = store_run::<u16>(store: &uniq heap, length: 2_u64);
-  }
-  region {
-    let weights_room = float_store_run::<f64>(store: &uniq heap, length: 2_u64);
-  }
   return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("generic container rows must check and concretize: {outcome:?}");
+            panic!("generic window rows must check and concretize: {outcome:?}");
         };
-        assert_eq!(checked.function_count(), 6);
+        assert_eq!(checked.function_count(), 4);
     });
 }
 
-#[test]
-fn region_bearing_function_and_nominal_arguments_reject_under_fn2() {
-    let expected = SemanticIssueKind::RegionBearingGenericArgument {
-        mechanical_fix: "make the slice or arena a direct written parameter or result instead of a generic argument",
-    };
-    assert_rule(
-        br#"fn instantiate<T: affine>() -> result: own unit pure {
-  return unit;
-}
-
-fn invalid() -> result: own unit pure {
-  instantiate::<Slice<u8>>();
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Fn2,
-        expected.clone(),
-    );
-    assert_rule(
-        br#"struct Marker<T: affine> {
-}
-
-fn invalid(value: own Marker<Slice<u8>>) -> result: own unit pure {
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Fn2,
-        expected.clone(),
-    );
-    assert_rule(
-        br#"fn invalid(value: own Option<Slice<u8>>) -> result: own unit pure {
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Fn2,
-        expected.clone(),
-    );
-    assert_rule(
-        br#"fn instantiate<T: affine>() -> result: own unit pure {
-  return unit;
-}
-
-fn invalid() -> result: own unit pure {
-  instantiate::<Arena<64, 8>>();
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Fn2,
-        expected,
-    );
-}
+// Retired with the region-bearing generic argument of [FN-2]: v0.59's
+// `region_bearing_function_and_nominal_arguments_reject_under_fn2` refused
+// `Slice<u8>` and `Arena<64, 8>` in a written `targ`. v0.60 has neither type,
+// and a reference kind is not a type at all [TYPE-8]: `targ := type | const
+// | function_arg` and `type` has no `&` alternative, so the generic-argument
+// position can no longer name one.
 
 /// A concrete nominal written inside an otherwise symbolic function remains a
 /// concrete descendant of that source schema.  Rebuilding the concrete
@@ -1275,17 +1033,17 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn ordinary_admission_diagnostics_prefer_source_order_over_instance_identity() {
     let source =
-        br#"fn earlier<T: affine>(values: own FixedVector<u8, 4>, index: own u64) -> result: own u8 reads(values) {
+        br#"fn earlier<T: affine>(values: own Slots<u8, 4>, index: own u64) -> result: own u8 pure {
   return values[index];
 }
 
-fn later(values: own FixedVector<u8, 4>, index: own u64) -> result: own u8 reads(values) {
+fn later(values: own Slots<u8, 4>, index: own u64) -> result: own u8 pure {
   return values[index];
 }
 
 fn main() -> status: own ExitStatus pure {
-  let first_values = fixed_vector::<u8, 4>();
-  let second_values = fixed_vector::<u8, 4>();
+  let first_values = slots_new::<u8, 4>();
+  let second_values = slots_new::<u8, 4>();
   earlier::<u8>(values: move first_values, index: 5_u64);
   later(values: move second_values, index: 5_u64);
   return exit_status(code: 0_u8);
@@ -1301,28 +1059,20 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// A wrapper's type argument can carry its entire region axis. The physical
-/// family erases that axis and defers release selection; ordinary aliases must
-/// still distinguish the Box and Vector cleanup classes nested inside it.
+/// A multi-result list is a nominal of its own, and its ordinal names are
+/// part of that nominal's identity: two declarations that differ only in a
+/// result binder spelling stay in two physical families.
 #[test]
-fn nominal_physical_families_reach_regions_inside_type_arguments_and_result_lists() {
+fn nominal_physical_families_keep_result_list_ordinal_names() {
     let source = br#"struct Wrapped<T: linear> {
   value: T;
 }
 
-fn first['a: affine](value: own Wrapped<Result<Box<'a, u64>, Vector<'a, u64>>>, spare: own Box<'a, u64>) -> (back: own Wrapped<Result<Box<'a, u64>, Vector<'a, u64>>>, spare: own Box<'a, u64>) pure {
+fn general(value: own Wrapped<Box<u64>>, spare: own Box<u64>) -> (back: own Wrapped<Box<u64>>, spare: own Box<u64>) pure {
   return move value, move spare;
 }
 
-fn second['b: affine](value: own Wrapped<Result<Box<'b, u64>, Vector<'b, u64>>>, spare: own Box<'b, u64>) -> (back: own Wrapped<Result<Box<'b, u64>, Vector<'b, u64>>>, spare: own Box<'b, u64>) pure {
-  return move value, move spare;
-}
-
-fn general['g](value: own Wrapped<Result<Box<'g, u64>, Vector<'g, u64>>>, spare: own Box<'g, u64>) -> (back: own Wrapped<Result<Box<'g, u64>, Vector<'g, u64>>>, spare: own Box<'g, u64>) pure {
-  return move value, move spare;
-}
-
-fn renamed['g](value: own Wrapped<Result<Box<'g, u64>, Vector<'g, u64>>>, spare: own Box<'g, u64>) -> (other: own Wrapped<Result<Box<'g, u64>, Vector<'g, u64>>>, spare: own Box<'g, u64>) pure {
+fn renamed(value: own Wrapped<Box<u64>>, spare: own Box<u64>) -> (other: own Wrapped<Box<u64>>, spare: own Box<u64>) pure {
   return move value, move spare;
 }
 
@@ -1342,32 +1092,6 @@ fn main() -> status: own ExitStatus pure {
                 .find(|function| function.name == name)
                 .expect("each declaration has a checked function")
         };
-        for ty in [
-            |function: &crate::semantic::model::CheckedFunction| function.parameters[0].ty,
-            |function: &crate::semantic::model::CheckedFunction| function.result,
-        ] {
-            let id = |name| match ty(function(name)) {
-                CheckedType::Nominal(id) => id,
-                other => panic!("the wrapper or result list must be nominal: {other:?}"),
-            };
-            let (first, second, general) = (id("first"), id("second"), id("general"));
-            assert_ne!(first, second, "source region identities remain distinct");
-            assert_eq!(
-                checked.data.nominal_lowering_alias[first.0 as usize],
-                checked.data.nominal_lowering_alias[second.0 as usize],
-                "equal release classes share the ordinary lowering alias"
-            );
-            assert_ne!(
-                checked.data.nominal_lowering_alias[first.0 as usize],
-                checked.data.nominal_lowering_alias[general.0 as usize],
-                "nested General and Extent releases remain separate"
-            );
-            assert_eq!(
-                checked.data.nominal_physical_alias[first.0 as usize],
-                checked.data.nominal_physical_alias[general.0 as usize],
-                "one physical family is specialized by the closed release environment"
-            );
-        }
         let (CheckedType::Nominal(general), CheckedType::Nominal(renamed)) =
             (function("general").result, function("renamed").result)
         else {
@@ -1437,19 +1161,19 @@ fn main() -> status: own ExitStatus pure {
 }
 
 /// This acyclic graph exceeds both former implementation depth cutoffs.
-/// Accepted source depth must not change which region instances share a family.
+/// Accepted source depth must not change which declarations share a family.
 #[test]
 fn nominal_physical_families_complete_deep_finite_type_graphs() {
-    let mut source = String::from("struct Layer0['s] {\n  cell: Box<'s, u64>;\n}\n\n");
+    let mut source = String::from("struct Layer0 {\n  cell: Box<u64>;\n}\n\n");
     for depth in 1..=80 {
         source.push_str(&format!(
-            "struct Layer{depth}['s] {{\n  inner: Layer{}<'s>;\n}}\n\n",
+            "struct Layer{depth} {{\n  inner: Layer{};\n}}\n\n",
             depth - 1
         ));
     }
     source.push_str(
-        "fn first['a: affine](value: own Layer80<'a>) -> back: own Layer80<'a> pure {\n  return move value;\n}\n\n\
-         fn second['b: affine](value: own Layer80<'b>) -> back: own Layer80<'b> pure {\n  return move value;\n}\n\n\
+        "fn first(value: own Layer80) -> back: own Layer80 pure {\n  return move value;\n}\n\n\
+         fn second(value: own Layer80) -> back: own Layer80 pure {\n  return move value;\n}\n\n\
          fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics(source.as_bytes(), |outcome| {
@@ -1468,7 +1192,7 @@ fn nominal_physical_families_complete_deep_finite_type_graphs() {
             };
             id
         });
-        assert_ne!(ids[0], ids[1]);
+        assert_eq!(ids[0], ids[1], "one written nominal is one instance");
         for aliases in [
             &checked.data.nominal_lowering_alias,
             &checked.data.nominal_physical_alias,
@@ -1482,20 +1206,16 @@ fn nominal_physical_families_complete_deep_finite_type_graphs() {
 /// must still be checked even after the recursive pair has been visited.
 #[test]
 fn nominal_physical_families_complete_cycles_and_check_remaining_fields() {
-    let source = br#"enum Tree['s, 't] {
+    let source = br#"enum Tree {
   Leaf();
-  Branch(next: Box<'s, Tree<'s, 't>>, values: Vector<'t, u64>);
+  Branch(next: Box<Tree>, values: Slots<u64, 2>);
 }
 
-fn first['a: affine, 'b: affine](value: own Tree<'a, 'b>) -> back: own Tree<'a, 'b> pure {
+fn first(value: own Tree) -> back: own Tree pure {
   return move value;
 }
 
-fn second['c: affine, 'd: affine](value: own Tree<'c, 'd>) -> back: own Tree<'c, 'd> pure {
-  return move value;
-}
-
-fn mixed['e: affine, 'f](value: own Tree<'e, 'f>) -> back: own Tree<'e, 'f> pure {
+fn second(value: own Tree) -> back: own Tree pure {
   return move value;
 }
 
@@ -1507,7 +1227,7 @@ fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("the recursive nominal graph must check: {outcome:?}");
         };
-        let ids = ["first", "second", "mixed"].map(|name| {
+        let ids = ["first", "second"].map(|name| {
             let function = checked
                 .data
                 .functions
@@ -1519,47 +1239,34 @@ fn main() -> status: own ExitStatus pure {
             };
             id
         });
+        assert_eq!(ids[0], ids[1]);
+        let CheckedNominalKind::Enum { variants } = &checked.data.nominals[ids[0].0 as usize].kind
+        else {
+            panic!("Tree must remain an enum nominal");
+        };
+        assert_eq!(variants.len(), 2, "the nonrecursive field is still checked");
         assert_eq!(
             checked.data.nominal_lowering_alias[ids[0].0 as usize],
             checked.data.nominal_lowering_alias[ids[1].0 as usize]
         );
-        assert_ne!(
-            checked.data.nominal_lowering_alias[ids[0].0 as usize],
-            checked.data.nominal_lowering_alias[ids[2].0 as usize],
-            "the nonrecursive Vector field still has a different release action"
-        );
         assert_eq!(
             checked.data.nominal_physical_alias[ids[0].0 as usize],
-            checked.data.nominal_physical_alias[ids[2].0 as usize]
+            checked.data.nominal_physical_alias[ids[1].0 as usize]
         );
     });
 }
 
 /// Concrete generic calls are rebuilt after the symbolic inventory is rolled
-/// back. A Box type argument must retain its source store identity through that
-/// rebuild, including when the call is inside an uncalled ordinary helper.
+/// back. A `Box` type argument must retain its referent through that rebuild,
+/// including when the call is inside an uncalled ordinary helper.
 #[test]
-fn generic_replay_preserves_box_store_brands_and_legacy_boxes() {
-    use crate::semantic::model::CheckedReleaseClass;
-
+fn generic_replay_preserves_a_box_type_argument() {
     let source = br#"fn pass<T: linear>(value: own T) -> result: own T pure {
   return move value;
 }
 
-fn first_general['s](cell: own Box<'s, u64>) -> result: own Box<'s, u64> pure {
-  return pass::<Box<'s, u64>>(value: move cell);
-}
-
-fn second_general['s](cell: own Box<'s, u64>) -> result: own Box<'s, u64> pure {
-  return pass::<Box<'s, u64>>(value: move cell);
-}
-
-fn extent['s: affine](cell: own Box<'s, u64>) -> result: own Box<'s, u64> pure {
-  return pass::<Box<'s, u64>>(value: move cell);
-}
-
-fn legacy(cell: own box<u64>) -> result: own box<u64> pure {
-  return pass::<box<u64>>(value: move cell);
+fn relay(cell: own Box<u64>) -> result: own Box<u64> pure {
+  return pass::<Box<u64>>(value: move cell);
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -1570,63 +1277,37 @@ fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("generic replay must preserve each Box type argument: {outcome:?}");
         };
-        let mut brands = Vec::new();
-        for (name, expected_release, branded) in [
-            ("first_general", CheckedReleaseClass::General, true),
-            ("second_general", CheckedReleaseClass::General, true),
-            ("extent", CheckedReleaseClass::Extent, true),
-            ("legacy", CheckedReleaseClass::General, false),
-        ] {
-            let relay = checked
-                .data
-                .functions
-                .iter()
-                .find(|function| function.name == name)
-                .expect("every written relay is checked even though main does not call it");
-            let box_type = relay.parameters[0].ty;
-            let CheckedType::Nominal(id) = box_type else {
-                panic!("{name} must take a Box nominal");
-            };
-            let CheckedNominalKind::Box {
-                region,
-                release,
-                referent,
-            } = checked.data.nominals[id.0 as usize].kind
-            else {
-                panic!("{name} must retain its Box kind");
-            };
-            assert_eq!(referent, CheckedType::Integer(IntegerType::U64));
-            assert_eq!(release, expected_release);
-            if branded {
-                let [expected_region] = relay.region_parameters.as_slice() else {
-                    panic!("{name} declares one store region");
-                };
-                assert_eq!(region, Some(*expected_region));
-                assert!(
-                    !brands.contains(expected_region),
-                    "the same written region name in another relay is a different store"
-                );
-                brands.push(*expected_region);
-            } else {
-                assert_eq!(region, None, "legacy box has no store brand");
-            }
-            assert_eq!(relay.result, box_type);
-            assert!(
-                checked.data.functions.iter().any(|function| {
-                    function.name == "pass"
-                        && function.parameters[0].ty == box_type
-                        && function.result == box_type
-                }),
-                "{name}'s explicit generic argument must produce an exact pass instance"
-            );
-        }
+        let relay = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "relay")
+            .expect("the written relay is checked even though main does not call it");
+        let box_type = relay.parameters[0].ty;
+        let CheckedType::Nominal(id) = box_type else {
+            panic!("relay must take a Box nominal");
+        };
+        let CheckedNominalKind::Box { referent, .. } = checked.data.nominals[id.0 as usize].kind
+        else {
+            panic!("relay must retain its Box kind");
+        };
+        assert_eq!(referent, CheckedType::Integer(IntegerType::U64));
+        assert_eq!(relay.result, box_type);
+        assert!(
+            checked.data.functions.iter().any(|function| {
+                function.name == "pass"
+                    && function.parameters[0].ty == box_type
+                    && function.result == box_type
+            }),
+            "relay's explicit generic argument must produce an exact pass instance"
+        );
     });
 }
 
 #[test]
-fn general_elements_retain_deep_runs_through_generic_replay_and_nominal_fields() {
+fn general_elements_retain_deep_windows_through_generic_replay_and_nominal_fields() {
     let source = br#"struct Wrapped {
-  values: FixedVector<FixedVector<FixedVector<u64, 2>, 2>, 2>;
+  values: Slots<Slots<Slots<u64, 2>, 2>, 2>;
 }
 
 fn pass<T: affine>(value: own T) -> result: own T pure {
@@ -1634,22 +1315,16 @@ fn pass<T: affine>(value: own T) -> result: own T pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let empty_leaf = fixed_vector::<u64, 2>();
-  region {
-    place_back(vector: &uniq empty_leaf, value: 7_u64);
-  }
+  let empty_leaf = slots_new::<u64, 2>();
+  place_back(window: &empty_leaf, value: 7_u64);
   let leaf = move empty_leaf;
-  let empty_middle = fixed_vector::<FixedVector<u64, 2>, 2>();
-  region {
-    place_back(vector: &uniq empty_middle, value: move leaf);
-  }
+  let empty_middle = slots_new::<Slots<u64, 2>, 2>();
+  place_back(window: &empty_middle, value: move leaf);
   let middle = move empty_middle;
-  let empty_outer = fixed_vector::<FixedVector<FixedVector<u64, 2>, 2>, 2>();
-  region {
-    place_back(vector: &uniq empty_outer, value: move middle);
-  }
+  let empty_outer = slots_new::<Slots<Slots<u64, 2>, 2>, 2>();
+  place_back(window: &empty_outer, value: move middle);
   let outer = move empty_outer;
-  let returned = pass::<FixedVector<FixedVector<FixedVector<u64, 2>, 2>, 2>>(value: move outer);
+  let returned = pass::<Slots<Slots<Slots<u64, 2>, 2>, 2>>(value: move outer);
   let wrapped = Wrapped(values: move returned);
   let retained = pass::<Wrapped>(value: move wrapped);
   return exit_status(code: 0_u8);
@@ -1657,7 +1332,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("deep run elements and the nominal control must check: {outcome:?}");
+            panic!("deep window elements and the nominal control must check: {outcome:?}");
         };
         let wrapper = checked
             .data
@@ -1670,10 +1345,15 @@ fn main() -> status: own ExitStatus pure {
         };
         let mut ty = fields[0].ty;
         for _ in 0..3 {
-            let CheckedType::FixedVector { element, length } = ty else {
-                panic!("every declared nested run must survive the checked graph");
+            let CheckedType::Window {
+                shape: WindowShape::Slots,
+                element,
+                capacity,
+            } = ty
+            else {
+                panic!("every declared nested window must survive the checked graph");
             };
-            assert_eq!(length, CheckedConst::Value(2));
+            assert_eq!(capacity, Some(CheckedConst::Value(2)));
             ty = checked
                 .element_type(element)
                 .expect("a complete checked element");
@@ -1694,17 +1374,13 @@ fn consume<T: affine>(value: own T) -> result: own unit pure {
 
 fn wrapper<U: affine>() -> result: own unit pure {
   let pair = Pair<u8>(value: 7_u8);
-  let empty_inner = fixed_vector::<Pair<u8>, 1>();
-  region {
-    place_back(vector: &uniq empty_inner, value: move pair);
-  }
+  let empty_inner = slots_new::<Pair<u8>, 1>();
+  place_back(window: &empty_inner, value: move pair);
   let inner = move empty_inner;
-  let empty_outer = fixed_vector::<FixedVector<Pair<u8>, 1>, 1>();
-  region {
-    place_back(vector: &uniq empty_outer, value: move inner);
-  }
+  let empty_outer = slots_new::<Slots<Pair<u8>, 1>, 1>();
+  place_back(window: &empty_outer, value: move inner);
   let outer = move empty_outer;
-  consume::<FixedVector<FixedVector<Pair<u8>, 1>, 1>>(value: move outer);
+  consume::<Slots<Slots<Pair<u8>, 1>, 1>>(value: move outer);
   return unit;
 }
 
@@ -1724,10 +1400,15 @@ fn main() -> status: own ExitStatus pure {
             .expect("the schema-written concrete call is retained");
         let mut ty = consume.parameters[0].ty;
         for _ in 0..2 {
-            let CheckedType::FixedVector { element, length } = ty else {
+            let CheckedType::Window {
+                shape: WindowShape::Slots,
+                element,
+                capacity,
+            } = ty
+            else {
                 panic!("the concrete argument retains both structural layers");
             };
-            assert_eq!(length, CheckedConst::Value(1));
+            assert_eq!(capacity, Some(CheckedConst::Value(1)));
             ty = checked
                 .element_type(element)
                 .expect("a reified element handle");
@@ -1746,12 +1427,12 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn constructor_fields_can_materialize_the_first_store_branded_nominal_instance() {
-    let source = br#"struct Wrapped['s] {
-  values: Vector<u8>;
+fn constructor_fields_materialize_the_nominal_instance() {
+    let source = br#"struct Wrapped {
+  values: Slots<u8, 4>;
 }
 
-fn rebuild['s](values: own Vector<'s, u8>) -> result: own Vector<'s, u8> pure {
+fn rebuild(values: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure {
   let wrapped = Wrapped(values: move values);
   let Wrapped(values: restored) = move wrapped;
   return move restored;
@@ -1759,7 +1440,9 @@ fn rebuild['s](values: own Vector<'s, u8>) -> result: own Vector<'s, u8> pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the constructor's ordinary field arguments determine its brand: {outcome:?}");
+            panic!(
+                "the constructor's ordinary field arguments determine its instance: {outcome:?}"
+            );
         };
         assert!(
             checked

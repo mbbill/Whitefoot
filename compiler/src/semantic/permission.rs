@@ -1006,12 +1006,6 @@ pub(super) fn set_target_place(
             }
             places.resolve(target.root, &container_steps(target))
         }
-        // [VIEW-1]'s element store through a view has no v0.60 subject: the
-        // view formers left [OP-1]'s table and nothing builds this target.
-        CheckedSetTarget::SliceIndex(_) => {
-            footprint.unresolved = Some(node.clone());
-            return;
-        }
     };
     footprint.writes.extend(resolved.into_iter().map(|place| Access {
         place,
@@ -1115,8 +1109,6 @@ pub(super) fn visit_read_bindings(
         CheckedExpression::BorrowBuffer { root, .. }
         | CheckedExpression::BufferMeasure { root, .. }
         | CheckedExpression::BufferIndex { root, .. } => note(root.binding),
-        CheckedExpression::SliceMeasure { root, .. }
-        | CheckedExpression::SliceIndex { root, .. } => note(root.binding),
         CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => {
             if let CheckedArrayRoot::Binding { binding, .. } = root {
@@ -1215,15 +1207,12 @@ fn collect_operand_reads(
         // One clause-only datum; no executable statement carries one.
         CheckedExpression::PostconditionResultMeasure { .. } => {}
         // Expression forms whose v0.60 operation left [OP-1]'s table and
-        // which the checker no longer builds: the view formers and measures
-        // [VIEW-1], the buffer and arena formers [BLK-1, STOR-2], the box
-        // former [OP-13 builds one through a call], and the two reborrow
-        // shapes [OWN-6]. An occurrence would be storage this walk cannot
-        // account for, so it fails closed rather than contributing nothing.
-        CheckedExpression::SliceOf { .. }
-        | CheckedExpression::SliceMeasure { .. }
-        | CheckedExpression::SliceIndex { .. }
-        | CheckedExpression::BufferFill { .. }
+        // which the checker no longer builds: the buffer and arena formers
+        // [BLK-1, STOR-2], the box former [OP-13 builds one through a call],
+        // and the two reborrow shapes [OWN-6]. An occurrence would be
+        // storage this walk cannot account for, so it fails closed rather
+        // than contributing nothing.
+        CheckedExpression::BufferFill { .. }
         | CheckedExpression::BufferVacant { .. }
         | CheckedExpression::BufferFits { .. }
         | CheckedExpression::BufferMeasure { .. }

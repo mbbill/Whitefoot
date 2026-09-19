@@ -113,20 +113,18 @@ fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
     );
 }
 
-const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination) contract {
+const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
   requires start <= end;
-  requires end <= len_of(deref(destination));
+  requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 } {
-  region {
-    match host_copy_bytes(value: value, destination: &uniq deref(destination), start: start, end: end) {
-      Ok(value: next) => {
-        return Ok<u64, CopyError>(value: next);
-      }
-      Err(error: problem) => {
-        return Err<u64, CopyError>(error: move problem);
-      }
+  match host_copy_bytes(value: value, destination: destination, start: start, end: end) {
+    Ok(value: next) => {
+      return Ok<u64, CopyError>(value: next);
+    }
+    Err(error: problem) => {
+      return Err<u64, CopyError>(error: move problem);
     }
   }
 }
@@ -134,7 +132,7 @@ const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destinatio
 "#;
 
 #[test]
-fn a_view_signature_is_identical_for_a_wf_body_and_a_linked_body() {
+fn a_range_reference_signature_is_identical_for_a_wf_body_and_a_linked_body() {
     let original = String::from_utf8(corpus_source("run-syshost-nontext-argv-bytes-roundtrip"))
         .expect("source is UTF-8");
     let source = format!(
@@ -163,11 +161,11 @@ fn a_view_signature_is_identical_for_a_wf_body_and_a_linked_body() {
                 crate::compile_with_overlap(&inputs, crate::CompilerLimits::default(), overlap)
             }
         };
-        let llvm = llvm.expect("ordinary view wrapper compiles in each driver mode");
+        let llvm = llvm.expect("ordinary range-reference wrapper compiles in each driver mode");
         let result = compile_and_run_with(&llvm, &[b"a\xffb"]);
         assert!(
             result.status.success(),
-            "same-signature view call: {result:?}"
+            "same-signature range-reference call: {result:?}"
         );
         assert!(result.stdout.is_empty());
         assert!(result.stderr.is_empty());
@@ -175,11 +173,11 @@ fn a_view_signature_is_identical_for_a_wf_body_and_a_linked_body() {
 }
 
 #[test]
-fn behavior_actuals_preserve_ordinary_view_calls_rows_and_contracts() {
+fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts() {
     let formal = r#"formal Copier {
-  fn transfer(value: &HostString, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination) contract {
+  fn transfer(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
     requires start <= end;
-    requires end <= len_of(deref(destination));
+    requires end <= deref(destination).len;
     ensures when Ok(value: next): start <= next;
     ensures when Ok(value: next): next <= end;
   };

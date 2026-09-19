@@ -22,6 +22,43 @@
 //! observations live in `floor_probe.c`, under the common native test target.
 //! Record bytes are a runtime implementation contract; SCOPE-3 keeps resource
 //! availability outside the source outcome model.
+//!
+//! Ported to kernel specification v0.60. Every case below keeps its subject,
+//! because every subject below is the trusted base's own termination outside
+//! the language [SCOPE-3]: the resource record, the abort, the stack floor and
+//! the probe that keeps a large frame inside the guard region. [STOR-8] now
+//! makes allocation total *in the source*: it never returns a failure, never
+//! traps, and no allocating operation carries a `Result`, and exhaustion of
+//! the heap terminates the program from the trusted base. That retires the
+//! writer-visible failure path, not the termination these cases observe.
+//!
+//! Two v0.59 subjects this module carried are retired outright, each with a
+//! named successor:
+//!
+//! - The arena allocation form and its `arena.new.oom.` refusal edge retire
+//!   with regions and arenas [OWN-3, OWN-4, OWN-10, FORM-8, STOR-4]. There is
+//!   no successor form and no successor edge; the four-form image below is now
+//!   the four [OP-13] cell constructions `box_new`, `box_array_filled`,
+//!   `box_slots_new` and `box_ring_new` over [STOR-8]'s one heap.
+//! - Modelling a vacant slot as `Option<T>` and reading one back with
+//!   `replace`, whose `None()` arm the writer matched on, retires with [SET-2]
+//!   and [LIV-2]. The successor is [WIN-1]'s window: a slot inside the window
+//!   always holds a value, no program point can observe one as empty, and the
+//!   boundary moves only through [OP-10]'s `place_back` and `take_back`, with
+//!   [OP-11]'s `swap` where an old value must survive the write.
+//!
+//! Emitted-shape expectations are kept exactly as v0.59 wrote them wherever a
+//! concurrent lowering port owns the answer; each is marked
+//! `KEPT AS WRITTEN for the lowering port:` at its assertion.
+//!
+//! Three of the checker gaps the v0.60 packages carry are reached from here:
+//! [OP-10]'s compiler-owned window type parameter is not inferred from the
+//! operand (`check/generics.rs:2196-2213` refuses a call to a callee with type
+//! parameters and no written argument list, citing FN-2), a `Box`'s content
+//! `b.inner` is reached only on the explicit-`deref` chain, and a
+//! runtime-capacity `Slots<T>` or `Ring<T>` stops as an unimplemented compiler
+//! capability at `check/types.rs:464`. Those are unimplemented capabilities,
+//! not source rejections, and no expectation here is softened for them.
 
 use std::process::Command;
 
@@ -42,11 +79,11 @@ const HOST_STACK_PROBE: &str = "\"probe-stack\"=\"inline-asm\"";
 /// transfer, and the entry itself.
 const MIXED_DEFINITIONS: &[u8] = br#"enum Chain {
   End();
-  More(next: box<Chain>);
+  More(next: Box<Chain>);
 }
 
-fn depth(chain: &box<Chain>) -> result: own u64 reads(chain) {
-  match deref(deref(chain)) {
+fn depth(chain: &Box<Chain>) -> result: own u64 reads(chain) {
+  match deref(chain).inner {
     End() => {
       return 0_u64;
     }
@@ -59,15 +96,13 @@ fn depth(chain: &box<Chain>) -> result: own u64 reads(chain) {
 
 fn main() -> status: own ExitStatus pure {
   let end = End();
-  let bottom = box_new(move end);
+  let bottom = box_new::<Chain>(value: move end);
   let one = More(next: move bottom);
-  let boxed = box_new(move one);
-  region {
-    let measured = depth(chain: &boxed);
-    if measured == 1_u64 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
+  let boxed = box_new::<Chain>(value: move one);
+  let measured = depth(chain: &boxed);
+  if measured == 1_u64 {
+  } else {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }
@@ -230,13 +265,19 @@ const fn libc_sigabrt() -> i32 {
 ///
 /// Handing a call out makes concurrent allocation refusal possible, so this
 /// module must use the shared first-record latch.
+///
+/// The count is a literal the host cannot satisfy, and with `u8`'s stride of
+/// one it still discharges [OP-9]'s allocation-size obligation, so the module
+/// really carries the construction whose heap exhaustion the trusted base
+/// reports. Nothing in the source names that outcome: [STOR-8] hands back no
+/// payload and the program holds no failure arm.
 const HEAP_RECORD_LANE: &[u8] = br#"fn leafwork(v: own u64) -> result: own u64 pure {
   return v *wrap 3_u64;
 }
 
 fn build(n: own u64) -> result: own u64 pure {
-  let b = buffer_new(4000000000000000000_u64, 7_u8);
-  let e = b[0_u64];
+  let b = box_array_filled::<u8>(count: 4000000000000000000_u64, value: 7_u8);
+  let e = b.inner[0_u64];
   return 0_u64 +wrap n;
 }
 
@@ -265,6 +306,11 @@ fn a_module_that_writes_a_resource_record_and_hands_a_call_out_is_latched() {
          {module}"
     );
     assert!(module.contains("@.wf_resource_record.latch"));
+    // KEPT AS WRITTEN for the lowering port: whether a v0.60 construction
+    // still emits an inline null test that calls `@wf_resource_abort()`, or
+    // whether the trusted base's own allocator terminates and the generated
+    // module carries no refusal edge at all, is the lowering port's decision
+    // under [STOR-8]. Re-derive this symbol and the latch symbol from it.
     assert!(
         module.contains("call void @wf_resource_abort()"),
         "the fixture must reach a resource record: {module}"
@@ -277,25 +323,29 @@ fn a_module_that_writes_a_resource_record_and_hands_a_call_out_is_latched() {
 }
 
 /// One program reaching every allocation form the emitter lowers: a filled
-/// buffer, a vacant one, a heap box, and an arena node.
+/// array, an empty window, a heap box, and a ring.
 ///
-/// The lengths are constants so the fit obligation discharges statically and
-/// the fixture stays about the refusal edges rather than about proving a
-/// dynamic length fits.
+/// The counts are constants so [OP-9]'s allocation-size obligation discharges
+/// statically and the fixture stays about the refusal edges rather than about
+/// proving a dynamic count fits.
+///
+/// The arena node this image carried in v0.59 is gone with regions and arenas
+/// [OWN-3, OWN-4, OWN-10, FORM-8, STOR-4]; the fourth form is now
+/// `box_ring_new`, the fourth [OP-13] cell construction. Each form contributes
+/// one observed measure [OP-15] so the successful run still proves it ran:
+/// 7 + 4 + 4 + 3 = 18, the same exit code v0.59's image produced.
 const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 pure {
-  let filled = buffer_new(4_u64, 5_u64);
-  let vacant = buffer_vacant::<u32>(4_u64);
-  let boxed = box_new(7_u64);
-  let held = deref(boxed);
-  let filled_len = len_of(filled);
-  let vacant_len = len_of(vacant);
+  let filled = box_array_filled::<u64>(count: 4_u64, value: 5_u64);
+  let vacant = box_slots_new::<u32>(capacity: 4_u64);
+  let cycle = box_ring_new::<u32>(capacity: 3_u64);
+  let boxed = box_new::<u64>(value: 7_u64);
+  let held = boxed.inner;
+  let filled_len = filled.inner.len;
+  let vacant_cap = vacant.inner.cap;
+  let cycle_cap = cycle.inner.cap;
   let total = held +wrap filled_len;
-  set total = total +wrap vacant_len;
-  region 'a {
-    let kept = arena_new::<'a, u64>(3_u64);
-    let seen = deref(kept);
-    set total = total +wrap seen;
-  }
+  set total = total +wrap vacant_cap;
+  set total = total +wrap cycle_cap;
   return total;
 }
 
@@ -314,6 +364,17 @@ fn main() -> status: own ExitStatus pure {
 
 /// Generated allocation calls alone are interposed; runtime startup allocation
 /// remains real. One small four-form image covers success and every refusal.
+///
+/// The subject survives [STOR-8] unchanged: the program holds no failure arm
+/// and receives no payload, and an exhausted heap ends the process from the
+/// trusted base with the one record naming the resource class.
+///
+/// KEPT AS WRITTEN for the lowering port: the observer limit, the refusal
+/// range and the `A1;A2;A3;A4;` trace all say that each of the four [OP-13]
+/// cell constructions is exactly one interposed allocation. Whether a boxed
+/// runtime-capacity shape is one heap object or a cell plus a block is the
+/// lowering port's decision under [STOR-1]; re-derive the limit, the range and
+/// both identity lists from it.
 #[test]
 fn each_generated_allocation_form_reaches_its_refusal_record() {
     let directory = test_directory();
@@ -357,9 +418,18 @@ fn each_generated_allocation_form_reaches_its_refusal_record() {
     std::fs::remove_dir_all(directory).expect("remove allocation refusal image");
 }
 
-/// Filled and vacant buffers whose proved byte ceilings fit the selected
-/// target carry no runtime target-domain path. The allocator can still return
-/// null, so each operation keeps its ordinary heap-resource failure edge.
+/// Filled and empty windows whose proved byte ceilings fit the selected target
+/// carry no runtime target-domain path. The allocator can still return null,
+/// so each operation keeps its ordinary heap-resource edge, which is the
+/// trusted base's termination and not a source outcome [STOR-8].
+///
+/// The subject is [STOR-6]'s separation: a target-qualification failure stops
+/// compilation and may not become a runtime guard. That rule is unchanged.
+///
+/// KEPT AS WRITTEN for the lowering port: every label here, `buffer.fill.`,
+/// `buffer.vacant.`, `.allocate.`, `.oom.` and the two target-domain symbols,
+/// is v0.59's emitted spelling for what are now `box_array_filled` and
+/// `box_slots_new` [OP-13]. Re-derive the block names from the port.
 #[test]
 fn target_qualified_buffers_keep_only_the_heap_refusal_path() {
     let module = heap_module();
@@ -403,16 +473,21 @@ fn target_qualified_buffers_keep_only_the_heap_refusal_path() {
 /// that routed three of its four refusal edges and left the fourth calling
 /// `@abort` directly would still die silently on exactly the allocation that
 /// took the fourth path, and nothing about the program would say which.
+///
+/// The `arena.new.oom.` edge is retired here with regions and arenas [OWN-3,
+/// OWN-4, OWN-10, FORM-8, STOR-4]; the form no longer exists, so it has no
+/// successor edge. The fourth form of the image above is `box_ring_new`.
+///
+/// KEPT AS WRITTEN for the lowering port: the three surviving labels are
+/// v0.59's emitted spellings, and `box_ring_new` has no pinned label at all.
+/// Re-derive one label per [OP-13] cell construction the port emits, and
+/// re-derive whether a refusal edge is emitted in the module or left inside
+/// the trusted base's allocator [STOR-8].
 #[test]
 fn every_allocation_refusal_edge_reaches_the_resource_abort() {
     let module = heap_module();
     let lines: Vec<&str> = module.lines().collect();
-    for refusal in [
-        "box.new.oom.",
-        "arena.new.oom.",
-        "buffer.fill.oom.",
-        "buffer.vacant.oom.",
-    ] {
+    for refusal in ["box.new.oom.", "buffer.fill.oom.", "buffer.vacant.oom."] {
         let mut found = 0;
         for (index, line) in lines.iter().enumerate() {
             if !line.starts_with(refusal) || !line.ends_with(':') {
@@ -440,39 +515,31 @@ fn every_allocation_refusal_edge_reaches_the_resource_abort() {
 /// recursive edge keeps the generated function representative of an ordinary
 /// source recursion without making the fault depend on a sequence of frames.
 const LARGE_FRAME_SPINE: &[u8] =
-    br#"fn read_pad(values: &array<u64, 7168>, index: own u64) -> result: own u64 reads(values) contract {
+    br#"fn read_pad(values: &Array<u64, 7168>, index: own u64) -> result: own u64 reads(values) contract {
   requires index < 7168_u64;
 } {
   return deref(values)[index];
 }
 
 fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
-  let pad = array_new::<u64, 7168>(v);
+  let pad = array_filled::<u64, 7168>(value: v);
   let wide = cvt::<u8, u64>(i);
   set pad[wide] = depth;
   let done = depth == 0_u64;
   if done {
-    region {
-      return read_pad(values: &pad, index: wide);
-    }
+    return read_pad(values: &pad, index: wide);
   }
   let next = depth -wrap 1_u64;
   let a = spine(depth: next, v: v, i: i);
-  region {
-    let b = read_pad(values: &pad, index: wide);
-    return a +wrap b;
-  }
+  let b = read_pad(values: &pad, index: wide);
+  return a +wrap b;
 }
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
   let count = 0_u64;
-  region {
-    set count = args_count(args: &args);
-  }
+  set count = args_count(args: &args);
   match cvt::<u64, u8>(count) {
     Ok(value: idx) => {
       let depth = count *wrap 20000_u64;
@@ -697,25 +764,33 @@ fn ablate_probe(module: &str, signature: &str) -> String {
 /// program used to be the one the compiler generated to *destroy* the value at
 /// scope exit, which is the point: a writer looking at this program can see no
 /// depth to bound, cannot instrument the traversal, and cannot avoid it.
+///
+/// The loop read the old node out with `replace`, which is retired: [SET-1]
+/// writes exactly one place and [WIN-3] gives the old value its disposition,
+/// which for an affine one is its release. Here the old value must survive the
+/// write, so the successor is [OP-11] `swap`: neither root is consumed, no
+/// program point holds a hole, and the binding the exchange leaves behind is
+/// the one the round releases. The allocation and release identities are
+/// unchanged by that substitution.
 fn boxed_spine_source(depth: u64) -> Vec<u8> {
     format!(
         r#"enum Tree {{
   Leaf();
-  Branch(left: box<Tree>, right: box<Tree>);
+  Branch(left: Box<Tree>, right: Box<Tree>);
 }}
 
 struct Holder {{
-  node: box<Tree>;
+  node: Box<Tree>;
 }}
 
-fn boxed_leaf() -> result: own box<Tree> pure {{
+fn boxed_leaf() -> result: own Box<Tree> pure {{
   let leaf = Leaf();
-  return box_new(move leaf);
+  return box_new::<Tree>(value: move leaf);
 }}
 
-fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tree> pure {{
+fn boxed_branch(left: own Box<Tree>, right: own Box<Tree>) -> result: own Box<Tree> pure {{
   let branch = Branch(left: move left, right: move right);
-  return box_new(move branch);
+  return box_new::<Tree>(value: move branch);
 }}
 
 fn main() -> status: own ExitStatus pure {{
@@ -724,9 +799,9 @@ fn main() -> status: own ExitStatus pure {{
   for @grow (i in 0_u64..{depth}_u64) {{
     let sibling = boxed_leaf();
     let placeholder = boxed_leaf();
-    let taken = replace held.node = move placeholder;
-    let taller = boxed_branch(left: move taken, right: move sibling);
-    let spent = replace held.node = move taller;
+    swap(first: &held.node, second: &placeholder);
+    let taller = boxed_branch(left: move placeholder, right: move sibling);
+    swap(first: &held.node, second: &taller);
   }}
   return exit_status(code: 0_u8);
 }}
@@ -735,68 +810,52 @@ fn main() -> status: own ExitStatus pure {{
     .into_bytes()
 }
 
-/// A cleanup cycle that closes through a `buffer` instead of through a `box`.
+/// A cleanup cycle that closes through a window instead of through a bare
+/// cell.
 ///
-/// `box` supplies the indirection the target layout needs while the buffer
-/// stays inside the cycle: `Chain` -> `box<buffer<Option<Chain>>>` ->
-/// `buffer<Option<Chain>>` -> `Option<Chain>` -> `Chain`. Nothing about the
-/// program says "recursive"; as with the boxed spine, the only recursion is
-/// the one the compiler would generate to destroy the value.
+/// `Box` supplies the indirection the target layout needs while the window
+/// stays inside the cycle: `Chain` -> `Box<Slots<Chain>>` -> `Slots<Chain>` ->
+/// `Chain`. Nothing about the program says "recursive"; as with the boxed
+/// spine, the only recursion is the one the compiler would generate to destroy
+/// the value.
 ///
 /// The shape matters because the two indirections need different traversal
-/// arms. A `box` names one content, so one worklist entry carries the whole
-/// edge. A buffer names many elements whose reclamation order [STOR-3] fixes,
-/// so it takes one entry per element plus one for the block.
+/// arms. A `Box` names one content, so one traversal step carries the whole
+/// edge. A window names many elements whose reclamation order [STOR-3] fixes,
+/// so it takes one step per element plus one for the block.
+///
+/// v0.59 modelled a vacant slot as `Option<Chain>` and moved values in and out
+/// with `replace`, matching the `None()` arm each time. Both retire: [WIN-1]
+/// says a slot inside the window always holds a value and no program point can
+/// observe one as empty, so the vacancy is the window itself, and [OP-10]'s
+/// `place_back` and `take_back` are what move the boundary. The `Option` layer
+/// leaves the cycle with them, which shortens the chain by one node type but
+/// not the cycle: `Slots<Chain>` still names `Chain`.
 fn buffer_chain_source(depth: u64) -> Vec<u8> {
     format!(
         r#"enum Chain {{
   Nil();
-  Cons(kids: box<buffer<Option<Chain>>>);
+  Cons(kids: Box<Slots<Chain>>);
 }}
 
 fn nest(inner: own Chain) -> result: own Chain pure {{
-  let slots = buffer_vacant::<Chain>(1_u64);
-  let filled = Some<Chain>(value: move inner);
-  let vacant = replace slots[0_u64] = move filled;
-  match vacant {{
-    None() => {{
-    }}
-    Some(value: stray) => {{
-    }}
-  }}
-  let held = box_new(move slots);
+  let held = box_slots_new::<Chain>(capacity: 1_u64);
+  place_back(window: &held.inner, value: move inner);
   return Cons(kids: move held);
 }}
 
 fn main() -> status: own ExitStatus pure {{
-  let holder = buffer_vacant::<Chain>(1_u64);
+  let holder = box_slots_new::<Chain>(capacity: 1_u64);
   let seed = Nil();
-  let seeded = Some<Chain>(value: move seed);
-  let empty = replace holder[0_u64] = move seeded;
-  match empty {{
-    None() => {{
-    }}
-    Some(value: stray) => {{
-    }}
-  }}
-  for @build (i in 0_u64..{depth}_u64) {{
-    let taken = replace holder[0_u64] = None<Chain>();
-    match taken {{
-      None() => {{
-        return exit_status(code: 1_u8);
-      }}
-      Some(value: inner) => {{
-        let grown = nest(inner: move inner);
-        let refilled = Some<Chain>(value: move grown);
-        let hole = replace holder[0_u64] = move refilled;
-        match hole {{
-          None() => {{
-          }}
-          Some(value: leftover) => {{
-          }}
-        }}
-      }}
-    }}
+  place_back(window: &holder.inner, value: move seed);
+  for @build (
+    i in 0_u64..{depth}_u64,
+    invariant width: holder.inner.cap == 1_u64,
+    invariant filled: holder.inner.len == 1_u64
+  ) {{
+    let taken = take_back(window: &holder.inner);
+    let grown = nest(inner: move taken);
+    place_back(window: &holder.inner, value: move grown);
   }}
   return exit_status(code: 0_u8);
 }}
@@ -807,11 +866,13 @@ fn main() -> status: own ExitStatus pure {{
 
 /// A value whose ownership graph is a chain rather than a cycle: deep in
 /// nothing, and reached by the same emitter.
+///
+/// The chain is `Box<Slots<Box<u64>>>` -> `Slots<Box<u64>>` -> `Box<u64>` ->
+/// `u64`, and no node type names another one above it.
 const SHALLOW_OWNERSHIP: &[u8] = br#"fn main() -> status: own ExitStatus pure {
-  let slots = buffer_vacant::<box<u64>>(2_u64);
-  let boxed = box_new(7_u64);
-  let wrapped = Some<box<u64>>(value: move boxed);
-  let vacant = replace slots[0_u64] = move wrapped;
+  let slots = box_slots_new::<Box<u64>>(capacity: 2_u64);
+  let boxed = box_new::<u64>(value: 7_u64);
+  place_back(window: &slots.inner, value: move boxed);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -958,58 +1019,33 @@ fn an_ownership_chain_keeps_its_straight_line_drop() {
     assert!(!release_graph_has_cycle(&glue), "{module}");
 }
 
-/// A buffer in a cleanup cycle whose elements each own further storage.
+/// A window in a cleanup cycle whose elements each own further storage.
+///
+/// The four `replace` writes and their matched `None()` arms retire with
+/// [SET-2] and [LIV-2]; the successor is four [OP-10] `place_back` calls onto
+/// a window that starts empty [OP-13] and whose slots are never observable as
+/// empty [WIN-1]. The element identities and their order are unchanged.
 const WIDE_BUFFER_CYCLE: &[u8] = br#"enum Chain {
   Nil();
-  Cons(kids: box<buffer<Option<Chain>>>);
+  Cons(kids: Box<Slots<Chain>>);
 }
 
 fn leafy() -> result: own Chain pure {
-  let slots = buffer_vacant::<Chain>(1_u64);
-  let held = box_new(move slots);
+  let held = box_slots_new::<Chain>(capacity: 1_u64);
   return Cons(kids: move held);
 }
 
 fn main() -> status: own ExitStatus pure {
-  let slots = buffer_vacant::<Chain>(4_u64);
+  let slots = box_slots_new::<Chain>(capacity: 4_u64);
   let child0 = leafy();
-  let first = Some<Chain>(value: move child0);
-  let hole0 = replace slots[0_u64] = move first;
-  match hole0 {
-    None() => {
-    }
-    Some(value: stray0) => {
-    }
-  }
+  place_back(window: &slots.inner, value: move child0);
   let child1 = leafy();
-  let second = Some<Chain>(value: move child1);
-  let hole1 = replace slots[1_u64] = move second;
-  match hole1 {
-    None() => {
-    }
-    Some(value: stray1) => {
-    }
-  }
+  place_back(window: &slots.inner, value: move child1);
   let child2 = leafy();
-  let third = Some<Chain>(value: move child2);
-  let hole2 = replace slots[2_u64] = move third;
-  match hole2 {
-    None() => {
-    }
-    Some(value: stray2) => {
-    }
-  }
+  place_back(window: &slots.inner, value: move child2);
   let child3 = leafy();
-  let fourth = Some<Chain>(value: move child3);
-  let hole3 = replace slots[3_u64] = move fourth;
-  match hole3 {
-    None() => {
-    }
-    Some(value: stray3) => {
-    }
-  }
-  let held = box_new(move slots);
-  let root = Cons(kids: move held);
+  place_back(window: &slots.inner, value: move child3);
+  let root = Cons(kids: move slots);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1024,9 +1060,16 @@ fn definition_body<'a>(module: &'a str, signature: &str) -> &'a str {
     &body[..end]
 }
 
-/// [STOR-3] fixes a buffer's release as each element's release in ascending
-/// index order followed by that one heap free, and the release of a buffer
-/// inside a cycle is the same action as the release of any other buffer.
+/// [STOR-3] fixes a window's release as each element's release in ascending
+/// logical index order followed by that one heap free, and the release of a
+/// window inside a cycle is the same action as the release of any other.
+///
+/// KEPT AS WRITTEN for the lowering port: the drop-glue symbol
+/// `@wf.drop.buffer.t`, the `%index`/`%next` loop registers, the `%element`
+/// load and `call void @free(ptr %pointer)` are v0.59's emitted spellings for
+/// what is now a `Slots` release over its window [WIN-1, STOR-3]. Re-derive
+/// each symbol from the port; the order the case pins is the rule's and does
+/// not move.
 ///
 /// The order is pinned where it is chosen because nothing downstream can see
 /// it: [STOR-3] gives memory reclamation the empty effect row. Walking the
@@ -1078,6 +1121,18 @@ fn a_buffer_in_a_cleanup_cycle_is_walked_in_the_order_the_rule_fixes() {
 /// Allocation-instance identities expose omitted/double releases, field/element
 /// order and backing lifetime directly. Large depth and unverified allocator
 /// scribbling did not establish those properties.
+///
+/// The boxed-branch arithmetic is re-derived and holds under the `swap`
+/// rewrite: each round still allocates sibling, placeholder and branch in that
+/// order and releases the placeholder the exchange left behind, and the final
+/// walk still descends left before right.
+///
+/// KEPT AS WRITTEN for the lowering port: the two window fixtures' limits and
+/// identity ranges say that one `box_slots_new` is one interposed allocation
+/// where v0.59 spelled it `buffer_vacant` plus `box_new`. Whether a boxed
+/// runtime-capacity shape is one heap object or a cell plus a block is the
+/// lowering port's decision under [STOR-1]; re-derive the `nested buffer` and
+/// `wide buffer` limits and traces from it.
 #[test]
 fn branching_and_nested_release_walks_reclaim_each_instance_in_order() {
     let mut boxed_trace = String::from("A1;");

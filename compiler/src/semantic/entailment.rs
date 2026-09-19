@@ -38,9 +38,9 @@ use term::TermId;
 
 #[cfg(test)]
 pub(crate) use state::{
-    CountedRootAtom, DerivationNode, FlowEvent, FlowEventId, FlowEventKind, GoalSign,
-    ImplicitBoundKind, JoinParent, PostconditionCallDetail, PostconditionDeliveryJoinDetail,
-    Relation,
+    CountedRootAtom, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind,
+    GoalSign, ImplicitBoundKind, JoinParent, PostconditionCallDetail,
+    PostconditionDeliveryJoinDetail, Relation,
 };
 #[cfg(test)]
 pub(crate) use term::{
@@ -1314,9 +1314,6 @@ pub(super) fn collect_statement_calls(
                                 collect_expression_calls(caller, offset, calls);
                             }
                         }
-                        CheckedSetTarget::SliceIndex(target) => {
-                            collect_expression_calls(caller, &target.offset, calls);
-                        }
                     }
                 }
                 for value in values.expressions() {
@@ -1337,9 +1334,6 @@ pub(super) fn collect_statement_calls(
                         for offset in target.offsets() {
                             collect_expression_calls(caller, offset, calls);
                         }
-                    }
-                    CheckedSetTarget::SliceIndex(target) => {
-                        collect_expression_calls(caller, &target.offset, calls);
                     }
                 }
                 collect_expression_calls(caller, value, calls);

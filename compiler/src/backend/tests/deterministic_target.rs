@@ -5,12 +5,51 @@
 //! short reads and writes that a real descriptor cannot reliably produce.
 //! No compiler target, semantic identifier or acceptance classification
 //! changes when the linked implementation is substituted.
+//!
+//! Every program here is retargeted to kernel spec v0.60; no test of this
+//! module lost its subject rule, so none is retired. What the retarget
+//! changed, and what it left standing:
+//!
+//! - `region { .. }` wrappers and region parameters are gone with [OWN-3],
+//!   [OWN-4], [OWN-10] and [FORM-8]; their statements stay in the enclosing
+//!   block and have no successor of their own.
+//! - `&uniq p` and a shared `&p` collapse to the one reference kind `&p`;
+//!   write permission is stated by the callee's row [EFF-1], and the rows
+//!   below drop the retired `reads(p), writes(p)` pair and the multi-path
+//!   entry for the same reason.
+//! - `buffer_new(n, v)` and `slice_of(&b)` retire with [VIEW-1] and the
+//!   v0.59 storage classes. The successors are [OP-13] `array_filled` and
+//!   `box_array_filled` and [REF-4]'s range reference `&x[lo..hi]`, which the
+//!   PRE-1 host rows now take directly as the parameter kind `&[u8]`.
+//! - `let previous = replace outcome = e;` retires with [SET-2]. The
+//!   successor is [SET-1] `set outcome = e;`, whose [WIN-3] disposition
+//!   releases the old affine value.
+//!
+//! Four tests compile `tests/programs/io_chunked_read.wf` and
+//! `tests/programs/io_write_prefix.wf`, which are still v0.59 sources owned
+//! outside this module; they run against v0.60 only once those two programs
+//! are ported, and nothing here was weakened to hide that.
+//!
+//! One known checker gap stands between the programs written here and
+//! acceptance today, and the assertions state the normative verdict rather
+//! than the current one, because an unimplemented feature is not a
+//! source-language rejection. `box_array_filled` in the heap-record test
+//! forms a runtime-capacity `Array<u8>` inside a `Box`, so the range
+//! reference over `bytes.inner` depends on the `Box` content gap
+//! (`check/expressions.rs` `resolve_struct_path` has no `Box` branch). No
+//! program here calls a window operation, `swap` or `free_empty`, so none
+//! depends on [OP-10]'s uninferred window type parameter; none names a
+//! runtime-capacity `Slots` or `Ring`; and none moves out of a window slot.
 
 use std::fmt::Write as _;
 
 use crate::backend::target::{TargetLayout, TargetLayoutFailure};
 
 // The same programs run against real descriptors and scripted linked bodies.
+// Both are still v0.59 sources owned by `tests/programs/`, not by this module;
+// the four tests that compile them are retargeted only when those two files
+// are. The patch below also reads `bytes[0_u64]` out of the first, so a port
+// that moves that run into a `Box` must spell it `bytes.inner[0_u64]` here.
 const CHUNKED_READ: &[u8] = include_bytes!("../../../../tests/programs/io_chunked_read.wf");
 const WRITE_PREFIX: &[u8] = include_bytes!("../../../../tests/programs/io_write_prefix.wf");
 
@@ -722,9 +761,7 @@ pub(super) fn run_emitted_on_deterministic_host(
 /// An ordinary entry that explicitly closes its initial working directory.
 const RELEASES_ONE_DIRECTORY: &[u8] = br#"fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
-  region {
-    let closed = close_directory(factory: &uniq factory, directory: move cwd);
-  }
+  let closed = close_directory(factory: &factory, directory: move cwd);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -734,19 +771,15 @@ const RELEASES_ONE_DIRECTORY: &[u8] = br#"fn main(inputs: own Inputs) -> status:
 const READS_ITS_ARGUMENTS: &[u8] =
     br#"fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  region {
-    let total = args_count(args: &args);
-    let narrowed = cvt::<u64, u8>(total);
-    match narrowed {
-      Ok(value: code) => {
-        return exit_status(code: code);
-      }
-      Err(error: overflowed) => {
-        return exit_status(code: 200_u8);
-      }
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let total = args_count(args: &args);
+  let narrowed = cvt::<u64, u8>(total);
+  match narrowed {
+    Ok(value: code) => {
+      return exit_status(code: code);
+    }
+    Err(error: overflowed) => {
+      return exit_status(code: 200_u8);
     }
   }
 }
@@ -756,33 +789,25 @@ const READS_ITS_ARGUMENTS: &[u8] =
 /// while also binding the initial working directory so exactly one resource
 /// in the program releases with a close.
 const WRITES_THEN_RELEASES_BOTH: &[u8] =
-    br#"fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, entry_factory: &uniq HandleFactory) -> status: own ExitStatus reads(out, entry_factory), writes(out, entry_factory) {
-  let bytes = buffer_new(3_u64, 65_u8);
+    br#"fn exercise(cwd: &DirectoryRead, out: &OutputStream, entry_factory: &HandleFactory) -> status: own ExitStatus writes(out), writes(entry_factory) {
+  let bytes = array_filled::<u8, 3>(value: 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
-  region {
-    region {
-      region {
-        let native_window_1 = slice_of(&bytes);
-        region {
-          match write_once(factory: &uniq deref(entry_factory), output: &uniq deref(out), source: &native_window_1, start: 0_u64, end: 3_u64) {
-            Ok(value: written) => {
-              let narrowed = cvt::<u64, u8>(written);
-              match narrowed {
-                Ok(value: code) => {
-                  return exit_status(code: code);
-                }
-                Err(error: overflowed) => {
-                  return exit_status(code: 200_u8);
-                }
-              }
-            }
-            Err(error: problem) => {
-              return exit_status(code: 211_u8);
-            }
-          }
+  let payload = &bytes[0_u64..3_u64];
+  match write_once(factory: entry_factory, output: out, source: payload, start: 0_u64, end: 3_u64) {
+    Ok(value: written) => {
+      let narrowed = cvt::<u64, u8>(written);
+      match narrowed {
+        Ok(value: code) => {
+          return exit_status(code: code);
+        }
+        Err(error: overflowed) => {
+          return exit_status(code: 200_u8);
         }
       }
+    }
+    Err(error: problem) => {
+      return exit_status(code: 211_u8);
     }
   }
 }
@@ -790,11 +815,9 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    let outcome = exercise(cwd: &cwd, out: &uniq out, entry_factory: &uniq entry_factory);
-    close_directory(factory: &uniq entry_factory, directory: move cwd);
-    return move outcome;
-  }
+  let outcome = exercise(cwd: &cwd, out: &out, entry_factory: &entry_factory);
+  close_directory(factory: &entry_factory, directory: move cwd);
+  return move outcome;
 }
 "#;
 
@@ -803,23 +826,19 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 /// inspection and provisional cleanup are therefore on the same emitted path
 /// under test.
 fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
-    let arms = class_arms(12, named, default);
+    let arms = class_arms(8, named, default);
     format!(
-        r#"fn exercise(factory: &uniq HandleFactory, cwd: &DirectoryRead) -> status: own ExitStatus reads(factory, cwd), writes(factory) {{
-  let name = buffer_new(1_u64, 65_u8);
-  region {{
-    let window = slice_of(&name);
-    region {{
-      match open_file(factory: &uniq deref(factory), root: cwd, name: &window, start: 0_u64, end: 1_u64) {{
-        Ok(value: file) => {{
-          close_read(factory: &uniq deref(factory), file: move file);
-          return exit_status(code: 24_u8);
-        }}
-        Err(error: problem) => {{
-          match move problem {{
-{arms}          }}
-        }}
-      }}
+        r#"fn exercise(factory: &HandleFactory, cwd: &DirectoryRead) -> status: own ExitStatus reads(cwd), writes(factory) {{
+  let name = array_filled::<u8, 1>(value: 65_u8);
+  let component = &name[0_u64..1_u64];
+  match open_file(factory: factory, root: cwd, name: component, start: 0_u64, end: 1_u64) {{
+    Ok(value: file) => {{
+      close_read(factory: factory, file: move file);
+      return exit_status(code: 24_u8);
+    }}
+    Err(error: problem) => {{
+      match move problem {{
+{arms}      }}
     }}
   }}
 }}
@@ -827,12 +846,8 @@ fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {{
   let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
   let outcome = exit_status(code: 0_u8);
-  region {{
-    let previous = replace outcome = exercise(factory: &uniq factory, cwd: &cwd);
-  }}
-  region {{
-    close_directory(factory: &uniq factory, directory: move cwd);
-  }}
+  set outcome = exercise(factory: &factory, cwd: &cwd);
+  close_directory(factory: &factory, directory: move cwd);
   return move outcome;
 }}
 "#
@@ -1270,29 +1285,29 @@ fn an_affine_output_drop_does_not_call_a_close() {
 fn the_heap_resource_record_writer_stays_native_on_the_deterministic_target() {
     // The resource-exhaustion recorder stays independent of the ordinary
     // library's substituted write implementation. Both paths remain callable.
+    // The heap is the one [STOR-8] heap and a `Box` is what puts this module
+    // on it; allocation is total in the source, so the record writer below is
+    // the trusted base's own exhaustion path and not a source-visible arm.
     let source = br#"fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  let bytes = buffer_new(1_u64, 65_u8);
-  region {
-    region {
-      let ordinary_source_4 = slice_of(&bytes);
-      region {
-        match write_once(factory: &uniq entry_factory, output: &uniq out, source: &ordinary_source_4, start: 0_u64, end: 1_u64) {
-          Ok(value: next) => {
-          }
-          Err(error: problem) => {
-          }
-        }
-      }
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let bytes = box_array_filled::<u8>(count: 1_u64, value: 65_u8);
+  let ordinary_source = &bytes.inner[0_u64..1_u64];
+  match write_once(factory: &entry_factory, output: &out, source: ordinary_source, start: 0_u64, end: 1_u64) {
+    Ok(value: next) => {
+    }
+    Err(error: problem) => {
     }
   }
   return exit_status(code: 0_u8);
 }
 "#;
     let module = emit_for_deterministic_target(source);
+    // KEPT AS WRITTEN for the lowering port: the five emitted shapes below are
+    // the `write_once` declaration head, the native `@write` declaration, the
+    // resource-record writer's own loop line, and the two calls. A `&[u8]`
+    // parameter's emitted form may change, so re-derive these against the
+    // ported lowering rather than against v0.59's view descriptor.
     assert!(module.contains("declare void @wf_write_once(ptr %wf.result,"));
     assert!(module.contains("declare i64 @write(i32, ptr, i64)"));
     assert!(module.contains("%written = call i64 @write(i32 2, ptr %cursor"));
@@ -1318,7 +1333,7 @@ pub(super) fn assert_zero_write_outcome() {
     // Err(WriteZero) with zero code/origin. This is actual source behavior,
     // tested by substituting the native facility rather than inspecting IR.
     let arms = class_arms(
-        12,
+        8,
         &[(
             "WriteZero",
             "if c == 0_u32 {\n  if o == 0_u8 {\n    return exit_status(code: 120_u8);\n  } else {\n    return exit_status(code: 121_u8);\n  }\n} else {\n  return exit_status(code: 122_u8);\n}",
@@ -1328,30 +1343,24 @@ pub(super) fn assert_zero_write_outcome() {
     let source = format!(
         r#"fn main(inputs: own Inputs) -> status: own ExitStatus pure {{
   let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
-  region {{
-    close_directory(factory: &uniq factory, directory: move cwd);
-  }}
-  let bytes = buffer_new(2_u64, 119_u8);
-  region {{
-    let window = slice_of(&bytes);
-    region {{
-      match write_once(factory: &uniq factory, output: &uniq out, source: &window, start: 0_u64, end: 2_u64) {{
-        Ok(value: written) => {{
-          let narrowed = cvt::<u64, u8>(written);
-          match narrowed {{
-            Ok(value: code) => {{
-              return exit_status(code: code);
-            }}
-            Err(error: overflowed) => {{
-              return exit_status(code: 200_u8);
-            }}
-          }}
+  close_directory(factory: &factory, directory: move cwd);
+  let bytes = array_filled::<u8, 2>(value: 119_u8);
+  let window = &bytes[0_u64..2_u64];
+  match write_once(factory: &factory, output: &out, source: window, start: 0_u64, end: 2_u64) {{
+    Ok(value: written) => {{
+      let narrowed = cvt::<u64, u8>(written);
+      match narrowed {{
+        Ok(value: code) => {{
+          return exit_status(code: code);
         }}
-        Err(error: problem) => {{
-          match move problem {{
-{arms}          }}
+        Err(error: overflowed) => {{
+          return exit_status(code: 200_u8);
         }}
       }}
+    }}
+    Err(error: problem) => {{
+      match move problem {{
+{arms}      }}
     }}
   }}
 }}

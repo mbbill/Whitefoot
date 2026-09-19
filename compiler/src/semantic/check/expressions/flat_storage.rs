@@ -252,6 +252,79 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// [OP-15] one measure member read over a place rooted in a named
+    /// constant [CONST-2].
+    ///
+    /// [CONST-1] says a const table is read "via a subscript, a measure
+    /// member [OP-15], a field suffix, or a `&` reference", and [MSR-2] gives
+    /// a measure read only the descriptor storage. Immutable static storage
+    /// answers no liveness or ownership question, so the read is the `own
+    /// u64` value itself and exhibits only what the place's own offsets do.
+    fn check_constant_storage_measure(
+        &self,
+        node: NodeId,
+        constant: super::super::super::model::CheckedConstantId,
+        suffixes: &[NodeId],
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        function: &FunctionSignature,
+        options: PlaceUseOptions,
+    ) -> Result<TypedExpression, CheckStop> {
+        let Some(measure) = self.trailing_measure_member(suffixes)? else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        let place = self.constant_storage_place(
+            constant,
+            &suffixes[..suffixes.len() - 1],
+            bindings,
+            function,
+            options.loop_depth,
+            false,
+        )?;
+        let Some(measured) = measured_kind_of(place.root.ty) else {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "a measured place [MSR-1]",
+                    self.checked_type_name(place.root.ty)?,
+                ),
+            );
+        };
+        if matches!(
+            measure.cell(measured),
+            super::super::super::model::MeasureCell::Absent
+        ) {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "a measured place whose measure table has this row",
+                    self.checked_type_name(place.root.ty)?,
+                ),
+            );
+        }
+        if options.explicit_move && self.judges_class_spelling() {
+            return self.issue_node(
+                SemanticRule::Own1,
+                node,
+                SemanticIssueKind::MoveOfCopy {
+                    mechanical_fix: "read the measure without `move`",
+                },
+            );
+        }
+        Ok(TypedExpression {
+            expression: CheckedExpression::ContainerMeasure {
+                measure,
+                root: place.root,
+            },
+            mode: CheckedMode::Own,
+            reference: None,
+            reference_value: false,
+            effects: place.offsets.effects,
+            accesses: place.offsets.accesses,
+        })
+    }
+
     pub(super) fn check_constant_storage_read(
         &self,
         node: NodeId,
@@ -261,6 +334,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         function: &FunctionSignature,
         options: PlaceUseOptions,
     ) -> Result<TypedExpression, CheckStop> {
+        // [OP-15, CONST-1] a const table is read through a measure member
+        // exactly as any other measured place is, and [MSR-1] gives the
+        // measure no storage below itself, so it ends the written path.
+        if self.trailing_measure_member(suffixes)?.is_some() {
+            return self
+                .check_constant_storage_measure(node, constant, suffixes, bindings, function, options);
+        }
         let place = self.constant_storage_place(
             constant,
             suffixes,
@@ -351,10 +431,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // (32, 16) pair each; a `FixedVector` is its element pair
             // repeated `n` times followed by its two (8, 8) descriptor words,
             // so its aggregate alignment is `max(align_ceiling(T), 8)`.
-            CheckedType::Vector { .. } | CheckedType::Heap { .. } | CheckedType::Extent { .. } => {
-                finish(CheckedLayoutMagnitude::Finite(32), 16)
-            }
-            CheckedType::FixedVector { element, length } => {
+            CheckedType::Window {
+                element,
+                capacity: Some(length),
+                ..
+            } => {
                 let length = length.value()?;
                 let element =
                     self.layout_ceiling_inner(self.element_type(element).ok()?, visiting)?;
@@ -366,7 +447,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     align,
                 )
             }
-            CheckedType::Slice { .. } => None,
+            // A runtime-capacity shape's block is one pointer wide in its
+            // owner; its header and elements are the heap object's own size
+            // and are not part of the owner's inline layout [TYPE-9].
+            CheckedType::Window { capacity: None, .. } => None,
             CheckedType::Nominal(id) => {
                 if !visiting.insert(id) {
                     return None;
@@ -1042,6 +1126,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut carried = CarriedOperands::default();
         for (position, &suffix) in suffixes.iter().enumerate() {
             let Some(offset_node) = self.subscript_offset(suffix)? else {
+                // [TYPE-9] a `Box`'s content is its one member `inner`, and
+                // the storage below that member is the box's referent, so
+                // this step is the dereference the resolved path already
+                // records rather than a field selection.
+                if let CheckedType::Nominal(nominal) = ty
+                    && let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind
+                {
+                    let name = self
+                        .deferred_use_at(suffix, crate::DeferredUseRole::ProjectedField)?
+                        .spelling()
+                        .to_owned();
+                    if name != "inner" {
+                        return self.issue_node(
+                            SemanticRule::Type9,
+                            suffix,
+                            SemanticIssueKind::type_mismatch(
+                                "the Box content field `inner`",
+                                format!("the field name `{name}`, which a Box does not declare"),
+                            ),
+                        );
+                    }
+                    path.push(CheckedPlaceStep::BoxReferent(nominal));
+                    ty = referent;
+                    continue;
+                }
                 let (fields, selected) =
                     self.resolve_struct_path(&suffixes[position..=position], ty)?;
                 path.extend(fields.into_iter().map(CheckedPlaceStep::Field));
@@ -1051,10 +1160,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // [OP-4] each suffix selects the complete element type of its
             // already-typed base. Array storage can be nested in a run slot.
             let element_type = match ty {
-                CheckedType::Array { element, .. }
-                | CheckedType::FixedVector { element, .. }
-                | CheckedType::Vector { element, .. } => self.element_type(element)?,
-                CheckedType::Buffer { .. } | CheckedType::Slice { .. } => {
+                CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+                    self.element_type(element)?
+                }
+                CheckedType::Buffer { .. } => {
                     return self.unsupported(UnsupportedSemanticFeature::CompositeValues, suffix);
                 }
                 _ => {
@@ -1231,10 +1340,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // [OP-4] the indexable bases, reached through `deref` exactly as
             // an inline one is: a run is one measured place wherever it is
             // reached from [MSR-1].
-            CheckedType::Array { .. }
-            | CheckedType::FixedVector { .. }
-            | CheckedType::Vector { .. }
-            | CheckedType::Extent { .. } => {
+            CheckedType::Array { .. } | CheckedType::Window { .. } => {
                 Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
                     root: CheckedContainerRoot {
                         root: PlaceRoot::Binding(binding),
@@ -1477,10 +1583,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // row and [OP-4] makes the two runs indexable bases; a `Heap<'s>`
             // has neither, so it falls through to the operand rejection
             // below.
-            CheckedType::Array { .. }
-            | CheckedType::FixedVector { .. }
-            | CheckedType::Vector { .. }
-            | CheckedType::Extent { .. } => {
+            CheckedType::Array { .. } | CheckedType::Window { .. } => {
                 let (Some(binding), Some(declaration)) = (binding, declaration) else {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 };
@@ -1528,16 +1631,7 @@ fn field_prefix(path: &[CheckedPlaceStep]) -> Option<Vec<u32>> {
 pub(in crate::semantic::check) const fn measured_kind_of(
     ty: CheckedType,
 ) -> Option<super::super::super::model::MeasuredKind> {
-    use super::super::super::model::MeasuredKind;
-    match ty {
-        CheckedType::Array { .. } => Some(MeasuredKind::Array),
-        CheckedType::Buffer { .. } => Some(MeasuredKind::Buffer),
-        CheckedType::Slice { .. } => Some(MeasuredKind::Slice),
-        CheckedType::FixedVector { .. } => Some(MeasuredKind::FixedVector),
-        CheckedType::Vector { .. } => Some(MeasuredKind::Vector),
-        CheckedType::Extent { .. } => Some(MeasuredKind::Extent),
-        _ => None,
-    }
+    ty.measured()
 }
 
 #[cfg(test)]

@@ -1,43 +1,55 @@
-//! Emission of the [BLK-1] runs: the window, its subscript, and [BLK-3]'s
-//! four boundary operations.
+//! Emission of the [TYPE-9] windows: the window itself, its subscript, and
+//! the [OP-10] boundary operations over it.
 //!
-//! A run carries no per-slot tag and no runtime discriminant: `len` and `head`
-//! are the complete typestate. Boundary operations update these words and the
-//! selected element through the exclusive referent. A placement returns unit;
-//! a take returns the removed element without transferring the run owner.
+//! A window carries no per-slot tag and no runtime discriminant: `len` and,
+//! on a `Ring`, `head` are the complete typestate [WIN-1]. A boundary
+//! operation updates those words and the selected slot through the reference
+//! the operand names.
 //!
-//! The window is `len` slots beginning at `head` modulo `cap`, so a subscript
-//! at logical offset `i` reads slot `(head + i) mod cap` [BLK-1]. Because
+//! The layout is header-first, so the inline and the boxed placement of one
+//! shape share one address computation
+//! (compiler/storage-representation): a `Slots` is `{ len, slots }` and a
+//! `Ring` is `{ len, head, slots }`, each with a `cap` word after `len` in
+//! the runtime-capacity placement and none at all where the type constant
+//! already fixes it.
+//!
+//! The window is `len` slots beginning at `head` modulo `cap` [WIN-1], so a
+//! subscript at logical offset `i` reads slot `(head + i) mod cap`. Because
 //! `head < cap` and `i < len <= cap`, the sum is below `2 * cap` and the
 //! modulus is one conditional subtract; no division is emitted.
 
-use crate::{IrBoundary, IrElement, IrMeasure};
+use crate::{IrBoundary, IrElement, IrMeasure, IrWindowShape};
 
 use super::*;
 
-/// The two shapes a run takes at run time [BLK-1, OP-9].
+/// One emitted window's field layout [TYPE-9, WIN-1].
 #[derive(Clone, Copy)]
-enum RunShape {
-    /// `FixedVector<T, n>`: `n` inline slots, then `len` and `head`. The
-    /// capacity is the type constant and is stored nowhere.
-    Inline { element: IrElement, length: u64 },
-    /// `Vector<'s, T>`: the descriptor `{ pointer, cap, len, head }`.
-    Descriptor { element: IrElement },
+struct RunShape {
+    shape: IrWindowShape,
+    element: IrElement,
+    /// `Some` is the constant-capacity placement, whose capacity is the type
+    /// constant and is stored nowhere.
+    capacity: Option<u64>,
 }
 
 impl RunShape {
     const fn of(ty: IrType) -> Option<Self> {
         match ty {
-            IrType::FixedVector { element, length } => Some(Self::Inline { element, length }),
-            IrType::Vector { element, .. } => Some(Self::Descriptor { element }),
+            IrType::Window {
+                shape,
+                element,
+                capacity,
+            } => Some(Self {
+                shape,
+                element,
+                capacity,
+            }),
             _ => None,
         }
     }
 
     const fn element(self) -> IrElement {
-        match self {
-            Self::Inline { element, .. } | Self::Descriptor { element } => element,
-        }
+        self.element
     }
 
     fn element_type(self, program: &IrProgram<'_, '_, '_>) -> Result<IrType, BackendFailure> {
@@ -46,19 +58,36 @@ impl RunShape {
             .ok_or(BackendFailure::InvalidIr)
     }
 
-    /// The aggregate field index of `len`.
+    /// The aggregate field index of `len`, which every row of [MSR-1]'s
+    /// table has and which the header-first layout puts first.
     const fn length_field(self) -> u32 {
-        match self {
-            Self::Inline { .. } => 1,
-            Self::Descriptor { .. } => 2,
+        0
+    }
+
+    /// The aggregate field index of `cap`, which only a runtime-capacity
+    /// block stores.
+    const fn capacity_field(self) -> Option<u32> {
+        match self.capacity {
+            Some(_) => None,
+            None => Some(1),
         }
     }
 
-    /// The aggregate field index of `head`.
-    const fn head_field(self) -> u32 {
-        match self {
-            Self::Inline { .. } => 2,
-            Self::Descriptor { .. } => 3,
+    /// The aggregate field index of `head`, which only a `Ring` has [WIN-1].
+    const fn head_field(self) -> Option<u32> {
+        match (self.shape, self.capacity) {
+            (IrWindowShape::Slots, _) => None,
+            (IrWindowShape::Ring, Some(_)) => Some(1),
+            (IrWindowShape::Ring, None) => Some(2),
+        }
+    }
+
+    /// The aggregate field index of the slots.
+    const fn slots_field(self) -> u32 {
+        match (self.shape, self.capacity) {
+            (IrWindowShape::Slots, Some(_)) => 1,
+            (IrWindowShape::Slots, None) | (IrWindowShape::Ring, Some(_)) => 2,
+            (IrWindowShape::Ring, None) => 3,
         }
     }
 }
@@ -123,7 +152,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         {
             return Err(BackendFailure::InvalidIr);
         }
-        let head = self.run_word(run_type, run, shape.head_field())?;
+        let head = self.window_origin(shape, run_type, run)?;
         let physical = self.wrap_offset(shape, run_type, run, &head, &self.value_name(offset))?;
         self.element_pointer(run, shape, run_type, run, &physical)
             .map(|pointer| format!("%{pointer}"))
@@ -150,312 +179,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// [BLK-2] `arena_frame`: one bump extent reserved in this activation's
-    /// own frame.
-    ///
-    /// The provider value is the reservation's base address and its cursor,
-    /// and the reservation is where the extent's initial state is
-    /// established: the cursor is zero at every activation of the region
-    /// block naming its store region, which is the state [BLK-2] gives a
-    /// freshly reserved extent.
-    pub(super) fn emit_arena_frame(
-        &mut self,
-        result: IrValueId,
-        ty: IrType,
-        bytes: u64,
-        align: u64,
-    ) -> Result<(), BackendFailure> {
-        if ty != IrType::Provider {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let _ = (bytes, align);
-        let provider = llvm_type(self.program, ty)?;
-        let storage = self.entry_slot(FunctionSlot::ExtentStorage(result))?;
-        let based = self.next_temporary()?;
-        writeln!(
-            self.output,
-            "  %{based} = insertvalue {provider} zeroinitializer, ptr {storage}, 0\n  {} = insertvalue {provider} %{based}, i64 0, 1",
-            self.value_name(result),
-        )
-        .map_err(|_| BackendFailure::TextEmission)
-    }
-
-    /// [BLK-2] one take from a store: the run the store hands out, and the
-    /// store's own advanced state written back through the `&uniq` borrow.
-    ///
-    /// A bump take is `advance<T>(count)` bytes at the extent's cursor
-    /// [BLK-0]; the take succeeds exactly when `room_of(store) >=
-    /// advance<T>(count)`, which is the relation the refusing row publishes on
-    /// its `None` arm. There is no branch: the refusal is a value, so both
-    /// arms are computed and the outcome selects between them, and a refused
-    /// take leaves the cursor where it was.
-    pub(super) fn emit_store_take(
-        &mut self,
-        result: IrValueId,
-        ty: IrType,
-        take: crate::IrStoreTake,
-    ) -> Result<(), BackendFailure> {
-        // The element type, its layout ceilings and the retained count bound
-        // are the target stage's own [STOR-6]; emission reads the stride they
-        // qualified and nothing else of them.
-        let crate::IrStoreTake {
-            store,
-            count,
-            stride,
-            extent,
-            refusal,
-            ..
-        } = take;
-        if self.value_type(store) != Some(IrType::Address(crate::IrAddressed::Provider))
-            || self.value_type(count)
-                != Some(IrType::Integer {
-                    width: 64,
-                    signed: false,
-                })
-        {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let run_type = match (ty, refusal) {
-            (IrType::Vector { .. }, None) => ty,
-            (IrType::Nominal(nominal), Some(refusal)) if nominal == refusal.nominal => {
-                self.refusal_payload_type(refusal)?
-            }
-            _ => return Err(BackendFailure::InvalidIr),
-        };
-        let provider = llvm_type(self.program, IrType::Provider)?;
-        let count = self.value_name(count);
-        let address = self.value_name(store);
-        let (pointer, capacity, taken) = match extent {
-            Some(extent) => self.emit_bump_take(&address, &provider, &count, stride, extent)?,
-            None => self.emit_general_take(&address, &count, stride)?,
-        };
-        // The run itself: the storage the store handed out, `count` slots of
-        // capacity, and the empty window [BLK-2] publishes.
-        let run_llvm = llvm_type(self.program, run_type)?;
-        let based = self.next_temporary()?;
-        let run = self.next_temporary()?;
-        writeln!(
-            self.output,
-            "  %{based} = insertvalue {run_llvm} zeroinitializer, ptr {pointer}, 0\n  %{run} = insertvalue {run_llvm} %{based}, i64 {capacity}, 1",
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        let Some(refusal) = refusal else {
-            writeln!(
-                self.output,
-                "  {} = insertvalue {run_llvm} %{run}, i64 0, 2",
-                self.value_name(result),
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-            return Ok(());
-        };
-        let complete = self.next_temporary()?;
-        writeln!(
-            self.output,
-            "  %{complete} = insertvalue {run_llvm} %{run}, i64 0, 2",
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        let outcome = llvm_type(self.program, ty)?;
-        let variants = self.refusal_variants(refusal)?;
-        let payload = variant_field_base(&variants, refusal.made)?;
-        let tag = self.next_temporary()?;
-        let tagged = self.next_temporary()?;
-        writeln!(
-            self.output,
-            "  %{tag} = select i1 {taken}, i32 {}, i32 {}\n  %{tagged} = insertvalue {outcome} zeroinitializer, i32 %{tag}, 0\n  {} = insertvalue {outcome} %{tagged}, {run_llvm} %{complete}, {payload}",
-            refusal.made,
-            refusal.refused,
-            self.value_name(result),
-        )
-        .map_err(|_| BackendFailure::TextEmission)
-    }
-
-    /// S39 one cell formation: the store's take of one cell's bytes, the
-    /// move of the value into it, and the outcome that carries either.
-    ///
-    /// The store's answer decides the arm, so this is the one kernel row
-    /// whose emission branches: the value is written into the cell only on
-    /// the arm where the store gave one, and it is handed back in the
-    /// refusal's own payload on the other. Both payload fields of the
-    /// outcome are written and the tag decides which the release walk and
-    /// every reader select [PRE-1].
-    pub(super) fn emit_store_box(
-        &mut self,
-        result: IrValueId,
-        ty: IrType,
-        cell: crate::IrStoreBox,
-    ) -> Result<(), BackendFailure> {
-        let crate::IrStoreBox {
-            store,
-            value,
-            bytes,
-            extent,
-            outcome,
-            ..
-        } = cell;
-        if self.value_type(store) != Some(IrType::Address(crate::IrAddressed::Provider)) {
-            return Err(BackendFailure::InvalidIr);
-        }
-        if ty != IrType::Nominal(outcome.nominal) {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let referent_type = llvm_type(
-            self.program,
-            self.value_type(value).ok_or(BackendFailure::InvalidIr)?,
-        )?;
-        let provider = llvm_type(self.program, IrType::Provider)?;
-        let address = self.value_name(store);
-        // A zero-byte cell still needs one distinct address to store into.
-        let request = bytes.max(1);
-        let (pointer, taken) = match extent {
-            Some(extent) => {
-                let count = "1".to_owned();
-                let (pointer, _, taken) =
-                    self.emit_bump_take(&address, &provider, &count, request, extent)?;
-                (pointer, taken)
-            }
-            None => {
-                let raw = self.next_temporary()?;
-                let supplied = self.next_temporary()?;
-                writeln!(
-                    self.output,
-                    "  %{raw} = call ptr @malloc(i64 {request})\n  %{supplied} = icmp ne ptr %{raw}, null",
-                )
-                .map_err(|_| BackendFailure::TextEmission)?;
-                (format!("%{raw}"), format!("%{supplied}"))
-            }
-        };
-        let made = format!("box.made.v{}", result.ordinal());
-        let refused = format!("box.refused.v{}", result.ordinal());
-        let joined = super::store_box_join_label(result);
-        writeln!(
-            self.output,
-            "  br i1 {taken}, label %{made}, label %{refused}\n\
-             {made}:\n  store {referent_type} {}, ptr {pointer}\n  br label %{joined}\n\
-             {refused}:\n  br label %{joined}\n\
-             {joined}:",
-            self.value_name(value),
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        let outcome_type = llvm_type(self.program, ty)?;
-        let variants = self.refusal_variants(outcome)?;
-        let ok_field = variant_field_base(&variants, outcome.made)?;
-        let err_field = variant_field_base(&variants, outcome.refused)?;
-        let tag = self.next_temporary()?;
-        let tagged = self.next_temporary()?;
-        let carried = self.next_temporary()?;
-        writeln!(
-            self.output,
-            "  %{tag} = phi i32 [ {}, %{made} ], [ {}, %{refused} ]\n  \
-             %{tagged} = insertvalue {outcome_type} zeroinitializer, i32 %{tag}, 0\n  \
-             %{carried} = insertvalue {outcome_type} %{tagged}, ptr {pointer}, {ok_field}\n  \
-             {} = insertvalue {outcome_type} %{carried}, {referent_type} {}, {err_field}",
-            outcome.made,
-            outcome.refused,
-            self.value_name(result),
-            self.value_name(value),
-        )
-        .map_err(|_| BackendFailure::TextEmission)
-    }
-
-    /// The bump take: the cursor advance, the refusal condition, and the
-    /// store's own new state.
-    ///
-    /// `advance<T>(count)` is `round_up(size_ceiling(T) * count, align)`
-    /// [BLK-0]. The product cannot overflow, `fits::<T>(count)` having been
-    /// discharged at the call [OP-9]; the rounding is guarded anyway, so an
-    /// unrepresentable advance refuses instead of wrapping into an accepted
-    /// take.
-    fn emit_bump_take(
-        &mut self,
-        address: &str,
-        provider: &str,
-        count: &str,
-        stride: u64,
-        extent: crate::IrExtentConstants,
-    ) -> Result<(String, String, String), BackendFailure> {
-        let align = extent.align.max(1);
-        let mask = (!(align - 1)) as i64;
-        let state = self.next_temporary()?;
-        let base = self.next_temporary()?;
-        let cursor = self.next_temporary()?;
-        let raw = self.next_temporary()?;
-        let padded = self.next_temporary()?;
-        let advance = self.next_temporary()?;
-        let representable = self.next_temporary()?;
-        let room = self.next_temporary()?;
-        let fits = self.next_temporary()?;
-        let taken = self.next_temporary()?;
-        let pointer = self.next_temporary()?;
-        let next = self.next_temporary()?;
-        let moved = self.next_temporary()?;
-        let advanced = self.next_temporary()?;
-        writeln!(
-            self.output,
-            "  %{state} = load {provider}, ptr {address}\n  \
-             %{base} = extractvalue {provider} %{state}, 0\n  \
-             %{cursor} = extractvalue {provider} %{state}, 1\n  \
-             %{raw} = mul nuw i64 {count}, {stride}\n  \
-             %{padded} = add i64 %{raw}, {}\n  \
-             %{advance} = and i64 %{padded}, {mask}\n  \
-             %{representable} = icmp uge i64 %{padded}, %{raw}\n  \
-             %{room} = sub i64 {}, %{cursor}\n  \
-             %{fits} = icmp uge i64 %{room}, %{advance}\n  \
-             %{taken} = and i1 %{representable}, %{fits}\n  \
-             %{pointer} = getelementptr inbounds i8, ptr %{base}, i64 %{cursor}\n  \
-             %{next} = add i64 %{cursor}, %{advance}\n  \
-             %{moved} = select i1 %{taken}, i64 %{next}, i64 %{cursor}\n  \
-             %{advanced} = insertvalue {provider} %{state}, i64 %{moved}, 1\n  \
-             store {provider} %{advanced}, ptr {address}",
-            align - 1,
-            extent.bytes,
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        let capacity = self.next_temporary()?;
-        let handed = self.next_temporary()?;
-        writeln!(
-            self.output,
-            "  %{capacity} = select i1 %{taken}, i64 {count}, i64 0\n  %{handed} = select i1 %{taken}, ptr %{pointer}, ptr null",
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        Ok((
-            format!("%{handed}"),
-            format!("%{capacity}"),
-            format!("%{taken}"),
-        ))
-    }
-
-    /// The general-store take: the host is asked for the run's bytes and its
-    /// refusal is the row's `None` arm [BLK-2, L6].
-    fn emit_general_take(
-        &mut self,
-        _address: &str,
-        count: &str,
-        stride: u64,
-    ) -> Result<(String, String, String), BackendFailure> {
-        let bytes = self.next_temporary()?;
-        let pointer = self.next_temporary()?;
-        let empty = self.next_temporary()?;
-        let supplied = self.next_temporary()?;
-        let taken = self.next_temporary()?;
-        let capacity = self.next_temporary()?;
-        let handed = self.next_temporary()?;
-        writeln!(
-            self.output,
-            "  %{bytes} = mul nuw i64 {count}, {stride}\n  \
-             %{pointer} = call ptr @malloc(i64 %{bytes})\n  \
-             %{empty} = icmp eq i64 %{bytes}, 0\n  \
-             %{supplied} = icmp ne ptr %{pointer}, null\n  \
-             %{taken} = or i1 %{empty}, %{supplied}\n  \
-             %{capacity} = select i1 %{taken}, i64 {count}, i64 0\n  \
-             %{handed} = select i1 %{taken}, ptr %{pointer}, ptr null",
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        Ok((
-            format!("%{handed}"),
-            format!("%{capacity}"),
-            format!("%{taken}"),
-        ))
-    }
 
     fn refusal_variants(
         &self,
@@ -476,10 +199,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let [field] = made.fields() else {
             return Err(BackendFailure::InvalidIr);
         };
-        match field.ty() {
-            ty @ IrType::Vector { .. } => Ok(ty),
-            _ => Err(BackendFailure::InvalidIr),
-        }
+        Ok(field.ty())
     }
 
     /// [MSR-1] one measure of a run or a bump extent, read at run time.
@@ -499,34 +219,23 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         let container_type = self.run_value_type(container)?;
-        // A bump extent has one measure word, its cursor [MSR-1]: its byte
-        // extent is the type constant and its `room_of` is the complement the
-        // lowering already formed, so neither reaches emission, and it has no
-        // window at all.
-        if container_type == IrType::Provider {
-            if measure != IrMeasure::Length {
-                return Err(BackendFailure::InvalidIr);
-            }
-            let cursor = self.run_word(container_type, container, 1)?;
-            return writeln!(
-                self.output,
-                "  {} = add i64 {cursor}, 0",
-                self.value_name(result)
-            )
-            .map_err(|_| BackendFailure::TextEmission);
-        }
         let Some(shape) = RunShape::of(container_type) else {
             return Err(BackendFailure::InvalidIr);
         };
         let value = match measure {
             IrMeasure::Length => self.run_word(container_type, container, shape.length_field())?,
-            IrMeasure::Head => self.run_word(container_type, container, shape.head_field())?,
-            // A `FixedVector`'s capacity is the type constant and never
-            // reaches emission; a `Vector`'s is the descriptor word.
-            IrMeasure::Capacity => match shape {
-                RunShape::Inline { .. } => return Err(BackendFailure::InvalidIr),
-                RunShape::Descriptor { .. } => self.run_word(container_type, container, 1)?,
-            },
+            // `head` is a `Ring`'s alone [WIN-1]; a `Slots` window begins at
+            // slot zero and the measure table gives it no cell at all.
+            IrMeasure::Head => {
+                let field = shape.head_field().ok_or(BackendFailure::InvalidIr)?;
+                self.run_word(container_type, container, field)?
+            }
+            // A constant capacity is the type constant and never reaches
+            // emission; a runtime one is the block's own word.
+            IrMeasure::Capacity => {
+                let field = shape.capacity_field().ok_or(BackendFailure::InvalidIr)?;
+                self.run_word(container_type, container, field)?
+            }
             // `room` is the complement [MSR-2] relates to the other two.
             IrMeasure::Room => {
                 let length = self.run_word(container_type, container, shape.length_field())?;
@@ -565,7 +274,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         ty: IrType,
         run: IrValueId,
     ) -> Result<(), BackendFailure> {
-        let IrType::Slice { element } = ty else {
+        let IrType::Range { element } = ty else {
             return Err(BackendFailure::InvalidIr);
         };
         let run_type = self.run_value_type(run)?;
@@ -588,7 +297,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if shape.element_type(self.program)? != element.ty() {
             return Err(BackendFailure::InvalidIr);
         }
-        let head = self.run_word(run_type, run, shape.head_field())?;
+        let head = self.window_origin(shape, run_type, run)?;
         let length = self.run_word(run_type, run, shape.length_field())?;
         let pointer = self.element_pointer(result, shape, run_type, run, &head)?;
         let descriptor_type = llvm_type(self.program, ty)?;
@@ -626,7 +335,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         {
             return Err(BackendFailure::InvalidIr);
         }
-        let head = self.run_word(run_type, run, shape.head_field())?;
+        let head = self.window_origin(shape, run_type, run)?;
         let offset = self.value_name(offset);
         let physical = self.wrap_offset(shape, run_type, run, &head, &offset)?;
         let element_pointer = self.element_pointer(result, shape, run_type, run, &physical)?;
@@ -684,7 +393,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             _ => return Err(BackendFailure::InvalidIr),
         }
         let length = self.run_word(run_type, run, shape.length_field())?;
-        let head = self.run_word(run_type, run, shape.head_field())?;
+        let head = self.window_origin(shape, run_type, run)?;
         let updated = self.prepare_run_update(result, run, run_type)?;
         // A placement writes the element at the slot the boundary is about to
         // occupy; a removal has already read it out.
@@ -725,10 +434,19 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let destination = self.run_storage(run)?.ok_or(BackendFailure::InvalidIr)?;
         let length_address =
             self.aggregate_field_pointer(run_type, &destination, shape.length_field() as usize)?;
-        let head_address =
-            self.aggregate_field_pointer(run_type, &destination, shape.head_field() as usize)?;
-        writeln!(self.output, "  store i64 %{new_length}, ptr {length_address}\n  store i64 {new_head}, ptr {head_address}")
+        writeln!(self.output, "  store i64 %{new_length}, ptr {length_address}")
             .map_err(|_| BackendFailure::TextEmission)?;
+        // Only a `Ring` stores a window origin [WIN-1]; a `Slots` window
+        // begins at slot zero and no operation moves it, so a front
+        // operation over one is no row of [OP-10] this emitter can serve.
+        if let Some(field) = shape.head_field() {
+            let head_address =
+                self.aggregate_field_pointer(run_type, &destination, field as usize)?;
+            writeln!(self.output, "  store i64 {new_head}, ptr {head_address}")
+                .map_err(|_| BackendFailure::TextEmission)?;
+        } else if row.front() {
+            return Err(BackendFailure::InvalidIr);
+        }
         self.emit_constant(result, ty, IrConstant::Unit)
     }
 
@@ -745,7 +463,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         run: IrValueId,
         row: IrBoundary,
     ) -> Result<String, BackendFailure> {
-        let head = self.run_word(run_type, run, shape.head_field())?;
+        let head = self.window_origin(shape, run_type, run)?;
         match row {
             IrBoundary::TakeFront => Ok(head),
             // One slot before the window origin: `head + cap - 1` lies in
@@ -835,17 +553,34 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         run_type: IrType,
         run: IrValueId,
     ) -> Result<String, BackendFailure> {
-        match shape {
-            RunShape::Inline { length, .. } => Ok(length.to_string()),
-            RunShape::Descriptor { .. } => self.run_word(run_type, run, 1),
+        match (shape.capacity, shape.capacity_field()) {
+            (Some(capacity), _) => Ok(capacity.to_string()),
+            (None, Some(field)) => self.run_word(run_type, run, field),
+            (None, None) => Err(BackendFailure::InvalidIr),
         }
     }
 
-    /// The address of one physical slot of a run.
+    /// The window origin [WIN-1]: a `Ring`'s stored `head`, and the constant
+    /// zero for a `Slots`, whose window begins at slot zero and whose
+    /// measure table gives it no `head` cell at all.
+    fn window_origin(
+        &mut self,
+        shape: RunShape,
+        run_type: IrType,
+        run: IrValueId,
+    ) -> Result<String, BackendFailure> {
+        match shape.head_field() {
+            Some(field) => self.run_word(run_type, run, field),
+            None => Ok("0".to_owned()),
+        }
+    }
+
+    /// The address of one physical slot of a window.
     ///
-    /// A frame-resident run's slots are inline, so the aggregate is written to
-    /// this operation's own frame slot and indexed there; a store-resident
-    /// run's slots are behind its descriptor pointer.
+    /// The slots follow the header in the same block in both placements
+    /// (compiler/storage-representation), so one `getelementptr` serves the
+    /// inline window and the boxed one alike; only where the block address
+    /// comes from differs.
     fn element_pointer(
         &mut self,
         _result: IrValueId,
@@ -854,35 +589,16 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         run: IrValueId,
         physical: &str,
     ) -> Result<String, BackendFailure> {
-        let element_type = llvm_type(self.program, shape.element_type(self.program)?)?;
+        let _ = shape;
+        let llvm = llvm_type(self.program, run_type)?;
+        let slot = self.run_storage(run)?.ok_or(BackendFailure::InvalidIr)?;
         let pointer = self.next_temporary()?;
-        match shape {
-            RunShape::Inline { .. } => {
-                let llvm = llvm_type(self.program, run_type)?;
-                let slot = self.run_storage(run)?.ok_or(BackendFailure::InvalidIr)?;
-                writeln!(
-                    self.output,
-                    "  %{pointer} = getelementptr inbounds {llvm}, ptr {slot}, i64 0, i32 0, i64 {physical}",
-                )
-                .map_err(|_| BackendFailure::TextEmission)?;
-            }
-            RunShape::Descriptor { .. } => {
-                let llvm = llvm_type(self.program, run_type)?;
-                let base = self.next_temporary()?;
-                if let Some(address) = self.run_storage(run)? {
-                    let field = self.aggregate_field_pointer(run_type, &address, 0)?;
-                    writeln!(self.output, "  %{base} = load ptr, ptr {field}\n  %{pointer} = getelementptr inbounds {element_type}, ptr %{base}, i64 {physical}")
-                        .map_err(|_| BackendFailure::TextEmission)?;
-                    return Ok(pointer);
-                }
-                writeln!(
-                    self.output,
-                    "  %{base} = extractvalue {llvm} {}, 0\n  %{pointer} = getelementptr inbounds {element_type}, ptr %{base}, i64 {physical}",
-                    self.value_name(run),
-                )
-                .map_err(|_| BackendFailure::TextEmission)?;
-            }
-        }
+        writeln!(
+            self.output,
+            "  %{pointer} = getelementptr inbounds {llvm}, ptr {slot}, i64 0, i32 {}, i64 {physical}",
+            shape.slots_field(),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
         Ok(pointer)
     }
 }

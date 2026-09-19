@@ -15,7 +15,7 @@ use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedConst, CheckedEnumType, CheckedExpression,
     CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMatchArm, CheckedMeasure,
-    CheckedNominalKind, CheckedPlaceStep, CheckedSetTarget, CheckedSliceSource, CheckedType,
+    CheckedNominalKind, CheckedPlaceStep, CheckedSetTarget, CheckedType,
     CheckedValue, IntegerType, MeasuredKind,
 };
 use super::super::fragment_type;
@@ -736,7 +736,7 @@ impl Analyzer<'_, '_> {
                 let length_term = self.place_measure_term(
                     CheckedMeasure::Length,
                     place,
-                    MeasuredKind::Buffer,
+                    MeasuredKind::RuntimeArray,
                     None,
                 );
                 let event = self.binding_event(event, FlowEventKind::S6, node_path);
@@ -744,138 +744,6 @@ impl Analyzer<'_, '_> {
                     &Relation::Equal {
                         left: length_term,
                         right: allocated,
-                        difference: 0,
-                    },
-                    &mut self.derivations,
-                    event,
-                );
-                true
-            }
-            CheckedExpression::SliceOf { range: Some(_), .. } => {
-                // The relative extent end - start has three terms and is
-                // installed as an exact affine value image by the parent
-                // walk, after both formation obligations have discharged.
-                true
-            }
-            CheckedExpression::SliceOf { source, .. } => {
-                let ValueImage::Binding(binding) = destination else {
-                    return true;
-                };
-                // [BLK-0] the row's own published relation `len_of(result)
-                // == len_of(vector)`, established here over the viewed
-                // place. The row's other three relations are the constant
-                // cells [MSR-1] gives every view — `cap_of` equals `len_of`,
-                // and `room_of` and `head_of` are zero — which the term layer
-                // already answers from the measure table, so this is the one
-                // clause of the record that needs a source.
-                if let CheckedSliceSource::Run(root) = source {
-                    let Some(measured) = super::measured_kind(root.ty) else {
-                        return true;
-                    };
-                    let source_length = self.place_measure_term(
-                        CheckedMeasure::Length,
-                        self.container_root_path(root),
-                        measured,
-                        super::type_constant(root.ty),
-                    );
-                    let slice_place = self.bound_place(binding);
-                    let slice_length = self.place_measure_term(
-                        CheckedMeasure::Length,
-                        slice_place,
-                        MeasuredKind::Slice,
-                        None,
-                    );
-                    let event = self.binding_event(event, FlowEventKind::S6, node_path);
-                    state.establish(
-                        &Relation::Equal {
-                            left: slice_length,
-                            right: source_length,
-                            difference: 0,
-                        },
-                        &mut self.derivations,
-                        event,
-                    );
-                    return true;
-                }
-                // [VIEW-2] the child carries the parent's range, so the one
-                // relation the formation publishes is the parent view's own
-                // length read through its holder.
-                if let CheckedSliceSource::ViewHolder {
-                    binding: parent, ..
-                } = source
-                {
-                    let source_length = self.place_measure_term(
-                        CheckedMeasure::Length,
-                        ResolvedPlace::spelled(PlaceRoot::Binding(*parent), self.is_holder(*parent), Vec::new()),
-                        MeasuredKind::Slice,
-                        None,
-                    );
-                    let slice_place = self.bound_place(binding);
-                    let slice_length = self.place_measure_term(
-                        CheckedMeasure::Length,
-                        slice_place,
-                        MeasuredKind::Slice,
-                        None,
-                    );
-                    let event = self.binding_event(event, FlowEventKind::S6, node_path);
-                    state.establish(
-                        &Relation::Equal {
-                            left: slice_length,
-                            right: source_length,
-                            difference: 0,
-                        },
-                        &mut self.derivations,
-                        event,
-                    );
-                    return true;
-                }
-                let (place, array_length) = match source {
-                    // Answered above; a run's viewed place is a projection
-                    // path and not a field list.
-                    CheckedSliceSource::Run(_) | CheckedSliceSource::ViewHolder { .. } => {
-                        return true;
-                    }
-                    CheckedSliceSource::Array { root, length } => {
-                        (self.array_root_place(root), Some(*length))
-                    }
-                    CheckedSliceSource::Buffer(root) => (
-                        ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone()),
-                        None,
-                    ),
-                    // Content reached in an arena through one explicit deref
-                    // [OWN-5]; the viewed array's constant length still
-                    // equates to the formed slice's length.
-                    CheckedSliceSource::ArenaContent {
-                        binding,
-                        fields,
-                        length,
-                    } => (
-                        ResolvedPlace::spelled(PlaceRoot::Binding(*binding), true, fields.clone()),
-                        Some(*length),
-                    ),
-                };
-                let source_length = self.place_measure_term(
-                    CheckedMeasure::Length,
-                    place,
-                    if array_length.is_some() {
-                        MeasuredKind::Array
-                    } else {
-                        MeasuredKind::Buffer
-                    },
-                    array_length,
-                );
-                let slice_place = self.bound_place(binding);
-                let slice_length = self.place_measure_term(
-                    CheckedMeasure::Length,
-                    slice_place,
-                    MeasuredKind::Slice,
-                    None,
-                );
-                let event = self.binding_event(event, FlowEventKind::S6, node_path);
-                state.establish(
-                    &Relation::Equal {
-                        left: slice_length,
-                        right: source_length,
                         difference: 0,
                     },
                     &mut self.derivations,
@@ -916,19 +784,13 @@ impl Analyzer<'_, '_> {
             } => (
                 *measure,
                 self.array_root_place(root),
-                MeasuredKind::Array,
+                MeasuredKind::ConstantArray,
                 Some(*length),
             ),
             CheckedExpression::BufferMeasure { measure, root } => (
                 *measure,
                 ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone()),
-                MeasuredKind::Buffer,
-                None,
-            ),
-            CheckedExpression::SliceMeasure { measure, root } => (
-                *measure,
-                ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), Vec::new()),
-                MeasuredKind::Slice,
+                MeasuredKind::RuntimeArray,
                 None,
             ),
             // [MSR-1] a run's or a bump extent's measure reader names the

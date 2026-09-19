@@ -4,16 +4,17 @@
 //! currently satisfied without the emitter doing anything. That is the point:
 //! it is a canary for the effect-attribute channel that a future change will
 //! open when it starts translating Whitefoot effect rows (`pure`, `reads`,
-//! `writes`, `allocates`) into LLVM attributes. It must fail on the day anyone
+//! `writes`) into LLVM attributes. It must fail on the day anyone
 //! emits `willreturn`, before the resulting miscompile reaches a program.
 //!
 //! Why `willreturn` specifically, and why not just the combination:
 //!
-//! [EFF-3] of the active kernel specification says `pure` "licenses
-//! deduplication and reordering of calls with equal arguments. Elimination of
-//! an unused pure call additionally requires a termination proof; v0 provides
-//! no termination checker, so unused pure calls are not eliminated. `pure`
-//! excludes all reads/writes/allocates; it does not promise termination."
+//! [EFF-3] of the active kernel specification says a call whose row is `pure`
+//! "and which allocates nothing licenses deduplication and reordering with
+//! equal arguments. Elimination of an unused licensed call additionally
+//! requires a termination proof; v0 provides no termination checker, so unused
+//! calls are not eliminated. The source spelling `pure` excludes state reads
+//! and state writes; it does not promise termination."
 //! `willreturn` is exactly the termination promise the language
 //! does not make, so emitting it asserts something v0 cannot prove.
 //!

@@ -1,0 +1,9 @@
+Node: compiler/prelude-records
+
+Decision: The [PRE-1] declaration record reader parses `fn_sig`'s own generated node sequence with `fn_decl`'s own generated optional-generics node spliced in after the leading `"fn" IDENT`, and the shape verifier checks the record against that same spliced sequence, because [PRE-1] calls its records ordinary `fn_sig` records and then writes generic parameters on eleven of them and names them in its own prose, while [GRAM-2]'s `fn_sig` has no `generics?` and the `fn_decl` beside it does, so as written no record carrying a type parameter parses and every compilation stops before any source file is read, and splicing two generated nodes invents no grammar datum and leaves a writer's `fn_sig` inside a `formal_decl` with no generic header, instead of adding a grammar production the specification does not write or rewriting the records to avoid their type parameters.
+
+Decision: [FORM-3]'s reserved-name refusal skips a role whose source is a prelude record, because the rule covers "no source declaration or FN-9 result-datum candidate" and a [PRE-1] record is neither, while the rule's own fence writes `next` as the payload binder of five host records and as a result binding of a sixth, so a reading that covered every declaration role would reject the prelude before any source file is read, instead of refusing those spellings everywhere and leaving the prelude unable to declare itself.
+
+Rejected:
+- Reading a [PRE-1] record as a `fn_decl` with an empty body: rejected because the record would then carry a Whitefoot body for [FN-9] to verify, which [PRE-1] states it does not have, and the empty body would fail the ordinary result check of every record that returns a value.
+- Leaving the records unparseable and reporting the conflict alone: rejected because nothing downstream of the parser can be exercised at all while it holds, so every later package would be unverifiable until the specification is amended.

@@ -353,6 +353,15 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
             &declaration_index,
             &declaration_by_role,
             &prelude.builtins,
+            &|source| {
+                syntax
+                    .finalized
+                    .parsed
+                    .classified
+                    .source_bundle()
+                    .file(source)
+                    .is_some_and(|file| file.prelude().is_some())
+            },
         )? {
             return Err(BuildStop::Issue(Box::new(issue)));
         }
@@ -382,16 +391,15 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
             &postcondition_entry_uses,
             &lexical_uses,
         )?;
-        return Ok(Tables {
+        Ok(Tables {
             scopes: scopes.records,
             prelude: prelude.records,
-
             declarations,
             dependent_declarations,
             lexical_uses,
             deferred_uses,
             postconditions,
-        });
+        })
     }
 }
 

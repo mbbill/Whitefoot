@@ -753,11 +753,15 @@ fn three_written_uses_follow_the_certificate_when_auto_stops_at_two() {
 /// The binary-search midpoint. The written sum proves `2*(mid - hi) <= -1`,
 /// which over the integers is exactly `mid < hi`; without the integer
 /// tightening the halved target is outside every fixed residual rule.
+///
+/// The searched run reaches the function as a [REF-4] range reference, whose
+/// one measure `len` is read as the [OP-15] member of its referent. The
+/// certificate and the subscript it discharges are unchanged.
 #[test]
 fn a_midpoint_certificate_halves_its_doubled_sum_and_discharges_the_subscript() {
     let source = format!(
-        r#"fn probe(table: own Slice<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {{
-  define spare = len_of(table);
+        r#"fn probe(table: &[u8], lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {{
+  define spare = deref(table).len;
   requires lo < hi;
   requires hi <= spare;
 }} {{
@@ -768,7 +772,7 @@ fn a_midpoint_certificate_halves_its_doubled_sum_and_discharges_the_subscript() 
     use (lo < hi);
     use (2_u64 * half <= span);
   }}
-  let byte = table[mid];
+  let byte = deref(table)[mid];
   return byte;
 }}
 

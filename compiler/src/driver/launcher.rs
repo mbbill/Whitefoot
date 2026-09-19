@@ -47,10 +47,6 @@ pub(crate) fn render(
                 inputs = Some(*id);
                 arguments.push("ptr %inputs".to_owned());
             }
-            ParameterAbi::Value(IrType::Provider) if !heap => {
-                heap = true;
-                arguments.push("{ ptr, i64 } zeroinitializer".to_owned());
-            }
             _ => return Ok(String::new()),
         }
     }

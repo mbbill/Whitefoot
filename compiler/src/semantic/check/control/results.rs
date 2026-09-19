@@ -158,6 +158,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let cell = matches!(usage.target(), ResolvedTarget::Container(id)
             if crate::container_nominal(id)
                 .is_some_and(|entry| entry.shape == crate::ContainerShape::Box));
+        // [TYPE-2] an opaque struct has no usable constructor, and a
+        // destructuring `let_stmt` whose TYPEID names one is that rule's hard
+        // error at the complete statement. `Box` is the prelude's opaque
+        // struct [TYPE-9, PRE-1], so a cell's content is reached through its
+        // member `inner` and never by taking the cell apart.
+        let opaque_typeid = match usage.target() {
+            ResolvedTarget::Source { declaration, .. } => {
+                self.is_opaque_struct_declaration(declaration)?
+            }
+            _ => cell,
+        };
+        if opaque_typeid {
+            return self.issue_node(
+                SemanticRule::Type2,
+                node,
+                SemanticIssueKind::ContainerConstruction {
+                    nominal: written,
+                    mechanical_fix: "build it with a construction function [OP-13, PRE-1]",
+                },
+            );
+        }
         let source_declaration = match usage.target() {
             ResolvedTarget::Source { declaration, .. } => Some(declaration),
             _ if cell => None,

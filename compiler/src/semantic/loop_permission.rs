@@ -619,7 +619,7 @@ impl<'check> Survey<'check, '_> {
         // calls nothing; it is walked anyway, because a read of the running
         // total spelled in a subscript is a read like any other.
         match target {
-            CheckedSetTarget::Place(_) | CheckedSetTarget::SliceIndex(_) => {}
+            CheckedSetTarget::Place(_) => {}
             CheckedSetTarget::ArrayIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::Storage(target) => {
@@ -658,7 +658,7 @@ impl<'check> Survey<'check, '_> {
             }
             // A whole-place target is no element, and the view element store
             // has no v0.60 subject.
-            CheckedSetTarget::Place(_) | CheckedSetTarget::SliceIndex(_) => return None,
+            CheckedSetTarget::Place(_) => return None,
         };
         self.proven_affine_map_at(obligation)
     }
@@ -904,10 +904,7 @@ impl<'check> Survey<'check, '_> {
             // Expression forms whose v0.60 operation left [OP-1]'s table and
             // which the checker no longer builds. An occurrence would be
             // storage this walk cannot account for, so the body is refused.
-            CheckedExpression::SliceOf { .. }
-            | CheckedExpression::SliceMeasure { .. }
-            | CheckedExpression::SliceIndex { .. }
-            | CheckedExpression::BufferFill { .. }
+            CheckedExpression::BufferFill { .. }
             | CheckedExpression::BufferVacant { .. }
             | CheckedExpression::BufferFits { .. }
             | CheckedExpression::BufferMeasure { .. }
