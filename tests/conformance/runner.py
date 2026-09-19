@@ -21,14 +21,13 @@ Verdict = ("accept",) | ("reject", rule) | ("run", exit) | ("unsupported", why)
 
 Manifest line (JSON):
   {"id": str, "rules": [rule_id...], "expect": EXPECT, "arrange": ARRANGE?,
-   "status": "runnable"|"pending"|"xfail", "reason": str?, "doc": str}
+   "status": "runnable"|"pending", "reason": str?, "doc": str}
   EXPECT = {"kind":"accept"} | {"kind":"reject","rule":R} | {"kind":"run","exit":N}
          | {"kind":"unsupported","why":str}
 
-  status: runnable = must match expect;  pending = toolchain can't run it yet (skip);
-          xfail = expect is the CORRECT spec behavior but the current toolchain does
-                  not yet produce it (a tracked gap) — reported, non-failing; if it
-                  starts matching, it is flagged XPASS (fix landed; drop the xfail).
+  status: runnable = must match expect;  pending = toolchain can't run it yet (skip).
+          There is no expected-failure status: a case whose declared verdict the
+          toolchain does not reach is a failing case until the toolchain is fixed.
 
 `expect` is the verdict the SPECIFICATION requires; `status` is the separate
 toolchain-readiness axis. An unimplemented compiler capability is a `status`
@@ -119,9 +118,7 @@ def run_cases(cases):
         src = (CASES / f"{c['id']}.wf").read_text()
         v = ADAPTER(src, c["expect"]["kind"] == "run")
         m = matches(v, c["expect"])
-        if status == "xfail":
-            outcome = "XPASS" if m else "XFAIL"
-        elif v[0] == "unsupported" and c["expect"]["kind"] != "unsupported":
+        if v[0] == "unsupported" and c["expect"]["kind"] != "unsupported":
             outcome = "FAIL"                     # runnable means supported; gaps belong in pending
         else:
             outcome = "PASS" if m else "FAIL"
@@ -268,7 +265,7 @@ def validate_manifest(cases, annots, root=ROOT, cases_dir=CASES):
     if orphan_sources:
         errors.append("orphan case sources: " + " ".join(orphan_sources))
 
-    valid_statuses = {"runnable", "pending", "xfail"}
+    valid_statuses = {"runnable", "pending"}
     expectation_fields = {
         "accept": {"kind"},
         "reject": {"kind", "rule"},
@@ -291,7 +288,7 @@ def validate_manifest(cases, annots, root=ROOT, cases_dir=CASES):
         status = case.get("status", "runnable")
         if status not in valid_statuses:
             errors.append(f"{case_id}: invalid status {status!r}")
-        if status in {"pending", "xfail"} and not case.get("reason"):
+        if status == "pending" and not case.get("reason"):
             errors.append(f"{case_id}: {status} case requires a reason")
 
         expect = case.get("expect")
@@ -450,11 +447,9 @@ def main():
             tally = {}
             for c, o, v in run_cases(cases):
                 tally[o] = tally.get(o, 0) + 1
-                if o in ("FAIL", "XPASS"):
+                if o == "FAIL":
                     fail += 1
                     print(f"  {o:5} {c['id']:38} want {c['expect']} got {v}")
-                elif o == "XFAIL" and verbose:
-                    print(f"  XFAIL {c['id']:38} ({c.get('reason','known gap')})")
                 elif o == "SKIP" and verbose:
                     print(f"  SKIP  {c['id']:38} {v[1] if len(v) > 1 else 'pending'}")
             print("conformance run: " + "  ".join(f"{k}={tally[k]}" for k in sorted(tally)))
