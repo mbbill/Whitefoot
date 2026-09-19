@@ -43,7 +43,9 @@ A reference may be rebound. At a control-flow join, a reference variable's targe
 ```text
 w = if cond { &v1 } else { &v2 }     // w names one of {v1, v2}
 p = &deref(w)[i]                         // p names one of {deref(v1)[i], deref(v2)[i]}
-loop { p = &deref(p.kids)[0] }           // rejected: the path would grow without bound; use recursion or indices
+loop { p = &deref(p.kids)[0] }           // rejected: after k iterations the path is k steps long, so the join has no finite
+                                     // target set. A path may carry a runtime index (deref(pool)[i], one bound fact), never a
+                                     // runtime depth. Walk owned links by recursion, or keep the nodes in a pool and iterate an index
 ```
 
 There is no `uniq` or `mut` marker on references. Whether a callee may write through a reference parameter is stated by its effect row (Rule 9).
@@ -257,7 +259,7 @@ slot = &deref(b).next
 put(slot, move b)                            // rejected: move b writes the prefix b of slot's path (Rule 3)
 ```
 
-Function-typed parameters carry a full signature with its own row and contract, and a call through one uses that row. Recursion is checked through contracts, never by unfolding bodies.
+Function-typed parameters are generic parameters (FN-2): they carry a full signature with its own row and contract, a call through one uses that row, and each instance is a direct call. A supplied function may refine the formal signature: its row may be a subset (a row states only what the body does, so a read-only function cannot declare a write), its `requires` may be weaker, its `ensures` stronger; parameter and result types agree exactly. Recursion is checked through contracts, never by unfolding bodies.
 
 ## Rule 11. Facts, contracts, and invalidation
 
@@ -333,8 +335,7 @@ truncate(&a.buf, 0)                        // reset: elements released; later re
 
 ## Proposed additions awaiting owner ruling
 
-1. Function-argument matching: FN-4 today requires a supplied function to agree exactly with the formal signature; the alternative is ordinary refinement (smaller row, weaker `requires`, stronger `ensures`). Zero runtime cost either way; recommendation is to keep exact agreement.
-2. A wildcard path form `x.**` ("somewhere under x") so that a reference may descend an owned linked structure in a loop, at the price of conservative overlap and invalidation against everything under `x`. Without it the walk is recursive or index-based.
+None.
 
 Settled by the existing specification: function-typed parameters are generic parameters instantiated per instance (FN-2), so a function argument is a direct call. Recorded for the implementation plan, not as language rules: the compiler-derived release of an owned chain runs in bounded stack using the freed cells as its worklist; self-recursive descent has tail calls eliminated or a stated depth budget.
 
@@ -344,6 +345,7 @@ Settled by the existing specification: function-typed parameters are generic par
 - A heap block with a fixed header followed by a runtime-length tail in one allocation.
 - A bitmask fact (`x & (c - 1) < c` for a power-of-two `c`) to remove the per-probe bounds compare in hash tables.
 - Contract facts beyond affine comparisons: a `requires` stating a variant refinement (`p is Some`), and an `ensures` naming a single indexed path (`deref(p.slots)[h.idx].gen == h.gen`); the second decides whether a guarded pool access pays one load, compare, and branch per call.
+- A wildcard path form `x.**` ("somewhere under x") for descending an owned linked structure in a loop, at the price of conservative overlap and invalidation under `x`. Revisit only if the pool-plus-index form proves too slow or inexpressible for a real workload.
 
 ## Known costs already recorded
 
