@@ -1,54 +1,46 @@
-fn fill_recursive(output: own MutSlice<u64>, depth: own u64) -> result: own u64 reads(output), writes(output) contract {
+fn fill_recursive(output: &[u64], depth: own u64) -> result: own u64 writes(output) contract {
   requires depth <= 64_u64;
 } {
-  doc "Subdivides one borrowed range recursively, including uneven and empty ranges. The parent is used again after both children complete, so the witness checks restoration as well as disjoint sibling calls.";
-  let count = len_of(output);
+  doc "Subdivides one range reference recursively, including uneven and empty ranges. The parent range is used again after both children complete, so the witness checks restoration as well as disjoint sibling calls.";
+  let count = deref(output).len;
   if count <= 1_u64 {
     for (i in 0_u64..count) {
-      set output[i] = 1_u64;
+      set deref(output)[i] = 1_u64;
     }
     return count;
   }
   if depth == 0_u64 {
     for (i in 0_u64..count) {
-      set output[i] = 1_u64;
+      set deref(output)[i] = 1_u64;
     }
     return count;
   }
   let middle = count / 2_u64;
   let remaining = depth - 1_u64;
-  region {
-    let left = mut_slice_of(&uniq output, 0_u64, middle);
-    let right = mut_slice_of(&uniq output, middle, count);
-    let a = fill_recursive(output: move left, depth: remaining);
-    let b = fill_recursive(output: move right, depth: remaining);
-    let restored = output[0_u64];
-    set output[0_u64] = restored;
-  }
+  let left = &deref(output)[0_u64..middle];
+  let right = &deref(output)[middle..count];
+  let a = fill_recursive(output: left, depth: remaining);
+  let b = fill_recursive(output: right, depth: remaining);
+  let restored = deref(output)[0_u64];
+  set deref(output)[0_u64] = restored;
   return count;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let values = buffer_new(17_u64, 0_u64);
-  region {
-    let output = mut_slice_of(&uniq values, 0_u64, 17_u64);
-    let filled = fill_recursive(output: move output, depth: 32_u64);
-    if filled != 17_u64 {
-      return exit_status(code: 1_u8);
-    }
+  let values = array_filled::<u64, 17>(value: 0_u64);
+  let written = fill_recursive(output: &values[0_u64..17_u64], depth: 32_u64);
+  if written != 17_u64 {
+    return exit_status(code: 1_u8);
   }
   for (i in 0_u64..17_u64) {
     if values[i] != 1_u64 {
       return exit_status(code: 2_u8);
     }
   }
-  let empty = buffer_new(0_u64, 0_u64);
-  region {
-    let output = mut_slice_of(&uniq empty, 0_u64, 0_u64);
-    let filled = fill_recursive(output: move output, depth: 32_u64);
-    if filled != 0_u64 {
-      return exit_status(code: 3_u8);
-    }
+  let empty = array_filled::<u64, 0>(value: 0_u64);
+  let none = fill_recursive(output: &empty[0_u64..0_u64], depth: 32_u64);
+  if none != 0_u64 {
+    return exit_status(code: 3_u8);
   }
   return exit_status(code: 0_u8);
 }

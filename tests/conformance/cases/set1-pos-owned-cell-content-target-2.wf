@@ -3,7 +3,7 @@ fn hold() -> result: own unit pure {
   let bytes = slots_new::<u8, 1>();
   let other = slots_new::<u8, 1>();
   let owner = box_new::<Slots<u8, 1>>(value: move bytes);
-  swap::<Slots<u8, 1>>(first: &owner.inner, second: &other);
+  swap(first: &owner.inner, second: &other);
   return unit;
 }
 

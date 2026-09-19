@@ -1,6 +1,6 @@
-fn fill_and_count(destination: &[u8], value: own u8) -> filled: own u64 writes(destination) contract {
+fn fill_and_count(destination: &[u8], value: own u8) -> filled_count: own u64 writes(destination) contract {
   requires 2_u64 <= deref(destination).len;
-  ensures filled == 2_u64;
+  ensures filled_count == 2_u64;
 } {
   doc "Fills the destination it was handed and publishes how many positions it filled.";
   set deref(destination)[0_u64] = value;
@@ -12,7 +12,7 @@ fn main() -> status: own ExitStatus pure {
   doc "The fill-and-publish helper, restated for v0.60. A reference never escapes its callee [REF-3], so the helper returns an owned count with its relation in ensures and the caller forms the child range itself: the re-slice &deref(window)[0_u64..filled] names the same storage the helper wrote through [REF-4], re-slicing through deref because window is a reference variable and the storage it names is reached only that way [REF-1], and the caller reads back through that child exactly what the helper wrote through its destination.";
   let table = box_array_filled::<u8>(count: 4_u64, value: 3_u8);
   let window = &table.inner[0_u64..4_u64];
-  let filled = fill_and_count(destination: window, value: 200_u8);
+  let filled_count = fill_and_count(destination: window, value: 200_u8);
   let published = &deref(window)[0_u64..filled];
   let seen = deref(published).len;
   if seen == 2_u64 {

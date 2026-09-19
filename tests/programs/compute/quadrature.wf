@@ -41,10 +41,10 @@ fn adaptive(a: own f64, b: own f64, center: own f64, width: own f64, fa: own f64
     let correction = fdiv.strict(delta, 15.0_f64);
     return fadd.strict(combined, correction);
   }
-  let next = depth - 1_u64;
+  let deeper = depth - 1_u64;
   let half_tolerance = fmul.strict(tolerance, 0.5_f64);
-  let l = adaptive(a: a, b: middle, center: center, width: width, fa: fa, fm: fl, fb: fm, whole: left, tolerance: half_tolerance, depth: next);
-  let r = adaptive(a: middle, b: b, center: center, width: width, fa: fm, fm: fr, fb: fb, whole: right, tolerance: half_tolerance, depth: next);
+  let l = adaptive(a: a, b: middle, center: center, width: width, fa: fa, fm: fl, fb: fm, whole: left, tolerance: half_tolerance, depth: deeper);
+  let r = adaptive(a: middle, b: b, center: center, width: width, fa: fm, fm: fr, fb: fb, whole: right, tolerance: half_tolerance, depth: deeper);
   return fadd.strict(l, r);
 }
 

@@ -1,4 +1,4 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled_slots<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
   ensures result.len >= n;
   ensures result.room <= 0_u64;
 } {
@@ -26,7 +26,7 @@ fn walk_bound<const n: u64>(source: own Slots<u8, 8>) -> reached: own u8 pure co
 
 fn main() -> status: own ExitStatus pure {
   doc "MSR-6: the pbase admission carries the const generic into the two other positions a named const already reaches, the for_stmt endpoint and the clause operand. The requirement is stated over the parameter, the counted loop's upper endpoint is the same parameter, and the subscript at that offset discharges from the requirement after instantiation folds the parameter to its mathematical constant.";
-  let run = filled::<u8, 8>(value: 0_u8);
+  let run = filled_slots::<u8, 8>(value: 0_u8);
   let reached = walk_bound::<4>(source: move run);
   if reached == 0_u8 {
     return exit_status(code: 0_u8);

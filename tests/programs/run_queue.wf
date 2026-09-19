@@ -1,127 +1,99 @@
-fn pair() -> result: own FixedVector<u8, 4> pure contract {
-  ensures len_of(result) >= 2_u64;
-  ensures len_of(result) <= 2_u64;
-  ensures room_of(result) >= 2_u64;
-  ensures head_of(result) <= 0_u64;
+fn pair() -> result: own Ring<u8, 4> pure contract {
+  ensures result.len >= 2_u64;
+  ensures result.len <= 2_u64;
+  ensures result.room >= 2_u64;
+  ensures result.head <= 0_u64;
 } {
   doc "Builds a run of two values and publishes what its window then holds.";
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 7_u8);
-  }
+  let empty = ring_new::<u8, 4>();
+  place_back(window: &empty, value: 7_u8);
   let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 9_u8);
-  }
+  place_back(window: &one, value: 9_u8);
   let two = move one;
   return move two;
 }
 
-fn append(vector: &uniq FixedVector<u8, 4>, value: own u8) -> result: own unit reads(vector), writes(vector) contract {
-  requires room_of(deref(vector)) > 0_u64;
-  ensures len_of(deref(vector)) >= len_of(deref(entry(vector))) + 1_u64;
+fn append(vector: &Ring<u8, 4>, value: own u8) -> result: own unit writes(vector) contract {
+  requires deref(vector).room > 0_u64;
+  ensures deref(vector).len >= deref(entry(vector)).len + 1_u64;
 } {
   doc "Places one value at the back boundary of a run.";
-  region {
-    place_back(vector: &uniq deref(vector), value: value);
-  }
+  place_back(window: vector, value: value);
   return unit;
 }
 
-fn pass_window(values: own FixedVector<u8, 4>) -> result: own FixedVector<u8, 4> pure contract {
-  ensures len_of(result) == len_of(values);
-  ensures head_of(result) == head_of(values);
+fn pass_window(values: own Ring<u8, 4>) -> result: own Ring<u8, 4> pure contract {
+  ensures result.len == values.len;
+  ensures result.head == values.head;
 } {
   return move values;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Runs a queue over one four-slot run: the window wraps, and every element comes back in the order it went in.";
+  doc "Runs a queue over one four-slot Ring: the window wraps, and every element comes back in the order it went in.";
   let built = pair();
   let first_of_two = built[0_u64];
   if first_of_two == 7_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  region {
-    append(vector: &uniq built, value: 8_u8);
-  }
+  append(vector: &built, value: 8_u8);
   let grown = move built;
   let third = grown[2_u64];
   if third == 8_u8 {
   } else {
     return exit_status(code: 9_u8);
   }
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 1_u8);
-  }
+  let empty = ring_new::<u8, 4>();
+  place_back(window: &empty, value: 1_u8);
   let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 2_u8);
-  }
+  place_back(window: &one, value: 2_u8);
   let two = move one;
-  region {
-    place_back(vector: &uniq two, value: 3_u8);
-  }
+  place_back(window: &two, value: 3_u8);
   let three = move two;
-  region {
-    let taken1 = take_front(vector: &uniq three);
-    let rest0 = move three;
-    if taken1 == 1_u8 {
-    } else {
-      return exit_status(code: 2_u8);
-    }
-    region {
-      let taken2 = take_front(vector: &uniq rest0);
-      let rest1 = move rest0;
-      if taken2 == 2_u8 {
-      } else {
-        return exit_status(code: 3_u8);
-      }
-      region {
-        place_back(vector: &uniq rest1, value: 4_u8);
-      }
-      let four = move rest1;
-      region {
-        place_back(vector: &uniq four, value: 5_u8);
-      }
-      let five = pass_window(values: move four);
-      let wrapped = five[1_u64];
-      if wrapped == 4_u8 {
-      } else {
-        return exit_status(code: 4_u8);
-      }
-      region {
-        let taken3 = take_front(vector: &uniq five);
-        let rest2 = move five;
-        if taken3 == 3_u8 {
-        } else {
-          return exit_status(code: 5_u8);
-        }
-        region {
-          let taken4 = take_front(vector: &uniq rest2);
-          let rest3 = move rest2;
-          if taken4 == 4_u8 {
-          } else {
-            return exit_status(code: 6_u8);
-          }
-          region {
-            let taken5 = take_front(vector: &uniq rest3);
-            let rest4 = move rest3;
-            if taken5 == 5_u8 {
-            } else {
-              return exit_status(code: 7_u8);
-            }
-            let left = len_of(rest4);
-            if left == 0_u64 {
-            } else {
-              return exit_status(code: 8_u8);
-            }
-            return exit_status(code: 0_u8);
-          }
-        }
-      }
-    }
+  let taken1 = take_front(window: &three);
+  let rest0 = move three;
+  if taken1 == 1_u8 {
+  } else {
+    return exit_status(code: 2_u8);
   }
+  let taken2 = take_front(window: &rest0);
+  let rest1 = move rest0;
+  if taken2 == 2_u8 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  place_back(window: &rest1, value: 4_u8);
+  let four = move rest1;
+  place_back(window: &four, value: 5_u8);
+  let five = pass_window(values: move four);
+  let wrapped = five[1_u64];
+  if wrapped == 4_u8 {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  let taken3 = take_front(window: &five);
+  let rest2 = move five;
+  if taken3 == 3_u8 {
+  } else {
+    return exit_status(code: 5_u8);
+  }
+  let taken4 = take_front(window: &rest2);
+  let rest3 = move rest2;
+  if taken4 == 4_u8 {
+  } else {
+    return exit_status(code: 6_u8);
+  }
+  let taken5 = take_front(window: &rest3);
+  let rest4 = move rest3;
+  if taken5 == 5_u8 {
+  } else {
+    return exit_status(code: 7_u8);
+  }
+  let left = rest4.len;
+  if left == 0_u64 {
+  } else {
+    return exit_status(code: 8_u8);
+  }
+  return exit_status(code: 0_u8);
 }

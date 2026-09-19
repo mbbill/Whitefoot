@@ -11,7 +11,7 @@ fn main() -> status: own ExitStatus pure {
   let first = Item(value: 1_u64);
   let slot = Slot(item: move first);
   let second = Item(value: 2_u64);
-  swap::<Item>(first: &slot.item, second: &second);
+  swap(first: &slot.item, second: &second);
   let old = second.value;
   if old == 1_u64 {
   } else {

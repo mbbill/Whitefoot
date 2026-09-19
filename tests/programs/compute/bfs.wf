@@ -1,13 +1,13 @@
-fn pull_distance(neighbors: own Slice<u64>, previous: own Slice<u64>, level: own u64) -> result: own u64 reads(neighbors, previous) contract {
-  requires level < len_of(previous);
-  requires len_of(previous) <= 67108864_u64;
+fn pull_distance(neighbors: &[u64], previous: &[u64], level: own u64) -> result: own u64 reads(neighbors), reads(previous) contract {
+  requires level < deref(previous).len;
+  requires deref(previous).len <= 67108864_u64;
 } {
-  let count = len_of(previous);
-  let slots = len_of(neighbors);
+  let count = deref(previous).len;
+  let slots = deref(neighbors).len;
   for (slot in 0_u64..slots) {
-    let neighbor = neighbors[slot];
+    let neighbor = deref(neighbors)[slot];
     if neighbor < count {
-      if previous[neighbor] == level {
+      if deref(previous)[neighbor] == level {
         return level + 1_u64;
       }
     }
@@ -15,19 +15,19 @@ fn pull_distance(neighbors: own Slice<u64>, previous: own Slice<u64>, level: own
   return count;
 }
 
-fn pull_level(edges: own Slice<u64>, previous: own Slice<u64>, output: own MutSlice<u64>, count: own u64, level: own u64) -> result: own u64 reads(edges, previous), writes(output) contract {
+fn pull_level(edges: &[u64], previous: &[u64], output: &[u64], count: own u64, level: own u64) -> result: own u64 reads(edges), reads(previous), writes(output) contract {
   requires count <= 67108864_u64;
-  requires count <= len_of(previous);
-  requires len_of(previous) <= count;
-  requires count <= len_of(output);
-  requires 4_u64 * count <= len_of(edges);
+  requires count <= deref(previous).len;
+  requires deref(previous).len <= count;
+  requires count <= deref(output).len;
+  requires 4_u64 * count <= deref(edges).len;
   requires level < count;
 } {
   let covered = count * 4_u64;
-  invariant complete_rows: covered <= len_of(edges);
+  invariant complete_rows: covered <= deref(edges).len;
   let changed = 0_u64;
   for (vertex in 0_u64..count) {
-    let distance = previous[vertex];
+    let distance = deref(previous)[vertex];
     let result = distance;
     let added = 0_u64;
     if distance == count {
@@ -36,55 +36,47 @@ fn pull_level(edges: own Slice<u64>, previous: own Slice<u64>, output: own MutSl
       invariant row_end: end <= covered {
         use 4 times (vertex + 1_u64 <= count);
       }
-      let neighbors = slice_of(&edges, first, end);
+      let neighbors = &deref(edges)[first..end];
       let found = pull_distance(neighbors: neighbors, previous: previous, level: level);
       set result = found;
       if found != count {
         set added = 1_u64;
       }
     }
-    let after = vertex + 1_u64;
-    region {
-      let cell = mut_slice_of(&uniq output, vertex, after);
-      set cell[0_u64] = result;
-    }
+    set deref(output)[vertex] = result;
     set changed = changed +wrap added;
   }
   return changed;
 }
 
-fn bfs_pull(edges: own Slice<u64>) -> result: own buffer<u64> reads(edges) contract {
-  requires len_of(edges) <= 67108864_u64;
+fn bfs_pull(edges: &[u64]) -> result: own Box<Array<u64>> reads(edges) contract {
+  requires deref(edges).len <= 67108864_u64;
 } {
-  let slots = len_of(edges);
+  let slots = deref(edges).len;
   let count = slots / 4_u64;
   let covered = count * 4_u64;
   invariant complete_rows: covered <= slots;
-  let current = buffer_new(count, count);
-  let next = buffer_new(count, count);
+  let current = box_array_filled::<u64>(count: count, value: count);
+  let other = box_array_filled::<u64>(count: count, value: count);
   if count == 0_u64 {
     return move current;
   }
-  set current[0_u64] = 0_u64;
+  set current.inner[0_u64] = 0_u64;
   for (level in 0_u64..count) {
     let parity = level % 2_u64;
     if parity == 0_u64 {
-      region {
-        let previous = slice_of(&current);
-        let output = mut_slice_of(&uniq next);
-        let changed = pull_level(edges: edges, previous: previous, output: move output, count: count, level: level);
-        if changed == 0_u64 {
-          return move next;
-        }
+      let previous = &current.inner[0_u64..count];
+      let output = &other.inner[0_u64..count];
+      let changed = pull_level(edges: edges, previous: previous, output: output, count: count, level: level);
+      if changed == 0_u64 {
+        return move other;
       }
     } else {
-      region {
-        let previous = slice_of(&next);
-        let output = mut_slice_of(&uniq current);
-        let changed = pull_level(edges: edges, previous: previous, output: move output, count: count, level: level);
-        if changed == 0_u64 {
-          return move current;
-        }
+      let previous = &other.inner[0_u64..count];
+      let output = &current.inner[0_u64..count];
+      let changed = pull_level(edges: edges, previous: previous, output: output, count: count, level: level);
+      if changed == 0_u64 {
+        return move current;
       }
     }
   }
@@ -92,29 +84,29 @@ fn bfs_pull(edges: own Slice<u64>) -> result: own buffer<u64> reads(edges) contr
   if parity == 0_u64 {
     return move current;
   }
-  return move next;
+  return move other;
 }
 
-fn bfs_sparse(edges: own Slice<u64>) -> result: own buffer<u64> reads(edges) contract {
-  requires len_of(edges) <= 67108864_u64;
+fn bfs_sparse(edges: &[u64]) -> result: own Box<Array<u64>> reads(edges) contract {
+  requires deref(edges).len <= 67108864_u64;
 } {
   doc "Sparse level traversal. Each vertex owns one intrusive frontier link, so no queue-capacity theorem or per-vertex allocation is needed. The count sentinel denotes both an absent edge and an undiscovered distance.";
-  let slots = len_of(edges);
+  let slots = deref(edges).len;
   let count = slots / 4_u64;
-  let distance = buffer_new(count, count);
+  let distance = box_array_filled::<u64>(count: count, value: count);
   let covered = count * 4_u64;
   invariant complete_rows: covered <= slots;
-  let links = buffer_new(count, count);
+  let links = box_array_filled::<u64>(count: count, value: count);
   if count == 0_u64 {
     return move distance;
   }
-  set distance[0_u64] = 0_u64;
+  set distance.inner[0_u64] = 0_u64;
   let frontier = 0_u64;
   for (level in 0_u64..count) {
     if frontier >= count {
       break;
     }
-    let next = count;
+    let pending = count;
     let vertex = frontier;
     loop {
       if vertex >= count {
@@ -126,24 +118,24 @@ fn bfs_sparse(edges: own Slice<u64>) -> result: own buffer<u64> reads(edges) con
         use 4 times (vertex + 1_u64 <= count);
       }
       for (slot in first..end) {
-        let neighbor = edges[slot];
+        let neighbor = deref(edges)[slot];
         if neighbor < count {
-          if distance[neighbor] == count {
-            set distance[neighbor] = level + 1_u64;
-            set links[neighbor] = next;
-            set next = neighbor;
+          if distance.inner[neighbor] == count {
+            set distance.inner[neighbor] = level + 1_u64;
+            set links.inner[neighbor] = pending;
+            set pending = neighbor;
           }
         }
       }
-      set vertex = links[vertex];
+      set vertex = links.inner[vertex];
     }
-    set frontier = next;
+    set frontier = pending;
   }
   return move distance;
 }
 
-fn bfs(edges: own Slice<u64>, pull: own u64) -> result: own buffer<u64> reads(edges) contract {
-  requires len_of(edges) <= 67108864_u64;
+fn bfs(edges: &[u64], pull: own u64) -> result: own Box<Array<u64>> reads(edges) contract {
+  requires deref(edges).len <= 67108864_u64;
 } {
   doc "Distances from vertex zero in a graph with four adjacency slots per vertex. Out-of-range slots are absent edges; trailing incomplete rows are ignored. Pull traverses the reverse graph, so the comparison fixtures are undirected.";
   if pull != 0_u64 {
@@ -152,26 +144,23 @@ fn bfs(edges: own Slice<u64>, pull: own u64) -> result: own buffer<u64> reads(ed
   return bfs_sparse(edges: edges);
 }
 
-fn release_bfs(output: own buffer<u64>) -> result: own u64 pure {
+fn release_bfs(output: own Box<Array<u64>>) -> result: own u64 pure {
   return 0_u64;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let edges = buffer_new(12_u64, 3_u64);
+  let edges = array_filled::<u64, 12>(value: 3_u64);
   set edges[0_u64] = 1_u64;
   set edges[4_u64] = 0_u64;
   set edges[5_u64] = 2_u64;
   set edges[8_u64] = 1_u64;
-  region {
-    let graph = slice_of(&edges);
-    let output = bfs(edges: graph, pull: 0_u64);
-    let count = len_of(output);
-    if count != 3_u64 {
-      return exit_status(code: 1_u8);
-    }
-    if output[2_u64] != 2_u64 {
-      return exit_status(code: 2_u8);
-    }
+  let output = bfs(edges: &edges[0_u64..12_u64], pull: 0_u64);
+  let count = output.inner.len;
+  if count != 3_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if output.inner[2_u64] != 2_u64 {
+    return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
 }

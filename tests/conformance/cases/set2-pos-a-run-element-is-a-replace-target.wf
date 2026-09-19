@@ -6,7 +6,7 @@ fn main() -> status: own ExitStatus pure {
   let b = Some<u8>(value: 2_u8);
   place_back(window: &run, value: move b);
   let fresh = Some<u8>(value: 9_u8);
-  swap::<Option<u8>>(first: &run[0_u64], second: &fresh);
+  swap(first: &run[0_u64], second: &fresh);
   match fresh {
     Some(value: was) => {
       if was == 1_u8 {
@@ -19,7 +19,7 @@ fn main() -> status: own ExitStatus pure {
     }
   }
   let again = Some<u8>(value: 8_u8);
-  swap::<Option<u8>>(first: &run[0_u64], second: &again);
+  swap(first: &run[0_u64], second: &again);
   match again {
     Some(value: got) => {
       if got == 9_u8 {

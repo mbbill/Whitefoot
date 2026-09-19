@@ -1,108 +1,85 @@
-fn exercise(args: &Args, cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(files) {
-  region {
-    match arg_get(args: args, position: 1_u64) {
-      Ok(value: text) => {
-        match relative_path(value: move text) {
-          Ok(value: path) => {
-            region {
-              region {
-                match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(8_u64, 0_u8);
-                    let vacant = 0_u64;
-                    region {
-                      region {
-                        region {
-                          let native_window_7 = mut_slice_of(&uniq bytes);
-                          region {
-                            match read_at(factory: &uniq deref(files), file: &uniq file, destination: &uniq native_window_7, file_offset: 0_u64, start: 0_u64, end: 0_u64) {
-                              Ok(value: n) => {
-                                set vacant = n;
-                              }
-                              Err(error: read_stop_5) => {
-                                match read_stop_5 {
-                                  ReadEnd() => {
-                                    close_read(factory: &uniq deref(files), file: move file);
-                                    return exit_status(code: 210_u8);
-                                  }
-                                  ReadFailed(error: problem) => {
-                                    close_read(factory: &uniq deref(files), file: move file);
-                                    return exit_status(code: 211_u8);
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
+fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(args), reads(cwd), writes(files) {
+  doc "An empty request must transfer nothing and must not disturb the following transfer; both requests name the same destination range reference over one frame-resident array.";
+  match arg_get(args: args, position: 1_u64) {
+    Ok(value: text) => {
+      match relative_path(value: move text) {
+        Ok(value: path) => {
+          match open_read(factory: files, root: cwd, path: &path) {
+            Ok(value: file) => {
+              let bytes = array_filled::<u8, 8>(value: 0_u8);
+              let vacant = 0_u64;
+              let window = &bytes[0_u64..8_u64];
+              match read_at(factory: files, file: &file, destination: window, file_offset: 0_u64, start: 0_u64, end: 0_u64) {
+                Ok(value: n) => {
+                  set vacant = n;
+                }
+                Err(error: first_stop) => {
+                  match first_stop {
+                    ReadEnd() => {
+                      close_read(factory: files, file: move file);
+                      return exit_status(code: 210_u8);
                     }
-                    if vacant == 0_u64 {
-                    } else {
-                      close_read(factory: &uniq deref(files), file: move file);
-                      return exit_status(code: 212_u8);
-                    }
-                    region {
-                      region {
-                        region {
-                          let native_window_8 = mut_slice_of(&uniq bytes);
-                          region {
-                            match read_at(factory: &uniq deref(files), file: &uniq file, destination: &uniq native_window_8, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
-                              Ok(value: n) => {
-                                let narrowed = cvt::<u64, u8>(n);
-                                match narrowed {
-                                  Ok(value: code) => {
-                                    close_read(factory: &uniq deref(files), file: move file);
-                                    return exit_status(code: code);
-                                  }
-                                  Err(error: overflowed) => {
-                                    close_read(factory: &uniq deref(files), file: move file);
-                                    return exit_status(code: 200_u8);
-                                  }
-                                }
-                              }
-                              Err(error: read_stop_6) => {
-                                match read_stop_6 {
-                                  ReadEnd() => {
-                                    close_read(factory: &uniq deref(files), file: move file);
-                                    return exit_status(code: 213_u8);
-                                  }
-                                  ReadFailed(error: problem) => {
-                                    close_read(factory: &uniq deref(files), file: move file);
-                                    return exit_status(code: 214_u8);
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
+                    ReadFailed(error: problem) => {
+                      close_read(factory: files, file: move file);
+                      return exit_status(code: 211_u8);
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 203_u8);
+                }
+              }
+              if vacant == 0_u64 {
+              } else {
+                close_read(factory: files, file: move file);
+                return exit_status(code: 212_u8);
+              }
+              let second = &bytes[0_u64..8_u64];
+              match read_at(factory: files, file: &file, destination: second, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
+                Ok(value: n) => {
+                  let narrowed = cvt::<u64, u8>(n);
+                  match narrowed {
+                    Ok(value: code) => {
+                      close_read(factory: files, file: move file);
+                      return exit_status(code: code);
+                    }
+                    Err(error: overflowed) => {
+                      close_read(factory: files, file: move file);
+                      return exit_status(code: 200_u8);
+                    }
+                  }
+                }
+                Err(error: second_stop) => {
+                  match second_stop {
+                    ReadEnd() => {
+                      close_read(factory: files, file: move file);
+                      return exit_status(code: 213_u8);
+                    }
+                    ReadFailed(error: problem) => {
+                      close_read(factory: files, file: move file);
+                      return exit_status(code: 214_u8);
+                    }
                   }
                 }
               }
             }
-          }
-          Err(error: rejected) => {
-            return exit_status(code: 204_u8);
+            Err(error: problem) => {
+              return exit_status(code: 203_u8);
+            }
           }
         }
+        Err(error: rejected) => {
+          return exit_status(code: 204_u8);
+        }
       }
-      Err(error: absent) => {
-        return exit_status(code: 205_u8);
-      }
+    }
+    Err(error: absent) => {
+      return exit_status(code: 205_u8);
     }
   }
 }
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  doc "PRE-1 ordinary Inputs are destructured once; the referenced operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
-  region {
-    let outcome = exercise(args: &args, cwd: &cwd, files: &uniq files);
-    close_directory(factory: &uniq files, directory: move cwd);
-    return move outcome;
-  }
+  let outcome = exercise(args: &args, cwd: &cwd, files: &files);
+  close_directory(factory: &files, directory: move cwd);
+  return move outcome;
 }

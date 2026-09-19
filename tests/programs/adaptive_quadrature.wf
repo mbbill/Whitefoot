@@ -41,10 +41,10 @@ fn adaptive(a: own f64, b: own f64, center: own f64, width: own f64, fa: own f64
     let correction = fdiv.strict(delta, 15.0_f64);
     return fadd.strict(combined, correction);
   }
-  let next = depth - 1_u64;
+  let deeper = depth - 1_u64;
   let half_tolerance = fmul.strict(tolerance, 0.5_f64);
-  let l = adaptive(a: a, b: middle, center: center, width: width, fa: fa, fm: fl, fb: fm, whole: left, tolerance: half_tolerance, depth: next);
-  let r = adaptive(a: middle, b: b, center: center, width: width, fa: fm, fm: fr, fb: fb, whole: right, tolerance: half_tolerance, depth: next);
+  let l = adaptive(a: a, b: middle, center: center, width: width, fa: fa, fm: fl, fb: fm, whole: left, tolerance: half_tolerance, depth: deeper);
+  let r = adaptive(a: middle, b: b, center: center, width: width, fa: fm, fm: fr, fb: fb, whole: right, tolerance: half_tolerance, depth: deeper);
   return fadd.strict(l, r);
 }
 
@@ -63,9 +63,7 @@ fn integrate(a: own f64, b: own f64, center: own f64, width: own f64, tolerance:
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "Integrates 2048 narrow Lorentz profiles with centers from 1/4 to just below 3/4, width 1/64 and tolerance 2^-42. Emits the sum's 64 floating-point bits, most significant first, as ASCII. The numerical depth cap is part of the algorithm, not a compiler proof limit.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq files, directory: move unused_cwd);
-  }
+  close_directory(factory: &files, directory: move unused_cwd);
   let center = 0.25_f64;
   let total = 0.0_f64;
   let step = fdiv.strict(1.0_f64, 4096.0_f64);
@@ -76,12 +74,11 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
     set center = fadd.strict(center, step);
   }
   let bits = reinterpret::<f64, u64>(total);
-  let report = fixed_vector::<u8, 64>();
+  let report = slots_new::<u8, 64>();
   for @digits (
     at in 0_u64..64_u64,
-    invariant grown: len_of(report) >= at,
-    invariant spare: room_of(report) + at >= 64_u64,
-    invariant flat: head_of(report) <= 0_u64
+    invariant grown: report.len >= at,
+    invariant spare: report.room + at >= 64_u64
   ) {
     let top = iand(bits, 9223372036854775808_u64);
     let digit = if top == 0_u64 {
@@ -89,25 +86,21 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
     } else {
       give 49_u8;
     }
-    place_back(vector: &uniq report, value: digit);
+    place_back(window: &report, value: digit);
     set bits = ishl.wrap(bits, 1_u32);
   }
-  region {
-    let published = slice_of(&report);
-    let sent = 0_u64;
-    loop @write {
-      if sent >= 64_u64 {
-        break @write;
+  let published = &report[0_u64..64_u64];
+  let sent = 0_u64;
+  loop @write {
+    if sent >= 64_u64 {
+      break @write;
+    }
+    match write_once(factory: &files, output: &out, source: published, start: sent, end: 64_u64) {
+      Ok(value: accepted) => {
+        set sent = accepted;
       }
-      region {
-        match write_once(factory: &uniq files, output: &uniq out, source: &published, start: sent, end: 64_u64) {
-          Ok(value: next) => {
-            set sent = next;
-          }
-          Err(error: problem) => {
-            return exit_status(code: 1_u8);
-          }
-        }
+      Err(error: problem) => {
+        return exit_status(code: 1_u8);
       }
     }
   }

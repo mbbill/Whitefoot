@@ -1,80 +1,62 @@
-struct Entry['s] {
-  payload: Box<'s, u64>;
+struct Entry {
+  payload: Box<u64>;
 }
 
-fn build['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (slots: own FixedVector<Option<Entry<'s>>, 1>, returned: own Box<'s, u64>) pure contract {
-  ensures len_of(slots) == 1_u64;
+fn build(first: own Box<u64>, replacement: own Box<u64>) -> (slots: own Slots<Option<Entry>, 1>, returned: own Box<u64>) pure contract {
+  ensures slots.len == 1_u64;
 } {
   let stored_entry = Entry(payload: move first);
-  let occupied = Some<Entry<'s>>(value: move stored_entry);
-  let slots = fixed_vector::<Option<Entry<'s>>, 1>();
-  region {
-    place_back(vector: &uniq slots, value: move occupied);
-  }
+  let occupied = Some<Entry>(value: move stored_entry);
+  let slots = slots_new::<Option<Entry>, 1>();
+  place_back(window: &slots, value: move occupied);
   return move slots, move replacement;
 }
 
-fn replace_one['s](slots: &uniq FixedVector<Option<Entry<'s>>, 1>, replacement: own Entry<'s>) -> previous: own Option<Entry<'s>> reads(slots), writes(slots) contract {
-  requires 1_u64 <= len_of(deref(slots));
-  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
+fn replace_one(slots: &Slots<Option<Entry>, 1>, replacement: own Entry) -> previous: own Option<Entry> writes(slots) contract {
+  requires 1_u64 <= deref(slots).len;
+  ensures deref(slots).len == deref(entry(slots)).len;
 } {
-  let occupied = Some<Entry<'s>>(value: move replacement);
-  let previous = replace deref(slots)[0_u64] = move occupied;
-  return move previous;
+  doc "The exchange is swap: the offered occupant goes into the slot and the binding comes back holding the slot's previous value, with no hole at any program point.";
+  let offered = Some<Entry>(value: move replacement);
+  swap(first: &deref(slots)[0_u64], second: &offered);
+  return move offered;
 }
 
-fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) pure contract {
-  ensures len_of(updated) == 1_u64;
+fn compose(first: own Box<u64>, replacement: own Box<u64>) -> (updated: own Slots<Option<Entry>, 1>, previous: own Option<Entry>) pure contract {
+  ensures updated.len == 1_u64;
 } {
   let (slots, returned) = build(first: move first, replacement: move replacement);
   let stored_entry = Entry(payload: move returned);
-  region {
-    let previous = replace_one(slots: &uniq slots, replacement: move stored_entry);
-    return move slots, move previous;
-  }
+  let previous = replace_one(slots: &slots, replacement: move stored_entry);
+  return move slots, move previous;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  region {
-    match heap_box(store: &uniq heap, value: 11_u64) {
-      Err(error: back) => {
-        return exit_status(code: 70_u8);
-      }
-      Ok(value: first) => {
-        match heap_box(store: &uniq heap, value: 22_u64) {
-          Err(error: back) => {
-            return exit_status(code: 70_u8);
-          }
-          Ok(value: replacement) => {
-            let (updated, previous) = compose(first: move first, replacement: move replacement);
-            match move previous {
-              None() => {
-                return exit_status(code: 1_u8);
-              }
-              Some(value: old_entry) => {
-                if deref(old_entry.payload) != 11_u64 {
-                  return exit_status(code: 2_u8);
-                }
-              }
-            }
-            region {
-              let occupied = take_back(vector: &uniq updated);
-              let empty = move updated;
-              match move occupied {
-                None() => {
-                  return exit_status(code: 4_u8);
-                }
-                Some(value: new_entry) => {
-                  if deref(new_entry.payload) != 22_u64 {
-                    return exit_status(code: 5_u8);
-                  }
-                }
-              }
-              return exit_status(code: 0_u8);
-            }
-          }
-        }
+fn main() -> status: own ExitStatus pure {
+  doc "Allocation is total, so the cells are built without a failure arm and the program either reports the observed contents or exits zero.";
+  let first = box_new::<u64>(value: 11_u64);
+  let replacement = box_new::<u64>(value: 22_u64);
+  let (updated, previous) = compose(first: move first, replacement: move replacement);
+  match move previous {
+    None() => {
+      return exit_status(code: 1_u8);
+    }
+    Some(value: old_entry) => {
+      if old_entry.payload.inner != 11_u64 {
+        return exit_status(code: 2_u8);
       }
     }
   }
+  let occupied = take_back(window: &updated);
+  let empty = move updated;
+  match move occupied {
+    None() => {
+      return exit_status(code: 4_u8);
+    }
+    Some(value: new_entry) => {
+      if new_entry.payload.inner != 22_u64 {
+        return exit_status(code: 5_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
 }

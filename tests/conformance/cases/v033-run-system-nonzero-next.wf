@@ -7,8 +7,8 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   match arg_get(args: &args, position: 1_u64) {
     Ok(value: text) => {
       match host_copy_bytes(value: &text, destination: window, start: 1_u64, end: 3_u64) {
-        Ok(value: next) => {
-          if next == 3_u64 {
+        Ok(value: next_value) => {
+          if next_value == 3_u64 {
           } else {
             return exit_status(code: 2_u8);
           }

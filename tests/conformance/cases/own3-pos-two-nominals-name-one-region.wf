@@ -3,7 +3,7 @@ struct Lease<T: linear> {
 }
 
 struct BlockPool<T: linear> {
-  free: Slots<Box<Slots<T>>, 8>;
+  free_list: Slots<Box<Slots<T>>, 8>;
 }
 
 fn main() -> status: own ExitStatus pure {

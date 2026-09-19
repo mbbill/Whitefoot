@@ -87,51 +87,51 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-const usage_text: FixedVector<u8, 33> =[117_u8, 115_u8, 97_u8, 103_u8, 101_u8, 58_u8, 32_u8, 114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 32_u8, 70_u8, 73_u8, 76_u8, 69_u8, 10_u8];
+const usage_text: Array<u8, 33> =[117_u8, 115_u8, 97_u8, 103_u8, 101_u8, 58_u8, 32_u8, 114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 32_u8, 70_u8, 73_u8, 76_u8, 69_u8, 10_u8];
 
-const reason_unreadable: FixedVector<u8, 55> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 114_u8, 101_u8, 97_u8, 100_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 10_u8];
+const reason_unreadable: Array<u8, 55> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 114_u8, 101_u8, 97_u8, 100_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 10_u8];
 
-const reason_empty: FixedVector<u8, 45> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 101_u8, 109_u8, 112_u8, 116_u8, 121_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 10_u8];
+const reason_empty: Array<u8, 45> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 101_u8, 109_u8, 112_u8, 116_u8, 121_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 10_u8];
 
-const reason_too_large: FixedVector<u8, 64> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 32_u8, 101_u8, 120_u8, 99_u8, 101_u8, 101_u8, 100_u8, 115_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 32_u8, 98_u8, 117_u8, 102_u8, 102_u8, 101_u8, 114_u8, 10_u8];
+const reason_too_large: Array<u8, 64> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 32_u8, 101_u8, 120_u8, 99_u8, 101_u8, 101_u8, 100_u8, 115_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 32_u8, 98_u8, 117_u8, 102_u8, 102_u8, 101_u8, 114_u8, 10_u8];
 
-const reason_truncated: FixedVector<u8, 51> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 115_u8, 116_u8, 114_u8, 101_u8, 97_u8, 109_u8, 32_u8, 101_u8, 110_u8, 100_u8, 115_u8, 32_u8, 101_u8, 97_u8, 114_u8, 108_u8, 121_u8, 10_u8];
+const reason_truncated: Array<u8, 51> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 115_u8, 116_u8, 114_u8, 101_u8, 97_u8, 109_u8, 32_u8, 101_u8, 110_u8, 100_u8, 115_u8, 32_u8, 101_u8, 97_u8, 114_u8, 108_u8, 121_u8, 10_u8];
 
-const reason_malformed: FixedVector<u8, 50> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 109_u8, 97_u8, 108_u8, 102_u8, 111_u8, 114_u8, 109_u8, 101_u8, 100_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 115_u8, 116_u8, 114_u8, 101_u8, 97_u8, 109_u8, 10_u8];
+const reason_malformed: Array<u8, 50> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 109_u8, 97_u8, 108_u8, 102_u8, 111_u8, 114_u8, 109_u8, 101_u8, 100_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 115_u8, 116_u8, 114_u8, 101_u8, 97_u8, 109_u8, 10_u8];
 
-const reason_output_full: FixedVector<u8, 63> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 100_u8, 101_u8, 99_u8, 111_u8, 100_u8, 101_u8, 100_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 32_u8, 101_u8, 120_u8, 99_u8, 101_u8, 101_u8, 100_u8, 115_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 32_u8, 98_u8, 117_u8, 102_u8, 102_u8, 101_u8, 114_u8, 10_u8];
+const reason_output_full: Array<u8, 63> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 100_u8, 101_u8, 99_u8, 111_u8, 100_u8, 101_u8, 100_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 32_u8, 101_u8, 120_u8, 99_u8, 101_u8, 101_u8, 100_u8, 115_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 32_u8, 98_u8, 117_u8, 102_u8, 102_u8, 101_u8, 114_u8, 10_u8];
 
-const reason_write_failed: FixedVector<u8, 56> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 112_u8, 117_u8, 98_u8, 108_u8, 105_u8, 115_u8, 104_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 100_u8, 101_u8, 99_u8, 111_u8, 100_u8, 101_u8, 100_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 10_u8];
+const reason_write_failed: Array<u8, 56> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 112_u8, 117_u8, 98_u8, 108_u8, 105_u8, 115_u8, 104_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 100_u8, 101_u8, 99_u8, 111_u8, 100_u8, 101_u8, 100_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 10_u8];
 
-fn append_slice(destination: &uniq MutSlice<u8>, capacity: own u64, filled: own u64, text: own Slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
-  requires capacity == len_of(deref(destination));
-  requires filled <= capacity;
+fn append_slice(destination: &[u8], capacity: own u64, used: own u64, text: &[u8]) -> result: own u64 reads(text), writes(destination) contract {
+  requires capacity == deref(destination).len;
+  requires used <= capacity;
   ensures result <= capacity;
 } {
-  doc "Appends as much of one static message as the destination still holds.";
-  let spare = len_of(deref(destination));
-  let admitted = filled <= spare;
-  let length = len_of(text);
+  doc "Appends as much of one static message as the destination range reference still holds.";
+  let spare = deref(destination).len;
+  let admitted = used <= spare;
+  let length = deref(text).len;
   if admitted {
-    for @append (at in filled..spare) {
-      let taken = at -wrap filled;
+    for @append (at in used..spare) {
+      let taken = at -wrap used;
       let done = taken >= length;
       if done {
         return at;
       }
-      let byte = text[taken];
+      let byte = deref(text)[taken];
       set deref(destination)[at] = byte;
     }
     return spare;
   } else {
-    return filled;
+    return used;
   }
 }
 
-fn copy_range(destination: &uniq MutSlice<u8>, at: own u64, source: own Slice<u8>, from: own u64, to: own u64) -> result: own u64 reads(destination, source), writes(destination) {
+fn copy_range(destination: &[u8], at: own u64, source: &[u8], from: own u64, to: own u64) -> result: own u64 reads(source), writes(destination) {
   doc "Copies one half-open source range into the destination at one offset.";
-  let source_room = len_of(source);
-  let destination_room = len_of(deref(destination));
+  let source_room = deref(source).len;
+  let destination_room = deref(destination).len;
   let target = at;
   let cursor = from;
   loop @copy {
@@ -144,7 +144,7 @@ fn copy_range(destination: &uniq MutSlice<u8>, at: own u64, source: own Slice<u8
     } else {
       return target;
     }
-    let byte = source[cursor];
+    let byte = deref(source)[cursor];
     let write_ok = target < destination_room;
     if write_ok {
     } else {
@@ -184,11 +184,11 @@ fn inflate_status(error: own InflateError) -> result: own u8 pure {
   }
 }
 
-fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(factory, output, source), writes(factory, output) contract {
-  define source_length = len_of(source);
+fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], length: own u64) -> result: own Result<unit, IoError> reads(source), writes(factory), writes(output) contract {
+  define source_length = deref(source).len;
   requires length <= source_length;
 } {
-  doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
+  doc "Publishes one prefix of the source range, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @publish {
     let pending = sent < length;
@@ -196,377 +196,264 @@ fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source:
     } else {
       break @publish;
     }
-    region {
-      match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: &source, start: sent, end: length) {
-        Ok(value: next) => {
-          set sent = next;
-        }
-        Err(error: problem) => {
-          return Err<unit, IoError>(error: move problem);
-        }
+    match write_once(factory: factory, output: output, source: source, start: sent, end: length) {
+      Ok(value: next_endpoint) => {
+        set sent = next_endpoint;
+      }
+      Err(error: problem) => {
+        return Err<unit, IoError>(error: move problem);
       }
     }
   }
   return Ok<unit, IoError>(value: unit);
 }
 
-fn assemble_reason(report: own MutSlice<u8>, capacity: own u64, reason: own u8) -> result: own u64 reads(report), writes(report) contract {
-  requires capacity == len_of(report);
+fn assemble_reason(report: &[u8], capacity: own u64, reason: own u8) -> result: own u64 writes(report) contract {
+  requires capacity == deref(report).len;
   ensures result <= capacity;
 } {
-  doc "Assembles the static diagnostic that names one boundary outcome and hands its length back; the caller publishes it, because a helper handed a view cannot form the shared child a write_once source needs [VIEW-2].";
+  doc "Assembles the static diagnostic that names one boundary outcome and hands its length back; the caller publishes it from the same range reference it handed in [REF-4].";
   let length = 0_u64;
   let report_capacity = capacity;
   if reason == 1_u8 {
-    region {
-      let view = slice_of(&usage_text);
-      region {
-        set length = append_slice(destination: &uniq report, capacity: report_capacity, filled: length, text: view);
-      }
-    }
+    let view = &usage_text[0_u64..33_u64];
+    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
   }
   if reason == 2_u8 {
-    region {
-      let view = slice_of(&reason_unreadable);
-      region {
-        set length = append_slice(destination: &uniq report, capacity: report_capacity, filled: length, text: view);
-      }
-    }
+    let view = &reason_unreadable[0_u64..55_u64];
+    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
   }
   if reason == 3_u8 {
-    region {
-      let view = slice_of(&reason_empty);
-      region {
-        set length = append_slice(destination: &uniq report, capacity: report_capacity, filled: length, text: view);
-      }
-    }
+    let view = &reason_empty[0_u64..45_u64];
+    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
   }
   if reason == 4_u8 {
-    region {
-      let view = slice_of(&reason_too_large);
-      region {
-        set length = append_slice(destination: &uniq report, capacity: report_capacity, filled: length, text: view);
-      }
-    }
+    let view = &reason_too_large[0_u64..64_u64];
+    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
   }
   if reason == 5_u8 {
-    region {
-      let view = slice_of(&reason_truncated);
-      region {
-        set length = append_slice(destination: &uniq report, capacity: report_capacity, filled: length, text: view);
-      }
-    }
+    let view = &reason_truncated[0_u64..51_u64];
+    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
   }
   if reason == 6_u8 {
-    region {
-      let view = slice_of(&reason_malformed);
-      region {
-        set length = append_slice(destination: &uniq report, capacity: report_capacity, filled: length, text: view);
-      }
-    }
+    let view = &reason_malformed[0_u64..50_u64];
+    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
   }
   if reason == 7_u8 {
-    region {
-      let view = slice_of(&reason_output_full);
-      region {
-        set length = append_slice(destination: &uniq report, capacity: report_capacity, filled: length, text: view);
-      }
-    }
+    let view = &reason_output_full[0_u64..63_u64];
+    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
   }
   if reason == 8_u8 {
-    region {
-      let view = slice_of(&reason_write_failed);
-      region {
-        set length = append_slice(destination: &uniq report, capacity: report_capacity, filled: length, text: view);
-      }
-    }
+    let view = &reason_write_failed[0_u64..56_u64];
+    set length = append_slice(destination: report, capacity: report_capacity, used: length, text: view);
   }
   return length;
 }
 
-fn exercise(args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, err: &uniq OutputStream, files: &uniq HandleFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(out, err, files) {
-  doc "Reads one raw DEFLATE file named on the command line through ordinary read_at calls; every boundary outcome reaches its own status.";
-  region 'workspace {
-    let workspace = arena_frame::<131072, 1, 'workspace>();
-    region {
-      let scratch = arena_vector_proved::<u8>(store: &uniq workspace, count: 4097_u64);
-      for @reserve_scratch (
-        at in 0_u64..4097_u64,
-        invariant grown: len_of(scratch) >= at,
-        invariant spare: room_of(scratch) + at >= 4097_u64,
-        invariant flat: head_of(scratch) <= 0_u64
-      ) {
-        place_back(vector: &uniq scratch, value: 0_u8);
+fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputStream, files: &HandleFactory) -> status: own ExitStatus reads(args), reads(cwd), writes(out), writes(err), writes(files) {
+  doc "Reads one raw DEFLATE file named on the command line through ordinary read_at calls; every boundary outcome reaches its own status. The four runs are inline Slots windows of this frame, so the boundary needs no arena [TYPE-9, STOR-1].";
+  let scratch = slots_new::<u8, 4097>();
+  for @reserve_scratch (
+    at in 0_u64..4097_u64,
+    invariant grown: scratch.len >= at,
+    invariant spare: scratch.room + at >= 4097_u64
+  ) {
+    place_back(window: &scratch, value: 0_u8);
+  }
+  let report = slots_new::<u8, 128>();
+  for @reserve_report (
+    at in 0_u64..128_u64,
+    invariant grown: report.len >= at,
+    invariant spare: report.room + at >= 128_u64
+  ) {
+    place_back(window: &report, value: 0_u8);
+  }
+  let scratch_window = &scratch[0_u64..4097_u64];
+  let report_window = &report[0_u64..128_u64];
+  let report_room = 128_u64;
+  let arguments = args_count(args: args);
+  let named = arguments >= 2_u64;
+  if named {
+  } else {
+    let assembled = assemble_reason(report: report_window, capacity: report_room, reason: 1_u8);
+    match publish_all(factory: files, output: err, source: report_window, length: assembled) {
+      Ok(value: published) => {
       }
-      let report = arena_vector_proved::<u8>(store: &uniq workspace, count: 128_u64);
-      for @reserve_report (
-        at in 0_u64..128_u64,
-        invariant grown: len_of(report) >= at,
-        invariant spare: room_of(report) + at >= 128_u64,
-        invariant flat: head_of(report) <= 0_u64
-      ) {
-        place_back(vector: &uniq report, value: 0_u8);
+      Err(error: problem) => {
       }
-      let report_room = len_of(report);
-      let arguments = 0_u64;
-      region {
-        set arguments = args_count(args: args);
-      }
-      let named = arguments >= 2_u64;
-      if named {
-      } else {
-        region {
-          let report_window = mut_slice_of(&uniq report);
-          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 1_u8);
-          let publish_view = slice_of(&report);
-          region {
-            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
-              Ok(value: published) => {
-              }
-              Err(error: problem) => {
-              }
-            }
-          }
-        }
-        return exit_status(code: 1_u8);
-      }
-      let status = 0_u8;
-      let filled = 0_u64;
-      let file_offset = 0_u64;
-      region {
-        match arg_get(args: args, position: 1_u64) {
-          Ok(value: text) => {
-            match relative_path(value: move text) {
-              Ok(value: path) => {
-                region {
-                  match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                    Ok(value: file) => {
-                      let ended = 0_u8;
-                      region {
-                        let scratch_window = mut_slice_of(&uniq scratch);
-                        loop @chunks {
-                          let within_scratch = filled <= 4097_u64;
-                          if within_scratch {
-                          } else {
-                            set ended = 2_u8;
-                            break @chunks;
-                          }
-                          let spare = 4097_u64 -wrap filled;
-                          let full = spare == 0_u64;
-                          if full {
-                            break @chunks;
-                          }
-                          region {
-                            match read_at(factory: &uniq deref(files), file: &uniq file, destination: &uniq scratch_window, file_offset: file_offset, start: filled, end: 4097_u64) {
-                              Ok(value: endpoint) => {
-                                let received = endpoint -wrap filled;
-                                set file_offset = file_offset +wrap received;
-                                set filled = endpoint;
-                              }
-                              Err(error: read_stop_15) => {
-                                match read_stop_15 {
-                                  ReadEnd() => {
-                                    set ended = 1_u8;
-                                  }
-                                  ReadFailed(error: problem) => {
-                                    set ended = 2_u8;
-                                  }
-                                }
-                              }
-                            }
-                          }
-                          if ended != 0_u8 {
-                            break @chunks;
-                          }
-                        }
+    }
+    return exit_status(code: 1_u8);
+  }
+  let status = 0_u8;
+  let loaded = 0_u64;
+  let file_offset = 0_u64;
+  match arg_get(args: args, position: 1_u64) {
+    Ok(value: text) => {
+      match relative_path(value: move text) {
+        Ok(value: path) => {
+          match open_read(factory: files, root: cwd, path: &path) {
+            Ok(value: file) => {
+              let ended = 0_u8;
+              loop @chunks {
+                let within_scratch = loaded <= 4097_u64;
+                if within_scratch {
+                } else {
+                  set ended = 2_u8;
+                  break @chunks;
+                }
+                let spare = 4097_u64 -wrap loaded;
+                let full = spare == 0_u64;
+                if full {
+                  break @chunks;
+                }
+                match read_at(factory: files, file: &file, destination: scratch_window, file_offset: file_offset, start: loaded, end: 4097_u64) {
+                  Ok(value: endpoint) => {
+                    let received = endpoint -wrap loaded;
+                    set file_offset = file_offset +wrap received;
+                    set loaded = endpoint;
+                  }
+                  Err(error: read_stop_15) => {
+                    match read_stop_15 {
+                      ReadEnd() => {
+                        set ended = 1_u8;
                       }
-                      if ended == 2_u8 {
-                        set status = 2_u8;
+                      ReadFailed(error: problem) => {
+                        set ended = 2_u8;
                       }
-                      close_read(factory: &uniq deref(files), file: move file);
-                    }
-                    Err(error: problem) => {
-                      set status = 2_u8;
                     }
                   }
                 }
+                if ended != 0_u8 {
+                  break @chunks;
+                }
               }
-              Err(error: rejected) => {
+              if ended == 2_u8 {
                 set status = 2_u8;
               }
-            }
-          }
-          Err(error: absent) => {
-            set status = 1_u8;
-          }
-        }
-      }
-      if status != 0_u8 {
-        region {
-          let report_window = mut_slice_of(&uniq report);
-          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: status);
-          let publish_view = slice_of(&report);
-          region {
-            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
-              Ok(value: published) => {
-              }
-              Err(error: problem) => {
-              }
-            }
-          }
-        }
-        return exit_status(code: status);
-      }
-      let empty = filled == 0_u64;
-      if empty {
-        region {
-          let report_window = mut_slice_of(&uniq report);
-          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 3_u8);
-          let publish_view = slice_of(&report);
-          region {
-            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
-              Ok(value: published) => {
-              }
-              Err(error: problem) => {
-              }
-            }
-          }
-        }
-        return exit_status(code: 3_u8);
-      }
-      let too_large = filled > 4096_u64;
-      if too_large {
-        region {
-          let report_window = mut_slice_of(&uniq report);
-          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 4_u8);
-          let publish_view = slice_of(&report);
-          region {
-            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
-              Ok(value: published) => {
-              }
-              Err(error: problem) => {
-              }
-            }
-          }
-        }
-        return exit_status(code: 4_u8);
-      }
-      let stream = arena_vector_proved::<u8>(store: &uniq workspace, count: 4096_u64);
-      for @reserve_stream (
-        at in 0_u64..filled,
-        invariant made_lo: len_of(stream) >= at,
-        invariant made_hi: len_of(stream) <= at,
-        invariant spare_lo: room_of(stream) + at >= 4096_u64,
-        invariant spare_hi: room_of(stream) + at <= 4096_u64,
-        invariant flat: head_of(stream) <= 0_u64
-      ) {
-        place_back(vector: &uniq stream, value: 0_u8);
-      }
-      region {
-        let scratch_view = slice_of(&scratch);
-        let stream_window = mut_slice_of(&uniq stream);
-        region {
-          let copied = copy_range(destination: &uniq stream_window, at: 0_u64, source: scratch_view, from: 0_u64, to: filled);
-        }
-      }
-      let decoded = arena_vector_proved::<u8>(store: &uniq workspace, count: 65536_u64);
-      for @reserve_decoded (
-        at in 0_u64..65536_u64,
-        invariant grown: len_of(decoded) >= at,
-        invariant spare: room_of(decoded) + at >= 65536_u64,
-        invariant flat: head_of(decoded) <= 0_u64
-      ) {
-        place_back(vector: &uniq decoded, value: 0_u8);
-      }
-      let decoded_length = 0_u64;
-      region {
-        let stream_view = slice_of(&stream);
-        let decoded_window = mut_slice_of(&uniq decoded);
-        region {
-          match inflate(out: &uniq decoded_window, input: stream_view) {
-            Ok(value: produced) => {
-              set decoded_length = produced;
-            }
-            Err(error: failure) => {
-              set status = inflate_status(error: failure);
-            }
-          }
-        }
-      }
-      if status != 0_u8 {
-        region {
-          let report_window = mut_slice_of(&uniq report);
-          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: status);
-          let publish_view = slice_of(&report);
-          region {
-            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
-              Ok(value: published) => {
-              }
-              Err(error: problem) => {
-              }
-            }
-          }
-        }
-        return exit_status(code: status);
-      }
-      let decoded_room = len_of(decoded);
-      let decoded_fits = decoded_length <= decoded_room;
-      if decoded_fits {
-      } else {
-        region {
-          let report_window = mut_slice_of(&uniq report);
-          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 7_u8);
-          let publish_view = slice_of(&report);
-          region {
-            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
-              Ok(value: published) => {
-              }
-              Err(error: problem) => {
-              }
-            }
-          }
-        }
-        return exit_status(code: 7_u8);
-      }
-      region {
-        let decoded_view = slice_of(&decoded);
-        region {
-          match publish_all(factory: &uniq deref(files), output: &uniq deref(out), source: decoded_view, length: decoded_length) {
-            Ok(value: published) => {
+              close_read(factory: files, file: move file);
             }
             Err(error: problem) => {
-              set status = 8_u8;
+              set status = 2_u8;
             }
           }
         }
-      }
-      if status != 0_u8 {
-        region {
-          let report_window = mut_slice_of(&uniq report);
-          let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: status);
-          let publish_view = slice_of(&report);
-          region {
-            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
-              Ok(value: published) => {
-              }
-              Err(error: problem) => {
-              }
-            }
-          }
+        Err(error: rejected) => {
+          set status = 2_u8;
         }
-        return exit_status(code: status);
       }
-      return exit_status(code: 0_u8);
+    }
+    Err(error: absent) => {
+      set status = 1_u8;
     }
   }
+  if status != 0_u8 {
+    let assembled = assemble_reason(report: report_window, capacity: report_room, reason: status);
+    match publish_all(factory: files, output: err, source: report_window, length: assembled) {
+      Ok(value: published) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+    return exit_status(code: status);
+  }
+  let empty = loaded == 0_u64;
+  if empty {
+    let assembled = assemble_reason(report: report_window, capacity: report_room, reason: 3_u8);
+    match publish_all(factory: files, output: err, source: report_window, length: assembled) {
+      Ok(value: published) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+    return exit_status(code: 3_u8);
+  }
+  let too_large = loaded > 4096_u64;
+  if too_large {
+    let assembled = assemble_reason(report: report_window, capacity: report_room, reason: 4_u8);
+    match publish_all(factory: files, output: err, source: report_window, length: assembled) {
+      Ok(value: published) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+    return exit_status(code: 4_u8);
+  }
+  let stream = slots_new::<u8, 4096>();
+  for @reserve_stream (
+    at in 0_u64..4096_u64,
+    invariant grown: stream.len >= at,
+    invariant spare: stream.room + at >= 4096_u64
+  ) {
+    place_back(window: &stream, value: 0_u8);
+  }
+  let stream_window = &stream[0_u64..4096_u64];
+  let copied = copy_range(destination: stream_window, at: 0_u64, source: scratch_window, from: 0_u64, to: loaded);
+  let decoded = slots_new::<u8, 65536>();
+  for @reserve_decoded (
+    at in 0_u64..65536_u64,
+    invariant grown: decoded.len >= at,
+    invariant spare: decoded.room + at >= 65536_u64
+  ) {
+    place_back(window: &decoded, value: 0_u8);
+  }
+  let decoded_window = &decoded[0_u64..65536_u64];
+  let stream_view = &stream[0_u64..loaded];
+  let decoded_length = 0_u64;
+  match inflate(out: decoded_window, input: stream_view) {
+    Ok(value: produced) => {
+      set decoded_length = produced;
+    }
+    Err(error: failure) => {
+      set status = inflate_status(error: failure);
+    }
+  }
+  if status != 0_u8 {
+    let assembled = assemble_reason(report: report_window, capacity: report_room, reason: status);
+    match publish_all(factory: files, output: err, source: report_window, length: assembled) {
+      Ok(value: published) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+    return exit_status(code: status);
+  }
+  let decoded_room = 65536_u64;
+  let decoded_fits = decoded_length <= decoded_room;
+  if decoded_fits {
+  } else {
+    let assembled = assemble_reason(report: report_window, capacity: report_room, reason: 7_u8);
+    match publish_all(factory: files, output: err, source: report_window, length: assembled) {
+      Ok(value: published) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+    return exit_status(code: 7_u8);
+  }
+  match publish_all(factory: files, output: out, source: decoded_window, length: decoded_length) {
+    Ok(value: published) => {
+    }
+    Err(error: problem) => {
+      set status = 8_u8;
+    }
+  }
+  if status != 0_u8 {
+    let assembled = assemble_reason(report: report_window, capacity: report_room, reason: status);
+    match publish_all(factory: files, output: err, source: report_window, length: assembled) {
+      Ok(value: published) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+    return exit_status(code: status);
+  }
+  return exit_status(code: 0_u8);
 }
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: files, stdin: unused_stdin) = move inputs;
-  region {
-    let outcome = exercise(args: &args, cwd: &cwd, out: &uniq out, err: &uniq err, files: &uniq files);
-    close_directory(factory: &uniq files, directory: move cwd);
-    return move outcome;
-  }
+  let outcome = exercise(args: &args, cwd: &cwd, out: &out, err: &err, files: &files);
+  close_directory(factory: &files, directory: move cwd);
+  return move outcome;
 }

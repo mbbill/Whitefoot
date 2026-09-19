@@ -1,56 +1,24 @@
-enum RuntimeGapNode['s] {
+enum RuntimeGapNode {
   Empty();
-  Entry(left: Box<'s, RuntimeGapNode<'s>>, right: Box<'s, RuntimeGapNode<'s>>);
+  Entry(left: Box<RuntimeGapNode>, right: Box<RuntimeGapNode>);
 }
 
-fn boxed_empty['s](store: &uniq Heap<'s>) -> made: own Option<Box<'s, RuntimeGapNode<'s>>> reads(store), writes(store), allocates(store) {
-  let empty = Empty<'s>();
-  region {
-    match heap_box(store: &uniq deref(store), value: move empty) {
-      Ok(value: cell) => {
-        return Some<Box<'s, RuntimeGapNode<'s>>>(value: move cell);
-      }
-      Err(error: back) => {
-        return None<Box<'s, RuntimeGapNode<'s>>>();
-      }
-    }
-  }
+fn boxed_empty() -> made: own Box<RuntimeGapNode> pure {
+  let empty = Empty();
+  let cell = box_new::<RuntimeGapNode>(value: move empty);
+  return move cell;
 }
 
-fn insert_once['s](store: &uniq Heap<'s>, tree: &uniq Box<'s, RuntimeGapNode<'s>>) -> inserted: own Bool reads(store, tree), writes(store, tree), allocates(store) {
-  doc "Minimal valid-source trigger: allocate a replacement recursive node, replace the caller's Box descriptor, and let ordinary cleanup release the displaced Empty cell and resulting tree.";
-  match deref(deref(tree)) {
+fn insert_once(tree: &Box<RuntimeGapNode>) -> inserted: own Bool writes(tree) {
+  doc "Minimal valid-source trigger: allocate a replacement recursive node and commit it over the caller's cell, so the ordinary assignment releases the displaced Empty cell and scope exit releases the resulting tree.";
+  match deref(tree).inner {
     Empty() => {
-      region {
-        match boxed_empty(store: &uniq deref(store)) {
-          None() => {
-            return False();
-          }
-          Some(value: left_child) => {
-            region {
-              match boxed_empty(store: &uniq deref(store)) {
-                None() => {
-                  return False();
-                }
-                Some(value: right_child) => {
-                  let stored_entry = Entry(left: move left_child, right: move right_child);
-                  region {
-                    match heap_box(store: &uniq deref(store), value: move stored_entry) {
-                      Err(error: back) => {
-                        return False();
-                      }
-                      Ok(value: replacement) => {
-                        let displaced = replace deref(tree) = move replacement;
-                        return True();
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+      let left_child = boxed_empty();
+      let right_child = boxed_empty();
+      let stored_entry = Entry(left: move left_child, right: move right_child);
+      let replacement = box_new::<RuntimeGapNode>(value: move stored_entry);
+      set deref(tree) = move replacement;
+      return True();
     }
     Entry(left: existing_left, right: existing_right) => {
       return True();
@@ -58,22 +26,12 @@ fn insert_once['s](store: &uniq Heap<'s>, tree: &uniq Box<'s, RuntimeGapNode<'s>
   }
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "Expected success is exit 0; allocator refusal is exit 70.";
-  region {
-    match boxed_empty(store: &uniq heap) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: root) => {
-        region {
-          let inserted = insert_once(store: &uniq heap, tree: &uniq root);
-          if inserted {
-            return exit_status(code: 0_u8);
-          }
-          return exit_status(code: 70_u8);
-        }
-      }
-    }
+fn main() -> status: own ExitStatus pure {
+  doc "Expected success is exit 0; allocation is total, so there is no refusal path to report.";
+  let root = boxed_empty();
+  let inserted = insert_once(tree: &root);
+  if inserted {
+    return exit_status(code: 0_u8);
   }
+  return exit_status(code: 70_u8);
 }

@@ -31,9 +31,9 @@ fn drain(fail: own Bool) -> result: own u8 pure {
     }
     Ok(value: second) => {
       place_back(window: &run, value: move second);
-      let last = take_back(window: &run);
+      let last_value = take_back(window: &run);
       let first = take_back(window: &run);
-      let last_number = consume(ticket: move last);
+      let last_number = consume(ticket: move last_value);
       let first_number = consume(ticket: move first);
       free_empty(window: move run);
       let total = first_number +wrap last_number;

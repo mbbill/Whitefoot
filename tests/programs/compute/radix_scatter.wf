@@ -1,57 +1,53 @@
 struct Chunk {
-  low: FixedVector<u64, 256>;
-  high: FixedVector<u64, 256>;
+  low: Slots<u64, 256>;
+  high: Slots<u64, 256>;
 }
 
-fn append_selected(values: &uniq FixedVector<u64, 256>, value: own u64, selected: own Bool) -> result: own unit reads(values), writes(values) contract {
-  requires len_of(deref(values)) < 256_u64;
-  ensures len_of(deref(values)) <= len_of(deref(entry(values))) + 1_u64;
+fn append_selected(values: &Slots<u64, 256>, value: own u64, selected: own Bool) -> result: own unit writes(values) contract {
+  requires deref(values).len < 256_u64;
+  ensures deref(values).len <= deref(entry(values)).len + 1_u64;
 } {
   if selected {
-    region {
-      place_back(vector: &uniq deref(values), value: value);
-    }
+    place_back(window: values, value: value);
     return unit;
   }
   return unit;
 }
 
-fn partition_block(input: own Slice<u64>, bit: own u32) -> (low: own FixedVector<u64, 256>, high: own FixedVector<u64, 256>) reads(input) contract {
-  requires len_of(input) <= 256_u64;
+fn partition_block(input: &[u64], bit: own u32) -> (low: own Slots<u64, 256>, high: own Slots<u64, 256>) reads(input) contract {
+  requires deref(input).len <= 256_u64;
   requires bit < 64_u32;
-  ensures len_of(low) <= len_of(input);
-  ensures len_of(high) <= len_of(input);
+  ensures low.len <= deref(input).len;
+  ensures high.len <= deref(input).len;
 } {
-  let count = len_of(input);
-  let lows = fixed_vector::<u64, 256>();
-  let highs = fixed_vector::<u64, 256>();
+  let count = deref(input).len;
+  let lows = slots_new::<u64, 256>();
+  let highs = slots_new::<u64, 256>();
   for (
     i in 0_u64..count,
-    invariant low_count: len_of(lows) <= i,
-    invariant high_count: len_of(highs) <= i
+    invariant low_count: lows.len <= i,
+    invariant high_count: highs.len <= i
   ) {
-    let key = input[i];
+    let key = deref(input)[i];
     let shifted = ishr(key, bit);
     let digit = shifted % 2_u64;
     let is_low = digit == 0_u64;
     let is_high = digit != 0_u64;
-    region {
-      append_selected(values: &uniq lows, value: key, selected: is_low);
-      append_selected(values: &uniq highs, value: key, selected: is_high);
-    }
+    append_selected(values: &lows, value: key, selected: is_low);
+    append_selected(values: &highs, value: key, selected: is_high);
   }
   return move lows, move highs;
 }
 
-fn write_chunk(input: own Slice<u64>, bit: own u32, output: own MutSlice<Option<Chunk>>) -> result: own u64 reads(input, output), writes(output) contract {
-  requires len_of(input) <= 256_u64;
+fn write_chunk(input: &[u64], bit: own u32, output: &[Option<Chunk>]) -> result: own u64 reads(input), writes(output) contract {
+  requires deref(input).len <= 256_u64;
   requires bit < 64_u32;
-  requires 1_u64 <= len_of(output);
+  requires 1_u64 <= deref(output).len;
 } {
   let (low, high) = partition_block(input: input, bit: bit);
   let chunk = Chunk(low: move low, high: move high);
-  let previous = replace output[0_u64] = Some<Chunk>(value: move chunk);
-  return len_of(input);
+  set deref(output)[0_u64] = Some<Chunk>(value: move chunk);
+  return deref(input).len;
 }
 
 fn tally(chunk: own Option<Chunk>, previous_low: own u64, previous_high: own u64) -> (kept: own Option<Chunk>, low: own u64, high: own u64) pure contract {
@@ -65,8 +61,8 @@ fn tally(chunk: own Option<Chunk>, previous_low: own u64, previous_high: own u64
       return None<Chunk>(), previous_low, previous_high;
     }
     Some(value: payload) => {
-      let low_count = len_of(payload.low);
-      let high_count = len_of(payload.high);
+      let low_count = payload.low.len;
+      let high_count = payload.high.len;
       let low_sum = previous_low + low_count;
       let high_sum = previous_high + high_count;
       return Some<Chunk>(value: move payload), low_sum, high_sum;
@@ -74,74 +70,82 @@ fn tally(chunk: own Option<Chunk>, previous_low: own u64, previous_high: own u64
   }
 }
 
-fn copy_run(values: &FixedVector<u64, 256>, output: own MutSlice<u64>) -> result: own u64 reads(values), writes(output) contract {
-  requires len_of(deref(values)) <= len_of(output);
+fn copy_run(values: &Slots<u64, 256>, output: &[u64]) -> result: own u64 reads(values), writes(output) contract {
+  requires deref(values).len <= deref(output).len;
 } {
-  let count = len_of(deref(values));
+  let count = deref(values).len;
   for (i in 0_u64..count) {
-    set output[i] = deref(values)[i];
+    set deref(output)[i] = deref(values)[i];
   }
   return count;
 }
 
-fn copy_values(input: own Slice<u64>, output: own MutSlice<u64>) -> result: own u64 reads(input), writes(output) contract {
-  requires len_of(input) <= len_of(output);
+fn copy_values(input: &[u64], output: &[u64]) -> result: own u64 reads(input), writes(output) contract {
+  requires deref(input).len <= deref(output).len;
 } {
-  let count = len_of(input);
+  let count = deref(input).len;
   for (i in 0_u64..count) {
-    set output[i] = input[i];
+    set deref(output)[i] = deref(input)[i];
   }
   return count;
 }
 
-fn pack_chunks(chunks: own MutSlice<Option<Chunk>>, lows: own MutSlice<u64>, highs: own MutSlice<u64>) -> result: own u64 reads(chunks, lows, highs), writes(chunks, lows, highs) contract {
-  requires len_of(chunks) <= 16777217_u64;
-  requires 256_u64 * len_of(chunks) <= len_of(lows);
-  requires 256_u64 * len_of(chunks) <= len_of(highs);
+fn pack_chunks(chunks: &[Option<Chunk>], lows: &[u64], highs: &[u64]) -> result: own u64 writes(chunks), writes(lows), writes(highs) contract {
+  requires deref(chunks).len <= 16777217_u64;
+  requires 256_u64 * deref(chunks).len <= deref(lows).len;
+  requires 256_u64 * deref(chunks).len <= deref(highs).len;
 } {
-  let blocks = len_of(chunks);
-  let low_capacity = len_of(lows);
-  let high_capacity = len_of(highs);
+  let blocks = deref(chunks).len;
+  let low_capacity = deref(lows).len;
+  let high_capacity = deref(highs).len;
   if blocks == 0_u64 {
     return 0_u64;
   }
-  let chunk = replace chunks[0_u64] = None<Chunk>();
-  region {
-    let tail = mut_slice_of(&uniq chunks, 1_u64, blocks);
-    match chunk {
-      None() => {
-        return pack_chunks(chunks: move tail, lows: move lows, highs: move highs);
-      }
-      Some(value: payload) => {
-        region {
-          let low_count = len_of(payload.low);
-          let high_count = len_of(payload.high);
-          let first_low = mut_slice_of(&uniq lows, 0_u64, low_count);
-          let rest_low = mut_slice_of(&uniq lows, low_count, low_capacity);
-          let first_high = mut_slice_of(&uniq highs, 0_u64, high_count);
-          let rest_high = mut_slice_of(&uniq highs, high_count, high_capacity);
-          let copied_low = copy_run(values: &payload.low, output: move first_low);
-          let copied_high = copy_run(values: &payload.high, output: move first_high);
-          let remaining = pack_chunks(chunks: move tail, lows: move rest_low, highs: move rest_high);
-        }
-      }
+  let taken = None<Chunk>();
+  swap(first: &deref(chunks)[0_u64], second: &taken);
+  let tail = &deref(chunks)[1_u64..blocks];
+  match move taken {
+    None() => {
+      return pack_chunks(chunks: tail, lows: lows, highs: highs);
+    }
+    Some(value: payload) => {
+      let low_count = payload.low.len;
+      let high_count = payload.high.len;
+      let first_low = &deref(lows)[0_u64..low_count];
+      let rest_low = &deref(lows)[low_count..low_capacity];
+      let first_high = &deref(highs)[0_u64..high_count];
+      let rest_high = &deref(highs)[high_count..high_capacity];
+      let copied_low = copy_run(values: &payload.low, output: first_low);
+      let copied_high = copy_run(values: &payload.high, output: first_high);
+      let remaining = pack_chunks(chunks: tail, lows: rest_low, highs: rest_high);
     }
   }
   return 0_u64;
 }
 
-fn radix_scatter(input: own Slice<u64>, bit: own u32) -> result: own buffer<u64> reads(input) contract {
-  requires len_of(input) <= 16777216_u64;
+fn radix_scatter(input: &[u64], bit: own u32) -> result: own Box<Array<u64>> reads(input) contract {
+  requires deref(input).len <= 16777216_u64;
   requires bit < 64_u32;
 } {
-  doc "Stable distribution by one runtime-selected bit. Fixed-capacity local runs carry bounded lengths; a recursive chain packs each digit through exclusive output ranges. Extra buffers, transfers, and chain depth are measured costs.";
-  let count = len_of(input);
+  doc "Stable distribution by one runtime-selected bit. Fixed-capacity local runs carry bounded lengths; a recursive chain packs each digit through exclusive output ranges. Extra cells, transfers, and chain depth are measured costs.";
+  let count = deref(input).len;
   let full_blocks = count / 256_u64;
   let covered = full_blocks * 256_u64;
   let blocks = full_blocks + 1_u64;
   let capacity = covered + 256_u64;
   invariant capacity_limit: capacity <= 16777472_u64;
-  let chunks = buffer_vacant::<Chunk>(blocks);
+  let chunks = box_slots_new::<Option<Chunk>>(capacity: blocks);
+  for (
+    index in 0_u64..blocks,
+    invariant filled: chunks.inner.len >= index,
+    invariant bounded: chunks.inner.len <= index,
+    invariant spare: chunks.inner.room + index >= blocks
+  ) {
+    let vacant = None<Chunk>();
+    place_back(window: &chunks.inner, value: move vacant);
+  }
+  invariant complete_min: chunks.inner.len >= blocks;
+  invariant complete_max: chunks.inner.len <= blocks;
   for (block in 0_u64..blocks) {
     let first = block * 256_u64;
     let end = first + 256_u64;
@@ -150,17 +154,13 @@ fn radix_scatter(input: own Slice<u64>, bit: own u32) -> result: own buffer<u64>
     }
     let after = block + 1_u64;
     if end <= count {
-      region {
-        let source = slice_of(&input, first, end);
-        let destination = mut_slice_of(&uniq chunks, block, after);
-        let wrote = write_chunk(input: source, bit: bit, output: move destination);
-      }
+      let source = &deref(input)[first..end];
+      let destination = &chunks.inner[block..after];
+      let wrote = write_chunk(input: source, bit: bit, output: destination);
     } else {
-      region {
-        let source = slice_of(&input, first, count);
-        let destination = mut_slice_of(&uniq chunks, block, after);
-        let wrote = write_chunk(input: source, bit: bit, output: move destination);
-      }
+      let source = &deref(input)[first..count];
+      let destination = &chunks.inner[block..after];
+      let wrote = write_chunk(input: source, bit: bit, output: destination);
     }
   }
   let low_total = 0_u64;
@@ -178,71 +178,65 @@ fn radix_scatter(input: own Slice<u64>, bit: own u32) -> result: own buffer<u64>
       use high_bound;
       use 256 times (block <= blocks);
     }
-    let chunk = replace chunks[block] = None<Chunk>();
-    let (kept, next_low, next_high) = tally(chunk: move chunk, previous_low: low_total, previous_high: high_total);
+    let taken = None<Chunk>();
+    swap(first: &chunks.inner[block], second: &taken);
+    let (kept, next_low, next_high) = tally(chunk: move taken, previous_low: low_total, previous_high: high_total);
     invariant next_low_bound: next_low <= 256_u64 * block + 256_u64;
     invariant next_high_bound: next_high <= 256_u64 * block + 256_u64;
     set low_total = next_low;
     set high_total = next_high;
-    let old = replace chunks[block] = move kept;
+    set chunks.inner[block] = move kept;
   }
   invariant full_low_bound: low_total <= capacity;
   invariant full_high_bound: high_total <= capacity;
-  let lows = buffer_new(capacity, 0_u64);
-  let highs = buffer_new(capacity, 0_u64);
-  region {
-    let source = mut_slice_of(&uniq chunks, 0_u64, blocks);
-    let low_output = mut_slice_of(&uniq lows, 0_u64, capacity);
-    let high_output = mut_slice_of(&uniq highs, 0_u64, capacity);
-    let packed = pack_chunks(chunks: move source, lows: move low_output, highs: move high_output);
-  }
+  let lows = box_array_filled::<u64>(count: capacity, value: 0_u64);
+  let highs = box_array_filled::<u64>(count: capacity, value: 0_u64);
+  let source = &chunks.inner[0_u64..blocks];
+  let low_output = &lows.inner[0_u64..capacity];
+  let high_output = &highs.inner[0_u64..capacity];
+  let packed = pack_chunks(chunks: source, lows: low_output, highs: high_output);
   let output_count = low_total + high_total;
   invariant output_limit: output_count <= 33554944_u64 {
     use full_low_bound;
     use full_high_bound;
     use 2 times capacity_limit;
   }
-  let output = buffer_new(output_count, 0_u64);
-  region {
-    let low_source = slice_of(&lows, 0_u64, low_total);
-    let high_source = slice_of(&highs, 0_u64, high_total);
-    let low_output = mut_slice_of(&uniq output, 0_u64, low_total);
-    let high_output = mut_slice_of(&uniq output, low_total, output_count);
-    let copied_low = copy_values(input: low_source, output: move low_output);
-    let copied_high = copy_values(input: high_source, output: move high_output);
-  }
+  let output = box_array_filled::<u64>(count: output_count, value: 0_u64);
+  let low_source = &lows.inner[0_u64..low_total];
+  let high_source = &highs.inner[0_u64..high_total];
+  let low_destination = &output.inner[0_u64..low_total];
+  let high_destination = &output.inner[low_total..output_count];
+  let copied_low = copy_values(input: low_source, output: low_destination);
+  let copied_high = copy_values(input: high_source, output: high_destination);
   return move output;
 }
 
-fn release_radix_scatter(output: own buffer<u64>) -> result: own u64 pure {
+fn release_radix_scatter(output: own Box<Array<u64>>) -> result: own u64 pure {
   return 0_u64;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let input = buffer_new(8209_u64, 0_u64);
+  let input = box_array_filled::<u64>(count: 8209_u64, value: 0_u64);
   for (i in 0_u64..8209_u64) {
-    set input[i] = i;
+    set input.inner[i] = i;
   }
-  region {
-    let source = slice_of(&input);
-    let result = radix_scatter(input: source, bit: 0_u32);
-    let length = len_of(result);
-    if length != 8209_u64 {
-      return exit_status(code: 3_u8);
+  let result = radix_scatter(input: &input.inner[0_u64..8209_u64], bit: 0_u32);
+  let length = result.inner.len;
+  if length != 8209_u64 {
+    return exit_status(code: 3_u8);
+  }
+  for (i in 0_u64..4105_u64) {
+    let expected = i * 2_u64;
+    if result.inner[i] != expected {
+      return exit_status(code: 1_u8);
     }
-    for (i in 0_u64..4105_u64) {
-      let expected = i * 2_u64;
-      if result[i] != expected {
-        return exit_status(code: 1_u8);
-      }
-    }
-    for (i in 0_u64..4104_u64) {
-      let at = i + 4105_u64;
-      let even = i * 2_u64;
-      let expected = even + 1_u64;
-      if result[at] != expected {
-        return exit_status(code: 2_u8);
-      }
+  }
+  for (i in 0_u64..4104_u64) {
+    let at = i + 4105_u64;
+    let even = i * 2_u64;
+    let expected = even + 1_u64;
+    if result.inner[at] != expected {
+      return exit_status(code: 2_u8);
     }
   }
   return exit_status(code: 0_u8);

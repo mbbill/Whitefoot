@@ -103,8 +103,8 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
   ) {
     place_back(window: &page, value: 0_u8);
   }
-  let head = &first[0_u64..2_u64];
-  match write_once(factory: files, output: out, source: head, start: 0_u64, end: 2_u64) {
+  let head_range = &first[0_u64..2_u64];
+  match write_once(factory: files, output: out, source: head_range, start: 0_u64, end: 2_u64) {
     Ok(value: written) => {
     }
     Err(error: problem) => {

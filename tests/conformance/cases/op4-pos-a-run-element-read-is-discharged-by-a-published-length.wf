@@ -2,10 +2,10 @@ fn two() -> made: own Slots<u8, 4> pure contract {
   ensures made.len >= 2_u64;
 } {
   doc "Builds a run of two values and publishes what its window then holds.";
-  let filled = slots_new::<u8, 4>();
-  place_back(window: &filled, value: 7_u8);
-  place_back(window: &filled, value: 9_u8);
-  return move filled;
+  let filled_slots = slots_new::<u8, 4>();
+  place_back(window: &filled_slots, value: 7_u8);
+  place_back(window: &filled_slots, value: 9_u8);
+  return move filled_slots;
 }
 
 fn main() -> status: own ExitStatus pure {

@@ -1,13 +1,13 @@
 struct HuffmanTable {
-  counts: FixedVector<u64, 16>;
-  symbols: FixedVector<u64, 286>;
+  counts: Slots<u64, 16>;
+  symbols: Slots<u64, 286>;
   max_bits: u32;
   used_symbols: u64;
 }
 
-const code_length_order: FixedVector<u8, 19> =[16_u8, 17_u8, 18_u8, 0_u8, 8_u8, 7_u8, 9_u8, 6_u8, 10_u8, 5_u8, 11_u8, 4_u8, 12_u8, 3_u8, 13_u8, 2_u8, 14_u8, 1_u8, 15_u8];
+const code_length_order: Array<u8, 19> =[16_u8, 17_u8, 18_u8, 0_u8, 8_u8, 7_u8, 9_u8, 6_u8, 10_u8, 5_u8, 11_u8, 4_u8, 12_u8, 3_u8, 13_u8, 2_u8, 14_u8, 1_u8, 15_u8];
 
-fn decode_length(state: &uniq InflateState, input: own Slice<u8>, symbol: own u64) -> result: own Result<u64, InflateError> reads(state.input_offset, state.hold, state.bits, input), writes(state.input_offset, state.hold, state.bits) {
+fn decode_length(state: &InflateState, input: &[u8], symbol: own u64) -> result: own Result<u64, InflateError> reads(input), writes(state.input_offset), writes(state.hold), writes(state.bits) {
   let before_lengths = symbol < 257_u64;
   let after_lengths = symbol >= 286_u64;
   let invalid_symbol = bor(before_lengths, after_lengths);
@@ -29,21 +29,19 @@ fn decode_length(state: &uniq InflateState, input: own Slice<u8>, symbol: own u6
   let length_extra_high = ishl.wrap(1_u64, length_extra_count);
   let length_extra_mask = length_extra_high -wrap 1_u64;
   let length_extra = 0_u64;
-  region {
-    match read_bits(state: &uniq deref(state), input: input, count: length_extra_count, mask: length_extra_mask) {
-      Ok(value: extra) => {
-        set length_extra = extra;
-      }
-      Err(error: length_error) => {
-        return Err<u64, InflateError>(error: length_error);
-      }
+  match read_bits(state: state, input: input, count: length_extra_count, mask: length_extra_mask) {
+    Ok(value: extra) => {
+      set length_extra = extra;
+    }
+    Err(error: length_error) => {
+      return Err<u64, InflateError>(error: length_error);
     }
   }
   let copy_length = length_base +wrap length_extra;
   return Ok<u64, InflateError>(value: copy_length);
 }
 
-fn copy_distance(state: &uniq InflateState, input: own Slice<u8>, out: &uniq MutSlice<u8>, copy_length: own u64, distance_symbol: own u64) -> result: own Result<unit, InflateError> reads(state.input_offset, state.output_offset, state.hold, state.bits, input, out), writes(state.input_offset, state.output_offset, state.hold, state.bits, out) {
+fn copy_distance(state: &InflateState, input: &[u8], out: &[u8], copy_length: own u64, distance_symbol: own u64) -> result: own Result<unit, InflateError> reads(input), writes(state.input_offset), writes(state.output_offset), writes(state.hold), writes(state.bits), writes(out) {
   let invalid_distance_symbol = distance_symbol >= 30_u64;
   if invalid_distance_symbol {
     let error = InvalidDistance();
@@ -56,14 +54,12 @@ fn copy_distance(state: &uniq InflateState, input: own Slice<u8>, out: &uniq Mut
   let distance_extra_high = ishl.wrap(1_u64, distance_extra_count);
   let distance_extra_mask = distance_extra_high -wrap 1_u64;
   let distance_extra = 0_u64;
-  region {
-    match read_bits(state: &uniq deref(state), input: input, count: distance_extra_count, mask: distance_extra_mask) {
-      Ok(value: extra) => {
-        set distance_extra = extra;
-      }
-      Err(error: distance_error) => {
-        return Err<unit, InflateError>(error: distance_error);
-      }
+  match read_bits(state: state, input: input, count: distance_extra_count, mask: distance_extra_mask) {
+    Ok(value: extra) => {
+      set distance_extra = extra;
+    }
+    Err(error: distance_error) => {
+      return Err<unit, InflateError>(error: distance_error);
     }
   }
   let distance = distance_base +wrap distance_extra;
@@ -79,7 +75,7 @@ fn copy_distance(state: &uniq InflateState, input: own Slice<u8>, out: &uniq Mut
       break @copy_match;
     } else {
       let source_index = deref(state).output_offset -wrap distance;
-      let history_room = len_of(deref(out));
+      let history_room = deref(out).len;
       let source_in_history = source_index < history_room;
       if source_in_history {
       } else {
@@ -87,13 +83,11 @@ fn copy_distance(state: &uniq InflateState, input: own Slice<u8>, out: &uniq Mut
         return Err<unit, InflateError>(error: error);
       }
       let byte = deref(out)[source_index];
-      region {
-        match emit_byte(state: &uniq deref(state), out: &uniq deref(out), value: byte) {
-          Ok(value: emitted) => {
-          }
-          Err(error: emit_error) => {
-            return Err<unit, InflateError>(error: emit_error);
-          }
+      match emit_byte(state: state, out: out, value: byte) {
+        Ok(value: emitted) => {
+        }
+        Err(error: emit_error) => {
+          return Err<unit, InflateError>(error: emit_error);
         }
       }
       set copied = copied +wrap 1_u64;
@@ -102,12 +96,13 @@ fn copy_distance(state: &uniq InflateState, input: own Slice<u8>, out: &uniq Mut
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn build_huffman_table(lengths: own Slice<u8>, symbol_count: own u64, max_bits: own u32, allow_single: own Bool, allow_empty: own Bool) -> result: own Result<HuffmanTable, InflateError> reads(lengths) contract {
-  define lengths_room = len_of(lengths);
+fn build_huffman_table(lengths: &[u8], symbol_count: own u64, max_bits: own u32, allow_single: own Bool, allow_empty: own Bool) -> result: own Result<HuffmanTable, InflateError> reads(lengths) contract {
+  define lengths_room = deref(lengths).len;
   define symbol_limit = symbol_count <= 286_u64;
   requires symbol_count <= lengths_room;
   requires symbol_limit;
 } {
+  doc "The two columns are inline Slots windows of this frame, so the table needs no heap cell [TYPE-9, STOR-1].";
   let count_slots_word = cvt::<u32, u64>(max_bits);
   let count_slots = count_slots_word +wrap 1_u64;
   let count_slots_fit = count_slots <= 16_u64;
@@ -116,32 +111,30 @@ fn build_huffman_table(lengths: own Slice<u8>, symbol_count: own u64, max_bits: 
     let error = InvalidHuffmanTree();
     return Err<HuffmanTable, InflateError>(error: error);
   }
-  let counts = fixed_vector::<u64, 16>();
+  let counts = slots_new::<u64, 16>();
   for @reserve_counts (
     at in 0_u64..count_slots,
-    invariant made_lo: len_of(counts) >= at,
-    invariant made_hi: len_of(counts) <= at,
-    invariant spare_lo: room_of(counts) + at >= 16_u64,
-    invariant spare_hi: room_of(counts) + at <= 16_u64,
-    invariant flat: head_of(counts) <= 0_u64
+    invariant made_lo: counts.len >= at,
+    invariant made_hi: counts.len <= at,
+    invariant spare_lo: counts.room + at >= 16_u64,
+    invariant spare_hi: counts.room + at <= 16_u64
   ) {
-    place_back(vector: &uniq counts, value: 0_u64);
+    place_back(window: &counts, value: 0_u64);
   }
-  let symbols = fixed_vector::<u64, 286>();
+  let symbols = slots_new::<u64, 286>();
   for @reserve_symbols (
     at in 0_u64..symbol_count,
-    invariant made_lo: len_of(symbols) >= at,
-    invariant made_hi: len_of(symbols) <= at,
-    invariant spare_lo: room_of(symbols) + at >= 286_u64,
-    invariant spare_hi: room_of(symbols) + at <= 286_u64,
-    invariant flat: head_of(symbols) <= 0_u64
+    invariant made_lo: symbols.len >= at,
+    invariant made_hi: symbols.len <= at,
+    invariant spare_lo: symbols.room + at >= 286_u64,
+    invariant spare_hi: symbols.room + at <= 286_u64
   ) {
-    place_back(vector: &uniq symbols, value: 0_u64);
+    place_back(window: &symbols, value: 0_u64);
   }
   let nonzero = 0_u64;
   let sole_length = 0_u32;
   for @count_lengths (symbol in 0_u64..symbol_count) {
-    let length_byte = lengths[symbol];
+    let length_byte = deref(lengths)[symbol];
     let length = cvt::<u8, u32>(length_byte);
     let too_long = length > max_bits;
     if too_long {
@@ -191,16 +184,15 @@ fn build_huffman_table(lengths: own Slice<u8>, symbol_count: own u64, max_bits: 
       return Err<HuffmanTable, InflateError>(error: error);
     }
   }
-  let offsets = fixed_vector::<u64, 16>();
+  let offsets = slots_new::<u64, 16>();
   for @reserve_offsets (
     at in 0_u64..count_slots,
-    invariant made_lo: len_of(offsets) >= at,
-    invariant made_hi: len_of(offsets) <= at,
-    invariant spare_lo: room_of(offsets) + at >= 16_u64,
-    invariant spare_hi: room_of(offsets) + at <= 16_u64,
-    invariant flat: head_of(offsets) <= 0_u64
+    invariant made_lo: offsets.len >= at,
+    invariant made_hi: offsets.len <= at,
+    invariant spare_lo: offsets.room + at >= 16_u64,
+    invariant spare_hi: offsets.room + at <= 16_u64
   ) {
-    place_back(vector: &uniq offsets, value: 0_u64);
+    place_back(window: &offsets, value: 0_u64);
   }
   let offset = 0_u64;
   set length = 1_u32;
@@ -217,12 +209,12 @@ fn build_huffman_table(lengths: own Slice<u8>, symbol_count: own u64, max_bits: 
     }
   }
   for @order_symbols (symbol in 0_u64..symbol_count) {
-    let length_byte = lengths[symbol];
+    let length_byte = deref(lengths)[symbol];
     let symbol_length = cvt::<u8, u32>(length_byte);
     let present = symbol_length > 0_u32;
     if present {
       let count_index = cvt::<u32, u64>(symbol_length);
-      let order_offsets_room = len_of(offsets);
+      let order_offsets_room = offsets.len;
       let order_slot_ok = count_index < order_offsets_room;
       if order_slot_ok {
       } else {
@@ -230,7 +222,7 @@ fn build_huffman_table(lengths: own Slice<u8>, symbol_count: own u64, max_bits: 
         return Err<HuffmanTable, InflateError>(error: error);
       }
       let destination = offsets[count_index];
-      let order_symbols_room = len_of(symbols);
+      let order_symbols_room = symbols.len;
       let destination_ok = destination < order_symbols_room;
       if destination_ok {
       } else {
@@ -245,7 +237,7 @@ fn build_huffman_table(lengths: own Slice<u8>, symbol_count: own u64, max_bits: 
   return Ok<HuffmanTable, InflateError>(value: move table);
 }
 
-fn decode_table_symbol(state: &uniq InflateState, input: own Slice<u8>, table: &HuffmanTable) -> result: own Result<u64, InflateError> reads(state.input_offset, state.hold, state.bits, input, table.counts, table.symbols, table.max_bits, table.used_symbols), writes(state.input_offset, state.hold, state.bits) {
+fn decode_table_symbol(state: &InflateState, input: &[u8], table: &HuffmanTable) -> result: own Result<u64, InflateError> reads(input), reads(table.counts), reads(table.symbols), reads(table.max_bits), reads(table.used_symbols), writes(state.input_offset), writes(state.hold), writes(state.bits) {
   let empty = deref(table).used_symbols == 0_u64;
   if empty {
     let error = InvalidHuffmanCode();
@@ -258,19 +250,17 @@ fn decode_table_symbol(state: &uniq InflateState, input: own Slice<u8>, table: &
   let decoded = 0_u64;
   loop @table_code_lengths {
     let bit = 0_u64;
-    region {
-      match read_bits(state: &uniq deref(state), input: input, count: 1_u32, mask: 1_u64) {
-        Ok(value: read_bit) => {
-          set bit = read_bit;
-        }
-        Err(error: read_error) => {
-          return Err<u64, InflateError>(error: read_error);
-        }
+    match read_bits(state: state, input: input, count: 1_u32, mask: 1_u64) {
+      Ok(value: read_bit) => {
+        set bit = read_bit;
+      }
+      Err(error: read_error) => {
+        return Err<u64, InflateError>(error: read_error);
       }
     }
     set code = ior(code, bit);
     let count_index = cvt::<u32, u64>(bit_length);
-    let table_counts_room = len_of(deref(table).counts);
+    let table_counts_room = deref(table).counts.len;
     let table_count_ok = count_index < table_counts_room;
     if table_count_ok {
     } else {
@@ -285,7 +275,7 @@ fn decode_table_symbol(state: &uniq InflateState, input: own Slice<u8>, table: &
     if found {
       let offset = code -wrap first;
       let ordered = symbol_index +wrap offset;
-      let table_symbols_room = len_of(deref(table).symbols);
+      let table_symbols_room = deref(table).symbols.len;
       let ordered_ok = ordered < table_symbols_room;
       if ordered_ok {
       } else {

@@ -7,7 +7,7 @@ fn relay(value: own ReadFile) -> result: own ReadFile pure {
 fn exchange(slot: &ReadFile, incoming: own ReadFile) -> previous: own ReadFile writes(slot) {
   doc "swap exchanges the values at two owned places without a hole; neither root is consumed and each keeps exactly one owner.";
   let previous = move incoming;
-  swap::<ReadFile>(first: slot, second: &previous);
+  swap(first: slot, second: &previous);
   return move previous;
 }
 

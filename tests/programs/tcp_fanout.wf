@@ -87,10 +87,10 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn byte_at(store: &Slice<u8>, index: own u64) -> result: own u8 reads(store) {
-  doc "Reads one stored byte, delivering zero for a position the view does not hold.";
-  let room = len_of(deref(store));
-  let inside = index < room;
+fn byte_at(store: &[u8], index: own u64) -> result: own u8 reads(store) {
+  doc "Reads one stored byte, delivering zero for a position the range reference does not hold.";
+  let span = deref(store).len;
+  let inside = index < span;
   if inside {
     let value = deref(store)[index];
     return value;
@@ -98,7 +98,7 @@ fn byte_at(store: &Slice<u8>, index: own u64) -> result: own u8 reads(store) {
   return 0_u8;
 }
 
-fn parse_port(digits: &Slice<u8>, length: own u64) -> result: own u16 reads(digits) {
+fn parse_port(digits: &[u8], length: own u64) -> result: own u16 reads(digits) {
   doc "Reads one decimal port out of the argument bytes the invocation supplied; a byte that is not a digit ends the number.";
   let port = 0_u16;
   let ended = 0_u8;
@@ -130,8 +130,8 @@ fn parse_port(digits: &Slice<u8>, length: own u64) -> result: own u16 reads(digi
   return port;
 }
 
-fn send_all(send: &uniq TcpSend, source: &Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(send, source), writes(send) contract {
-  define source_length = len_of(deref(source));
+fn send_all(send: &TcpSend, source: &[u8], length: own u64) -> result: own Result<unit, IoError> reads(source), writes(send) contract {
+  define source_length = deref(source).len;
   requires length <= source_length;
 } {
   doc "Sends one prefix of the source run, reattempting until the connection has accepted every byte or refused it.";
@@ -142,106 +142,79 @@ fn send_all(send: &uniq TcpSend, source: &Slice<u8>, length: own u64) -> result:
     } else {
       break @sending;
     }
-    region {
-      match send_once(send: &uniq deref(send), source: source, start: sent, end: length) {
-        Ok(value: next) => {
-          set sent = next;
-        }
-        Err(error: problem) => {
-          return Err<unit, IoError>(error: move problem);
-        }
+    match send_once(send: send, source: source, start: sent, end: length) {
+      Ok(value: next_endpoint) => {
+        set sent = next_endpoint;
+      }
+      Err(error: problem) => {
+        return Err<unit, IoError>(error: move problem);
       }
     }
   }
   return Ok<unit, IoError>(value: unit);
 }
 
-fn zero_fill['s: affine](vector: &uniq Vector<'s, u8>) -> result: own unit reads(vector), writes(vector) contract {
-  define spare = room_of(deref(vector));
-  define start = head_of(deref(vector));
+fn zero_fill(vector: &Slots<u8, 256>) -> result: own unit writes(vector) contract {
+  define spare = deref(vector).room;
   requires 256_u64 <= spare;
-  requires start <= 0_u64;
-  ensures len_of(deref(vector)) >= 256_u64;
-  ensures head_of(deref(vector)) <= 0_u64;
+  ensures deref(vector).len >= 256_u64;
 } {
-  doc "Opens a fresh run's whole capacity, so a view formed over it holds the 256 slots one connection's scratch needs. It is a helper rather than a loop written where the run is taken because its contract is what publishes the opened length: a caller reads the exclusive referent's exit length bound off the signature instead of re-deriving it from three loop invariants at every site [FN-9].";
+  doc "Opens a fresh window's whole capacity, so a range reference formed over it holds the 256 slots one connection's scratch needs. It is a helper rather than a loop written where the window is made because its contract is what publishes the opened length: a caller reads the referent's exit length bound off the signature instead of re-deriving it from two loop invariants at every site [FN-9, MSR-3].";
   for @fill_run (
     at in 0_u64..256_u64,
-    invariant grown_run: len_of(deref(vector)) >= at,
-    invariant spare_run: room_of(deref(vector)) + at >= 256_u64,
-    invariant flat_run: head_of(deref(vector)) <= 0_u64
+    invariant grown_run: deref(vector).len >= at,
+    invariant spare_run: deref(vector).room + at >= 256_u64
   ) {
-    place_back(vector: &uniq deref(vector), value: 0_u8);
+    place_back(window: vector, value: 0_u8);
   }
   return unit;
 }
 
-fn serve_one(listener: &uniq TcpListener, handles: &uniq HandleFactory) -> result: own u8 reads(listener, handles), writes(listener, handles) {
-  doc "Accepts one peer through exclusive listener and factory values, echoes its first chunk, and explicitly closes both halves. Its arena scratch belongs to this call and remains alive until every ordinary call returns.";
+fn serve_one(listener: &TcpListener, handles: &HandleFactory) -> result: own u8 writes(listener), writes(handles) {
+  doc "Accepts one peer through two reference parameters whose declared rows the call site proves disjoint, echoes its first chunk, and explicitly closes both halves. Its scratch is one inline Slots window of this call's own frame [EFF-5, TYPE-9].";
   let outcome = 0_u8;
-  region 'scratch {
-    let store = arena_frame::<256, 8, 'scratch>();
-    region {
-      let fresh = arena_vector_proved::<u8>(store: &uniq store, count: 256_u64);
-      region {
-        zero_fill(vector: &uniq fresh);
-      }
-      let scratch = move fresh;
-      region {
-        match tcp_accept(factory: &uniq deref(handles), listener: &uniq deref(listener)) {
-          Ok(value: accepted_link) => {
-            let AcceptedConnection(connection: link, peer: from) = move accepted_link;
-            let available = 0_u64;
-            let refused = 0_u8;
-            region {
-              let window = mut_slice_of(&uniq scratch);
-              region {
-                match receive_next(receive: &uniq link.receive, destination: &uniq window, start: 0_u64, end: 256_u64) {
-                  Ok(value: endpoint) => {
-                    set available = endpoint;
-                  }
-                  Err(error: read_stop_11) => {
-                    match read_stop_11 {
-                      ReadEnd() => {
-                        set refused = 1_u8;
-                      }
-                      ReadFailed(error: problem) => {
-                        set outcome = 3_u8;
-                        set refused = 1_u8;
-                      }
-                    }
-                  }
-                }
-              }
+  let scratch = slots_new::<u8, 256>();
+  zero_fill(vector: &scratch);
+  let window = &scratch[0_u64..256_u64];
+  match tcp_accept(factory: handles, listener: listener) {
+    Ok(value: accepted_link) => {
+      let AcceptedConnection(connection: link, peer: from) = move accepted_link;
+      let available = 0_u64;
+      let refused = 0_u8;
+      match receive_next(receive: &link.receive, destination: window, start: 0_u64, end: 256_u64) {
+        Ok(value: endpoint) => {
+          set available = endpoint;
+        }
+        Err(error: read_stop_11) => {
+          match read_stop_11 {
+            ReadEnd() => {
+              set refused = 1_u8;
             }
-            if refused == 0_u8 {
-              region {
-                let returned = slice_of(&scratch);
-                region {
-                  match send_all(send: &uniq link.send, source: &returned, length: available) {
-                    Ok(value: delivered) => {
-                    }
-                    Err(error: problem) => {
-                      set outcome = 4_u8;
-                    }
-                  }
-                }
-              }
-            }
-            let TcpConnection(receive: close_receive_12, send: close_send_12) = move link;
-            close_receive(factory: &uniq deref(handles), receive: move close_receive_12);
-            close_send(factory: &uniq deref(handles), send: move close_send_12);
-          }
-          Err(error: problem) => {
-            region {
-              if factory_refusal(error: &problem) {
-                set outcome = 6_u8;
-              } else {
-                set outcome = 5_u8;
-              }
+            ReadFailed(error: problem) => {
+              set outcome = 3_u8;
+              set refused = 1_u8;
             }
           }
         }
+      }
+      if refused == 0_u8 {
+        match send_all(send: &link.send, source: window, length: available) {
+          Ok(value: delivered) => {
+          }
+          Err(error: problem) => {
+            set outcome = 4_u8;
+          }
+        }
+      }
+      let TcpConnection(receive: close_receive_12, send: close_send_12) = move link;
+      close_receive(factory: handles, receive: move close_receive_12);
+      close_send(factory: handles, send: move close_send_12);
+    }
+    Err(error: problem) => {
+      if factory_refusal(error: &problem) {
+        set outcome = 6_u8;
+      } else {
+        set outcome = 5_u8;
       }
     }
   }
@@ -249,103 +222,73 @@ fn serve_one(listener: &uniq TcpListener, handles: &uniq HandleFactory) -> resul
 }
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  doc "Listens on the invocation port and serves four peers in order. Each ordinary call borrows the same listener and factory until return; deleting PAR-3 removes the former staged overlap.";
+  doc "Listens on the invocation port and serves four peers in order. Each ordinary call takes the same listener and factory as two reference parameters until return.";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  close_directory(factory: &handles, directory: move unused_cwd);
+  let digits = slots_new::<u8, 16>();
+  for @fill_digits (
+    at in 0_u64..16_u64,
+    invariant grown_digits: digits.len >= at,
+    invariant spare_digits: digits.room + at >= 16_u64
+  ) {
+    place_back(window: &digits, value: 0_u8);
   }
-  region 'arguments {
-    let names = arena_frame::<16, 8, 'arguments>();
-    region {
-      let digits = arena_vector_proved::<u8>(store: &uniq names, count: 16_u64);
-      for @fill_digits (
-        at in 0_u64..16_u64,
-        invariant grown_digits: len_of(digits) >= at,
-        invariant spare_digits: room_of(digits) + at >= 16_u64,
-        invariant flat_digits: head_of(digits) <= 0_u64
-      ) {
-        place_back(vector: &uniq digits, value: 0_u8);
-      }
-      let room = len_of(digits);
-      let port = 0_u16;
-      let arguments = 0_u64;
-      region {
-        set arguments = args_count(args: &args);
-      }
-      let named = arguments >= 2_u64;
-      if named {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      let carried = 0_u64;
-      region {
-        match arg_get(args: &args, position: 1_u64) {
-          Ok(value: text) => {
-            region {
-              region {
-                let window = mut_slice_of(&uniq digits);
-                region {
-                  match host_copy_utf8(value: &text, destination: &uniq window, start: 0_u64, end: room) {
-                    Ok(value: written) => {
-                      set carried = written;
-                    }
-                    Err(error: problem) => {
-                      set carried = 0_u64;
-                    }
-                  }
-                }
-              }
-            }
-          }
-          Err(error: problem) => {
-            set carried = 0_u64;
-          }
+  let digit_span = 16_u64;
+  let window = &digits[0_u64..16_u64];
+  let port = 0_u16;
+  let arguments = args_count(args: &args);
+  let named = arguments >= 2_u64;
+  if named {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let carried = 0_u64;
+  match arg_get(args: &args, position: 1_u64) {
+    Ok(value: text) => {
+      match host_copy_utf8(value: &text, destination: window, start: 0_u64, end: digit_span) {
+        Ok(value: written) => {
+          set carried = written;
+        }
+        Err(error: problem) => {
+          set carried = 0_u64;
         }
       }
-      if carried == 0_u64 {
-        return exit_status(code: 2_u8);
-      }
-      region {
-        let named_port = slice_of(&digits);
-        region {
-          set port = parse_port(digits: &named_port, length: carried);
-        }
-      }
-      let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
-      let outcome = 0_u8;
-      region {
-        region {
-          match tcp_listen(factory: &uniq handles, address: &address) {
-            Ok(value: bound) => {
-              for (
-                served in 0_u64..4_u64,
-                invariant progress: served <= 4_u64
-              ) {
-                let reported = serve_one(listener: &uniq bound, handles: &uniq handles);
-                if reported == 6_u8 {
-                  close_listener(factory: &uniq handles, listener: move bound);
-                  return exit_status(code: 6_u8);
-                }
-                if reported == 0_u8 {
-                } else {
-                  set outcome = reported;
-                }
-              }
-              let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
-            }
-            Err(error: problem) => {
-              region {
-                if factory_refusal(error: &problem) {
-                  set outcome = 8_u8;
-                } else {
-                  set outcome = 7_u8;
-                }
-              }
-            }
-          }
-        }
-      }
-      return exit_status(code: outcome);
+    }
+    Err(error: problem) => {
+      set carried = 0_u64;
     }
   }
+  if carried == 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  set port = parse_port(digits: window, length: carried);
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
+  let outcome = 0_u8;
+  match tcp_listen(factory: &handles, address: &address) {
+    Ok(value: bound) => {
+      for (
+        served in 0_u64..4_u64,
+        invariant progress: served <= 4_u64
+      ) {
+        let reported = serve_one(listener: &bound, handles: &handles);
+        if reported == 6_u8 {
+          close_listener(factory: &handles, listener: move bound);
+          return exit_status(code: 6_u8);
+        }
+        if reported == 0_u8 {
+        } else {
+          set outcome = reported;
+        }
+      }
+      let listener_credit = close_listener(factory: &handles, listener: move bound);
+    }
+    Err(error: problem) => {
+      if factory_refusal(error: &problem) {
+        set outcome = 8_u8;
+      } else {
+        set outcome = 7_u8;
+      }
+    }
+  }
+  return exit_status(code: outcome);
 }
