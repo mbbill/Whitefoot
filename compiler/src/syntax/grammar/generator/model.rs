@@ -13,7 +13,6 @@ pub enum Pred {
     Fixed(&'static str),
     Identifier,
     TypeIdentifier,
-    RegionIdentifier,
     Label,
     OperationName,
     Literal,
@@ -40,7 +39,6 @@ impl Pred {
         match self {
             Pred::Identifier => "Identifier",
             Pred::TypeIdentifier => "TypeIdentifier",
-            Pred::RegionIdentifier => "RegionIdentifier",
             Pred::Label => "Label",
             Pred::OperationName => "OperationName",
             Pred::Literal => "Literal",
@@ -56,7 +54,6 @@ impl Pred {
         match self {
             Pred::Identifier => Some("Identifier"),
             Pred::TypeIdentifier => Some("TypeIdentifier"),
-            Pred::RegionIdentifier => Some("RegionIdentifier"),
             Pred::Label => Some("Label"),
             Pred::OperationName => Some("OperationName"),
             _ => None,
@@ -67,6 +64,8 @@ impl Pred {
 /// Maps a written terminal spelling to its `FixedTerminal` variant.
 pub fn fixed_terminal(spelling: &str) -> Pred {
     const TABLE: &[(&str, &str)] = &[
+        ("program", "Program"),
+        ("no_heap", "NoHeap"),
         ("struct", "Struct"),
         ("{", "LeftBrace"),
         ("}", "RightBrace"),
@@ -102,23 +101,14 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("f32", "F32"),
         ("f64", "F64"),
         ("unit", "Unit"),
-        ("array", "Array"),
-        ("Slice", "Slice"),
-        ("MutSlice", "MutSlice"),
-        ("box", "Box"),
-        ("arena", "Arena"),
-        ("buffer", "Buffer"),
         ("own", "Own"),
         ("&", "Ampersand"),
-        ("uniq", "Uniq"),
         ("let", "Let"),
         ("propagate", "Propagate"),
-        ("replace", "Replace"),
         ("set", "Set"),
         ("return", "Return"),
         ("loop", "Loop"),
         ("break", "Break"),
-        ("region", "Region"),
         ("else", "Else"),
         ("give", "Give"),
         ("match", "Match"),
@@ -130,25 +120,21 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("pure", "Pure"),
         ("reads", "Reads"),
         ("writes", "Writes"),
-        ("allocates", "Allocates"),
         // FLOOR-5 additions: `if` plus the twenty `infix_op` spellings.
         // `else` already exists for statement and value conditionals. Verified
         // against the fixed delta's [GRAM-5] block, not guessed.
         ("if", "If"),
         ("+", "Plus"),
-        ("+defined", "PlusDefined"),
         ("+wrap", "PlusWrap"),
         ("+defined", "PlusDefined"),
         ("+checked", "PlusChecked"),
         ("+sat", "PlusSat"),
         ("-", "Minus"),
-        ("-defined", "MinusDefined"),
         ("-wrap", "MinusWrap"),
         ("-defined", "MinusDefined"),
         ("-checked", "MinusChecked"),
         ("-sat", "MinusSat"),
         ("*", "Star"),
-        ("*defined", "StarDefined"),
         ("*wrap", "StarWrap"),
         ("*defined", "StarDefined"),
         ("*checked", "StarChecked"),
@@ -171,12 +157,12 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("<=", "LessEqual"),
         (">=", "GreaterEqual"),
         ("::", "ColonColon"),
-        // v0.45 [PROV-6]: the declaration modifier, the linearity bound
-        // alternatives, and the early-release statement.
+        // v0.45 [PROV-6]: the declaration modifier and the linearity bound
+        // alternatives. v0.60 retires `dispose`; [OP-14] `free_empty` is an
+        // ordinary [PRE-1] call, not an atom.
         ("linear", "Linear"),
         ("affine", "Affine"),
         ("copy", "Copy"),
-        ("dispose", "Dispose"),
         // v0.48 [PRF-1]: the cited-premise multiplicity atom.
         ("times", "Times"),
         ("formal", "Formal"),
@@ -198,7 +184,6 @@ pub fn bare_terminal(name: &str) -> Option<Pred> {
     match name {
         "IDENT" => Some(Pred::Identifier),
         "TYPEID" => Some(Pred::TypeIdentifier),
-        "REGIONID" => Some(Pred::RegionIdentifier),
         "LABEL" => Some(Pred::Label),
         "OPNAME" => Some(Pred::OperationName),
         "STRING" => Some(Pred::String),

@@ -116,7 +116,7 @@ const fn prelude(
 
 /// Distinct OP-1 spellings in normative table order, with repeated `cvt`
 /// collapsed at its first occurrence as required by OP-1.
-pub(crate) const OPERATION_FAMILIES: [&str; 98] = [
+pub(crate) const OPERATION_FAMILIES: [&str; 86] = [
     "+wrap",
     "-wrap",
     "*wrap",
@@ -162,18 +162,6 @@ pub(crate) const OPERATION_FAMILIES: [&str; 98] = [
     "bxor",
     "bnot",
     "cvt",
-    "len_of",
-    "cap_of",
-    "room_of",
-    "head_of",
-    "slice_of",
-    "mut_slice_of",
-    "box_new",
-    "arena_new",
-    "array_new",
-    "buffer_fits",
-    "buffer_new",
-    "buffer_vacant",
     "iand",
     "ior",
     "ixor",
@@ -219,6 +207,13 @@ pub(crate) const OPERATION_FAMILIES: [&str; 98] = [
 
 pub(crate) const MODE_WORDS: [&str; 5] = ["wrap", "defined", "checked", "sat", "strict"];
 
+/// The four measure pseudo-fields [MSR-1, OP-15] followed by the four window
+/// parts [WIN-2], in the FORM-3 alternative order DIAG-1 fixes as the
+/// `measure-or-part` reserved ordinal.
+pub(crate) const MEASURE_AND_PART_NAMES: [&str; 8] = [
+    "len", "cap", "room", "head", "next", "last", "filled", "free",
+];
+
 pub(crate) fn operation_id(spelling: &str) -> Option<OperationFamilyId> {
     OPERATION_FAMILIES
         .iter()
@@ -240,25 +235,36 @@ pub(crate) fn reserved_name(spelling: &str) -> Option<(ReservedNameClass, u16)> 
             .ok()
             .map(|ordinal| (ReservedNameClass::DotlessOperation, ordinal));
     }
-    MODE_WORDS
+    if let Some(index) = MODE_WORDS
+        .iter()
+        .position(|candidate| *candidate == spelling)
+    {
+        return u16::try_from(index)
+            .ok()
+            .map(|ordinal| (ReservedNameClass::ModeWord, ordinal));
+    }
+    // [FORM-3] the eight measure and window-part names are reserved from every
+    // declaration role OP-1 already lists, because `r.len` would otherwise
+    // carry two meanings [TYPE-10].
+    MEASURE_AND_PART_NAMES
         .iter()
         .position(|candidate| *candidate == spelling)
         .and_then(|index| u16::try_from(index).ok())
-        .map(|ordinal| (ReservedNameClass::ModeWord, ordinal))
+        .map(|ordinal| (ReservedNameClass::MeasureOrPart, ordinal))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        DeclarationClass, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS, ReservedNameClass,
-        reserved_name,
+        DeclarationClass, MEASURE_AND_PART_NAMES, MODE_WORDS, OPERATION_FAMILIES,
+        PRELUDE_DECLARATIONS, ReservedNameClass, reserved_name,
     };
     use std::collections::HashSet;
 
     #[test]
     fn exact_catalogs_are_closed_and_unique_where_required() {
         assert_eq!(PRELUDE_DECLARATIONS.len(), 24);
-        assert_eq!(OPERATION_FAMILIES.len(), 98);
+        assert_eq!(OPERATION_FAMILIES.len(), 86);
         assert_eq!(
             OPERATION_FAMILIES
                 .iter()
@@ -271,6 +277,12 @@ mod tests {
             MODE_WORDS
                 .iter()
                 .all(|word| !OPERATION_FAMILIES.contains(word))
+        );
+        // [DIAG-1] "Those three reserved sets are disjoint in this version."
+        assert!(
+            MEASURE_AND_PART_NAMES
+                .iter()
+                .all(|name| !OPERATION_FAMILIES.contains(name) && !MODE_WORDS.contains(name))
         );
         // OP-1's derived-set consequence of the v0.41 comparison symbols:
         // the six integer comparisons are operator spellings, so they occupy
@@ -296,6 +308,31 @@ mod tests {
                 "{retired} is a free identifier"
             );
         }
+        // OP-1's table no longer carries a reader, view, or acquiring row, so
+        // the twelve v0.59 spellings below became free identifiers with them.
+        for retired in [
+            "len_of",
+            "cap_of",
+            "room_of",
+            "head_of",
+            "slice_of",
+            "mut_slice_of",
+            "arena_new",
+            "array_new",
+            "buffer_fits",
+            "buffer_new",
+            "buffer_vacant",
+        ] {
+            assert_eq!(
+                reserved_name(retired),
+                None,
+                "{retired} is a free identifier"
+            );
+        }
+        // `box_new` also left the operation table, but it is now an ordinary
+        // PRE-1 construction function [OP-13], so it is taken by declaration
+        // collision rather than by reservation.
+        assert_eq!(reserved_name("box_new"), None);
         assert_eq!(
             reserved_name("cvt"),
             Some((ReservedNameClass::DotlessOperation, 44))
@@ -304,6 +341,16 @@ mod tests {
             reserved_name("wrap"),
             Some((ReservedNameClass::ModeWord, 0))
         );
+        for (ordinal, spelling) in MEASURE_AND_PART_NAMES.iter().enumerate() {
+            assert_eq!(
+                reserved_name(spelling),
+                Some((
+                    ReservedNameClass::MeasureOrPart,
+                    u16::try_from(ordinal).expect("eight reserved names")
+                )),
+                "{spelling} is FORM-3 reserved at ordinal {ordinal}"
+            );
+        }
     }
 
     #[test]
@@ -319,6 +366,28 @@ mod tests {
             OPERATION_FAMILIES.as_slice(),
             extract_operation_families(crate::ACTIVE_KERNEL_SPEC_TEXT)
         );
+
+        assert_eq!(
+            MEASURE_AND_PART_NAMES.as_slice(),
+            extract_measure_and_part_names(crate::ACTIVE_KERNEL_SPEC_TEXT)
+        );
+    }
+
+    /// FORM-3's own reservation sentence, read as the authority for both the
+    /// membership and the `measure-or-part` ordinal order [DIAG-1].
+    fn extract_measure_and_part_names(spec: &str) -> Vec<&str> {
+        let sentence = spec
+            .split_once("\nThe eight names ")
+            .expect("FORM-3 reservation sentence")
+            .1
+            .split_once(" are reserved from every declaration role")
+            .expect("FORM-3 reservation sentence ending")
+            .0;
+        sentence
+            .split('`')
+            .enumerate()
+            .filter_map(|(index, part)| (index % 2 == 1).then_some(part))
+            .collect()
     }
 
     fn extract_prelude_records(spec: &str) -> Vec<(String, Option<DeclarationClass>)> {

@@ -34,15 +34,13 @@ pub enum RuleOwner {
     Eff1,
 }
 
-/// One of the five name predicates used by DIAG-1 name-slot attribution.
+/// One of the four name predicates used by DIAG-1 name-slot attribution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NamePredicate {
     /// IDENT.
     Identifier,
     /// TYPEID.
     TypeIdentifier,
-    /// REGIONID.
-    RegionIdentifier,
     /// LABEL.
     Label,
     /// OPNAME.
@@ -56,7 +54,6 @@ impl NamePredicate {
         match self {
             Self::Identifier => TerminalPredicate::Identifier,
             Self::TypeIdentifier => TerminalPredicate::TypeIdentifier,
-            Self::RegionIdentifier => TerminalPredicate::RegionIdentifier,
             Self::Label => TerminalPredicate::Label,
             Self::OperationName => TerminalPredicate::OperationName,
         }

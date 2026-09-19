@@ -99,33 +99,6 @@ fn check_inventory(
             .get(record_index)
             .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
 
-        if matches!(
-            declaration.role,
-            DeclarationRole::RegionParameter | DeclarationRole::LocalRegion
-        ) && let Some(conflicting) = index
-            .with_spelling(&declaration.spelling)
-            .iter()
-            .copied()
-            .take_while(|candidate| *candidate < meta.record_index)
-            .filter_map(|candidate| metas.get(candidate))
-            .find(|candidate| {
-                candidate.region_owner == meta.region_owner
-                    && matches!(
-                        declarations[candidate.record_index].role,
-                        DeclarationRole::RegionParameter | DeclarationRole::LocalRegion
-                    )
-            })
-        {
-            return Ok(Some(ResolutionIssue {
-                rule: ResolutionRule::Own3,
-                origin: declaration.origin.clone(),
-                kind: ResolutionIssueKind::RepeatedRegion {
-                    spelling: declaration.spelling.clone(),
-                    conflicting: declarations[conflicting.record_index].origin.clone(),
-                },
-            }));
-        }
-
         if declaration.role == DeclarationRole::MatchBinder
             && let Some(issue) = match_binder_issue(topology, scopes, role, declaration, &tables)?
         {
@@ -180,23 +153,9 @@ fn reserved_role<'role>(
         RawRoleKind::DependentDeclaration(DependentDeclarationRole::VariantField) => {
             ReservedDeclarationRole::VariantField
         }
-        RawRoleKind::Declaration(DeclarationRole::RegionParameter) => {
-            ReservedDeclarationRole::RegionParameter
-        }
-        RawRoleKind::Declaration(DeclarationRole::LocalRegion) => {
-            ReservedDeclarationRole::LocalRegion
-        }
         _ => return None,
     };
-    let spelling = if matches!(
-        mapped,
-        ReservedDeclarationRole::RegionParameter | ReservedDeclarationRole::LocalRegion
-    ) {
-        role.spelling.strip_prefix('\'')?
-    } else {
-        &role.spelling
-    };
-    Some((mapped, spelling))
+    Some((mapped, role.spelling.as_str()))
 }
 
 fn match_binder_issue(
@@ -330,10 +289,10 @@ fn collision_issue(
         )));
     }
 
-    // [DIAG-1] rank 5, read over the two compiler-owned container domains:
-    // the [TYPE-2] container and provider nominals and the [BLK-0] kernel
-    // operations enter every unit [BLK-0], so a source declaration in the same
-    // domain is the same collision and neither declaration resolves.
+    // [DIAG-1] rank 5, read over the four compiler-owned storage nominals:
+    // [TYPE-9] admits `Array`, `Slots`, `Ring` and `Box` into the nominal-type
+    // and constructor domains of every unit, so a source declaration in the
+    // same domain is the same collision and neither declaration resolves.
     let mut container_conflicts = Vec::new();
     for class in &meta.entries {
         let domain =
@@ -350,20 +309,6 @@ fn collision_issue(
                     domain,
                     class: entry,
                     origin: DeclarationOrigin::Container(crate::ContainerNominalId::new(
-                        u8::try_from(ordinal)
-                            .map_err(|_| ResolutionCompilerFailure::InvalidRoleShape)?,
-                    )),
-                });
-            }
-        }
-        for (ordinal, operation) in crate::KERNEL_OPERATIONS.iter().enumerate() {
-            if operation.spelling == declaration.spelling
-                && declaration_domain(crate::KERNEL_OPERATION_CLASS) == Some(domain)
-            {
-                container_conflicts.push(DeclarationConflict {
-                    domain,
-                    class: crate::KERNEL_OPERATION_CLASS,
-                    origin: DeclarationOrigin::Kernel(crate::KernelOperationId::new(
                         u8::try_from(ordinal)
                             .map_err(|_| ResolutionCompilerFailure::InvalidRoleShape)?,
                     )),
@@ -509,7 +454,7 @@ fn collect_domain_conflicts(
 /// blind-writer trial of 2026-08-28 met that one twice and repaired it by
 /// guessing.
 const COLLIDES_WITH_PRELUDE: &str = "a source declaration never displaces, overrides, or shadows a PRE-1 prelude declaration of the same spelling and domain, and neither declaration resolves after the collision; rename this declaration";
-const COLLIDES_WITH_CONTAINER: &str = "a source declaration never displaces, overrides, or shadows a compiler-owned container nominal or kernel-domain operation of the same spelling and domain [TYPE-2, BLK-0], and neither declaration resolves after the collision; rename this declaration";
+const COLLIDES_WITH_CONTAINER: &str = "a source declaration never displaces, overrides, or shadows a compiler-owned storage nominal of the same spelling and domain [TYPE-9], and neither declaration resolves after the collision; rename this declaration";
 const COLLIDES_IN_ONE_SCOPE: &str = "one scope declares each spelling once in a domain, so this is a redeclaration and not a shadow; rename this declaration, or delete the earlier one when nothing reads it";
 const COLLIDES_WITH_LIVE_OUTER: &str = "a declaration's scope ends with the block that declares it, and not where its value is consumed: a binding whose value was moved is dead as a value while its declaration stays live, so an inner declaration of the same spelling still collides with it. Rename the inner declaration, or close the block that declares the outer one before this point";
 
@@ -559,10 +504,11 @@ pub(super) fn conflict_key(
                 subtoken: 0,
             },
         ),
-        // [DIAG-1] orders the two compiler-owned container domains after the
-        // prelude and before any source event, by their own
-        // ordinals: the nominal-type rows [TYPE-2] then the
-        // `container_declaration_ordinal` rows [BLK-0].
+        // The compiler-owned storage nominals [TYPE-9] sort after the prelude
+        // and before any source event, by their own table ordinal. [DIAG-1]
+        // fixes the PRE-1-first and source-last halves of that order and does
+        // not say where this third origin goes, because it enumerates no such
+        // origin; the position here keeps the two rows [DIAG-1] does fix.
         DeclarationOrigin::Container(id) => (
             2,
             EventKey {
@@ -574,20 +520,9 @@ pub(super) fn conflict_key(
                 subtoken: 0,
             },
         ),
-        DeclarationOrigin::Kernel(id) => (
-            3,
-            EventKey {
-                source: 0,
-                start: u64::from(id.ordinal()),
-                end: 0,
-                path: Vec::new(),
-                role: 0,
-                subtoken: 0,
-            },
-        ),
         DeclarationOrigin::Source(origin) => {
             let _ = declarations;
-            (4, EventKey::from_origin(origin))
+            (3, EventKey::from_origin(origin))
         }
     }
 }

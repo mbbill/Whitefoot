@@ -20,7 +20,7 @@ fn observed(source: &[u8]) -> Vec<(Vec<u8>, String)> {
 
 #[test]
 fn recognizes_every_shape_without_keyword_or_operation_resolution() {
-    let source = b"fn Thing 'region @again foo.wrap p.field -1_i64 6.022e-23_f64 unit\n";
+    let source = b"fn Thing @again foo.wrap p.field -1_i64 6.022e-23_f64 unit\n";
     let observed = observed(source);
     assert_eq!(
         observed,
@@ -28,8 +28,6 @@ fn recognizes_every_shape_without_keyword_or_operation_resolution() {
             (b"fn".to_vec(), "token:LowerWordForm".into()),
             (b" ".to_vec(), "trivia:Spaces".into()),
             (b"Thing".to_vec(), "token:UpperWordForm".into()),
-            (b" ".to_vec(), "trivia:Spaces".into()),
-            (b"'region".to_vec(), "token:RegionForm".into()),
             (b" ".to_vec(), "trivia:Spaces".into()),
             (b"@again".to_vec(), "token:LabelForm".into()),
             (b" ".to_vec(), "trivia:Spaces".into()),
@@ -330,7 +328,7 @@ fn every_closed_operation_suffix_and_near_miss_has_the_expected_shape() {
 
 #[test]
 fn arrow_and_borrow_seams_do_not_change_neighboring_shapes() {
-    let observed = observed(b"-1_i64 -> => &'r &uniq 'r\n");
+    let observed = observed(b"-1_i64 -> => & &[ ]\n");
     let tokens: Vec<_> = observed
         .into_iter()
         .filter(|(_, label)| label.starts_with("token:"))
@@ -342,10 +340,9 @@ fn arrow_and_borrow_seams_do_not_change_neighboring_shapes() {
             (b"->".to_vec(), "token:ThinArrow".into()),
             (b"=>".to_vec(), "token:FatArrow".into()),
             (b"&".to_vec(), "token:Ampersand".into()),
-            (b"'r".to_vec(), "token:RegionForm".into()),
             (b"&".to_vec(), "token:Ampersand".into()),
-            (b"uniq".to_vec(), "token:LowerWordForm".into()),
-            (b"'r".to_vec(), "token:RegionForm".into()),
+            (b"[".to_vec(), "token:LeftBracket".into()),
+            (b"]".to_vec(), "token:RightBracket".into()),
         ]
     );
 }

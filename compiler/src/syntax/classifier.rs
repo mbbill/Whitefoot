@@ -2,8 +2,7 @@ use crate::SpecHash;
 use crate::lexer::{LexedBundle, Lexeme, Token, TokenKind};
 use crate::syntax::terminal::{
     FixedTerminal, TERMINAL_CONTRACT_SPEC_HASH, TerminalPredicate, TerminalSet, is_digits,
-    is_identifier, is_label, is_literal, is_operation_name, is_region_identifier, is_string,
-    is_type_identifier,
+    is_identifier, is_label, is_literal, is_operation_name, is_string, is_type_identifier,
 };
 
 use crate::syntax::outcome::{
@@ -60,25 +59,12 @@ fn membership(token: Token<'_>) -> Option<TerminalSet> {
             }
         }
         TokenKind::UpperWordForm => {
-            // [S35] the view nominals are capitalized fixed atoms of the
-            // `type` production, so an upper word is read as its fixed
-            // terminal where the grammar has one and as a TYPEID otherwise —
-            // the same two-way reading `LowerWordForm` already makes.
-            if let Some(terminal) = FixedTerminal::from_spelling(spelling) {
-                set.insert(TerminalPredicate::Fixed(terminal));
-                true
-            } else {
-                let valid = is_type_identifier(spelling);
-                if valid {
-                    set.insert(TerminalPredicate::TypeIdentifier);
-                }
-                valid
-            }
-        }
-        TokenKind::RegionForm => {
-            let valid = is_region_identifier(spelling);
+            // v0.60 has no capitalized fixed atom: [GRAM-3] derives every
+            // storage shape as `TYPEID targs?`, so an upper word carries the
+            // TYPEID predicate on its shape alone.
+            let valid = is_type_identifier(spelling);
             if valid {
-                set.insert(TerminalPredicate::RegionIdentifier);
+                set.insert(TerminalPredicate::TypeIdentifier);
             }
             valid
         }

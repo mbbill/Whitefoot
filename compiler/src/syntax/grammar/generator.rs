@@ -36,7 +36,6 @@ const ENUM_ORDER: &[&str] = &[
     "doc",
     "generics",
     "gparam",
-    "region_params",
     "param_list",
     "param",
     "type",
@@ -53,7 +52,6 @@ const ENUM_ORDER: &[&str] = &[
     "return_stmt",
     "loop_stmt",
     "break_stmt",
-    "region_stmt",
     "contract_define",
     "give_stmt",
     "match_stmt",
@@ -86,7 +84,6 @@ const ENUM_ORDER: &[&str] = &[
     "requires_clause",
     "ensures_clause",
     "result_route",
-    "replace_let_rhs",
     "effect_path",
     "invariant_stmt",
     "affine_expr",
@@ -97,9 +94,15 @@ const ENUM_ORDER: &[&str] = &[
     "compare_op",
     "clause_expr",
     "clause_op",
-    "dispose_stmt",
-    "region_param",
     "linearity_bound",
+    // v0.60 additions, appended so every surviving production keeps its dense
+    // index: the no-heap declaration [GRAM-2, STOR-8], the factored range step
+    // [GRAM-5], and the effect-path productions [EFF-1] broke out of prose.
+    "heap_decl",
+    "range_tail",
+    "epbase",
+    "epsuffix",
+    "erange",
 ];
 
 /// v0.33 deliberately replaces the old pseudo-statement contract grammar.

@@ -53,8 +53,7 @@ impl<'bytes> Scanner<'bytes> {
             b'\n' => self.fixed(start, 1, RawKind::Trivia(TriviaKind::LineFeed)),
             b'a'..=b'z' => self.lower_word(start),
             b'A'..=b'Z' => self.upper_word(start),
-            b'\'' => self.prefixed_name(start, SourceIssueKind::MissingRegionName, true)?,
-            b'@' => self.prefixed_name(start, SourceIssueKind::MissingLabelName, false)?,
+            b'@' => self.label_form(start)?,
             b'0'..=b'9' => self.number(start),
             b'-' if self.bytes.get(start + 1) == Some(&b'>') => {
                 self.fixed(start, 2, RawKind::Token(TokenKind::ThinArrow))
@@ -187,34 +186,27 @@ impl<'bytes> Scanner<'bytes> {
         }
     }
 
-    fn prefixed_name(
-        &self,
-        start: usize,
-        missing: SourceIssueKind,
-        region: bool,
-    ) -> Result<RawLexeme, RawIssue> {
+    /// Forms one label token: the `@` sigil and its mandatory lowercase name.
+    ///
+    /// v0.60 leaves `@` as the only sigil-prefixed form; the apostrophe-
+    /// prefixed REGIONID retired with regions [FORM-3], so a `'` reaches the
+    /// residual unexpected-byte arm instead of a second call here.
+    fn label_form(&self, start: usize) -> Result<RawLexeme, RawIssue> {
+        let missing = RawIssue {
+            start,
+            end: start + 1,
+            kind: SourceIssueKind::MissingLabelName,
+        };
         let Some(first) = self.bytes.get(start + 1).copied() else {
-            return Err(RawIssue {
-                start,
-                end: start + 1,
-                kind: missing,
-            });
+            return Err(missing);
         };
         if !first.is_ascii_lowercase() {
-            return Err(RawIssue {
-                start,
-                end: start + 1,
-                kind: missing,
-            });
+            return Err(missing);
         }
         Ok(RawLexeme {
             start,
             end: take_while(self.bytes, start + 2, is_lower_continuation),
-            kind: RawKind::Token(if region {
-                TokenKind::RegionForm
-            } else {
-                TokenKind::LabelForm
-            }),
+            kind: RawKind::Token(TokenKind::LabelForm),
         })
     }
 

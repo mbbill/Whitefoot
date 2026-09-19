@@ -19,8 +19,7 @@ pub use engine::resolve;
 
 pub use kernel::{
     CONTAINER_NOMINAL_CLASS, CONTAINER_NOMINAL_CLASSES, CONTAINER_NOMINALS, ContainerNominal,
-    ContainerNominalId, ContainerShape, KERNEL_OPERATION_CLASS, KERNEL_OPERATIONS, KernelOperation,
-    KernelOperationId, KernelRow, container_nominal, kernel_operation,
+    ContainerNominalId, ContainerShape, container_nominal,
 };
 
 /// Returns the exact OP-1 spelling of a resolved operation family.
@@ -50,7 +49,7 @@ pub enum ScopeKind {
     CompilationUnit,
     /// Type and const generics owned by one declaration.
     DeclarationGenerics,
-    /// Region parameters, parameters, signature suffix, clauses, and body.
+    /// Parameters, signature suffix, clauses, and body.
     FunctionSignature,
     /// One contract-member signature.
     ContractSignature,
@@ -58,7 +57,7 @@ pub enum ScopeKind {
     ContractBlock,
     /// A concrete function body.
     FunctionBody,
-    /// The statement body nested under an arm, loop, or local region.
+    /// The statement body nested under an arm, loop, or counted range.
     NestedBody,
     /// Match binders visible to one arm body.
     Arm,
@@ -66,8 +65,6 @@ pub enum ScopeKind {
     LoopLabel,
     /// One counted label and binder visible only to that counted body.
     CountedRange,
-    /// One local region visible only to that region body.
-    LocalRegion,
 }
 
 /// One resolver scope and its lexical parent.
@@ -216,8 +213,6 @@ pub enum DeclarationClass {
     Formal,
     /// A named argument-group abbreviation.
     Actual,
-    /// Region parameter or local region.
-    Region,
     /// Loop label.
     Label,
     /// One machine-checked invariant fact named by source.
@@ -237,8 +232,6 @@ pub enum DeclarationDomain {
     Constructor,
     /// Built-in numeric bounds.
     NumericBound,
-    /// Region parameters and local regions.
-    Region,
     /// Loop labels.
     Label,
     /// Machine-checked invariant facts.
@@ -246,20 +239,21 @@ pub enum DeclarationDomain {
 }
 
 impl DeclarationDomain {
+    /// [DIAG-1] fixes the conflict-domain order as lexical-IDENT,
+    /// nominal-type, constructor, numeric-bound, LABEL, invariant.
     pub(crate) const fn ordinal(self) -> u8 {
         match self {
             Self::LexicalIdentifier => 0,
             Self::NominalType => 1,
             Self::Constructor => 2,
             Self::NumericBound => 3,
-            Self::Region => 4,
-            Self::Label => 5,
-            Self::Invariant => 6,
+            Self::Label => 4,
+            Self::Invariant => 5,
         }
     }
 }
 
-/// Source declaration roles D01 through D15.
+/// Source declaration roles, in the closed order this resolver classifies.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationRole {
     /// D01: top-level function.
@@ -282,16 +276,12 @@ pub enum DeclarationRole {
     GenericType,
     /// D08: const generic.
     ConstGeneric,
-    /// D09: region parameter.
-    RegionParameter,
     /// D10: function or contract-member parameter.
     Parameter,
     /// D11: ordinary lexical let binding.
     Let,
     /// D12: loop label.
     LoopLabel,
-    /// D13: local region.
-    LocalRegion,
     /// D14: match binder.
     MatchBinder,
     /// D15: counted-range binder.
@@ -300,7 +290,7 @@ pub enum DeclarationRole {
     Invariant,
 }
 
-/// Dependent declaration roles X01 through X03.
+/// Dependent declaration roles resolved by the semantic owner type.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DependentDeclarationRole {
     /// X01: source struct field.
@@ -328,18 +318,12 @@ pub enum LexicalUseRole {
     ArmVariant,
     /// The leading enum variant of an FN-9 selector.
     EnsuresVariant,
-    /// U06: region carried by a type.
-    TypeRegion,
-    /// U07: region carried by a mode.
-    ModeRegion,
-    /// U08: explicit region type argument.
-    TypeArgumentRegion,
-    /// U09: formal value parameter at the root of a state-effect path.
+    /// U09: reference parameter at the root of a state-effect path [EFF-1].
     EffectRoot,
-    /// Region whose arena allocation list an effect row extends.
-    EffectAllocationRegion,
-    /// U10: region named by a borrow expression.
-    BorrowRegion,
+    /// An index or range endpoint supplied inside a state-effect path. It is
+    /// an IDENT that must resolve to a value parameter of the same callable
+    /// and is evaluated once at the call [EFF-1].
+    EffectIndex,
     /// U11: break target.
     BreakLabel,
     /// U12: constant-expression identifier.
@@ -373,6 +357,10 @@ pub enum DeferredUseRole {
     MatchField,
     /// X06: projected field.
     ProjectedField,
+    /// The variant TYPEID of a payload `psuffix` or `epsuffix`, `p.Some.value`
+    /// [GRAM-5, EFF-1]. Which variant a place's enum type has is the owner
+    /// type's judgment, exactly as the paired field name is.
+    PayloadVariant,
     /// The member name on the left side of an actual binding.
     FunctionBinding,
     /// The member selected by a qualified group call.
@@ -423,10 +411,13 @@ pub enum DeclarationOrigin {
     Source(SourceOrigin),
     /// One normative PRE-1 record.
     Prelude(PreludeDeclarationId),
-    /// One [TYPE-2] compiler-owned container or provider nominal.
+    /// One [TYPE-9] compiler-owned storage nominal.
+    ///
+    /// [DIAG-1] enumerates a source origin and a PRE-1 origin and no third
+    /// form, but [TYPE-6] admits the four storage nominals into the same two
+    /// domains a source declaration can collide with, so the conflict has to
+    /// name something. This form is that name.
     Container(ContainerNominalId),
-    /// One [BLK-0] kernel-domain operation present in every unit [BLK-0].
-    Kernel(KernelOperationId),
 }
 
 /// One source declaration event and its lookup entries.
@@ -531,12 +522,9 @@ pub enum ResolvedTarget {
     Prelude(BuiltinPreludeId),
     /// One exact OP-1 operation family.
     Operation(OperationFamilyId),
-    /// One [TYPE-2] compiler-owned container or provider nominal, admitted at
-    /// a `type` TYPEID in every unit.
+    /// One [TYPE-9] compiler-owned storage nominal, admitted at a `type`
+    /// TYPEID in every unit.
     Container(ContainerNominalId),
-    /// One admitted [BLK-0] kernel-domain operation, admitted at a `callee`
-    /// IDENT in every unit [BLK-0].
-    Kernel(KernelOperationId),
 }
 
 /// One lexical use and its exact target.
@@ -704,19 +692,21 @@ pub enum ResolutionRule {
     Form3,
     /// Generic numeric suffix.
     Form5,
+    /// A misplaced or repeated heap declaration.
+    Gram2,
     /// Match-binder freshness.
     Gram10,
     /// Type or place lookup.
     Type5,
     /// Namespace collision, constructor, or label lookup.
     Type6,
+    /// A `set` target name that resolves to nothing.
+    Set1,
     /// Constant-expression lookup.
     Const1,
     /// Constant-value lookup.
     Const2,
-    /// Region uniqueness or lookup.
-    Own3,
-    /// Parameter-rooted state-effect lookup.
+    /// Reference-parameter-rooted state-effect lookup.
     Eff1,
     /// Operation-family or callee lookup.
     Op1,
@@ -741,12 +731,13 @@ impl ResolutionRule {
         match self {
             Self::Form3 => "FORM-3",
             Self::Form5 => "FORM-5",
+            Self::Gram2 => "GRAM-2",
             Self::Gram10 => "GRAM-10",
             Self::Type5 => "TYPE-5",
             Self::Type6 => "TYPE-6",
+            Self::Set1 => "SET-1",
             Self::Const1 => "CONST-1",
             Self::Const2 => "CONST-2",
-            Self::Own3 => "OWN-3",
             Self::Eff1 => "EFF-1",
             Self::Op1 => "OP-1",
             Self::Fn3 => "FN-3",
@@ -766,6 +757,9 @@ pub enum ReservedNameClass {
     DotlessOperation,
     /// One FORM-3 operation-mode suffix word.
     ModeWord,
+    /// One of FORM-3's eight measure pseudo-field or window-part names
+    /// [TYPE-10, MSR-1, WIN-2].
+    MeasureOrPart,
 }
 
 /// Declaration roles covered by OP-1's reserved-lower-name inventory.
@@ -796,10 +790,6 @@ pub enum ReservedDeclarationRole {
     Field,
     /// Enum-variant field.
     VariantField,
-    /// Region parameter, using its unsigiled interior spelling.
-    RegionParameter,
-    /// Local region, using its unsigiled interior spelling.
-    LocalRegion,
 }
 
 /// Why an FN-8/FN-9 contract block was rejected by early admission.
@@ -842,9 +832,15 @@ impl DeclarationConflict {
 pub enum ResolutionIssueKind {
     /// Early FN-8/FN-9 contract structural-admission failure.
     ContractShape(ContractShapeIssue),
+    /// A `heap_decl` that is not the first item of the first source record, or
+    /// a second one anywhere in the unit [GRAM-2].
+    MisplacedHeapDeclaration {
+        /// The admitted leading declaration, when the unit has one.
+        admitted: Option<SourceOrigin>,
+    },
     /// A declaration uses a derived reserved lower name.
     ReservedName {
-        /// Unsigiled spelling for a region, otherwise the declaration spelling.
+        /// The complete declaration or result-candidate spelling.
         spelling: String,
         /// Exact declaration role covered by the reserved-name rule.
         declaration_role: ReservedDeclarationRole,
@@ -852,13 +848,6 @@ pub enum ResolutionIssueKind {
         class: ReservedNameClass,
         /// Ordinal inside that reserved set.
         inventory_ordinal: u16,
-    },
-    /// A region spelling repeats within one function or member signature.
-    RepeatedRegion {
-        /// Complete sigiled spelling.
-        spelling: String,
-        /// Earlier declaration.
-        conflicting: SourceOrigin,
     },
     /// GRAM-10 freshness failed before the binder became a declaration.
     MatchBinderFreshness {
@@ -1005,7 +994,7 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
         self.prelude.get(id.ordinal() as usize)
     }
 
-    /// Returns all source declaration events D01 through D15.
+    /// Returns all source declaration events.
     #[must_use]
     pub fn declarations(&self) -> &[DeclarationRecord] {
         &self.declarations
@@ -1017,19 +1006,19 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
         self.declarations.get(id.index())
     }
 
-    /// Returns dependent declarations X01 through X03.
+    /// Returns the dependent declarations.
     #[must_use]
     pub fn dependent_declarations(&self) -> &[DependentDeclarationRecord] {
         &self.dependent_declarations
     }
 
-    /// Returns every successful lexical use U01 through U18.
+    /// Returns every successful lexical use.
     #[must_use]
     pub fn lexical_uses(&self) -> &[LexicalUseRecord] {
         &self.lexical_uses
     }
 
-    /// Returns deferred owner/member uses X04 through X09.
+    /// Returns the deferred owner/member uses.
     #[must_use]
     pub fn deferred_uses(&self) -> &[DeferredUseRecord] {
         &self.deferred_uses

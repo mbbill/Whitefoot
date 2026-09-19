@@ -37,8 +37,8 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
             | Production::BreakStmt
             | Production::ProofUse
             | Production::GiveStmt
-            // [PROV-6, FORM-2] `dispose p;` is a simple statement.
-            | Production::DisposeStmt
+            // [GRAM-2, FORM-2] `program no_heap;` is a simple item.
+            | Production::HeapDecl
     );
     if fixed || (record.production == Production::InvariantStmt && record.body_open.is_none()) {
         return Ok(true);
@@ -55,7 +55,6 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
                 nested.production,
                 Production::OrdinaryLetRhs
                     | Production::PropagateLetRhs
-                    | Production::ReplaceLetRhs
                     // [GRAM-4] a destructuring `let` takes a `call` right-hand
                     // side directly and renders on one line like every other
                     // non-initializer `let`.
@@ -71,10 +70,11 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
 /// The terminal ordinal of the `(` a parenthesized list production opens, when
 /// this node selects the list form [GRAM-2, GRAM-4].
 ///
-/// A `fn_decl` result list, a destructuring `let_stmt` binder list, and a
-/// `set_stmt` target list each render one space before that `(` [FORM-2]. The
-/// three are one question — which node selected a parenthesized list — so they
-/// share one answer rather than three near-identical walks.
+/// A `fn_decl` result list and a destructuring `let_stmt` binder list each
+/// render one space before that `(` [FORM-2]. The two are one question — which
+/// node selected a parenthesized list — so they share one answer rather than
+/// two near-identical walks. v0.60 retired the third case, `set_stmt`'s target
+/// list, with the multi-target commit [SET-1].
 fn stated_space_open_paren(
     topology: &FinalizedTopology,
     node: NodeId,
@@ -115,15 +115,11 @@ fn stated_space_open_paren(
                     .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?,
             ))
         }
-        // `let (a, b) = f(...);` and `set (x, y) = f(...);`: the `(` is the
-        // terminal immediately after the introducer.
-        Production::LetStmt | Production::SetStmt => {
-            let selects_list = if record.production == Production::LetStmt {
-                counted(Production::Call)? != 0
-            } else {
-                counted(Production::Place)? >= 2
-            };
-            if !selects_list {
+        // `let (a, b) = f(...);`: the `(` is the terminal immediately after
+        // the introducer. A destructuring consume writes its `(` after a
+        // TYPEID instead, and takes the ordinary left attachment.
+        Production::LetStmt => {
+            if counted(Production::Call)? == 0 {
                 return Ok(None);
             }
             Ok(Some(
@@ -148,7 +144,6 @@ fn is_block_bearing(record: &crate::syntax::parser::finalize::topology::NodeReco
             | Production::ContractBlock
             | Production::LoopStmt
             | Production::ForStmt
-            | Production::RegionStmt
             | Production::MatchStmt
             | Production::ValueMatch
             | Production::Arm
@@ -257,9 +252,9 @@ pub(super) fn build_gap_styles(
             mark_before(&mut gaps, topology, record.first_terminal, GapStyle::Spaced)?;
         }
 
-        // [FORM-2] a result list, a destructuring binder list, and a target
-        // list each keep one space before their `(`, overriding the generic
-        // right attachment of `(` exactly as the `for` header does.
+        // [FORM-2] a result list and a destructuring binder list each keep
+        // one space before their `(`, overriding the generic right attachment
+        // of `(` exactly as the `for` header does.
         if let Some(open) = stated_space_open_paren(topology, node, record)? {
             mark_before(&mut gaps, topology, open, GapStyle::Spaced)?;
         }
@@ -429,6 +424,20 @@ pub(super) fn attachment(
             .production
             == Production::CompareOp
     };
+    // [FORM-2] a destructuring consume's rest marker keeps one space after
+    // the `,` that precedes it, `let Conn(f: fh, ..) = move c;`, overriding
+    // the generic right attachment of `..`. The marker is the only `..` a
+    // `let_stmt` owns directly: `for_binding`, `range_tail`, and `erange`
+    // each own theirs [GRAM-4, GRAM-5, EFF-1]. With no bound field the
+    // preceding terminal is `(`, whose left attachment still emits no byte,
+    // so `let Conn(..) = move c;` is unaffected.
+    let rest_marker = predicate == TerminalPredicate::Fixed(FixedTerminal::DotDot)
+        && topology
+            .terminals
+            .get(ordinal)
+            .and_then(|record| record.owner)
+            .and_then(|owner| topology.node(owner))
+            .is_some_and(|owner| owner.production == Production::LetStmt);
     let actual_separator = predicate == TerminalPredicate::Fixed(FixedTerminal::Colon)
         && topology
             .terminals
@@ -439,6 +448,12 @@ pub(super) fn attachment(
     if compare_angle || actual_separator {
         return Ok(Attachment {
             left: false,
+            right: false,
+        });
+    }
+    if rest_marker {
+        return Ok(Attachment {
+            left: true,
             right: false,
         });
     }

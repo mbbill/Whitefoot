@@ -212,9 +212,9 @@ enum ListStop {
     (
         "prelude/host_copy_bytes.wf",
         PreludeSource::Function,
-        r#"fn host_copy_bytes(value: &HostString, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination) contract {
+        r#"fn host_copy_bytes(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
   requires start <= end;
-  requires end <= len_of(deref(destination));
+  requires end <= destination.len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
@@ -229,9 +229,9 @@ enum ListStop {
     (
         "prelude/host_copy_utf8.wf",
         PreludeSource::Function,
-        r#"fn host_copy_utf8(value: &HostString, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, Utf8CopyError> reads(value, destination), writes(destination) contract {
+        r#"fn host_copy_utf8(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, Utf8CopyError> reads(value), writes(destination) contract {
   requires start <= end;
-  requires end <= len_of(deref(destination));
+  requires end <= destination.len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
@@ -246,15 +246,15 @@ enum ListStop {
     (
         "prelude/open_read.wf",
         PreludeSource::Function,
-        r#"fn open_read(factory: &uniq HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: own Result<ReadFile, IoError> reads(factory, root, path), writes(factory);
+        r#"fn open_read(factory: &HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: own Result<ReadFile, IoError> reads(root), reads(path), writes(factory);
 "#,
     ),
     (
         "prelude/read_at.wf",
         PreludeSource::Function,
-        r#"fn read_at(factory: &uniq HandleFactory, file: &uniq ReadFile, destination: &uniq MutSlice<u8>, file_offset: own u64, start: own u64, end: own u64) -> result: own Result<u64, ReadStop> reads(factory, file, destination), writes(factory, file, destination) contract {
+        r#"fn read_at(factory: &HandleFactory, file: &ReadFile, destination: &[u8], file_offset: own u64, start: own u64, end: own u64) -> result: own Result<u64, ReadStop> writes(factory), writes(file), writes(destination) contract {
   requires start <= end;
-  requires end <= len_of(deref(destination));
+  requires end <= destination.len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
@@ -263,9 +263,9 @@ enum ListStop {
     (
         "prelude/write_once.wf",
         PreludeSource::Function,
-        r#"fn write_once(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(factory, output, source), writes(factory, output) contract {
+        r#"fn write_once(factory: &HandleFactory, output: &OutputStream, source: &[u8], start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(source), writes(factory), writes(output) contract {
   requires start <= end;
-  requires end <= len_of(deref(source));
+  requires end <= source.len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
@@ -280,24 +280,24 @@ enum ListStop {
     (
         "prelude/open_directory.wf",
         PreludeSource::Function,
-        r#"fn open_directory(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
+        r#"fn open_directory(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(root), reads(name), writes(factory) contract {
   requires start <= end;
-  requires end <= len_of(deref(name));
+  requires end <= name.len;
 };
 "#,
     ),
     (
         "prelude/open_directory_source.wf",
         PreludeSource::Function,
-        r#"fn open_directory_source(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory);
+        r#"fn open_directory_source(factory: &HandleFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(directory), writes(factory);
 "#,
     ),
     (
         "prelude/directory_next.wf",
         PreludeSource::Function,
-        r#"fn directory_next(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) reads(source, destination), writes(source, destination) contract {
+        r#"fn directory_next(source: &DirectorySource, destination: &[u8], start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) writes(source), writes(destination) contract {
   requires start <= end;
-  requires end <= len_of(deref(destination));
+  requires end <= destination.len;
   ensures start <= next;
   ensures next <= end;
 };
@@ -306,36 +306,36 @@ enum ListStop {
     (
         "prelude/open_file.wf",
         PreludeSource::Function,
-        r#"fn open_file(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(factory, root, name), writes(factory) contract {
+        r#"fn open_file(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(root), reads(name), writes(factory) contract {
   requires start <= end;
-  requires end <= len_of(deref(name));
+  requires end <= name.len;
 };
 "#,
     ),
     (
         "prelude/close_read.wf",
         PreludeSource::Function,
-        r#"fn close_read(factory: &uniq HandleFactory, file: own ReadFile) -> result: own Result<unit, IoError> reads(factory, file), writes(factory, file);
+        r#"fn close_read(factory: &HandleFactory, file: own ReadFile) -> result: own Result<unit, IoError> writes(factory);
 "#,
     ),
     (
         "prelude/close_directory.wf",
         PreludeSource::Function,
-        r#"fn close_directory(factory: &uniq HandleFactory, directory: own DirectoryRead) -> result: own Result<unit, IoError> reads(factory, directory), writes(factory, directory);
+        r#"fn close_directory(factory: &HandleFactory, directory: own DirectoryRead) -> result: own Result<unit, IoError> writes(factory);
 "#,
     ),
     (
         "prelude/close_directory_source.wf",
         PreludeSource::Function,
-        r#"fn close_directory_source(factory: &uniq HandleFactory, source: own DirectorySource) -> result: own Result<unit, IoError> reads(factory, source), writes(factory, source);
+        r#"fn close_directory_source(factory: &HandleFactory, source: own DirectorySource) -> result: own Result<unit, IoError> writes(factory);
 "#,
     ),
     (
         "prelude/read_next.wf",
         PreludeSource::Function,
-        r#"fn read_next(factory: &uniq HandleFactory, input: &uniq InputStream, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, ReadStop> reads(factory, input, destination), writes(factory, input, destination) contract {
+        r#"fn read_next(factory: &HandleFactory, input: &InputStream, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, ReadStop> writes(factory), writes(input), writes(destination) contract {
   requires start <= end;
-  requires end <= len_of(deref(destination));
+  requires end <= destination.len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
@@ -356,27 +356,27 @@ enum ListStop {
     (
         "prelude/tcp_listen.wf",
         PreludeSource::Function,
-        r#"fn tcp_listen(factory: &uniq HandleFactory, address: &SocketAddress) -> result: own Result<TcpListener, IoError> reads(factory, address), writes(factory);
+        r#"fn tcp_listen(factory: &HandleFactory, address: &SocketAddress) -> result: own Result<TcpListener, IoError> reads(address), writes(factory);
 "#,
     ),
     (
         "prelude/tcp_accept.wf",
         PreludeSource::Function,
-        r#"fn tcp_accept(factory: &uniq HandleFactory, listener: &uniq TcpListener) -> result: own Result<AcceptedConnection, IoError> reads(factory, listener), writes(factory, listener);
+        r#"fn tcp_accept(factory: &HandleFactory, listener: &TcpListener) -> result: own Result<AcceptedConnection, IoError> writes(factory), writes(listener);
 "#,
     ),
     (
         "prelude/tcp_connect.wf",
         PreludeSource::Function,
-        r#"fn tcp_connect(factory: &uniq HandleFactory, address: &SocketAddress) -> result: own Result<TcpConnection, IoError> reads(factory, address), writes(factory);
+        r#"fn tcp_connect(factory: &HandleFactory, address: &SocketAddress) -> result: own Result<TcpConnection, IoError> reads(address), writes(factory);
 "#,
     ),
     (
         "prelude/receive_next.wf",
         PreludeSource::Function,
-        r#"fn receive_next(receive: &uniq TcpReceive, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, ReadStop> reads(receive, destination), writes(receive, destination) contract {
+        r#"fn receive_next(receive: &TcpReceive, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, ReadStop> writes(receive), writes(destination) contract {
   requires start <= end;
-  requires end <= len_of(deref(destination));
+  requires end <= destination.len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
@@ -385,9 +385,9 @@ enum ListStop {
     (
         "prelude/send_once.wf",
         PreludeSource::Function,
-        r#"fn send_once(send: &uniq TcpSend, source: &Slice<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(send, source), writes(send) contract {
+        r#"fn send_once(send: &TcpSend, source: &[u8], start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(source), writes(send) contract {
   requires start <= end;
-  requires end <= len_of(deref(source));
+  requires end <= source.len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
@@ -396,19 +396,201 @@ enum ListStop {
     (
         "prelude/close_listener.wf",
         PreludeSource::Function,
-        r#"fn close_listener(factory: &uniq HandleFactory, listener: own TcpListener) -> result: own Result<unit, IoError> reads(factory, listener), writes(factory, listener);
+        r#"fn close_listener(factory: &HandleFactory, listener: own TcpListener) -> result: own Result<unit, IoError> writes(factory);
 "#,
     ),
     (
         "prelude/close_receive.wf",
         PreludeSource::Function,
-        r#"fn close_receive(factory: &uniq HandleFactory, receive: own TcpReceive) -> result: own Result<unit, IoError> reads(factory, receive), writes(factory, receive);
+        r#"fn close_receive(factory: &HandleFactory, receive: own TcpReceive) -> result: own Result<unit, IoError> writes(factory);
 "#,
     ),
     (
         "prelude/close_send.wf",
         PreludeSource::Function,
-        r#"fn close_send(factory: &uniq HandleFactory, send: own TcpSend) -> result: own Result<unit, IoError> reads(factory, send), writes(factory, send);
+        r#"fn close_send(factory: &HandleFactory, send: own TcpSend) -> result: own Result<unit, IoError> writes(factory);
+"#,
+    ),
+    (
+        "prelude/box_new.wf",
+        PreludeSource::Function,
+        r#"fn box_new<T: linear>(value: own T) -> result: own Box<T> pure;
+"#,
+    ),
+    (
+        "prelude/array_filled.wf",
+        PreludeSource::Function,
+        r#"fn array_filled<T: copy, const n: u64>(value: own T) -> result: own Array<T, n> pure contract {
+  ensures result.len == n;
+};
+"#,
+    ),
+    (
+        "prelude/slots_new.wf",
+        PreludeSource::Function,
+        r#"fn slots_new<T: linear, const n: u64>() -> result: own Slots<T, n> pure contract {
+  ensures result.len == 0_u64;
+  ensures result.cap == n;
+};
+"#,
+    ),
+    (
+        "prelude/ring_new.wf",
+        PreludeSource::Function,
+        r#"fn ring_new<T: linear, const n: u64>() -> result: own Ring<T, n> pure contract {
+  ensures result.len == 0_u64;
+  ensures result.cap == n;
+  ensures result.head == 0_u64;
+};
+"#,
+    ),
+    (
+        "prelude/box_array_filled.wf",
+        PreludeSource::Function,
+        r#"fn box_array_filled<T: copy>(count: own u64, value: own T) -> result: own Box<Array<T>> pure contract {
+  ensures deref(result).len == count;
+};
+"#,
+    ),
+    (
+        "prelude/box_slots_new.wf",
+        PreludeSource::Function,
+        r#"fn box_slots_new<T: linear>(capacity: own u64) -> result: own Box<Slots<T>> pure contract {
+  ensures deref(result).len == 0_u64;
+  ensures deref(result).cap == capacity;
+};
+"#,
+    ),
+    (
+        "prelude/box_ring_new.wf",
+        PreludeSource::Function,
+        r#"fn box_ring_new<T: linear>(capacity: own u64) -> result: own Box<Ring<T>> pure contract {
+  ensures deref(result).len == 0_u64;
+  ensures deref(result).cap == capacity;
+  ensures deref(result).head == 0_u64;
+};
+"#,
+    ),
+    (
+        "prelude/slots_from_array.wf",
+        PreludeSource::Function,
+        r#"fn slots_from_array<T: linear, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pure contract {
+  ensures result.len == n;
+  ensures result.cap == n;
+};
+"#,
+    ),
+    (
+        "prelude/slots_into_array.wf",
+        PreludeSource::Function,
+        r#"fn slots_into_array<T: linear, const n: u64>(values: own Slots<T, n>) -> result: own Array<T, n> pure contract {
+  requires values.len == n;
+  ensures result.len == n;
+};
+"#,
+    ),
+    (
+        "prelude/place_back.wf",
+        PreludeSource::Function,
+        r#"fn place_back<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window.next), writes(window.len) contract {
+  requires window.room > 0_u64;
+  ensures window.len == entry(window).len + 1_u64;
+  ensures window.cap == entry(window).cap;
+};
+"#,
+    ),
+    (
+        "prelude/take_back.wf",
+        PreludeSource::Function,
+        r#"fn take_back<W: linear, T: linear>(window: &W) -> value: own T writes(window.last), writes(window.len) contract {
+  requires window.len > 0_u64;
+  ensures window.len + 1_u64 == entry(window).len;
+  ensures window.cap == entry(window).cap;
+};
+"#,
+    ),
+    (
+        "prelude/insert_at.wf",
+        PreludeSource::Function,
+        r#"fn insert_at<W: linear, T: linear>(window: &W, index: own u64, value: own T) -> result: own unit writes(window.filled), writes(window.next), writes(window.len) contract {
+  requires index <= window.len;
+  requires window.room > 0_u64;
+  ensures window.len == entry(window).len + 1_u64;
+  ensures window.cap == entry(window).cap;
+};
+"#,
+    ),
+    (
+        "prelude/remove_at.wf",
+        PreludeSource::Function,
+        r#"fn remove_at<W: linear, T: linear>(window: &W, index: own u64) -> value: own T writes(window.filled), writes(window.len) contract {
+  requires index < window.len;
+  ensures window.len + 1_u64 == entry(window).len;
+  ensures window.cap == entry(window).cap;
+};
+"#,
+    ),
+    (
+        "prelude/append.wf",
+        PreludeSource::Function,
+        r#"fn append<W: linear, X: linear>(destination: &W, source: &X) -> result: own unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
+  requires destination.room >= source.len;
+  ensures destination.len == entry(destination).len + entry(source).len;
+  ensures source.len == 0_u64;
+};
+"#,
+    ),
+    (
+        "prelude/split_off.wf",
+        PreludeSource::Function,
+        r#"fn split_off<W: linear, X: linear>(source: &W, index: own u64, destination: &X) -> result: own unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
+  requires index <= source.len;
+  requires destination.room >= source.len - index;
+  ensures source.len == index;
+  ensures destination.len == entry(destination).len + entry(source).len - index;
+};
+"#,
+    ),
+    (
+        "prelude/grow.wf",
+        PreludeSource::Function,
+        r#"fn grow<T: linear>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(deref(cell)) contract {
+  requires capacity >= deref(cell).cap;
+  ensures deref(cell).cap == capacity;
+  ensures deref(cell).len == deref(entry(cell)).len;
+};
+"#,
+    ),
+    (
+        "prelude/place_front.wf",
+        PreludeSource::Function,
+        r#"fn place_front<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window) contract {
+  requires window.room > 0_u64;
+  ensures window.len == entry(window).len + 1_u64;
+};
+"#,
+    ),
+    (
+        "prelude/take_front.wf",
+        PreludeSource::Function,
+        r#"fn take_front<W: linear, T: linear>(window: &W) -> value: own T writes(window) contract {
+  requires window.len > 0_u64;
+  ensures window.len + 1_u64 == entry(window).len;
+};
+"#,
+    ),
+    (
+        "prelude/swap.wf",
+        PreludeSource::Function,
+        r#"fn swap<T: linear>(first: &T, second: &T) -> result: own unit writes(first), writes(second);
+"#,
+    ),
+    (
+        "prelude/free_empty.wf",
+        PreludeSource::Function,
+        r#"fn free_empty<W: linear>(window: own W) -> result: own unit pure contract {
+  requires window.len == 0_u64;
+};
 "#,
     ),
 ];
@@ -463,7 +645,10 @@ mod tests {
             .iter()
             .filter(|function| function.body.is_none())
             .count();
-        assert_eq!(signatures, 29);
+        // [PRE-1] 29 host records, then the nine construction functions
+        // [OP-13], the nine window operations [OP-10], `swap` [OP-11] and
+        // `free_empty` [OP-14].
+        assert_eq!(signatures, 49);
         assert!(
             !checked
                 .data

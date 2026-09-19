@@ -65,8 +65,6 @@ pub enum TokenKind {
     LowerWordForm,
     /// A FORM-3 uppercase word shape.
     UpperWordForm,
-    /// An apostrophe-prefixed region-name shape.
-    RegionForm,
     /// An at-sign-prefixed label shape.
     LabelForm,
     /// A dotted operation-name shape with one closed mode suffix.
