@@ -50,8 +50,8 @@ The colon separating an `actual_decl` name from its formal application is render
 Examples include `Result<i32, Overflow>`, `f(x: a, y: b)`, `cvt::<u8, u32>(w)`, `a <= b`, `actual SeedKey : Key<u64, Seed>`, and `[10_u8, 20_u8]`.
 The range step renders compactly: `&r[lo..hi]`, `part[k]`, because `[`, `..`, and `]` are all attachment members.
 A payload step renders compactly: `n.left.Some.value`.
-A measure or window part renders as an ordinary field suffix: `r.len`, `r.next`, and `deref(b).len`.
-`&` attaches left, so a reference expression is `&p`, `&deref(b).f`, `&r[i]`, or `&r[lo..hi]`, and a reference parameter mode is `&u8` or `&Slots<Int, N>`.
+A measure or window part renders as an ordinary field suffix: `r.len`, `r.next`, and `deref(p).len`.
+`&` attaches left, so a reference expression is `&p`, `&deref(p).f`, `&r[i]`, or `&r[lo..hi]`, and a reference parameter mode is `&u8` or `&Slots<Int, N>`.
 The range-reference parameter kind renders compactly: `part: &[Int]`.
 `move deref(b)` renders with exactly one space after `move`, as `move place` already does.
 
@@ -178,7 +178,7 @@ program      := item*
 item         := fn_decl | struct_decl | enum_decl | formal_decl | actual_decl | const_decl
               | heap_decl
 heap_decl    := "program" "no_heap" ";"
-struct_decl  := "linear"? "struct" TYPEID generics? "{" doc? field* "}"
+struct_decl  := "opaque"? "linear"? "struct" TYPEID generics? "{" doc? field* "}"
 field        := IDENT ":" type ";"
 enum_decl    := "linear"? "enum" TYPEID generics? "{" doc? variant* "}"
 variant      := TYPEID "(" vfield_list? ")" ";"
@@ -297,7 +297,7 @@ range_tail     := ".." atom
 The enum payload step is `"." TYPEID "." IDENT` — the variant name and then that variant's declared field name, `n.left.Some.value` — and it is the one spelling for reaching a payload, the kernel having no positional fields [GRAM-8].
 A field step and a payload step are told apart by the shape kind of the token after the `.`, never by grammar position or context, so both spellings are META-2-clean [GRAM-1].
 The range step is factored into `"[" atom range_tail? "]"` with `range_tail` a production of its own, because `"[" atom "]"` and `"[" atom ".." atom "]"` as two alternatives would share a `SELECT_2` language [GRAM-1]; `range_tail` maps 1:1 to its own node kind, so the mapping of [GRAM-1] holds for the factored form.
-The `deref` alternative of `pbase` takes any `place` whose selected kind is a reference or a cell — `&T`, `&[T]`, or `Box<T>` — so one production spells the referent of a reference and the content of a cell alike [TYPE-7].
+The `deref` alternative of `pbase` takes any `place` whose selected kind is a reference — `&T` or `&[T]` — and spells its referent [TYPE-7]; a `Box`'s content is its field `inner`, reached by the ordinary field step [TYPE-9].
 `borrow_expr` is `"&" place`: there is no permission marker and no other qualifier on a reference [REF-1].
 
 [GRAM-6] There is no general operator syntax and no precedence: an `infix` expression is exactly one operation over two atoms [GRAM-5, GRAM-9], composition is by `let`, and no precedence, associativity, or parenthesization surface exists.
@@ -380,12 +380,12 @@ Callee kind is resolved by name lookup [OP-1], the same partition that already s
 [TYPE-1] Primitive types: `i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 unit`.
 (`Bool` is a prelude enum, §14, not a primitive.)
 
-[TYPE-2] Composite types: `struct`, `enum`, and the four compiler-owned nominals `Array`, `Slots`, `Ring`, and `Box`.
-The four are nominals of the nominal-type TYPEID domain [TYPE-6], written as a TYPEID with `targs` [GRAM-3] and declared by no source item; their forms, capacities, placements, and element domains are [TYPE-9]'s.
+[TYPE-2] Composite types: `struct`, `enum`, and the three compiler-owned storage shapes `Array`, `Slots`, and `Ring`; the cell `Box` is the prelude's opaque struct [TYPE-9, PRE-1].
+The three are nominals of the nominal-type TYPEID domain [TYPE-6], written as a TYPEID with `targs` [GRAM-3] and declared by no source item, because a struct body can state neither their elements nor their two capacity forms; their forms, capacities, placements, and element domains are [TYPE-9]'s.
 In this specification's prose `N` stands for a written const argument; source writes a `const` IDENT, lowercase under [FORM-3], as the [PRE-1] rows do.
-Every value of the four is affine [OWN-1] unless its element or content type makes it linear [PROV-6].
+Every value of the three shapes and of `Box` is affine [OWN-1] unless its element or content type makes it linear [PROV-6].
 A `struct` or `enum` declaration may carry the `linear` modifier [GRAM-2], which states a logical must-consume obligation on values of that nominal in every scope and changes no component, layout, or construction route [PROV-6].
-An opaque nominal [PRE-1] has no writer-visible component or constructor. It obeys the ordinary nominal type, ownership, and call rules.
+A `struct` declaration may carry the `opaque` modifier [GRAM-2], written before `linear` when both are present: an opaque struct has fields and no usable constructor. Its constructor entry [TYPE-6] exists to be refused: a constructor `call` whose leading TYPEID names an opaque struct is a hard error citing TYPE-2 at the complete `call`, and a destructuring `let_stmt` whose TYPEID names one is a hard error citing TYPE-2 at the complete `let_stmt`, each with the restructuring `build it with a construction function [OP-13, PRE-1]`. Its fields obey the ordinary field, ownership, and release rules [OWN-1, PROV-6, STOR-3], and a `move` out of one of its fields is the ordinary [WIN-3] consume. No source-declared opaque struct has a construction function, so a value of one is never formed; the prelude declares `Box<T>` and every host handle as opaque structs and supplies their construction rows [PRE-1].
 
 [TYPE-3] Nameability: every constructible type/mode/effect has a canonical, finite, writable name requiring no compiler execution.
 The `linear` modifier and a generic parameter's linearity bound are properties of a declaration and not components of a type name: two instances of one nominal have one name whether or not its declaration is marked, and no name spells a linearity class [PROV-6].
@@ -429,8 +429,8 @@ The grammar role, never an inferred type or expected result, selects the domain 
 | domain | declarations | admitted uses |
 |---|---|---|
 | lexical IDENT | top-level `fn_decl`; raw function-kind `gparam`; top-level `const_decl`; const `gparam`; `param`; `let_stmt`; `for_stmt` binder; arm `fieldbind` binders; `contract_define`; FN-9-owned result and route candidates; PRE-1 functions | a `callee` IDENT admits a top-level function, in-scope function parameter, or PRE-1 function; an unqualified `function_arg` or `fn_bind` right side admits an ordinary function or function parameter; `const` IDENT admits an in-scope const generic or earlier named const; `cvalue` IDENT admits an earlier named const; `pbase` admits an in-scope runtime value binding, contract definition, admitted symbolic result datum, named const, or in-scope const generic [MSR-6] |
-| nominal-type TYPEID | source `struct_decl` and `enum_decl` names; source formal and actual groups; PRE-1 nominal types; the four compiler-owned storage nominals [TYPE-9]; lexical type `gparam`s overlay this domain while live | a runtime `type` or generic-numeric suffix admits only its ordinary type class; an explicit `targ` additionally admits a formal or actual abbreviation; a `pack_use` admits a formal or actual group, with FN-3/FN-5 checking its position and member selection |
-| constructor TYPEID | each source struct constructor under its struct TYPEID; every source enum `variant`; PRE-1 variants, classified as struct-constructor or enum-variant; PRE-1 struct constructors; the four compiler-owned storage nominals [TYPE-9] | the leading TYPEID of constructor `call` admits either class; the leading TYPEID of `arm` or `result_route` admits only enum-variant |
+| nominal-type TYPEID | source `struct_decl` and `enum_decl` names; source formal and actual groups; PRE-1 nominal types; the three compiler-owned storage shapes [TYPE-9]; lexical type `gparam`s overlay this domain while live | a runtime `type` or generic-numeric suffix admits only its ordinary type class; an explicit `targ` additionally admits a formal or actual abbreviation; a `pack_use` admits a formal or actual group, with FN-3/FN-5 checking its position and member selection |
+| constructor TYPEID | each source struct constructor under its struct TYPEID; every source enum `variant`; PRE-1 variants, classified as struct-constructor or enum-variant; PRE-1 struct constructors; an opaque struct's constructor, existing only to be refused [TYPE-2]; the three compiler-owned storage shapes [TYPE-9] | the leading TYPEID of constructor `call` admits either class; the leading TYPEID of `arm` or `result_route` admits only enum-variant |
 | numeric-bound TYPEID | the two built-in bounds `Int` and `Float` [PRE-1] | the bound TYPEID of a type `gparam`; a linearity bound instead uses its fixed grammar spelling [GRAM-2, PROV-6] |
 | LABEL | an optional LABEL written by `loop_stmt` or `for_stmt` | an optional LABEL written by `break_stmt` |
 | invariant IDENT | names written by `header_invariant` and `invariant_stmt` | the IDENT premise alternative of `use_premise` |
@@ -514,10 +514,12 @@ Every aggregate therefore holds only owned values, which is what [STOR-7] rests 
 
 [TYPE-9] Three storage shapes, two placements each, and one cell.
 `Array<T, N>`, `Slots<T, N>`, and `Ring<T, N>` are the constant-capacity forms, whose capacity is the type constant N [CONST-1] and whose storage is inline in the owner or the stack frame [STOR-1].
-`Array<T>`, `Slots<T>`, and `Ring<T>` are the runtime-capacity forms, whose capacity is a measure fixed at construction [MSR-1]; a runtime-capacity form may appear only as the content of a `Box` and never inline in another value and never as a local binding; every other position is a hard error citing TYPE-9 at the complete `type`, with the restructuring `wrap it in a Box, or write the constant-capacity form`.
-`Box<T>` owns exactly one heap object of any nameable T [TYPE-3], including a runtime-capacity form; there is one heap [STOR-8], a `Box` carries no brand, and it may be moved, stored in an aggregate, and returned freely.
+`Array<T>`, `Slots<T>`, and `Ring<T>` are the runtime-capacity forms, whose capacity is a measure fixed at construction [MSR-1]; a runtime-capacity form may appear only as the content of a `Box` — the type of its `inner` field — and never inline in another value and never as a local binding; every other position is a hard error citing TYPE-9 at the complete `type`, with the restructuring `wrap it in a Box, or write the constant-capacity form`.
+`Box<T>` is the prelude's opaque struct `opaque struct Box<T> { inner: T; }` [TYPE-2, PRE-1]: its one field `inner` is its content, stored in exactly one heap object the `Box` value owns [STOR-1]; T is any nameable type [TYPE-3], including a runtime-capacity form; there is one heap [STOR-8], a `Box` carries no brand, and it may be moved, stored in an aggregate, and returned freely.
+The content is reached by the ordinary field step, `b.inner`, and never by `deref` [TYPE-7, REF-1]; `let n = move b.inner;` consumes the `Box`, yields its content, and frees the cell [WIN-3].
+A `move` of a runtime-capacity content is a hard error citing TYPE-9 at the complete `place`, with the restructuring `let the Box release it at scope exit, or empty it and call free_empty(move b) [OP-14]`.
 The element type of any shape is any nameable type, copy, affine, or linear [OWN-1, PROV-6].
-Each of the four nominals contributes one nominal-type entry and one constructor entry of the same spelling [TYPE-6]; the constructor entry exists to be refused, a constructor `call` admitting one being a hard error citing TYPE-9 at the complete constructor `call`, with the restructuring `build it with a construction function [OP-13]`.
+Each of the three shapes contributes one nominal-type entry and one constructor entry of the same spelling [TYPE-6]; the constructor entry exists to be refused, a constructor `call` admitting one being a hard error citing TYPE-9 at the complete constructor `call`, with the restructuring `build it with a construction function [OP-13]`; a `Box` constructor `call` is refused by [TYPE-2] in the same words.
 
 [TYPE-10] Measures and window parts are names, not declarations.
 `len`, `cap`, `room`, and `head` are read-only pseudo-fields of a measured place [MSR-1]; a program reads them like fields [OP-15] and can never assign one, and only the operations of [OP-10] and [OP-13] change them.
@@ -525,11 +527,11 @@ Each of the four nominals contributes one nominal-type entry and one constructor
 The eight spellings occupy no declaration domain and are reserved from field, parameter, binder, and result binding by [FORM-3].
 A write to a measure, and a read of a window part, a `borrow_expr` over one, and a write of one, are each a hard error citing TYPE-10 at the complete `place`, with the restructuring `use the operation that moves the window boundary [OP-10]`.
 
-[TYPE-7] Reading through a reference or a cell is explicit.
-`deref(place)` where `place` has type `&T`, `&[T]`, or `Box<T>` denotes a place of referent type T [GRAM-5] — for `&[T]` the run of T elements that range names [REF-4] — and a use of that place copies it when T is copy and requires `move` when T is affine [OWN-1].
-A reference or `Box` binding used where a value of its referent type is expected is a hard error citing TYPE-7, with the mechanical fix `deref(.)`.
-There is no implicit read through a reference or through a cell [TYPE-4, META-2].
-`move deref(b)` consumes the `Box`, yields its content, and frees the cell [WIN-3].
+[TYPE-7] Reading through a reference is explicit.
+`deref(place)` where `place` has type `&T` or `&[T]` denotes a place of referent type T [GRAM-5] — for `&[T]` the run of T elements that range names [REF-4] — and a use of that place copies it when T is copy and requires `move` when T is affine [OWN-1].
+A reference binding used where a value of its referent type is expected is a hard error citing TYPE-7, with the mechanical fix `deref(.)`.
+There is no implicit read through a reference [TYPE-4, META-2].
+`deref(place)` where `place` is not a reference, a `Box` included, is a hard error citing TYPE-7 at the complete `place`, with the restructuring `a Box's content is its field inner [TYPE-9]; an owned place is named as itself`.
 
 [SET-1] Place assignment.
 For `set p = e;`, target evaluation first resolves and evaluates the complete `p` without reading or consuming the value stored there.
@@ -540,7 +542,7 @@ Field suffixes introduce no runtime evaluation.
 This rule judges a value target; a `set` whose target is a reference variable and whose right-hand side is a `borrow_expr` rebinds that name and is judged by [REF-1] instead.
 A `set` whose target is a reference variable and whose right-hand side is a value is not a rebinding: it is a hard error citing TYPE-7 at the target `place`, with the mechanical fix `deref(.)`.
 The value target's final selected type is T.
-The target is writable exactly when it is rooted in a live own-mode value binding, is `deref(p)` or a path below it where `p` is a reference parameter whose declared row carries `writes` of that path [EFF-1, EFF-5] or a local reference variable whose named path is itself writable, or is reached through `deref` of a live `Box` binding rooted the same way.
+The target is writable exactly when it is rooted in a live own-mode value binding, is `deref(p)` or a path below it where `p` is a reference parameter whose declared row carries `writes` of that path [EFF-1, EFF-5] or a local reference variable whose named path is itself writable.
 Fields and indices inherit the writability of their selected base.
 A named const is never writable [CONST-2].
 A `for_stmt` binder is compiler-updated state and is never source-writable; a target rooted there is a SET-1 rejection at the complete target `place`.
@@ -584,7 +586,7 @@ This keeps the const-generic forwarding path closed under the one operation: `co
 cvalue := literal | IDENT | "[" cvalue ("," cvalue)* "]" | TYPEID targs? "(" (IDENT ":" cvalue ("," IDENT ":" cvalue)*)? ")"
 ```
 
-`type` must be const-eligible: a primitive [TYPE-1], `Array<T, N>` of const-eligible T, or a source `struct` whose every field type is const-eligible; `enum`, `Box`, `Slots`, and `Ring` are not const-eligible (a const is pure static rodata: no allocation, no drop).
+`type` must be const-eligible: a primitive [TYPE-1], `Array<T, N>` of const-eligible T, or a source non-opaque `struct` whose every field type is const-eligible; `enum`, `Box`, `Slots`, and `Ring` are not const-eligible (a const is pure static rodata: no allocation, no drop).
 The `cvalue` totally defines the value: a primitive-typed const takes a FORM-5 numeric or unit literal or an IDENT naming an earlier const of that exact type; an `Array<T, N>`-typed const takes `[cvalue, ..., cvalue]` with exactly N entries, each of type T, and a struct-typed const takes the construction form `TYPEID(field: cvalue, ...)` naming its exact struct and writing every declared field in declared order [GRAM-8], each field value a cvalue of the declared field type.
 The const-dependency graph is acyclic and declaration-before-use [TYPE-6]; evaluation is substitution and layout only.
 A const item is never `move`d or `set`, and no declared row may write a path rooted at one [EFF-1, EFF-5].
@@ -607,7 +609,7 @@ After any consuming use, the whole binding rooting `p` is dead (partial moves ki
 SET-1 rechecks its premises after its right-hand side under [LIV-1]; a dead binding is revived only by a [SET-1] commit whose target is that complete binding, which reinitializes it, and by nothing else.
 
 [REF-1] A reference is a local name for a path.
-A path starts at a local variable or a parameter and continues through field selections, `deref` (a reference's referent or `Box` content [TYPE-7]), an index step, a range step [REF-4], or an enum payload step [GRAM-5].
+A path starts at a local variable or a parameter and continues through field selections, `deref` (a reference's referent [TYPE-7]), an index step, a range step [REF-4], or an enum payload step [GRAM-5].
 A payload step is available only under the refinement fact that the enum currently holds that variant, which a `match` arm establishes [ENT-3.S15] and which any write to the enum invalidates [REF-2].
 A reference variable denotes the reference, and the storage it names is reached only through `deref` [TYPE-7]: every place expression, subscript, field selection, payload step, and measure read that goes through a reference variable `p` is written under that step — `deref(p)`, `deref(p).field`, `deref(part)[i]`, `deref(part).len`, and `deref(p).Some.value`.
 `let q = p;` where `p` is a reference variable makes `q` a reference to the same path — an alias, not a copy of the referent — and passing a bare reference variable where a `&T` or `&[T]` parameter is expected passes that reference.
@@ -686,7 +688,7 @@ This rule states the liveness premise [SET-1] rechecks after a right-hand side, 
 A type is linear exactly when its declaration carries the `linear` modifier [GRAM-2] or it owns, at any depth, a linear type; a struct, an enum, an `Array`, a `Slots`, a `Ring`, or a `Box` [TYPE-9] owning a linear part is linear, and every other type is copy or affine by [OWN-1].
 Linearity is a property of the type and not of a scope.
 This rule refines [OWN-1]'s classification and replaces none of it: a copy value is never linear, and a value this rule does not make linear keeps exactly the disposition [OWN-1] and [STOR-3] give it.
-A type owns its fields, its enum variant payloads, its `Box` content [TYPE-7], and the elements of an `Array`, a `Slots`, or a `Ring` it is.
+A type owns its fields, its enum variant payloads, its `Box` content [TYPE-9], and the elements of an `Array`, a `Slots`, or a `Ring` it is.
 A full `Array` has the same element-type ownership closure as a window [WIN-1]: if T is linear then `Array<T, N>` is linear, including when N is zero; a zero extent changes the executed element count, not this type-level judgment.
 A written type argument is owned through the field, payload, or element position it lands in and never by the type that writes it.
 
@@ -789,8 +791,8 @@ A `Slots` or `Ring` release is each element's compiler-derived release over its 
 A `const` item [CONST-2] is never released.
 Every other frame-resident owned value [STOR-1] has no release action.
 
-An opaque nominal's release is empty.
-Its declaration's `linear` modifier, and only the ordinary ownership closure of [PROV-6], requires explicit consumption.
+A prelude host handle [PRE-1] has no fields, so its release is empty; every other opaque struct [TYPE-2] takes the release its fields give it under this rule, `Box` the cell case above.
+An opaque struct's `linear` modifier, and only the ordinary ownership closure of [PROV-6], requires explicit consumption.
 No source declaration, annotation, attribute, contract, or binding attaches a finalizer or any other user-defined action to a value's release.
 
 A successful [SET-1] assignment derives no finalizer or cleanup edge and no release beyond the old value's own: a copy target's previous value needs none, and an affine target's previous value takes the release [WIN-3] states.
@@ -987,7 +989,7 @@ A successful bounds judgment neither narrows nor authorizes narrowing the offset
 
 [OP-5] Every source condition and contract predicate requires its selected expression to have exact value mode and type `own Bool`, where `Bool` is the PRE-1 nominal type.
 No integer, other enum, or implicit truthiness conversion is admitted [TYPE-4].
-The implicit-read case already owned by [TYPE-7] is exclusive: when `e` uses a `Box` binding where its content `Bool` value would be required, that use is rejected citing TYPE-7 and OP-5 forms no candidate.
+The implicit-read case already owned by [TYPE-7] is exclusive: when `e` uses a reference binding where its referent `Bool` value would be required, that use is rejected citing TYPE-7 and OP-5 forms no candidate.
 Every other exact-mode or exact-type failure is a hard error citing OP-5 at the selected `expr` node, with `SourceCoordinate` equal to that expression node's complete checked half-open source extent.
 An `if` condition is executed control flow [GRAM-6], while a contract predicate, invariant relation, and `proof_use` are erased proof syntax [FN-8, FN-9, INV-1, PRF-1].
 This judgment alone creates no runtime check or effect.
@@ -1047,8 +1049,8 @@ No written conclusion alone, runtime multiplication guard, or fallback is retain
 All layout-ceiling arithmetic is over unbounded mathematical integers.
 Let `round_up(x,a) = ceil(x/a) * a`.
 For a sequence of `(size, alignment)` pairs, start at offset zero, round each current offset up to the next field's alignment, add that field's size, take aggregate alignment as the maximum of one and the field alignments, and round the final offset to that aggregate alignment.
-The primitive `(size_ceiling, align_ceiling)` pairs are: `unit`, `Bool`, `i8`, and `u8` `(1,1)`; `i16` and `u16` `(2,2)`; `i32`, `u32`, and `f32` `(4,4)`; `i64`, `u64`, and `f64` `(8,8)`; `Box<T>` `(8,8)`, one pointer; a runtime-capacity `Array<T>` `(16,8)`, a pointer and a length; a runtime-capacity `Slots<T>` `(24,8)`, a pointer, a capacity, and a length; a runtime-capacity `Ring<T>` `(32,8)`, those three and a window origin; and every opaque nominal `(32,16)`.
-A struct applies the sequence rule to fields in declaration order.
+The primitive `(size_ceiling, align_ceiling)` pairs are: `unit`, `Bool`, `i8`, and `u8` `(1,1)`; `i16` and `u16` `(2,2)`; `i32`, `u32`, and `f32` `(4,4)`; `i64`, `u64`, and `f64` `(8,8)`; `Box<T>` `(8,8)`, one pointer, its `inner` field living in the heap object and entering no sequence; a runtime-capacity `Array<T>` `(16,8)`, a pointer and a length; a runtime-capacity `Slots<T>` `(24,8)`, a pointer, a capacity, and a length; a runtime-capacity `Ring<T>` `(32,8)`, those three and a window origin; and every fieldless opaque struct `(32,16)`, the host handles' host-supplied representation [PRE-1].
+Every other struct applies the sequence rule to fields in declaration order.
 A constant-capacity `Array<T, N>` repeats T's pair N times.
 A constant-capacity `Slots<T, N>` repeats T's pair N times and then applies the sequence rule to that block followed by one `(8,8)` word, its length.
 A constant-capacity `Ring<T, N>` repeats T's pair N times and then applies the sequence rule to that block followed by two `(8,8)` words, its length and its window origin.
@@ -1074,7 +1076,7 @@ An operand whose shape is outside the operation's admitted set — `place_front`
 `insert_at` and `remove_at` each shift `r.filled` by one memmove and move the boundary by one, `insert_at` filling the append slot on its way.
 Each of those two is a content write of `r.filled`, so a surviving slot reference names its slot, whose occupant may have changed, exactly as a stale index does [OP-13].
 `append` and `split_off` each move a run of elements between two windows by one copy and move both boundaries.
-`grow` is defined on `Box<Slots<T>>` alone, remakes `deref(b)` whole, may reallocate in place, and carries [OP-9]'s obligation.
+`grow` is defined on `Box<Slots<T>>` alone, remakes the cell's content `deref(cell).inner` whole, may reallocate in place, and carries [OP-9]'s obligation.
 `place_front` and `take_front` admit `Ring<T, n>` and `Ring<T>` alone and shift every logical index of `r`, so every reference into `r` becomes invalid [REF-2].
 Writing one element is not a window operation: it is the ordinary assignment `set r[k] = x;` [SET-1], whose old value takes [WIN-3]'s disposition.
 A reference into a window is formed under a bound and stays valid while that bound holds: `&r[i]` under `i < r.len`, and `&r[lo..hi]` under `hi <= r.len` [REF-4].
@@ -1092,7 +1094,7 @@ A `swap` over a copy place is a hard error citing OP-11 at the first `borrow_exp
 [OP-12] The atomic in-place update.
 `set p = f(move p, args...);` for an affine place and `set p = f(p, args...);` for a copy one, where the first argument of the call is the target place itself, is the atomic in-place update: the old value enters `f` by value, `f`'s result is committed, and no program point lies between.
 The target argument carries [OWN-1]'s spelling of its own class and no other.
-Its target `p` is any owned place named by a path [REF-1] and writable under [SET-1], a place reached through `deref` of a live `Box` binding and a place reached through `deref` of a reference parameter whose declared row carries `writes` of that path included.
+Its target `p` is any owned place named by a path [REF-1] and writable under [SET-1], a place reached through `deref` of a reference parameter whose declared row carries `writes` of that path included.
 Its effect is `writes(p)`.
 `f` must return the place's type and must have no failure exit — every declared result ordinal is the place's type and no `ensures when` route removes a normal return.
 `f`'s declared row must not write, move out of, or free any prefix of `p`, while reading anything and writing disjoint storage is admitted [EFF-5]; a row that does is a hard error citing OP-12 at the complete `call`, carrying that substituted path.
@@ -1113,7 +1115,7 @@ A stale index that is still in bounds names the current occupant of that slot, w
 
 [OP-14] `free_empty`.
 `free_empty(window: move r)` consumes any window proved empty, an affine element type and a linear one alike, with the contract `requires window.len == 0_u64` submitted to [MSR-4] at the call.
-Its compiler-owned shape parameter W has exactly the admitted arguments `Slots<T, n>`, `Slots<T>`, `Ring<T, n>`, `Ring<T>`, `Box<Slots<T>>`, and `Box<Ring<T>>`, so `free_empty(window: move b)` consumes a boxed runtime-capacity window and frees its cell with it; at a boxed argument the row's measure place instantiates as `deref(window)` and the clause reads `deref(window).len == 0_u64`, exactly as any runtime-capacity measure is reached [TYPE-7, OP-4].
+Its compiler-owned shape parameter W has exactly the admitted arguments `Slots<T, n>`, `Slots<T>`, `Ring<T, n>`, `Ring<T>`, `Box<Slots<T>>`, and `Box<Ring<T>>`, so `free_empty(window: move b)` consumes a boxed runtime-capacity window and frees its cell with it; at a boxed argument the row's measure place instantiates as `window.inner` and the clause reads `window.inner.len == 0_u64`, exactly as any `Box` content is reached [TYPE-9, OP-4].
 A linear element type stays linear [PROV-6]; the proof is about the runtime length and never about the class.
 An undischarged obligation is a hard error citing OP-14 at the complete `call`, rendering the residual, with the restructuring `empty the window and establish its zero length at this point; otherwise take every element out and consume it`.
 
@@ -1142,7 +1144,7 @@ A `fn_sig` may carry the same requirement and postcondition templates. FN-4 chec
 Function-signature visibility is the [TYPE-6] table.
 Every explicit `return e1, ..., en;` writes exactly as many expressions as the enclosing declaration writes results, and expression i must produce exactly result ordinal i's `rtype`; there is no result-mode or result-type conversion [TYPE-4].
 A written count other than the declared result count is a hard error citing FN-1 at the `return_stmt` node.
-The implicit-read case already owned by [TYPE-7] is exclusive: when `e` uses a reference or `Box` binding where its referent value would be required by the written `rtype`, that use is rejected citing TYPE-7 and FN-1 forms no candidate.
+The implicit-read case already owned by [TYPE-7] is exclusive: when `e` uses a reference binding where its referent value would be required by the written `rtype`, that use is rejected citing TYPE-7 and FN-1 forms no candidate.
 A returned reference is owned by [REF-3] in the same exclusive way.
 Every other return mode or type mismatch is a hard error citing FN-1 at the `return_stmt` node, with `SourceCoordinate` equal to the complete checked half-open source extent of its selected `expr` child.
 FN-9 adds a stricter result and return-expression shape only for a function that declares an `ensures_clause`; a function with none retains every return form admitted here.
@@ -1375,8 +1377,8 @@ A `fn_decl` declares one result or an ordered result list of two or more [GRAM-2
 Every ordinal is a datum of every clause, written as that ordinal's binder spelling, and a single-result declaration is the one-ordinal case of this sentence rather than a second rule.
 A result ordinal's declared type is a fragment integer after concrete [FN-2] substitution [FN-9] or a measured type [MSR-1], and which of the two decides what that ordinal supplies: a fragment ordinal is a datum of the clause as its own value, and a measured ordinal is a datum only as a measure member of that ordinal's place.
 A measure member of a result place is instantiated at that ordinal's own destination [ENT-3.S12] — the place the destination names — exactly as a measure member of a formal place is instantiated at the formal's, and is queried at a selected return over the place that return hands back.
-A measure member of a result place reached through `deref` — `deref(result).len` — is admitted in an `ensures_clause`, because the construction rows publish exactly that of a boxed runtime-capacity shape [OP-13, PRE-1].
-DEFERRED: a measure member of a result place formed with field-selection `psuffix`es or subscripts, in place of the bare and `deref`-wrapped result places this version admits; its delta is numbered rules +0 and grammar productions +0, and it is an admission widening of [FN-9] rather than a new judgment.
+A measure member of a result place reached through the one field step `inner` of a `Box` result — `result.inner.len` — is admitted in an `ensures_clause`, because the construction rows publish exactly that of a boxed runtime-capacity shape [OP-13, PRE-1, TYPE-9].
+DEFERRED: a measure member of a result place formed with any other field-selection `psuffix`es or subscripts, in place of the bare and `inner`-selected result places this version admits; its delta is numbered rules +0 and grammar productions +0, and it is an admission widening of [FN-9] rather than a new judgment.
 
 A routed clause is written `when V(f: r):` or `when b is V(f: r):`, where `b` names the result ordinal the route applies to.
 The ordinal binder may be omitted exactly when one declared ordinal has that route's enum type; when two or more do, the route is ambiguous and the declaration is a hard error citing CALL-4 at the `ensures_clause`, `AmbiguousResultRoute`, carrying the restructuring `name the result ordinal the route applies to: write `when b is V(f: r):``.
@@ -1472,7 +1474,7 @@ The propagation operand is a consuming context.
 A non-place Result expression is its owned temporary.
 When `e` is a direct bare place of affine `Result<T, E>` type rooted in a live own-mode binding, propagation consumes that place exactly once under [OWN-1] without requiring a written `move`; a partial place consumes its whole root and retains the ordinary residual cleanup.
 An explicitly written `move p` retains its ordinary OWN-1 meaning.
-A place reached through `deref` of a reference, a reference or `Box` binding used without `deref`, a dead root, and an outer affine root consumed inside a loop retain their REF-2, TYPE-7, OWN-1, and OWN-11 judgments; ERR-3 grants no read-through, move-through-reference, revival, copy, or loop escape.
+A place reached through `deref` of a reference, a reference binding used without `deref`, a dead root, and an outer affine root consumed inside a loop retain their REF-2, TYPE-7, OWN-1, and OWN-11 judgments; ERR-3 grants no read-through, move-through-reference, revival, copy, or loop escape.
 The operand is consumed before the result tag is dispatched.
 On `Ok(v)` propagation binds v; on `Err(err)` the function returns `Err(err)`, and the checked program attaches an auto-derived context record `(function, node_path)` to the propagation edge — zero hand-written tokens per site.
 For an enclosing FN-9 `Ok` route, that automatic error return is unselected and publishes no normal-result relation.
@@ -1924,7 +1926,7 @@ An implementation may report unavailable resources, trusted-computing-base failu
 ## 13. Execution overlap
 
 [CAP-1] The kernel defines no writer-visible capability category and no additional concurrency permission. `own`, `&`, path overlap [OWN-7], and the ordinary effect row [EFF-1] are the complete authority and interference vocabulary available to [PAR-1] and [PAR-2].
-This version defines no thread construct. A later thread construct must derive transfer and sharing permission from these same ownership rules and the represented type; it may not add hidden shared mutation to an opaque nominal. Data-race impossibility is D1 law; general race conditions are out of scope (C004 amended scope).
+This version defines no thread construct. A later thread construct must derive transfer and sharing permission from these same ownership rules and the represented type; it may not add hidden shared mutation to an opaque struct [TYPE-2]. Data-race impossibility is D1 law; general race conditions are out of scope (C004 amended scope).
 
 [PAR-1] An implementation may execute two adjacent statements of one block with overlapping execution exactly when the first's write paths are disjoint from the second's read and write paths and the second's write paths are disjoint from the first's, using the same path-overlap and index/range-disjointness judgment as [EFF-5] and [OWN-7].
 Read/read overlap is admitted.
@@ -1989,24 +1991,55 @@ This rule uses [CAP-1]'s ordinary ownership boundary directly; it introduces no 
 
 [PRE-1] The prelude contributes ordinary nominal, constructor, numeric-bound and function declarations to every compilation unit. Their source visibility, whole-unit collisions, typing, ownership and calls are the ordinary rules; an entry's prelude origin supplies only its deterministic diagnostic ordinal [TYPE-6, DIAG-1].
 
-The following opaque nominal declaration records carry no public constructor, fields, variants or type parameters. This table is declaration notation, not additional source syntax. An opaque nominal is a bare TYPEID under GRAM-3 and neither copy nor const-eligible. OP-9 gives every such nominal the same conservative layout ceiling. Its drop is empty; explicit linearity and ordinary ownership closure are exactly PROV-6.
+The prelude's opaque structs [TYPE-2] are the cell `Box` [TYPE-9] and the host handles. A host handle has no fields and a host-supplied representation [OP-9], its release is empty [STOR-3], and only a host function row below returns one; `Box` is built by the construction rows [OP-13]. An opaque struct is neither copy nor const-eligible [OWN-1, CONST-2]; its `linear` modifier and the ordinary ownership closure are exactly [PROV-6]. Their declarations are:
 
-| Nominal | Modifier |
-|---|---|
-| Args | none |
-| HostString | none |
-| RelativePath | none |
-| DirectoryRead | linear |
-| ReadFile | linear |
-| OutputStream | none |
-| ExitStatus | none |
-| DirectorySource | linear |
-| HandleFactory | none |
-| InputStream | none |
-| SocketAddress | none |
-| TcpListener | linear |
-| TcpReceive | linear |
-| TcpSend | linear |
+```
+opaque struct Box<T> {
+  inner: T;
+}
+
+opaque struct Args {
+}
+
+opaque struct HostString {
+}
+
+opaque struct RelativePath {
+}
+
+opaque linear struct DirectoryRead {
+}
+
+opaque linear struct ReadFile {
+}
+
+opaque struct OutputStream {
+}
+
+opaque struct ExitStatus {
+}
+
+opaque linear struct DirectorySource {
+}
+
+opaque struct HandleFactory {
+}
+
+opaque struct InputStream {
+}
+
+opaque struct SocketAddress {
+}
+
+opaque linear struct TcpListener {
+}
+
+opaque linear struct TcpReceive {
+}
+
+opaque linear struct TcpSend {
+}
+```
 
 The complete ordinary struct and enum declarations are:
 
@@ -2215,16 +2248,16 @@ fn ring_new<T: linear, const n: u64>() -> result: own Ring<T, n> pure contract {
   ensures result.head == 0_u64;
 };
 fn box_array_filled<T: copy>(count: own u64, value: own T) -> result: own Box<Array<T>> pure contract {
-  ensures deref(result).len == count;
+  ensures result.inner.len == count;
 };
 fn box_slots_new<T: linear>(capacity: own u64) -> result: own Box<Slots<T>> pure contract {
-  ensures deref(result).len == 0_u64;
-  ensures deref(result).cap == capacity;
+  ensures result.inner.len == 0_u64;
+  ensures result.inner.cap == capacity;
 };
 fn box_ring_new<T: linear>(capacity: own u64) -> result: own Box<Ring<T>> pure contract {
-  ensures deref(result).len == 0_u64;
-  ensures deref(result).cap == capacity;
-  ensures deref(result).head == 0_u64;
+  ensures result.inner.len == 0_u64;
+  ensures result.inner.cap == capacity;
+  ensures result.inner.head == 0_u64;
 };
 fn slots_from_array<T: linear, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pure contract {
   ensures result.len == n;
@@ -2267,9 +2300,9 @@ fn split_off<W: linear, X: linear>(source: &W, index: own u64, destination: &X) 
   ensures deref(destination).len == deref(entry(destination)).len + deref(entry(source)).len - index;
 };
 fn grow<T: linear>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(deref(cell)) contract {
-  requires capacity >= deref(deref(cell)).cap;
-  ensures deref(deref(cell)).cap == capacity;
-  ensures deref(deref(cell)).len == deref(deref(entry(cell))).len;
+  requires capacity >= deref(cell).inner.cap;
+  ensures deref(cell).inner.cap == capacity;
+  ensures deref(cell).inner.len == deref(entry(cell)).inner.len;
 };
 fn place_front<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window) contract {
   requires deref(window).room > 0_u64;
@@ -2293,7 +2326,7 @@ fn free_empty<W: linear>(window: own W) -> result: own unit pure contract {
 
 Each record is an ordinary callable boundary usable by a direct call or a function-kind binding under FN-2 through FN-5. Its definition is supplied by the build and must satisfy the declared boundary [SCOPE-3]; calls neither inspect nor classify that definition. There is one ordinary callable ABI for definitions written in Whitefoot and definitions supplied by linking. A reference passed to either lasts through that call's return and is not retained beyond it [REF-3]. A missing definition or incompatible physical representation is a build/link failure, not a source-language rejection.
 PRE-1 requirement templates are discharged by FN-8 and declared postconditions are instantiated only by CALL-6 and FN-9's ordinary selected-result rules. The supplied definition is responsible for those propositions under SCOPE-3; its declaration has no Whitefoot body for FN-9 to verify. No compiler-owned operation fact or alternative acceptance judgment exists.
-The declaration preorder is opaque nominals in table order, then each struct or enum above in written order with its constructor or variants and their fields in declaration order, then `Int`, `Float`, then each host function above in written order, then each construction function above in written order, then each window operation above in written order, then `swap` and `free_empty`, each with its type, const and value parameters in declared order. Owner-local fields and parameters do not enter compilation-root name lookup. This preorder fixes each PRE-1 diagnostic ordinal [DIAG-1].
+The declaration preorder is each opaque struct above in written order with its refused constructor and its fields in declaration order, then each ordinary struct or enum above in written order with its constructor or variants and their fields in declaration order, then `Int`, `Float`, then each host function above in written order, then each construction function above in written order, then each window operation above in written order, then `swap` and `free_empty`, each with its type, const and value parameters in declared order. Owner-local fields and parameters do not enter compilation-root name lookup. This preorder fixes each PRE-1 diagnostic ordinal [DIAG-1].
 
 ## 15. Obligation discharge: deterministic facts, invariants, and local certificates (normative)
 
