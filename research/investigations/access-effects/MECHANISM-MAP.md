@@ -34,7 +34,7 @@ critiques, three judges, one synthesizer), with the owner taking the interim
 position on every one of the sixteen owner decisions; each row below carries
 that settlement. [VERDICT-D0.md](VERDICT-D0.md) is the record of the
 dispositions, the refused alternatives and the owner-decision table, and
-[EVIDENCE-debate-d0-2026-09-16.md](EVIDENCE-debate-d0-2026-09-16.md) is the
+EVIDENCE-debate-d0-2026-09-16.md (`EVIDENCE-debate-d0-2026-09-16.md`, removed in the cleanup, recoverable at commit 4ca62f8db758) is the
 full debate record. The rows are copied from the verdict's section 2; a
 "Disputed" note keeps the minority positions for the record, the majority
 position in the row being the settled one. Nothing here amends the live design

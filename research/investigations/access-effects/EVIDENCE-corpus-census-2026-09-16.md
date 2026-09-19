@@ -1898,4 +1898,3 @@ form a view, or use a provider type).
 
 `spec/kernel-spec.md` lines 673–803 (OWN-1…OWN-14, LIV-1, LIV-2), 1185–1232 (VIEW-1,
 VIEW-2, VIEW-4, VIEW-6), 1234–1300 (STOR-1, STOR-4, STOR-5).
-

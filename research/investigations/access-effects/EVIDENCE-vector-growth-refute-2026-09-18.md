@@ -968,7 +968,7 @@ Kind: rejected-zero-cost
 *counts.entry(word).or_insert(0) += 1;
 
 // Naive WF, rejected
-with &map.slots[probe(map, k)] as slot { 
+with &map.slots[probe(map, k)] as slot {
     if is_empty(slot) { insert(map, k, 0) }     // REJECTED: insert declares writes(map.slots)
     slot.value += 1
 }
@@ -1124,7 +1124,7 @@ Kind: rejected-real-cost
 ```text
 // C++/Rust: producer writes ring[head], consumer reads ring[tail], disjoint at runtime
 // because head != tail is maintained by acquire/release counters.
-par { 
+par {
     produce: while running { put(&ring.buf[ring.head & mask], item); release(ring.head + 1) }
     consume: while running { t = acquire(ring.tail); use(&ring.buf[t & mask]); ... }
 }
@@ -1796,4 +1796,3 @@ with &v.buf[i] as e { e.count += 1 }
 Trace: R5's part-name clause rejects the original: `e` has path v.buf[i], push writes v.buf, overlap with a write, rejected — without ever asking whether the realloc happens. R7 gives the rewrite: the part-name is gone at the end of the block, re-deriving costs one address computation, and the bounds fact `i < v.len` needed to re-derive is preserved across the push because R6 lets push's `ensures v.len == old(v.len) + 1` re-establish it (i < old(len) and len == old(len)+1 gives i < len, a linear step). This is the claim under test, and for a Vector<T> with T stored inline it works exactly as advertised: the rejection is total, the rewrite is mechanical, and the cost is one shift-add plus a reload of v.buf.ptr that a correct C++ program must also perform after push_back. Safe Rust additionally pays a bounds check that WF proves away.
 
 Cost: Zero to negative versus C++, negative versus safe Rust. The claim holds for inline T. It is only when the element is itself an owning pointer (G5) or when occupancy is data-dependent (G7) that the path-only check over-rejects or forces a layout change.
-

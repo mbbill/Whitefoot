@@ -9,7 +9,7 @@ splitting and rejoining state, and for the bridge between an identity and the
 runtime values that determine it, then derived line by line on P1, P3, P4, P7,
 P8 and the twenty-six cases of [CASES.md](CASES.md), cross-examined, and
 compared without selection. The completeness review follows. Record in
-[EVIDENCE-debate-core2-2026-09-16.md](EVIDENCE-debate-core2-2026-09-16.md).
+EVIDENCE-debate-core2-2026-09-16.md (`EVIDENCE-debate-core2-2026-09-16.md`, removed in the cleanup, recoverable at commit 4ca62f8db758).
 Nothing here is selected; the owner has not ruled. Supersede in place.
 
 

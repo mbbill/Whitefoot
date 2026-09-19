@@ -3,7 +3,7 @@
 Research date: 2026-09-16. Synthesized verdict of the core-model debate:
 twelve seeded candidates, twenty-four adversarial critiques, three judges, one
 synthesizer and one disposition clerk (record in
-[EVIDENCE-debate-core-2026-09-16.md](EVIDENCE-debate-core-2026-09-16.md);
+EVIDENCE-debate-core-2026-09-16.md (`EVIDENCE-debate-core-2026-09-16.md`, removed in the cleanup, recoverable at commit 4ca62f8db758);
 family dispositions in [DISPOSITIONS-CORE.md](DISPOSITIONS-CORE.md)). It
 selects a base and grafts for the decision points D1 (storage identity), D2
 (where permission and state live), D3 (state vocabulary) and D4 (sequential

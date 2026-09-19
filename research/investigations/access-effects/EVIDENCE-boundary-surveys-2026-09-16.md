@@ -2324,4 +2324,3 @@ access-effects question does not reach — which is what owner decision **O6** i
 actually asking, and why the verdict records that independent construct counts
 for the same model ran from 11 to 50 and calls its own count of 13
 "unfalsifiable".
-

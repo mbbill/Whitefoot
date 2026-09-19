@@ -1,6 +1,6 @@
 # Access effects: the ownership and reference redesign
 
-Outcome: candidate x1, recorded in [CANDIDATE-X1.md](CANDIDATE-X1.md), is the owner-confirmed rule set for references, storage, effects, and overlapped execution. It replaces the current specification's borrow modes, regions, store brands, and providers with: references as local names for paths, never stored or returned; validity as a fact; effects only on reference parameters; a pairwise call-site check; one global heap with an affine `Box`; three storage shapes (`Array`, `Slots`, `Ring`) with a compiler-maintained window; value classes with `linear` kept; and overlap permission by path disjointness. No specification, compiler, or design-tree change is made here; the next step is a specification amendment written from CANDIDATE-X1.md.
+Outcome: candidate x1, recorded in [CANDIDATE-X1.md](CANDIDATE-X1.md), is the owner-confirmed rule set for references, storage, effects, and overlapped execution. It replaces the current specification's borrow modes, regions, store brands, and providers with: references as local names for paths, never stored or returned; validity as a fact; effects only on reference parameters; a pairwise call-site check; one global heap with an affine `Box`; three storage shapes (`Array`, `Slots`, `Ring`) with a compiler-maintained window; value classes with `linear` kept; and overlap permission by path disjointness. No specification, compiler, or design-tree change is made here; the next steps are a specification amendment written from CANDIDATE-X1.md and owner rulings recording the surviving decisions into the design tree.
 
 ## How the result was reached
 
@@ -17,7 +17,7 @@ Outcome: candidate x1, recorded in [CANDIDATE-X1.md](CANDIDATE-X1.md), is the ow
 |---|---|
 | CANDIDATE-X1.md | Result. The frozen rule set, revision 5, no open proposal. |
 | REVIEW-X1-round1.md, REVIEW-X1-round2.md | Reviewer's re-trace of the matrix findings against the rule text. |
-| matrix-x1/GAPS-X1.md, matrix-x1-r2/GAPS-X1-r2.md | Judged reports of the two x1 rounds. The raw per-cell derivations, verifications, and task programs (about 2 MB) were removed from the tree in the cleanup and remain in history at commit 4ca62f8db758. |
+| matrix-x1/GAPS-X1.md, matrix-x1-r2/GAPS-X1-r2.md | Judged reports of the two x1 rounds. The raw per-cell derivations, verifications, and task programs (about 5 MB) were removed from the tree in the cleanup and remain in history at commit 4ca62f8db758. |
 | EVIDENCE-vector-growth-refute-2026-09-18.md | Adversarial check of the static-scope rule across reallocation. |
 | VERDICT-D0.md, MECHANISM-MAP.md, OPTIONS.md, PROGRAMS.md, CASES.md | Requirements, mechanism map, option catalog, discriminating programs. Still valid. |
 | EVIDENCE-mechanism-survey-2026-09-16.md, EVIDENCE-boundary-surveys-2026-09-16.md, EVIDENCE-corpus-census-2026-09-16.md | Survey and census data. |

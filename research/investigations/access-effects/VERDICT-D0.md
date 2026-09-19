@@ -3,7 +3,7 @@
 Research date: 2026-09-16. This is the synthesized verdict of the D0 debate
 (three drafts from different priorities, six adversarial critiques, three
 judges, one synthesizer; the full record is
-[EVIDENCE-debate-d0-2026-09-16.md](EVIDENCE-debate-d0-2026-09-16.md)). It is
+EVIDENCE-debate-d0-2026-09-16.md (`EVIDENCE-debate-d0-2026-09-16.md`, removed in the cleanup, recoverable at commit 4ca62f8db758)). It is
 the record of the settled requirement list, the premises reclassified, the
 disposition of every family in [OPTIONS.md](OPTIONS.md) sections D0 and REQ
 with its reason, and the sixteen decisions only the owner can take. Nothing

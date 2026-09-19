@@ -3,10 +3,10 @@
 Research date: 2026-09-16. This catalog lists every option enumerated for the
 decision points of the requirement-first ownership redesign, merged from five
 enumeration lenses (theory, systems practice, AI writer, radical, Whitefoot
-history) recorded in [EVIDENCE-option-enumeration-2026-09-16.md](EVIDENCE-option-enumeration-2026-09-16.md).
+history) recorded in EVIDENCE-option-enumeration-2026-09-16.md (`EVIDENCE-option-enumeration-2026-09-16.md`, removed in the cleanup, recoverable at commit 4ca62f8db758).
 Nothing here is ranked, scored or pruned; outlandish options are kept and
 marked. The debates that select among them record their verdicts and every
-refused option with its reason in [VERDICTS.md](VERDICTS.md) when they exist.
+refused option with its reason in VERDICTS.md when they exist.
 Supersede in place.
 
 Decision points are those of [MECHANISM-MAP.md](MECHANISM-MAP.md) section 6

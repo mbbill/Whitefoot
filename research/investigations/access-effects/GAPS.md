@@ -200,7 +200,7 @@ the program's intended result is modular.
 ## Next discussion, not an automatic repair sequence
 
 The owner required a discussion between the frozen first pass and any revised
-candidate. [E1](TARGET-PACKAGES.md) and [E2](RANGE-FAMILIES.md) are therefore
+candidate. E1 (`TARGET-PACKAGES.md`, removed in the cleanup, recoverable at commit 4ca62f8db758) and E2 (`RANGE-FAMILIES.md`, removed in the cleanup, recoverable at commit 4ca62f8db758) are therefore
 parked, unselected drafts, not closure of E or F and not the default next work.
 Their local examples remain evidence for comparing mechanisms.
 

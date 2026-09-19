@@ -762,8 +762,8 @@ alternative to test, not a selected replacement for temporary call references.
 ## Parked drafts: E1 target packages and E2 range families
 
 The [gap map](GAPS.md) preserves the first-round U/C classifications and
-witness-precision follow-ups. [E1](TARGET-PACKAGES.md) and
-[E2](RANGE-FAMILIES.md) preserve bounded exploratory mechanisms and their code
+witness-precision follow-ups. E1 (`TARGET-PACKAGES.md`, removed in the cleanup, recoverable at commit 4ca62f8db758) and
+E2 (`RANGE-FAMILIES.md`, removed in the cleanup, recoverable at commit 4ca62f8db758) preserve bounded exploratory mechanisms and their code
 for comparison. The agent pursued them before the required owner discussion;
 they are not selected repairs or a successor candidate. E1's stored-reference
 packaging is not a premise of the new temporary-reference direction. Dynamic
