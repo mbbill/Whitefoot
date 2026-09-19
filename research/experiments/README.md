@@ -16,6 +16,15 @@ explicitly requested, and useful daily regression checks are extracted into
 formal test ownership with their required inputs and oracles. Existing caller
 descriptions do not grant an exception to that boundary.
 
+## Language design models
+
+- [access-state/](access-state/RESULTS.md) — symbolic access/state checking of
+  an earlier alias/state fragment, compared with reusable physical storage. A
+  language-design model, not a WF source compiler or a soundness proof; it is
+  superseded by the access-effects investigation's candidate x1 and kept as an
+  experiment record. Its self-checks run manually with
+  `make -C research/experiments/access-state check`.
+
 ## Current flagship experiment evidence
 
 The owner's ruling for the flagship: ripgrep is the umbrella target with a

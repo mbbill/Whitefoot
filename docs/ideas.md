@@ -238,6 +238,10 @@ ordinary representation under the same workload; stop if the benefit does
 not justify the extra proof boundary. No general privileged proof system or
 sealed container catalog is selected by this question.
 
+### References as names, storage as windows
+
+The [access-effects investigation](../research/investigations/access-effects/RESEARCH.md) redesigned ownership and references from the requirements up. Its result, [candidate x1](../research/investigations/access-effects/CANDIDATE-X1.md), keeps references as local names for paths that are never stored or returned, states write permission in effect rows rather than reference modes, checks calls pairwise for path overlap, uses one global heap with an affine `Box`, and gives dynamic storage a compiler-maintained window (`Array`, `Slots`, `Ring`). Two derivation rounds over the frozen rules found only wording defects; the recorded costs are listed at the end of the candidate. The next steps are a specification amendment and owner rulings into the design tree; the [bounded model](../research/experiments/access-state/RESULTS.md) of the earlier alias/state fragment is superseded and kept as an experiment record.
+
 ### Wider parallel proof domains
 
 A useful extension starts with a real loop whose required independent work
