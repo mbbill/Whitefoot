@@ -104,9 +104,9 @@ fn main() -> status: own ExitStatus pure {
     place_back(window: &source.inner, value: 7_u8);
   }
   let destination = &output.inner[0_u64..4_u64];
-  let room = deref(destination).len;
+  let capacity = deref(destination).len;
   let held = source.inner.len;
-  if held <= room {
+  if held <= capacity {
   } else {
     return exit_status(code: 5_u8);
   }
@@ -114,8 +114,8 @@ fn main() -> status: own ExitStatus pure {
   if written != length {
     return exit_status(code: 1_u8);
   }
-  let last = output.inner[3_u64];
-  if last != 7_u8 {
+  let trailing = output.inner[3_u64];
+  if trailing != 7_u8 {
     return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);

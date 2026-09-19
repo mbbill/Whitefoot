@@ -186,10 +186,10 @@ fn update(points: &Array<Point, 2>, index: own u64) -> result: own unit writes(p
 fn main() -> status: own ExitStatus pure {
   let first = Point(x: 17_u64, y: 29_u64);
   let second = Point(x: 41_u64, y: 53_u64);
-  let filled = slots_new::<Point, 2>();
-  place_back(window: &filled, value: move first);
-  place_back(window: &filled, value: move second);
-  let points = slots_into_array::<Point, 2>(values: move filled);
+  let loaded = slots_new::<Point, 2>();
+  place_back(window: &loaded, value: move first);
+  place_back(window: &loaded, value: move second);
+  let points = slots_into_array::<Point, 2>(values: move loaded);
   update(points: &points, index: 1_u64);
   if points[0_u64].x != 17_u64 {
     return exit_status(code: 1_u8);
@@ -374,8 +374,8 @@ fn choose_referenced(seed: own u64) -> result: own Array<u64, 512> pure {
   }
   let reader = &original[0_u64..512_u64];
   let candidate = array_filled::<u64, 512>(value: 43_u64);
-  let last = deref(reader)[511_u64];
-  if last != seed {
+  let trailing = deref(reader)[511_u64];
+  if trailing != seed {
     return array_filled::<u64, 512>(value: 99_u64);
   }
   return move candidate;
@@ -424,7 +424,7 @@ fn an_owned_parameter_uses_same_or_distinct_result_storage_after_entry_transfer(
     // An ordinary value-field update keeps the independent owned input/result
     // ABI under test. The wide array still forces indirect storage; the watch
     // read and both result aliases still expose a misplaced or premature entry
-    // transfer. `set same = append(items: move same, ...)` is [OP-12]'s atomic
+    // transfer. `set same = extend(items: move same, ...)` is [OP-12]'s atomic
     // in-place update: the target place is the call's first argument, `append`
     // returns the place's type and has no failure exit, and its row writes no
     // prefix of the target. A by-value parameter carries no effect entry
@@ -434,7 +434,7 @@ fn an_owned_parameter_uses_same_or_distinct_result_storage_after_entry_transfer(
   value: u64;
 }
 
-fn append(items: own Row, value: own u64, watch: &u64) -> updated: own Row reads(watch) {
+fn extend(items: own Row, value: own u64, watch: &u64) -> updated: own Row reads(watch) {
   let bias = deref(watch);
   let adjusted = value +wrap bias;
   set items.value = adjusted;
@@ -445,10 +445,10 @@ fn main() -> status: own ExitStatus pure {
   let watch = 5_u64;
   let payload = array_filled::<u64, 16>(value: 41_u64);
   let same = Row(payload: move payload, value: 0_u64);
-  set same = append(items: move same, value: 12_u64, watch: &watch);
+  set same = extend(items: move same, value: 12_u64, watch: &watch);
   let other_payload = array_filled::<u64, 16>(value: 43_u64);
   let vacant = Row(payload: move other_payload, value: 0_u64);
-  let distinct = append(items: move vacant, value: 24_u64, watch: &watch);
+  let distinct = extend(items: move vacant, value: 24_u64, watch: &watch);
   if same.value != 17_u64 {
     return exit_status(code: 1_u8);
   }
@@ -468,7 +468,7 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
     let module = super::emit_lowered(source, super::OverlapLowering::Off);
-    let append = super::emitted_function(&module, "append");
+    let append = super::emitted_function(&module, "extend");
     assert!(!append.contains("alloca"), "{append}");
     assert_eq!(append.matches("call void @llvm.memmove.").count(), 1);
     let main = super::emitted_function(&module, "main");
@@ -893,10 +893,10 @@ fn main() -> status: own ExitStatus pure {
   if second.right != 13_u64 {
     return exit_status(code: 4_u8);
   }
-  let filled = slots_new::<Row, 2>();
-  place_back(window: &filled, value: move first);
-  place_back(window: &filled, value: move second);
-  let rows = slots_into_array::<Row, 2>(values: move filled);
+  let loaded = slots_new::<Row, 2>();
+  place_back(window: &loaded, value: move first);
+  place_back(window: &loaded, value: move second);
+  let rows = slots_into_array::<Row, 2>(values: move loaded);
   let table = Table(rows: move rows, tag: 41_u64);
   swap(first: &table.rows[0_u64], second: &table.rows[1_u64]);
   let saved_left = table.rows[0_u64].left;
@@ -948,12 +948,12 @@ struct Table {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let filled = slots_new::<Row, 2>();
+  let loaded = slots_new::<Row, 2>();
   let first = Row(left: 3_u64, right: 5_u64);
-  place_back(window: &filled, value: move first);
+  place_back(window: &loaded, value: move first);
   let second = Row(left: 7_u64, right: 11_u64);
-  place_back(window: &filled, value: move second);
-  let rows = slots_into_array::<Row, 2>(values: move filled);
+  place_back(window: &loaded, value: move second);
+  let rows = slots_into_array::<Row, 2>(values: move loaded);
   let bytes = array_filled::<u8, 2>(value: 13_u8);
   let table = Table(rows: move rows, bytes: move bytes, tag: 17_u64);
   let saved = &table.rows[0_u64];
@@ -1403,8 +1403,8 @@ fn referencing_owned_box_content_addresses_the_allocation() {
   right: u64;
 }
 
-fn write(value: &u64, next: own u64) -> result: own unit writes(value) {
-  set deref(value) = next;
+fn write(value: &u64, fresh: own u64) -> result: own unit writes(value) {
+  set deref(value) = fresh;
   return unit;
 }
 
@@ -1415,7 +1415,7 @@ fn read(value: &u64) -> result: own u64 reads(value) {
 fn main() -> status: own ExitStatus pure {
   let pair = Pair(left: 11_u64, right: 29_u64);
   let owner = box_new::<Pair>(value: move pair);
-  write(value: &owner.inner.left, next: 37_u64);
+  write(value: &owner.inner.left, fresh: 37_u64);
   let observed = read(value: &owner.inner.right);
   if observed != 29_u64 {
     return exit_status(code: 1_u8);
@@ -1424,7 +1424,7 @@ fn main() -> status: own ExitStatus pure {
     return exit_status(code: 2_u8);
   }
   let held = &owner.inner.right;
-  write(value: held, next: 43_u64);
+  write(value: held, fresh: 43_u64);
   if owner.inner.right != 43_u64 {
     return exit_status(code: 3_u8);
   }

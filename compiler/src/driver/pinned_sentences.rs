@@ -70,7 +70,7 @@ fn main() -> status: own ExitStatus pure {
         // The whole payload, so the field names of the hand-written `Debug`
         // are pinned with the sentence they carry.
         sentences: &[
-            r#"SyntaxIssue { rule: Form3, coordinate: SyntaxCoordinate { source: SourceId(0), start: ByteOffset(6), end: ByteOffset(11) }, expected: ["IDENT"], mechanical_fix: "an IDENT slot admits only [FORM-3]'s IDENT `[a-z][a-z0-9_]*`, so a `const`, `fn`, parameter, `let`, field, or binder name is lowercase and is never a TYPEID `[A-Z][A-Za-z0-9]*`, a REGIONID `'[a-z][a-z0-9_]*`, a LABEL `@[a-z][a-z0-9_]*`, or an OPNAME; rename the name written here to the IDENT shape" }"#,
+            r#"SyntaxIssue { rule: Form3, coordinate: SyntaxCoordinate { source: SourceId(0), start: ByteOffset(6), end: ByteOffset(11) }, expected: ["IDENT"], mechanical_fix: "an IDENT slot admits only [FORM-3]'s IDENT `[a-z][a-z0-9_]*`, so a `const`, `fn`, parameter, `let`, field, or binder name is lowercase and is never a TYPEID `[A-Z][A-Za-z0-9]*`, a LABEL `@[a-z][a-z0-9_]*`, or an OPNAME; rename the name written here to the IDENT shape" }"#,
         ],
     },
     Probe {
@@ -85,24 +85,15 @@ fn main() -> status: own ExitStatus pure {
 "#,
         rule: "FORM-3",
         sentences: &[
-            "a TYPEID slot admits only [FORM-3]'s TYPEID `[A-Z][A-Za-z0-9]*`, so a struct, enum, contract, variant, or constructor name is capitalized and is never an IDENT `[a-z][a-z0-9_]*`, a REGIONID `'[a-z][a-z0-9_]*`, a LABEL `@[a-z][a-z0-9_]*`, or an OPNAME; rename the name written here to the TYPEID shape",
+            "a TYPEID slot admits only [FORM-3]'s TYPEID `[A-Z][A-Za-z0-9]*`, so a struct, enum, contract, variant, or constructor name is capitalized and is never an IDENT `[a-z][a-z0-9_]*`, a LABEL `@[a-z][a-z0-9_]*`, or an OPNAME; rename the name written here to the TYPEID shape",
         ],
     },
-    Probe {
-        name: "region-parameter-is-not-a-regionid.wf",
-        source: br#"fn f[r](x: own u64) -> out: own u64 pure {
-  return x;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "FORM-3",
-        sentences: &[
-            "a REGIONID slot admits only [FORM-3]'s REGIONID `'[a-z][a-z0-9_]*`, the one region spelling, so write the leading apostrophe; an IDENT `[a-z][a-z0-9_]*`, a TYPEID `[A-Z][A-Za-z0-9]*`, a LABEL `@[a-z][a-z0-9_]*`, and an OPNAME are other lexical classes and none is admitted here",
-        ],
-    },
+    // Retired with the region spelling: the REGIONID name-slot probe
+    // `region-parameter-is-not-a-regionid.wf` pinned the sentence a `[r]`
+    // region parameter published, and v0.60 has no REGIONID lexical class,
+    // no region parameter and no such sentence to pin. Its successors are
+    // the three name-slot probes that remain above — IDENT, TYPEID and
+    // LABEL — whose own sentences no longer list REGIONID either.
     Probe {
         name: "break-target-is-not-a-label.wf",
         source: br#"fn main() -> status: own ExitStatus pure {
@@ -114,7 +105,7 @@ fn main() -> status: own ExitStatus pure {
 "#,
         rule: "FORM-3",
         sentences: &[
-            "a LABEL slot admits only [FORM-3]'s LABEL `@[a-z][a-z0-9_]*`, so write the leading `@`; an IDENT `[a-z][a-z0-9_]*`, a TYPEID `[A-Z][A-Za-z0-9]*`, a REGIONID `'[a-z][a-z0-9_]*`, and an OPNAME are other lexical classes and none is admitted here",
+            "a LABEL slot admits only [FORM-3]'s LABEL `@[a-z][a-z0-9_]*`, so write the leading `@`; an IDENT `[a-z][a-z0-9_]*`, a TYPEID `[A-Z][A-Za-z0-9]*`, and an OPNAME are other lexical classes and none is admitted here",
         ],
     },
     // -------------------------------------------------------------------
@@ -168,8 +159,8 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "forbidden-atom-in-a-contract-block.wf",
-        source: br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
-  requires buffer_fits::<u8>(len_of(deref(data)));
+        source: br#"fn count(data: &[u8], start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
+  requires imax(start, imin(start, end)) <= end;
 } {
   return 0_u64;
 }
@@ -188,10 +179,10 @@ fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "entry-of-a-shared-parameter.wf",
-        source: br#"fn record(destination: &buffer<u8>) -> written: own u64 reads(destination) contract {
-  ensures written == len_of(deref(entry(destination)));
+        source: br#"fn record(destination: &[u8]) -> written: own u64 reads(destination) contract {
+  ensures written == deref(entry(destination)).len;
 } {
-  return len_of(deref(destination));
+  return deref(destination).len;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -206,9 +197,9 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "contradictory-published-relations.wf",
-        source: br#"fn measure(taken: own buffer<u8>) -> measured: own u64 reads(taken) contract {
-  ensures measured <= len_of(taken);
-  ensures len_of(taken) < measured;
+        source: br#"fn measure(taken: own Array<u8, 4>) -> measured: own u64 pure contract {
+  ensures measured <= taken.len;
+  ensures taken.len < measured;
 } {
   return 0_u64;
 }
@@ -282,7 +273,7 @@ fn consume(ticket: own Ticket) -> seq: own u64 pure {
 fn main() -> status: own ExitStatus pure {
   let permit = Ticket(seq: 1_u64);
   let used = consume(ticket: move permit);
-  region {
+  if used == 1_u64 {
     let permit = Ticket(seq: 2_u64);
     let again = consume(ticket: move permit);
   }
@@ -300,34 +291,30 @@ fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "prelude-range-residual.wf",
-        source: br#"fn main(out: own OutputStream, factory: own HandleFactory) -> status: own ExitStatus reads(out, factory), writes(out, factory) {
-  let header = buffer_new(4_u64, 65_u8);
-  let payload = buffer_new(9_u64, 66_u8);
-  let wide = len_of(payload);
-  region {
-    let view = slice_of(&header);
-    region {
-      let sent = write_once(factory: &uniq factory, output: &uniq out, source: &view, start: 0_u64, end: wide);
-    }
-  }
+        source: br#"fn main(out: own OutputStream, factory: own HandleFactory) -> status: own ExitStatus pure {
+  let header = array_filled::<u8, 4>(value: 65_u8);
+  let payload = array_filled::<u8, 9>(value: 66_u8);
+  let wide = payload.len;
+  let view = &header[0_u64..4_u64];
+  let sent = write_once(factory: &factory, output: &out, source: view, start: 0_u64, end: wide);
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
-        sentences: &[r#"instantiated_goal: "wide <= len_of(view)""#],
+        sentences: &[r#"instantiated_goal: "wide <= deref(view).len""#],
     },
     Probe {
         name: "bounds-residual.wf",
         source: br#"fn main() -> status: own ExitStatus pure {
-  let table = buffer_new(4_u64, 0_u8);
-  let other = buffer_new(9_u64, 0_u8);
-  let pick = len_of(other);
+  let table = array_filled::<u8, 4>(value: 0_u8);
+  let other = array_filled::<u8, 9>(value: 0_u8);
+  let pick = other.len;
   let one = table[pick];
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-4",
-        sentences: &[r#"residual: "pick < len_of(table)""#],
+        sentences: &[r#"residual: "pick < table.len""#],
     },
     // -------------------------------------------------------------------
     // [FN-2]: written type and region arguments.
@@ -582,45 +569,31 @@ fn main() -> status: own ExitStatus pure {
             r#"TypeMismatch { expected: "a type in the Option type-argument position", found: "a const argument in the Option type-argument position" }"#,
         ],
     },
-    Probe {
-        // TYPE-2 now admits owning array elements; STOR-5 still forbids
-        // storing a view inside that complete owner.
-        name: "array-element-is-a-view.wf",
-        source: br#"fn take(value: own array<Slice<u8>, 4>) -> out: own u64 pure {
-  return 0_u64;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "STOR-5",
-        sentences: &[
-            r#"RegionBearingStorage { mechanical_fix: "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value" }"#,
-        ],
-    },
+    // Retired with the measure-former call spelling. v0.59 read a measure by
+    // calling `len_of(P)`, and these three probes pinned that call's own
+    // operand sentences (`indexed-operand-is-a-move`,
+    // `indexed-operand-is-not-a-place`, `indexed-place-is-a-scalar`). v0.60
+    // reads a measure as the `psuffix` `P.len` [OP-15, MSR-1], so no source
+    // reaches those sentences; they join the unreachable list above. The
+    // measure place's own defects are pinned by the [OP-4] and [INV-1] probes.
+    // Retired with the view kinds it named. `Slice<T>`, arenas and providers
+    // are not types in v0.60, and [GRAM-3]'s `type` has no reference
+    // production, so no written source reaches [STOR-5] at all: the rule is
+    // now the closing clause for a substituted generic instance alone. Its
+    // sentence joins the unreachable list in this module's header.
     // -------------------------------------------------------------------
     // [EFF-1] and [EFF-2]: the declared row.
     // -------------------------------------------------------------------
-    Probe {
-        name: "writes-through-a-shared-borrow.wf",
-        source: br#"fn touch(data: &buffer<u8>) -> out: own u64 writes(data) {
-  return len_of(deref(data));
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "EFF-1",
-        sentences: &[
-            r#"InvalidEffectRow { reason: "a `writes` path is rooted at a shared borrow parameter, which grants no exclusive access to that state", mechanical_fix: "declare that parameter `&uniq` or `own`, or drop the path from `writes`; an effect path grants no permission of its own" }"#,
-        ],
-    },
+    // Retired with the permission marker. v0.60 has no `&uniq`, so a
+    // `writes` path rooted at a reference parameter is the ordinary spelling
+    // [REF-1, EFF-1] and there is no shared-versus-unique defect left to
+    // publish. The successors are the two [EFF-1] row defects pinned below.
     Probe {
         name: "repeated-effect-category.wf",
-        source: br#"fn touch(left: own u64, right: own u64) -> out: own u64 reads(left), reads(right) {
-  return left;
+        source: br#"fn touch(left: &u64, right: &u64) -> out: own u64 reads(left), reads(left), reads(right) {
+  let a = deref(left);
+  let b = deref(right);
+  return a +wrap b;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -629,13 +602,13 @@ fn main() -> status: own ExitStatus pure {
 "#,
         rule: "EFF-1",
         sentences: &[
-            r#"InvalidEffectRow { reason: "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates", mechanical_fix: "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates" }"#,
+            r#"InvalidEffectRow { reason: "a row lists each path at most once per category, and this entry repeats one", mechanical_fix: "delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path" }"#,
         ],
     },
     Probe {
         name: "effect-suffix-on-a-non-struct.wf",
-        source: br#"fn touch(value: own u64) -> out: own u64 reads(value.count) {
-  return value;
+        source: br#"fn touch(value: &u64) -> out: own u64 reads(value.count) {
+  return deref(value);
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -654,8 +627,8 @@ fn main() -> status: own ExitStatus pure {
   right: u64;
 }
 
-fn touch(pair: own Pair) -> out: own u64 reads(pair.middle) {
-  return pair.left;
+fn touch(pair: &Pair) -> out: own u64 reads(pair.middle) {
+  return deref(pair).left;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -669,8 +642,8 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "declared-row-is-narrower-than-the-body.wf",
-        source: br#"fn touch(data: &buffer<u8>) -> out: own u64 pure {
-  return len_of(deref(data));
+        source: br#"fn touch(data: &[u8]) -> out: own u64 pure {
+  return deref(data).len;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -679,7 +652,7 @@ fn main() -> status: own ExitStatus pure {
 "#,
         rule: "EFF-2",
         sentences: &[
-            r#"EffectMismatch { expected_row: "reads(data)", found_row: "pure", missing: ["reads(data)"], extra: [], mechanical_fix: "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions" }"#,
+            r#"EffectMismatch { expected_row: "reads(data.len)", found_row: "pure", missing: ["reads(data.len)"], extra: [], mechanical_fix: "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions" }"#,
         ],
     },
     // -------------------------------------------------------------------
@@ -689,19 +662,19 @@ fn main() -> status: own ExitStatus pure {
         name: "buffer-length-is-not-a-u64.wf",
         source: br#"fn main() -> status: own ExitStatus pure {
   let flag = 1_u64 > 0_u64;
-  let store = buffer_new(flag, 0_u8);
+  let store = box_array_filled::<u8>(count: flag, value: 0_u8);
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "own u64", found: "own Bool" }"#],
+        sentences: &[r#"TypeMismatch { expected: "u64", found: "Bool" }"#],
     },
     Probe {
         // Field suffixes after indices are supported; this scalar element
         // still has no fields. Pin that type rule, not the retired path limit.
         name: "scalar-buffer-element-has-no-fields.wf",
         source: br#"fn main() -> status: own ExitStatus pure {
-  let store = buffer_new(4_u64, 0_u8);
+  let store = array_filled::<u8, 4>(value: 0_u8);
   let one = store[0_u64].value;
   return exit_status(code: 0_u8);
 }
@@ -711,220 +684,35 @@ fn main() -> status: own ExitStatus pure {
             r#"TypeMismatch { expected: "a source struct, whose declared field this suffix selects", found: "u8" }"#,
         ],
     },
-    Probe {
-        name: "indexed-operand-is-a-move.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
-  let store = buffer_new(4_u64, 0_u8);
-  let n = len_of(move store);
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "TYPE-5",
-        sentences: &[
-            r#"TypeMismatch { expected: "a place, which a subscript indexes", found: "a written `move`, which consumes rather than indexes" }"#,
-        ],
-    },
-    Probe {
-        name: "indexed-operand-is-not-a-place.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
-  let n = len_of(1_u64);
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "TYPE-5",
-        sentences: &[
-            r#"TypeMismatch { expected: "a place, which a subscript indexes", found: "an atom that is not a place" }"#,
-        ],
-    },
-    Probe {
-        name: "indexed-place-is-a-scalar.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
-  let value = 1_u64;
-  let n = len_of(value);
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "TYPE-5",
-        sentences: &[
-            r#"TypeMismatch { expected: "an array, buffer, or slice place", found: "u64" }"#,
-        ],
-    },
-    Probe {
-        name: "slice-of-a-non-borrow.wf",
-        source: br#"const digits: array<u8, 2> =[48_u8, 49_u8];
-
-fn main() -> status: own ExitStatus pure {
-  let view = slice_of(digits);
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "TYPE-5",
-        sentences: &[
-            r#"TypeMismatch { expected: "a written shared borrow of the viewed storage, `&'r place`", found: "an atom that is not a borrow expression" }"#,
-        ],
-    },
-    Probe {
-        name: "slice-of-a-unique-borrow.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
-  let store = buffer_new(4_u64, 0_u8);
-  region {
-    let view = slice_of(&uniq store);
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "TYPE-5",
-        sentences: &[
-            r#"TypeMismatch { expected: "a written shared borrow of the viewed storage, `&'r place`", found: "a `&uniq` borrow, which slice_of does not take" }"#,
-        ],
-    },
     // -------------------------------------------------------------------
     // [OWN-4], [OWN-6], and [OWN-10]: regions and reborrows.
     // -------------------------------------------------------------------
-    Probe {
-        name: "slice-of-arena-content-under-a-foreign-region.wf",
-        source: br#"fn arena_view['v](storage: own arena<array<u8, 2>>, marker: &'v u64) -> result: &'v u64 pure {
-  let view = slice_of(&'v deref(storage));
-  return marker;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "OWN-10",
-        sentences: &[
-            r#"InvalidBorrowLifetime { region: "'v", binder: "storage", mechanical_fix: "arena content outlives its arena's own region, not the arena binding; that region is unwritten here, so write it on the arena and name it on this view, or take the view in a region it outlives" }"#,
-        ],
-    },
-    Probe {
-        name: "borrow-of-local-storage-under-a-parameter-region.wf",
-        source: br#"fn sum(data: &buffer<u8>) -> out: own u64 reads(data) {
-  return len_of(deref(data));
-}
-
-fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> pure {
-  let local = buffer_new(4_u64, 0_u8);
-  let counted = sum(data: &'r local);
-  return anchor;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "OWN-10",
-        sentences: &[
-            r#"InvalidBorrowLifetime { region: "'r", binder: "local", mechanical_fix: "a borrow of local storage names a region introduced inside that binding's own scope: write `region 'r { ... }` after the binding and take the borrow inside it. A caller-supplied region parameter is never admitted here, because it outlives the storage." }"#,
-        ],
-    },
-    Probe {
-        name: "returned-child-reborrow-names-a-foreign-region.wf",
-        source: br#"fn pass['b](holder: &buffer<u8>, marker: &'b u64) -> out: &'b buffer<u8> pure {
-  return &'b deref(holder);
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "OWN-10",
-        sentences: &[
-            r#"InvalidBorrowLifetime { region: "'b", binder: "holder", mechanical_fix: "a returned child reborrow names a region its holder's own region outlives; that region is unwritten here, so relate the holder's region to this result and name it on the returned reborrow" }"#,
-        ],
-    },
-    Probe {
-        name: "returned-borrow-of-a-local-region.wf",
-        source: br#"fn leak['r0](x: &'r0 i32) -> return_value: &'r0 i32 pure {
-  region 's {
-    region {
-      return &'s deref(x);
-    }
-  }
-}
-
-fn main() -> return_value: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "OWN-4",
-        sentences: &[
-            r#"InvalidBorrowLifetime { region: "'r0", binder: "x", mechanical_fix: "the value's borrow is live for 's, and 'r0 is not inside it; store or pass it under a region 's outlives, or introduce 'r0 inside 's's block" }"#,
-        ],
-    },
     // The former two-statement source is now an acceptance witness in the
     // semantic borrow tests. Pin the retained local-region condition here.
-    Probe {
-        name: "caller-region-for-an-argument-child.wf",
-        source: br#"fn observe(value: &u64) -> result: own unit pure {
-  return unit;
-}
-
-fn bad['r](value: &uniq 'r u64, other: &'r u64) -> result: own unit pure {
-  observe(value: &'r deref(value));
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "OWN-6",
-        sentences: &[
-            "introduce the child region locally inside the holder's region; a caller-supplied region is admitted only in a borrow-result provenance-candidate position",
-        ],
-    },
-    Probe {
-        name: "borrow-kind-does-not-match-the-destination.wf",
-        source: br#"fn measure(data: &buffer<u8>) -> out: own u64 reads(data) {
-  return len_of(deref(data));
-}
-
-fn main() -> status: own ExitStatus pure {
-  let store = buffer_new(4_u64, 0_u8);
-  region {
-    let n = measure(data: &uniq store);
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "a shared borrow", found: "&uniq buffer<u8>" }"#],
-    },
-    Probe {
-        name: "shared-borrow-where-a-unique-one-is-required.wf",
-        source: br#"fn update(output: &uniq OutputStream) -> result: own unit pure {
-  return unit;
-}
-
-fn main(out: own OutputStream) -> status: own ExitStatus pure {
-  region {
-    let result = update(output: &out);
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "a `uniq` borrow", found: "&OutputStream" }"#],
-    },
+    // Retired with `slice_of` and the permission marker: the four probes
+    // `slice-of-a-non-borrow`, `slice-of-a-unique-borrow`,
+    // `borrow-kind-does-not-match-the-destination` and
+    // `shared-borrow-where-a-unique-one-is-required` each pinned a sentence
+    // about a borrow kind or a view former, and v0.60 has neither [REF-1,
+    // REF-4]. The general [TYPE-5] mismatch sentence they shared stays
+    // pinned by `buffer-length-is-not-a-u64` and
+    // `slice-value-where-a-scalar-is-required` below.
     Probe {
         name: "slice-value-where-a-scalar-is-required.wf",
-        source: br#"const digits: array<u8, 2> =[48_u8, 49_u8];
+        source: br#"const digits: Array<u8, 2> =[48_u8, 49_u8];
 
 fn measure(view: own u64) -> out: own u64 pure {
   return view;
 }
 
 fn main() -> status: own ExitStatus pure {
-  region {
-    let view = slice_of(&digits);
-    let n = measure(view: view);
-  }
+  let view = &digits[0_u64..2_u64];
+  let n = measure(view: view);
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "u64", found: "Slice<u8>" }"#],
+        sentences: &[r#"TypeMismatch { expected: "u64", found: "u8" }"#],
     },
     // -------------------------------------------------------------------
     // [TYPE-5] and [FORM-5]: projections, replacement, and operands.
@@ -972,12 +760,12 @@ fn main() -> status: own ExitStatus pure {
 
 fn main() -> status: own ExitStatus pure {
   let ticket = Ticket(seq: 1_u64);
-  let stale = replace ticket = 2_u64;
+  set ticket = 2_u64;
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "own Ticket", found: "own u64" }"#],
+        sentences: &[r#"TypeMismatch { expected: "Ticket", found: "u64" }"#],
     },
     Probe {
         name: "boolean-operand-is-an-integer.wf",
@@ -1053,7 +841,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let bytes = buffer_new(1_u64, 3_u8);
+  let bytes = array_filled::<u8, 1>(value: 3_u8);
   let raw = bytes[0_u64];
   let s = cvt::<u8, u32>(raw);
   let r = need(x: s);
@@ -1112,7 +900,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(4_u64, 0_u8);
+  let data = array_filled::<u8, 4>(value: 0_u8);
   let r = need(x: data[0_u64]);
   return exit_status(code: 0_u8);
 }
@@ -1122,14 +910,14 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "goal-over-a-dereferenced-holder.wf",
-        source: br#"fn need(names: &buffer<u8>, pos: own u64) -> out: own u64 pure contract {
-  define spare = len_of(deref(names));
+        source: br#"fn need(names: &[u8], pos: own u64) -> out: own u64 pure contract {
+  define spare = deref(names).len;
   requires pos <= spare;
 } {
   return pos;
 }
 
-fn outer(names: &buffer<u8>) -> out: own u64 pure {
+fn outer(names: &[u8]) -> out: own u64 pure {
   let r = need(names: names, pos: 9_u64);
   return r;
 }
@@ -1139,169 +927,24 @@ fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "FN-8",
-        sentences: &[r#"instantiated_goal: "9_u64 <= len_of(deref(names))""#],
+        sentences: &[r#"instantiated_goal: "9_u64 <= deref(names).len""#],
     },
     // [FORM-8] one canonical region spelling: each position a region can
     // occupy, written exactly where the surrounding text does not fix it.
-    Probe {
-        name: "region-written-at-an-unrelated-parameter.wf",
-        source: br#"fn peek['r](value: &'r i32) -> result: own i32 reads(value) {
-  return deref(value);
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "FORM-8",
-        sentences: &[
-            "drop the region name: no other position of this declaration names this region, so the position denotes one region of its own",
-        ],
-    },
-    Probe {
-        name: "region-elided-at-a-result.wf",
-        source: br#"fn pass(value: &i32) -> result: &i32 pure {
-  return value;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "FORM-8",
-        sentences: &[
-            "write this result region: name the parameter region the result shares, or a region parameter of its own that the caller supplies",
-        ],
-    },
-    Probe {
-        name: "region-parameter-list-out-of-order.wf",
-        source: br#"fn pass['s, 'r](first: &'r i32, second: &'s i32, third: &'s i32) -> result: &'r i32 pure {
-  return first;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "FORM-8",
-        sentences: &[
-            "the region parameter list holds exactly the region names this declaration writes, once each, in the order of their first written occurrence, and is absent when it writes none",
-        ],
-    },
-    Probe {
-        name: "region-written-at-the-innermost-borrow.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
-  let a = 40_i32;
-  region 'r {
-    let p = &'r a;
-    let observed = deref(p);
-    if observed == 40_i32 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "FORM-8",
-        sentences: &[
-            "drop the region name: this borrow takes the region of the region block that most closely encloses it, and a loop body is one",
-        ],
-    },
     // [FORM-8, OWN-11] a loop body is itself a region block, so a block that
     // is the body's only statement spells that one region twice.
-    Probe {
-        name: "region-block-is-the-whole-loop-body.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
-  let a = 40_i32;
-  for @scan (step in 0_u64..2_u64) {
-    region {
-      let p = &a;
-      let observed = deref(p);
-      if observed == 40_i32 {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "FORM-8",
-        sentences: &[
-            "the loop body is its own region; remove the region block, keep its statements where they stand, and drop every region name it carried",
-        ],
-    },
-    Probe {
-        name: "region-block-name-nothing-references.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
-  let a = 40_i32;
-  region 'r {
-    let p = &a;
-    let observed = deref(p);
-    if observed == 40_i32 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "FORM-8",
-        sentences: &[
-            "drop the region name: nothing inside this block names it, so the block is written `region { ... }`",
-        ],
-    },
-    Probe {
-        name: "region-argument-the-call-determines.wf",
-        source: br#"fn peek(value: &i32) -> result: own i32 reads(value) {
-  return deref(value);
-}
-
-fn main() -> status: own ExitStatus pure {
-  let a = 40_i32;
-  region 'r {
-    let p = &a;
-    let v = peek::<'r>(value: p);
-    if v == 40_i32 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "FORM-8",
-        sentences: &[
-            "write exactly the callee's region parameters that occur in no parameter type, in their declared order; every other region argument is determined by this call's own arguments and is not written",
-        ],
-    },
-    Probe {
-        name: "prelude-region-argument-the-call-determines.wf",
-        source: br#"fn main(args: own Args) -> status: own ExitStatus reads(args) {
-  region 'a {
-    let total = args_count::<'a>(args: &args);
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "FORM-8",
-        sentences: &[
-            "write exactly the callee's region parameters that occur in no parameter type, in their declared order; every other region argument is determined by this call's own arguments and is not written",
-        ],
-    },
     // -------------------------------------------------------------------
     // [LIV-1] and [LIV-2]: join-checked liveness and the one commit.
     // -------------------------------------------------------------------
     Probe {
         name: "branches-disagree-about-a-binding.wf",
-        source: br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
-  let n = len_of(cell);
+        source: br#"fn measure(cell: own Box<Array<u8>>) -> size: own u64 pure {
+  let n = cell.inner.len;
   return n;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let c = buffer_new(4_u64, 0_u8);
+  let c = box_array_filled::<u8>(count: 4_u64, value: 0_u8);
   let flag = 1_u64;
   let taken = 0_u64;
   if flag == 1_u64 {
@@ -1322,13 +965,13 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "one-iteration-leaves-an-outer-binding-dead.wf",
-        source: br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
-  let n = len_of(cell);
+        source: br#"fn measure(cell: own Box<Array<u8>>) -> size: own u64 pure {
+  let n = cell.inner.len;
   return n;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let c = buffer_new(4_u64, 0_u8);
+  let c = box_array_filled::<u8>(count: 4_u64, value: 0_u8);
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
   }
@@ -1341,116 +984,12 @@ fn main() -> status: own ExitStatus pure {
             "one iteration must leave every outer binding in the status the next one starts from: commit a value back into it before the backedge, or declare and consume it inside the body",
         ],
     },
-    Probe {
-        name: "two-targets-of-one-commit-overlap.wf",
-        source: br#"fn two_bytes(bound: own u64) -> (low: own u8, high: own u8) pure {
-  return 1_u8, 2_u8;
-}
-
-fn unproved(values: &uniq FixedVector<u8, 4>, i: own u64, j: own u64) -> result: own unit writes(values) contract {
-  requires i < len_of(deref(values));
-  requires j < len_of(deref(values));
-} {
-  set (deref(values)[i], deref(values)[j]) = two_bytes(bound: 4_u64);
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "LIV-2",
-        sentences: &[
-            r#"first: "deref(values)[i]""#,
-            r#"second: "deref(values)[j]""#,
-            "prove that a corresponding pair of target indices differs before this statement, or write the overlapping target in a statement of its own",
-        ],
-    },
-    Probe {
-        name: "a-commit-target-carrying-a-region.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(4_u64, 0_u8);
-  let spare = buffer_new(4_u64, 0_u8);
-  region {
-    let view = mut_slice_of(&uniq data);
-    let other = mut_slice_of(&uniq spare);
-    set view = move other;
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "LIV-2",
-        sentences: &[
-            r#"target_type: "MutSlice<u8>""#,
-            "a slice\'s static origin set and an arena\'s confinement are fixed at initialization; bind a new slice or arena under a new let",
-        ],
-    },
     // [VIEW-4]: the same commit at a *copy* view, whose target [LIV-2]'s own
     // condition would admit with nothing consumed.
-    Probe {
-        name: "a-commit-displacing-a-live-loan.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(4_u64, 0_u8);
-  let spare = buffer_new(4_u64, 0_u8);
-  region {
-    let view = slice_of(&data);
-    let other = slice_of(&spare);
-    set view = other;
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "VIEW-4",
-        sentences: &[
-            r#"target_type: "Slice<u8>""#,
-            "bind a new view under a new `let` rather than committing at this one",
-        ],
-    },
     // -------------------------------------------------------------------
     // [BLK-1] and [PROV-1]: the container nominals a construct may not name
     // and the store region an extent always writes.
     // -------------------------------------------------------------------
-    Probe {
-        name: "a-construct-naming-a-run.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
-  let made = FixedVector(len: 0_u64);
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "BLK-1",
-        sentences: &[
-            r#"nominal: "FixedVector""#,
-            "form the run with a formation operation",
-        ],
-    },
-    Probe {
-        name: "a-construct-naming-a-provider.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
-  let made = Heap(cursor: 0_u64);
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "BLK-1",
-        sentences: &[
-            r#"nominal: "Heap""#,
-            "receive the provider as a parameter",
-        ],
-    },
-    Probe {
-        name: "an-extent-eliding-its-store-region.wf",
-        source: br#"fn carve(extent: own Arena<4096, 16>) -> made: own u64 pure {
-  return 0_u64;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "FORM-8",
-        sentences: &[
-            "write the store region this extent names: a bump extent's region is one the caller must choose, so it is written at every position",
-        ],
-    },
     // -------------------------------------------------------------------
     // [INV-1]: the one `call` an affine factor admits is a measure former.
     // -------------------------------------------------------------------
@@ -1473,6 +1012,33 @@ fn main() -> status: own ExitStatus pure {
             "write len_of(P), cap_of(P), room_of(P) or head_of(P) over a measured place",
         ],
     },
+    // Retired with the rules whose sentences they pinned. Each probe below
+    // cited a rule v0.60 does not have, so the sentence it compared no longer
+    // exists anywhere in the compiler and no source can reach it:
+    //   - slice-of-arena-content-under-a-foreign-region.wf [OWN-10]
+    //   - borrow-of-local-storage-under-a-parameter-region.wf [OWN-10]
+    //   - returned-child-reborrow-names-a-foreign-region.wf [OWN-10]
+    //   - returned-borrow-of-a-local-region.wf [OWN-4]
+    //   - caller-region-for-an-argument-child.wf [OWN-6]
+    //   - region-written-at-an-unrelated-parameter.wf [FORM-8]
+    //   - region-elided-at-a-result.wf [FORM-8]
+    //   - region-parameter-list-out-of-order.wf [FORM-8]
+    //   - region-written-at-the-innermost-borrow.wf [FORM-8]
+    //   - region-block-is-the-whole-loop-body.wf [FORM-8]
+    //   - region-block-name-nothing-references.wf [FORM-8]
+    //   - region-argument-the-call-determines.wf [FORM-8]
+    //   - prelude-region-argument-the-call-determines.wf [FORM-8]
+    //   - two-targets-of-one-commit-overlap.wf [LIV-2]
+    //   - a-commit-target-carrying-a-region.wf [LIV-2]
+    //   - a-commit-displacing-a-live-loan.wf [VIEW-4]
+    //   - a-construct-naming-a-run.wf [BLK-1]
+    //   - a-construct-naming-a-provider.wf [BLK-1]
+    //   - an-extent-eliding-its-store-region.wf [FORM-8]
+    // The region and loan rules [OWN-3, OWN-4, OWN-6, OWN-10, FORM-8, VIEW-4,
+    // BLK-1, LIV-2] left the language with regions, permission markers, views
+    // and the fallible store take. Their successors are the reference rules
+    // [REF-1, REF-3, REF-4] and the window rules [WIN-1, WIN-3, OP-10],
+    // whose own sentences are pinned by the probes that remain above.
 ];
 
 /// Every sentence in the corpus is rendered by a program that reaches it.

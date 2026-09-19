@@ -316,9 +316,9 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
   let report = box_array_filled::<u8>(count: 8_u64, value: 0_u8);
   let window = &report.inner[0_u64..8_u64];
-  let filled = spell(destination: window, at: 0_u64, value: value);
+  let stored = spell(destination: window, at: 0_u64, value: value);
   match write_once(factory: &entry_factory, output: &out, source: window, start: 0_u64, end: 8_u64) {
-    Ok(value: next) => {
+    Ok(value: accepted) => {
       return exit_status(code: 0_u8);
     }
     Err(error: problem) => {
@@ -380,7 +380,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let size = report.inner.len;
   let source = &report.inner[0_u64..size];
   match write_once(factory: &entry_factory, output: &out, source: source, start: 0_u64, end: size) {
-    Ok(value: next) => {
+    Ok(value: accepted) => {
       return exit_status(code: 0_u8);
     }
     Err(error: problem) => {
@@ -400,7 +400,7 @@ fn map_and_reduction_source() -> Vec<u8> {
     let (_, spell) = COMBINE_PRELUDE
         .split_once("fn spell(")
         .expect("the shared prelude defines the eight-byte speller");
-    format!("fn spell({spell}{source}")
+    format!("fn spell({spell}\n{source}")
         .replacen("count: 400000_u64", "count: 400008_u64", 1)
         .replacen("  for @fill", "  let checksum = 0_u64;\n  for @fill", 1)
         .replacen("    set out.inner[slot] = byte;", "    set out.inner[slot] = byte;\n    set checksum = checksum +wrap mixed;", 1)
@@ -422,7 +422,7 @@ fn borrowed_read_modify_map_source() -> Vec<u8> {
         )
         .replacen(
             "    set out.inner[slot] = byte;\n",
-            "    let old = deref(out)[slot];\n    let next = old +wrap byte;\n    set deref(out)[slot] = next;\n",
+            "    let old = deref(out)[slot];\n    let blended = old +wrap byte;\n    set deref(out)[slot] = blended;\n",
             1,
         )
         .replacen("  return move out;\n", "  return unit;\n", 1)
@@ -1214,7 +1214,7 @@ fn admitted_combine_source() -> Vec<u8> {
     }
     source.push_str(&format!(
         "  match write_once(factory: &factory, output: &out, source: window, start: 0_u64, \
-         end: {width}_u64) {{\n    Ok(value: next) => {{\n      \
+         end: {width}_u64) {{\n    Ok(value: accepted) => {{\n      \
          return exit_status(code: 0_u8);\n    }}\n    Err(error: problem) => {{\n      \
          return exit_status(code: 1_u8);\n    }}\n  }}\n}}\n"
     ));

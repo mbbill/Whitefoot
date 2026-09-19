@@ -164,7 +164,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   set report.inner[0_u64] = byte;
   let ordinary_source_2 = &report.inner[0_u64..2_u64];
   match write_once(factory: &entry_factory, output: &out, source: ordinary_source_2, start: 0_u64, end: 2_u64) {
-    Ok(value: next) => {
+    Ok(value: accepted) => {
       return exit_status(code: 0_u8);
     }
     Err(error: problem) => {
@@ -750,9 +750,9 @@ fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
   if done {
     return v;
   }
-  let next = depth -wrap 1_u64;
+  let below = depth -wrap 1_u64;
   let scaled = fmul.strict(v, 1.0009765625_f64);
-  let a = spine(depth: next, v: scaled);
+  let a = spine(depth: below, v: scaled);
   let b = leaf(v: v);
   return fadd.strict(a, b);
 }
@@ -1765,8 +1765,8 @@ fn an_ordinary_worker_helper_can_call_the_linked_io_library() {
   let bytes = box_array_filled::<u8>(count: 1_u64, value: 88_u8);
   let window = &bytes.inner[0_u64..1_u64];
   match write_once(factory: &factory, output: &out, source: window, start: 0_u64, end: 1_u64) {
-    Ok(value: next) => {
-      return next;
+    Ok(value: accepted) => {
+      return accepted;
     }
     Err(error: problem) => {
       return 0_u64;
@@ -2075,9 +2075,9 @@ fn recursive_controls_preserve_scalar_and_destination_results() {
     let value = deref(seed);
     return {leaf};
   }}
-  let next = depth - 1_u64;
-  let l = fold(depth: next, seed: seed);
-  let r = fold(depth: next, seed: seed);
+  let below = depth - 1_u64;
+  let l = fold(depth: below, seed: seed);
+  let r = fold(depth: below, seed: seed);
   let combined = {sum};
   return {merged};
 }}

@@ -6,8 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef void (*sort_entry)(const uint64_t *, uint64_t, uint64_t **, uint64_t *);
-typedef void (*sort_release)(uint64_t *, uint64_t);
+typedef void (*sort_entry)(const uint64_t *, uint64_t, uint64_t **, uint64_t *, void **);
+/* The owned result is a Box<Array<T>> cell; the adapter hands that cell back
+ * as the retained handle and the release row consumes exactly it. */
+typedef void (*sort_release)(void *);
 
 static void fail(const char *message) {
     (void)fprintf(stderr, "merge_sort: %s\n", message);
@@ -54,14 +56,15 @@ static size_t matrix(sort_entry entry, sort_release release) {
         for (unsigned distribution = 0; distribution < 6; ++distribution) {
             uint64_t *input = allocate(n), *original = allocate(n), *result = NULL;
             uint64_t length = UINT64_MAX;
+            void *held = NULL;
             fill(input, n, distribution);
             memcpy(original, input, n * sizeof(*input));
             uint64_t *expected = oracle(input, n);
-            entry(input, n, &result, &length);
+            entry(input, n, &result, &length, &held);
             if (length != n) fail("output length");
             checked += compare(result, expected, n);
             checked += compare(input, original, n);
-            release(result, length);
+            release(held);
             free(expected); free(original); free(input);
         }
     }
@@ -69,8 +72,8 @@ static size_t matrix(sort_entry entry, sort_release release) {
 }
 
 #ifndef WF_ORACLE_NO_MAIN
-extern void wf_bench_merge_sort(const uint64_t *, uint64_t, uint64_t **, uint64_t *);
-extern void wf_bench_merge_sort_release(uint64_t *, uint64_t);
+extern void wf_bench_merge_sort(const uint64_t *, uint64_t, uint64_t **, uint64_t *, void **);
+extern void wf_bench_merge_sort_release(void *);
 extern int wf__floor_run(int, char **);
 #ifdef WFB_ORACLE_PARALLEL
 extern int wf__par_pool_active(void);

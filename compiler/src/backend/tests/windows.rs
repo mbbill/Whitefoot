@@ -446,8 +446,8 @@ fn range_references_cross_helpers_without_transferring_ownership() {
 #[test]
 fn a_reference_parameter_updates_caller_storage_through_one_address_path() {
     let source = br#"struct Pool {
-  left: Box<Slots<u64>>;
-  right: Box<Slots<u64>>;
+  left: Box<Array<u64>>;
+  right: Box<Array<u64>>;
   count: u64;
 }
 
@@ -565,10 +565,12 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
 /// `Slots<u8, n>` by value [STOR-1], and the whole program allocates nothing.
 /// The assertions are those facts.
 ///
-/// KEPT AS WRITTEN for the lowering port: the two `{ [n x i8], i64, i64 }`
-/// layouts below are the v0.59 `FixedVector` block. A v0.60 `Slots` stores its
-/// `len` with the block and a `head` belongs to `Ring` alone [STOR-1, WIN-1],
-/// so the constant-capacity block's emitted layout is the lowering's to fix.
+/// Re-derived from the ported lowering: a `Slots<T, N>` stores its `len` with
+/// the block and a `head` belongs to `Ring` alone [STOR-1, WIN-1], so the
+/// constant-capacity block is the header-first `{ i64 len, [N x T] slots }`
+/// rather than v0.59's three-word `FixedVector`. The reference parameter is
+/// passed as one pointer with the callee-visible `dereferenceable` the block's
+/// own size gives it.
 #[test]
 fn chunk_summary_instances_preserve_window_abi_and_avoid_allocation() {
     let llvm = compile(include_bytes!(
@@ -579,7 +581,7 @@ fn chunk_summary_instances_preserve_window_abi_and_avoid_allocation() {
         .filter(|line| line.starts_with("define ") && line.contains(" @wf_summarize$instance$"))
         .map(|header| {
             assert!(header.starts_with("define i8 @wf_summarize$instance$"));
-            assert!(header.contains("(ptr %v0, ptr %wf.arg.v1)"));
+            assert!(header.contains("%v0, ptr %wf.arg.v1)"), "{header}");
             let name = header
                 .split_once("@wf_")
                 .expect("WF symbol")
@@ -594,25 +596,29 @@ fn chunk_summary_instances_preserve_window_abi_and_avoid_allocation() {
     assert_eq!(
         summaries
             .iter()
-            .filter(|body| body.contains("getelementptr inbounds { [4 x i8], i64, i64 }"))
+            .filter(|body| body.contains("getelementptr inbounds { i64, [4 x i8] }"))
             .count(),
         1
     );
     assert_eq!(
         summaries
             .iter()
-            .filter(|body| body.contains("getelementptr inbounds { [1 x i8], i64, i64 }"))
+            .filter(|body| body.contains("getelementptr inbounds { i64, [1 x i8] }"))
             .count(),
         1
     );
     let combine = emitted_function(&llvm, "combine");
     assert!(combine.starts_with("define i8 @wf_combine(ptr "));
+    // Re-derived for v0.60: each of the three reference parameters is one
+    // pointer, and the emitted head now carries the callee-visible
+    // `dereferenceable` the constant-capacity block's own size gives it, so
+    // the parameter ordinals rather than a bare `ptr %v` are what count.
     assert_eq!(
         combine
             .lines()
             .next()
             .expect("combine signature")
-            .matches("ptr %v")
+            .matches(" %v")
             .count(),
         3
     );
@@ -805,8 +811,8 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
     let empty = None<u32>();
     place_back(window: &slots.inner, value: move empty);
   }
-  let filled = Some<u32>(value: 7_u32);
-  set slots.inner[2_u64] = move filled;
+  let occupied = Some<u32>(value: 7_u32);
+  set slots.inner[2_u64] = move occupied;
   return exit_status(code: 0_u8);
 }
 "#;

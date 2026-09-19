@@ -14,8 +14,10 @@ const char *const wf_oracle_fixture = "taps=64 outputs=524288 seed=92821";
 
 #define FIR_SEED UINT32_C(92821)
 enum { MAX_TAPS = 64 };
-extern void wf_bench_fir(const double *, uint64_t, const double *, uint64_t, uint64_t, uint64_t, uint64_t, double **, uint64_t *);
-extern void wf_bench_fir_release(double *, uint64_t);
+/* The owned result is a Box<Array<T>> cell; the adapter hands that cell back
+ * as the retained handle and the release row consumes exactly it. */
+extern void wf_bench_fir(const double *, uint64_t, const double *, uint64_t, uint64_t, uint64_t, uint64_t, double **, uint64_t *, void **);
+extern void wf_bench_fir_release(void *);
 typedef struct { double delay[MAX_TAPS]; size_t next, taps; } DelayLine;
 
 static double sample(uint32_t *state, size_t i) {
@@ -136,14 +138,15 @@ static void check_witness(const double *input, size_t count, const double *histo
                           const double *taps, size_t tap_count, const double *expected) {
     double prefix[6], *output = NULL;
     uint64_t length = UINT64_MAX;
+    void *held = NULL;
     size_t h = tap_count - 1;
     if (h + count > 6) wf_oracle_fail("fir: witness extent");
     memcpy(prefix, history, h * sizeof(double));
     memcpy(prefix + h, input, count * sizeof(double));
-    wf_bench_fir(prefix, h + count, taps, tap_count, h, h + count, h, &output, &length);
+    wf_bench_fir(prefix, h + count, taps, tap_count, h, h + count, h, &output, &length, &held);
     if (length != count) wf_oracle_fail("fir: witness output extent");
     check_samples(expected, output, count, "WF-witness");
-    wf_bench_fir_release(output, length);
+    wf_bench_fir_release(held);
 }
 
 static void check_known(void) {
@@ -191,6 +194,7 @@ static void check_rounding(void) {
 typedef struct {
     double *prefix, *held_prefix, *taps, *held_taps;
     double *expected, *expected_history, *output;
+    void *held;
     size_t n, k, h;
 } Work;
 
@@ -238,12 +242,13 @@ static size_t input(Work *w, size_t k, size_t n, uint32_t seed, int blocks) {
 }
 
 static void release(Work *w) {
-    if (w->output) wf_bench_fir_release(w->output, w->n);
+    if (w->held) wf_bench_fir_release(w->held);
     w->output = NULL;
+    w->held = NULL;
 }
 static void run(Work *w) {
     uint64_t length = UINT64_MAX;
-    wf_bench_fir(w->prefix, w->h + w->n, w->taps, w->k, w->h, w->h + w->n, w->h, &w->output, &length);
+    wf_bench_fir(w->prefix, w->h + w->n, w->taps, w->k, w->h, w->h + w->n, w->h, &w->output, &length, &w->held);
     if (length != w->n) wf_oracle_fail("fir: output extent");
 }
 

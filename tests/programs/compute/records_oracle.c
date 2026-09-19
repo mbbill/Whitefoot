@@ -16,11 +16,14 @@ const char *const wf_oracle_fixture = "records=131072 max_length=255 shape=unico
 #define RC_VERIFY_MAX_LENGTH ((size_t)129)
 #define RC_RECORD_BOUND UINT64_C(1048576)
 #define RC_INPUT_BYTE_BOUND UINT64_C(16777216)
-extern void wf_bench_records(const uint8_t *, uint64_t, const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *);
-extern void wf_bench_records_release(uint64_t *, uint64_t);
+/* The owned result is a Box<Array<T>> cell; the adapter hands that cell back
+ * as the retained handle and the release row consumes exactly it. */
+extern void wf_bench_records(const uint8_t *, uint64_t, const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *, void **);
+extern void wf_bench_records_release(void *);
 typedef struct {
     uint8_t *data, *held_data;
     uint64_t *offsets, *held_offsets, *expected, *output;
+    void *held;
     size_t n, capacity, count;
 } Work;
 
@@ -129,12 +132,13 @@ static Work input(size_t count, size_t limit, const char *shape, uint32_t seed) 
 }
 
 static void release(Work *w) {
-    if (w->output) wf_bench_records_release(w->output, w->count);
+    if (w->held) wf_bench_records_release(w->held);
     w->output = NULL;
+    w->held = NULL;
 }
 static void run(Work *w) {
     uint64_t length = UINT64_MAX;
-    wf_bench_records(w->data, w->n, w->offsets, w->count + 1, 0, w->count, &w->output, &length);
+    wf_bench_records(w->data, w->n, w->offsets, w->count + 1, 0, w->count, &w->output, &length, &w->held);
     if (length != w->count) wf_oracle_fail("records: output extent");
 }
 

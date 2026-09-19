@@ -13,7 +13,7 @@ fn pair() -> result: own Ring<u8, 4> pure contract {
   return move two;
 }
 
-fn append(vector: &Ring<u8, 4>, value: own u8) -> result: own unit writes(vector) contract {
+fn enqueue(vector: &Ring<u8, 4>, value: own u8) -> result: own unit writes(vector) contract {
   requires deref(vector).room > 0_u64;
   ensures deref(vector).len >= deref(entry(vector)).len + 1_u64;
 } {
@@ -37,7 +37,7 @@ fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 1_u8);
   }
-  append(vector: &built, value: 8_u8);
+  enqueue(vector: &built, value: 8_u8);
   let grown = move built;
   let third = grown[2_u64];
   if third == 8_u8 {

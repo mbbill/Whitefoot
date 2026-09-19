@@ -62,7 +62,7 @@
 
 use std::process::Command;
 
-use super::{build_linked_executable, compile, emitted_function, test_directory};
+use super::{build_linked_executable, compile, test_directory};
 
 /// The attribute group [`crate::backend::emitter`] gives every definition, and
 /// the value it carries on this host.
@@ -79,7 +79,7 @@ const HOST_STACK_PROBE: &str = "\"probe-stack\"=\"inline-asm\"";
 /// transfer, and the entry itself.
 const MIXED_DEFINITIONS: &[u8] = br#"enum Chain {
   End();
-  More(next: Box<Chain>);
+  More(tail: Box<Chain>);
 }
 
 fn depth(chain: &Box<Chain>) -> result: own u64 reads(chain) {
@@ -87,8 +87,8 @@ fn depth(chain: &Box<Chain>) -> result: own u64 reads(chain) {
     End() => {
       return 0_u64;
     }
-    More(next: inner) => {
-      let below = depth(chain: inner);
+    More(tail: below_chain) => {
+      let below = depth(chain: below_chain);
       return below +wrap 1_u64;
     }
   }
@@ -97,7 +97,7 @@ fn depth(chain: &Box<Chain>) -> result: own u64 reads(chain) {
 fn main() -> status: own ExitStatus pure {
   let end = End();
   let bottom = box_new::<Chain>(value: move end);
-  let one = More(next: move bottom);
+  let one = More(tail: move bottom);
   let boxed = box_new::<Chain>(value: move one);
   let measured = depth(chain: &boxed);
   if measured == 1_u64 {
@@ -277,7 +277,7 @@ const HEAP_RECORD_LANE: &[u8] = br#"fn leafwork(v: own u64) -> result: own u64 p
 
 fn build(n: own u64) -> result: own u64 pure {
   let b = box_array_filled::<u8>(count: 4000000000000000000_u64, value: 7_u8);
-  let e = b.inner[0_u64];
+  let e = b.inner.len;
   return 0_u64 +wrap n;
 }
 
@@ -335,15 +335,15 @@ fn a_module_that_writes_a_resource_record_and_hands_a_call_out_is_latched() {
 /// one observed measure [OP-15] so the successful run still proves it ran:
 /// 7 + 4 + 4 + 3 = 18, the same exit code v0.59's image produced.
 const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 pure {
-  let filled = box_array_filled::<u64>(count: 4_u64, value: 5_u64);
+  let packed = box_array_filled::<u64>(count: 4_u64, value: 5_u64);
   let vacant = box_slots_new::<u32>(capacity: 4_u64);
   let cycle = box_ring_new::<u32>(capacity: 3_u64);
   let boxed = box_new::<u64>(value: 7_u64);
   let held = boxed.inner;
-  let filled_len = filled.inner.len;
+  let packed_len = packed.inner.len;
   let vacant_cap = vacant.inner.cap;
   let cycle_cap = cycle.inner.cap;
-  let total = held +wrap filled_len;
+  let total = held +wrap packed_len;
   set total = total +wrap vacant_cap;
   set total = total +wrap cycle_cap;
   return total;
@@ -369,12 +369,14 @@ fn main() -> status: own ExitStatus pure {
 /// and receives no payload, and an exhausted heap ends the process from the
 /// trusted base with the one record naming the resource class.
 ///
-/// KEPT AS WRITTEN for the lowering port: the observer limit, the refusal
-/// range and the `A1;A2;A3;A4;` trace all say that each of the four [OP-13]
-/// cell constructions is exactly one interposed allocation. Whether a boxed
-/// runtime-capacity shape is one heap object or a cell plus a block is the
-/// lowering port's decision under [STOR-1]; re-derive the limit, the range and
-/// both identity lists from it.
+/// Re-derived from the ported lowering: [STOR-1] places a boxed runtime-capacity
+/// shape as a cell plus the storage its content needs, and the emitted rows
+/// answer that per shape. `box_array_filled` takes two — the element block and
+/// the cell that holds its `{ data, count }` content — while `box_slots_new`,
+/// `box_ring_new` and `box_new` each take one, because a window's block is
+/// header-first and the cell *is* that block. The four-form image is therefore
+/// five interposed allocations, and the observer limit, the refusal range and
+/// both identity lists below say exactly that.
 #[test]
 fn each_generated_allocation_form_reaches_its_refusal_record() {
     let directory = test_directory();
@@ -383,10 +385,10 @@ fn each_generated_allocation_form_reaches_its_refusal_record() {
         .replace("@free(", "@wf_test_release(");
     let host = format!(
         "{}\n__attribute__((constructor)) static void unbuffer(void) {{ setvbuf(stdout, NULL, _IONBF, 0); }}\n",
-        super::owned_places::allocation_observer_by_process(4)
+        super::owned_places::allocation_observer_by_process(5)
     );
     let executable = build_linked_executable(&observed, Some(&host), &[], &directory);
-    for refused in 0..=4 {
+    for refused in 0..=5 {
         let output = Command::new(&executable)
             .env("WF_TEST_REFUSE_ALLOCATION", refused.to_string())
             .output()
@@ -395,13 +397,13 @@ fn each_generated_allocation_form_reaches_its_refusal_record() {
         if refused == 0 {
             assert_eq!(output.status.code(), Some(18), "{output:?}");
             assert!(output.stderr.is_empty());
-            assert!(trace.starts_with("A1;A2;A3;A4;"), "{trace}");
+            assert!(trace.starts_with("A1;A2;A3;A4;A5;"), "{trace}");
             let mut freed = trace
                 .split(';')
                 .filter_map(|event| event.strip_prefix('F'))
                 .collect::<Vec<_>>();
             freed.sort_unstable();
-            assert_eq!(freed, ["1", "2", "3", "4"], "{trace}");
+            assert_eq!(freed, ["1", "2", "3", "4", "5"], "{trace}");
         } else {
             use std::os::unix::process::ExitStatusExt;
             assert_eq!(
@@ -426,16 +428,18 @@ fn each_generated_allocation_form_reaches_its_refusal_record() {
 /// The subject is [STOR-6]'s separation: a target-qualification failure stops
 /// compilation and may not become a runtime guard. That rule is unchanged.
 ///
-/// KEPT AS WRITTEN for the lowering port: every label here, `buffer.fill.`,
-/// `buffer.vacant.`, `.allocate.`, `.oom.` and the two target-domain symbols,
-/// is v0.59's emitted spelling for what are now `box_array_filled` and
-/// `box_slots_new` [OP-13]. Re-derive the block names from the port.
+/// Re-derived from the ported lowering: a construction row is emitted as its
+/// own out-of-line body [PRE-1], so the allocation and its refusal edge are in
+/// `wf_box_array_filled$instance$N` and `wf_box_slots_new$instance$N` rather
+/// than at the call in `shapes`. The block names the port chose are
+/// `buffer.fill.` for the filled element block and `window.block.` for a
+/// window's header-first block; `buffer.vacant.` went with `buffer_vacant`.
 #[test]
 fn target_qualified_buffers_keep_only_the_heap_refusal_path() {
     let module = heap_module();
     for absent in [
         "buffer.fill.target.",
-        "buffer.vacant.target.",
+        "window.block.target.",
         "@wf_target_domain_abort",
         "@.wf_resource.target_domain",
     ] {
@@ -445,24 +449,29 @@ fn target_qualified_buffers_keep_only_the_heap_refusal_path() {
         );
     }
 
-    let shapes = emitted_function(&module, "shapes");
-    let lines: Vec<&str> = shapes.lines().collect();
-    for operation in ["buffer.fill", "buffer.vacant"] {
-        let allocation = lines
-            .iter()
-            .position(|line| line.starts_with(&format!("{operation}.allocate.")))
-            .expect("the fixture must reach the buffer allocation block");
+    for (row, refusal_label) in [
+        ("box_array_filled", "buffer.fill.oom."),
+        ("box_slots_new", "window.block.oom."),
+    ] {
+        let body = super::emitted_prelude_row(&module, row);
+        let lines: Vec<&str> = body.lines().collect();
         let refusal = lines
             .iter()
-            .position(|line| line.starts_with(&format!("{operation}.oom.")))
+            .position(|line| line.starts_with(refusal_label))
             .expect("the allocator's null result must retain a refusal block");
-        assert!(allocation < refusal);
-        let allocation_path = lines[allocation + 1..refusal].join("\n");
-        assert!(allocation_path.contains("call ptr @malloc"));
-        assert!(allocation_path.contains("icmp ne ptr"));
+        let allocation_path = lines[..refusal].join("\n");
+        assert!(
+            allocation_path.contains("call ptr @malloc"),
+            "the row must reach the allocator before its refusal block:\n{body}"
+        );
+        assert!(
+            allocation_path.contains("icmp ne ptr"),
+            "the refusal edge is the allocator's own null test:\n{body}"
+        );
         assert_eq!(
             lines.get(refusal + 1).copied(),
-            Some("  call void @wf_resource_abort()")
+            Some("  call void @wf_resource_abort()"),
+            "{body}"
         );
     }
 }
@@ -478,16 +487,18 @@ fn target_qualified_buffers_keep_only_the_heap_refusal_path() {
 /// OWN-4, OWN-10, FORM-8, STOR-4]; the form no longer exists, so it has no
 /// successor edge. The fourth form of the image above is `box_ring_new`.
 ///
-/// KEPT AS WRITTEN for the lowering port: the three surviving labels are
-/// v0.59's emitted spellings, and `box_ring_new` has no pinned label at all.
-/// Re-derive one label per [OP-13] cell construction the port emits, and
-/// re-derive whether a refusal edge is emitted in the module or left inside
-/// the trusted base's allocator [STOR-8].
+/// Re-derived from the ported lowering: the emitted label names the storage a
+/// construction takes rather than the row that takes it, so the four [OP-13]
+/// cell constructions publish three distinct refusal edges. `box_new` and the
+/// cell half of `box_array_filled` take `box.new.oom.`, the element block of
+/// `box_array_filled` takes `buffer.fill.oom.`, and `box_slots_new` and
+/// `box_ring_new` share `window.block.oom.`, because a window's block is
+/// header-first and one address computation serves both [STOR-1, WIN-1].
 #[test]
 fn every_allocation_refusal_edge_reaches_the_resource_abort() {
     let module = heap_module();
     let lines: Vec<&str> = module.lines().collect();
-    for refusal in ["box.new.oom.", "buffer.fill.oom.", "buffer.vacant.oom."] {
+    for refusal in ["box.new.oom.", "buffer.fill.oom.", "window.block.oom."] {
         let mut found = 0;
         for (index, line) in lines.iter().enumerate() {
             if !line.starts_with(refusal) || !line.ends_with(':') {
@@ -529,8 +540,8 @@ fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
   if done {
     return read_pad(values: &pad, index: wide);
   }
-  let next = depth -wrap 1_u64;
-  let a = spine(depth: next, v: v, i: i);
+  let below = depth -wrap 1_u64;
+  let a = spine(depth: below, v: v, i: i);
   let b = read_pad(values: &pad, index: wide);
   return a +wrap b;
 }
@@ -851,7 +862,7 @@ fn main() -> status: own ExitStatus pure {{
   for @build (
     i in 0_u64..{depth}_u64,
     invariant width: holder.inner.cap == 1_u64,
-    invariant filled: holder.inner.len == 1_u64
+    invariant stored: holder.inner.len == 1_u64
   ) {{
     let taken = take_back(window: &holder.inner);
     let grown = nest(inner: move taken);

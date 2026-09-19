@@ -1099,18 +1099,18 @@ fn a_mid_stream_read_failure_stops_the_drain_after_the_bytes_it_delivered() {
         .replace(
             "return exit_status(code: 202_u8);",
             "let first = bytes[0_u64];
-                      let second = bytes[1_u64];
-                      let third = bytes[2_u64];
-                      if first != 97_u8 {
-                        return exit_status(code: 206_u8);
-                      }
-                      if second != 98_u8 {
-                        return exit_status(code: 207_u8);
-                      }
-                      if third != 99_u8 {
-                        return exit_status(code: 208_u8);
-                      }
-                      return exit_status(code: 202_u8);",
+                let second = bytes[1_u64];
+                let third = bytes[2_u64];
+                if first != 97_u8 {
+                  return exit_status(code: 206_u8);
+                }
+                if second != 98_u8 {
+                  return exit_status(code: 207_u8);
+                }
+                if third != 99_u8 {
+                  return exit_status(code: 208_u8);
+                }
+                return exit_status(code: 202_u8);",
         );
     let run = run_on_deterministic_host(
         source.as_bytes(),
@@ -1294,7 +1294,7 @@ fn the_heap_resource_record_writer_stays_native_on_the_deterministic_target() {
   let bytes = box_array_filled::<u8>(count: 1_u64, value: 65_u8);
   let ordinary_source = &bytes.inner[0_u64..1_u64];
   match write_once(factory: &entry_factory, output: &out, source: ordinary_source, start: 0_u64, end: 1_u64) {
-    Ok(value: next) => {
+    Ok(value: accepted) => {
     }
     Err(error: problem) => {
     }

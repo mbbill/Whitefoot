@@ -6,8 +6,10 @@ struct OwnedItem {
   id: u64;
 }
 
-fn sum_accept(env: &uniq Sum, value: own u64) -> result: own unit reads(env.total), writes(env.total) {
-  set deref(env).total = deref(env).total +wrap value;
+fn sum_accept(env: &Sum, value: own u64) -> result: own unit writes(env) {
+  doc "One drain member: folds each drained value into the caller's accumulator through the reference the row declares.";
+  let running = deref(env).total;
+  set deref(env).total = running +wrap value;
   return unit;
 }
 
@@ -15,189 +17,100 @@ actual SumDrain : VectorDrain<u64, Sum> {
   accept = sum_accept;
 }
 
-fn owned_item_id['s](item: &Box<'s, OwnedItem>) -> result: own u64 reads(item) {
-  return deref(deref(item)).id;
+fn owned_item_id(item: &Box<OwnedItem>) -> result: own u64 reads(item) {
+  doc "Reads one field of an owned cell through a reference; a Box's content is its field inner [TYPE-9].";
+  return deref(item).inner.id;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  region {
-    match grow_vector_new::<u64>(store: &uniq heap) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: values) => {
-        region {
-          let first = grow_vector_append::<u64>(values: &uniq values, store: &uniq heap, value: 11_u64);
-          match first {
-            Ok(value: length) => {
-            }
-            Err(error: back) => {
-              return exit_status(code: 70_u8);
-            }
-          }
-        }
-        region {
-          let second = grow_vector_append::<u64>(values: &uniq values, store: &uniq heap, value: 33_u64);
-          match second {
-            Ok(value: length) => {
-            }
-            Err(error: back) => {
-              return exit_status(code: 70_u8);
-            }
-          }
-        }
-        let before_insert = len_of(values.storage);
-        if before_insert >= 1_u64 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-        region {
-          let middle = grow_vector_insert::<u64>(values: &uniq values, store: &uniq heap, index: 1_u64, value: 22_u64);
-          match middle {
-            Ok(value: length) => {
-            }
-            Err(error: back) => {
-              return exit_status(code: 70_u8);
-            }
-          }
-        }
-        let held = len_of(values.storage);
-        if held == 3_u64 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-        let first_value = values.storage[0_u64];
-        let middle_value = values.storage[1_u64];
-        let last_value = values.storage[2_u64];
-        if first_value == 11_u64 {
-        } else {
-          return exit_status(code: 2_u8);
-        }
-        if middle_value == 22_u64 {
-        } else {
-          return exit_status(code: 3_u8);
-        }
-        if last_value == 33_u64 {
-        } else {
-          return exit_status(code: 4_u8);
-        }
-        region {
-          let removed = grow_vector_remove::<u64>(values: &uniq values, index: 1_u64);
-          if removed == 22_u64 {
-          } else {
-            return exit_status(code: 5_u8);
-          }
-        }
-        let sum = Sum(total: 0_u64);
-        region {
-          grow_vector_drain::<SumDrain>(values: &uniq values, env: &uniq sum);
-        }
-        if sum.total == 44_u64 {
-        } else {
-          return exit_status(code: 6_u8);
-        }
-        let empty = len_of(values.storage);
-        if empty == 0_u64 {
-        } else {
-          return exit_status(code: 7_u8);
-        }
-      }
-    }
+fn release_item(item: own Box<OwnedItem>) -> result: own unit pure {
+  doc "There is no release operation: an affine value is released early by moving it into a function that consumes it and ends, which frees this cell here rather than at the caller's scope exit [PROV-6, STOR-3].";
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "The scalar half exercises append, insert, remove and drain; the owning half repeats them over cells so the release ledger covers an element type that owns further storage. Allocation is total [STOR-8], so no operation carries a refusal arm and the program has no 70 exit.";
+  let values = grow_vector_new::<u64>();
+  let first = grow_vector_append::<u64>(values: &values, value: 11_u64);
+  let second = grow_vector_append::<u64>(values: &values, value: 33_u64);
+  let before_insert = values.storage.inner.len;
+  if before_insert == 2_u64 {
+  } else {
+    return exit_status(code: 1_u8);
   }
-  region {
-    match grow_vector_new::<Box<'heap, OwnedItem>>(store: &uniq heap) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: owners) => {
-        let first_item = OwnedItem(id: 101_u64);
-        match heap_box(store: &uniq heap, value: move first_item) {
-          Err(error: item) => {
-            return exit_status(code: 70_u8);
-          }
-          Ok(value: first) => {
-            region {
-              match grow_vector_append::<Box<'heap, OwnedItem>>(values: &uniq owners, store: &uniq heap, value: move first) {
-                Err(error: back) => {
-                  dispose back;
-                  return exit_status(code: 70_u8);
-                }
-                Ok(value: length) => {
-                }
-              }
-            }
-          }
-        }
-        let third_item = OwnedItem(id: 303_u64);
-        match heap_box(store: &uniq heap, value: move third_item) {
-          Err(error: item) => {
-            return exit_status(code: 70_u8);
-          }
-          Ok(value: third) => {
-            region {
-              match grow_vector_append::<Box<'heap, OwnedItem>>(values: &uniq owners, store: &uniq heap, value: move third) {
-                Err(error: back) => {
-                  dispose back;
-                  return exit_status(code: 70_u8);
-                }
-                Ok(value: length) => {
-                }
-              }
-            }
-          }
-        }
-        let before_owned_insert = len_of(owners.storage);
-        if before_owned_insert >= 1_u64 {
-        } else {
-          return exit_status(code: 8_u8);
-        }
-        let second_item = OwnedItem(id: 202_u64);
-        match heap_box(store: &uniq heap, value: move second_item) {
-          Err(error: item) => {
-            return exit_status(code: 70_u8);
-          }
-          Ok(value: second) => {
-            region {
-              match grow_vector_insert::<Box<'heap, OwnedItem>>(values: &uniq owners, store: &uniq heap, index: 1_u64, value: move second) {
-                Err(error: back) => {
-                  dispose back;
-                  return exit_status(code: 70_u8);
-                }
-                Ok(value: length) => {
-                }
-              }
-            }
-          }
-        }
-        let owned_length = len_of(owners.storage);
-        if owned_length == 3_u64 {
-        } else {
-          return exit_status(code: 9_u8);
-        }
-        region {
-          let removed = grow_vector_remove::<Box<'heap, OwnedItem>>(values: &uniq owners, index: 1_u64);
-          if deref(removed).id == 202_u64 {
-          } else {
-            return exit_status(code: 10_u8);
-          }
-          dispose removed;
-        }
-        region {
-          let first_id = owned_item_id(item: &owners.storage[0_u64]);
-          if first_id == 101_u64 {
-          } else {
-            return exit_status(code: 11_u8);
-          }
-        }
-        region {
-          let last_id = owned_item_id(item: &owners.storage[1_u64]);
-          if last_id == 303_u64 {
-          } else {
-            return exit_status(code: 12_u8);
-          }
-        }
-      }
-    }
+  let middle = grow_vector_insert::<u64>(values: &values, index: 1_u64, value: 22_u64);
+  let held = values.storage.inner.len;
+  if held == 3_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let first_value = values.storage.inner[0_u64];
+  let middle_value = values.storage.inner[1_u64];
+  let last_value = values.storage.inner[2_u64];
+  if first_value == 11_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  if middle_value == 22_u64 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  if last_value == 33_u64 {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  let removed = grow_vector_remove::<u64>(values: &values, index: 1_u64);
+  if removed == 22_u64 {
+  } else {
+    return exit_status(code: 5_u8);
+  }
+  let sum = Sum(total: 0_u64);
+  grow_vector_drain::<SumDrain>(values: &values, env: &sum);
+  if sum.total == 44_u64 {
+  } else {
+    return exit_status(code: 6_u8);
+  }
+  let empty = values.storage.inner.len;
+  if empty == 0_u64 {
+  } else {
+    return exit_status(code: 7_u8);
+  }
+  let owners = grow_vector_new::<Box<OwnedItem>>();
+  let first_item = OwnedItem(id: 101_u64);
+  let first_cell = box_new::<OwnedItem>(value: move first_item);
+  let owned_first = grow_vector_append::<Box<OwnedItem>>(values: &owners, value: move first_cell);
+  let third_item = OwnedItem(id: 303_u64);
+  let third_cell = box_new::<OwnedItem>(value: move third_item);
+  let owned_third = grow_vector_append::<Box<OwnedItem>>(values: &owners, value: move third_cell);
+  let before_owned_insert = owners.storage.inner.len;
+  if before_owned_insert == 2_u64 {
+  } else {
+    return exit_status(code: 8_u8);
+  }
+  let second_item = OwnedItem(id: 202_u64);
+  let second_cell = box_new::<OwnedItem>(value: move second_item);
+  let owned_middle = grow_vector_insert::<Box<OwnedItem>>(values: &owners, index: 1_u64, value: move second_cell);
+  let owned_length = owners.storage.inner.len;
+  if owned_length == 3_u64 {
+  } else {
+    return exit_status(code: 9_u8);
+  }
+  let taken = grow_vector_remove::<Box<OwnedItem>>(values: &owners, index: 1_u64);
+  let taken_id = owned_item_id(item: &taken);
+  if taken_id == 202_u64 {
+  } else {
+    release_item(item: move taken);
+    return exit_status(code: 10_u8);
+  }
+  release_item(item: move taken);
+  let first_id = owned_item_id(item: &owners.storage.inner[0_u64]);
+  if first_id == 101_u64 {
+  } else {
+    return exit_status(code: 11_u8);
+  }
+  let last_id = owned_item_id(item: &owners.storage.inner[1_u64]);
+  if last_id == 303_u64 {
+  } else {
+    return exit_status(code: 12_u8);
   }
   return exit_status(code: 0_u8);
 }

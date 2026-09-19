@@ -9,8 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef void (*stencil_entry)(uint64_t, uint64_t, uint64_t, double **, uint64_t *);
-typedef void (*stencil_release)(double *, uint64_t);
+typedef void (*stencil_entry)(uint64_t, uint64_t, uint64_t, double **, uint64_t *, void **);
+/* The owned result is a Box<Array<T>> cell; the adapter hands that cell back
+ * as the retained handle and the release row consumes exactly it. */
+typedef void (*stencil_release)(void *);
 
 static _Noreturn void fail(const char *message) {
     (void)fprintf(stderr, "stencil: %s\n", message);
@@ -95,10 +97,11 @@ static size_t verify_matrix(stencil_entry entry, stencil_release release) {
     }
     double *known_output = NULL;
     uint64_t known_length = UINT64_MAX;
-    entry(5, 5, 2, &known_output, &known_length);
+    void *known_held = NULL;
+    entry(5, 5, 2, &known_output, &known_length, &known_held);
     if (known_length != 25) fail("known output length");
     compared += compare(known, known_output, 25);
-    release(known_output, known_length);
+    release(known_held);
     free(known);
     for (size_t shape = 0; shape < sizeof(shapes) / sizeof(shapes[0]); ++shape) {
         size_t width = shapes[shape][0], height = shapes[shape][1];
@@ -106,10 +109,11 @@ static size_t verify_matrix(stencil_entry entry, stencil_release release) {
             double *expected = oracle(width, height, rounds[round]);
             double *output = NULL;
             uint64_t length = UINT64_MAX;
-            entry(width, height, rounds[round], &output, &length);
+            void *held = NULL;
+            entry(width, height, rounds[round], &output, &length, &held);
             if (length != width * height) fail("wrong output length");
             compared += compare(expected, output, (size_t)length);
-            release(output, length);
+            release(held);
             free(expected);
         }
     }
@@ -117,8 +121,8 @@ static size_t verify_matrix(stencil_entry entry, stencil_release release) {
 }
 
 #if !defined(WF_ORACLE_NO_MAIN) || defined(WF_ORACLE_PERFORMANCE)
-extern void wf_bench_stencil(uint64_t, uint64_t, uint64_t, double **, uint64_t *);
-extern void wf_bench_stencil_release(double *, uint64_t);
+extern void wf_bench_stencil(uint64_t, uint64_t, uint64_t, double **, uint64_t *, void **);
+extern void wf_bench_stencil_release(void *);
 #endif
 
 #ifndef WF_ORACLE_NO_MAIN
@@ -154,20 +158,22 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 const char *const wf_oracle_name = "stencil";
 const char *const wf_oracle_fixture = "width=1024 height=4096 steps=16 initial=squared-position";
 static double *timed_expected, *timed_output;
+static void *timed_held;
 size_t wf_oracle_verify(void) {
     return verify_matrix(wf_bench_stencil, wf_bench_stencil_release);
 }
 void wf_oracle_prepare(void) { timed_expected = oracle(1024, 4096, 16); }
 size_t wf_oracle_call(void) {
     uint64_t length = UINT64_MAX;
-    wf_bench_stencil(1024, 4096, 16, &timed_output, &length);
+    wf_bench_stencil(1024, 4096, 16, &timed_output, &length, &timed_held);
     if (length != 1024 * 4096) fail("timed output extent");
     return (size_t)length;
 }
 size_t wf_oracle_check(void) {
     size_t compared = compare(timed_expected, timed_output, 1024 * 4096);
-    wf_bench_stencil_release(timed_output, compared);
+    wf_bench_stencil_release(timed_held);
     timed_output = NULL;
+    timed_held = NULL;
     return compared;
 }
 void wf_oracle_finish(void) { free(timed_expected); timed_expected = NULL; }

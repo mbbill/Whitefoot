@@ -357,7 +357,7 @@ fn key_advance<Key<K, E>>(source: &Box<Slots<Slot<K>>>, target: &Box<Slots<Slot<
   return inspected, transfers;
 }
 
-fn key_rehash_all<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, count: own u64, env: &E) -> (code: own u8, examined: own u64, moved: own u64) reads(env), writes(deref(slots)) contract {
+fn key_rehash_all<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, count: own u64, env: &E) -> (code: own u8, examined: own u64, moved: own u64) reads(env), writes(slots) contract {
   requires deref(slots).inner.len <= 1048576_u64;
   requires count >= deref(slots).inner.len;
   requires count <= 2097152_u64;
@@ -492,7 +492,7 @@ fn advance(source: &Box<Slots<Slot<u64>>>, target: &Box<Slots<Slot<u64>>>, progr
   return examined, moved;
 }
 
-fn rehash_all(slots: &Box<Slots<Slot<u64>>>, count: own u64) -> (code: own u8, examined: own u64, moved: own u64) writes(deref(slots)) contract {
+fn rehash_all(slots: &Box<Slots<Slot<u64>>>, count: own u64) -> (code: own u8, examined: own u64, moved: own u64) writes(slots) contract {
   requires deref(slots).inner.len <= 1048576_u64;
   requires count >= deref(slots).inner.len;
   requires count <= 2097152_u64;
@@ -506,7 +506,8 @@ fn create_table(count: own u64) -> result: own Box<Slots<Slot<u64>>> pure contra
   requires count <= 2097152_u64;
   ensures result.inner.len == count;
 } {
-  return key_create::<u64>(count: count);
+  let made = key_create::<u64>(count: count);
+  return move made;
 }
 
 fn read_slot(slot: &Slot<u64>) -> (control: own u8, key: own u64, id: own u64) reads(slot) {

@@ -183,11 +183,11 @@ fn main() -> status: own ExitStatus pure {
     return exit_status(code: 3_u8);
   }
   let first = read(values: &entries, outer: 0_u64, row: 0_u64, column: 1_u64);
-  let last = read(values: &entries, outer: 1_u64, row: 1_u64, column: 1_u64);
+  let trailing = read(values: &entries, outer: 1_u64, row: 1_u64, column: 1_u64);
   if first != 23_u64 {
     return exit_status(code: 4_u8);
   }
-  if last != 53_u64 {
+  if trailing != 53_u64 {
     return exit_status(code: 5_u8);
   }
   let projected = read_row(values: &stored_entry.samples[1_u64], index: 0_u64);
@@ -1005,7 +1005,7 @@ fn general_run_elements_preserve_array_places_and_standing_extents() {
   place_back(window: &rows, value: move row);
   let width = rows[0_u64].len;
   let capacity = rows[0_u64].cap;
-  let room = rows[0_u64].room;
+  let spare = rows[0_u64].room;
   set rows[0_u64][1_u64] = 9_u64;
   if rows[0_u64][0_u64] != 7_u64 {
     return exit_status(code: 1_u8);
@@ -1019,7 +1019,7 @@ fn general_run_elements_preserve_array_places_and_standing_extents() {
   if capacity != 2_u64 {
     return exit_status(code: 4_u8);
   }
-  if room != 0_u64 {
+  if spare != 0_u64 {
     return exit_status(code: 6_u8);
   }
   return exit_status(code: 0_u8);

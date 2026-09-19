@@ -3,7 +3,11 @@ use super::support::{compile_and_run, compile_program};
 #[test]
 fn fir_filter_executes_with_nested_fixed_array_state() {
     let llvm = compile_program("fir_filter.wf");
-    assert!(llvm.contains("getelementptr inbounds { [8 x double]"));
+    // Re-derived for v0.60: the delay line is a `Slots<f64, 8>` and its block
+    // is header-first, `{ i64 len, [8 x double] slots }` [WIN-1, STOR-1], so
+    // the frame slot the program addresses carries that shape rather than the
+    // bare element array v0.59's fixed run emitted.
+    assert!(llvm.contains("getelementptr inbounds { { i64, [8 x double] }"));
     // Both enclosing records are addressed directly; element updates no
     // longer require reconstructing the DelayLine and FirFilter values.
     assert!(llvm.contains("getelementptr inbounds %wf.t0"));

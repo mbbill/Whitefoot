@@ -1,6 +1,6 @@
 use super::support::{compile_and_run, compile_program};
 
-/// [BLK-1, BLK-2, BLK-3] the two runs at execution: a formation row, the four
+/// [WIN-1, OP-10, MSR-1] the ring at execution: a construction row, the four
 /// boundary operations over the back and the front, and the window subscript
 /// at a wrapped window.
 ///
@@ -11,10 +11,13 @@ use super::support::{compile_and_run, compile_program};
 #[test]
 fn a_run_is_a_queue_whose_window_wraps() {
     let llvm = compile_program("run_queue.wf");
-    // The window subscript is the one conditional subtract [BLK-1] fixes,
-    // and the boundary store goes through the run's own frame slot.
+    // The window subscript is the one conditional subtract [WIN-1]'s
+    // coordinate system fixes, and the boundary store goes through the ring's
+    // own frame slot. Re-derived for v0.60: a `Ring`'s block is header-first,
+    // `{ i64 len, i64 head, [4 x i8] slots }`, so one address computation
+    // serves the inline and the boxed placement alike [STOR-1].
     assert!(llvm.contains("select i1"));
-    assert!(llvm.contains("getelementptr inbounds { [4 x i8], i64, i64 }"));
+    assert!(llvm.contains("getelementptr inbounds { { i64, i64, [4 x i8] }"));
 
     let output = compile_and_run(&llvm);
     assert_eq!(output.status.code(), Some(0));
@@ -22,26 +25,28 @@ fn a_run_is_a_queue_whose_window_wraps() {
     assert!(output.stderr.is_empty());
 }
 
-/// [VIEW-1, VIEW-2, PROV-3, S27, S31] the view half of the container design,
-/// executing: a view formed over a run, the shared view used twice with no
-/// `move`, an append to the run after that view's last use, a view of the same
-/// run drained to empty, and an exclusive view whose shared child reborrow
-/// reads what the parent wrote.
+/// [REF-4, MSR-1, OWN-7] the range-reference half of the container design,
+/// executing: a range reference formed over a window, that reference read
+/// twice, an append to the window after its last use, a range reference of the
+/// same window drained to empty, and a child range that reads what the parent
+/// wrote.
 ///
-/// The program reports through its own exit code, so a descriptor that pointed
-/// at the wrong slot is visible rather than silent: it reads the viewed length
-/// back from the run, sums the window twice through the copy view, sums it
-/// again after the append, and reads the byte an element write through the
-/// exclusive view left. The run's window never wraps, which is what the
-/// formation row's own requirement `head_of(vector) <= room_of(vector)`
-/// [BLK-0] admits it for; the drained run satisfies that requirement from the
-/// standing `head_of <= cap_of` alone.
+/// Retired subject: the view kinds [VIEW-1, VIEW-2] and their permission
+/// markers. v0.60 has no `Slice<T>`, no `&uniq` and no reborrow: [REF-4]'s
+/// `&[T]` is a reference kind admitted only in parameter position, whose one
+/// measure is `len`, equal to `hi - lo`.
+///
+/// The program reports through its own exit code, so a range that pointed at
+/// the wrong slot is visible rather than silent: it reads the window's length,
+/// sums the window twice through the range reference, sums it again after the
+/// append, and reads the byte an element write through a reference left.
 #[test]
 fn a_run_is_viewable_and_a_copy_view_dies_at_its_last_use() {
     let llvm = compile_program("run_views.wf");
-    // The view of an inline run is the address of slot `head` and the word
-    // `len`, taken in the run's own frame slot [VIEW-2].
-    assert!(llvm.contains("getelementptr inbounds { [4 x i8], i64, i64 }"));
+    // A range reference over an inline window is the address of the first
+    // element of the range and the element count [REF-4, MSR-1], taken in the
+    // window's own frame slot, whose block is header-first [STOR-1].
+    assert!(llvm.contains("getelementptr inbounds { { i64, [4 x i8] }"));
 
     let output = compile_and_run(&llvm);
     assert_eq!(output.status.code(), Some(0));
@@ -49,23 +54,23 @@ fn a_run_is_viewable_and_a_copy_view_dies_at_its_last_use() {
     assert!(output.stderr.is_empty());
 }
 
-/// [BLK-2, PROV-1, MSR-1] the store-backed half of the two runs at execution:
-/// one bump extent reserved in the entry's own frame, the proved take and the
-/// checked take over it, and the refusal a take the extent cannot hold gets.
+/// [WIN-1, OP-10, MSR-1] the bump-allocator shape at execution: one
+/// constant-capacity window resident in the entry's own frame, two runs carved
+/// off its back with `place_back`, and the carve its own `room` measure
+/// refuses.
 ///
-/// The program checks the store as well as the runs it hands out. It reads the
-/// extent's own measures before and after each take, so a cursor that advanced
-/// by the wrong `advance<T>(count)` reports a nonzero code; it observes that a
-/// refused take leaves the cursor exactly where it was, which is the relation
-/// the `None` arm publishes; and it fills a taken run through the boundary row
-/// and reads the window back, so a descriptor pointing at the wrong byte of the
-/// extent is visible rather than silent.
+/// Retired subject: the arena and its `advance<T>(count)` take [BLK-2,
+/// STOR-4]. v0.60 has no arenas and no reservation of its own; a
+/// constant-capacity `Slots` is frame-resident with its slots inline
+/// [STOR-1], and the bump is `place_back` with a range reference as the run it
+/// hands out. The program still reads the window's own measures before and
+/// after each carve, and still observes that the refused carve leaves `len`
+/// exactly where it was.
 #[test]
 fn a_bump_extent_hands_out_runs_and_refuses_the_one_it_cannot_hold() {
     let llvm = compile_program("arena_workspace.wf");
-    // The extent is one frame reservation at its own written alignment, and
-    // the take is pointer arithmetic inside it: no allocation call is emitted
-    // [BLK-2, STOR-1].
+    // The window is frame-resident with its slots inline, and the carve is
+    // pointer arithmetic inside it: no allocation call is emitted [STOR-1].
     assert!(llvm.contains("getelementptr inbounds i8, ptr"));
     assert!(!llvm.contains("call ptr @malloc"));
 
@@ -75,15 +80,16 @@ fn a_bump_extent_hands_out_runs_and_refuses_the_one_it_cannot_hold() {
     assert!(output.stderr.is_empty());
 }
 
-/// [BLK-1, MSR-3, MSR-5, SET-2] the fixed-run half of the container design's
-/// own library, executing: the two constructions, the transposing removal, the
-/// two checked boundary forms, and the drain that returns a wrapped window to
-/// its origin.
+/// [WIN-1, MSR-3, MSR-5, OP-10] the constant-capacity half of the container
+/// design's own library, executing: the two constructions, the transposing
+/// removal, the two checked boundary forms, and the drain that returns a
+/// wrapped window to its origin.
 ///
 /// Every one of the six is written in the design's spelling and proves its own
 /// contract, so the test is evidence for the surface as much as for the
-/// lowering: `take_at` needs the element-position `replace` and the arithmetic
-/// requirement `at + 2_u64 <= len_of(vector)`; `try_place` and `try_take` need
+/// lowering: `take_at` needs [OP-11]'s `swap` at an element position and the
+/// arithmetic requirement `at + 2_u64 <= vector.len`; `try_place` and
+/// `try_take` need
 /// a parameter's measure in an `ensures` to denote its entry datum; `vacant`
 /// needs a run at an unbounded element type; and `rebase` needs the rebind that
 /// carries `spare`'s measures onto `built`. The program checks what it built —
@@ -93,8 +99,8 @@ fn a_bump_extent_hands_out_runs_and_refuses_the_one_it_cannot_hold() {
 #[test]
 fn the_fixed_run_library_proves_and_runs() {
     let llvm = compile_program("fixed_run_library.wf");
-    // The element-position `replace` goes through the window, so the store's
-    // offset is the same conditional subtract a read uses [BLK-1].
+    // The element-position `swap` goes through the window, so the store's
+    // offset is the same conditional subtract a read uses [WIN-1].
     assert!(llvm.contains("select i1"));
 
     let output = compile_and_run(&llvm);
@@ -103,16 +109,15 @@ fn the_fixed_run_library_proves_and_runs() {
     assert!(output.stderr.is_empty());
 }
 
-/// [S22, S23, PROV-1, PROV-6, BLK-2] the general store at execution: the entry
-/// receives its provider, the take is a real allocation, and the release is a
-/// real free.
+/// [STOR-8, STOR-3, PROV-6, OP-13] the one heap at execution: the construction
+/// is a real allocation and the compiler-derived release is a real free.
 ///
-/// The program is the whole path in one source: an ordinary Heap parameter
-/// supplies the provider, `heap_vector` takes a run of four slots from it, a counted
-/// loop fills the run under the three invariants 3.L.3 writes, and a helper
-/// holding the provider adds the bytes and lets the run reach its scope exit.
-/// D3 is what makes that last step legal, and the helper's own row carries the
-/// `writes(store)` the derived release spends.
+/// Retired subject: the store surface [BLK-2] and its provider parameter. The
+/// heap is ambient and has no source spelling [STOR-8], so the program is the
+/// whole path in one source with no `Heap` parameter and no `writes(store)`
+/// row: `box_slots_new` takes a window of four slots, a counted loop fills it
+/// under the invariants the writer states, and a helper adds the bytes and
+/// lets the cell reach its scope exit.
 ///
 /// The exit code is the sum, so a slot addressed wrongly reports a code rather
 /// than passing quietly; the two assertions below are the allocator pair,
@@ -120,8 +125,8 @@ fn the_fixed_run_library_proves_and_runs() {
 #[test]
 fn the_general_store_hands_out_a_run_and_takes_it_back() {
     let llvm = compile_program("heap_run.wf");
-    // One take, one free, and the free is the run's own backing release
-    // emitted at the scope exit that owns it [PROV-6, BLK-2].
+    // One construction, one free, and the free is the cell's own release
+    // emitted at the scope exit that owns it [PROV-6, STOR-3].
     assert_eq!(llvm.matches("call ptr @malloc").count(), 1);
     assert!(llvm.contains("call void @free"));
 
@@ -131,13 +136,12 @@ fn the_general_store_hands_out_a_run_and_takes_it_back() {
     assert!(output.stderr.is_empty());
 }
 
-/// [BLK-1, PROV-6, S20, TYPE-5] the one-level lift at execution, under the two
-/// nominals 3.L.4 writes it with.
+/// [WIN-1, PROV-6, TYPE-5] the one-level lift at execution, under the two
+/// nominals the design writes it with.
 ///
-/// `BlockPool['s]` holds the free list and `linear struct Lease['s]` holds the
-/// leased run, so this is the design's pool entire: a nominal generic over its
-/// store, three operations generic over the same store, eight arena-backed
-/// runs carved into one run of runs, a lease taken off the back boundary and
+/// `BlockPool` holds the free list and `linear struct Lease` holds the leased
+/// run, so this is the design's pool entire: eight frame-resident windows
+/// carved into one window of windows, a lease taken off the back boundary and
 /// returned to a free list `pool_release` *proved* had room. The `linear`
 /// modifier is what makes the return unavoidable — the one path that does not
 /// return the lease has to take it apart, and dropping it is refused.
@@ -149,12 +153,14 @@ fn the_general_store_hands_out_a_run_and_takes_it_back() {
 #[test]
 fn a_run_of_store_backed_runs_is_a_block_pool() {
     let llvm = compile_program("block_pool.wf");
-    // One slot holds a whole four-word descriptor, so the run's storage is
-    // eight of them and the element load is that aggregate [BLK-1, OP-9].
-    assert!(llvm.contains("[8 x { ptr, i64, i64, i64 }]"));
-    // The blocks come out of the extent's own frame reservation: no
-    // allocation call is emitted for a bump take [BLK-2, STOR-1].
-    assert!(!llvm.contains("call ptr @malloc"));
+    // One slot holds a whole constant-capacity block, so the outer window's
+    // storage is eight of them and the element load is that aggregate
+    // [WIN-1, OP-9].
+    assert!(llvm.contains("[8 x %wf.t0]"));
+    // Re-derived for v0.60: the blocks themselves stay frame-resident, and the
+    // one heap object the program owns is the boxed run the entry hands to the
+    // lease, so exactly one allocation is emitted [STOR-1, STOR-8].
+    assert_eq!(llvm.matches("call ptr @malloc").count(), 1);
 
     let output = compile_and_run(&llvm);
     assert_eq!(output.status.code(), Some(0));

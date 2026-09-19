@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn the_executable_caller_proves_the_selected_functions_contract() {
-        let source = b"fn main['h](heap: own Heap<'h>) -> result: own unit pure contract {\n  requires 0_u64 <= 1_u64;\n} {\n  return unit;\n}\n";
+        let source = b"fn main() -> result: own unit pure contract {\n  requires 0_u64 <= 1_u64;\n} {\n  return unit;\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry-contract.wf", source)],
             CompilerLimits::default(),
@@ -668,7 +668,7 @@ mod tests {
 
     #[test]
     fn an_uninhabited_function_is_a_library_without_an_unproved_executable_call() {
-        let source = b"fn main['h](heap: own Heap<'h>) -> result: own unit pure contract {\n  requires 1_u64 <= 0_u64;\n} {\n  return unit;\n}\n";
+        let source = b"fn main() -> result: own unit pure contract {\n  requires 1_u64 <= 0_u64;\n} {\n  return unit;\n}\n";
         let llvm = compile(
             &[SourceInput::new("uninhabited-entry.wf", source)],
             CompilerLimits::default(),
@@ -727,7 +727,7 @@ mod tests {
         let detail = failure.detail();
         // The set as spellings, in the grammar's own order.
         assert!(
-            detail.contains(r#"expected: ["{", ";", ")", ",", "<", ">", "["#),
+            detail.contains(r#"expected: [";", "{", ")", ",", "<", ">", "["#),
             "{detail}"
         );
         // The line the writer wrote, and where in it the parser stopped.
@@ -742,7 +742,10 @@ mod tests {
         for (name, source, stage, rule) in [
             (
                 "local-target-formation.wf",
-                b"fn main() -> status: own ExitStatus pure {\n  invariant bad: 0_u64 == 0_u64;\n  return exit_status(code: 0_u8);\n}\n"
+                // v0.60's [INV-1] admits `==` in an invariant target and
+                // refuses `!=` in either position, which is the reverse of
+                // the v0.59 row this fixture carried.
+                b"fn main() -> status: own ExitStatus pure {\n  invariant bad: 0_u64 != 0_u64;\n  return exit_status(code: 0_u8);\n}\n"
                     .as_slice(),
                 CompilationStage::Semantics,
                 "INV-1",
@@ -807,22 +810,25 @@ mod tests {
         assert!(detail.contains("/absolute/path/report.wf:3:"), "{detail}");
     }
 
-    /// A child loan ends before the following ordinary statement.
-    /// Removing the old scope rejection must not hide a later missing range
-    /// proof; the same source with that requirement supplied compiles.
+    /// An ordinary reference parameter keeps its later call requirement.
+    ///
+    /// Retired subject: the child reborrow inside a `region { .. }` block,
+    /// which ended a loan before the following ordinary statement. v0.60 has
+    /// no regions and no reborrows [REF-1, REF-3]; the successor kept here is
+    /// the second half this case always carried — a missing `open_file` range
+    /// proof is still reported at the call and is still repaired by writing
+    /// the requirement, not by adding a scope.
     #[test]
-    fn child_reborrow_regions_keep_values_and_later_requirements() {
-        let source = br#"fn walk['c](factory: &uniq HandleFactory, root: &'c DirectoryRead, name: &'c Slice<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
-  region {
-    match open_file(factory: &uniq deref(factory), root: root, name: name, start: 0_u64, end: 1_u64) {
-      Ok(value: handle) => {
-        close_read(factory: &uniq deref(factory), file: move handle);
-      }
-      Err(error: problem) => {
-      }
+    fn a_reference_parameter_keeps_its_later_call_requirement() {
+        let source = br#"fn walk(factory: &HandleFactory, root: &DirectoryRead, name: &[u8]) -> result: own u8 reads(root), reads(name), writes(factory) {
+  match open_file(factory: factory, root: root, name: name, start: 0_u64, end: 1_u64) {
+    Ok(value: handle) => {
+      close_read(factory: factory, file: move handle);
     }
-    let later = 0_u8;
+    Err(error: problem) => {
+    }
   }
+  let later = 0_u8;
   return 0_u8;
 }
 "#;
@@ -884,7 +890,7 @@ fn main() -> status: own ExitStatus pure {
         // [TYPE-6], reached in the resolver.
         let collision = br#"fn main() -> status: own ExitStatus pure {
   let permit = 1_u64;
-  region {
+  if permit == 1_u64 {
     let permit = 2_u64;
   }
   return exit_status(code: 0_u8);
@@ -962,17 +968,17 @@ fn main() -> status: own ExitStatus pure {
 
     const TREE_PRELUDE: &str = "enum BoxNode {
   Leaf(w: u64);
-  Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
+  Branch(left: Box<BoxNode>, right: Box<BoxNode>, w: u64);
 }
 
-fn boxed_leaf(w: own u64) -> result: own box<BoxNode> pure {
+fn boxed_leaf(w: own u64) -> result: own Box<BoxNode> pure {
   let leaf = Leaf(w: w);
-  return box_new(move leaf);
+  return box_new::<BoxNode>(value: move leaf);
 }
 
-fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> pure {
+fn boxed_branch(left: own Box<BoxNode>, right: own Box<BoxNode>) -> result: own Box<BoxNode> pure {
   let branch = Branch(left: move left, right: move right, w: 0_u64);
-  return box_new(move branch);
+  return box_new::<BoxNode>(value: move branch);
 }
 
 ";
@@ -984,14 +990,14 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
     #[test]
     fn the_permission_ledger_reports_eligible_pairs_and_their_chains() {
         let eligible = format!(
-            "{TREE_PRELUDE}fn fold(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
-  match deref(deref(node)) {{
+            "{TREE_PRELUDE}fn fold(node: &Box<BoxNode>) -> result: own u64 writes(node) {{
+  match deref(node).inner {{
     Leaf(w: leaf_w) => {{
       return deref(leaf_w);
     }}
     Branch(left: l, right: r, w: slot) => {{
-      let a = fold(node: move l);
-      let b = fold(node: move r);
+      let a = fold(node: l);
+      let b = fold(node: r);
       let total = imax(a, b);
       set deref(slot) = total;
       return total;
@@ -1003,9 +1009,7 @@ fn main() -> status: own ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
-  region {{
-    let total = fold(node: &uniq branch0);
-  }}
+  let total = fold(node: &branch0);
   return exit_status(code: 0_u8);
 }}
 "
@@ -1028,24 +1032,24 @@ fn main() -> status: own ExitStatus pure {{
         // `scaled` makes the fact explicit, the semantic checker verifies it,
         // and lowering erases it before the permission table is consumed.
         let proved = format!(
-            "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 reads(values) {{
+            "{TREE_PRELUDE}fn scaled(values: own Array<u64, 8>, index: own u64) -> result: own u64 pure {{
   let size = values.len;
   let bounded = iand(index, 7_u64);
   invariant index_in_range: bounded <= 7_u64;
   return values[bounded];
 }}
 
-fn bubble(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
-  match deref(deref(node)) {{
+fn bubble(node: &Box<BoxNode>) -> result: own u64 writes(node) {{
+  match deref(node).inner {{
     Leaf(w: leaf_w) => {{
       let w = deref(leaf_w);
-      let values = array_new::<u64, 8>(1_u64);
+      let values = array_filled::<u64, 8>(value: 1_u64);
       let touched = scaled(values: move values, index: w);
       return w;
     }}
     Branch(left: l, right: r, w: slot) => {{
-      let a = bubble(node: move l);
-      let b = bubble(node: move r);
+      let a = bubble(node: l);
+      let b = bubble(node: r);
       let total = a +wrap b;
       set deref(slot) = total;
       return total;
@@ -1057,25 +1061,57 @@ fn main() -> status: own ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
-  region {{
-    let total = bubble(node: &uniq branch0);
-    if total == 7_u64 {{
-    }} else {{
-      return exit_status(code: 1_u8);
-    }}
+  let total = bubble(node: &branch0);
+  if total == 7_u64 {{
+  }} else {{
+    return exit_status(code: 1_u8);
   }}
   return exit_status(code: 0_u8);
 }}
 "
         );
         let ledger = ledger_of("bubble.wf", proved.as_bytes());
+        // `scaled`'s own body is reported first, in source order: its proof
+        // statement joins the chain the two preceding `let`s form, and its
+        // array construction and consuming call are the pair that follows.
         assert_eq!(
             ledger[0],
-            "PAR permitted   bubble.wf:32  pair(bubble, bubble)  eligible"
+            "PAR chain       bubble.wf:17  run(a let statement, a let statement, \
+             a proof statement)  3 members through line 19"
         );
         assert_eq!(
             ledger[1],
+            "PAR permitted   bubble.wf:26  pair(a let statement, array_filled)  eligible"
+        );
+        assert_eq!(
+            ledger[2],
+            "PAR chain       bubble.wf:26  run(a let statement, array_filled)  \
+             2 members through line 27"
+        );
+        assert_eq!(
+            ledger[3],
+            "PAR denied      bubble.wf:27  pair(array_filled, scaled)  condition 1: \
+             the write of s1 overlaps the write of s2 at \
+             let values = array_filled::<u64, 8>(value: 1_u64); vs move values"
+        );
+        assert_eq!(
+            ledger[4],
+            "PAR denied      bubble.wf:28  pair(scaled, a return statement)  condition 2: \
+             the exit edge of s2 may skip the statement written after it"
+        );
+        assert_eq!(
+            ledger[5],
+            "PAR permitted   bubble.wf:32  pair(bubble, bubble)  eligible"
+        );
+        assert_eq!(
+            ledger[6],
             "PAR chain       bubble.wf:32  run(bubble, bubble)  2 members through line 33"
+        );
+        assert_eq!(
+            ledger[7],
+            "PAR denied      bubble.wf:33  pair(bubble, a let statement)  condition 1: \
+             the write of s1 overlaps the operand read of s2 at \
+             let b = bubble(node: r); vs let total = a +wrap b;"
         );
         assert!(
             !ledger.iter().any(|line| line.contains("not-actualizable")),
@@ -1089,18 +1125,26 @@ fn main() -> status: own ExitStatus pure {{
         // so those lines follow the recursive ones and the file is fully
         // reported.
         assert_eq!(
-            ledger[2],
+            ledger[8],
             "PAR permitted   bubble.wf:42  pair(boxed_leaf, boxed_leaf)  eligible"
         );
         assert_eq!(
-            ledger[3],
+            ledger[9],
             "PAR chain       bubble.wf:42  run(boxed_leaf, boxed_leaf)  2 members through line 43"
         );
         assert_eq!(
-            ledger[4],
-            "PAR denied      bubble.wf:43  pair(boxed_leaf, boxed_branch)  condition 1: the operands of s2 read what s1 defines"
+            ledger[10],
+            "PAR denied      bubble.wf:43  pair(boxed_leaf, boxed_branch)  condition 1: \
+             the write of s1 overlaps the write of s2 at \
+             let leaf1 = boxed_leaf(w: 4_u64); vs move leaf1"
         );
-        assert_eq!(ledger.len(), 5);
+        assert_eq!(
+            ledger[11],
+            "PAR denied      bubble.wf:44  pair(boxed_branch, bubble)  condition 1: \
+             the write of s1 overlaps the write of s2 at \
+             let branch0 = boxed_branch(left: move leaf0, right: move leaf1); vs &branch0"
+        );
+        assert_eq!(ledger.len(), 12);
     }
 
     /// One denial line per numbered condition, each citing that condition and
@@ -1108,9 +1152,12 @@ fn main() -> status: own ExitStatus pure {{
     /// wrong condition, or with an empty citation, fails here.
     #[test]
     fn the_permission_ledger_names_the_condition_that_refused_each_pair() {
-        // Condition 2: two `&uniq` actuals resolve to one place, so the line
-        // has to name both actuals as the writer wrote them.
-        let overlapping = b"fn bump(slot: &uniq u64) -> result: own u64 reads(slot), writes(slot) {
+        // Condition 1: two reference actuals resolve to one place, so the line
+        // has to name both actuals as the writer wrote them. v0.60 has no
+        // permission marker, so what the pair rule sees is two writes of one
+        // storage rather than two exclusive loans, and the overlap is
+        // reported under condition 1 [REF-1, EFF-1, PAR-1].
+        let overlapping = b"fn bump(slot: &u64) -> result: own u64 writes(slot) {
   let seen = deref(slot);
   set deref(slot) = 7_u64;
   return seen;
@@ -1118,19 +1165,25 @@ fn main() -> status: own ExitStatus pure {{
 
 fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
-  region {
-    let lo = bump(slot: &uniq cell);
-    let hi = bump(slot: &uniq cell);
-    let total = imax(lo, hi);
-  }
+  let lo = bump(slot: &cell);
+  let hi = bump(slot: &cell);
+  let total = imax(lo, hi);
   return exit_status(code: 0_u8);
 }
 ";
         assert_eq!(
             ledger_of("bump.wf", overlapping),
             vec![
-                "PAR denied      bump.wf:10  pair(bump, bump)  condition 2: the exclusive loan of s1 overlaps the exclusive loan of s2 at &uniq cell vs &uniq cell"
-                    .to_owned()
+                "PAR denied      bump.wf:8  pair(a let statement, bump)  condition 1: \
+                 the write of s1 overlaps the write of s2 at let cell = 1_u64; vs &cell"
+                    .to_owned(),
+                "PAR denied      bump.wf:9  pair(bump, bump)  condition 1: \
+                 the write of s1 overlaps the write of s2 at &cell vs &cell"
+                    .to_owned(),
+                "PAR denied      bump.wf:10  pair(bump, a let statement)  condition 1: \
+                 the write of s1 overlaps the operand read of s2 at \
+                 let hi = bump(slot: &cell); vs let total = imax(lo, hi);"
+                    .to_owned(),
             ]
         );
 
@@ -1155,27 +1208,29 @@ fn main() -> status: own ExitStatus pure {
             vec![
                 "PAR permitted   row.wf:6  pair(release_read_file, release_read_file)  eligible".to_owned(),
                 "PAR chain       row.wf:6  run(release_read_file, release_read_file)  2 members through line 7".to_owned(),
+                "PAR denied      row.wf:7  pair(release_read_file, a return statement)  \
+                 condition 2: the exit edge of s2 may skip the statement written after it"
+                    .to_owned(),
             ]
         );
 
-        // Condition 4: a `propagate` is never a window member itself [PAR-1],
-        // so the one shape that still reaches condition 4 in the ledger is an
-        // interposed `propagate` whose Err edge leaves the function, standing
-        // between two ordinary calls the sequential execution would not
-        // otherwise let skip past it.
+        // The `propagate` edge: a `propagate` is never a window member itself
+        // [PAR-1], and the ledger now reports its Err edge under condition 2
+        // — the edge condition — once for each adjacent pair it stands in
+        // rather than once for the two ordinary calls it separates.
         let propagating = b"fn peek(slot: &u8) -> result: own u64 reads(slot) {
   return cvt::<u8, u64>(deref(slot));
 }
 
-fn stamp(slot: &uniq u8) -> result: own u64 writes(slot) {
+fn stamp(slot: &u8) -> result: own u64 writes(slot) {
   set deref(slot) = 9_u8;
   return 1_u64;
 }
 
-fn probe['o](outcome: own Result<u8, NarrowError>, a: &uniq 'o u8, b: &'o u8) -> result: own Result<unit, NarrowError> reads(b), writes(a) {
+fn probe(outcome: own Result<u8, NarrowError>, a: &u8, b: &u8) -> result: own Result<unit, NarrowError> reads(b), writes(a) {
   let seen = peek(slot: b);
   let narrowed = propagate outcome;
-  let stamped = stamp(slot: move a);
+  let stamped = stamp(slot: a);
   return Ok<unit, NarrowError>(value: unit);
 }
 
@@ -1186,8 +1241,15 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("propagate.wf", propagating),
             vec![
-                "PAR denied      propagate.wf:11  pair(peek, stamp)  condition 4: the Err edge of interposed statement 1 skips s2"
-                    .to_owned()
+                "PAR denied      propagate.wf:11  pair(peek, a propagate statement)  \
+                 condition 2: the Err edge of s2 may skip the statement written after it"
+                    .to_owned(),
+                "PAR denied      propagate.wf:12  pair(a propagate statement, stamp)  \
+                 condition 2: the Err edge of s1 may skip the statement written after it"
+                    .to_owned(),
+                "PAR denied      propagate.wf:13  pair(stamp, a return statement)  \
+                 condition 2: the exit edge of s2 may skip the statement written after it"
+                    .to_owned(),
             ]
         );
     }
@@ -1231,9 +1293,12 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("counting.wf", source),
             vec![
+                "PAR chain       counting.wf:2  run(a let statement, a let statement)  \
+                 2 members through line 3"
+                    .to_owned(),
                 "PAR loop        counting.wf:16  loop  permitted   eligible; \
                  one accumulator under +wrap"
-                    .to_owned()
+                    .to_owned(),
             ]
         );
     }
@@ -1261,6 +1326,9 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("folding.wf", source),
             vec![
+                "PAR chain       folding.wf:2  run(a let statement, a let statement)  \
+                 2 members through line 3"
+                    .to_owned(),
                 "PAR loop        folding.wf:4  loop  denied      condition 1: the loop writes \
                  storage outliving the iteration that no exactly associative operation reduces, \
                  at set total = fadd.strict(total, step);"
@@ -1282,9 +1350,12 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("folding.wf", integral),
             vec![
+                "PAR chain       folding.wf:2  run(a let statement, a let statement)  \
+                 2 members through line 3"
+                    .to_owned(),
                 "PAR loop        folding.wf:4  loop  permitted   eligible; \
                  one accumulator under +wrap"
-                    .to_owned()
+                    .to_owned(),
             ]
         );
     }
@@ -1294,7 +1365,8 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn a_proven_counted_binder_buffer_map_is_permitted() {
         let source = b"fn main() -> status: own ExitStatus pure {
-  let out = buffer_new(64_u64, 0_u64);
+  let values = array_filled::<u64, 64>(value: 0_u64);
+  let out = slots_from_array::<u64, 64>(values: move values);
   for @fill (i in 0_u64..64_u64) {
     set out[i] = i *wrap i;
   }
@@ -1304,8 +1376,15 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("mapping.wf", source),
             vec![
-                "PAR loop        mapping.wf:3  loop  permitted   eligible; no accumulator"
-                    .to_owned()
+                "PAR denied      mapping.wf:2  pair(array_filled, slots_from_array)  \
+                 condition 1: the write of s1 overlaps the write of s2 at \
+                 let values = array_filled::<u64, 64>(value: 0_u64); vs move values"
+                    .to_owned(),
+                "PAR denied      mapping.wf:3  pair(slots_from_array, a for loop)  \
+                 condition 1: s2 is a for loop"
+                    .to_owned(),
+                "PAR loop        mapping.wf:4  loop  permitted   eligible; no accumulator"
+                    .to_owned(),
             ]
         );
     }
@@ -1323,7 +1402,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn a_counted_loop_whose_callee_writes_carried_state_is_denied_by_condition_two() {
         let source =
-            b"fn accum(slot: &uniq f64, x: own f64) -> result: own u64 reads(slot), writes(slot) {
+            b"fn accum(slot: &f64, x: own f64) -> result: own u64 writes(slot) {
   set deref(slot) = fadd.strict(deref(slot), x);
   let bits = reinterpret::<f64, u64>(deref(slot));
   return iand(bits, 1_u64);
@@ -1333,7 +1412,7 @@ fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    let one = accum(slot: &uniq total, x: 0.5_f64);
+    let one = accum(slot: &total, x: 0.5_f64);
     set count = count +wrap one;
   }
   return exit_status(code: 0_u8);
@@ -1342,10 +1421,17 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("carrying.wf", source),
             vec![
-                "PAR loop        carrying.wf:10  loop  denied      condition 2: an iteration \
-                 holds an exclusive loan on storage the iteration does not introduce, \
-                 at &uniq total"
-                    .to_owned()
+                "PAR chain       carrying.wf:8  run(a let statement, a let statement)  \
+                 2 members through line 9"
+                    .to_owned(),
+                "PAR loop        carrying.wf:10  loop  denied      condition 2: the body \
+                 writes storage that is neither introduced by the iteration nor the \
+                 accumulator, at &total"
+                    .to_owned(),
+                "PAR denied      carrying.wf:11  pair(accum, a set statement)  condition 1: \
+                 the write of s1 overlaps the operand read of s2 at \
+                 let one = accum(slot: &total, x: 0.5_f64); vs set count = count +wrap one;"
+                    .to_owned(),
             ]
         );
 
@@ -1369,9 +1455,16 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("carrying.wf", reading),
             vec![
+                "PAR chain       carrying.wf:7  run(a let statement, a let statement)  \
+                 2 members through line 8"
+                    .to_owned(),
                 "PAR loop        carrying.wf:9  loop  permitted   eligible; \
                  one accumulator under +wrap"
-                    .to_owned()
+                    .to_owned(),
+                "PAR denied      carrying.wf:10  pair(weigh, a set statement)  condition 1: \
+                 the write of s1 overlaps the operand read of s2 at \
+                 let one = weigh(x: total); vs set count = count +wrap one;"
+                    .to_owned(),
             ]
         );
     }
@@ -1388,7 +1481,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn a_counted_loop_a_give_can_leave_is_denied_by_condition_four() {
         let source =
-            b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
+            b"fn scan_until(src: &Slots<u64, 64>, needle: own u64) -> result: own u64 reads(src) {
   let count = deref(src).len;
   let acc = 0_u64;
   let always = True();
@@ -1409,26 +1502,47 @@ fn main() -> status: own ExitStatus pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(64_u64, 1_u64);
+  let values = array_filled::<u64, 64>(value: 1_u64);
+  let data = slots_from_array::<u64, 64>(values: move values);
   set data[10_u64] = 7_u64;
-  region {
-    let t = scan_until(src: &data, needle: 7_u64);
-    return exit_status(code: 0_u8);
-  }
+  let t = scan_until(src: &data, needle: 7_u64);
+  return exit_status(code: 0_u8);
 }
 ";
         assert_eq!(
             ledger_of("giving.wf", source),
             vec![
+                "PAR chain       giving.wf:2  run(a let statement, a let statement, \
+                 a let statement)  3 members through line 4"
+                    .to_owned(),
                 "PAR loop        giving.wf:6  loop  denied      condition 4: a give leaves the loop"
-                    .to_owned()
+                    .to_owned(),
+                "PAR chain       giving.wf:8  run(a set statement, a let statement)  \
+                 2 members through line 9"
+                    .to_owned(),
+                "PAR denied      giving.wf:22  pair(array_filled, slots_from_array)  \
+                 condition 1: the write of s1 overlaps the write of s2 at \
+                 let values = array_filled::<u64, 64>(value: 1_u64); vs move values"
+                    .to_owned(),
+                "PAR denied      giving.wf:23  pair(slots_from_array, a set statement)  \
+                 condition 1: the write of s1 overlaps the write of s2 at \
+                 let data = slots_from_array::<u64, 64>(values: move values); vs \
+                 set data[10_u64] = 7_u64;"
+                    .to_owned(),
+                "PAR denied      giving.wf:24  pair(a set statement, scan_until)  \
+                 condition 1: the write of s1 overlaps the read of s2 at \
+                 set data[10_u64] = 7_u64; vs &data"
+                    .to_owned(),
+                "PAR denied      giving.wf:25  pair(scan_until, a return statement)  \
+                 condition 2: the exit edge of s2 may skip the statement written after it"
+                    .to_owned(),
             ]
         );
 
         // The same loop with the give removed is permitted, so the refusal is
         // about the exit edge and not about the shape.
         let contained =
-            b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
+            b"fn scan_until(src: &Slots<u64, 64>, needle: own u64) -> result: own u64 reads(src) {
   let count = deref(src).len;
   let acc = 0_u64;
   let always = True();
@@ -1445,20 +1559,38 @@ fn main() -> status: own ExitStatus pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(64_u64, 1_u64);
+  let values = array_filled::<u64, 64>(value: 1_u64);
+  let data = slots_from_array::<u64, 64>(values: move values);
   set data[10_u64] = 7_u64;
-  region {
-    let t = scan_until(src: &data, needle: 7_u64);
-    return exit_status(code: 0_u8);
-  }
+  let t = scan_until(src: &data, needle: 7_u64);
+  return exit_status(code: 0_u8);
 }
 ";
         assert_eq!(
             ledger_of("giving.wf", contained),
             vec![
+                "PAR chain       giving.wf:2  run(a let statement, a let statement, \
+                 a let statement)  3 members through line 4"
+                    .to_owned(),
                 "PAR loop        giving.wf:6  loop  permitted   eligible; \
                  one accumulator under +wrap"
-                    .to_owned()
+                    .to_owned(),
+                "PAR denied      giving.wf:18  pair(array_filled, slots_from_array)  \
+                 condition 1: the write of s1 overlaps the write of s2 at \
+                 let values = array_filled::<u64, 64>(value: 1_u64); vs move values"
+                    .to_owned(),
+                "PAR denied      giving.wf:19  pair(slots_from_array, a set statement)  \
+                 condition 1: the write of s1 overlaps the write of s2 at \
+                 let data = slots_from_array::<u64, 64>(values: move values); vs \
+                 set data[10_u64] = 7_u64;"
+                    .to_owned(),
+                "PAR denied      giving.wf:20  pair(a set statement, scan_until)  \
+                 condition 1: the write of s1 overlaps the read of s2 at \
+                 set data[10_u64] = 7_u64; vs &data"
+                    .to_owned(),
+                "PAR denied      giving.wf:21  pair(scan_until, a return statement)  \
+                 condition 2: the exit edge of s2 may skip the statement written after it"
+                    .to_owned(),
             ]
         );
     }
@@ -1491,11 +1623,17 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("booleans.wf", source),
             vec![
+                "PAR chain       booleans.wf:2  run(a let statement, a let statement, \
+                 a let statement)  3 members through line 4"
+                    .to_owned(),
                 "PAR loop        booleans.wf:5  loop  denied      condition 1: the body carries \
                  3 accumulators, and this rule recombines one"
                     .to_owned(),
                 "PAR hint        booleans.wf:5  loop  refused by condition 1; a recursive split \
                  over its index range would be eligible, combining under band, bor, bxor"
+                    .to_owned(),
+                "PAR chain       booleans.wf:8  run(a set statement, a set statement, \
+                 a set statement)  3 members through line 10"
                     .to_owned(),
             ]
         );
@@ -1574,14 +1712,14 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn the_ledger_names_every_cyclic_component_and_what_the_budget_did_with_it() {
         let recursive = format!(
-            "{TREE_PRELUDE}fn fold(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
-  match deref(deref(node)) {{
+            "{TREE_PRELUDE}fn fold(node: &Box<BoxNode>) -> result: own u64 writes(node) {{
+  match deref(node).inner {{
     Leaf(w: leaf_w) => {{
       return deref(leaf_w);
     }}
     Branch(left: l, right: r, w: slot) => {{
-      let a = fold(node: move l);
-      let b = fold(node: move r);
+      let a = fold(node: l);
+      let b = fold(node: r);
       let total = imax(a, b);
       set deref(slot) = total;
       return total;
@@ -1593,9 +1731,7 @@ fn main() -> status: own ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
-  region {{
-    let total = fold(node: &uniq branch0);
-  }}
+  let total = fold(node: &branch0);
   return exit_status(code: 0_u8);
 }}
 "
@@ -1702,14 +1838,14 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn the_permission_ledger_does_not_depend_on_whether_the_lowering_is_taken() {
         let source = format!(
-            "{TREE_PRELUDE}fn fold(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
-  match deref(deref(node)) {{
+            "{TREE_PRELUDE}fn fold(node: &Box<BoxNode>) -> result: own u64 writes(node) {{
+  match deref(node).inner {{
     Leaf(w: leaf_w) => {{
       return deref(leaf_w);
     }}
     Branch(left: l, right: r, w: slot) => {{
-      let a = fold(node: move l);
-      let b = fold(node: move r);
+      let a = fold(node: l);
+      let b = fold(node: r);
       let total = imax(a, b);
       set deref(slot) = total;
       return total;
@@ -1721,9 +1857,7 @@ fn main() -> status: own ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
-  region {{
-    let total = fold(node: &uniq branch0);
-  }}
+  let total = fold(node: &branch0);
   return exit_status(code: 0_u8);
 }}
 "
@@ -1799,9 +1933,14 @@ fn main() -> status: own ExitStatus pure {{
                 CompilationStage::Lexing,
                 "FORM-2",
             ),
+            // The v0.59 row here lexed `'Bad` as a malformed REGIONID. v0.60
+            // has no REGIONID at all, so `'` is an ordinary non-source byte
+            // and that row's subject left the language with regions. The
+            // successor is the other lexical name shape FORM-3 owns: a LABEL
+            // whose `@` is not followed by the IDENT shape.
             (
                 "sigil.wf",
-                b"fn probe() -> result: own unit pure {\n  let value: own i32 = 'Bad;\n  return unit;\n}\n",
+                b"fn probe() -> result: own unit pure {\n  loop @Bad {\n    break @Bad;\n  }\n  return unit;\n}\n",
                 CompilationStage::Lexing,
                 "FORM-3",
             ),
@@ -1836,14 +1975,15 @@ fn main() -> status: own ExitStatus pure {{
                 "FORM-2",
             ),
             (
-                // The v0.22 case put the undeclared region in a `let`
-                // annotation, which A3 deletes along with the violation. A
-                // borrow keeps writing its region, so the same undeclared
-                // spelling reaches the same OWN-3 at the same stage.
-                "region.wf",
-                b"fn probe() -> result: own unit pure {\n  let value = 0_i32;\n  let borrowed = &'gone value;\n  return unit;\n}\n",
+                // The v0.22 row wrote an undeclared region on a borrow and
+                // reached [OWN-3] in the resolver. v0.60 has no region
+                // spelling and no [OWN-3], so the reference's own unresolved
+                // root is what this stage still owns: a reference expression
+                // whose place base names nothing is a resolver rejection.
+                "reference-root.wf",
+                b"fn probe() -> result: own unit pure {\n  let value = 0_i32;\n  let borrowed = &gone;\n  return unit;\n}\n",
                 CompilationStage::Resolution,
-                "OWN-3",
+                "TYPE-5",
             ),
         ] {
             let failure = compile(&[SourceInput::new(name, source)], CompilerLimits::default())
@@ -1864,7 +2004,7 @@ fn main() -> status: own ExitStatus pure {{
 
     #[test]
     fn unrepresentable_array_is_a_target_failure_without_a_source_rule() {
-        let source = b"fn main() -> status: own ExitStatus pure {\n  let values = array_new::<u8, 18446744073709551615>(0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+        let source = b"fn main() -> status: own ExitStatus pure {\n  let values = array_filled::<u8, 18446744073709551615>(value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -1888,9 +2028,9 @@ fn main() -> status: own ExitStatus pure {{
   }
 }
 
-fn make(n: own u64) -> result: own buffer<u16> pure {
+fn make(n: own u64) -> result: own Box<Array<u16>> pure {
   let bounded = bounded_count(n: n);
-  return buffer_new(bounded, 0_u16);
+  return box_array_filled::<u16>(count: bounded, value: 0_u16);
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -1911,7 +2051,7 @@ fn main() -> status: own ExitStatus pure {
 
     #[test]
     fn complete_frame_is_checked_after_each_slot_layout_succeeds() {
-        let source = b"fn main() -> status: own ExitStatus pure {\n  let left = array_new::<u8, 4611686018427387904>(0_u8);\n  let right = array_new::<u8, 4611686018427387904>(0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+        let source = b"fn main() -> status: own ExitStatus pure {\n  let left = array_filled::<u8, 4611686018427387904>(value: 0_u8);\n  let right = array_filled::<u8, 4611686018427387904>(value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -1939,14 +2079,19 @@ fn main() -> status: own ExitStatus pure {
             .expect("an ordinary callable signature can be selected by the build caller");
             assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv)"));
         }
+        // Which rule owns each of these two swapped in v0.60: [EFF-1] now
+        // admits a row entry only over a reference parameter, so a row naming
+        // an `own` parameter is that rule's own rejection, and the declared
+        // write through a reference the body never writes is [EFF-2]'s
+        // exactness. Both are still rejections of the same two sources.
         for (source, rule) in [
             (
                 b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n".as_slice(),
-                "EFF-2",
+                "EFF-1",
             ),
             (
                 b"fn probe(file: &ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n",
-                "EFF-1",
+                "EFF-2",
             ),
         ] {
             let failure = compile(
@@ -2185,8 +2330,8 @@ fn main() -> status: own ExitStatus pure {
 
         let contract = rejection(
             "contract.wf",
-            br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
-  requires buffer_fits::<u8>(deref(data).len);
+            br#"fn count(data: &[u8], start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
+  requires imax(start, imin(start, end)) <= end;
 } {
   return 0_u64;
 }
@@ -2215,7 +2360,7 @@ fn main() -> status: own ExitStatus pure {
         compile(
             &[SourceInput::new(
                 "repaired.wf",
-                br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 pure contract {
+                br#"fn count(data: &[u8], start: own u64, end: own u64) -> lines: own u64 pure contract {
   define spare = deref(data).len;
   requires end <= spare;
 } {
@@ -2234,13 +2379,19 @@ fn main() -> status: own ExitStatus pure {
 
     /// [EFF-1] states the condition the row failed and the row that repairs it.
     ///
-    /// `writes(cwd), writes(out)` is two occurrences of one category, which the
-    /// rule forbids in one sentence the diagnostic did not carry.
+    /// Retired subject: the v0.59 defect this case showed was `writes(cwd),
+    /// writes(out)` — two occurrences of one category, which that version's
+    /// row forbade. v0.60 admits a category more than once in one row, so
+    /// that source is no longer a defect and the sentence it published no
+    /// longer exists. The successor pinned here is the condition the rule
+    /// does still state: a row lists each path at most once per category.
     #[test]
     fn an_effect_row_defect_names_its_condition_and_the_row_that_repairs_it() {
         let detail = rejection(
             "row.wf",
-            br#"fn probe(cwd: &uniq u64, out: &uniq u64) -> status: own ExitStatus reads(cwd, out), writes(cwd), writes(out) {
+            br#"fn probe(cwd: &u64, out: &u64) -> status: own ExitStatus writes(cwd), writes(cwd), writes(out) {
+  set deref(cwd) = 1_u64;
+  set deref(out) = 2_u64;
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2248,13 +2399,13 @@ fn main() -> status: own ExitStatus pure {
         assert!(detail.contains("[EFF-1]"), "{detail}");
         assert!(
             detail.contains(
-                r#"reason: "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates""#
+                r#"reason: "a row lists each path at most once per category, and this entry repeats one""#
             ),
             "{detail}"
         );
         assert!(
             detail.contains(
-                r#"mechanical_fix: "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates""#
+                r#"mechanical_fix: "delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path""#
             ),
             "{detail}"
         );
@@ -2268,7 +2419,7 @@ fn main() -> status: own ExitStatus pure {
     fn an_effect_mismatch_publishes_both_rows_and_the_exact_difference() {
         let detail = rejection(
             "effects.wf",
-            br#"fn count(data: &buffer<u8>) -> lines: own u64 reads(data) {
+            br#"fn count(data: &[u8]) -> lines: own u64 reads(data) {
   return 0_u64;
 }
 
@@ -2354,19 +2505,22 @@ fn main() -> status: own ExitStatus pure {
         .expect("the constructor spelling TYPE-5 names must be accepted");
     }
 
-    /// [OWN-10] names the region, the binder, and where a region it admits has
-    /// to be introduced.
+    /// A reference is never a result, and the grammar says so at the result
+    /// type.
+    ///
+    /// Retired subject: [OWN-10]'s `InvalidBorrowLifetime` sentence, which
+    /// named a region, the binder whose storage it outlived, and the
+    /// `region 'r { .. }` repair. v0.60 has no regions, no region parameters
+    /// and no lifetimes, so that rule, that sentence and that repair all left
+    /// the language. The successor pinned here is [REF-3]'s own refusal,
+    /// which the grammar reaches first: `type` has no reference production
+    /// [GRAM-3], so a written reference result stops at the result type with
+    /// the spelling the position does admit.
     #[test]
-    fn a_borrow_lifetime_rejection_names_the_region_the_binder_and_the_repair() {
+    fn a_reference_result_is_refused_at_the_result_type() {
         let detail = rejection(
-            "lifetime.wf",
-            br#"fn sum(data: &buffer<u8>) -> out: own u64 reads(data) {
-  return deref(data).len;
-}
-
-fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> pure {
-  let local = buffer_new(4_u64, 0_u8);
-  let counted = sum(data: &'r local);
+            "reference-result.wf",
+            br#"fn caller(anchor: &u64) -> out: &u64 pure {
   return anchor;
 }
 
@@ -2375,10 +2529,14 @@ fn main() -> status: own ExitStatus pure {
 }
 "#,
         );
-        assert!(detail.contains("[OWN-10]"), "{detail}");
+        assert!(detail.contains("[GRAM-3]"), "{detail}");
+        assert!(
+            detail.contains(r#"expected: ["own"]"#),
+            "{detail}"
+        );
         assert!(
             detail.contains(
-                r#"InvalidBorrowLifetime { region: "'r", binder: "local", mechanical_fix: "a borrow of local storage names a region introduced inside that binding's own scope: write `region 'r { ... }` after the binding and take the borrow inside it. A caller-supplied region parameter is never admitted here, because it outlives the storage." }"#
+                r#"at reference-result.wf:1:33 in line "fn caller(anchor: &u64) -> out: &u64 pure {""#
             ),
             "{detail}"
         );

@@ -436,7 +436,7 @@ fn advance(source: &Box<Slots<Slot>>, target: &Box<Slots<Slot>>, progress: &Prog
   return inspected, transfers;
 }
 
-fn rehash_all(slots: &Box<Slots<Slot>>, count: own u64) -> (code: own u8, examined: own u64, moved: own u64) writes(deref(slots)) contract {
+fn rehash_all(slots: &Box<Slots<Slot>>, count: own u64) -> (code: own u8, examined: own u64, moved: own u64) writes(slots) contract {
   requires deref(slots).inner.len <= 1048576_u64;
   requires count >= deref(slots).inner.len;
   requires count <= 2097152_u64;

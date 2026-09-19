@@ -1,3 +1,21 @@
+// The release ledger of the container library's test program, observed by
+// interposing every generated allocation and release.
+//
+// Retired subject: the allocation-refusal sweep. v0.59 returned null at each
+// allocation request in turn and read the source-visible fallback the library
+// installed -- an `Err(unit)` reserve, an `Err(value)` append, a retained
+// owner -- and pinned the exact byte count of every request beside it.
+// [STOR-8] makes allocation total in the source: it never returns a failure,
+// never traps, and no allocating operation carries a `Result`, and an
+// exhausted heap ends the program from the trusted base outside the language
+// [SCOPE-3]. There is no refusal for a program to observe and no fallback arm
+// to reach, so the sweep and its expected-byte table both go with the rule.
+//
+// The successor kept here is the identity half, which [STOR-3] and [WIN-3]
+// still fix: every allocation the program makes is released exactly once,
+// never twice, and none is left behind when the entry returns. That property
+// is what catches a missed release walk over an owning element, a double free
+// of a superseded backing, and a release of storage the program never owned.
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -7,7 +25,7 @@
 
 extern int wf_fixture_main(int argc, char **argv);
 
-enum { MAX_ALLOCATIONS = 16 };
+enum { MAX_ALLOCATIONS = 64 };
 
 typedef struct {
     void *pointer;
@@ -16,16 +34,10 @@ typedef struct {
     bool released;
 } Allocation;
 
-static const uint64_t expected_bytes[] = {
-    0, 8, 16, 32, 0, 8, 16, 8, 32, 8, 64,
-};
-
 static Allocation allocations[MAX_ALLOCATIONS];
 static size_t allocation_count;
 static size_t request_count;
-static size_t release_order[MAX_ALLOCATIONS];
 static size_t release_count;
-static size_t fail_at;
 
 static void require(bool condition, const char *message) {
     if (!condition) {
@@ -35,18 +47,9 @@ static void require(bool condition, const char *message) {
 }
 
 void *wf_observe_allocate(uint64_t bytes) {
-    require(request_count < sizeof expected_bytes / sizeof expected_bytes[0],
-            "unexpected allocation request");
     ++request_count;
-    if (bytes != expected_bytes[request_count - 1]) {
-        fprintf(stderr,
-                "vector allocation observer: request %zu has %" PRIu64
-                " bytes, expected %" PRIu64 "\n",
-                request_count, bytes, expected_bytes[request_count - 1]);
-        exit(1);
-    }
-    if (request_count == fail_at) return NULL;
-
+    // Allocation is total: the trusted base either hands back storage or ends
+    // the process, so this observer never returns null.
     void *pointer = malloc(bytes == 0 ? 1 : (size_t)bytes);
     require(pointer != NULL, "host allocation failed during observation");
     require(allocation_count < MAX_ALLOCATIONS, "allocation ledger overflow");
@@ -63,8 +66,7 @@ void wf_observe_release(void *pointer) {
         if (allocation->pointer != pointer) continue;
         require(!allocation->released, "allocation released twice");
         allocation->released = true;
-        require(release_count < MAX_ALLOCATIONS, "release ledger overflow");
-        release_order[release_count++] = allocation->request;
+        ++release_count;
         memset(pointer, 0xa5,
                allocation->bytes == 0 ? 1 : (size_t)allocation->bytes);
         return;
@@ -72,76 +74,30 @@ void wf_observe_release(void *pointer) {
     require(false, "release did not return an allocated address");
 }
 
-static void reset(size_t refusal) {
-    for (size_t index = 0; index < allocation_count; ++index)
-        free(allocations[index].pointer);
-    memset(allocations, 0, sizeof allocations);
-    memset(release_order, 0, sizeof release_order);
-    allocation_count = request_count = release_count = 0;
-    fail_at = refusal;
-}
-
-static void run_case(size_t refusal, int expected_status,
-                     const size_t *expected_releases,
-                     size_t expected_release_count) {
-    reset(refusal);
+int main(void) {
     int status = wf_fixture_main(0, NULL);
-    if (status != expected_status) {
+    if (status != 0) {
         fprintf(stderr,
-                "vector allocation observer: refusal %zu returned status %d, expected %d\n",
-                refusal, status, expected_status);
+                "vector allocation observer: the fixture returned status %d, "
+                "expected 0\n",
+                status);
         exit(1);
     }
-    require(release_count == expected_release_count,
-            "release count differs from the exact ledger");
-    for (size_t index = 0; index < release_count; ++index) {
-        if (release_order[index] != expected_releases[index]) {
+    require(request_count > 0, "the fixture must reach the heap at all");
+    require(release_count == allocation_count,
+            "every allocation is released exactly once");
+    for (size_t index = 0; index < allocation_count; ++index) {
+        if (!allocations[index].released) {
             fprintf(stderr,
-                    "vector allocation observer: release %zu returned request "
-                    "%zu, expected %zu\n",
-                    index + 1, release_order[index], expected_releases[index]);
+                    "vector allocation observer: request %zu (%" PRIu64
+                    " bytes) was never released\n",
+                    allocations[index].request, allocations[index].bytes);
             exit(1);
         }
     }
     for (size_t index = 0; index < allocation_count; ++index)
-        require(allocations[index].released,
-                "an admitted allocation was not released exactly once");
-    if (refusal == 0 || refusal == 1 || refusal == 5) {
-        require(request_count == sizeof expected_bytes / sizeof expected_bytes[0],
-                "successful or zero-byte-refused chain omitted an allocation request");
-    } else {
-        require(request_count == refusal,
-                "execution continued allocating after refusal");
-    }
-}
-
-int main(void) {
-    static const size_t success[] = {1, 2, 3, 4, 5, 7, 9, 10, 6, 8, 11};
-    static const size_t zero_1[] = {2, 3, 4, 5, 7, 9, 10, 6, 8, 11};
-    static const size_t zero_5[] = {1, 2, 3, 4, 7, 9, 10, 6, 8, 11};
-    static const size_t fail_2[] = {1};
-    static const size_t fail_3[] = {1, 2};
-    static const size_t fail_4[] = {1, 2, 3};
-    static const size_t fail_6[] = {1, 2, 3, 4, 5};
-    static const size_t fail_7[] = {1, 2, 3, 4, 6, 5};
-    static const size_t fail_8[] = {1, 2, 3, 4, 5, 6, 7};
-    static const size_t fail_9[] = {1, 2, 3, 4, 5, 8, 6, 7};
-    static const size_t fail_10[] = {1, 2, 3, 4, 5, 7, 6, 8, 9};
-    static const size_t fail_11[] = {1, 2, 3, 4, 5, 7, 10, 6, 8, 9};
-
-    run_case(0, 0, success, sizeof success / sizeof success[0]);
-    run_case(1, 0, zero_1, sizeof zero_1 / sizeof zero_1[0]);
-    run_case(2, 70, fail_2, sizeof fail_2 / sizeof fail_2[0]);
-    run_case(3, 70, fail_3, sizeof fail_3 / sizeof fail_3[0]);
-    run_case(4, 70, fail_4, sizeof fail_4 / sizeof fail_4[0]);
-    run_case(5, 0, zero_5, sizeof zero_5 / sizeof zero_5[0]);
-    run_case(6, 70, fail_6, sizeof fail_6 / sizeof fail_6[0]);
-    run_case(7, 70, fail_7, sizeof fail_7 / sizeof fail_7[0]);
-    run_case(8, 70, fail_8, sizeof fail_8 / sizeof fail_8[0]);
-    run_case(9, 70, fail_9, sizeof fail_9 / sizeof fail_9[0]);
-    run_case(10, 70, fail_10, sizeof fail_10 / sizeof fail_10[0]);
-    run_case(11, 70, fail_11, sizeof fail_11 / sizeof fail_11[0]);
-    reset(0);
-    puts("vector allocation observer: every refusal and release ledger passed");
+        free(allocations[index].pointer);
+    printf("vector allocation observer: %zu allocations, each released exactly once\n",
+           allocation_count);
     return 0;
 }

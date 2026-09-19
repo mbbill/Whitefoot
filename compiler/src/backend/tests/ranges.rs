@@ -312,8 +312,10 @@ fn runtime_block_sizes_change_budget_prices_without_changing_scan_results() {
 extern int wf__floor_run(int, char **);
 extern int wf__par_pool_active(void);
 extern uint64_t wf__par_split_budget(uint64_t, uint64_t);
-extern void wf_bench_prefix(const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *);
-extern void wf_bench_prefix_release(uint64_t *, uint64_t);
+/* The owned result is a Box<Array<u64>> cell; the adapter hands that cell back
+ * as the retained handle and the release row consumes exactly it. */
+extern void wf_bench_prefix(const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *, void **);
+extern void wf_bench_prefix_release(void *);
 static _Atomic uint64_t observed;
 uint64_t wf_work_budget(uint64_t span, uint64_t weight) {
     if (span == 128) {
@@ -332,8 +334,9 @@ int wf__main_body(int argc, char **argv) {
         if (!input) return 1;
         for (uint64_t i = 0; i < count; ++i) input[i] = i + 1;
         uint64_t *output = NULL, length = 0;
+        void *held = NULL;
         atomic_store(&observed, 0);
-        wf_bench_prefix(input, count, width, 1, &output, &length);
+        wf_bench_prefix(input, count, width, 1, &output, &length, &held);
         if (!output || length != count) return 2;
         uint64_t expected = 0;
         for (uint64_t i = 0; i < count; ++i) {
@@ -347,7 +350,7 @@ int wf__main_body(int argc, char **argv) {
                 (shape == 2 && price <= previous_price * 3)) return 4;
         } else if (price) return 5;
         previous_price = price;
-        wf_bench_prefix_release(output, length);
+        wf_bench_prefix_release(held);
         free(input);
     }
     return 0;
@@ -377,7 +380,8 @@ fn compute_oracle_rejects_wrong_values_and_missing_worker_observations() {
     );
     for corrupt in [true, false] {
         let program = if corrupt {
-            let changed = source.replacen("total +wrap input[i]", "total -wrap input[i]", 1);
+            let changed =
+                source.replacen("total +wrap deref(input)[i]", "total -wrap deref(input)[i]", 1);
             assert_ne!(
                 changed, source,
                 "the block-sum mutant must change the algorithm"
@@ -806,7 +810,7 @@ fn main() -> status: own ExitStatus pure {
 /// the same kind over all three [REF-4], and only the cell is freed.
 #[test]
 fn const_local_and_heap_run_ranges_share_one_read_only_path() {
-    let source = br#"const bytes: Array<u8, 4> = [1_u8, 2_u8, 3_u8, 4_u8];
+    let source = br#"const bytes: Array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
 
 fn sum(values: &[u8]) -> result: own u64 reads(values) {
   let total = 0_u64;

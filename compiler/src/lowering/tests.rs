@@ -81,16 +81,16 @@ fn runtime_work_keeps_data_dependent_inner_extents_static() {
   return total;
 }
 
-fn write_work(input: own Slice<u64>) -> result: own buffer<u64> reads(input) contract {
-  requires len_of(input) <= 1024_u64;
+fn write_work(input: &[u64], output: &[u64]) -> result: own unit reads(input), writes(output) contract {
+  requires deref(input).len <= 1024_u64;
+  requires deref(output).len >= deref(input).len;
 } {
-  let count = len_of(input);
-  let output = buffer_new(count, 0_u64);
+  let count = deref(input).len;
   for (i in 0_u64..count) {
-    let upper = input[i];
-    set output[i] = count_work(upper: upper);
+    let upper = deref(input)[i];
+    set deref(output)[i] = count_work(upper: upper);
   }
-  return move output;
+  return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -976,8 +976,8 @@ fn buffer_allocations_lower_the_source_proved_length_ceiling_into_target_obligat
     let source = br#"fn allocate(n: own u64) -> result: own unit pure contract {
   requires n <= 1000_u64;
 } {
-  let filled = buffer_new(n, 7_u16);
-  let vacant = buffer_vacant::<u16>(n);
+  let packed = box_array_filled::<u16>(count: n, value: 7_u16);
+  let vacant = box_slots_new::<u16>(capacity: n);
   return unit;
 }
 
@@ -986,11 +986,17 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
+    // Re-derived for v0.60: the two constructions are [OP-13] rows emitted as
+    // their own out-of-line bodies (compiler/prelude-records), so the filled
+    // element block and the window block are allocated in
+    // `box_array_filled$instance$N` and `box_slots_new$instance$N` rather than
+    // in `allocate`. The source-proved ceiling must still reach each one, so
+    // the whole program is searched and both allocation forms are read.
     with_ir(source, |program| {
-        let allocate = function(program, "allocate");
-        let bounds = allocate
-            .blocks()
+        let bounds = program
+            .functions()
             .iter()
+            .flat_map(IrFunction::blocks)
             .flat_map(IrBlock::instructions)
             .filter_map(|instruction| {
                 let IrInstruction::Define { operation, .. } = instruction else {
@@ -1000,6 +1006,9 @@ fn main() -> status: own ExitStatus pure {
                     IrOperation::BufferFill { target_domains, .. }
                     | IrOperation::BufferVacant { target_domains, .. } => {
                         Some(target_domains.source_length_upper_bound())
+                    }
+                    IrOperation::WindowBlockNew { obligations, .. } => {
+                        Some(obligations.target_domains.source_length_upper_bound())
                     }
                     _ => None,
                 }
@@ -1118,7 +1127,7 @@ fn a_buffer_release_retains_its_owned_storage_type() {
 /// and `{STEP}` varied per case.
 fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
     format!(
-        "fn main() -> status: own ExitStatus pure {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len_of(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = cursor >= stop;\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        "fn main() -> status: own ExitStatus pure {{\n  let data = box_array_filled::<u8>(count: 64_u64, value: 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = data.inner.len;\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = cursor >= stop;\n    if done {{\n      break @walk;\n    }}\n    let byte = data.inner[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }
