@@ -24,15 +24,15 @@ use super::super::state::{
     OutcomeRelation, Relation, close,
 };
 use super::super::term::{
-    CountedCaptureSide, MeasurePlacement, PlaceProjection, PlaceRoot, PlaceTerm,
-    ProjectedPlaceTerm, TermId, TermKind, ZERO, integer_value, type_range,
+    CountedCaptureSide, MeasurePlacement, PlaceRoot, PlaceStep, ResolvedPlace, TermId, TermKind,
+    ZERO, integer_value, type_range,
 };
 use super::super::{
     CountedAtomicDerivation, CountedBoundDerivation, CountedDerivationSet,
     CountedEqualityDerivation, CountedProofPoint, RemainderEndpoint, S7Derivation,
     S7DerivationKind, S7Subject, ShiftOneIdentity,
 };
-use super::{Analyzer, ArmFacts, ProofFlowState, projected_place};
+use super::{Analyzer, ArmFacts, ProofFlowState};
 /// Which term one evaluated value's [ENT-3] image is established on: the
 /// place a `let` binder introduces, or the compiler-owned commit value of one
 /// `set` occurrence, named by that statement's NodePath [ENT-2].
@@ -103,11 +103,7 @@ impl Analyzer<'_, '_> {
             side: CountedCaptureSide::Upper,
         });
         let binder = self.terms.intern(TermKind::Place(
-            PlaceTerm {
-                root: PlaceRoot::Binding(binder),
-                deref: false,
-                fields: Vec::new(),
-            },
+            ResolvedPlace::spelled(PlaceRoot::Binding(binder), false, Vec::new()),
             IntegerType::U64,
         ));
         state.establish(
@@ -355,26 +351,13 @@ impl Analyzer<'_, '_> {
         ty: CheckedType,
     ) -> Option<TermId> {
         let fragment = fragment_type(ty)?;
-        let kind = if self.needs_implicit_deref(binding) {
-            TermKind::ProjectedPlace(
-                ProjectedPlaceTerm {
-                    root: PlaceRoot::Binding(binding),
-                    projections: std::iter::once(PlaceProjection::Deref)
-                        .chain(fields.iter().copied().map(PlaceProjection::Field))
-                        .collect(),
-                },
-                fragment,
-            )
-        } else {
-            TermKind::Place(
-                PlaceTerm {
-                    root: PlaceRoot::Binding(binding),
-                    deref: false,
-                    fields: fields.to_vec(),
-                },
-                fragment,
-            )
-        };
+        // [REF-1] a reference root is resolved to the path it names rather
+        // than spelled with a synthesized `deref`, so the term carries the
+        // written path and nothing else.
+        let kind = TermKind::Place(
+            ResolvedPlace::spelled(PlaceRoot::Binding(binding), false, fields.to_vec()),
+            fragment,
+        );
         Some(self.terms.intern(kind))
     }
 
@@ -476,12 +459,8 @@ impl Analyzer<'_, '_> {
 
     /// The place term a binding names directly, for length facts over an
     /// allocated or borrowed collection.
-    pub(super) fn bound_place(&self, binding: BindingId) -> PlaceTerm {
-        PlaceTerm {
-            root: PlaceRoot::Binding(binding),
-            deref: false,
-            fields: Vec::new(),
-        }
+    pub(super) fn bound_place(&self, binding: BindingId) -> ResolvedPlace {
+        ResolvedPlace::binding(binding)
     }
 
     /// [ENT-3] S5: `let x: own T = lit;` establishes x = value(lit);
@@ -508,11 +487,7 @@ impl Analyzer<'_, '_> {
         let CheckedExpression::Binding { binding, ty, .. } = value else {
             return None;
         };
-        let source = projected_place(PlaceTerm {
-            root: PlaceRoot::Binding(*binding),
-            deref: self.is_holder(*binding),
-            fields: Vec::new(),
-        });
+        let source = ResolvedPlace::spelled(PlaceRoot::Binding(*binding), self.is_holder(*binding), Vec::new());
         self.mint_measure_datums(
             node_path,
             ordinal,
@@ -543,7 +518,7 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         ordinal: u32,
         placement: MeasurePlacement,
-        source: ProjectedPlaceTerm,
+        source: ResolvedPlace,
         ty: CheckedType,
         state: &mut ProofFlowState,
     ) -> Option<MeasureCarry> {
@@ -555,8 +530,8 @@ impl Analyzer<'_, '_> {
             let constant = super::type_constant(measured_type);
             let mut place = source.clone();
             place
-                .projections
-                .extend(path.iter().map(|field| PlaceProjection::Field(*field)));
+                .path
+                .extend(path.iter().map(|field| PlaceStep::Field(*field)));
             let event = self.proof_event(FlowEventKind::S5, Some(node_path));
             let mut datums = Vec::with_capacity(4);
             for measure in MEASURES {
@@ -644,7 +619,7 @@ impl Analyzer<'_, '_> {
         rebind: &MeasureCarry,
         state: &mut FactState,
     ) {
-        let target = projected_place(self.bound_place(binding));
+        let target = self.bound_place(binding);
         self.establish_measure_datums(node_path, target, rebind, state);
     }
 
@@ -654,18 +629,18 @@ impl Analyzer<'_, '_> {
     pub(super) fn establish_measure_datums(
         &mut self,
         node_path: &crate::NodePath,
-        destination: ProjectedPlaceTerm,
+        destination: ResolvedPlace,
         carry: &MeasureCarry,
         state: &mut FactState,
     ) {
         let event = self.proof_event(FlowEventKind::S5, Some(node_path));
         for carried in &carry.carried {
             let mut place = destination.clone();
-            place.projections.extend(
+            place.path.extend(
                 carried
                     .path
                     .iter()
-                    .map(|field| PlaceProjection::Field(*field)),
+                    .map(|field| PlaceStep::Field(*field)),
             );
             for (measure, datum) in MEASURES.into_iter().zip(&carried.datums) {
                 let left = self.place_measure_term(
@@ -760,7 +735,7 @@ impl Analyzer<'_, '_> {
                 let place = self.bound_place(binding);
                 let length_term = self.place_measure_term(
                     CheckedMeasure::Length,
-                    projected_place(place),
+                    place,
                     MeasuredKind::Buffer,
                     None,
                 );
@@ -806,7 +781,7 @@ impl Analyzer<'_, '_> {
                     let slice_place = self.bound_place(binding);
                     let slice_length = self.place_measure_term(
                         CheckedMeasure::Length,
-                        projected_place(slice_place),
+                        slice_place,
                         MeasuredKind::Slice,
                         None,
                     );
@@ -831,18 +806,14 @@ impl Analyzer<'_, '_> {
                 {
                     let source_length = self.place_measure_term(
                         CheckedMeasure::Length,
-                        projected_place(PlaceTerm {
-                            root: PlaceRoot::Binding(*parent),
-                            deref: self.is_holder(*parent),
-                            fields: Vec::new(),
-                        }),
+                        ResolvedPlace::spelled(PlaceRoot::Binding(*parent), self.is_holder(*parent), Vec::new()),
                         MeasuredKind::Slice,
                         None,
                     );
                     let slice_place = self.bound_place(binding);
                     let slice_length = self.place_measure_term(
                         CheckedMeasure::Length,
-                        projected_place(slice_place),
+                        slice_place,
                         MeasuredKind::Slice,
                         None,
                     );
@@ -868,11 +839,7 @@ impl Analyzer<'_, '_> {
                         (self.array_root_place(root), Some(*length))
                     }
                     CheckedSliceSource::Buffer(root) => (
-                        PlaceTerm {
-                            root: PlaceRoot::Binding(root.binding),
-                            deref: self.is_holder(root.binding),
-                            fields: root.fields.clone(),
-                        },
+                        ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone()),
                         None,
                     ),
                     // Content reached in an arena through one explicit deref
@@ -883,17 +850,13 @@ impl Analyzer<'_, '_> {
                         fields,
                         length,
                     } => (
-                        PlaceTerm {
-                            root: PlaceRoot::Binding(*binding),
-                            deref: true,
-                            fields: fields.clone(),
-                        },
+                        ResolvedPlace::spelled(PlaceRoot::Binding(*binding), true, fields.clone()),
                         Some(*length),
                     ),
                 };
                 let source_length = self.place_measure_term(
                     CheckedMeasure::Length,
-                    projected_place(place),
+                    place,
                     if array_length.is_some() {
                         MeasuredKind::Array
                     } else {
@@ -904,7 +867,7 @@ impl Analyzer<'_, '_> {
                 let slice_place = self.bound_place(binding);
                 let slice_length = self.place_measure_term(
                     CheckedMeasure::Length,
-                    projected_place(slice_place),
+                    slice_place,
                     MeasuredKind::Slice,
                     None,
                 );
@@ -958,21 +921,13 @@ impl Analyzer<'_, '_> {
             ),
             CheckedExpression::BufferMeasure { measure, root } => (
                 *measure,
-                PlaceTerm {
-                    root: PlaceRoot::Binding(root.binding),
-                    deref: self.is_holder(root.binding),
-                    fields: root.fields.clone(),
-                },
+                ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone()),
                 MeasuredKind::Buffer,
                 None,
             ),
             CheckedExpression::SliceMeasure { measure, root } => (
                 *measure,
-                PlaceTerm {
-                    root: PlaceRoot::Binding(root.binding),
-                    deref: self.is_holder(root.binding),
-                    fields: Vec::new(),
-                },
+                ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), Vec::new()),
                 MeasuredKind::Slice,
                 None,
             ),
@@ -989,7 +944,7 @@ impl Analyzer<'_, '_> {
             }
             _ => return None,
         };
-        Some(self.place_measure_term(measure, projected_place(place), measured, array_length))
+        Some(self.place_measure_term(measure, place, measured, array_length))
     }
 
     /// [ENT-3] S7 constant-offset arithmetic at a `let` binding.
@@ -1631,11 +1586,7 @@ impl Analyzer<'_, '_> {
         let Some(fragment) = fragment_type(binder.ty) else {
             return;
         };
-        let place = PlaceTerm {
-            root: PlaceRoot::Binding(binder.binding),
-            deref: false,
-            fields: Vec::new(),
-        };
+        let place = ResolvedPlace::spelled(PlaceRoot::Binding(binder.binding), false, Vec::new());
         let bound = self.terms.intern(TermKind::Place(place, fragment));
         match outcome.relation {
             OutcomeRelation::Shifted(delta) => {

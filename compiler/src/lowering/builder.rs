@@ -1228,7 +1228,7 @@ impl<'program> IrBuilder<'program> {
                         IrType::Address(referent),
                         IrOperation::ProjectAddress {
                             address,
-                            projection: IrPlaceProjection::EnumVariant {
+                            projection: IrPlaceStep::EnumVariant {
                                 nominal,
                                 variant: arm.tag,
                                 field: binder.field,

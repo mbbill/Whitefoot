@@ -1,3 +1,15 @@
+//! Places written with an explicit `deref` [GRAM-5, TYPE-7].
+//!
+//! `pbase := IDENT | "deref" "(" place ")" | "entry" "(" IDENT ")"` and the
+//! `deref` alternative takes any `place` whose selected kind is a reference,
+//! `&T` or `&[T]`, and spells its referent. A `Box`'s content is *not* reached
+//! that way: it is the field `inner`, an ordinary field step [TYPE-9], and a
+//! `deref` of anything that is not a reference is [TYPE-7]'s rejection.
+//!
+//! Resolving a place whose `deref` step names a reference variable replaces
+//! that step with the path the reference names, recursively, and every
+//! [OWN-7] judgment reads the resolved place [REF-1].
+
 use std::collections::HashMap;
 
 use crate::syntax::NodeId;
@@ -8,59 +20,56 @@ use crate::{
 };
 
 use super::super::super::model::{
-    CheckedContainerRoot, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedSetTarget,
-    CheckedType,
+    CheckedContainerRoot, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedType,
 };
-use super::super::super::places::PlaceProjection;
-use super::super::borrows::{AccessKind, BorrowInfo, ResolvedPlace};
+use super::super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
+use super::super::references::{AccessKind, WIN3_NO_TAKE};
 use super::super::{CheckStop, Checker, EffectSet, LocalBinding, PlaceAccess, TypedExpression};
-use super::{MutationAccess, MutationForm, MutationTarget, PlaceUseContext, PlaceUseOptions};
+use super::{PlaceUseContext, PlaceUseOptions};
 
+/// One place resolved through an explicit `deref` chain.
+///
+/// The v0.59 `borrow` and `holder_pending` fields are gone with the loans: a
+/// reference is not storage of its own, so a resolved place never carries one
+/// — the `deref` step has already been replaced by the path the reference
+/// names [REF-1].
 pub(super) struct ExplicitPlace {
+    /// The source declaration the *written* base names. For a `deref` chain
+    /// that is the reference binding, whose [REF-2] validity the caller
+    /// rechecks; `resolved` below is rooted at what that reference names.
     pub(super) declaration: DeclarationId,
     pub(super) ty: CheckedType,
     pub(super) mode: CheckedMode,
-    pub(super) borrow: Option<BorrowInfo>,
-    pub(super) holder_pending: bool,
     pub(super) expression: CheckedExpression,
     pub(super) resolved: ResolvedPlace,
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// A read of a place written through an explicit `deref` [TYPE-7].
     pub(super) fn check_dereferenced_place_use(
         &self,
         use_node: NodeId,
         node: NodeId,
-        pbase: NodeId,
+        _pbase: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         options: PlaceUseOptions,
     ) -> Result<TypedExpression, CheckStop> {
-        if self.is_direct_borrow_holder(pbase, bindings)? {
-            return self.check_direct_borrowed_place_use(use_node, node, pbase, bindings, options);
-        }
         let place = self.resolve_explicit_place(use_node, node, bindings)?;
-        if place.holder_pending {
-            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-        }
         self.check_commit_place_live(&place.resolved, use_node, false)?;
         let copy = self.is_copy_type(place.ty)?;
-        if !copy && options.explicit_move && self.is_box_descendant_read_out(&place.resolved) {
-            return self.unsupported(UnsupportedSemanticFeature::BoxReferentMove, use_node);
-        }
-        let read_out = !copy
-            && options.explicit_move
-            && !matches!(place.mode, CheckedMode::Shared(_))
-            && self.take_commit_read_out(&place.resolved);
+        let read_out = !copy && options.explicit_move && self.take_commit_read_out(&place.resolved);
         if !copy && !read_out {
-            if options.explicit_move && place.mode != CheckedMode::Own {
+            if options.explicit_move {
+                // [WIN-3] there is no take operation and no hole: a move out
+                // of a place a reference names would leave storage no owner
+                // can account for.
                 return self.issue_node(
-                    SemanticRule::Own5,
+                    SemanticRule::Win3,
                     use_node,
-                    SemanticIssueKind::BorrowConflict,
+                    SemanticIssueKind::InvalidElementMove {
+                        mechanical_fix: WIN3_NO_TAKE,
+                    },
                 );
-            }
-            if place.mode == CheckedMode::Own {
-                return self.unsupported(UnsupportedSemanticFeature::BoxReferentMove, use_node);
             }
             if matches!(options.context, PlaceUseContext::Ordinary) {
                 return self.issue_node(
@@ -81,54 +90,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        if place.borrow.is_some() {
-            let local = bindings
-                .get(&place.declaration)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            self.check_holder_not_suspended(local, use_node)?;
-        }
-        self.check_loan_access(
-            bindings,
-            place.borrow.as_ref().map(|_| place.declaration),
-            &place.resolved,
-            if read_out {
-                AccessKind::Move
-            } else {
-                AccessKind::Read
-            },
-            use_node,
-        )?;
         let mut effects = EffectSet::NONE;
-        // [EFF-1] a loan-bearing parameter's effect path names the viewed
-        // backing state and not the descriptor, and merely moving, returning
-        // or structurally repacking that value observes none of it: a read
-        // *through* the view is the subscript's own attribution. Before the
-        // shared view became copy this arm was reached only by a consume,
-        // which exhibited the same wrong read; the copy spelling is what made
-        // an accepted program declare it.
-        if !Self::checked_type_is_loan_bearing(place.ty) {
-            for path in self.effect_paths_for_place(use_node, &place.resolved, bindings)? {
-                effects.add_read(path);
-            }
+        for path in self.effect_paths_for_place(use_node, &place.resolved, bindings)? {
+            effects.add_read(path);
         }
-        let (mode, borrow, holder) = if copy || read_out {
-            (CheckedMode::Own, None, None)
-        } else {
-            (
-                place.mode,
-                place.borrow.clone().map(|borrow| BorrowInfo {
-                    place: place.resolved.clone(),
-                    ..borrow
-                }),
-                Some(place.declaration),
-            )
-        };
         let expression = if read_out {
             let (binding, path) = self.explicit_container_path(&place.expression, node)?;
             CheckedExpression::ReadStorage {
                 carrier: self.tree.path(use_node)?.clone(),
                 root: CheckedContainerRoot {
-                    root: crate::semantic::CheckedPlaceRoot::Binding(binding),
+                    root: PlaceRoot::Binding(binding),
                     path,
                     ty: place.ty,
                 },
@@ -138,10 +109,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         Ok(TypedExpression {
             expression,
-            mode,
-            borrow,
-            slice: None,
-            holder,
+            mode: CheckedMode::Own,
+            reference: None,
             reference_value: false,
             effects,
             accesses: vec![PlaceAccess {
@@ -151,194 +120,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    fn is_direct_borrow_holder(
-        &self,
-        pbase: NodeId,
-        bindings: &HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<bool, CheckStop> {
-        let holder = self
-            .tree
-            .first_child_with(pbase, Production::Place)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let holder_base = self
-            .tree
-            .first_child_with(holder, Production::Pbase)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if !self.tree.children(holder_base)?.is_empty()
-            || !self
-                .tree
-                .children_with(holder, Production::Psuffix)?
-                .is_empty()
-        {
-            return Ok(false);
-        }
-        let usage = self.use_at(holder_base, LexicalUseRole::PlaceBase)?;
-        let ResolvedTarget::Source {
-            declaration,
-            class: DeclarationClass::Value,
-        } = usage.target()
-        else {
-            return Ok(false);
-        };
-        Ok(bindings
-            .get(&declaration)
-            .is_some_and(|local| local.borrow.is_some()))
-    }
-
-    /// OWN-14 admits a returned reborrow only over `deref(h)` and suffixes,
-    /// where `h` itself is a holder binding. An extra owning dereference
-    /// cannot be hidden inside that holder position.
-    pub(in crate::semantic::check) fn check_returned_reborrow_holder_shape(
-        &self,
-        node: NodeId,
-        place_node: NodeId,
-        pbase: NodeId,
-        region: DeclarationId,
-        bindings: &HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<(), CheckStop> {
-        if self.is_direct_borrow_holder(pbase, bindings)? {
-            return Ok(());
-        }
-        let place = self.resolve_explicit_place(node, place_node, bindings)?;
-        if let Some(parent) = &place.borrow {
-            let local = bindings
-                .get(&place.declaration)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            self.check_holder_not_suspended(local, node)?;
-            self.check_returned_reborrow_lifetime(place.declaration, parent, region, node)?;
-            return self.issue_node(
-                SemanticRule::Own14,
-                node,
-                SemanticIssueKind::InvalidReborrowPosition {
-                    mechanical_fix: super::super::borrows::OWN14_RESTRUCTURING,
-                },
-            );
-        }
-        Ok(())
-    }
-
-    fn check_direct_borrowed_place_use(
-        &self,
-        use_node: NodeId,
-        node: NodeId,
-        pbase: NodeId,
-        bindings: &HashMap<DeclarationId, LocalBinding>,
-        options: PlaceUseOptions,
-    ) -> Result<TypedExpression, CheckStop> {
-        let (declaration, local, borrow) =
-            self.resolve_dereference_holder(node, pbase, bindings)?;
-        let suffixes = self.tree.children_with(node, Production::Psuffix)?;
-        let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
-        let copy = self.is_copy_type(ty)?;
-        // [LIV-2] the read-out of a `deref` target of this statement's commit
-        // is admitted on exactly [SET-2]'s exchange ground: the exchange
-        // leaves the referent place owning one valid value at every program
-        // point, so the sole [OWN-5] exception covers this move as well.
-        let mut read_out_place = borrow.place.clone();
-        read_out_place.extend_fields(&fields);
-        self.check_commit_place_live(&read_out_place, use_node, false)?;
-        let read_out = !copy && options.explicit_move && self.take_commit_read_out(&read_out_place);
-        if !copy && !read_out {
-            if options.explicit_move {
-                return self.issue_node(
-                    SemanticRule::Own5,
-                    use_node,
-                    SemanticIssueKind::BorrowConflict,
-                );
-            }
-            // An affine referent may still be matched through the borrow:
-            // [OWN-13] leaves the scrutinee live and derives borrowed payload
-            // binders. Every other bare use is the [OWN-1] error.
-            if matches!(options.context, PlaceUseContext::Ordinary) {
-                return self.issue_node(
-                    SemanticRule::Own1,
-                    use_node,
-                    SemanticIssueKind::BareAffineUse {
-                        mechanical_fix: "write `move p` for the affine place",
-                    },
-                );
-            }
-        }
-        if copy && options.explicit_move && self.judges_class_spelling() {
-            return self.issue_node(
-                SemanticRule::Own1,
-                use_node,
-                SemanticIssueKind::MoveOfCopy {
-                    mechanical_fix: "use the copy place without `move`",
-                },
-            );
-        }
-        self.check_holder_not_suspended(&local, use_node)?;
-        let mut resolved = borrow.place.clone();
-        resolved.extend_fields(&fields);
-        self.check_loan_access(
-            bindings,
-            Some(declaration),
-            &resolved,
-            AccessKind::Read,
-            use_node,
-        )?;
-        let mut effects = EffectSet::NONE;
-        // [EFF-1] as above: the descriptor read through a holder observes the
-        // viewed state no more than a direct one does.
-        if !Self::checked_type_is_loan_bearing(ty) {
-            for path in self.effect_paths_for_place(use_node, &resolved, bindings)? {
-                effects.add_read(path);
-            }
-        }
-        let expression = if !fields.is_empty() {
-            CheckedExpression::Project {
-                carrier: self.tree.path(use_node)?.clone(),
-                binding: local.binding,
-                fields: fields.clone(),
-                ty,
-                consume_root: false,
-                residual_drops: Vec::new(),
-            }
-        } else if self.borrow_addresses_storage(ty)? {
-            CheckedExpression::DerefAddressed {
-                carrier: self.tree.path(use_node)?.clone(),
-                binding: local.binding,
-                ty,
-            }
-        } else {
-            CheckedExpression::Binding {
-                carrier: self.tree.path(use_node)?.clone(),
-                binding: local.binding,
-                ty,
-                slice_origins: Vec::new(),
-                consume_root: false,
-            }
-        };
-        // A read-out delivers the referent's own value: the previous owner
-        // leaves through this move and the commit reinitializes the place
-        // [LIV-2], so the value is `own` and carries no borrow.
-        if copy || read_out {
-            return Ok(TypedExpression::owned_with_access(
-                expression,
-                effects,
-                resolved,
-                AccessKind::Read,
-            ));
-        }
-        let mode = borrow.mode();
-        let mut place = borrow.place.clone();
-        place.extend_fields(&fields);
-        Ok(TypedExpression {
-            expression,
-            mode,
-            borrow: Some(BorrowInfo { place, ..borrow }),
-            slice: None,
-            holder: Some(declaration),
-            reference_value: false,
-            effects,
-            accesses: vec![PlaceAccess {
-                place: resolved,
-                kind: AccessKind::Read,
-            }],
-        })
-    }
-
+    /// [GRAM-5, REF-1] the complete written `place`, with every `deref` step
+    /// already replaced by the path the reference it names names.
     pub(super) fn resolve_explicit_place(
         &self,
         carrier: NodeId,
@@ -355,7 +138,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(pbase, Production::Place)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let inner = self.resolve_explicit_place(carrier, inner, bindings)?;
-            self.resolve_explicit_dereference(carrier, pbase, inner)?
+            self.resolve_explicit_dereference(carrier, pbase, inner, bindings)?
         } else {
             if !self.tree.children(pbase)?.is_empty() {
                 return self.unsupported(UnsupportedSemanticFeature::CompositeValues, pbase);
@@ -385,44 +168,72 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 declaration,
                 ty: local.ty,
                 mode: local.mode,
-                borrow: local.borrow.clone(),
-                holder_pending: local.mode != CheckedMode::Own,
                 expression: CheckedExpression::Binding {
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
                     ty: local.ty,
-                    slice_origins: local
-                        .slice
-                        .as_ref()
-                        .map(|slice| slice.origins.clone())
-                        .unwrap_or_default(),
+                    slice_origins: Vec::new(),
                     consume_root: false,
                 },
-                resolved: local.borrow.map_or_else(
-                    || ResolvedPlace::fields(declaration, Vec::new()),
-                    |borrow| borrow.place,
-                ),
+                resolved: ResolvedPlace::binding(local.binding),
             }
         };
 
         for suffix in self.tree.children_with(node, Production::Psuffix)? {
             // A subscript selects a composite element value, which this
-            // version does not implement for explicit deref chains.
+            // version does not implement for explicit deref chains; the
+            // indexed path in `flat_storage` owns [OP-4].
             if self.subscript_offset(suffix)?.is_some() {
                 return self.unsupported(UnsupportedSemanticFeature::CompositeValues, suffix);
             }
-            if place.holder_pending {
+            // [TYPE-7] a reference binding used where a value of its referent
+            // type is expected needs `deref(.)`; a suffix on one is exactly
+            // that use.
+            if place.mode.is_reference() {
                 return self.issue_node(
                     SemanticRule::Type7,
                     suffix,
                     SemanticIssueKind::MissingDereference {
-                        mechanical_fix: "write `deref(holder)`",
+                        mechanical_fix: "write `deref(p)`",
                     },
                 );
             }
             let name = self
                 .deferred_use_at(suffix, DeferredUseRole::ProjectedField)?
-                .spelling();
+                .spelling()
+                .to_owned();
+            // [TYPE-10] the eight measure and window-part spellings are
+            // reserved from every field name [FORM-3], so one of them here is
+            // a read of a pseudo-field rather than a struct field. A measure
+            // read is [OP-15]'s place form and is resolved by the measure
+            // path before this walker sees it, so a spelling arriving here is
+            // one of the positions TYPE-10 refuses.
+            self.reject_reserved_pseudo_field(suffix, &name)?;
+            // [TYPE-9] a `Box`'s content is its field `inner`, reached by the
+            // ordinary field step and never by `deref`.
+            if let CheckedType::Nominal(nominal) = place.ty
+                && let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind
+            {
+                if name != "inner" {
+                    return self.issue_node(
+                        SemanticRule::Type9,
+                        suffix,
+                        SemanticIssueKind::type_mismatch(
+                            "the Box content field `inner`",
+                            format!("the field name `{name}`, which a Box does not declare"),
+                        ),
+                    );
+                }
+                place.expression = CheckedExpression::BoxDeref {
+                    carrier: self.tree.path(carrier)?.clone(),
+                    nominal,
+                    referent,
+                    value: Box::new(place.expression),
+                };
+                place.ty = referent;
+                place.resolved.path.push(PlaceStep::Deref);
+                continue;
+            }
             let CheckedType::Nominal(nominal) = place.ty else {
                 return self.issue_node(
                     SemanticRule::Type5,
@@ -459,137 +270,91 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             let field_index =
                 u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            let field_type = field.ty;
             place.expression = CheckedExpression::ProjectValue {
                 carrier: self.tree.path(carrier)?.clone(),
                 value: Box::new(place.expression),
                 nominal,
                 field: field_index,
-                ty: field.ty,
+                ty: field_type,
             };
-            place.ty = field.ty;
+            place.ty = field_type;
             place.resolved.extend_fields(&[field_index]);
         }
         Ok(place)
     }
 
+    /// [TYPE-7] `deref(place)` denotes the referent of a reference, and
+    /// nothing else.
+    ///
+    /// [REF-1] resolving a place whose `deref` step names a reference
+    /// variable replaces that step with the path that reference names, so the
+    /// resolved place below this step is rooted wherever that path is rooted.
     pub(super) fn resolve_explicit_dereference(
         &self,
         carrier: NodeId,
         pbase: NodeId,
         mut inner: ExplicitPlace,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<ExplicitPlace, CheckStop> {
-        if inner.holder_pending {
-            if self.borrow_addresses_storage(inner.ty)? {
-                let CheckedExpression::Binding { binding, .. } = inner.expression else {
-                    return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-                };
-                // Explicit dereference chains must first read the value
-                // stored behind the borrow. A later Box dereference reads
-                // that value's referent, not the owner's pointer slot.
-                inner.expression = CheckedExpression::DerefAddressed {
-                    carrier: self.tree.path(carrier)?.clone(),
-                    binding,
-                    ty: inner.ty,
-                };
-            }
-            inner.holder_pending = false;
-            return Ok(inner);
-        }
-
-        let CheckedType::Nominal(nominal) = inner.ty else {
+        if !inner.mode.is_reference() {
             return self.issue_node(
                 SemanticRule::Type7,
                 pbase,
                 SemanticIssueKind::MissingDereference {
-                    mechanical_fix: "deref requires a borrow, box, or arena place",
+                    mechanical_fix:
+                        "a Box's content is its field inner [TYPE-9]; an owned place is named \
+                         as itself",
                 },
             );
-        };
-        match self.nominal(nominal)?.kind {
-            CheckedNominalKind::Box { referent, .. } => {
-                inner.expression = CheckedExpression::BoxDeref {
-                    carrier: self.tree.path(carrier)?.clone(),
-                    nominal,
-                    referent,
-                    value: Box::new(inner.expression),
-                };
-                inner.ty = referent;
-                inner.resolved.storage_path.push(PlaceProjection::Deref);
-            }
-            CheckedNominalKind::Arena { content, .. } => {
-                inner.expression = CheckedExpression::ArenaDeref {
-                    carrier: self.tree.path(carrier)?.clone(),
-                    nominal,
-                    content,
-                    value: Box::new(inner.expression),
-                };
-                inner.ty = content;
-                inner.resolved.storage_path.push(PlaceProjection::Deref);
-            }
-            _ => {
-                return self.issue_node(
-                    SemanticRule::Type7,
-                    pbase,
-                    SemanticIssueKind::MissingDereference {
-                        mechanical_fix: "deref requires a borrow, box, or arena place",
-                    },
-                );
-            }
         }
+        let local = bindings
+            .get(&inner.declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        self.check_reference_valid(local, pbase)?;
+        let binding = local.binding;
+        let named = self.resolve_reference_root(inner.declaration, bindings)?;
+        let [path] = named.as_slice() else {
+            // [REF-1] a reference whose incoming edges name different paths
+            // carries the union of their sets, and every check on it must
+            // hold for every member. One written place selects one storage,
+            // so lowering a `deref` of such a union needs a representation
+            // this compiler does not have. That is a capability limit and
+            // never a source rejection.
+            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, pbase);
+        };
+        // The referent is read through the reference; the reference itself
+        // stays a distinct expression so lowering never has to guess whether
+        // a reference binding is passed on or read through [TYPE-7].
+        inner.expression = CheckedExpression::DerefAddressed {
+            carrier: self.tree.path(carrier)?.clone(),
+            binding,
+            ty: inner.ty,
+        };
+        inner.mode = CheckedMode::Own;
+        inner.resolved = path.clone();
         Ok(inner)
     }
 
-    /// [SET-1, SET-2] an owning Box edge is a typed storage projection, both
-    /// from an own binding and after dereferencing an exclusive holder.
-    pub(super) fn check_box_storage_set_target(
+    /// [TYPE-10] the eight measure and window-part spellings are names, not
+    /// declarations, and occupy no field domain.
+    pub(in crate::semantic::check) fn reject_reserved_pseudo_field(
         &self,
-        node: NodeId,
-        bindings: &HashMap<DeclarationId, LocalBinding>,
-        form: MutationForm,
-    ) -> Result<Option<MutationTarget>, CheckStop> {
-        let place = self.resolve_explicit_place(node, node, bindings)?;
-        if !place
-            .resolved
-            .storage_path
-            .contains(&PlaceProjection::Deref)
+        suffix: NodeId,
+        name: &str,
+    ) -> Result<(), CheckStop> {
+        if super::super::types::measure_named(name).is_none()
+            && super::super::types::window_part_named(name).is_none()
         {
-            return Ok(None);
+            return Ok(());
         }
-        if matches!(place.mode, CheckedMode::Shared(_)) {
-            return self.issue_node(SemanticRule::Own5, node, SemanticIssueKind::BorrowConflict);
-        }
-        let holder = place.borrow.as_ref().map(|_| place.declaration);
-        if holder.is_some() {
-            let local = bindings
-                .get(&place.declaration)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            self.check_holder_not_suspended(local, node)?;
-        }
-        self.check_loan_access(bindings, holder, &place.resolved, AccessKind::Write, node)?;
-        self.check_mutation_target_class(node, place.ty, form)?;
-        let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(node, &place.resolved, bindings)? {
-            effects.add_write(path.clone());
-            if form.is_replace() {
-                effects.add_read(path);
-            }
-        }
-        let (binding, path) = self.explicit_container_path(&place.expression, node)?;
-        Ok(Some(MutationTarget {
-            declaration: place.declaration,
-            access: MutationAccess::Place {
-                holder,
-                place: place.resolved.clone(),
+        self.issue_node(
+            SemanticRule::Type10,
+            suffix,
+            SemanticIssueKind::ReservedPseudoField {
+                spelling: name.to_owned(),
+                mechanical_fix: "use the operation that moves the window boundary [OP-10]",
             },
-            place: place.resolved,
-            element: false,
-            target: CheckedSetTarget::Storage(CheckedContainerRoot {
-                root: crate::semantic::CheckedPlaceRoot::Binding(binding),
-                path,
-                ty: place.ty,
-            }),
-            effects,
-            unsupported: None,
-        }))
+        )
     }
 }

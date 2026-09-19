@@ -183,10 +183,10 @@ pub(crate) enum GoalProjection {
     Deref,
     Field(u32),
     /// One [OP-4] subscript of the base reached so far, which [MSR-1] admits
-    /// in a measure place so that `len_of(table[i])` is a term. The offset is
-    /// a logical one and the obligation it owes is discharged where the place
-    /// is formed [MSR-4].
-    Subscript(super::places::PlaceOffset),
+    /// in a measure place so that `table[i].len` is a term. The offset is a
+    /// logical one, its captured value is immutable once the place is formed
+    /// [REF-1], and the obligation it owes is discharged there [MSR-4].
+    Subscript(super::places::CapturedValue),
 }
 
 /// One structural goal row and its exact selected type/domain identity.

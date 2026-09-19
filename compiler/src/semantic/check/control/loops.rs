@@ -7,9 +7,10 @@ use crate::{
 };
 
 use super::super::super::model::{
-    CheckedLoopId, CheckedLoopInvariant, CheckedMode, CheckedStatement, CheckedType, IntegerType,
+    BindingId, CheckedLoopId, CheckedLoopInvariant, CheckedMode, CheckedStatement, CheckedType,
+    IntegerType,
 };
-use super::super::borrows::RequiredReferent;
+use super::super::references::RequiredReferent;
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
 };
@@ -117,10 +118,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     live: true,
                     loop_depth: scope.loops.len() + 1,
                     compiler_updated: true,
-                    borrow: None,
-                    slice: None,
-                    slice_loans: Vec::new(),
-                    suspended: false,
+                    reference: None,
                 },
             )
             .is_some()
@@ -158,20 +156,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 give_context: scope.give_context,
             },
         )?;
-        // [OWN-11] the body is its own region block, so every loan it opened
-        // in that region ends with the iteration: on the backedge before the
-        // carried-state comparison, and on every edge leaving the body.
-        let body_region = self.region_declared_at(node)?;
-        for local in body_bindings.values_mut() {
-            local.end_slice_region(body_region);
-        }
+        // [OWN-11, REF-2] the body is an ordinary block whose own bindings
+        // begin and end with one iteration, so a reference whose path starts
+        // at one of them is invalid on the backedge, before the carried-state
+        // comparison, and on every edge leaving the body.
+        let leaving = Self::bindings_leaving_scope(&body_bindings, &header_keys);
+        Self::invalidate_references_leaving_scope(&mut body_bindings, &leaving);
         for state in &mut checked.give_states {
-            for local in state.values_mut() {
-                local.end_slice_region(body_region);
-            }
+            Self::invalidate_references_leaving_scope(state, &leaving);
         }
         for state in &mut checked.break_states {
-            state.end_slice_region(body_region);
+            state.invalidate_references_leaving_scope(&leaving);
         }
         self.judge_backedge_liveness(node, &header_keys, &header_bindings, &body_bindings)?;
         if checked.can_continue
@@ -509,20 +504,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 give_context: scope.give_context,
             },
         )?;
-        // [OWN-11] the body is its own region block, so every loan it opened
-        // in that region ends with the iteration: on the backedge before the
-        // carried-state comparison, and on every edge leaving the body.
-        let body_region = self.region_declared_at(node)?;
-        for local in body_bindings.values_mut() {
-            local.end_slice_region(body_region);
-        }
+        // [OWN-11, REF-2] the body is an ordinary block whose own bindings
+        // begin and end with one iteration, so a reference whose path starts
+        // at one of them is invalid on the backedge, before the carried-state
+        // comparison, and on every edge leaving the body.
+        let leaving = Self::bindings_leaving_scope(&body_bindings, &base_keys);
+        Self::invalidate_references_leaving_scope(&mut body_bindings, &leaving);
         for state in &mut checked.give_states {
-            for local in state.values_mut() {
-                local.end_slice_region(body_region);
-            }
+            Self::invalidate_references_leaving_scope(state, &leaving);
         }
         for state in &mut checked.break_states {
-            state.end_slice_region(body_region);
+            state.invalidate_references_leaving_scope(&leaving);
         }
         self.judge_backedge_liveness(node, &base_keys, &base_bindings, &body_bindings)?;
         if checked.can_continue
@@ -649,9 +641,10 @@ impl BreakState {
             .retain(|declaration, _| preserved.contains(declaration));
     }
 
-    pub(super) fn end_slice_region(&mut self, region: DeclarationId) {
-        for local in self.bindings.values_mut() {
-            local.end_slice_region(region);
-        }
+    /// [REF-2] the scope of the local variables a break edge leaves ends
+    /// there, so a reference whose path starts at one of them is invalid on
+    /// this edge.
+    pub(super) fn invalidate_references_leaving_scope(&mut self, leaving: &[BindingId]) {
+        Checker::invalidate_references_leaving_scope(&mut self.bindings, leaving);
     }
 }

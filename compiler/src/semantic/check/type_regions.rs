@@ -105,38 +105,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         destination: Option<DeclarationId>,
         node: NodeId,
     ) -> Result<(), CheckStop> {
-        let regions = self.confinement_regions(ty)?;
-        if regions.is_empty() {
-            return Ok(());
-        }
-        let mut supplied = function.region_parameters.clone();
-        for parameter in &function.parameters {
-            supplied.extend(self.confinement_regions(parameter.ty)?);
-        }
-        for (_, argument) in function.substitution.entries() {
-            if let super::generics::GenericArgument::Type(ty) = argument {
-                supplied.extend(self.confinement_regions(*ty)?);
-            }
-        }
-        for region in regions {
-            let within = match destination {
-                Some(destination) => {
-                    self.declaration_is_within_region_block(destination, region)?
-                }
-                None => false,
-            };
-            if supplied.contains(&region) || within {
-                continue;
-            }
-            return self.issue_node(
-                crate::SemanticRule::Blk4,
-                node,
-                crate::SemanticIssueKind::ConfinedValueEscape {
-                    region: self.region_phrase(region)?,
-                    mechanical_fix: "keep the destination within every region named by the value's complete type, or allocate its storage in a region that outlives the destination",
-                },
-            );
-        }
+        // [BLK-4] had no successor: v0.60 has one heap [STOR-8], no region
+        // block, and no confined value, so no type names a region a
+        // destination could escape. The walk is retained only so that its
+        // two remaining callers keep one entry point while the region-shape
+        // apparatus is removed with the storage package.
+        let _ = (ty, function, destination, node);
         Ok(())
     }
 

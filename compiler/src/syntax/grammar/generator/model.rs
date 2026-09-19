@@ -160,6 +160,7 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         // v0.45 [PROV-6]: the declaration modifier and the linearity bound
         // alternatives. v0.60 retires `dispose`; [OP-14] `free_empty` is an
         // ordinary [PRE-1] call, not an atom.
+        ("opaque", "Opaque"),
         ("linear", "Linear"),
         ("affine", "Affine"),
         ("copy", "Copy"),

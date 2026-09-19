@@ -25,7 +25,10 @@ use super::super::postcondition::{
 use super::generics::GenericArgument;
 use super::publication;
 use super::requires::{ClauseKind, ExpandedClauseDatum, ExpandedClauseExpression};
-use super::{CheckStop, Checker, ControlCounters, ControlScope, FunctionSignature, LocalBinding};
+use super::{
+    CheckStop, Checker, ControlCounters, ControlScope, FunctionSignature, LocalBinding,
+    ParameterSignature,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SelectorAdmissionType {
@@ -42,6 +45,23 @@ enum SelectorAdmissionType {
 struct PostconditionBindingInfo {
     ty: CheckedType,
     implicit_deref: bool,
+}
+
+/// [MSR-3] whether one declared parameter has an exit state a clause may name.
+///
+/// v0.60 has one reference kind, so the mode no longer decides it: the
+/// denotation is keyed on the parameter's mode *and* on what the callable's
+/// declared row writes [MSR-3]. A reference the row writes has two states at
+/// the boundary — the entry state `entry(p)` names and the exit state a bare
+/// `p` names in `ensures` — while a by-value parameter and a reference the
+/// row only reads have one.
+fn parameter_has_exit_state(function: &FunctionSignature, parameter: &ParameterSignature) -> bool {
+    parameter.mode.is_reference()
+        && function
+            .declared_effects
+            .writes
+            .iter()
+            .any(|path| path.root == parameter.declaration)
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -403,15 +423,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .signatures
                     .get(target.0 as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                match self.call_region_arguments(call, target_signature) {
-                    Ok(_) => {}
-                    Err(
-                        CheckStop::Issue(_)
-                        | CheckStop::Unsupported(_)
-                        | CheckStop::PostconditionPrerequisiteUnavailable,
-                    ) => continue,
-                    Err(stop) => return Err(stop),
-                }
+                // A call's written argument list carries type, const and
+                // function arguments alone [GRAM-3], all of which the
+                // instance selection above has already read.
+                let _ = target_signature;
                 if !eligible.contains(&target) {
                     eligible.push(target);
                 }
@@ -577,7 +592,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
                         projections: Vec::new(),
                         ty: parameter.ty,
-                        exit_state: matches!(parameter.mode, CheckedMode::Unique(_)),
+                        exit_state: parameter_has_exit_state(function, parameter),
                     }),
                 );
             }
@@ -695,7 +710,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 ancestor = self.tree.parent(node)?;
             }
-            if !in_ensures || !parameter.is_some_and(|p| matches!(p.mode, CheckedMode::Unique(_))) {
+            if !in_ensures
+                || !parameter.is_some_and(|p| parameter_has_exit_state(function, p))
+            {
                 return self.issue_node(
                     SemanticRule::Msr3,
                     base,
@@ -1098,7 +1115,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     RelationDatum::Measure(_, PostconditionPlace {
                         root: PostconditionPlaceRoot::ExitParameter { ordinal }, ..
                     }) if function.parameters.get(*ordinal as usize)
-                        .is_some_and(|parameter| matches!(parameter.mode, CheckedMode::Unique(_)))
+                        .is_some_and(|parameter| parameter_has_exit_state(function, parameter))
                 )
             });
         if (!matches!(selector.result_type, CheckedType::Integer(_)) && !exclusive_state_only)
@@ -1943,7 +1960,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             && signature
                 .parameters
                 .iter()
-                .any(|parameter| matches!(parameter.mode, CheckedMode::Unique(_)));
+                .any(|parameter| parameter_has_exit_state(signature, parameter));
         if signature
             .results
             .iter()

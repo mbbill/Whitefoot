@@ -10,133 +10,38 @@ use super::super::super::super::goal::{
     EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalProjection,
 };
 use super::super::super::super::model::{
-    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow, CheckedSliceOrigin,
-    CheckedType, LoanStrength,
+    CheckedCallSeparation, CheckedEffectStep, CheckedExpression, CheckedMode, CheckedNominalKind,
+    CheckedStatePath, CheckedType,
 };
-use super::super::super::borrows::{
-    AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, TemporaryLoan, places_overlap,
-    push_slice_origin,
+use super::super::super::super::places::{
+    CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations, places_overlap,
 };
+use super::super::super::references::InvalidationEvent;
 use super::super::super::{
-    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, ResultProvenance,
-    TypedExpression, borrow_result_provenance,
+    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
 };
 
-/// One formal region's binding at one call site.
+/// One entry of a call's substituted effect row [EFF-5].
 ///
-/// [FORM-8] writes only the region parameters no parameter position
-/// determines. Invariant input positions fix a brand; only formals without
-/// an invariant input take the least region of their loan actuals.
-#[derive(Clone, Copy)]
-pub(in crate::semantic::check) struct RegionBinding {
-    /// Whether the caller wrote this region argument.
-    written: bool,
-    /// The explicit argument or the least actual of a loan-only formal.
-    /// An invariant input instead fixes `store` and is never shortened.
-    region: Option<DeclarationId>,
-    /// [TYPE-2, PROV-1] the first invariant nominal or store brand.
-    ///
-    /// This includes phantom nominal parameters: equality is decided by
-    /// the exact region arguments of the type, not its fields. A
-    /// loan region relates two positions by outlives and takes the least
-    /// region observed; a store region takes the first and every later
-    /// position of the same formal must name it exactly, which is the
-    /// ordinary [TYPE-5] argument mismatch where it does not.
-    store: Option<DeclarationId>,
-}
-
-impl RegionBinding {
-    const INFERRED: Self = Self {
-        written: false,
-        region: None,
-        store: None,
-    };
-}
-
-/// What one parameter position requires of its actual argument's mode.
-#[derive(Clone, Copy)]
-pub(in crate::semantic::check) enum ModeExpectation {
-    /// An owned value.
-    Own,
-    /// A borrow of this kind. `region` is `None` where [FORM-8] leaves the
-    /// formal region for the actual to determine, and the actual's own region
-    /// is then the substituted one.
-    Borrow {
-        kind: BorrowKind,
-        region: Option<DeclarationId>,
-    },
-}
-
-/// One access an argument position claims for the duration of the call: the
-/// resolved place it reaches and the strength it reaches it with [OWN-12].
-///
-/// A view argument claims the storage its origin names. Where that origin is
-/// the enclosing declaration's own view parameter, the place is that
-/// parameter's binding: inside the callee a formal view's region is a region
-/// of its own and is incomparable with every other formal region [OWN-3,
-/// FORM-8], so the storage it reaches is exactly what that one binding
-/// reaches. A concrete overlap with another argument is decided where the
-/// view was formed over a written place, which is the caller that supplied
-/// it — the origin ceiling carries each formal origin down to that caller.
-struct CallAccessClaim {
-    kind: BorrowKind,
+/// Each declared `effect_path` rooted at reference parameter i takes actual
+/// argument i's path, and each IDENT index or range endpoint takes the value
+/// its own argument supplies. A by-value argument contributes a consumption
+/// (`move`) or a read (copy) of its own place to the same comparison, which
+/// is why an entry carries a resolved place and a category and nothing about
+/// how it was spelled.
+struct SubstitutedEntry {
     place: ResolvedPlace,
+    /// Whether this entry writes, replaces, moves out of, or frees the
+    /// storage at its path and everything below it [EFF-1].
+    write: bool,
+    /// The argument ordinal this entry came from, so the pairwise comparison
+    /// can skip a pair of entries belonging to one argument.
+    argument: usize,
+    /// The rendered path the [EFF-5] diagnostic carries.
+    spelling: String,
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// The single provenance-candidate parameter position of a
-    /// borrow-returning callee signature under the reborrow extension: the
-    /// one parameter written as a borrow of the result's kind in the
-    /// result's formal region, admitted only when no other parameter
-    /// mentions that formal region in its mode or type. Distinct formal
-    /// regions are incomparable inside the callee [OWN-3] and storage is
-    /// borrow- and region-free [STOR-5], so every borrow an accepted callee
-    /// can deliver in the result region is rooted in this parameter's actual
-    /// or in immutable named-const storage; the candidate's resolved place
-    /// therefore covers every mutable storage the result can reach.
-    ///
-    /// Every other disposition forms no candidate here. Under the
-    /// declaration-provenance candidate, FN-1 has already rejected the
-    /// ambiguous boundary at its `rtype`, so only the const-storage
-    /// disposition still reaches this call site.
-    fn result_borrow_candidate(&self, signature: &FunctionSignature) -> Option<usize> {
-        match borrow_result_provenance(
-            &signature.parameters,
-            signature.result_mode,
-            signature.result,
-        ) {
-            Some(ResultProvenance::Candidate(index)) => Some(index),
-            Some(
-                ResultProvenance::Unjudgeable
-                | ResultProvenance::ConstStorage
-                | ResultProvenance::Ambiguous,
-            )
-            | None => None,
-        }
-    }
-
-    /// FN-1 confines a mutable result to its unique candidate; const storage
-    /// cannot supply it. With the same complete type and no same-typed proper
-    /// subplace, only the entire candidate can be returned. This declaration
-    /// judgment changes neither the loan ceiling nor an inexact actual.
-    pub(in crate::semantic::check) fn whole_result_borrow_candidate(
-        &self,
-        signature: &FunctionSignature,
-    ) -> Result<Option<usize>, CheckStop> {
-        if !matches!(signature.result_mode, CheckedMode::Unique(_)) {
-            return Ok(None);
-        }
-        let Some(candidate) = self.result_borrow_candidate(signature) else {
-            return Ok(None);
-        };
-        if signature.parameters[candidate].ty != signature.result
-            || !self.has_no_same_typed_subplace(signature.result)?
-        {
-            return Ok(None);
-        }
-        Ok(Some(candidate))
-    }
-
     pub(super) fn check_user_call(
         &self,
         node: NodeId,
@@ -176,8 +81,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let effects = Some(super::super::super::super::model::CheckedEffects {
             reads: effective.declared_effects.reads.clone(),
             writes: effective.declared_effects.writes.clone(),
-            allocates: effective.declared_effects.allocates.clone(),
-            allocates_arenas: effective.declared_effects.allocates_arenas.clone(),
+            allocates: effective.declared_effects.allocates,
         });
         self.check_selected_user_call(node, &effective, effects, function, bindings, loop_depth)
     }
@@ -192,9 +96,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
         let target = signature.id;
-        let mut region_bindings = self.call_region_arguments(node, signature)?;
-        let mut loan_observations = Vec::new();
-        let mut parameter_atoms = Vec::new();
         let fields = if let Some(list) = self
             .tree
             .first_child_with(node, Production::FieldinitList)?
@@ -216,16 +117,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let mut arguments = Vec::with_capacity(fields.len());
-        let mut checked_borrows = Vec::with_capacity(fields.len());
-        let mut checked_slices = Vec::with_capacity(fields.len());
-        let mut argument_holders = Vec::with_capacity(fields.len());
-        let mut argument_places = Vec::with_capacity(fields.len());
         let mut argument_nodes = Vec::with_capacity(fields.len());
         let mut goal_arguments = Vec::with_capacity(fields.len());
-        let mut call_scoped_borrows: Vec<TemporaryLoan> = Vec::new();
+        // [EFF-5] each actual's resolved path set, in parameter order. The set
+        // has more than one member only where the actual is a reference a
+        // control-flow join gave more than one path [REF-1]; every check must
+        // then hold for every member.
+        let mut actual_paths: Vec<Vec<ResolvedPlace>> = Vec::with_capacity(fields.len());
+        let mut actual_modes = Vec::with_capacity(fields.len());
         let call = self.tree.path(node)?.clone();
         let mut effects = EffectSet::NONE;
-        let result_candidate = self.result_borrow_candidate(signature);
         for (ordinal, (field, parameter)) in
             fields.into_iter().zip(&signature.parameters).enumerate()
         {
@@ -240,192 +141,94 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(field, Production::Atom)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let explicit_borrow = self
-                .tree
-                .first_child_with(atom, Production::BorrowExpr)?
-                .is_some();
-            let argument = self.check_call_argument_atom(
-                function,
-                atom,
-                bindings,
-                loop_depth,
-                signature.result_mode == CheckedMode::Own,
-                result_candidate == Some(ordinal),
-            )?;
-            self.check_call_argument_loans(
-                bindings,
-                &argument,
-                explicit_borrow,
-                &call_scoped_borrows,
-                atom,
-            )?;
-            let expectation = self.substitute_mode(parameter.mode, signature, &region_bindings)?;
-            let type_regions =
-                self.match_type_regions(&parameter.region_shape, argument.expression.ty())?;
-            for (position, actual) in &type_regions {
-                let Some(index) = Self::formal_region_index(signature, position.formal) else {
-                    continue;
-                };
-                if position.invariant {
-                    // The first brand wins; exact whole-type comparison
-                    // below checks every repeated occurrence, including
-                    // multiple positions inside this same operand.
-                    region_bindings[index].store.get_or_insert(*actual);
-                } else {
-                    loan_observations.push((index, *actual, atom));
-                }
-            }
-            let expected_type = self.substitute_parameter_type(
-                parameter.ty,
-                signature,
-                &region_bindings,
-                &type_regions,
-            )?;
-            if argument.expression.ty() != expected_type {
+            let argument =
+                self.check_call_argument_atom(function, atom, bindings, loop_depth)?;
+            if argument.expression.ty() != parameter.ty {
                 return self.issue_node(
                     SemanticRule::Type5,
                     atom,
                     SemanticIssueKind::type_mismatch(
-                        self.checked_type_name(expected_type)?,
+                        self.checked_type_name(parameter.ty)?,
                         self.checked_type_name(argument.expression.ty())?,
                     ),
                 );
             }
-            let (passed_borrow, expected_mode) =
-                self.call_argument_borrow(expectation, &argument, atom)?;
-            parameter_atoms.push(atom);
-            if let (
-                CheckedMode::Shared(formal) | CheckedMode::Unique(formal),
-                CheckedMode::Shared(actual) | CheckedMode::Unique(actual),
-            ) = (parameter.mode, expected_mode)
-                && let Some(index) = Self::formal_region_index(signature, formal)
-            {
-                loan_observations.push((index, actual, atom));
+            if argument.mode != parameter.mode {
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    atom,
+                    SemanticIssueKind::type_mismatch(
+                        self.checked_value_name(parameter.mode, parameter.ty)?,
+                        self.checked_value_name(argument.mode, argument.expression.ty())?,
+                    ),
+                );
             }
-            argument_places.push(
-                argument
-                    .accesses
-                    .iter()
-                    .map(|access| access.place.clone())
-                    .collect::<Vec<_>>(),
-            );
-            let ordinal =
+            // [REF-2] a reference handed to a call must be valid at the call.
+            if let Some(reference) = &argument.reference
+                && !reference.is_valid()
+            {
+                return self.issue_node(
+                    SemanticRule::Ref2,
+                    atom,
+                    SemanticIssueKind::InvalidReferenceUse {
+                        binder: parameter.name.clone(),
+                        event: match &reference.validity {
+                            super::super::super::references::ReferenceValidity::Invalid(event) => {
+                                event.phrase()
+                            }
+                            super::super::super::references::ReferenceValidity::Valid => "",
+                        },
+                        mechanical_fix: super::super::super::references::REF2_FORM_AGAIN,
+                    },
+                );
+            }
+            let paths = argument
+                .reference
+                .as_ref()
+                .map(|reference| reference.paths.clone())
+                .unwrap_or_else(|| {
+                    argument
+                        .accesses
+                        .iter()
+                        .map(|access| access.place.clone())
+                        .collect()
+                });
+            let ordinal_index =
                 u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
             goal_arguments.push(self.call_goal_argument(
                 function.id,
                 &call,
-                ordinal,
+                ordinal_index,
                 atom,
-                expected_mode,
-                expected_type,
+                parameter.mode,
+                parameter.ty,
                 &argument,
-                passed_borrow.as_ref(),
+                paths.first(),
                 bindings,
             )?);
             argument_nodes.push(self.tree.path(atom)?.clone());
-            if explicit_borrow && let Some(borrow) = &argument.borrow {
-                call_scoped_borrows.push(TemporaryLoan::new(borrow.clone(), &argument));
-            }
-            checked_borrows.push(passed_borrow);
-            checked_slices.push(argument.slice.clone());
-            argument_holders.push(argument.holder);
+            actual_paths.push(paths);
+            actual_modes.push(parameter.mode);
             effects = effects.union(argument.effects);
             arguments.push(argument.expression);
         }
-        let actual_regions = self.resolved_regions(&mut region_bindings, &loan_observations)?;
-        for ((parameter, actual), atom) in signature
-            .parameters
-            .iter()
-            .zip(&arguments)
-            .zip(&parameter_atoms)
-        {
-            let expected = self.substitute_result_type(parameter.ty, signature, &actual_regions)?;
-            if actual.ty() != expected {
-                return self.issue_node(
-                    SemanticRule::Type5,
-                    *atom,
-                    SemanticIssueKind::type_mismatch(
-                        self.checked_type_name(expected)?,
-                        self.checked_type_name(actual.ty())?,
-                    ),
-                );
-            }
+        // [STOR-8] a unit carrying the no-heap declaration cannot call an
+        // allocating prelude row; [OP-11] refuses a `swap` over a copy place.
+        self.reject_allocating_call_under_no_heap(node, signature)?;
+        self.reject_swap_over_copy(node, signature)?;
+        // [EFF-5] substitute, compare pairwise, then project the surviving
+        // footprint onto the caller's own row [EFF-2].
+        // [EFF-3] a call inherits its callee's allocation fact.
+        if signature.declared_effects.allocates {
+            effects.add_allocation();
         }
-        self.check_region_parameter_bounds(node, signature, &actual_regions)?;
-        self.check_call_borrow_overlap(node, &checked_borrows, &checked_slices)?;
-        self.project_call_effects(
-            node,
-            function,
-            signature,
-            &actual_regions,
-            &checked_borrows,
-            &checked_slices,
-            &argument_holders,
-            &argument_places,
-            bindings,
-            &mut effects,
-        )?;
-        let result = self.substitute_result_type(signature.result, signature, &actual_regions)?;
-        let result_mode =
-            self.substituted_mode(signature.result_mode, signature, &actual_regions)?;
-        let slice = self.substitute_slice_result(signature, result, &checked_slices, bindings)?;
-        let slice_origins = slice
-            .as_ref()
-            .map(|slice| slice.origins.clone())
-            .unwrap_or_default();
-        // Reborrow extension: a borrow-mode result with a provenance
-        // candidate carries the candidate actual's complete resolved place
-        // as its own claim, so binding the result creates an ordinary holder
-        // over caller storage [OWN-5, OWN-6]. Creating that claim through a
-        // still-usable `&uniq` parent holder suspends the parent for the
-        // remainder of its life: the claim may outlive the statement inside
-        // the bound result, so statement-end resumption would leave two
-        // usable paths to one place.
-        let whole_candidate = self.whole_result_borrow_candidate(signature)?;
-        let result_borrow_info = result_candidate
-            .and_then(|index| checked_borrows.get(index))
-            .cloned()
-            .flatten()
-            .map(|mut borrow| {
-                borrow.exact_place &= whole_candidate == result_candidate;
-                borrow
-            });
-        let result_borrow =
-            if let Some((argument, borrow)) = result_candidate.zip(result_borrow_info.as_ref()) {
-                if let Some(holder) = result_candidate
-                    .and_then(|index| argument_holders.get(index))
-                    .copied()
-                    .flatten()
-                {
-                    let parent_is_unique = bindings
-                        .get(&holder)
-                        .and_then(|local| local.borrow.as_ref())
-                        .is_some_and(|parent| parent.kind == BorrowKind::Unique);
-                    if parent_is_unique {
-                        bindings
-                            .get_mut(&holder)
-                            .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                            .suspended = true;
-                    }
-                }
-                let root = if let Some(local) = bindings.get(&borrow.place.root) {
-                    crate::semantic::CheckedPlaceRoot::Binding(local.binding)
-                } else if let Some(constant) = self.constants.get(&borrow.place.root) {
-                    crate::semantic::CheckedPlaceRoot::Constant(*constant)
-                } else {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                };
-                Some(CheckedResultBorrow {
-                    argument,
-                    root,
-                    path: borrow.place.path.clone(),
-                })
-            } else {
-                None
-            };
-        self.statement_loans
-            .borrow_mut()
-            .extend(call_scoped_borrows);
+        let substituted = self.substitute_call_row(node, signature, &actual_paths, &actual_modes)?;
+        self.check_call_pairwise_disjointness(node, signature, &substituted)?;
+        self.invalidate_call_bystanders(&substituted, &call, bindings);
+        Self::invalidate_window_operation_references(signature, &substituted, bindings);
+        self.project_call_effects(node, function, &substituted, bindings, &mut effects)?;
+        let result = signature.result;
+        let result_mode = signature.result_mode;
         Ok(TypedExpression {
             expression: CheckedExpression::UserCall {
                 function: target,
@@ -434,22 +237,396 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 argument_nodes,
                 arguments,
                 goal_arguments,
-                goal_regions: actual_regions,
+                goal_regions: Vec::new(),
                 requirements: Vec::new(),
                 result,
-                slice_origins,
-                result_borrow,
+                slice_origins: Vec::new(),
+                result_borrow: None,
             },
             mode: result_mode,
-            borrow: result_borrow_info,
-            slice,
-            holder: None,
-            // A reference-returning call still yields a reference value; the
-            // referent is reached only through an explicit holder [TYPE-7].
-            reference_value: result_mode != CheckedMode::Own,
+            // [REF-3] no call delivers a reference: FN-1 returns owned values
+            // and the declaration boundary already refused any other result
+            // mode, so the result names no path.
+            reference: None,
+            reference_value: false,
             effects,
             accesses: Vec::new(),
         })
+    }
+
+    /// One resolved place in the spelling an [EFF-5] diagnostic renders.
+    fn render_resolved_place(&self, place: &ResolvedPlace) -> Result<String, CheckStop> {
+        let mut rendered = match place.root {
+            PlaceRoot::Binding(binding) => format!("<binding:{}>", binding.0),
+            PlaceRoot::Constant(constant) => self.constant(constant)?.name.clone(),
+        };
+        for step in &place.path {
+            match step {
+                PlaceStep::Field(field) => rendered.push_str(&format!(".{field}")),
+                PlaceStep::Deref => rendered = format!("deref({rendered})"),
+                PlaceStep::Payload { variant, field } => {
+                    rendered.push_str(&format!(".{variant}.{field}"));
+                }
+                PlaceStep::Index(_) => rendered.push_str("[.]"),
+                PlaceStep::Range(_) => rendered.push_str("[...]"),
+                PlaceStep::Part(part) => rendered.push_str(&format!(".{}", part.spelling())),
+                PlaceStep::Measure(measure) => {
+                    rendered.push_str(&format!(".{}", measure.spelling()));
+                }
+            }
+        }
+        Ok(rendered)
+    }
+
+    /// [EFF-5] the substituted row of one call.
+    ///
+    /// Each `effect_path` rooted at reference parameter i takes actual
+    /// argument i's path and appends its own `epsuffix*`; a by-value argument
+    /// contributes a consumption or a read of its place to the same list. An
+    /// index or range position names a value parameter of the same callable,
+    /// and the value that parameter's argument supplies is what replaces it.
+    fn substitute_call_row(
+        &self,
+        node: NodeId,
+        signature: &FunctionSignature,
+        actual_paths: &[Vec<ResolvedPlace>],
+        actual_modes: &[CheckedMode],
+    ) -> Result<Vec<SubstitutedEntry>, CheckStop> {
+        let mut entries = Vec::new();
+        for (write, declared) in [
+            (false, &signature.declared_effects.reads),
+            (true, &signature.declared_effects.writes),
+        ] {
+            for formal in declared {
+                let Some(index) = signature
+                    .parameters
+                    .iter()
+                    .position(|parameter| parameter.declaration == formal.root)
+                else {
+                    // [EFF-1] a row is rooted at a parameter of the same
+                    // callable; the declaration boundary already refused
+                    // anything else.
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                let steps = self.substitute_effect_steps(signature, formal, actual_paths)?;
+                for base in actual_paths.get(index).into_iter().flatten() {
+                    let mut place = base.clone();
+                    place.path.extend_from_slice(&steps);
+                    entries.push(SubstitutedEntry {
+                        spelling: self.render_resolved_place(&place)?,
+                        place,
+                        write,
+                        argument: index,
+                    });
+                }
+            }
+        }
+        // [EFF-5] clause 2: a by-value argument contributes a consumption
+        // (`move`) or a read (copy) of its place to this same comparison.
+        for (index, mode) in actual_modes.iter().enumerate() {
+            if *mode != CheckedMode::Own {
+                continue;
+            }
+            for place in actual_paths.get(index).into_iter().flatten() {
+                entries.push(SubstitutedEntry {
+                    spelling: self.render_resolved_place(place)?,
+                    place: place.clone(),
+                    // A `move` empties the place, which [EFF-1] classes with
+                    // the writes; a copy argument observes it.
+                    write: self.is_copy_place_type(signature, index).map_or(true, |copy| !copy),
+                    argument: index,
+                });
+            }
+        }
+        let _ = node;
+        Ok(entries)
+    }
+
+    /// One declared `epsuffix*`, with its index and range positions replaced
+    /// by the values their own arguments supply [EFF-5].
+    fn substitute_effect_steps(
+        &self,
+        signature: &FunctionSignature,
+        formal: &CheckedStatePath,
+        actual_paths: &[Vec<ResolvedPlace>],
+    ) -> Result<Vec<PlaceStep>, CheckStop> {
+        let captured = |parameter: DeclarationId| -> CapturedValue {
+            // The index position names a value parameter; the value its
+            // argument supplied is the immutable captured value of that
+            // argument's own place, where the argument is a place, and the
+            // unknown offset otherwise, which no family separates.
+            signature
+                .parameters
+                .iter()
+                .position(|candidate| candidate.declaration == parameter)
+                .and_then(|index| actual_paths.get(index))
+                .and_then(|paths| paths.first())
+                .and_then(|place| {
+                    place.path.iter().rev().find_map(|step| match step {
+                        PlaceStep::Index(value) => Some(*value),
+                        _ => None,
+                    })
+                })
+                .unwrap_or_else(CapturedValue::unknown)
+        };
+        Ok(formal
+            .steps
+            .iter()
+            .map(|step| match step {
+                CheckedEffectStep::Field(field) => PlaceStep::Field(*field),
+                CheckedEffectStep::Deref => PlaceStep::Deref,
+                CheckedEffectStep::Payload { variant, field } => PlaceStep::Payload {
+                    variant: *variant,
+                    field: *field,
+                },
+                CheckedEffectStep::Index(parameter) => PlaceStep::Index(captured(*parameter)),
+                CheckedEffectStep::Range { start, end } => {
+                    PlaceStep::Range(super::super::super::super::places::CapturedRange {
+                        start: captured(*start),
+                        end: captured(*end),
+                    })
+                }
+                CheckedEffectStep::Part(part) => PlaceStep::Part(*part),
+                CheckedEffectStep::Measure(measure) => PlaceStep::Measure(*measure),
+            })
+            .collect())
+    }
+
+    /// Whether the by-value parameter at `index` has a copy type, so its
+    /// argument contributes a read rather than a consumption [EFF-5].
+    fn is_copy_place_type(&self, signature: &FunctionSignature, index: usize) -> Option<bool> {
+        let parameter = signature.parameters.get(index)?;
+        self.is_copy_type(parameter.ty).ok()
+    }
+
+    /// [EFF-5] clause 1: two effects on overlapping paths where at least one
+    /// is a write must be proved disjoint.
+    ///
+    /// The checker holds the actual spellings and the live reference state,
+    /// so it owns this comparison; what it cannot do is discharge the index
+    /// or range goal the fixed [ENT-6] families own, so a pair the syntax
+    /// leaves open is recorded for the entailment fragment and refused there
+    /// if it stays undischarged. `swap` is the one operation whose two
+    /// arguments may name the same place [OP-11].
+    fn check_call_pairwise_disjointness(
+        &self,
+        node: NodeId,
+        signature: &FunctionSignature,
+        entries: &[SubstitutedEntry],
+    ) -> Result<(), CheckStop> {
+        if self.is_swap_row(signature) {
+            return Ok(());
+        }
+        let oracle = UnprovedSeparations;
+        for (index, left) in entries.iter().enumerate() {
+            for right in entries.iter().skip(index + 1) {
+                if left.argument == right.argument || !(left.write || right.write) {
+                    continue;
+                }
+                if !places_overlap(&oracle, &left.place, &right.place) {
+                    continue;
+                }
+                // A pair whose only unseparated steps are index or range
+                // positions is the fixed families' question; every other
+                // overlap is refused here and now.
+                if Self::separable_by_position(&left.place, &right.place) {
+                    self.call_separations
+                        .borrow_mut()
+                        .push(CheckedCallSeparation {
+                            site: self.tree.path(node)?.clone(),
+                            left: left.place.clone(),
+                            right: right.place.clone(),
+                            left_spelling: left.spelling.clone(),
+                            right_spelling: right.spelling.clone(),
+                        });
+                    continue;
+                }
+                return self.issue_node(
+                    SemanticRule::Eff5,
+                    node,
+                    SemanticIssueKind::OverlappingCallEffects {
+                        first: left.spelling.clone(),
+                        second: right.spelling.clone(),
+                        mechanical_fix: "prove the two positions distinct, or pass one of them",
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether the first step at which the two paths disagree is an index or
+    /// a range position, which is the only disagreement an admitted [OWN-7]
+    /// family can still separate.
+    fn separable_by_position(left: &ResolvedPlace, right: &ResolvedPlace) -> bool {
+        left.path
+            .iter()
+            .zip(&right.path)
+            .find(|(left, right)| left != right)
+            .is_some_and(|(left, right)| {
+                matches!(
+                    (left, right),
+                    (PlaceStep::Index(_), PlaceStep::Index(_))
+                        | (PlaceStep::Range(_), PlaceStep::Range(_))
+                )
+            })
+    }
+
+    /// [OP-10] the window operations that end the bound a reference into the
+    /// window was formed under.
+    ///
+    /// `place_back`'s `ensures` carries `i < r.len` across the call and
+    /// `insert_at` only changes a slot's occupant, so neither appears here.
+    /// The rest move a boundary down, move a run between two windows, shift
+    /// every logical index, or remake the block whole, and every reference
+    /// into the operand dies [REF-2, REF-4].
+    fn invalidate_window_operation_references(
+        signature: &FunctionSignature,
+        entries: &[SubstitutedEntry],
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+    ) {
+        const BOUND_ENDING_ROWS: [&str; 7] = [
+            "take_back",
+            "remove_at",
+            "append",
+            "split_off",
+            "place_front",
+            "take_front",
+            "grow",
+        ];
+        if !BOUND_ENDING_ROWS.contains(&signature.name.as_str()) {
+            return;
+        }
+        for entry in entries {
+            Self::invalidate_window_references(bindings, &entry.place);
+        }
+    }
+
+    /// [STOR-8] a compilation unit carrying the no-heap declaration cannot
+    /// call an allocating prelude row.
+    ///
+    /// The five rows the rule names are exactly the allocating [OP-13] and
+    /// [OP-10] records that take a cell from the heap; `slots_new`,
+    /// `ring_new` and `array_filled` build frame-resident shapes and are not
+    /// among them.
+    fn reject_allocating_call_under_no_heap(
+        &self,
+        node: NodeId,
+        signature: &FunctionSignature,
+    ) -> Result<(), CheckStop> {
+        const HEAP_ROWS: [&str; 5] = [
+            "box_new",
+            "box_array_filled",
+            "box_slots_new",
+            "box_ring_new",
+            "grow",
+        ];
+        if !self.no_heap || !HEAP_ROWS.contains(&signature.name.as_str()) {
+            return Ok(());
+        }
+        self.issue_node(
+            SemanticRule::Stor8,
+            node,
+            SemanticIssueKind::HeapTypeUnderNoHeap {
+                spelling: signature.name.clone(),
+                mechanical_fix: super::super::super::types::STOR8_NO_HEAP,
+            },
+        )
+    }
+
+    /// [OP-11] a `swap` over a copy place is a hard error at the first
+    /// `borrow_expr`, with the restructuring `read the two values and assign
+    /// them back`.
+    ///
+    /// The rule judges the refusal once at the written bound, exactly as
+    /// [OWN-1]'s spelling judgment is judged, and does not re-make it at a
+    /// concrete instance [FN-2]; `judges_class_spelling` is that same gate.
+    /// The rule locates it at the first `borrow_expr`; this locates it at the
+    /// complete `call`, whose written arguments are exactly those two
+    /// `borrow_expr` nodes, because the refusal is about the operation and
+    /// not about one of its two symmetric operands.
+    fn reject_swap_over_copy(
+        &self,
+        node: NodeId,
+        signature: &FunctionSignature,
+    ) -> Result<(), CheckStop> {
+        if !self.is_swap_row(signature) || !self.judges_class_spelling() {
+            return Ok(());
+        }
+        let Some(first) = signature.parameters.first() else {
+            return Ok(());
+        };
+        if !self.is_copy_type(first.ty)? {
+            return Ok(());
+        }
+        self.issue_node(
+            SemanticRule::Op11,
+            node,
+            SemanticIssueKind::SwapOverCopyPlace {
+                place_type: self.checked_type_name(first.ty)?,
+                mechanical_fix: "read the two values and assign them back",
+            },
+        )
+    }
+
+    /// [OP-11] the one operation whose two reference arguments may name the
+    /// same place.
+    fn is_swap_row(&self, signature: &FunctionSignature) -> bool {
+        signature.name == "swap"
+    }
+
+    /// [EFF-5] clause 3: a live reference outside the call whose path has a
+    /// proper prefix among the call's substituted write paths becomes invalid
+    /// after the call [REF-2].
+    ///
+    /// A reference that is itself an argument is the thing being accessed,
+    /// not a bystander, and does not invalidate itself; the reference whose
+    /// own path the write names is exactly the one whose path the write is a
+    /// prefix of, which [`Checker::invalidate_references`] already decides.
+    fn invalidate_call_bystanders(
+        &self,
+        entries: &[SubstitutedEntry],
+        call: &crate::NodePath,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+    ) {
+        let _ = call;
+        for entry in entries.iter().filter(|entry| entry.write) {
+            Self::invalidate_references(
+                bindings,
+                &entry.place,
+                &InvalidationEvent::CallWrite,
+            );
+        }
+    }
+
+    /// [EFF-2] the caller's own row: each projected entry rooted in a current
+    /// formal contributes that formal's corresponding path, and an entry
+    /// rooted only in local storage contributes none.
+    fn project_call_effects(
+        &self,
+        node: NodeId,
+        caller: &FunctionSignature,
+        entries: &[SubstitutedEntry],
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        effects: &mut EffectSet,
+    ) -> Result<(), CheckStop> {
+        for entry in entries {
+            for path in self.effect_paths_for_place(node, &entry.place, bindings)? {
+                if !caller
+                    .parameters
+                    .iter()
+                    .any(|parameter| parameter.declaration == path.path.root)
+                {
+                    continue;
+                }
+                if entry.write {
+                    effects.add_write(path);
+                } else {
+                    effects.add_read(path);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Captures one already-checked actual's pre-transfer goal image.
@@ -469,13 +646,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         expected_mode: CheckedMode,
         expected_type: CheckedType,
         argument: &super::super::super::TypedExpression,
-        passed_borrow: Option<&BorrowInfo>,
+        passed_place: Option<&ResolvedPlace>,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<GoalExpression, CheckStop> {
         if expected_mode != CheckedMode::Own {
-            let borrow = passed_borrow.ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            if borrow.exact_place {
-                return self.goal_referent_image(&borrow.place, expected_type, bindings);
+            if let Some(place) = passed_place {
+                return self.goal_referent_image(place, expected_type, bindings);
             }
             // FN-1's candidate protects every mutable origin a returned
             // borrow may reach, including when the delivered value is a
@@ -575,34 +751,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<GoalExpression, CheckStop> {
         let mut projections = Vec::new();
-        if bindings
-            .get(&place.root)
-            .is_some_and(|binding| binding.mode != CheckedMode::Own)
-        {
-            projections.push(GoalProjection::Deref);
+        for step in &place.path {
+            match step {
+                PlaceStep::Field(field) => projections.push(GoalProjection::Field(*field)),
+                PlaceStep::Deref => projections.push(GoalProjection::Deref),
+                PlaceStep::Index(index) => projections.push(GoalProjection::Subscript(*index)),
+                // [ENT-2] a goal datum's place carries field selections,
+                // `deref` wrappings and subscripts; a payload, range, part or
+                // measure step is no datum spelling, so the image stops here.
+                PlaceStep::Payload { .. }
+                | PlaceStep::Range(_)
+                | PlaceStep::Part(_)
+                | PlaceStep::Measure(_) => break,
+            }
         }
-        projections.extend(place.storage_path.iter().map(|step| match step {
-            crate::semantic::places::PlaceProjection::Field(field) => GoalProjection::Field(*field),
-            crate::semantic::places::PlaceProjection::Subscript(index) => {
-                GoalProjection::Subscript(*index)
-            }
-            crate::semantic::places::PlaceProjection::Deref => GoalProjection::Deref,
-        }));
-        let datum = if self.constants.contains_key(&place.root) {
-            GoalDatum::NamedConst {
-                declaration: place.root,
+        let _ = bindings;
+        let datum = match place.root {
+            PlaceRoot::Constant(constant) => GoalDatum::NamedConst {
+                declaration: self
+                    .constants
+                    .iter()
+                    .find_map(|(declaration, id)| (*id == constant).then_some(*declaration))
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
                 projections,
                 ty,
-            }
-        } else {
-            let binding = bindings
-                .get(&place.root)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            GoalDatum::Place {
-                root: binding.binding,
+            },
+            PlaceRoot::Binding(binding) => GoalDatum::Place {
+                root: binding,
                 projections,
                 ty,
-            }
+            },
         };
         Ok(GoalExpression::Datum(datum))
     }
@@ -654,16 +832,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let local = bindings
                         .get(&declaration)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    if let Some(borrow) = &local.borrow {
+                    if let Some(reference) = &local.reference {
                         (
-                            if borrow.exact_place {
-                                self.goal_referent_image(&borrow.place, local.ty, bindings)?
-                            } else {
-                                GoalExpression::Datum(GoalDatum::Place {
+                            match reference.paths.first() {
+                                Some(path) => {
+                                    self.goal_referent_image(path, local.ty, bindings)?
+                                }
+                                None => GoalExpression::Datum(GoalDatum::Place {
                                     root: local.binding,
                                     projections: vec![GoalProjection::Deref],
                                     ty: local.ty,
-                                })
+                                }),
                             },
                             true,
                         )
@@ -712,735 +891,4 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok((expression, holder_pending))
     }
 
-    /// The written type, const, and region arguments of a user-generic call.
-    ///
-    /// [DIAG-1] selects the cited rule by the callee's class rather than by
-    /// the kind of argument problem, and for a user-generic call that rule is
-    /// FN-2 — "a missing, wrong-kind, wrong-count, or wrong-domain argument".
-    /// TYPE-5 governs whether an argument's *type* matches its parameter, one
-    /// step later and at the offending atom; it does not own the argument list
-    /// itself.
-    /// Whether one formal occupies a parameter mode or an explicit type
-    /// position of this callable [FORM-8].
-    fn formal_region_is_determined(
-        &self,
-        signature: &FunctionSignature,
-        formal: DeclarationId,
-    ) -> Result<bool, CheckStop> {
-        for parameter in &signature.parameters {
-            if matches!(
-                parameter.mode,
-                CheckedMode::Shared(region) | CheckedMode::Unique(region) if region == formal
-            ) || parameter.region_shape.determines(formal)
-            {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
-    /// The formal regions a caller writes: exactly those the callee's own
-    /// parameter positions leave undetermined [FORM-8].
-    fn caller_chosen_regions(
-        &self,
-        signature: &FunctionSignature,
-    ) -> Result<Vec<usize>, CheckStop> {
-        let mut chosen = Vec::new();
-        for index in 0..signature.written_regions {
-            let Some(formal) = signature.region_parameters.get(index) else {
-                continue;
-            };
-            if !self.formal_region_is_determined(signature, *formal)? {
-                chosen.push(index);
-            }
-        }
-        Ok(chosen)
-    }
-
-    /// Binds each formal region of the callee for one call.
-    ///
-    /// [FORM-8] writes exactly the region parameters no parameter position
-    /// determines; every other formal region — a written one a parameter
-    /// position names, and every region a parameter position leaves unwritten
-    /// — is determined by the actual arguments at those positions and is
-    /// filled in as they are checked.
-    ///
-    /// [DIAG-1] selects the cited rule by the callee's class rather than by
-    /// the kind of argument problem, and for a user-generic call that rule is
-    /// FN-2 — "a missing, wrong-kind, wrong-count, or wrong-domain argument".
-    /// TYPE-5 governs whether an argument's *type* matches its parameter, one
-    /// step later and at the offending atom; it does not own the argument list
-    /// itself.
-    pub(in crate::semantic::check) fn call_region_arguments(
-        &self,
-        node: NodeId,
-        signature: &FunctionSignature,
-    ) -> Result<Vec<RegionBinding>, CheckStop> {
-        let chosen = self.caller_chosen_regions(signature)?;
-        let written = match self.tree.argument_list(node)? {
-            Some(targs) => {
-                let arguments = self.tree.children_with(targs, Production::Targ)?;
-                let leading_regions = self.user_call_region_prefix(&arguments)?;
-                // Type, const and function arguments were checked by FN-2
-                // after group expansion. A selected function formal is fully
-                // bound already and may supply only its remaining regions.
-                if self.behavior_call_key(node)?.is_some() && arguments.len() != leading_regions {
-                    return self.issue_node(
-                        SemanticRule::Fn2,
-                        node,
-                        SemanticIssueKind::type_mismatch(
-                            "only the function formal's caller-chosen regions",
-                            crate::semantic::written_count(arguments.len(), "argument"),
-                        ),
-                    );
-                }
-                arguments
-                    .into_iter()
-                    .take(leading_regions)
-                    .collect::<Vec<_>>()
-            }
-            None => Vec::new(),
-        };
-        if written.len() != chosen.len() {
-            return self.issue_node(
-                SemanticRule::Form8,
-                node,
-                SemanticIssueKind::RegionSpelling {
-                    mechanical_fix: "write exactly the callee's region parameters that occur in \
-no parameter type, in their declared order; every other region argument is determined by this \
-call's own arguments and is not written",
-                },
-            );
-        }
-        let slots = chosen;
-        let mut bindings = vec![RegionBinding::INFERRED; signature.region_parameters.len()];
-        for (slot, argument) in slots.into_iter().zip(written) {
-            let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
-            let ResolvedTarget::Source {
-                declaration,
-                class: DeclarationClass::Region,
-            } = usage.target()
-            else {
-                return self.issue_node(
-                    SemanticRule::Fn2,
-                    argument,
-                    SemanticIssueKind::type_mismatch(
-                        "a region argument in this position",
-                        "an argument that does not name a region",
-                    ),
-                );
-            };
-            let Some(binding) = bindings.get_mut(slot) else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
-            *binding = RegionBinding {
-                written: true,
-                region: Some(declaration),
-                store: Some(declaration),
-            };
-        }
-        Ok(bindings)
-    }
-
-    /// [PROV-6, S37] the region axis of the bound check, at one call.
-    ///
-    /// A written region parameter may carry a linearity bound, and that bound
-    /// is a claim about the *store* the region names: `affine` is a bump
-    /// extent, `linear` a general store [PROV-1]. The region argument this
-    /// call binds to it is the one every other region judgment uses, whether
-    /// the caller wrote it in the `::` list or a parameter position determined
-    /// it, so the check is over the resolved binding and never over a
-    /// spelling. Elided formal regions [FORM-8] carry no bound and are not
-    /// written, so only the written prefix is read.
-    fn check_region_parameter_bounds(
-        &self,
-        node: NodeId,
-        signature: &FunctionSignature,
-        actual_regions: &[DeclarationId],
-    ) -> Result<(), CheckStop> {
-        for (index, formal) in signature
-            .region_parameters
-            .iter()
-            .take(signature.written_regions)
-            .enumerate()
-        {
-            let record = self
-                .resolved
-                .declarations()
-                .iter()
-                .find(|candidate| candidate.id() == *formal)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let Some(formal_node) = self.tree.node_with_path(record.origin().node()) else {
-                continue;
-            };
-            let Some(bound) = self.written_linearity_bound(formal_node)? else {
-                continue;
-            };
-            let spelling = record.spelling().to_owned();
-            let actual = *actual_regions
-                .get(index)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            self.check_region_linearity_bound(&spelling, bound, actual, node)?;
-        }
-        Ok(())
-    }
-
-    /// The index of one formal region in the callee's formal-region list.
-    fn formal_region_index(signature: &FunctionSignature, formal: DeclarationId) -> Option<usize> {
-        signature
-            .region_parameters
-            .iter()
-            .position(|region| *region == formal)
-    }
-
-    /// Records one actual region observed at a position naming an inferred
-    /// formal region, keeping the least region every observation outlives
-    /// [OWN-3, OWN-4]. Two incomparable actual regions leave the formal with
-    /// no legal substitution and reject exactly as an unsatisfiable written
-    /// region argument does.
-    fn observe_actual_region(
-        &self,
-        binding: &mut RegionBinding,
-        actual: DeclarationId,
-        node: NodeId,
-    ) -> Result<(), CheckStop> {
-        let Some(current) = binding.region else {
-            binding.region = Some(actual);
-            return Ok(());
-        };
-        if self.region_outlives(actual, current)? {
-            return Ok(());
-        }
-        if self.region_outlives(current, actual)? {
-            binding.region = Some(actual);
-            return Ok(());
-        }
-        self.issue_node(
-            SemanticRule::Own4,
-            node,
-            SemanticIssueKind::InvalidBorrowLifetime {
-                region: self.region_phrase(current)?,
-                binder: self.region_phrase(actual)?,
-                mechanical_fix: format!(
-                    "this parameter position and an earlier one share one region, but {} and {} \
-are incomparable; pass borrows whose regions are nested, or give the parameters distinct regions",
-                    self.region_phrase(actual)?,
-                    self.region_phrase(current)?
-                ),
-            },
-        )
-    }
-
-    /// Every formal region's substituted actual after the argument list is
-    /// checked.
-    fn resolved_regions(
-        &self,
-        bindings: &mut [RegionBinding],
-        observations: &[(usize, DeclarationId, NodeId)],
-    ) -> Result<Vec<DeclarationId>, CheckStop> {
-        // Do not take a loan meet before all brands have been seen: loans
-        // preceding a brand constrain that same fixed brand too, independent
-        // of argument order. Only a formal with no invariant input takes
-        // the ordinary least actual loan region.
-        for (index, actual, node) in observations {
-            let binding = &mut bindings[*index];
-            if let Some(brand) = binding.store {
-                if !self.region_outlives(*actual, brand)? {
-                    return self.issue_node(SemanticRule::Own4, *node, SemanticIssueKind::InvalidBorrowLifetime {
-                        region: self.region_phrase(brand)?,
-                        binder: self.region_phrase(*actual)?,
-                        mechanical_fix: "the actual loan must outlive the region fixed by this formal's invariant type positions; use a sufficiently long loan or distinct formal regions".to_owned(),
-                    });
-                }
-            } else {
-                self.observe_actual_region(binding, *actual, *node)?;
-            }
-        }
-        bindings
-            .iter()
-            .map(|binding| {
-                binding
-                    .store
-                    .or(binding.region)
-                    .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
-            })
-            .collect()
-    }
-
-    /// What one formal mode requires of its actual, after region binding.
-    fn substitute_mode(
-        &self,
-        mode: CheckedMode,
-        signature: &FunctionSignature,
-        bindings: &[RegionBinding],
-    ) -> Result<ModeExpectation, CheckStop> {
-        let (kind, formal) = match mode {
-            CheckedMode::Own => return Ok(ModeExpectation::Own),
-            CheckedMode::Shared(region) => (BorrowKind::Shared, region),
-            CheckedMode::Unique(region) => (BorrowKind::Unique, region),
-        };
-        // A mode region belongs to the callable declaration; captured type
-        // argument regions occur inside its type, never in this mode slot.
-        let index = Self::formal_region_index(signature, formal)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let binding = bindings
-            .get(index)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        Ok(ModeExpectation::Borrow {
-            kind,
-            region: if binding.written {
-                binding.region
-            } else {
-                None
-            },
-        })
-    }
-
-    /// One formal mode substituted with regions already resolved.
-    fn substituted_mode(
-        &self,
-        mode: CheckedMode,
-        signature: &FunctionSignature,
-        regions: &[DeclarationId],
-    ) -> Result<CheckedMode, CheckStop> {
-        let (kind, formal) = match mode {
-            CheckedMode::Own => return Ok(CheckedMode::Own),
-            CheckedMode::Shared(region) => (BorrowKind::Shared, region),
-            CheckedMode::Unique(region) => (BorrowKind::Unique, region),
-        };
-        let index = Self::formal_region_index(signature, formal)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let actual = *regions
-            .get(index)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        Ok(match kind {
-            BorrowKind::Shared => CheckedMode::Shared(actual),
-            BorrowKind::Unique => CheckedMode::Unique(actual),
-        })
-    }
-
-    /// Checks one actual argument against its parameter's mode expectation and
-    /// returns the loan it passes together with the exact mode that position
-    /// carries after region binding.
-    pub(in crate::semantic::check) fn call_argument_borrow(
-        &self,
-        expectation: ModeExpectation,
-        argument: &TypedExpression,
-        atom: NodeId,
-    ) -> Result<(Option<BorrowInfo>, CheckedMode), CheckStop> {
-        let (kind, region) = match expectation {
-            ModeExpectation::Own => {
-                let borrow = self.borrow_for_destination(CheckedMode::Own, argument, atom)?;
-                return Ok((borrow, CheckedMode::Own));
-            }
-            ModeExpectation::Borrow { kind, region } => (kind, region),
-        };
-        if let Some(region) = region {
-            let mode = match kind {
-                BorrowKind::Shared => CheckedMode::Shared(region),
-                BorrowKind::Unique => CheckedMode::Unique(region),
-            };
-            let borrow = self.borrow_for_destination(mode, argument, atom)?;
-            return Ok((borrow, mode));
-        }
-        // [FORM-8] the parameter leaves its region to this actual, so the
-        // position constrains the borrow kind only and the actual's own
-        // region is the observed actual. [OWN-4] is checked after all input
-        // brands and loan regions have been collected, so a later brand
-        // constrains this loan in the same way as an earlier one.
-        let Some(borrow) = argument.borrow.clone() else {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atom,
-                SemanticIssueKind::type_mismatch(
-                    match kind {
-                        BorrowKind::Shared => "a shared borrow".to_owned(),
-                        BorrowKind::Unique => "a `uniq` borrow".to_owned(),
-                    },
-                    self.checked_value_name(argument.mode, argument.expression.ty())?,
-                ),
-            );
-        };
-        if borrow.kind != kind {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atom,
-                SemanticIssueKind::type_mismatch(
-                    match kind {
-                        BorrowKind::Shared => "a shared borrow".to_owned(),
-                        BorrowKind::Unique => "a `uniq` borrow".to_owned(),
-                    },
-                    self.checked_value_name(argument.mode, argument.expression.ty())?,
-                ),
-            );
-        }
-        let mode = match kind {
-            BorrowKind::Shared => CheckedMode::Shared(borrow.region),
-            BorrowKind::Unique => CheckedMode::Unique(borrow.region),
-        };
-        Ok((Some(borrow), mode))
-    }
-
-    /// Substitute all invariant positions together. A loan-only position is
-    /// compared at its actual type here, then contributes to the final loan
-    /// substitution. The final pass enforces whole-type equality after the
-    /// complete substitution, including loan-only formals in view types;
-    /// this preliminary check does not authorize a view coercion.
-    fn substitute_parameter_type(
-        &self,
-        ty: CheckedType,
-        signature: &FunctionSignature,
-        bindings: &[RegionBinding],
-        positions: &[(
-            super::super::super::type_regions::RegionPosition,
-            DeclarationId,
-        )],
-    ) -> Result<CheckedType, CheckStop> {
-        let mut substitution = Self::fixed_call_regions(signature, bindings);
-        for (position, actual) in positions {
-            if position.invariant {
-                continue;
-            }
-            if Self::formal_region_index(signature, position.formal).is_none() {
-                continue;
-            }
-            substitution.retain(|(formal, _)| *formal != position.formal);
-            substitution.push((position.formal, *actual));
-        }
-        self.substitute_type_regions(ty, &substitution)
-    }
-
-    /// One formal type with every formal region already resolved.
-    ///
-    /// [FN-2] substitutes a call's region arguments into every position of the
-    /// callee's signature, and a result position is one of them: the type the
-    /// caller receives names the store the call's own operands and written
-    /// `::` members determined [FORM-8], never the declaration's formal
-    /// region. Two calls of `fn f['s: affine](store: &uniq Arena<'s, ...>) ->
-    /// made: own BlockPool<'s>` at two extents therefore produce two types,
-    /// which is [PROV-1]'s invariant store region read at the position where
-    /// the value is produced.
-    ///
-    /// The substitution is over the complete checked type, so it reaches a
-    /// region under `Option`, inside a nominal instance, in a run's element
-    /// position, and in the result-list nominal a multi-result callable hands
-    /// back. A region this declaration does not parameterize — the entry
-    /// heap or a brand captured inside a concrete type argument — occurs in
-    /// no formal pair and is left alone.
-    fn substitute_result_type(
-        &self,
-        ty: CheckedType,
-        signature: &FunctionSignature,
-        actual_regions: &[DeclarationId],
-    ) -> Result<CheckedType, CheckStop> {
-        let substitution = Self::call_region_substitution(signature, actual_regions);
-        self.substitute_type_regions(ty, &substitution)
-    }
-
-    /// Every formal region this call has already fixed, paired with the
-    /// region it fixed it to.
-    ///
-    /// A region the caller wrote in its `::` list is fixed by that member,
-    /// and a store region an earlier operand position named is fixed by that
-    /// operand and invariant afterwards [PROV-1]. A region no position has
-    /// bound yet is deliberately absent: [FORM-8] leaves it to the actual at
-    /// the position that first names it, which is the judgment
-    /// [`Self::substitute_parameter_type`] makes at its own top level.
-    fn fixed_call_regions(
-        signature: &FunctionSignature,
-        bindings: &[RegionBinding],
-    ) -> Vec<(DeclarationId, DeclarationId)> {
-        signature
-            .region_parameters
-            .iter()
-            .copied()
-            .enumerate()
-            .filter_map(|(index, formal)| {
-                let binding = bindings.get(index)?;
-                let region = if binding.written {
-                    binding.region
-                } else {
-                    binding.store
-                }?;
-                (region != formal).then_some((formal, region))
-            })
-            .collect()
-    }
-
-    /// Every formal region of one call that its actual differs from, paired
-    /// with that actual [FORM-8].
-    fn call_region_substitution(
-        signature: &FunctionSignature,
-        actual_regions: &[DeclarationId],
-    ) -> Vec<(DeclarationId, DeclarationId)> {
-        signature
-            .region_parameters
-            .iter()
-            .copied()
-            .zip(actual_regions.iter().copied())
-            .filter(|(formal, actual)| formal != actual)
-            .collect()
-    }
-
-    fn substitute_slice_result(
-        &self,
-        signature: &FunctionSignature,
-        result: CheckedType,
-        arguments: &[Option<SliceInfo>],
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<Option<SliceInfo>, CheckStop> {
-        let CheckedType::Slice { region, .. } = result else {
-            return Ok(None);
-        };
-        let mut origins = Vec::new();
-        let mut loans = Vec::new();
-        for origin in &signature.slice_return_ceiling {
-            match origin {
-                CheckedSliceOrigin::ImmutableConst => {
-                    push_slice_origin(&mut origins, CheckedSliceOrigin::ImmutableConst);
-                }
-                CheckedSliceOrigin::FormalSlice { parameter, .. } => {
-                    let index = signature
-                        .parameters
-                        .iter()
-                        .position(|candidate| candidate.declaration == *parameter)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    let actual = arguments
-                        .get(index)
-                        .and_then(Option::as_ref)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    for actual_origin in &actual.origins {
-                        push_slice_origin(&mut origins, actual_origin.clone());
-                    }
-                    // [VIEW-6] an own-view formal relays the actual's
-                    // existing claims. A borrowed-view formal can supply
-                    // only a shared child, whose new claim has the result
-                    // region and inherits those exact parent routes.
-                    let child;
-                    let actual = if signature.parameters[index].mode == CheckedMode::Own {
-                        actual
-                    } else {
-                        child = actual.child(region);
-                        Self::publish_slice_loans(&child, bindings)?;
-                        &child
-                    };
-                    for key in &actual.loans {
-                        if !loans.contains(key) {
-                            loans.push(key.clone());
-                        }
-                    }
-                }
-                CheckedSliceOrigin::SourcePlace { .. } => {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                }
-            }
-        }
-        Ok(Some(SliceInfo {
-            region,
-            origins,
-            loans,
-        }))
-    }
-
-    pub(super) fn check_call_borrow_overlap(
-        &self,
-        node: NodeId,
-        borrows: &[Option<BorrowInfo>],
-        slices: &[Option<SliceInfo>],
-    ) -> Result<(), CheckStop> {
-        let claims = borrows
-            .iter()
-            .zip(slices)
-            .map(|(borrow, slice)| Self::call_claims(borrow.as_ref(), slice.as_ref()))
-            .collect::<Vec<_>>();
-        for (index, left_claims) in claims.iter().enumerate() {
-            for right_claims in claims.iter().skip(index + 1) {
-                if left_claims.iter().any(|left| {
-                    right_claims.iter().any(|right| {
-                        (left.kind == BorrowKind::Unique || right.kind == BorrowKind::Unique)
-                            && places_overlap(&left.place, &right.place)
-                    })
-                }) {
-                    return self.issue_node(
-                        SemanticRule::Own12,
-                        node,
-                        SemanticIssueKind::BorrowConflict,
-                    );
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn call_claims(borrow: Option<&BorrowInfo>, slice: Option<&SliceInfo>) -> Vec<CallAccessClaim> {
-        let mut claims = Vec::new();
-        if let Some(borrow) = borrow {
-            claims.push(CallAccessClaim {
-                kind: borrow.kind,
-                place: borrow.place.clone(),
-            });
-        }
-        if let Some(slice) = slice {
-            for origin in &slice.origins {
-                let place = match origin {
-                    CheckedSliceOrigin::SourcePlace { root, path, .. } => {
-                        ResolvedPlace::from_path(*root, path.clone())
-                    }
-                    CheckedSliceOrigin::FormalSlice { parameter, .. } => {
-                        ResolvedPlace::fields(*parameter, Vec::new())
-                    }
-                    CheckedSliceOrigin::ImmutableConst => continue,
-                };
-                claims.push(CallAccessClaim {
-                    kind: BorrowKind::Shared,
-                    place,
-                });
-            }
-        }
-        claims
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn project_call_effects(
-        &self,
-        node: NodeId,
-        caller: &FunctionSignature,
-        signature: &FunctionSignature,
-        actual_regions: &[DeclarationId],
-        borrows: &[Option<BorrowInfo>],
-        slices: &[Option<SliceInfo>],
-        holders: &[Option<DeclarationId>],
-        argument_places: &[Vec<ResolvedPlace>],
-        bindings: &HashMap<DeclarationId, LocalBinding>,
-        effects: &mut EffectSet,
-    ) -> Result<(), CheckStop> {
-        for formal_region in &signature.declared_effects.allocates_arenas {
-            let index = signature
-                .region_parameters
-                .iter()
-                .position(|region| region == formal_region)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            effects.add_arena_allocation(
-                *actual_regions
-                    .get(index)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-            );
-        }
-        // [S23] the third category projects exactly as the other two do. Its
-        // loan access is the write an allocator already performs on the same
-        // provider path [EFF-1], so the check is the write check and no second
-        // access is attributed.
-        for (access, declared, allocation) in [
-            (AccessKind::Read, &signature.declared_effects.reads, false),
-            (AccessKind::Write, &signature.declared_effects.writes, false),
-            (
-                AccessKind::Write,
-                &signature.declared_effects.allocates,
-                true,
-            ),
-        ] {
-            for formal in declared {
-                let index = signature
-                    .parameters
-                    .iter()
-                    .position(|parameter| parameter.declaration == formal.root)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let parameter = signature
-                    .parameters
-                    .get(index)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let mut actual_paths = Vec::new();
-
-                if parameter.mode != CheckedMode::Own {
-                    let borrow = borrows
-                        .get(index)
-                        .and_then(Option::as_ref)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    let mut place = borrow.place.clone();
-                    place.extend_fields(&formal.fields);
-                    self.check_call_loan_access(
-                        bindings,
-                        holders.get(index).copied().flatten(),
-                        &place,
-                        access,
-                        node,
-                    )?;
-                    // Borrowing a view still checks the descriptor's loan.
-                    // Its callee effects refer to the viewed backing below,
-                    // just as they do when that same view is passed by value.
-                    if !matches!(parameter.ty, CheckedType::Slice { .. }) {
-                        actual_paths
-                            .extend(self.effect_paths_for_whole_place(node, &place, bindings)?);
-                    }
-                }
-                if let CheckedType::Slice { strength, .. } = parameter.ty {
-                    let slice = slices
-                        .get(index)
-                        .and_then(Option::as_ref)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    // A borrowed descriptor is reached through its resolved
-                    // place; the argument's holder, if present, names the
-                    // borrow of that descriptor. Backing accesses continue
-                    // the descriptor's recorded view loan [VIEW-2, OWN-5].
-                    let descriptor = borrows
-                        .get(index)
-                        .and_then(Option::as_ref)
-                        .filter(|borrow| borrow.place.path.is_empty())
-                        .map(|borrow| borrow.place.root)
-                        .or_else(|| holders.get(index).copied().flatten());
-                    // [PROV-3] use 1: an access the callee makes through this
-                    // view is *that view's own* access to its origin, judged
-                    // at its own strength, and not a second access the view's
-                    // loan should refuse. The skip is exact rather than
-                    // conservative: no other loan can stand on a place an
-                    // exclusive view already views, because a second view of
-                    // either strength and every ordinary write are refused
-                    // there [OWN-5], so the only loan the check would find is
-                    // the one this actual holds. A shared actual keeps the
-                    // check, where the callee's own row admits reads alone.
-                    let judged = strength != LoanStrength::Exclusive;
-                    for (mut place, _) in slice.source_places() {
-                        place.extend_fields(&formal.fields);
-                        if judged {
-                            self.check_call_loan_access(
-                                bindings, descriptor, &place, access, node,
-                            )?;
-                        }
-                    }
-                    for mut place in slice.effect_places() {
-                        place.extend_fields(&formal.fields);
-                        actual_paths
-                            .extend(self.effect_paths_for_whole_place(node, &place, bindings)?);
-                    }
-                }
-
-                for place in argument_places
-                    .get(index)
-                    .into_iter()
-                    .flatten()
-                    .filter(|_| parameter.mode == CheckedMode::Own)
-                {
-                    let mut path = self.state_path(place, bindings)?;
-                    path.fields.extend_from_slice(&formal.fields);
-                    actual_paths.push(path.into());
-                }
-                for path in actual_paths {
-                    if !caller
-                        .parameters
-                        .iter()
-                        .any(|parameter| parameter.declaration == path.path.root)
-                    {
-                        continue;
-                    }
-                    match (access, allocation) {
-                        (_, true) => effects.add_allocation(path),
-                        (AccessKind::Read, false) => effects.add_read(path),
-                        (AccessKind::Write, false) => effects.add_write(path),
-                        _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
 }

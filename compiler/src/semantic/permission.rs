@@ -1,262 +1,157 @@
-//! The permission judgment P: whether two sibling call statements may be
-//! executed with their evaluations overlapped.
+//! The permission judgment [PAR-1]: whether two adjacent statements of one
+//! block may be executed with their evaluations overlapped, and which runs of
+//! adjacent statements may all overlap.
 //!
 //! P is a compiler-internal legality judgment. It refuses nothing, changes no
 //! acceptance, and grants no lowering by itself; it records, per analyzed
-//! site, whether overlapping the two statements is permitted. A permitted
-//! window is actualizable, full stop.
+//! block, which adjacent pairs may overlap and which runs the checked program
+//! hands the backend as overlap groups.
 //!
-//! # The window
+//! # The judgment
 //!
-//! The judged unit is a *window*: an ordered pair (s1, s2) of `let x = f(...);`
-//! statements in one block, both binding the result of one named-function
-//! call, together with every statement of that block strictly between them.
-//! [PAR-1] says "s1 **precedes** s2 in one block", not that it immediately
-//! precedes it, and permission may not turn on accidental statement adjacency
-//! — one builtin written between two calls must not decide whether they may
-//! overlap, when the same operation wrapped in a pure function would leave
-//! them adjacent. Every condition below therefore quantifies over the
-//! interposed statements as well as over the two calls, and an interposed
-//! statement this analysis cannot account for **denies with a report** rather
-//! than silently ending the enumeration.
+//! [PAR-1] admits an overlap of two *adjacent* statements "exactly when the
+//! first's write paths are disjoint from the second's read and write paths
+//! and the second's write paths are disjoint from the first's, using the same
+//! path-overlap and index/range-disjointness judgment as [EFF-5] and
+//! [OWN-7]". Read/read overlap is admitted. There is no window of interposed
+//! statements: two calls separated by a third statement are not adjacent, and
+//! the run rule below is what lets all three overlap together.
 //!
-//! P(s1, s2) holds exactly when all three conditions hold. Writing T for an
-//! interposed statement, D(u) for the binding u defines, U(u) for the bindings
-//! its operands mention, and W/R/O(u) for u's written, read, and caller-side
-//! operand-read footprints:
+//! One statement's footprint has three halves:
 //!
-//! 1. **No dataflow.** No argument of s2 mentions a binding s1 defines; no
-//!    interposed statement's operands mention a binding s1 defines; and no
-//!    argument of s2 mentions a binding an interposed statement defines. The
-//!    two added clauses are the two schedules speaking: where s1 is handed
-//!    out, its value does not exist until the join, so no T may read it; where
-//!    s2 is handed out, its operands are evaluated before T1…Tk run, so s2 may
-//!    not read what they define. T1…Tk keep their mutual order on the calling
-//!    thread under both schedules, so there is no clause between them.
-//! 2. **Disjoint footprints.** Projecting each callee's declared `reads` and
-//!    `writes` regions onto its argument resolved places — the same [EFF-2]
-//!    boundary projection [ENT-5] kills use — gives W(s) and R(s). P requires
-//!    W(s1) disjoint from W(s2) and R(s2), and W(s2) disjoint from R(s1),
-//!    under [OWN-7]'s overlap relation over resolved places. An actual whose
-//!    caller place this analysis cannot resolve fails closed.
+//! - **writes** — the places a call's declared `writes` row reaches through
+//!   its actuals after [EFF-5] substitution, the place every by-value
+//!   consumption empties ("a by-value consumption counts as a write of the
+//!   argument's place"), the place a `set` names, and the binding a `let`
+//!   defines ("a `let`'s defined binding is a write path"). That last clause
+//!   is what makes ordinary dataflow a footprint conflict rather than a
+//!   condition of its own: where the second statement reads what the first
+//!   defines, the first's write path and the second's read path are one
+//!   place.
+//! - **reads** — the places a call's declared `reads` row reaches through the
+//!   same substitution.
+//! - **operand reads** — the storage the statement's own argument
+//!   expressions touch on the calling thread. "Evaluating a statement's own
+//!   argument expressions is part of that statement, so each statement's
+//!   write paths must also be disjoint from the places the other statement's
+//!   argument expressions read." Both directions are required, because which
+//!   statement's operand evaluation an overlap moves is the implementation's
+//!   choice of lane.
 //!
-//!    The callee projection is not the whole footprint. A statement also
-//!    reaches storage *before* its call, on the calling thread, while it
-//!    evaluates its own operands, and an overlap moves that evaluation across
-//!    the other member's call — so each member's writes must also be disjoint
-//!    from the other's caller-side operand reads. Without this the pair
-//!    `let a = bump(slot: &uniq 'r cell); let b = take(v: cell);` is permitted
-//!    while `take`'s operand reads the storage `bump` writes, which is both a
-//!    changed result and, on a granted lane, a data race. Both directions are
-//!    judged because which member's operands move is the implementation's
-//!    choice of which member takes the lane, which permission may not depend
-//!    on.
+//! Allocation and release contribute no path [STOR-8], so an allocating call
+//! adds nothing here and never denies an adjacency on that ground.
 //!
-//!    Each interposed T carries the same obligations against both members,
-//!    with **one asymmetry that must not be lost**: T is judged against s2
-//!    exactly as an ordinary earlier member is — including `W(T)` against
-//!    `O(s2)`, because the schedule that hands s2 out hoists its operand
-//!    evaluation above T — while against s1 the mirror obligation `W(T)`
-//!    against `O(s1)` does **not** arise, because the schedule that hands s1
-//!    out evaluates its operands before the fork and the schedule that hands
-//!    s2 out has already completed s1. The operand half is one-sided for s1
-//!    and two-sided for s2. Getting this wrong conservatively costs only
-//!    denials; getting it wrong permissively is a race.
-//! 3. **No skipping exit.** No exit edge of s1 bypasses s2, and no statement
-//!    between them carries an exit edge at all: s1's only continuation is s2.
-//!    A `propagate` right-hand side has an `Err` edge to the function-return
-//!    sink [ERR-3], so it is never a window member on either side; standing
-//!    between two members it denies as an interposed statement instead.
-//!    This is not merely a condition about differing observables: under either
-//!    schedule a hand-out is outstanding at every interposed statement, so an
-//!    exit taken there abandons an unjoined lane still reading the caller's
-//!    frame. Source proof statements are erased before lowering and therefore
-//!    introduce no runtime exit edge.
+//! A footprint element whose caller place this analysis does not resolve
+//! overlaps every place and denies permission, and a statement form whose
+//! footprint this analysis does not compute denies for the same reason: a
+//! missing element would *widen* permission, which is the one direction the
+//! judgment must never fail in.
 //!
-//! Two schedules are realizable for one window — hand s1 to a lane and run
-//! T1…Tk then s2 on the calling thread, or run s1 then hoist s2's operands,
-//! hand s2 out, and run T1…Tk — and [PAR-1] forbids stating any rule in terms
-//! of the schedule. The conditions above are therefore the **intersection** of
-//! what the two admit, never the weaker set the current backend alone would
-//! survive.
+//! # Runs
 //!
-//! # Proof statements do not add a fourth condition
+//! "Permission composes: any run of adjacent statements that pairwise may
+//! overlap may all overlap, and 'pairwise' means every ordered pair in the
+//! run." The runs are computed over a running union footprint, as
+//! `compiler/checker-facts` decides: a statement joins the current run when
+//! its write paths miss the union's read and write paths and its read paths
+//! miss the union's write paths, and otherwise starts a new run. Disjointness
+//! from a union is the conjunction of disjointness from each member, so the
+//! running test accepts exactly the runs the rule's every-ordered-pair
+//! condition accepts, at a cost linear in the statements of the block. A
+//! greedy partition can lose an opportunity and can never change a verdict,
+//! because permission is never an obligation.
 //!
-//! Nothing beyond those three conditions is required. Every source proof
-//! statement has already been checked against its control-flow facts before
-//! permission metadata is built. It is then erased before lowering: it has no
-//! runtime evaluation, effect, exit edge, or scheduler-visible event. A failed
-//! proof rejects the program instead of creating a runtime fallback. The
-//! permission judgment therefore neither rechecks proofs nor models a proof
-//! failure path.
+//! A run's members that are not calls carry no hand-out and leave the
+//! parallel lowering's clone set untouched, as
+//! `compiler/parallel-lowering/two-worlds` decides: only a handed-out call
+//! has a lowering that differs between the two worlds, so a permitted
+//! adjacency among ordinary statements is scheduling and alias metadata
+//! rather than a new hand-out site.
 //!
-//! **Invariant.** The window and counted-loop judgments consult typing, declared
-//! effect rows, resolved places [OWN-5, OWN-7], and statement-graph exit edges.
-//! The counted-loop judgment additionally consumes an already-successful
-//! [OP-4] disposition and its retained single-binder affine value image; it
-//! does not repeat that proof or inspect unrelated entailment facts. Permission remains a
-//! read-only lowering judgment: it cannot turn an accepted program into a
-//! rejected one or move a required check.
+//! # Exit edges
+//!
+//! [PAR-1] v0.60 states no condition about exit edges, where v0.59 required
+//! that "every normal continuation of s1 reaches s2". A statement whose
+//! continuation may leave the block cannot be overlapped with the statement
+//! written after it, because that statement may not execute at all and the
+//! rule still promises that "bindings and every Whitefoot state place equal
+//! the source-order result". This judgment therefore refuses an exit-bearing
+//! statement, which is the fail-closed reading of a sentence the rule no
+//! longer carries.
+//!
+//! # Proof statements
+//!
+//! Every source proof statement has already been checked against its
+//! control-flow facts before permission metadata is built, and is erased
+//! before lowering: it has no runtime evaluation, effect, exit edge, or
+//! scheduler-visible event. A failed proof rejects the program instead of
+//! creating a runtime fallback. The judgment therefore neither rechecks
+//! proofs nor models a proof failure path, and a proof statement carries an
+//! empty footprint.
+//!
+//! **Invariant.** This judgment consults typing, declared effect rows,
+//! resolved places [REF-1, OWN-7], and statement-graph exit edges. It cannot
+//! turn an accepted program into a rejected one or move a required check.
 
 use super::loop_permission::LoopPermission;
 use super::model::{
-    BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedMode, CheckedSetTarget,
-    CheckedSliceSource, CheckedStatePath, CheckedStatement, CheckedType, FunctionId,
+    BindingId, CheckedArrayRoot, CheckedEffects, CheckedExpression, CheckedFunction, CheckedMode,
+    CheckedPlaceStep, CheckedSetTarget, CheckedStatePath, CheckedStatement, FunctionId,
     expression_children,
 };
-use super::places::{PlaceMap, PlaceRoot, PlaceTerm, ResolvedPlace};
-use crate::{DeclarationId, NodePath};
+use super::places::{
+    CapturedRange, CapturedValue, PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace,
+    UnprovedSeparations,
+};
+use crate::NodePath;
 
-/// The declared effect row and region parameters of one concrete function, as
-/// P reads them. This is the callable boundary only: no body fact enters.
+/// The declared effect row of one concrete function, as P reads it. This is
+/// the callable boundary only: no body fact enters.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PermissionSignature {
-    /// Formal region parameters in declaration order.
-    pub(crate) region_parameters: Vec<DeclarationId>,
     pub(crate) reads: Vec<CheckedStatePath>,
     pub(crate) writes: Vec<CheckedStatePath>,
-    pub(crate) allocates_arenas: Vec<DeclarationId>,
 }
 
-/// Which statement of an analyzed window a denial cites: one of the two
-/// judged calls, or one of the statements written between them.
+/// Which statement of an analyzed adjacency a denial cites.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PairSide {
     First,
     Second,
-    /// The interposed statement at this zero-based position in the window.
-    Between(usize),
 }
 
-/// One exit edge of a window statement that does not reach the statement's
-/// ordinary successor.
+/// One exit edge of a statement that does not reach the statement's ordinary
+/// successor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ExitKind {
     /// A `propagate` right-hand side's `Err` edge to the function-return
     /// sink [ERR-3].
     PropagateError,
     /// A `return`, `give`, or `break` edge, which leaves the enclosing block
-    /// or function without reaching s2.
+    /// or function without reaching the next statement.
     BlockExit,
 }
 
-/// One footprint element: a resolved caller place, or one arena region whose
-/// allocation list the callee appends to.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum Access {
-    /// Storage the callee reaches through one actual.
-    Place {
-        place: ResolvedPlace,
-        /// The actual's source node, for citation.
-        argument: NodePath,
-    },
-    /// The caller region an `allocates(arena 'r)` row appends into. Two
-    /// overlapped calls allocating into one region would both mutate that
-    /// region's allocation list, so the region is a written footprint element
-    /// of its own, with no actual to project onto.
-    ///
-    /// The other half of the arena boundary is **not** covered and must be
-    /// before any arena program compiles. An `arena<'r, T>` is a
-    /// [`CheckedType::Nominal`], not a variant [`Footprint`] derives a region
-    /// from, so an `own arena<'r, T>` parameter carries no mode region and no
-    /// slice state: a callee row that declares `writes(arena)` projects nothing
-    /// onto it, and only the handle's consumed place is recorded. Every arena
-    /// program stops today at `UnsupportedSemanticFeature::ArenaRuntime`, so
-    /// nothing reaches this gap; the arena lane must close it rather than
-    /// inherit the projection.
-    Arena {
-        region: DeclarationId,
-        call: NodePath,
-    },
-}
-
-/// One [OWN-5] loan an argument borrow holds over a caller place for the
-/// duration of its call [OWN-12].
+/// One footprint element: a resolved caller place and the source node that
+/// cites it.
 ///
-/// A loan is not a use. The callee's declared row says what the callee *does*
-/// through the borrow; the loan says what the borrow *forbids everyone else*
-/// while it is live. The two are independent: `fn peek(c: &uniq 'c u64)
-/// reads(cell)` projects a read and holds an exclusive loan, and a `pure`
-/// callee projects nothing and still holds one.
+/// There is no second shape. An arena region was v0.59's one footprint
+/// element with no place of its own; [STOR-8] gives allocation and release no
+/// effect entry and [PAR-1] states that they "contribute no path", so the
+/// whole allocation half of the footprint is gone rather than retargeted.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Loan {
-    pub(crate) strength: LoanStrength,
+pub(crate) struct Access {
     pub(crate) place: ResolvedPlace,
-    /// The actual's source node, for citation.
+    /// The actual or statement node the element is cited at.
     pub(crate) argument: NodePath,
 }
 
-/// The two borrow modes [OWN-2], as [OWN-5] grades their exclusion.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum LoanStrength {
-    Shared,
-    Exclusive,
-}
-
-impl LoanStrength {
-    const fn half(self) -> FootprintHalf {
-        match self {
-            Self::Shared => FootprintHalf::SharedLoan,
-            Self::Exclusive => FootprintHalf::ExclusiveLoan,
-        }
-    }
-
-    /// [OWN-5]'s matrix, read as this loan against one overlapping use of the
-    /// other statement. This is `check_loan_access`'s loan/access table, the
-    /// same word for the same thing: an exclusive loan excludes every access,
-    /// a shared loan excludes writes and admits reads.
-    const fn excludes_use(self, use_half: FootprintHalf) -> bool {
-        match self {
-            Self::Exclusive => true,
-            Self::Shared => matches!(use_half, FootprintHalf::Write),
-        }
-    }
-
-    /// The same matrix against the other statement's loan: two loans
-    /// conflict exactly when at least one is exclusive [OWN-5, OWN-12].
-    const fn excludes_loan(self, other: Self) -> bool {
-        matches!(self, Self::Exclusive) || matches!(other, Self::Exclusive)
-    }
-}
-
-impl Access {
-    fn conflicts(&self, other: &Self, places: &PlaceMap) -> bool {
-        match (self, other) {
-            (Self::Place { place: left, .. }, Self::Place { place: right, .. }) => {
-                places.overlaps(left, right)
-            }
-            (Self::Arena { region: left, .. }, Self::Arena { region: right, .. }) => left == right,
-            (Self::Place { .. }, Self::Arena { .. }) | (Self::Arena { .. }, Self::Place { .. }) => {
-                false
-            }
-        }
-    }
-}
-
-/// Which two footprint halves a condition-2 conflict joins. The ledger states
-/// it, so a denial names the access it actually found rather than calling
-/// every conflict a write/write one.
-///
-/// The halves are named from the *earlier* and *later* statement of the two
-/// the conflict joins, which the denial carries alongside as a [`PairSide`]
-/// each: for the judged pair those are s1 and s2, and for an interposed
-/// statement they are that statement and whichever member it was judged
-/// against.
-/// One half of a statement's [OWN-5] access set.
-///
-/// The first three are *uses*: what the callee's declared row does through an
-/// actual, and what the caller's own operand evaluation touches. The last two
-/// are *loans*: what an argument borrow forbids everyone else for the
-/// duration of the call [OWN-12], whatever its callee's row does or does not
-/// declare. A row-less `&uniq` argument is the pointed case — it reads
-/// nothing, writes nothing, and still excludes every overlapping access.
+/// One half of a statement's [PAR-1] footprint.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FootprintHalf {
     Write,
     Read,
     OperandRead,
-    SharedLoan,
-    ExclusiveLoan,
 }
 
 impl FootprintHalf {
@@ -265,12 +160,12 @@ impl FootprintHalf {
             Self::Write => "write",
             Self::Read => "read",
             Self::OperandRead => "operand read",
-            Self::SharedLoan => "shared loan",
-            Self::ExclusiveLoan => "exclusive loan",
         }
     }
 }
 
+/// Which two footprint halves a conflict joins, named from the earlier and
+/// the later statement, so a denial states the access it actually found.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ConflictKind {
     pub(crate) earlier: FootprintHalf,
@@ -289,20 +184,10 @@ impl ConflictKind {
     }
 }
 
-/// Why P does not hold for one analyzed window. Each variant names exactly one
-/// condition of the judgment.
+/// Why P does not hold for one analyzed adjacency.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Denial {
-    /// Condition 1: the operands of one window statement read a binding an
-    /// earlier one defines.
-    Dataflow {
-        binding: BindingId,
-        /// The statement that defines the binding.
-        definer: PairSide,
-        /// The statement whose operands read it.
-        reader: PairSide,
-    },
-    /// Condition 2: two accesses of two window footprints conflict.
+    /// Two accesses of the two footprints overlap under [OWN-7].
     Footprint {
         kind: ConflictKind,
         left: Access,
@@ -310,57 +195,39 @@ pub(crate) enum Denial {
         /// The two statements the accesses belong to, earlier first.
         sides: (PairSide, PairSide),
     },
-    /// Condition 2: one statement's [OWN-5] loan excludes an overlapping
-    /// loan or use of the other. Carried apart from `Footprint` only because
-    /// a loan cites its borrow's actual rather than a row entry; it is the
-    /// same condition and the ledger renders it the same way.
-    Loan {
-        kind: ConflictKind,
-        left: NodePath,
-        right: NodePath,
-        sides: (PairSide, PairSide),
-    },
-    /// Condition 2, fail-closed: the row projects an access through an actual
-    /// whose caller place this analysis cannot resolve, or an operand reads
-    /// storage it cannot resolve.
+    /// Fail-closed: a footprint element whose caller place this analysis does
+    /// not resolve overlaps every place [PAR-1].
     UnresolvedFootprint { side: PairSide, argument: NodePath },
-    /// Condition 2, fail-closed: a statement written between s1 and s2 has a
-    /// form whose footprint this analysis does not compute. [PAR-1] says an
-    /// unresolved element overlaps every place, so such a statement denies
-    /// rather than ending the enumeration silently — which is the whole point
-    /// of judging a window instead of an adjacent pair.
-    InterposedForm {
+    /// Fail-closed: a statement form whose footprint this analysis does not
+    /// compute. Such a statement would otherwise contribute nothing and widen
+    /// permission.
+    UnclassifiedForm {
         side: PairSide,
         /// The form, as the ledger names it to the writer.
         form: &'static str,
     },
-    /// Condition 3: an exit edge of a statement between the two members does
-    /// not reach s2. No member itself carries an exit edge: [PAR-1] admits a
-    /// `let`-bound call or a scrutinee call, and the one statement shape with
-    /// an exit edge, `propagate`, is never a candidate (see `candidate_of`).
+    /// A statement whose continuation may leave the block, so the statement
+    /// written after it need not execute at all.
     SkippingExit { side: PairSide, kind: ExitKind },
 }
 
 impl Denial {
-    /// The judgment condition this denial cites. The permission ledger prints
-    /// it and the judgment tests assert it; acceptance never reads it.
+    /// The judgment clause this denial cites. The permission ledger prints it
+    /// and the judgment tests assert it; acceptance never reads it.
     pub(crate) const fn condition(&self) -> u8 {
         match self {
-            Self::Dataflow { .. } => 1,
             Self::Footprint { .. }
-            | Self::Loan { .. }
             | Self::UnresolvedFootprint { .. }
-            | Self::InterposedForm { .. } => 2,
-            Self::SkippingExit { .. } => 4,
+            | Self::UnclassifiedForm { .. } => 1,
+            Self::SkippingExit { .. } => 2,
         }
     }
 }
 
-/// The judgment's outcome for one analyzed pair.
+/// The judgment's outcome for one analyzed adjacency.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PermissionVerdict {
-    /// P holds, so the window may be overlapped. Source proof statements were
-    /// already checked and erase before this permission can be actualized.
+    /// P holds, so the two statements may be overlapped.
     PermittedEligible,
     Denied(Denial),
 }
@@ -370,7 +237,7 @@ impl PermissionVerdict {
         matches!(self, Self::PermittedEligible)
     }
 
-    /// The cited condition of a denial, or `None` for a permitted verdict.
+    /// The cited clause of a denial, or `None` for a permitted verdict.
     #[allow(dead_code)]
     pub(crate) const fn denied_condition(&self) -> Option<u8> {
         match self {
@@ -380,23 +247,24 @@ impl PermissionVerdict {
     }
 }
 
-/// One analyzed call statement.
+/// One analyzed statement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PermissionSite {
-    /// The statement node that owns the call: the `let_stmt` node, or the call
-    /// occurrence where the statement form carries no node of its own.
+    /// The statement node.
     pub(crate) statement: NodePath,
-    /// The binding the statement defines, or `None` for a call whose result
-    /// its own statement consumes. A join must complete before the first use
-    /// of it.
+    /// The binding the statement defines, or `None` where it defines none.
     pub(crate) binding: Option<BindingId>,
-    /// The call occurrence inside it. This is the site's identity: it exists
-    /// in every written call position, where a defining binding does not.
-    pub(crate) call: NodePath,
+    /// The named-function call this statement's right-hand side is, where it
+    /// is one. Only a call-rooted member adds a hand-out; an ordinary
+    /// statement is a member of the overlap group and carries none
+    /// [parallel-lowering/two-worlds].
+    pub(crate) call: Option<NodePath>,
+    /// The callee's name for a call member, or the statement's form for any
+    /// other member. The ledger prints it.
     pub(crate) callee_name: String,
 }
 
-/// One ordered pair of adjacent call statements and its verdict.
+/// One ordered pair of adjacent statements and its verdict.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PermissionPair {
     pub(crate) first: PermissionSite,
@@ -404,24 +272,20 @@ pub(crate) struct PermissionPair {
     pub(crate) verdict: PermissionVerdict,
 }
 
-/// A maximal chain of at least two adjacent call statements every ordered
-/// pair of which is permitted and eligible. A chain is not implied by its
-/// adjacent pairs, so every ordered pair inside it is judged.
+/// A maximal run of at least two adjacent statements that may all overlap.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PermissionRun {
     pub(crate) sites: Vec<PermissionSite>,
 }
 
-/// Every analyzed pair and eligible chain of one concrete function, in source
-/// order.
+/// Every analyzed pair and run of one concrete function, in source order.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct FunctionPermissions {
     pub(crate) function: String,
     pub(crate) pairs: Vec<PermissionPair>,
     pub(crate) runs: Vec<PermissionRun>,
     /// The [PAR-2] verdict of every counted loop of this function, in source
-    /// order. The pair judgment above is computed exactly as it was before
-    /// these existed, and nothing here is lowered by this version.
+    /// order.
     pub(crate) loops: Vec<LoopPermission>,
 }
 
@@ -432,9 +296,7 @@ pub(crate) struct PermissionMetadata {
 }
 
 impl PermissionMetadata {
-    /// The table of one concrete function by its dense identity. A function
-    /// the judgment never reached has no analyzed pair and therefore no
-    /// entry, which reads the same as an empty one.
+    /// The table of one concrete function by its dense identity.
     pub(crate) fn of(&self, function: FunctionId) -> Option<&FunctionPermissions> {
         self.functions.get(function.0 as usize)
     }
@@ -450,10 +312,6 @@ impl PermissionMetadata {
 }
 
 /// Runs P over every concrete function of one checked program.
-///
-/// `signatures` is dense by [`FunctionId`] and carries only callable-boundary
-/// data. Nothing in this call graph, statement walk, or place resolution reads
-/// a derived fact.
 pub(crate) fn analyze_permission(
     functions: &[CheckedFunction],
     signatures: &[PermissionSignature],
@@ -475,49 +333,13 @@ pub(super) struct Program<'check> {
     signatures: &'check [PermissionSignature],
 }
 
-/// One candidate statement: a statement whose call position holds exactly one
-/// named-function call.
-///
-/// A call reaches this analysis in two written positions: as the whole
-/// right-hand side of a `let`, and as the scrutinee of a `match`. The two are
-/// the same call and get the same judgment; what differs is who reads the
-/// result. A `let` names it, so nothing reads it until a later statement does.
-/// A scrutinee is read by its own statement's dispatch, so every statement
-/// after that one already stands behind a read of it — which is what
-/// `result_read_by_own_statement` records and what
-/// [`Program::judge`] turns into the window that refuses the pair.
-struct Candidate<'check> {
-    /// The statement node that owns the call. A `match` statement carries no
-    /// node of its own in the checked model, so a scrutinee candidate names
-    /// its call occurrence here; both are inside the same statement and both
-    /// sort, locate, and enclose identically.
-    statement: NodePath,
-    /// Position of this statement in its own block. Two candidates and the
-    /// statements between their positions are one judged window.
-    index: usize,
-    /// The binding the statement defines, or `None` where the call's result is
-    /// consumed by the statement itself and never named.
-    binding: Option<BindingId>,
-    call: CallProjection<'check>,
-    /// The statement's own remainder reads this call's result — a scrutinee
-    /// dispatch and the arms it selects. The result is therefore live before
-    /// any later statement runs.
-    result_read_by_own_statement: bool,
-}
-
-/// One call occurrence, reduced to what the [EFF-2] boundary projection reads.
-///
-/// The window judgment reaches a call as the whole right-hand side of a
-/// `let_stmt`; the loop judgment reaches one wherever it is written in a body.
-/// Both project the same boundary, so both build it from this and neither
-/// grows a second copy of the projection.
+/// One call occurrence, reduced to what the [EFF-5] substitution reads.
 pub(super) struct CallProjection<'check> {
-    pub(super) formal_effects: Option<&'check super::model::CheckedEffects>,
+    pub(super) formal_effects: Option<&'check CheckedEffects>,
     pub(super) call: &'check NodePath,
     pub(super) target: FunctionId,
     pub(super) arguments: &'check [CheckedExpression],
     pub(super) argument_nodes: &'check [NodePath],
-    pub(super) regions: &'check [DeclarationId],
 }
 
 /// The call one expression is, or `None` for every other expression form.
@@ -528,7 +350,6 @@ pub(super) fn call_projection(value: &CheckedExpression) -> Option<CallProjectio
             call,
             argument_nodes,
             arguments,
-            goal_regions,
             formal_effects,
             ..
         } => Some(CallProjection {
@@ -537,49 +358,30 @@ pub(super) fn call_projection(value: &CheckedExpression) -> Option<CallProjectio
             target: *function,
             arguments,
             argument_nodes,
-            regions: goal_regions,
         }),
         _ => None,
     }
 }
 
-/// One statement written between the two judged calls, reduced to what the
-/// window rule asks of it.
-struct Interposed {
-    /// The binding it defines, when it defines one.
-    defines: Option<BindingId>,
-    /// Every binding its own operands mention.
-    uses: Vec<BindingId>,
-    footprint: Footprint,
-}
-
-/// Why one interposed statement cannot be judged as written.
-enum InterposedRefusal {
-    /// It carries an exit edge — condition 4.
-    Exit(ExitKind),
-    /// Its footprint is not computed for this form — condition 2.
-    Form(&'static str),
-}
-
-/// One block, prepared once for every window judged inside it.
+/// One statement of a block, classified once for every adjacency it takes
+/// part in.
 ///
-/// Every statement is classified and every candidate's footprint projected a
-/// single time per block, not once per judged window. A block with m calls
-/// among n statements is judged over O(m²) ordered pairs by [`collect_runs`],
-/// and each window spans up to n statements, so classifying inside `judge`
-/// made the analysis O(m²·n) in place resolution and allocation. On the
-/// frozen real-source fixtures — whose entry blocks carry tens of calls — that
-/// was the difference between a suite that finishes and one that does not.
-struct BlockWindows<'check, 'places> {
-    places: &'places PlaceMap,
-    /// Every statement of the block, in source order, classified as an
-    /// interposed member. Candidate statements are classified too: they are
-    /// interposed members of the non-adjacent windows [`collect_runs`] judges.
-    statements: Vec<Result<Interposed, InterposedRefusal>>,
-    /// The call candidates of the block, in source order.
-    candidates: Vec<Candidate<'check>>,
-    /// Each candidate's [EFF-2] projection, positionally with `candidates`.
-    footprints: Vec<Footprint>,
+/// `site` is absent for a statement the checked model gives no node of its
+/// own — an expression statement, a `match`, a `loop`, a `break`. Every such
+/// form is refused below, so an absent site is never a run member and never a
+/// reported pair member; it still ends the run it interrupts.
+struct Classified {
+    site: Option<PermissionSite>,
+    footprint: Result<Footprint, Refusal>,
+}
+
+/// Why one statement cannot take part in an overlap as written.
+#[derive(Clone, Copy)]
+enum Refusal {
+    /// It carries an exit edge.
+    Exit(ExitKind),
+    /// Its footprint is not computed for this form.
+    Form(&'static str),
 }
 
 impl<'check> Program<'check> {
@@ -611,515 +413,409 @@ impl<'check> Program<'check> {
                 .cmp(right.sites[0].statement.components())
         });
         // The loop judgment runs last and reads the finished verdicts, so a
-        // loop that already holds an eligible pair is never told to become
-        // one. Its own verdict does not read them: [PAR-2] is a judgment of
-        // the loop, not of what a writer could put inside it.
+        // loop that already holds an eligible adjacency is never additionally
+        // told to become one. Its own verdict does not read them: [PAR-2] is
+        // a judgment of the loop, not of what a writer could put inside it.
         let eligible = permissions
             .pairs
             .iter()
             .filter(|pair| pair.verdict.is_eligible())
             .map(|pair| pair.first.statement.clone())
             .collect::<Vec<_>>();
-        permissions.loops = super::loop_permission::judge_loops(self, &places, function, &eligible);
+        permissions.loops =
+            super::loop_permission::judge_loops(self, &places, function, &eligible);
         permissions
     }
 
-    /// Judges every adjacent pair of *calls* in one block, each over the
-    /// window of statements written between them.
+    /// Judges every adjacent pair of one block and collects its runs.
     ///
-    /// The enumeration is over call candidates rather than over runs of
-    /// adjacent candidate statements. A statement of any other form no longer
-    /// ends the enumeration; it becomes an interposed member of the window and
-    /// is judged, so a pair separated by one builtin gets a verdict and a
-    /// ledger line where it previously got neither. The reported pairs stay
-    /// adjacent-call pairs, so the ledger's volume is unchanged.
+    /// Every statement is classified and every footprint projected a single
+    /// time per block, because a block of n statements is read n-1 times as
+    /// an adjacency and once more by the run walk.
     fn analyze_block(
         &self,
         places: &PlaceMap,
         block: &'check [CheckedStatement],
         permissions: &mut FunctionPermissions,
     ) {
-        let candidates = block
-            .iter()
-            .enumerate()
-            .filter_map(|(index, statement)| candidate_of(index, statement))
-            .collect::<Vec<_>>();
-        if candidates.len() < 2 {
+        if block.len() < 2 {
             return;
         }
-        let windows = BlockWindows {
-            places,
-            statements: block
-                .iter()
-                .enumerate()
-                .map(|(index, statement)| self.interposed_of(places, index, statement))
-                .collect(),
-            footprints: candidates
-                .iter()
-                .map(|candidate| self.footprint(places, &candidate.call))
-                .collect(),
-            candidates,
-        };
-        for ordinal in 0..windows.candidates.len() - 1 {
-            let verdict = self.judge(&windows, ordinal, ordinal + 1);
+        let classified = block
+            .iter()
+            .map(|statement| self.classify(places, statement))
+            .collect::<Vec<_>>();
+        for window in classified.windows(2) {
+            let [first, second] = window else {
+                continue;
+            };
+            // The ledger reports adjacencies a writer can act on. A pair of
+            // two statements neither of which holds a call has no hand-out to
+            // gain and would bury the lines that do, so it is judged for the
+            // run walk below and not reported.
+            let (Some(first_site), Some(second_site)) = (&first.site, &second.site) else {
+                continue;
+            };
+            if first_site.call.is_none() && second_site.call.is_none() {
+                continue;
+            }
             permissions.pairs.push(PermissionPair {
-                first: self.site(&windows.candidates[ordinal]),
-                second: self.site(&windows.candidates[ordinal + 1]),
-                verdict,
+                first: first_site.clone(),
+                second: second_site.clone(),
+                verdict: self.judge(places, first, second),
             });
         }
-        self.collect_runs(&windows, permissions);
+        self.collect_runs(places, &classified, permissions);
     }
 
-    /// Grows maximal chains whose every ordered pair is permitted and
-    /// eligible.
+    /// The verdict of one ordered adjacency.
+    fn judge(&self, places: &PlaceMap, first: &Classified, second: &Classified) -> PermissionVerdict {
+        for (side, classified) in [(PairSide::First, first), (PairSide::Second, second)] {
+            match &classified.footprint {
+                Err(Refusal::Exit(kind)) => {
+                    return PermissionVerdict::Denied(Denial::SkippingExit {
+                        side,
+                        kind: *kind,
+                    });
+                }
+                Err(Refusal::Form(form)) => {
+                    return PermissionVerdict::Denied(Denial::UnclassifiedForm { side, form });
+                }
+                Ok(footprint) => {
+                    if let Some(argument) = &footprint.unresolved {
+                        return PermissionVerdict::Denied(Denial::UnresolvedFootprint {
+                            side,
+                            argument: argument.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        let (left, right) = match (&first.footprint, &second.footprint) {
+            (Ok(left), Ok(right)) => (left, right),
+            // Every refusal already returned a denial above. This arm keeps
+            // the match total without a panic in a judgment that is allowed
+            // to deny and never allowed to fail.
+            _ => {
+                return PermissionVerdict::Denied(Denial::UnclassifiedForm {
+                    side: PairSide::First,
+                    form: "a statement form this judgment does not compute",
+                });
+            }
+        };
+        match footprint_conflict(places, left, right) {
+            Some(denial) => PermissionVerdict::Denied(denial),
+            None => PermissionVerdict::PermittedEligible,
+        }
+    }
+
+    /// Grows maximal runs over a running union footprint [checker-facts].
     ///
-    /// Every ordered pair is judged over its own window, so a statement
-    /// between two chain members is judged against every member of the chain:
-    /// for members mi and mj bracketing an interposed T, the pair (mi, mj)
-    /// covers T against both of them, and for any further member mk the pair
-    /// that brackets both T and mk covers T against mk. A chain requires all
-    /// its ordered pairs, so nothing in the window escapes judgment — which is
-    /// [PAR-1]'s "permission for a chain is exactly permission for every
-    /// ordered pair it contains", read over windows.
+    /// A statement joins the current run when its write paths miss the
+    /// union's read and write paths and its read paths miss the union's write
+    /// paths; otherwise it starts a new run. Disjointness from a union is the
+    /// conjunction of disjointness from each member, so this accepts exactly
+    /// the runs [PAR-1]'s every-ordered-pair condition accepts.
     fn collect_runs(
         &self,
-        windows: &BlockWindows<'check, '_>,
+        places: &PlaceMap,
+        classified: &[Classified],
         permissions: &mut FunctionPermissions,
     ) {
-        let group = &windows.candidates;
-        let mut start = 0;
-        while start + 1 < group.len() {
-            let mut end = start;
-            while end + 1 < group.len()
-                && (start..=end).all(|earlier| self.judge(windows, earlier, end + 1).is_eligible())
-            {
-                end += 1;
+        let mut run: Vec<usize> = Vec::new();
+        let mut union = Footprint::default();
+        let mut flush = |run: &mut Vec<usize>, union: &mut Footprint| {
+            let sites = run
+                .iter()
+                .filter_map(|index| classified[*index].site.clone())
+                .collect::<Vec<_>>();
+            // Every form that is given a footprint carries a node of its own,
+            // so the filter above removes nothing; the length is read after
+            // it so that a form which later loses its node cannot shorten a
+            // run behind the judgment's back.
+            if sites.len() >= 2 && sites.len() == run.len() {
+                permissions.runs.push(PermissionRun { sites });
             }
-            if end > start {
-                permissions.runs.push(PermissionRun {
-                    sites: group[start..=end]
-                        .iter()
-                        .map(|candidate| self.site(candidate))
-                        .collect(),
-                });
-                start = end + 1;
+            run.clear();
+            *union = Footprint::default();
+        };
+        for (index, statement) in classified.iter().enumerate() {
+            let Ok(footprint) = &statement.footprint else {
+                // An exit-bearing or unclassified statement joins no run and
+                // ends the one before it: the statements after it are not
+                // reached from the same straight-line edge.
+                flush(&mut run, &mut union);
+                continue;
+            };
+            if footprint.unresolved.is_some() {
+                flush(&mut run, &mut union);
+                continue;
+            }
+            if run.is_empty() {
+                run.push(index);
+                union.absorb(footprint);
+                continue;
+            }
+            if footprint_conflict(places, &union, footprint).is_some() {
+                flush(&mut run, &mut union);
+                run.push(index);
+                union.absorb(footprint);
             } else {
-                start += 1;
+                run.push(index);
+                union.absorb(footprint);
             }
         }
+        flush(&mut run, &mut union);
     }
 
-    fn site(&self, candidate: &Candidate<'check>) -> PermissionSite {
-        let callee_name = self
-            .functions
-            .get(candidate.call.target.0 as usize)
-            .map(|function| function.name.clone())
-            .unwrap_or_default();
-        PermissionSite {
-            statement: candidate.statement.clone(),
-            binding: candidate.binding,
-            call: candidate.call.call.clone(),
-            callee_name,
-        }
-    }
-
-    /// The three conditions in their numbered order, then eligibility, over the
-    /// window (s1, T1…Tk, s2).
+    /// One statement, reduced to what [PAR-1] judges, or the reason it cannot
+    /// be.
     ///
-    /// An interposed statement is classified before any condition is
-    /// evaluated, because a form whose footprint this analysis does not
-    /// compute has no condition-1 or condition-2 answer to give: it denies on
-    /// the spot, citing the condition its form violates. A window with several
-    /// defects therefore reports the interposed form ahead of a lower-numbered
-    /// defect elsewhere, which is the honest report — nothing else about that
-    /// statement is known.
-    fn judge(
-        &self,
-        windows: &BlockWindows<'check, '_>,
-        first_ordinal: usize,
-        second_ordinal: usize,
-    ) -> PermissionVerdict {
-        let first = &windows.candidates[first_ordinal];
-        let second = &windows.candidates[second_ordinal];
-        // Where s1's own statement reads s1's result, the rest of that
-        // statement — the dispatch and the arm it selects — runs between the
-        // call and everything after it, so the statement is itself the
-        // window's first interposed member. It is classified exactly as any
-        // other statement of its form is, which is what makes a scrutinee
-        // candidate deny as a first member without a rule of its own.
-        let window_start = first.index + usize::from(!first.result_read_by_own_statement);
-        let mut interposed = Vec::with_capacity(second.index - window_start);
-        for (offset, classified) in windows
-            .statements
-            .get(window_start..second.index)
-            .unwrap_or_default()
-            .iter()
-            .enumerate()
-        {
-            let side = PairSide::Between(offset);
-            match classified {
-                Ok(record) => interposed.push(record),
-                Err(InterposedRefusal::Exit(kind)) => {
-                    return PermissionVerdict::Denied(Denial::SkippingExit { side, kind: *kind });
-                }
-                Err(InterposedRefusal::Form(form)) => {
-                    return PermissionVerdict::Denied(Denial::InterposedForm { side, form });
-                }
-            }
-        }
-
-        // Condition 1: ordinary def-use, over the whole window.
-        let mut used = Vec::new();
-        for argument in second.call.arguments {
-            collect_used_bindings(argument, &mut used);
-        }
-        if let Some(defined) = first.binding
-            && used.contains(&defined)
-        {
-            return PermissionVerdict::Denied(Denial::Dataflow {
-                binding: defined,
-                definer: PairSide::First,
-                reader: PairSide::Second,
-            });
-        }
-        for (offset, record) in interposed.iter().enumerate() {
-            // Where s1 takes the lane its value does not exist until the join,
-            // so nothing between them may read it.
-            if let Some(defined) = first.binding
-                && record.uses.contains(&defined)
-            {
-                return PermissionVerdict::Denied(Denial::Dataflow {
-                    binding: defined,
-                    definer: PairSide::First,
-                    reader: PairSide::Between(offset),
-                });
-            }
-            // Where s2 takes the lane its operands are evaluated before the
-            // interposed statements run, so it may not read what they define.
-            if let Some(defined) = record.defines
-                && used.contains(&defined)
-            {
-                return PermissionVerdict::Denied(Denial::Dataflow {
-                    binding: defined,
-                    definer: PairSide::Between(offset),
-                    reader: PairSide::Second,
-                });
-            }
-        }
-
-        // Condition 2: disjoint footprints under OWN-7, fail closed.
-        let left = &windows.footprints[first_ordinal];
-        let right = &windows.footprints[second_ordinal];
-        for (side, footprint) in [(PairSide::First, left), (PairSide::Second, right)]
-            .into_iter()
-            .chain(
-                interposed
-                    .iter()
-                    .enumerate()
-                    .map(|(offset, record)| (PairSide::Between(offset), &record.footprint)),
-            )
-        {
-            // Operand evaluation is part of the statement, so an overlap moves
-            // it too. Which statement's operands move depends on which member
-            // takes the lane, so an unresolved operand read anywhere in the
-            // window denies just as an unresolved row projection does.
-            if let Some(argument) = footprint
-                .unresolved
-                .clone()
-                .or_else(|| footprint.operand_unresolved.clone())
-            {
-                return PermissionVerdict::Denied(Denial::UnresolvedFootprint { side, argument });
-            }
-        }
-        if let Some(denial) = footprint_conflict(
-            windows.places,
-            left,
-            PairSide::First,
-            right,
-            PairSide::Second,
-            true,
-        ) {
-            return PermissionVerdict::Denied(denial);
-        }
-        for (offset, record) in interposed.iter().enumerate() {
-            let side = PairSide::Between(offset);
-            // Against s1 the mirror operand obligation is dropped: the
-            // schedule that hands s1 out evaluates O(s1) before the fork, and
-            // the schedule that hands s2 out has already completed s1, so no
-            // interposed write can reach O(s1). The operand half is one-sided
-            // for s1 and two-sided for s2, and that asymmetry is the whole
-            // difference between this rule and judging T as an ordinary member.
-            if let Some(denial) = footprint_conflict(
-                windows.places,
-                left,
-                PairSide::First,
-                &record.footprint,
-                side,
-                false,
-            ) {
-                return PermissionVerdict::Denied(denial);
-            }
-            if let Some(denial) = footprint_conflict(
-                windows.places,
-                &record.footprint,
-                side,
-                right,
-                PairSide::Second,
-                true,
-            ) {
-                return PermissionVerdict::Denied(denial);
-            }
-        }
-
-        // Condition 3: no window member carries an exit edge: [PAR-1] admits a
-        // `let`-bound call or a scrutinee call as a member, and a
-        // `propagate` statement forms no candidate at all (see
-        // `candidate_of`), so a skipping exit can only come from a statement
-        // interposed between s1 and s2, already denied during classification
-        // above.
-
-        // All three conditions hold. Source proof statements were checked
-        // before this analysis and have no runtime exit or footprint.
-        PermissionVerdict::PermittedEligible
-    }
-
-    /// One statement between the two members, reduced to what the window rule
-    /// judges, or the reason it cannot be.
-    ///
-    /// The match is exhaustive on purpose: a statement form this analysis does
-    /// not classify would otherwise contribute an empty footprint and *widen*
-    /// permission, which is the one direction the judgment must never fail in.
-    /// Every form is either given a footprint here or refused here.
-    fn interposed_of(
-        &self,
-        places: &PlaceMap,
-        index: usize,
-        statement: &'check CheckedStatement,
-    ) -> Result<Interposed, InterposedRefusal> {
-        match statement {
-            CheckedStatement::Proof(_) => Ok(Interposed {
-                defines: None,
-                uses: Vec::new(),
-                footprint: Footprint::default(),
-            }),
+    /// The match is exhaustive on purpose: a statement form this analysis did
+    /// not classify would contribute an empty footprint and *widen*
+    /// permission. Every form is either given a footprint here or refused
+    /// here.
+    fn classify(&self, places: &PlaceMap, statement: &'check CheckedStatement) -> Classified {
+        let (node, binding, call, label, footprint) = match statement {
+            // A source proof is checked before permission and erased before
+            // lowering: no runtime evaluation, effect, exit edge, or
+            // scheduler-visible event, so its footprint is empty and it joins
+            // a run without changing it.
+            CheckedStatement::Proof(proof) => (
+                Some(&proof.node_path),
+                None,
+                None,
+                "a proof statement",
+                Ok(Footprint::default()),
+            ),
             CheckedStatement::Let {
                 node_path,
                 binding,
                 value,
             } => {
-                // A call between the members is judged exactly as a member is,
-                // with its full [EFF-2] projection rather than the operand
-                // reads of an ordinary value.
-                if let Some(candidate) = candidate_of(index, statement) {
-                    let mut uses = Vec::new();
-                    for argument in candidate.call.arguments {
-                        collect_used_bindings(argument, &mut uses);
-                    }
-                    return Ok(Interposed {
-                        defines: Some(*binding),
-                        uses,
-                        footprint: self.footprint(places, &candidate.call),
-                    });
-                }
-                // A written borrow's shared-or-uniq mode is erased from the
-                // checked expression, so the [OWN-5] loan this statement
-                // would hold across the window cannot be formed here. Refusal
-                // is the fail-closed direction: an unloaned borrow would
-                // contribute an empty footprint and widen permission.
-                if expression_forms_borrow(value) {
-                    return Err(InterposedRefusal::Form("a statement that forms a borrow"));
-                }
-                let mut uses = Vec::new();
-                collect_used_bindings(value, &mut uses);
-                Ok(Interposed {
-                    defines: Some(*binding),
-                    uses,
-                    footprint: value_footprint(places, value, node_path),
-                })
+                let mut footprint = self.value_footprint(places, value, node_path);
+                // "a `let`'s defined binding is a write path" [PAR-1]. This
+                // is what makes reading what an earlier statement defines a
+                // footprint conflict rather than a rule of its own.
+                footprint.writes.push(Access {
+                    place: ResolvedPlace::binding(*binding),
+                    argument: node_path.clone(),
+                });
+                let projection = call_projection(value);
+                let label = projection
+                    .as_ref()
+                    .map_or("a let statement", |_| "a call statement");
+                let call = projection.map(|projection| projection.call.clone());
+                (
+                    Some(node_path),
+                    Some(*binding),
+                    call,
+                    label,
+                    Ok(footprint),
+                )
             }
-            // [CALL-4] a binder or target list defines more than one place in
-            // one statement, and this window admits exactly one definition
-            // per statement. Refusal is the fail-closed direction: nothing
-            // here widens a permission it cannot describe.
-            CheckedStatement::DestructuringLet { .. } | CheckedStatement::SetList { .. } => Err(
-                InterposedRefusal::Form("a statement that binds an ordered result list"),
-            ),
             CheckedStatement::Set {
                 node_path,
                 target,
                 value,
             } => {
-                if expression_forms_borrow(value) {
-                    return Err(InterposedRefusal::Form("a statement that forms a borrow"));
-                }
-                let mut footprint = value_footprint(places, value, node_path);
-                set_target_place(places, target, node_path, &mut footprint, false);
-                let mut uses = Vec::new();
-                collect_used_bindings(value, &mut uses);
-                collect_set_target_bindings(target, &mut uses);
-                Ok(Interposed {
-                    defines: None,
-                    uses,
-                    footprint,
-                })
+                let mut footprint = self.value_footprint(places, value, node_path);
+                set_target_place(places, target, node_path, &mut footprint);
+                (Some(node_path), None, None, "a set statement", Ok(footprint))
             }
-            // [SET-2]: one read of the previous value into the fresh binding
-            // and one write of the replacement into the target, so the target
-            // place is both halves of the footprint.
-            CheckedStatement::Replace {
-                node_path,
+            // Exit-bearing forms.
+            CheckedStatement::PropagateLet { node_path, .. } => (
+                Some(node_path),
+                None,
+                None,
+                "a propagate statement",
+                Err(Refusal::Exit(ExitKind::PropagateError)),
+            ),
+            CheckedStatement::Return { node_path, .. } => (
+                Some(node_path),
+                None,
+                None,
+                "a return statement",
+                Err(Refusal::Exit(ExitKind::BlockExit)),
+            ),
+            CheckedStatement::Give { node_path, .. } => (
+                Some(node_path),
+                None,
+                None,
+                "a give statement",
+                Err(Refusal::Exit(ExitKind::BlockExit)),
+            ),
+            CheckedStatement::Break { .. } => (
+                None,
+                None,
+                None,
+                "a break statement",
+                Err(Refusal::Exit(ExitKind::BlockExit)),
+            ),
+            // Forms carrying their own control flow and their own drops. A
+            // `match` statement's arms are statements this walk does not
+            // fold into the statement's own footprint, so the statement is
+            // refused rather than judged on its scrutinee alone. v0.59's
+            // [PAR-1] carried a sentence putting a scrutinee call's arms
+            // outside the judged statement; v0.60's does not, and the
+            // fail-closed reading of its absence is this refusal.
+            CheckedStatement::Match { .. } => {
+                (None, None, None, "a match statement", Err(Refusal::Form("a match statement")))
+            }
+            CheckedStatement::ValueMatchLet { node_path, .. } => (
+                Some(node_path),
+                None,
+                None,
+                "a value match or value if",
+                Err(Refusal::Form("a value match or value if")),
+            ),
+            CheckedStatement::Loop { .. } => {
+                (None, None, None, "a loop", Err(Refusal::Form("a loop")))
+            }
+            CheckedStatement::CountedRange { node_path, .. } => (
+                Some(node_path),
+                None,
+                None,
+                "a for loop",
+                Err(Refusal::Form("a for loop")),
+            ),
+            // [CALL-4] a binder list defines more than one place in one
+            // statement, and this judgment describes one definition per
+            // statement.
+            CheckedStatement::DestructuringLet { node_path, .. } => (
+                Some(node_path),
+                None,
+                None,
+                "a statement that binds an ordered result list",
+                Err(Refusal::Form("a statement that binds an ordered result list")),
+            ),
+            // An expression statement's reach is projected by no row, and a
+            // discarded result carries its own [STOR-3] release walk.
+            CheckedStatement::Evaluate(_) => (
+                None,
+                None,
+                None,
+                "an expression statement",
+                Err(Refusal::Form("an expression statement")),
+            ),
+            CheckedStatement::DropExpression { .. } => (
+                None,
+                None,
+                None,
+                "a discarded expression statement",
+                Err(Refusal::Form("a discarded expression statement")),
+            ),
+            CheckedStatement::Dispose { node_path, .. } => (
+                Some(node_path),
+                None,
+                None,
+                "a dispose statement",
+                Err(Refusal::Form("a dispose statement")),
+            ),
+            // Forms whose source production v0.60 no longer has, and which
+            // the checker no longer builds: `replace` [SET-2], the multi-
+            // target commit [LIV-2], and the region block [STOR-2]. They are
+            // refused rather than given a footprint, because the arm cannot
+            // be reached and a footprint written for an unreachable shape
+            // would be unverifiable. Their variants leave `CheckedStatement`
+            // with the lowering that still matches on them.
+            CheckedStatement::Replace { .. }
+            | CheckedStatement::SetList { .. }
+            | CheckedStatement::Region { .. } => (
+                None,
+                None,
+                None,
+                "a statement form this version no longer writes",
+                Err(Refusal::Form("a statement form this version no longer writes")),
+            ),
+        };
+        let callee_name = statement_value(statement)
+            .and_then(call_projection)
+            .and_then(|projection| {
+                self.functions
+                    .get(projection.target.0 as usize)
+                    .map(|function| function.name.clone())
+            })
+            .unwrap_or_else(|| label.to_owned());
+        Classified {
+            site: node.cloned().map(|statement| PermissionSite {
+                statement,
                 binding,
-                target,
-                value,
-            } => {
-                // Dead today: [SET-2] makes a region-bearing target type a
-                // hard error, and a borrow type is region-bearing, so a
-                // replace value can never be a borrow. The guard stands so
-                // the window invariant — every loan live inside a permitted
-                // window is one an argument of a judged call holds — rests
-                // on written checks in all three admitted forms rather than
-                // on that rule staying put.
-                if expression_forms_borrow(value) {
-                    return Err(InterposedRefusal::Form("a statement that forms a borrow"));
-                }
-                let mut footprint = value_footprint(places, value, node_path);
-                set_target_place(places, target, node_path, &mut footprint, true);
-                let mut uses = Vec::new();
-                collect_used_bindings(value, &mut uses);
-                collect_set_target_bindings(target, &mut uses);
-                Ok(Interposed {
-                    defines: Some(*binding),
-                    uses,
-                    footprint,
-                })
-            }
-            // Exit-bearing forms: condition 4.
-            CheckedStatement::PropagateLet { .. } => {
-                Err(InterposedRefusal::Exit(ExitKind::PropagateError))
-            }
-            CheckedStatement::Return { .. }
-            | CheckedStatement::Give { .. }
-            | CheckedStatement::Break { .. } => Err(InterposedRefusal::Exit(ExitKind::BlockExit)),
-            // PAR-1's admitted intervening forms exclude expression
-            // statements [GRAM-4], including calls with ordinary exact rows.
-            // A discarded result also carries its own [STOR-3] release.
-            CheckedStatement::Evaluate(_) => {
-                Err(InterposedRefusal::Form("an expression statement"))
-            }
-            CheckedStatement::DropExpression { .. } => {
-                Err(InterposedRefusal::Form("a discarded expression statement"))
-            }
-            // [PROV-6] `dispose p;` runs a release walk of its own, which is
-            // the same classification an interposed drop needs and does not
-            // have yet.
-            CheckedStatement::Dispose { .. } => Err(InterposedRefusal::Form("a dispose statement")),
-            // Forms carrying their own control flow and their own drops. The
-            // lowering already refuses them by splitting the block, so the
-            // checker refusing them keeps the two in agreement.
-            CheckedStatement::Match { .. } => Err(InterposedRefusal::Form("a match statement")),
-            CheckedStatement::ValueMatchLet { .. } => {
-                Err(InterposedRefusal::Form("a value match or value if"))
-            }
-            CheckedStatement::Loop { .. } => Err(InterposedRefusal::Form("a loop")),
-            CheckedStatement::CountedRange { .. } => Err(InterposedRefusal::Form("a for loop")),
-            CheckedStatement::Region { .. } => Err(InterposedRefusal::Form("a region")),
+                call,
+                callee_name,
+            }),
+            footprint,
         }
     }
 
-    /// The written and read footprints of one call, by [EFF-2] boundary
-    /// projection onto the actuals' resolved places.
-    pub(super) fn footprint(&self, places: &PlaceMap, candidate: &CallProjection<'_>) -> Footprint {
-        self.user_call_footprint(places, candidate, candidate.target)
-    }
-
-    fn user_call_footprint(
+    /// The footprint of one statement's right-hand side: its own operand
+    /// reads, the places its by-value consumptions empty, and, where the
+    /// value is a call, that call's substituted row.
+    fn value_footprint(
         &self,
         places: &PlaceMap,
-        candidate: &CallProjection<'_>,
-        callee_id: FunctionId,
+        value: &CheckedExpression,
+        node: &NodePath,
     ) -> Footprint {
         let mut footprint = Footprint::default();
-        let (Some(signature), Some(callee)) = (
-            self.signatures.get(callee_id.0 as usize),
-            self.functions.get(callee_id.0 as usize),
-        ) else {
-            footprint.unresolved = Some(candidate.call.clone());
+        if let Some(projection) = call_projection(value) {
+            self.call_footprint(places, &projection, &mut footprint);
             return footprint;
+        }
+        collect_consumed_places(places, value, node, &mut footprint);
+        collect_operand_reads(places, value, node, &mut footprint);
+        footprint
+    }
+
+    /// The written and read footprints of one call, by [EFF-5] substitution
+    /// of the callee's declared row onto the actuals' resolved places.
+    pub(super) fn footprint(&self, places: &PlaceMap, call: &CallProjection<'_>) -> Footprint {
+        let mut footprint = Footprint::default();
+        self.call_footprint(places, call, &mut footprint);
+        footprint
+    }
+
+    fn call_footprint(
+        &self,
+        places: &PlaceMap,
+        call: &CallProjection<'_>,
+        footprint: &mut Footprint,
+    ) {
+        let (Some(signature), Some(callee)) = (
+            self.signatures.get(call.target.0 as usize),
+            self.functions.get(call.target.0 as usize),
+        ) else {
+            footprint.unresolved = Some(call.call.clone());
+            return;
         };
 
-        // An `allocates(arena 'r)` row appends to the caller region's
-        // allocation list, which is written storage with no actual of its own.
-        for formal in candidate
-            .formal_effects
-            .map_or(&signature.allocates_arenas, |effects| {
-                &effects.allocates_arenas
-            })
-        {
-            match signature
-                .region_parameters
-                .iter()
-                .position(|region| region == formal)
-                .and_then(|index| candidate.regions.get(index))
-            {
-                Some(region) => footprint.writes.push(Access::Arena {
-                    region: *region,
-                    call: candidate.call.clone(),
-                }),
-                None => footprint.unresolved = Some(candidate.call.clone()),
-            }
-        }
-
+        // "A by-value consumption counts as a write of the argument's place"
+        // [PAR-1]. The affine discipline already forbids two consumers of one
+        // place; the footprint states it rather than assuming it.
         for (index, parameter) in callee.parameters.iter().enumerate() {
-            let Some(argument) = candidate.arguments.get(index) else {
-                footprint.unresolved = Some(candidate.call.clone());
-                return footprint;
-            };
-            let node = candidate
-                .argument_nodes
-                .get(index)
-                .unwrap_or(candidate.call);
-            // The loans half [OWN-5, OWN-12]. A borrow-mode parameter's
-            // actual is an argument borrow live for the whole call, so it
-            // holds a loan on its resolved place whatever the row declares. A
-            // slice parameter is deliberately not read here: a slice's shared
-            // loan belongs to the named data region its `slice_of`
-            // established, not to the statement that passes the descriptor,
-            // and the borrow checker holds it for that whole region already.
-            let strength = match parameter.mode {
-                CheckedMode::Own => None,
-                CheckedMode::Shared(_) => Some(LoanStrength::Shared),
-                CheckedMode::Unique(_) => Some(LoanStrength::Exclusive),
-            };
-            if let Some(strength) = strength {
-                match argument_place(places, argument) {
-                    Some(place) => footprint.loans.push(Loan {
-                        strength,
-                        place,
-                        argument: node.clone(),
-                    }),
-                    None => footprint.unresolved = Some(node.clone()),
-                }
+            if !matches!(parameter.mode, CheckedMode::Own) {
+                continue;
             }
-            // A consumed `own` actual transfers caller storage into the
-            // callee. The affine discipline already forbids two consumers of
-            // one place; the footprint states it rather than assuming it.
-            if parameter.mode == CheckedMode::Own
-                && let Some(place) = consumed_place(places, argument)
-            {
-                footprint.writes.push(Access::Place {
+            let Some(argument) = call.arguments.get(index) else {
+                footprint.unresolved = Some(call.call.clone());
+                return;
+            };
+            let node = call.argument_nodes.get(index).unwrap_or(call.call);
+            if !consumes_root(argument) {
+                continue;
+            }
+            match argument_places(places, argument) {
+                Some(places) => footprint.writes.extend(places.into_iter().map(|place| Access {
                     place,
                     argument: node.clone(),
-                });
+                })),
+                None => footprint.unresolved = Some(node.clone()),
             }
         }
 
-        let reads = candidate
-            .formal_effects
-            .map_or(&signature.reads, |effects| &effects.reads);
-        let writes = candidate
-            .formal_effects
-            .map_or(&signature.writes, |effects| &effects.writes);
+        let effects = call.formal_effects;
+        let reads = effects.map_or(&signature.reads, |effects| &effects.reads);
+        let writes = effects.map_or(&signature.writes, |effects| &effects.writes);
         for (written, declared) in [(false, reads), (true, writes)] {
             for path in declared {
                 let Some(index) = callee
@@ -1127,169 +823,153 @@ impl<'check> Program<'check> {
                     .iter()
                     .position(|parameter| parameter.declaration == path.root)
                 else {
-                    footprint.unresolved = Some(candidate.call.clone());
+                    footprint.unresolved = Some(call.call.clone());
                     continue;
                 };
                 let (Some(argument), Some(node)) = (
-                    candidate.arguments.get(index),
-                    candidate.argument_nodes.get(index),
+                    call.arguments.get(index),
+                    call.argument_nodes.get(index),
                 ) else {
-                    footprint.unresolved = Some(candidate.call.clone());
+                    footprint.unresolved = Some(call.call.clone());
                     continue;
                 };
-                match argument_place(places, argument).or_else(|| consumed_place(places, argument))
-                {
-                    Some(mut place) => {
-                        place.extend_fields(&path.fields);
-                        let access = Access::Place {
-                            place,
-                            argument: node.clone(),
-                        };
-                        if written {
-                            footprint.writes.push(access);
-                        } else {
-                            footprint.reads.push(access);
-                        }
+                let Some(roots) = argument_places(places, argument) else {
+                    footprint.unresolved = Some(node.clone());
+                    continue;
+                };
+                for mut place in roots {
+                    place.path.extend(substituted_steps(path));
+                    let access = Access {
+                        place,
+                        argument: node.clone(),
+                    };
+                    if written {
+                        footprint.writes.push(access);
+                    } else {
+                        footprint.reads.push(access);
                     }
-                    None => footprint.unresolved = Some(node.clone()),
                 }
             }
         }
 
         // The caller-side half: what this statement's own operand evaluation
-        // touches before the call. An overlap moves it across the earlier
-        // call, so it is part of the footprint even though no row mentions it.
-        for (index, argument) in candidate.arguments.iter().enumerate() {
-            let node = candidate
-                .argument_nodes
-                .get(index)
-                .unwrap_or(candidate.call);
-            collect_operand_reads(places, argument, node, &mut footprint);
+        // touches before the call.
+        for (index, argument) in call.arguments.iter().enumerate() {
+            let node = call.argument_nodes.get(index).unwrap_or(call.call);
+            collect_operand_reads(places, argument, node, footprint);
         }
-        footprint
     }
 }
 
-#[derive(Debug, Default)]
+/// The statement's right-hand side, for the one classification that needs to
+/// read the callee's name back out of it.
+fn statement_value(statement: &CheckedStatement) -> Option<&CheckedExpression> {
+    match statement {
+        CheckedStatement::Let { value, .. } => Some(value),
+        _ => None,
+    }
+}
+
+/// The resolved steps of one declared [EFF-1] path below its substituted root.
+///
+/// An index or range position of a signature names a value parameter of the
+/// same callable, and [EFF-5] replaces it with the value that parameter's own
+/// argument supplies. This analysis does not hold the call's argument values,
+/// so such a position becomes an unknown captured value, which no admitted
+/// family separates [checker-facts]. That is conservative in the direction
+/// permission must fail in: an unknown index overlaps every index.
+fn substituted_steps(path: &CheckedStatePath) -> Vec<PlaceStep> {
+    path.steps
+        .iter()
+        .map(|step| match step {
+            super::model::CheckedEffectStep::Field(field) => PlaceStep::Field(*field),
+            super::model::CheckedEffectStep::Deref => PlaceStep::Deref,
+            super::model::CheckedEffectStep::Payload { variant, field } => PlaceStep::Payload {
+                variant: *variant,
+                field: *field,
+            },
+            super::model::CheckedEffectStep::Index(_) => {
+                PlaceStep::Index(CapturedValue::unknown())
+            }
+            super::model::CheckedEffectStep::Range { .. } => PlaceStep::Range(CapturedRange {
+                start: CapturedValue::unknown(),
+                end: CapturedValue::unknown(),
+            }),
+            super::model::CheckedEffectStep::Part(part) => PlaceStep::Part(*part),
+            super::model::CheckedEffectStep::Measure(measure) => PlaceStep::Measure(*measure),
+        })
+        .collect()
+}
+
+#[derive(Clone, Debug, Default)]
 pub(super) struct Footprint {
     pub(super) writes: Vec<Access>,
     pub(super) reads: Vec<Access>,
-    /// The [OWN-5] loans this statement's argument borrows hold for the
-    /// duration of its call, independent of what its callee's row declares.
-    pub(super) loans: Vec<Loan>,
     /// Storage this statement's own operand expressions read on the calling
-    /// thread, before the call. An overlap moves some statement's operand
-    /// evaluation across another's call, and which one moves is the
-    /// implementation's choice of lane, so this half is judged in both
-    /// directions for the pair — and, for a statement between the two, against
-    /// s2's writes in both directions but against s1's writes only one way.
-    /// The module doc derives that asymmetry.
+    /// thread, before the call. [PAR-1] judges this half in both directions,
+    /// because which statement's operand evaluation an overlap moves is the
+    /// implementation's choice of lane.
     pub(super) operand_reads: Vec<Access>,
-    /// Set when the row projects an access this analysis cannot resolve to a
-    /// caller place. Every such statement is denied.
+    /// Set where a footprint element's caller place is not resolved. Every
+    /// such statement denies [PAR-1].
     pub(super) unresolved: Option<NodePath>,
-    /// Set when an operand expression reads storage this analysis cannot
-    /// resolve to a caller place. Denies wherever this statement sits in the
-    /// window.
-    pub(super) operand_unresolved: Option<NodePath>,
 }
 
-/// The condition-2 obligations of one ordered pair of window footprints.
+impl Footprint {
+    /// Adds one statement's halves to a running union [checker-facts].
+    fn absorb(&mut self, other: &Self) {
+        self.writes.extend(other.writes.iter().cloned());
+        self.reads.extend(other.reads.iter().cloned());
+        self.operand_reads
+            .extend(other.operand_reads.iter().cloned());
+    }
+
+    /// Every place this footprint reads, in either half.
+    fn read_halves(&self) -> impl Iterator<Item = (FootprintHalf, &Access)> {
+        self.reads
+            .iter()
+            .map(|access| (FootprintHalf::Read, access))
+            .chain(
+                self.operand_reads
+                    .iter()
+                    .map(|access| (FootprintHalf::OperandRead, access)),
+            )
+    }
+}
+
+/// [PAR-1]'s disjointness clause over one ordered pair of footprints.
 ///
 /// The earlier statement's writes are judged against every half of the later
-/// one — its callee's reads and writes and its caller-side operand reads —
-/// and the later one's writes against the earlier one's reads.
-///
-/// `earlier_operands` selects whether the later statement's writes are also
-/// judged against the earlier one's *operand* reads. It holds for the judged
-/// pair and for an interposed statement against s2, whose operand evaluation
-/// the hand-out hoists above it. It does not hold for s1 against an interposed
-/// statement: under the schedule that hands s1 out, O(s1) is evaluated before
-/// the fork, and under the schedule that hands s2 out, s1 has already
-/// completed — so nothing written between them can reach it. Dropping the
-/// obligation there is the one place this rule is weaker than judging every
-/// window statement as an ordinary member, and it is derived, not assumed.
-fn footprint_conflict(
-    places: &PlaceMap,
-    earlier: &Footprint,
-    earlier_side: PairSide,
-    later: &Footprint,
-    later_side: PairSide,
-    earlier_operands: bool,
-) -> Option<Denial> {
-    if let Some(denial) = loan_conflict(
-        places,
-        earlier,
-        earlier_side,
-        later,
-        later_side,
-        earlier_operands,
-    ) {
-        return Some(denial);
-    }
+/// one, and the later one's writes against every half of the earlier one.
+/// Read/read overlap is admitted. The relation is [OWN-7]'s, asked of the
+/// resolved paths through the function's overlap memo.
+fn footprint_conflict(places: &PlaceMap, earlier: &Footprint, later: &Footprint) -> Option<Denial> {
+    let oracle = UnprovedSeparations;
     for write in &earlier.writes {
-        for (kind, access) in later
+        for (half, access) in later
             .writes
             .iter()
-            .map(|access| {
-                (
-                    ConflictKind::new(FootprintHalf::Write, FootprintHalf::Write),
-                    access,
-                )
-            })
-            .chain(later.reads.iter().map(|access| {
-                (
-                    ConflictKind::new(FootprintHalf::Write, FootprintHalf::Read),
-                    access,
-                )
-            }))
-            .chain(later.operand_reads.iter().map(|access| {
-                (
-                    ConflictKind::new(FootprintHalf::Write, FootprintHalf::OperandRead),
-                    access,
-                )
-            }))
+            .map(|access| (FootprintHalf::Write, access))
+            .chain(later.read_halves())
         {
-            if write.conflicts(access, places) {
+            if places.overlaps(&oracle, &write.place, &access.place) {
                 return Some(Denial::Footprint {
-                    kind,
+                    kind: ConflictKind::new(FootprintHalf::Write, half),
                     left: write.clone(),
                     right: access.clone(),
-                    sides: (earlier_side, later_side),
+                    sides: (PairSide::First, PairSide::Second),
                 });
             }
         }
     }
     for write in &later.writes {
-        for (kind, read) in earlier
-            .reads
-            .iter()
-            .map(|access| {
-                (
-                    ConflictKind::new(FootprintHalf::Read, FootprintHalf::Write),
-                    access,
-                )
-            })
-            .chain(
-                earlier_operands
-                    .then(|| {
-                        earlier.operand_reads.iter().map(|access| {
-                            (
-                                ConflictKind::new(FootprintHalf::OperandRead, FootprintHalf::Write),
-                                access,
-                            )
-                        })
-                    })
-                    .into_iter()
-                    .flatten(),
-            )
-        {
-            if write.conflicts(read, places) {
+        for (half, access) in earlier.read_halves() {
+            if places.overlaps(&oracle, &write.place, &access.place) {
                 return Some(Denial::Footprint {
-                    kind,
-                    left: read.clone(),
+                    kind: ConflictKind::new(half, FootprintHalf::Write),
+                    left: access.clone(),
                     right: write.clone(),
-                    sides: (earlier_side, later_side),
+                    sides: (PairSide::First, PairSide::Second),
                 });
             }
         }
@@ -1297,265 +977,90 @@ fn footprint_conflict(
     None
 }
 
-/// The loans half of the same condition: each statement's [OWN-5] loans
-/// against the other statement's loans and uses.
-///
-/// The matrix is [OWN-5]'s own, the one `check_loan_access` applies to a live
-/// loan: an exclusive loan excludes every overlapping access and every
-/// overlapping loan, a shared loan excludes overlapping writes and
-/// overlapping exclusive loans, and two shared loans coexist. Both
-/// directions are judged because an overlap may move either statement.
-///
-/// `earlier_operands` gates the earlier statement's operand reads exactly as
-/// it does above, for the same derivation: no loan of the later statement
-/// can reach an operand evaluation that either happened before the fork or
-/// after the earlier statement completed.
-fn loan_conflict(
-    places: &PlaceMap,
-    earlier: &Footprint,
-    earlier_side: PairSide,
-    later: &Footprint,
-    later_side: PairSide,
-    earlier_operands: bool,
-) -> Option<Denial> {
-    fn uses(
-        footprint: &Footprint,
-        operands: bool,
-    ) -> Vec<(FootprintHalf, &ResolvedPlace, &NodePath)> {
-        footprint
-            .writes
-            .iter()
-            .map(|access| (FootprintHalf::Write, access))
-            .chain(
-                footprint
-                    .reads
-                    .iter()
-                    .map(|access| (FootprintHalf::Read, access)),
-            )
-            .chain(
-                operands
-                    .then(|| {
-                        footprint
-                            .operand_reads
-                            .iter()
-                            .map(|access| (FootprintHalf::OperandRead, access))
-                    })
-                    .into_iter()
-                    .flatten(),
-            )
-            .filter_map(|(half, access)| match access {
-                Access::Place { place, argument } => Some((half, place, argument)),
-                // An arena region is not a place a borrow can name.
-                Access::Arena { .. } => None,
-            })
-            .collect::<Vec<_>>()
-    }
-
-    for loan in &earlier.loans {
-        for other in &later.loans {
-            if loan.strength.excludes_loan(other.strength)
-                && places.overlaps(&loan.place, &other.place)
-            {
-                return Some(Denial::Loan {
-                    kind: ConflictKind::new(loan.strength.half(), other.strength.half()),
-                    left: loan.argument.clone(),
-                    right: other.argument.clone(),
-                    sides: (earlier_side, later_side),
-                });
-            }
-        }
-        for (half, place, argument) in uses(later, true) {
-            if loan.strength.excludes_use(half) && places.overlaps(&loan.place, place) {
-                return Some(Denial::Loan {
-                    kind: ConflictKind::new(loan.strength.half(), half),
-                    left: loan.argument.clone(),
-                    right: argument.clone(),
-                    sides: (earlier_side, later_side),
-                });
-            }
-        }
-    }
-    for loan in &later.loans {
-        for (half, place, argument) in uses(earlier, earlier_operands) {
-            if loan.strength.excludes_use(half) && places.overlaps(&loan.place, place) {
-                return Some(Denial::Loan {
-                    kind: ConflictKind::new(half, loan.strength.half()),
-                    left: argument.clone(),
-                    right: loan.argument.clone(),
-                    sides: (earlier_side, later_side),
-                });
-            }
-        }
-    }
-    None
-}
-
-/// The footprint of a window statement that is not a call: the places its
-/// consumed `own` operands transfer away, and the places its operands read.
-/// Whether an expression forms a borrow anywhere inside it.
-///
-/// The checked tree erases a written borrow's shared-or-uniq mode (the mode
-/// lives only in `CheckedMode`, which a non-argument borrow never meets), so
-/// a window statement that forms one cannot be given its [OWN-5] loan and is
-/// refused instead. Call arguments never reach this: their loans key on the
-/// parameter's mode.
-pub(super) fn expression_forms_borrow(expression: &CheckedExpression) -> bool {
-    matches!(
-        expression,
-        CheckedExpression::BorrowBuffer { .. }
-            | CheckedExpression::BorrowAddressed { .. }
-            | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::ReborrowAddressed { .. }
-    ) || expression_children(expression)
-        .into_iter()
-        .any(expression_forms_borrow)
-}
-
-fn value_footprint(places: &PlaceMap, value: &CheckedExpression, node: &NodePath) -> Footprint {
-    let mut footprint = Footprint::default();
-    collect_consumed_places(places, value, node, &mut footprint);
-    collect_operand_reads(places, value, node, &mut footprint);
-    footprint
-}
-
-/// Records the storage a `set` or `replace` target names, and the operands its
-/// subscript reads. A `replace` also reads the target, which `reads_target`
-/// selects [SET-2].
-///
-/// An element target resolves to the whole collection, because a resolved
-/// place carries no index segment [ENT-2]. That is the fail-closed direction:
-/// one element write conflicts with any access to the collection.
+/// Records the storage a `set` names, and the operands its subscripts read.
 pub(super) fn set_target_place(
     places: &PlaceMap,
     target: &CheckedSetTarget,
     node: &NodePath,
     footprint: &mut Footprint,
-    reads_target: bool,
 ) {
-    let place = match target {
-        CheckedSetTarget::Place(target) => rooted_place(places, target.binding, &target.fields),
+    let resolved = match target {
+        CheckedSetTarget::Place(target) => {
+            places.resolve(PlaceRoot::Binding(target.binding), &field_steps(&target.fields))
+        }
         CheckedSetTarget::ArrayIndex(target) => {
             collect_operand_reads(places, &target.offset, node, footprint);
-            rooted_place(places, target.binding, &target.fields)
+            let mut steps = field_steps(&target.fields);
+            steps.push(PlaceStep::Index(CapturedValue::unknown()));
+            places.resolve(PlaceRoot::Binding(target.binding), &steps)
         }
         CheckedSetTarget::BufferIndex(target) => {
             collect_operand_reads(places, &target.offset, node, footprint);
-            rooted_place(places, target.root.binding, &target.root.fields)
+            let mut steps = field_steps(&target.root.fields);
+            steps.push(PlaceStep::Index(CapturedValue::unknown()));
+            places.resolve(PlaceRoot::Binding(target.root.binding), &steps)
         }
         CheckedSetTarget::Storage(target) => {
             for offset in target.offsets() {
                 collect_operand_reads(places, offset, node, footprint);
             }
-            rooted_container_place(places, target)
+            places.resolve(target.root, &container_steps(target))
         }
-        // A view element store contributes its resolved origin range under
-        // VIEW-2. PAR-2 may contain it in a proved range assignment. Formal
-        // view origins are installed at the callable boundary; every other
-        // unresolved origin denies permission instead of inventing storage
-        // at the descriptor binding.
-        CheckedSetTarget::SliceIndex(target) => {
-            collect_operand_reads(places, &target.offset, node, footprint);
-            let Some(place) = places.view_origin(target.root.binding) else {
-                footprint.unresolved = Some(node.clone());
-                return;
-            };
-            place
+        // [VIEW-1]'s element store through a view has no v0.60 subject: the
+        // view formers left [OP-1]'s table and nothing builds this target.
+        CheckedSetTarget::SliceIndex(_) => {
+            footprint.unresolved = Some(node.clone());
+            return;
         }
     };
-    if reads_target {
-        footprint.reads.push(Access::Place {
-            place: place.clone(),
-            argument: node.clone(),
-        });
-    }
-    footprint.writes.push(Access::Place {
+    footprint.writes.extend(resolved.into_iter().map(|place| Access {
         place,
         argument: node.clone(),
-    });
+    }));
 }
 
-/// Every binding a `set` or `replace` target mentions: the root it writes
-/// through, whose value the calling thread reads to reach the storage, and any
-/// binding its subscript reads.
-fn collect_set_target_bindings(target: &CheckedSetTarget, out: &mut Vec<BindingId>) {
-    let root = target.binding();
-    if !out.contains(&root) {
-        out.push(root);
-    }
-    match target {
-        CheckedSetTarget::Place(_) => {}
-        CheckedSetTarget::ArrayIndex(target) => collect_used_bindings(&target.offset, out),
-        CheckedSetTarget::BufferIndex(target) => collect_used_bindings(&target.offset, out),
-        CheckedSetTarget::Storage(target) => {
-            for offset in target.offsets() {
-                collect_used_bindings(offset, out);
-            }
-        }
-        CheckedSetTarget::SliceIndex(target) => collect_used_bindings(&target.offset, out),
-    }
+pub(super) fn field_steps(fields: &[u32]) -> Vec<PlaceStep> {
+    fields.iter().copied().map(PlaceStep::Field).collect()
+}
+
+/// The resolved steps of one checked storage path.
+pub(super) fn container_steps(root: &super::model::CheckedContainerRoot) -> Vec<PlaceStep> {
+    root.path.iter().map(CheckedPlaceStep::place_step).collect()
 }
 
 /// Every caller place one expression transfers away by consuming an `own`
-/// value.
-///
-/// A move is recorded as a *write* of the storage it empties, for the reason
-/// the call-boundary projection records a consumed actual that way: the affine
-/// discipline already forbids a second consumer, and the footprint states it
-/// rather than assuming it.
+/// value, recorded as a write of the storage it empties [PAR-1].
 pub(super) fn collect_consumed_places(
     places: &PlaceMap,
     expression: &CheckedExpression,
     node: &NodePath,
     footprint: &mut Footprint,
 ) {
-    if let Some(place) = consumed_place(places, expression) {
-        footprint.writes.push(Access::Place {
+    if consumes_root(expression)
+        && let Some(resolved) = argument_places(places, expression)
+    {
+        footprint.writes.extend(resolved.into_iter().map(|place| Access {
             place,
             argument: node.clone(),
-        });
+        }));
     }
     for child in expression_children(expression) {
         collect_consumed_places(places, child, node, footprint);
     }
 }
 
-/// One candidate statement, or `None` for every other statement shape.
-/// The call one statement holds in call position, whatever the position is.
-///
-/// The enumeration is over written call positions, not over statement kinds
-/// that happen to be convenient: a `match` scrutinee is the same call as a
-/// `let` right-hand side, gets the same [EFF-2] projection, and is judged by
-/// the same three conditions. What the position changes is one recorded fact —
-/// whether the statement itself reads the result — and `judge` derives the
-/// window from that fact rather than from the statement's spelling.
-fn candidate_of(index: usize, statement: &CheckedStatement) -> Option<Candidate<'_>> {
-    let (node_path, binding, value, read_by_own_statement) = match statement {
-        CheckedStatement::Let {
-            node_path,
-            binding,
-            value,
-        } => (Some(node_path), Some(*binding), value, false),
-        // A scrutinee call. `Match` carries no statement node in the checked
-        // model and `ValueMatchLet`'s binding names the match's result rather
-        // than the call's, so neither supplies a defining binding here.
-        CheckedStatement::Match { scrutinee, .. }
-        | CheckedStatement::ValueMatchLet { scrutinee, .. } => (None, None, scrutinee, true),
-        // [PAR-1] admits a `let_stmt` selecting `ordinary_let_rhs`, or a
-        // scrutinee call, as a window member. A `propagate` right-hand side selects
-        // `propagate_let_rhs` instead, so it forms no candidate here — on
-        // either side of a pair — and keeps its ordinary classification in
-        // `interposed_of`, which denies it as an interposed statement
-        // carrying an exit edge.
-        _ => return None,
-    };
-    let call = call_projection(value)?;
-    Some(Candidate {
-        statement: node_path.unwrap_or(call.call).clone(),
-        index,
-        binding,
-        call,
-        result_read_by_own_statement: read_by_own_statement,
-    })
+/// Whether this expression consumes the place it names [OWN-1].
+fn consumes_root(expression: &CheckedExpression) -> bool {
+    matches!(
+        expression,
+        CheckedExpression::Binding {
+            consume_root: true,
+            ..
+        } | CheckedExpression::Project {
+            consume_root: true,
+            ..
+        }
+    )
 }
 
 /// Every block nested inside one statement, for the whole-body walk.
@@ -1588,23 +1093,9 @@ fn push_nested_blocks<'check>(
     }
 }
 
-/// Every binding one expression tree mentions, for the ordinary def-use test.
-fn collect_used_bindings(expression: &CheckedExpression, out: &mut Vec<BindingId>) {
-    visit_read_bindings(expression, &mut |binding| {
-        if !out.contains(&binding) {
-            out.push(binding);
-        }
-    });
-}
-
-/// Calls `note` once per binding occurrence one expression tree reads.
-///
-/// The dedup belongs to the caller, because a caller that has to tell one
-/// occurrence of a binding from two — the loop-split hint asks exactly that of
-/// an accumulator — cannot recover the count from a deduplicated list. Which
-/// expression form reads which binding is classified here, beside the other
-/// exhaustive matches that keep this analysis from missing a read.
-pub(crate) fn visit_read_bindings(
+/// Every binding one expression tree mentions, for the counted judgment's
+/// accumulator count.
+pub(super) fn visit_read_bindings(
     expression: &CheckedExpression,
     note: &mut impl FnMut(BindingId),
 ) {
@@ -1632,21 +1123,6 @@ pub(crate) fn visit_read_bindings(
                 note(*binding);
             }
         }
-        CheckedExpression::SliceOf { source, .. } => match source {
-            CheckedSliceSource::Array { root, .. } => {
-                if let CheckedArrayRoot::Binding { binding, .. } = root {
-                    note(*binding);
-                }
-            }
-            CheckedSliceSource::Buffer(root) => note(root.binding),
-            CheckedSliceSource::ArenaContent { binding, .. } => note(*binding),
-            CheckedSliceSource::Run(root) => {
-                if let Some(binding) = root.binding() {
-                    note(binding);
-                }
-            }
-            CheckedSliceSource::ViewHolder { binding, .. } => note(*binding),
-        },
         _ => {}
     }
     for child in expression_children(expression) {
@@ -1657,29 +1133,30 @@ pub(crate) fn visit_read_bindings(
 /// Every caller place one operand expression reads on the calling thread,
 /// with an unresolved read failing closed.
 ///
-/// This is deliberately not the [EFF-2] callee projection. It is the storage
-/// the *caller* touches while building an actual: a value read out of a
-/// binding, a field, a `deref`, a buffer or array element. Forming a borrow
-/// takes an address and reads no content, so it contributes nothing here — the
+/// This is the storage the *caller* touches while building an actual: a value
+/// read out of a binding, a field, a `deref` [TYPE-7], a subscript. Forming a
+/// reference names a path and reads no content beyond its own index and
+/// endpoint atoms [REF-1, REF-4], so it contributes nothing here — the
 /// callee's declared row already covers whatever it reaches through that
-/// borrow. Reading through a slice descriptor cannot be resolved to the
-/// storage it views, so it denies rather than resolving to the descriptor.
+/// reference.
 ///
 /// The match is exhaustive on purpose. A future expression form that reads
 /// caller storage must be classified here rather than silently contributing
 /// nothing, because a missing operand read widens permission.
-pub(super) fn collect_operand_reads(
+fn collect_operand_reads(
     places: &PlaceMap,
     expression: &CheckedExpression,
     node: &NodePath,
     footprint: &mut Footprint,
 ) {
-    fn read(footprint: &mut Footprint, node: &NodePath, place: ResolvedPlace) {
-        footprint.operand_reads.push(Access::Place {
-            place,
-            argument: node.clone(),
-        });
-    }
+    let read = |footprint: &mut Footprint, resolved: Vec<ResolvedPlace>| {
+        footprint
+            .operand_reads
+            .extend(resolved.into_iter().map(|place| Access {
+                place,
+                argument: node.clone(),
+            }));
+    };
     match expression {
         // Reads no caller storage of its own.
         CheckedExpression::Constant(_)
@@ -1691,188 +1168,101 @@ pub(super) fn collect_operand_reads(
         | CheckedExpression::BooleanOperation { .. }
         | CheckedExpression::EnumEquality { .. }
         | CheckedExpression::ArrayFill { .. }
-        | CheckedExpression::BufferFill { .. }
-        | CheckedExpression::BufferVacant { .. }
-        | CheckedExpression::BufferFits { .. }
-        | CheckedExpression::BoxNew { .. }
-        | CheckedExpression::ArenaNew { .. }
         | CheckedExpression::ConstructStruct { .. }
         | CheckedExpression::ConstructEnum { .. }
         | CheckedExpression::ProjectValue { .. } => {}
-        // Address formation: no content is read on this thread.
-        CheckedExpression::BorrowBuffer { .. }
-        | CheckedExpression::BorrowAddressed { .. }
-        | CheckedExpression::BorrowBox { .. }
-        | CheckedExpression::ReborrowAddressed { .. } => {}
-        // The handle itself is the recursed child, and its resolved place is
-        // where an opaque referent anchors, so the child walk covers both.
-        CheckedExpression::BoxDeref { .. } | CheckedExpression::ArenaDeref { .. } => {}
+        // Naming a path reads no content: a reference formation evaluates its
+        // index and endpoint atoms, which are this expression's own children
+        // and are walked below [REF-1, REF-4].
+        CheckedExpression::BorrowAddressed { .. } => {}
         CheckedExpression::Binding { binding, .. } => {
-            read(footprint, node, rooted_place(places, *binding, &[]));
+            read(footprint, places.resolve(PlaceRoot::Binding(*binding), &[]));
         }
         CheckedExpression::Project {
             binding, fields, ..
-        } => read(footprint, node, rooted_place(places, *binding, fields)),
+        } => read(
+            footprint,
+            places.resolve(PlaceRoot::Binding(*binding), &field_steps(fields)),
+        ),
+        // `deref(p)` is the path `p` names [TYPE-7, REF-1], which is what
+        // resolving its root through the reference summary produces.
         CheckedExpression::DerefAddressed { binding, .. } => {
-            read(footprint, node, places.resolve_deref(*binding, 0));
-        }
-        CheckedExpression::BufferMeasure { root, .. }
-        | CheckedExpression::BufferIndex { root, .. } => {
-            read(
-                footprint,
-                node,
-                rooted_place(places, root.binding, &root.fields),
-            );
+            read(footprint, places.resolve(PlaceRoot::Binding(*binding), &[]));
         }
         CheckedExpression::ContainerMeasure { root, .. }
         | CheckedExpression::ReadStorage { root, .. } => {
-            read(footprint, node, rooted_container_place(places, root));
+            read(footprint, places.resolve(root.root, &container_steps(root)));
         }
         CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => match root {
-            CheckedArrayRoot::Binding { binding, fields } => {
-                read(footprint, node, rooted_place(places, *binding, fields));
-            }
+            CheckedArrayRoot::Binding { binding, fields } => read(
+                footprint,
+                places.resolve(PlaceRoot::Binding(*binding), &field_steps(fields)),
+            ),
             CheckedArrayRoot::Constant(id) => read(
                 footprint,
-                node,
-                ResolvedPlace {
+                vec![ResolvedPlace {
                     root: PlaceRoot::Constant(*id),
                     path: Vec::new(),
-                },
+                }],
             ),
-        },
-        CheckedExpression::SliceOf { source, .. } => match slice_source_place(places, source) {
-            Some(place) => read(footprint, node, place),
-            None => footprint.operand_unresolved = Some(node.clone()),
-        },
-        // A read through a view is a read of the storage the view was formed
-        // over [VIEW-1]: the element the subscript selects is a byte of that
-        // origin, and a measure read is a read of the same claim. Where this
-        // prepass does not resolve the origin, such as one a callee returned,
-        // the read fails closed. A formal view anchors its incoming origin.
-        CheckedExpression::SliceMeasure { root, .. }
-        | CheckedExpression::SliceIndex { root, .. } => match places.view_origin(root.binding) {
-            Some(place) => read(footprint, node, place),
-            None => footprint.operand_unresolved = Some(node.clone()),
         },
         // [GRAM-9] forbids a call in argument position; if one ever reaches
         // here its whole footprint is unaccounted for.
-        CheckedExpression::UserCall { .. } | CheckedExpression::KernelCall { .. } => {
-            footprint.operand_unresolved = Some(node.clone());
+        CheckedExpression::UserCall { .. } => {
+            footprint.unresolved = Some(node.clone());
         }
         // One clause-only datum; no executable statement carries one.
         CheckedExpression::PostconditionResultMeasure { .. } => {}
+        // Expression forms whose v0.60 operation left [OP-1]'s table and
+        // which the checker no longer builds: the view formers and measures
+        // [VIEW-1], the buffer and arena formers [BLK-1, STOR-2], the box
+        // former [OP-13 builds one through a call], and the two reborrow
+        // shapes [OWN-6]. An occurrence would be storage this walk cannot
+        // account for, so it fails closed rather than contributing nothing.
+        CheckedExpression::SliceOf { .. }
+        | CheckedExpression::SliceMeasure { .. }
+        | CheckedExpression::SliceIndex { .. }
+        | CheckedExpression::BufferFill { .. }
+        | CheckedExpression::BufferVacant { .. }
+        | CheckedExpression::BufferFits { .. }
+        | CheckedExpression::BufferMeasure { .. }
+        | CheckedExpression::BufferIndex { .. }
+        | CheckedExpression::BorrowBuffer { .. }
+        | CheckedExpression::BorrowBox { .. }
+        | CheckedExpression::ReborrowAddressed { .. }
+        | CheckedExpression::BoxNew { .. }
+        | CheckedExpression::BoxDeref { .. }
+        | CheckedExpression::ArenaNew { .. }
+        | CheckedExpression::ArenaDeref { .. } => {
+            footprint.unresolved = Some(node.clone());
+        }
     }
     for child in expression_children(expression) {
         collect_operand_reads(places, child, node, footprint);
     }
 }
 
-/// The caller place one actual reaches, for a parameter whose row projects an
-/// access through it.
-fn argument_place(places: &PlaceMap, argument: &CheckedExpression) -> Option<ResolvedPlace> {
-    if let Some((place, _entry_image)) = places.argument_referent(argument) {
-        return Some(place);
-    }
-    match argument {
-        CheckedExpression::SliceOf { .. } => places.view_origin_of(argument),
-        // [VIEW-1] a view is a claim on the storage it was formed over, and
-        // [VIEW-2] puts the loan on that origin range rather than on the
-        // descriptor the value occupies. A view written at the call and a
-        // view bound by a `let` and handed on are therefore one footprint on
-        // one place, and this arm is what makes the second read as the first.
-        // A borrow of a view is the descriptor read once more [VIEW-2, OWN-6]
-        // and reaches this same arm, because that is the shape the checked
-        // tree gives `&uniq window`.
-        CheckedExpression::Binding {
-            binding,
-            ty: CheckedType::Slice { .. },
-            ..
-        } => places.view_origin(*binding),
-        _ => None,
-    }
-}
-
-/// The storage a direct slice value views.
-pub(super) fn slice_source_place(
-    places: &PlaceMap,
-    source: &CheckedSliceSource,
-) -> Option<ResolvedPlace> {
-    Some(match source {
-        CheckedSliceSource::Array { root, .. } => match root {
-            CheckedArrayRoot::Binding { binding, fields } => rooted_place(places, *binding, fields),
-            CheckedArrayRoot::Constant(id) => ResolvedPlace {
-                root: PlaceRoot::Constant(*id),
-                path: Vec::new(),
-            },
-        },
-        CheckedSliceSource::Buffer(root) => rooted_place(places, root.binding, &root.fields),
-        CheckedSliceSource::ArenaContent {
-            binding, fields, ..
-        } => rooted_place(places, *binding, fields),
-        // A run's path may carry subscripts of its own, so its viewed place
-        // is the one the measured-root resolver builds [MSR-1].
-        CheckedSliceSource::Run(root) => rooted_container_place(places, root),
-        // The child views exactly what its parent views, and the parent is
-        // reached through its holder [OWN-6].
-        CheckedSliceSource::ViewHolder { binding, .. } => return places.view_origin(*binding),
-    })
-}
-
-/// The [OWN-5] place one measured or subscripted root names [MSR-1, MSR-2].
+/// The caller places one actual names [REF-1].
 ///
-/// A run's path may carry subscripts of its own, so it is resolved from the
-/// same source-order path the proof engine reads and never from a field list.
-pub(super) fn rooted_container_place(
+/// A reference argument names a path, so its actual resolves to the path the
+/// reference names rather than to any storage of its own; at a join a
+/// reference names a set, and every check on it must hold for every member.
+fn argument_places(
     places: &PlaceMap,
-    root: &super::model::CheckedContainerRoot,
-) -> ResolvedPlace {
-    let mut projections = Vec::new();
-    if root
-        .binding()
-        .is_some_and(|binding| places.is_holder(binding))
-    {
-        projections.push(super::places::PlaceProjection::Deref);
-    }
-    projections.extend(root.path.iter().map(|step| match step {
-        super::model::CheckedPlaceStep::Field(field) => {
-            super::places::PlaceProjection::Field(*field)
-        }
-        super::model::CheckedPlaceStep::BoxReferent(_) => super::places::PlaceProjection::Deref,
-        super::model::CheckedPlaceStep::Subscript(subscript) => {
-            super::places::PlaceProjection::Subscript(subscript.place_offset)
-        }
-    }));
-    places.resolve_projected(&super::places::ProjectedPlaceTerm {
-        root: root.root,
-        projections,
-    })
-}
-
-pub(super) fn rooted_place(places: &PlaceMap, binding: BindingId, fields: &[u32]) -> ResolvedPlace {
-    places.resolve(&PlaceTerm {
-        root: PlaceRoot::Binding(binding),
-        deref: places.is_holder(binding),
-        fields: fields.to_vec(),
-    })
-}
-
-/// The caller place a consuming `own` actual transfers away, when the actual
-/// names one.
-fn consumed_place(places: &PlaceMap, argument: &CheckedExpression) -> Option<ResolvedPlace> {
+    argument: &CheckedExpression,
+) -> Option<Vec<ResolvedPlace>> {
     match argument {
-        CheckedExpression::Binding {
-            binding,
-            consume_root: true,
-            ..
-        } => Some(rooted_place(places, *binding, &[])),
+        CheckedExpression::Binding { binding, .. }
+        | CheckedExpression::DerefAddressed { binding, .. } => {
+            Some(places.resolve(PlaceRoot::Binding(*binding), &[]))
+        }
         CheckedExpression::Project {
-            binding,
-            consume_root: true,
-            fields,
-            ..
-        } => Some(rooted_place(places, *binding, fields)),
+            binding, fields, ..
+        } => Some(places.resolve(PlaceRoot::Binding(*binding), &field_steps(fields))),
+        CheckedExpression::BorrowAddressed { root, .. } => {
+            Some(places.resolve(root.root, &container_steps(root)))
+        }
         _ => None,
     }
 }

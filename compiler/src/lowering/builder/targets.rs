@@ -88,7 +88,7 @@ impl IrBuilder<'_> {
                     IrType::Address(referent),
                     IrOperation::ProjectAddress {
                         address: array,
-                        projection: IrPlaceProjection::ArrayElement {
+                        projection: IrPlaceStep::ArrayElement {
                             offset,
                             target_domain: target.target_domain.into(),
                         },

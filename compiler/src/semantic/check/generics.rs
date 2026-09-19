@@ -6,7 +6,7 @@ use crate::syntax::NodeId;
 use crate::{
     BuiltinPreludeId, DeclarationClass, DeclarationId, DeclarationRole, FixedTerminal,
     LexicalUseRole, Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind,
-    SemanticRule, UnsupportedSemanticFeature,
+    SemanticRule,
 };
 
 use super::super::goal::{CheckedRequirement, GoalDatum, GoalExpression, GoalOperation};
@@ -14,10 +14,7 @@ use super::super::model::{
     CheckedConst, CheckedElement, CheckedFlatElement, CheckedGenericRequirement,
     CheckedNominalKind, CheckedType, CheckedValue, FloatType, IntegerType, LoanStrength, NominalId,
 };
-use super::{
-    CheckStop, Checker, FunctionSignature, FunctionTemplate, PreludeType,
-    derive_slice_return_ceiling,
-};
+use super::{CheckStop, Checker, FunctionSignature, FunctionTemplate, PreludeType};
 
 /// [FN-2, PROV-6, S37] the one mandatory bound a type parameter carries.
 ///
@@ -319,6 +316,26 @@ impl GenericSubstitution {
         })
     }
 }
+
+/// [OP-13, OP-10] the [PRE-1] records that take from the heap.
+///
+/// [EFF-3]'s licence excepts a call that allocates from deduplication and
+/// reordering, on the ground that the heap is finite and a duplicated take is
+/// a different program [STOR-8]. Allocation carries no effect entry, so the
+/// base case of that fact is this list and every other boundary's fact is the
+/// union of the facts of the calls its body exhibits.
+const ALLOCATING_PRELUDE_FUNCTIONS: [&str; 10] = [
+    "box_new",
+    "slots_new",
+    "ring_new",
+    "array_filled",
+    "box_array_filled",
+    "box_slots_new",
+    "box_ring_new",
+    "slots_from_array",
+    "slots_into_array",
+    "grow",
+];
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// Substitute captured brands without reintroducing scratch nominal IDs
@@ -788,12 +805,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 continue;
             }
-            let path = self.tree.path(argument)?;
-            if !self.resolved.lexical_uses().iter().any(|usage| {
-                usage.role() == LexicalUseRole::TypeArgumentRegion && usage.origin().node() == path
-            }) {
-                return Ok(false);
-            }
+            // [GRAM-3] a `targ` is a type, a const or a function argument;
+            // anything else in that position is not a written argument this
+            // application can read.
+            return Ok(false);
         }
         Ok(true)
     }
@@ -824,10 +839,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 class: DeclarationClass::FunctionParameter,
                 ..
             } => return Ok(None),
-            // An OP family and a kernel-domain row [BLK-0] have no function
-            // template; recursion through either is impossible, so
-            // neither contributes a cycle edge.
-            ResolvedTarget::Operation(_) | ResolvedTarget::Kernel(_) => {
+            // An OP family has no function template; recursion through one is
+            // impossible, so it contributes no cycle edge.
+            ResolvedTarget::Operation(_) => {
                 return Ok(None);
             }
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
@@ -1014,13 +1028,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         substitution: GenericSubstitution,
         id: super::super::model::FunctionId,
     ) -> Result<FunctionSignature, CheckStop> {
-        self.check_declaration_region_spelling(template.node)?;
-        let mut region_parameters = self.parse_region_parameters(template.node)?;
-        let written_regions = region_parameters.len();
+        // [GRAM-2, FORM-3] no declaration carries a region parameter in
+        // v0.60: a reference is a name for a path [REF-1] and its validity is
+        // the [REF-2] flow fact, not a brand on the signature.
+        let region_parameters = Vec::new();
+        let written_regions = 0;
         let parameters = self.parse_parameters_with(template.node, &substitution)?;
-        // [FORM-8] every region a parameter position leaves unwritten is a
-        // formal region of this callable too.
-        Self::append_elided_formal_regions(&mut region_parameters, &parameters);
         // [GRAM-2] the declaration writes one result or an ordered result
         // list. Every ordinal is judged by the ordinary result rules below;
         // a list additionally hands its caller one value of the compiler-owned
@@ -1054,59 +1067,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // The whole list is judged before any per-ordinal capability refusal
         // below, because a source-language rejection is never replaced by a
         // compiler-capability stop.
-        for (ordinal, entry) in results.iter().enumerate() {
-            if matches!(entry.ty, super::super::model::CheckedType::Slice { .. })
-                && results[..ordinal]
-                    .iter()
-                    .any(|earlier| earlier.ty == entry.ty)
-            {
-                return self.issue_node(
-                    SemanticRule::View6,
-                    entry.rtype,
-                    SemanticIssueKind::SameRegionViewResults {
-                        result_type: self.checked_type_name(entry.ty)?,
-                        mechanical_fix: "give each result its own formal region",
-                    },
-                );
-            }
-        }
         let single = results.len() == 1;
         let rtype = first_result.rtype;
         let (result_mode, result, result_list) = if single {
             (first_result.mode, first_result.ty, None)
         } else {
+            // [REF-3] no result ordinal is a reference: FN-1 returns owned
+            // values, and a `return_stmt` whose selected expression is a
+            // reference is that violation at its own `expr`.
             for entry in &results {
-                // [STOR-4] an arena ordinal has no legal producing return, the
-                // same judgment a single arena result receives.
-                if self.arena_instance(entry.ty)?.is_some() {
+                if entry.mode != super::super::model::CheckedMode::Own {
                     return self.issue_node(
-                        SemanticRule::Stor4,
+                        SemanticRule::Ref3,
                         entry.rtype,
-                        SemanticIssueKind::ArenaEscape {
-                            mechanical_fix: super::ARENA_ESCAPE_RESTRUCTURING,
+                        SemanticIssueKind::EscapingReference {
+                            mechanical_fix: super::references::REF3_RETURN_AN_INDEX,
                         },
                     );
                 }
-                // A view ordinal at a region no other ordinal shares needs
-                // [FN-1]'s parameter-derived return-origin ceiling stated over
-                // an ordinal rather than over the one written result. That
-                // derivation is not built yet, so the ordinal is an explicit
-                // capability refusal here instead of an unchecked escape.
-                if matches!(entry.ty, super::super::model::CheckedType::Slice { .. }) {
-                    return self
-                        .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, entry.rtype);
-                }
             }
-            // A borrow-mode ordinal would have to carry its loan through the
-            // one value the boundary hands back, which this compiler cannot
-            // represent yet. It is an explicit capability refusal at the
-            // offending ordinal, never a source-language rejection.
             let Some(fields) = self.result_list_fields(template.node, &substitution)? else {
-                let offending = results
-                    .iter()
-                    .find(|entry| entry.mode != super::super::model::CheckedMode::Own)
-                    .map_or(rtype, |entry| entry.rtype);
-                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, offending);
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
             };
             let nominal = self
                 .result_list_nominals
@@ -1119,39 +1100,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Some(nominal),
             )
         };
-        // [STOR-4] a value of type `arena<'r, T>` may not be returned, so a
-        // result type naming an arena has no legal producing return and is
-        // rejected at the callable boundary.
-        if self.arena_instance(result)?.is_some() {
+        // [REF-3] a reference never leaves the callable that formed it, so a
+        // declared result mode other than `own` is refused at the boundary.
+        if result_mode != super::super::model::CheckedMode::Own {
             return self.issue_node(
-                SemanticRule::Stor4,
+                SemanticRule::Ref3,
                 rtype,
-                SemanticIssueKind::ArenaEscape {
-                    mechanical_fix: super::ARENA_ESCAPE_RESTRUCTURING,
+                SemanticIssueKind::EscapingReference {
+                    mechanical_fix: super::references::REF3_RETURN_AN_INDEX,
                 },
             );
         }
-        if result_mode != super::super::model::CheckedMode::Own {
-            if matches!(result, super::super::model::CheckedType::Slice { .. }) {
-                return self.issue_node(
-                    SemanticRule::Fn1,
-                    rtype,
-                    SemanticIssueKind::BorrowedSliceResult {
-                        mechanical_fix: "return the direct own slice descriptor under its data region; do not return a borrow of a slice descriptor",
-                    },
-                );
-            }
-            if !self.borrowable_type(result)? {
-                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, rtype);
-            }
-            self.reject_ambiguous_result_provenance(&parameters, result_mode, result, rtype)?;
-        }
-        let slice_return_ceiling = derive_slice_return_ceiling(&parameters, result_mode, result);
         let effects = self
             .tree
             .first_child_with(template.node, Production::Effects)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let declared_effects = self.parse_effects(effects, &parameters)?;
+        let mut declared_effects = self.parse_effects(effects, &parameters)?;
+        // [EFF-3] the allocation fact of a boundary that allocates by
+        // definition: the [OP-13] construction functions and [OP-10]'s
+        // `grow`. It is not a row category [EFF-1, STOR-8], so it is set here
+        // from the declaration's own identity and unioned along the call
+        // graph by the ordinary effect walk.
+        declared_effects.allocates |= ALLOCATING_PRELUDE_FUNCTIONS.contains(&template.name.as_str());
         let symbol = if template.generic_parameters.is_empty() {
             template.name.clone()
         } else {
@@ -1170,7 +1140,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             result,
             results,
             result_list,
-            slice_return_ceiling,
             effects_node: effects,
             declared_effects,
             formal_parameter: None,
@@ -1815,10 +1784,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             StableCheckedType::Boxed { region, referent } => {
                 let referent = self.reify_concrete_type(referent)?;
-                CheckedType::Nominal(match region {
-                    Some(region) => self.intern_store_box_nominal(*region, referent)?,
-                    None => self.intern_box_nominal(referent)?,
-                })
+                // [TYPE-9] a `Box` carries no brand and there is one heap
+                // [STOR-8], so one referent is one cell nominal.
+                let _ = region;
+                CheckedType::Nominal(self.intern_box_nominal(referent)?)
             }
             StableCheckedType::Arena { region, content } => {
                 let content = self.reify_concrete_type(content)?;
@@ -1847,7 +1816,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             StableCheckedType::Vector { region, element } => CheckedType::Vector {
                 region: *region,
                 element: self.reify_element(element)?,
-                release: self.vector_release_class(*region)?,
+                // [PROV-6] a window's release follows its element class and
+                // no longer follows a region's declared store bound.
+                release: super::super::model::CheckedReleaseClass::General,
             },
             StableCheckedType::Heap { region } => CheckedType::Heap { region: *region },
             StableCheckedType::Extent {
@@ -2267,73 +2238,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .with_regions(regions))
     }
 
-    /// The leading region members of one nominal's written argument list
-    /// [S20, FORM-8].
-    ///
-    /// Each member is a bare REGIONID resolved in the writing scope, and one
-    /// that resolves to a region parameter of an enclosing nominal instance
-    /// takes that instance's own actual: a field type `Inner<'s>` inside
-    /// `struct Outer['s]` names `Outer`'s region, so `Outer<'a>` holds an
-    /// `Inner<'a>` and not an `Inner<'s>` [PROV-1].
+    /// [GRAM-2, FORM-3] no nominal declares a region parameter in v0.60, so
+    /// a written argument list carries type, const and function arguments
+    /// alone and this application binds no region.
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the caller's argument-reading path is fallible"
+    )]
     fn nominal_region_arguments(
         &self,
-        node: NodeId,
+        _node: NodeId,
         region_parameters: &[DeclarationId],
-        caller: &GenericSubstitution,
+        _caller: &GenericSubstitution,
     ) -> Result<Vec<(DeclarationId, DeclarationId)>, CheckStop> {
-        if region_parameters.is_empty() {
-            return Ok(Vec::new());
-        }
-        let arguments = match self.tree.argument_list(node)? {
-            Some(targs) => self.tree.children_with(targs, Production::Targ)?,
-            None => Vec::new(),
-        };
-        if arguments.len() < region_parameters.len() {
-            return self.issue_node(
-                SemanticRule::Type5,
-                node,
-                SemanticIssueKind::type_mismatch(
-                    crate::semantic::written_count(region_parameters.len(), "region argument"),
-                    crate::semantic::written_count(arguments.len(), "type argument"),
-                ),
-            );
-        }
-        let mut regions = Vec::with_capacity(region_parameters.len());
-        for (formal, argument) in region_parameters.iter().copied().zip(arguments) {
-            if self
-                .tree
-                .direct_token_with(argument, crate::TerminalPredicate::RegionIdentifier)?
-                .is_none()
-            {
-                return self.issue_node(
-                    SemanticRule::Type5,
-                    argument,
-                    SemanticIssueKind::type_mismatch(
-                        "a region argument in this position, which this nominal declares a \
-region parameter for",
-                        "an argument that does not name a region",
-                    ),
-                );
-            }
-            let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
-            let ResolvedTarget::Source {
-                declaration,
-                class: DeclarationClass::Region,
-            } = usage.target()
-            else {
-                return self.issue_node(
-                    SemanticRule::Type5,
-                    argument,
-                    SemanticIssueKind::type_mismatch(
-                        "a region argument in this position",
-                        "an argument that does not name a region",
-                    ),
-                );
-            };
-            let actual = caller.region_argument(declaration).unwrap_or(declaration);
-            regions.push((formal, actual));
-        }
-        Ok(regions)
+        debug_assert!(region_parameters.is_empty());
+        Ok(Vec::new())
     }
 
     /// One argument list, read for two callee classes.
@@ -2403,8 +2322,7 @@ region parameter for",
                                 "a type argument occupies this parameter position",
                             );
                         };
-                        self.reject_region_bearing_generic_argument(source, caller)?;
-                        GenericArgument::Type(self.parse_type_with(ty, caller)?)
+                                        GenericArgument::Type(self.parse_type_with(ty, caller)?)
                     }
                     GenericParameter::Const { .. } => {
                         let Some(value) = self.tree.first_child_with(source, Production::Const)?
@@ -2424,11 +2342,6 @@ region parameter for",
             };
             match (parameter, value) {
                 (GenericParameter::Type { declaration, bound }, GenericArgument::Type(ty)) => {
-                    if self.checked_type_is_region_bearing(ty)? {
-                        return self.issue_node(SemanticRule::Fn2, source, SemanticIssueKind::RegionBearingGenericArgument {
-                            mechanical_fix: "make the slice or arena a direct written parameter or result instead of a generic argument",
-                        });
-                    }
                     let requirement = match bound {
                         GenericBound::Int
                             if !matches!(

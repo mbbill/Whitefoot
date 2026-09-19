@@ -323,7 +323,7 @@ impl IrBuilder<'_> {
                     ),
                     IrOperation::ProjectAddress {
                         address: owner,
-                        projection: IrPlaceProjection::BoxReferent { nominal },
+                        projection: IrPlaceStep::BoxReferent { nominal },
                     },
                 )?
             }
@@ -343,7 +343,7 @@ impl IrBuilder<'_> {
                     ),
                     IrOperation::ProjectAddress {
                         address: owner,
-                        projection: IrPlaceProjection::Field {
+                        projection: IrPlaceStep::Field {
                             nominal,
                             field: *field,
                         },
@@ -408,7 +408,7 @@ impl IrBuilder<'_> {
                         .ok_or(LoweringFailure::InvalidCheckedProgram)?
                         .ty;
                     (
-                        IrPlaceProjection::Field {
+                        IrPlaceStep::Field {
                             nominal,
                             field: *field,
                         },
@@ -424,17 +424,17 @@ impl IrBuilder<'_> {
                     else {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     };
-                    (IrPlaceProjection::BoxReferent { nominal }, *referent)
+                    (IrPlaceStep::BoxReferent { nominal }, *referent)
                 }
                 crate::semantic::CheckedPlaceStep::Subscript(subscript) => {
                     let offset = self.expression(&subscript.offset)?;
                     let projection = match lower_type(self.erasure, subscript.base_type)? {
-                        IrType::Array { .. } => IrPlaceProjection::ArrayElement {
+                        IrType::Array { .. } => IrPlaceStep::ArrayElement {
                             offset,
                             target_domain: subscript.target_domain.into(),
                         },
                         IrType::FixedVector { .. } | IrType::Vector { .. } => {
-                            IrPlaceProjection::RunElement {
+                            IrPlaceStep::RunElement {
                                 offset,
                                 target_domain: subscript.target_domain.into(),
                             }

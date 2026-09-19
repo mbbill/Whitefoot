@@ -1042,7 +1042,7 @@ impl IrBoundary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IrPlaceProjection {
+pub enum IrPlaceStep {
     /// A field of directly stored nominal content.
     Field { nominal: IrNominalId, field: u32 },
     /// The allocation payload reached through a stored Box owner slot.
@@ -1331,7 +1331,7 @@ pub enum IrOperation {
     /// the same backing and lifetime; it does not read or copy its content.
     ProjectAddress {
         address: IrValueId,
-        projection: IrPlaceProjection,
+        projection: IrPlaceStep,
     },
     Load {
         address: IrValueId,

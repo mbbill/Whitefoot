@@ -1,0 +1,9 @@
+Node: compiler/checker-facts
+
+Decision: The obligation families the entailment flow submits carry exactly the rules that own their refusals in the active specification: a range-reference formation goal, `lo <= hi` and `hi <= x.len` submitted under [MSR-4], cites REF-4 at the formation, and a range-disjointness goal cites EFF-5 at the call whose substituted paths are being compared, because a diagnostic names the rule whose sentence the program broke and [OWN-7] states a relation without owning a refusal of its own, so a residual goal that cites OWN-7 would name a rule the writer cannot repair against, instead of keeping the retired view-formation and loan-separation citations or inventing a citation for the relation.
+
+Decision: The commit-target index-separation family and the kernel-row requirement family are removed rather than retargeted, because `set_stmt := "set" place "=" expr ";"` [GRAM-4] writes exactly one place, so no pair of targets of one commit exists to separate, and every kernel row is now an ordinary [PRE-1] declaration whose requirement is submitted and reported as an ordinary call requirement with a source node, so both families have no subject and keeping either would leave a submission site no program can reach, instead of retaining them against a later rule that might want them.
+
+Rejected:
+- Keeping an index-separation family for a multi-target commit: rejected because the grammar admits one target, so the family's submission site is unreachable and its diagnostic could never be produced by an accepted parse.
+- Citing OWN-7 on an undischarged separation: rejected because OWN-7 states the overlap relation and states no refusal, so the citation would send a writer to a rule with no repair, while the consumer rules REF-4 and EFF-5 each state the refusal and its restructuring.

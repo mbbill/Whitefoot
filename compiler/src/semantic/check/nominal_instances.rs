@@ -144,9 +144,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Vec::new()
         };
         let linear = self.declaration_is_linear(node)?;
-        // [S20, GRAM-2] a nominal's `region_params` are its own, exactly as a
-        // function's are, and each is a component of its type name.
-        let region_parameters = self.parse_region_parameters(node)?;
+        // [GRAM-2] no nominal declares a region parameter in v0.60.
+        let region_parameters = Vec::new();
         let template = NominalTemplate {
             declaration: declaration_id,
             node,
@@ -381,27 +380,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(), CheckStop> {
-        if self.has_fixed(node, crate::FixedTerminal::Box)? {
-            let referent_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(referent_node, substitution)?;
-            let referent = self.parse_type_with(referent_node, substitution)?;
-            self.intern_box_nominal(referent)?;
-            return Ok(());
-        }
-        if self.has_fixed(node, crate::FixedTerminal::Arena)? {
-            let content_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(content_node, substitution)?;
-            let content = self.parse_type_with(content_node, substitution)?;
-            let region = self.type_region(node)?;
-            self.intern_arena_nominal(region, content)?;
-            return Ok(());
-        }
+        // [TYPE-9] `box<T>` and `arena<'r, T>` are no longer grammar atoms:
+        // `Box<T>` is the prelude's opaque struct and reaches the container
+        // branch below, and the arena retired with the regions.
         if self
             .tree
             .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
@@ -417,8 +398,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             && crate::container_nominal(id)
                 .is_some_and(|entry| entry.shape == crate::ContainerShape::Box)
         {
-            let (region, referent) = self.store_box_arguments(node, substitution)?;
-            self.intern_store_box_nominal(region, referent)?;
+            // [TYPE-9] `Box<T>`: one written type argument, its content.
+            let referent_node = self
+                .tree
+                .first_child_with(node, Production::Type)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let referent = self.parse_type_with(referent_node, substitution)?;
+            self.intern_box_nominal(referent)?;
             return Ok(());
         }
         match usage.target() {
@@ -953,10 +939,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(field, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(ty, substitution)?;
             self.ensure_nominal_type(ty, substitution)?;
             let parsed = self.parse_type_with(ty, substitution)?;
-
+            self.reject_inline_runtime_capacity(ty, parsed)?;
             fields.push(CheckedField { name, ty: parsed });
         }
         Ok(fields)
@@ -996,10 +981,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .tree
                         .first_child_with(field, Production::Type)?
                         .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                    self.reject_region_bearing_storage_type(ty, substitution)?;
                     self.ensure_nominal_type(ty, substitution)?;
                     let parsed = self.parse_type_with(ty, substitution)?;
-
+                    self.reject_inline_runtime_capacity(ty, parsed)?;
                     fields.push(CheckedField {
                         name: field_name,
                         ty: parsed,
@@ -1136,7 +1120,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Vector {
                     region,
                     element: self.substitute_element_regions(element, regions)?,
-                    release: self.vector_release_class(region)?,
+                    release: super::super::model::CheckedReleaseClass::General,
                 }
             }
             CheckedType::Heap { region } => CheckedType::Heap {
@@ -1294,33 +1278,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(CheckedType::Nominal(existing));
         }
         match &self.nominal(id)?.kind {
-            // S39 a store-branded cell substitutes both halves of its own
-            // identity: its store region and its referent.
-            CheckedNominalKind::Box {
-                referent,
-                region: Some(region),
-                ..
-            } => {
-                let substituted_region = Self::substituted_region(regions, *region);
-                let substituted = self.substitute_type_regions(*referent, regions)?;
-                if substituted == *referent && substituted_region == *region {
-                    return Ok(CheckedType::Nominal(id));
-                }
-                let Some(existing) = self
-                    .store_box_nominals
-                    .get(&(substituted_region, substituted))
-                    .copied()
-                else {
-                    self.pending_nominals
-                        .borrow_mut()
-                        .push(super::PendingNominal::StoreBox(
-                            substituted_region,
-                            substituted,
-                        ));
-                    return Err(CheckStop::DeferredNominal);
-                };
-                Ok(CheckedType::Nominal(existing))
-            }
             CheckedNominalKind::Box { referent, .. } => {
                 let substituted = self.substitute_type_regions(*referent, regions)?;
                 if substituted == *referent {
@@ -1769,8 +1726,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.prelude_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
         self.box_nominals
-            .retain(|_, id| (id.0 as usize) < checkpoint);
-        self.store_box_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
         self.arena_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);

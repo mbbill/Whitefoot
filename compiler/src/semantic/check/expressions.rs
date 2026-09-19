@@ -16,7 +16,8 @@ use super::super::model::{
     CheckedProjectedDrop, CheckedReleaseMode, CheckedSetTarget, CheckedType, CheckedValue,
     CheckedWritablePlace, FloatType, IntegerType,
 };
-use super::borrows::{AccessKind, OwnedContent, ReborrowPosition, ResolvedPlace};
+use super::super::places::ResolvedPlace;
+use super::references::AccessKind;
 use super::{
     CheckStop, Checker, Constructor, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
 };
@@ -34,152 +35,74 @@ struct PlaceUseOptions {
     loop_depth: usize,
 }
 
-/// Which mutation statement is forming this target.
+/// One formed and judged [SET-1] target.
 ///
-/// [SET-1] and [SET-2] share the whole writability relation and differ only in
-/// the final selected type's required [OWN-1] class, so one judgment serves
-/// both and this says which side of it applies. `replace` demands a
-/// region-free affine type at formation, while a commit's affine admission is
-/// [LIV-2]'s first condition and is judged at the commit, where the read-out
-/// is known; only the region-free demand, which no commit reinitializes
-/// either, is decidable from the type alone.
-#[derive(Clone, Copy)]
-pub(super) enum MutationForm {
-    /// `set p = e`, whose affine admission [LIV-2] judges at the commit.
-    Set,
-    /// `replace p = e`.
-    Replace,
-}
-
-/// One formed and judged mutation target [SET-1, SET-2, LIV-2].
-///
-/// The resolved place carries both [OWN-7]'s conservative overlap path and
-/// [LIV-2]'s storage path, whose owning dereferences distinguish a target
-/// from its strict prefixes. Borrow-holder dereferences resolve to the
-/// borrowed origin, so neither relation depends on the holder's spelling.
+/// v0.60 has one mutation statement: `set_stmt := "set" place "=" expr ";"`
+/// [GRAM-4] writes exactly one place. The `replace` form, its [SET-2] class
+/// inversion and the region-free demand it carried all went with the regions,
+/// so the two-sided `MutationForm` has no subject and the target carries the
+/// one resolved place it writes.
 pub(in crate::semantic::check) struct MutationTarget {
     /// The source declaration the written place is rooted at: the value
-    /// binding for a bare, field or subscript target, the holder for a
-    /// `deref` target.
+    /// binding for a bare, field or subscript target, and the reference
+    /// binding for a `deref` target, whose [REF-2] validity is rechecked at
+    /// the commit.
     pub(in crate::semantic::check) declaration: DeclarationId,
-    /// The resolved place this target writes [OWN-6].
+    /// The resolved place this target writes [REF-1, OWN-7].
     pub(in crate::semantic::check) place: ResolvedPlace,
-    /// The access captured during target formation, rechecked after the RHS
-    /// without evaluating its source offsets again [SET-1, OWN-5].
-    pub(in crate::semantic::check) access: MutationAccess,
+    /// The reference binding the target is reached through, when it is
+    /// `deref(p)` or a path below one [SET-1]. Its [REF-2] validity is
+    /// rechecked after the right-hand side.
+    pub(in crate::semantic::check) through_reference: Option<DeclarationId>,
     /// Whether the target uses the element-position judgment [MSR-2].
-    /// Legacy indexed targets retain their base in `place`; typed Storage
-    /// targets already retain the complete selected path. Commit formation
-    /// accounts for that distinction before matching any read-out.
     pub(in crate::semantic::check) element: bool,
     pub(in crate::semantic::check) target: CheckedSetTarget,
     pub(in crate::semantic::check) effects: EffectSet,
     /// A capability this compiler does not implement at this target, carried
     /// rather than raised so that [DIAG-1]'s order holds: every source
-    /// rejection of the statement, [LIV-2]'s commit conditions included, is
-    /// judged before the stop, and no capability limit stands in front of a
-    /// rejection.
+    /// rejection of the statement is judged before the stop, and no
+    /// capability limit stands in front of a rejection.
     pub(in crate::semantic::check) unsupported: Option<UnsupportedSemanticFeature>,
 }
 
-pub(in crate::semantic::check) enum MutationAccess {
-    Place {
-        holder: Option<DeclarationId>,
-        place: ResolvedPlace,
-    },
-    /// A view's own origin loan permits this write; later loans must still
-    /// leave both its descriptor and its origins usable [PROV-3].
-    View {
-        descriptor: DeclarationId,
-        place: ResolvedPlace,
-        origins: Vec<ResolvedPlace>,
-    },
-}
-
-impl MutationForm {
-    /// Whether this is the [SET-2] side, whose commit also reads the target.
-    pub(super) const fn is_replace(self) -> bool {
-        matches!(self, Self::Replace)
-    }
-}
-
 impl Checker<'_, '_, '_, '_> {
-    /// Re-establish writability at commit under the complete post-RHS loan
-    /// state. All paths here were captured before evaluating that RHS.
+    /// Re-establish writability at the commit [SET-1, LIV-1].
+    ///
+    /// The loan state this re-read v0.59 is gone with the loans. What [SET-1]
+    /// still rechecks after the right-hand side is the one fact the
+    /// right-hand side can destroy: a target reached through a reference
+    /// needs that reference still valid at the commit [REF-2].
     pub(super) fn revalidate_mutation_access(
         &self,
-        access: &MutationAccess,
+        through_reference: Option<DeclarationId>,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         node: NodeId,
     ) -> Result<(), CheckStop> {
-        match access {
-            MutationAccess::Place { holder, place } => {
-                if let Some(holder) = holder {
-                    let local = bindings
-                        .get(holder)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    self.check_holder_not_suspended(local, node)?;
-                }
-                self.check_loan_access(bindings, *holder, place, AccessKind::Write, node)
-            }
-            MutationAccess::View {
-                descriptor,
-                place,
-                origins,
-            } => {
-                let local = bindings
-                    .get(descriptor)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                self.check_holder_not_suspended(local, node)?;
-                self.check_loan_access(
-                    bindings,
-                    Some(*descriptor),
-                    place,
-                    AccessKind::Write,
-                    node,
-                )?;
-                self.check_child_reborrow_freeze(bindings, origins, node)?;
-                for origin in origins {
-                    self.check_temporary_loan_access(
-                        bindings,
-                        Some(*descriptor),
-                        origin,
-                        AccessKind::Write,
-                        node,
-                    )?;
-                }
-                Ok(())
-            }
-        }
+        let Some(declaration) = through_reference else {
+            return Ok(());
+        };
+        let local = bindings
+            .get(&declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        self.check_reference_valid(local, node)
     }
 }
 
-/// [STOR-1]'s restructuring, which [LIV-2] leaves as the rule's only one:
-/// `replace` names the previous owner.
+/// [WIN-3]'s own restructuring at an assignment over a linear place.
 ///
-/// The second sentence this constant had beside it — the fresh `let` offered
-/// when the right-hand side consumed the target root — is retired with
-/// [LIV-2]. That shape is no longer a rejection at a complete binding: the
-/// consuming `move` is the target's read-out and the statement is accepted.
-/// At a projected target the root is genuinely dead at the commit, so the
-/// rejection there is [OWN-1]'s dead root, which offers the same fresh `let`
-/// in its own sentence.
-pub(in crate::semantic::check) const STOR1_REPLACE: &str =
-    "use replace: let old = replace p = e; binds the previous owner";
+/// Assigning over an owned place releases the old value when it is affine and
+/// is a hard error when it is linear, because no release exists for a linear
+/// value: the writer takes it out and consumes it first.
+pub(in crate::semantic::check) const WIN3_LINEAR_TARGET: &str =
+    "take the linear value out and consume it before writing this place";
+
+/// The roots [SET-1] admits for a written target, as the diagnostic names
+/// them.
+const SET1_WRITABLE_ROOTS: &str =
+    "a live own-mode value binding, or a path below deref of a reference whose \
+     row declares that write";
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// [SET-2] target formation: exactly [SET-1]'s relation with the
-    /// copy/affine class judgment inverted and the region-free demand added.
-    pub(super) fn check_replace_target(
-        &self,
-        function: &FunctionSignature,
-        node: NodeId,
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        loop_depth: usize,
-    ) -> Result<MutationTarget, CheckStop> {
-        self.check_mutation_target(function, node, bindings, loop_depth, MutationForm::Replace)
-    }
-
     pub(super) fn check_set_target(
         &self,
         function: &FunctionSignature,
@@ -187,7 +110,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<MutationTarget, CheckStop> {
-        self.check_mutation_target(function, node, bindings, loop_depth, MutationForm::Set)
+        self.check_mutation_target(function, node, bindings, loop_depth)
     }
 
     /// The source declaration a written place is rooted at, when its base is a
@@ -217,16 +140,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// One judgment of a place's [SET-1]/[SET-2] mutation-target class: the
-    /// two statements share the complete writability relation and differ only
-    /// in the final selected type's required [OWN-1] class.
+    /// One [SET-1] target: the writability relation the rule states.
+    ///
+    /// The target is writable exactly when it is rooted in a live own-mode
+    /// value binding, when it is `deref(p)` or a path below it where `p` is a
+    /// reference parameter whose declared row carries `writes` of that path,
+    /// or when `p` is a local reference variable whose named path is itself
+    /// writable [SET-1, EFF-1, EFF-5].
     fn check_mutation_target(
         &self,
         function: &FunctionSignature,
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        form: MutationForm,
     ) -> Result<MutationTarget, CheckStop> {
         let pbase = self
             .tree
@@ -260,8 +186,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     node,
                     SemanticIssueKind::InvalidSetTarget {
                         root_class: "compiler-updated counted binder".to_owned(),
-                        required_classes:
-                            "source-writable live own storage or a live usable &uniq referent",
+                        required_classes: SET1_WRITABLE_ROOTS,
                     },
                 );
             }
@@ -269,11 +194,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let suffixes = self.tree.children_with(node, Production::Psuffix)?;
         if let Some(subscript) = self.last_subscript(&suffixes)? {
             return self.check_indexed_set_target(
-                function, node, &suffixes, subscript, bindings, loop_depth, form,
+                function, node, &suffixes, subscript, bindings, loop_depth,
             );
         }
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
-            return self.check_dereferenced_set_target(node, pbase, bindings, form);
+            return self.check_dereferenced_set_target(function, node, bindings);
         }
         if !self.tree.children(pbase)?.is_empty() {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -296,7 +221,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node,
                 SemanticIssueKind::InvalidSetTarget {
                     root_class: format!("{class:?}"),
-                    required_classes: "live own storage or a live usable &uniq referent",
+                    required_classes: SET1_WRITABLE_ROOTS,
                 },
             );
         }
@@ -305,13 +230,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(&declaration)
             .cloned()
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        // [LIV-2] a commit whose target is a complete binding reinitializes
+        // [REF-1] a `set` whose target is a reference variable and whose
+        // right-hand side is a `borrow_expr` rebinds that name and writes no
+        // storage, so [SET-1]'s value-target judgment does not apply to it.
+        // That rebinding is recognized at the statement; reaching this
+        // formation with a bare reference target means the right-hand side is
+        // a value, which [TYPE-7] refuses with `deref(.)`.
+        if local.reference.is_some() && suffixes.is_empty() {
+            return self.issue_node(
+                SemanticRule::Type7,
+                node,
+                SemanticIssueKind::MissingDereference {
+                    mechanical_fix: "write `deref(.)`",
+                },
+            );
+        }
+        // [SET-1] a commit whose target is a complete binding reinitializes
         // that binding, so a dead one is the one root this formation admits;
         // every projected, dereferenced or subscripted target of a dead root
         // stays [OWN-1]'s rejection, because reinitializing one component of a
         // dead root would leave the rest uninitialized.
-        let reinitializes = matches!(form, MutationForm::Set) && suffixes.is_empty();
-        if !local.live && !reinitializes {
+        if !local.live && !suffixes.is_empty() {
             return self.issue_node(
                 SemanticRule::Own1,
                 node,
@@ -327,35 +266,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticRule::Set1,
                 node,
                 SemanticIssueKind::InvalidSetTarget {
-                    root_class: match local.mode {
-                        CheckedMode::Shared(_) => "shared borrow",
-                        CheckedMode::Unique(_) => "unique borrow holder",
-                        CheckedMode::Own => "owned value",
-                    }
-                    .to_owned(),
-                    required_classes: "live own storage or a live usable &uniq referent",
+                    root_class: "a reference, which names a path rather than storage".to_owned(),
+                    required_classes: SET1_WRITABLE_ROOTS,
                 },
             );
         }
-        let resolved = ResolvedPlace::fields(declaration, fields.clone());
-        self.check_loan_access(bindings, None, &resolved, AccessKind::Write, node)?;
-
-        self.check_mutation_target_class(node, ty, form)?;
+        let resolved = ResolvedPlace::spelled(
+            crate::semantic::places::PlaceRoot::Binding(local.binding),
+            false,
+            fields.clone(),
+        );
+        self.check_mutation_target_class(node, ty)?;
         let mut effects = EffectSet::NONE;
         for path in self.effect_paths_for_place(node, &resolved, bindings)? {
-            effects.add_write(path.clone());
-            if form.is_replace() {
-                effects.add_read(path);
-            }
+            effects.add_write(path);
         }
 
         Ok(MutationTarget {
             declaration,
-            access: MutationAccess::Place {
-                holder: None,
-                place: resolved.clone(),
-            },
             place: resolved,
+            through_reference: None,
             element: false,
             target: CheckedSetTarget::Place(CheckedWritablePlace {
                 binding: local.binding,
@@ -368,64 +298,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// The final selected type's [OWN-1] class judgment shared by the
-    /// [SET-1] and [SET-2] target paths: `set` demands copy [STOR-1], and
-    /// `replace` demands region-free affine [SET-2].
+    /// [WIN-3] the final selected type's class judgment at a `set` target.
+    ///
+    /// Assigning over any owned place releases the old value when it is
+    /// affine and is a hard error when it is linear: a linear value has no
+    /// release, so the writer takes it out and consumes it first. v0.59's
+    /// copy-only demand and its region-free companion were [SET-2]'s and went
+    /// with `replace`.
     fn check_mutation_target_class(
         &self,
         node: NodeId,
         ty: CheckedType,
-        form: MutationForm,
     ) -> Result<(), CheckStop> {
-        let MutationForm::Set = form else {
-            // [SET-2, VIEW-4] a loan-bearing target is judged as the
-            // region-bearing target it is, before the copy class is read:
-            // [S27] made the shared view copy, and "use set for a copy place"
-            // is exactly the repair [VIEW-4] refuses at this same place.
-            if !Self::checked_type_is_loan_bearing(ty)
-                && self.is_copy_type(ty)?
-                && self.judges_class_spelling()
-            {
-                return self.issue_node(
-                    SemanticRule::Set2,
-                    node,
-                    SemanticIssueKind::InvalidReplaceTarget {
-                        target_type: self.checked_type_name(ty)?,
-                        mechanical_fix: "use set for a copy place; read the previous value bare",
-                    },
-                );
-            }
-            // [SET-2] rejects a region-bearing target type at any depth of
-            // T, which is [STOR-5]'s relation over the selected type rather
-            // than an enumerated set of spellings: a slice, an arena, and
-            // anything reaching one.
-            if self.checked_type_is_region_bearing(ty)? {
-                return self.issue_node(
-                    SemanticRule::Set2,
-                    node,
-                    SemanticIssueKind::InvalidReplaceTarget {
-                        target_type: self.checked_type_name(ty)?,
-                        mechanical_fix: "a slice's static origin set and an arena's confinement \
-                                         are fixed at initialization; bind a new slice or arena \
-                                         under a new let",
-                    },
-                );
-            }
-            return Ok(());
-        };
-        // [LIV-2] an affine target's admission is judged at the commit, where
-        // the read-out is known; only the region-free demand [SET-2] states of
-        // a replacement target is decidable from the type alone, and a commit
-        // reinitializes no origin set or arena confinement either.
-        if !self.is_copy_type(ty)? && self.checked_type_is_region_bearing(ty)? {
+        if matches!(
+            self.linearity_class(ty)?,
+            super::linearity::LinearityClass::Linear
+        ) {
             return self.issue_node(
-                SemanticRule::Liv2,
+                SemanticRule::Win3,
                 node,
-                SemanticIssueKind::RegionBearingCommitTarget {
+                SemanticIssueKind::LinearAssignmentTarget {
                     target_type: self.checked_type_name(ty)?,
-                    mechanical_fix: "a slice's static origin set and an arena's confinement \
-                                     are fixed at initialization; bind a new slice or arena \
-                                     under a new let",
+                    mechanical_fix: WIN3_LINEAR_TARGET,
                 },
             );
         }
@@ -451,21 +345,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// One written mode, with the region spelled as the source spells it.
+    /// One written mode, as [GRAM-2] spells it.
+    ///
+    /// v0.60 has one reference kind and no permission marker on it [REF-1],
+    /// and the `&[T]` range kind is spelled by the type it precedes, so the
+    /// mode renders in the three words the grammar writes. The region the
+    /// v0.59 spellings carried has no subject.
     pub(in crate::semantic::check) fn checked_mode_name(
         &self,
         mode: CheckedMode,
     ) -> Result<String, CheckStop> {
         Ok(match mode {
             CheckedMode::Own => "own".to_owned(),
-            CheckedMode::Shared(region) => match self.region_spelling(region).as_str() {
-                "" => "&".to_owned(),
-                spelling => format!("&{spelling}"),
-            },
-            CheckedMode::Unique(region) => match self.region_spelling(region).as_str() {
-                "" => "&uniq".to_owned(),
-                spelling => format!("&uniq {spelling}"),
-            },
+            CheckedMode::Reference | CheckedMode::Range => "&".to_owned(),
         })
     }
 
@@ -947,7 +839,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 bindings,
                 loop_depth,
                 place_context,
-                ReborrowPosition::Forbidden,
             ),
             Production::Call if self.tree.is_constructor_call(node)? => {
                 self.check_construct(function, node, bindings, loop_depth)
@@ -1060,7 +951,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             loop_depth,
             PlaceUseContext::Ordinary,
-            ReborrowPosition::Forbidden,
         )
     }
 
@@ -1081,7 +971,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             loop_depth,
             PlaceUseContext::Consuming,
-            ReborrowPosition::Forbidden,
         )
     }
 
@@ -1091,20 +980,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        own_result: bool,
-        result_candidate: bool,
     ) -> Result<TypedExpression, CheckStop> {
-        self.check_atom_in_context(
-            function,
-            node,
-            bindings,
-            loop_depth,
-            PlaceUseContext::Ordinary,
-            ReborrowPosition::CallArgument {
-                own_result,
-                result_candidate,
-            },
-        )
+        self.check_atom_in_context(function, node, bindings, loop_depth, PlaceUseContext::Ordinary)
     }
 
     fn check_atom_in_context(
@@ -1114,7 +991,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
         place_context: PlaceUseContext,
-        reborrow_position: ReborrowPosition,
     ) -> Result<TypedExpression, CheckStop> {
         if let Some(value) = self.postcondition_result_placeholder(node)? {
             return Ok(TypedExpression::owned(
@@ -1150,7 +1026,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(value);
         }
         if let Some(borrow) = self.tree.first_child_with(node, Production::BorrowExpr)? {
-            return self.check_borrow(borrow, function, bindings, loop_depth, reborrow_position);
+            return self.check_borrow(borrow, function, bindings, loop_depth);
         }
         Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
     }
@@ -1283,18 +1159,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                if local.mode != CheckedMode::Own {
+                // [REF-1, TYPE-7] a bare reference variable denotes the
+                // reference itself, and the storage it names is reached only
+                // through `deref`, so a suffix chain written directly on one
+                // is the [TYPE-7] missing-dereference rejection. The bare
+                // read is a copy of a name, never a consume: a reference owns
+                // no storage, so `move p` on one is [OWN-1]'s copy spelling.
+                if local.mode.is_reference() {
                     if !suffixes.is_empty() {
                         return self.issue_node(
                             SemanticRule::Type7,
                             use_node,
                             SemanticIssueKind::MissingDereference {
-                                mechanical_fix: "write `deref(holder)`",
+                                mechanical_fix: "write `deref(p)`",
                             },
                         );
                     }
-                    let copy = matches!(local.mode, CheckedMode::Shared(_));
-                    if options.explicit_move && copy {
+                    if options.explicit_move {
                         return self.issue_node(
                             SemanticRule::Own1,
                             use_node,
@@ -1303,63 +1184,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             },
                         );
                     }
-                    if !copy
-                        && !options.explicit_move
-                        && matches!(options.context, PlaceUseContext::Ordinary)
-                    {
-                        return self.issue_node(
-                            SemanticRule::Own1,
-                            use_node,
-                            SemanticIssueKind::BareAffineUse {
-                                mechanical_fix: "write `move p` for the affine place",
-                            },
-                        );
-                    }
-                    // A suspended holder admits no move, copy, or
-                    // call-transfer of itself [OWN-5, OWN-13]; OWN-1's
-                    // spelling judgments above are defined first and cite
-                    // first at this node [DIAG-1].
-                    self.check_holder_not_suspended(&local, use_node)?;
-                    // A pure callee still receives the holder's authority.
-                    // Its empty effect row cannot bypass a live child loan.
-                    if let Some(borrow) = &local.borrow {
-                        self.check_temporary_loan_access(
-                            bindings,
-                            Some(declaration),
-                            &borrow.place,
-                            if copy {
-                                AccessKind::Read
-                            } else {
-                                AccessKind::Move
-                            },
-                            use_node,
-                        )?;
-                    }
-                    if !copy {
-                        bindings
-                            .get_mut(&declaration)
-                            .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                            .live = false;
-                    }
-                    let slice = local.slice;
-                    let slice_origins = slice
-                        .as_ref()
-                        .map(|slice| slice.origins.clone())
-                        .unwrap_or_default();
+                    self.check_reference_valid(&local, use_node)?;
                     return Ok(TypedExpression {
                         expression: CheckedExpression::Binding {
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
                             ty: local.ty,
-                            slice_origins,
-                            consume_root: !copy,
+                            slice_origins: Vec::new(),
+                            consume_root: false,
                         },
                         mode: local.mode,
-                        borrow: local.borrow,
-                        slice,
-                        holder: Some(declaration),
-                        // A bare borrow holder selects the holder, not its
-                        // referent [TYPE-7, SET-1].
+                        reference: local.reference.clone(),
+                        // A bare reference variable selects the reference,
+                        // not the place it names [TYPE-7, REF-1].
                         reference_value: true,
                         effects: EffectSet::NONE,
                         accesses: Vec::new(),
@@ -1395,14 +1232,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // [OWN-1]'s root-killing consume and derives no residual
                 // cleanup of the root's unselected content.
                 self.check_commit_place_live(
-                    &ResolvedPlace::fields(declaration, fields.clone()),
+                    &ResolvedPlace::fields(local.binding, fields.clone()),
                     use_node,
                     false,
                 )?;
                 let read_out = !copy
                     && options.explicit_move
                     && self
-                        .take_commit_read_out(&ResolvedPlace::fields(declaration, fields.clone()));
+                        .take_commit_read_out(&ResolvedPlace::fields(local.binding, fields.clone()));
                 // OWN-1 makes an affine projection consume its whole root.
                 // Its residual cleanup destroys every unselected resource
                 // field, so the loan access is the root rather than only the
@@ -1418,13 +1255,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 } else {
                     AccessKind::Move
                 };
-                self.check_loan_access(
-                    bindings,
-                    None,
-                    &ResolvedPlace::fields(declaration, access_fields.clone()),
-                    access_kind,
-                    use_node,
-                )?;
                 // [PROV-6] a consume of a proper sub-place of a value linear
                 // in this scope, with no commit reinitialising that sub-place,
                 // is a partial consume: the residual leaf is abandoned in a
@@ -1458,7 +1288,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?
                         .live = false;
                 }
-                let access = ResolvedPlace::fields(declaration, access_fields);
+                let access = ResolvedPlace::fields(local.binding, access_fields);
                 let mut effects = EffectSet::NONE;
                 // [LIV-2, EFF-2] a read-out reads the target's own storage,
                 // exactly as [SET-2]'s exchange does, and the commit writes it.
@@ -1471,38 +1301,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // guard was invisible, because a consume exhibited no read at
                 // all; the copy spelling is what would otherwise have made
                 // `return value;` declare a read of storage it never touches.
-                if (matches!(access_kind, AccessKind::Read) || read_out)
-                    && !Self::checked_type_is_loan_bearing(ty)
-                {
+                if matches!(access_kind, AccessKind::Read) || read_out {
                     for path in self.effect_paths_for_place(use_node, &access, bindings)? {
                         effects.add_read(path);
                     }
                 }
                 if fields.is_empty() {
-                    let slice = local.slice;
-                    let slice_origins = slice
-                        .as_ref()
-                        .map(|slice| slice.origins.clone())
-                        .unwrap_or_default();
-                    let mut expression = TypedExpression::owned_with_access(
+                    Ok(TypedExpression::owned_with_access(
                         CheckedExpression::Binding {
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
                             ty,
-                            slice_origins,
+                            slice_origins: Vec::new(),
                             consume_root: !copy,
                         },
                         effects,
                         access,
                         access_kind,
-                    );
-                    if slice.is_some() {
-                        // Projected callee effects use this descriptor's
-                        // continuing view loan, just as a direct index does.
-                        expression.holder = Some(declaration);
-                    }
-                    expression.slice = slice;
-                    Ok(expression)
+                    ))
                 } else {
                     Ok(TypedExpression::owned_with_access(
                         CheckedExpression::Project {
@@ -1616,149 +1432,94 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
-    /// A [SET-1] or [SET-2] target whose `deref` reaches storage the root
-    /// binding owns rather than a referent behind a holder. [SET-1]'s
-    /// writability relation admits both roots, and this one directly: the
-    /// target is rooted in a live own-mode value binding whose storage is
-    /// box-owned or arena-owned [STOR-1]. There is no holder here to be live,
-    /// usable, `&uniq`, or unsuspended, so the judgment is the ordinary
-    /// own-rooted one — liveness [OWN-1], the loan state [OWN-5], then the
-    /// final selected type's class.
+    /// One [SET-1] target written `deref(p)` or a path below one.
     ///
-    /// Past the judgment nothing writes owned indirection content: the target
-    /// names the root binding, which lowers to the content pointer under the
-    /// box's own IR type, and arena storage has no runtime at all. The target
-    /// therefore stops at an explicit capability gate rather than publishing a
-    /// checked program whose single store would overwrite the pointer.
-    fn check_owned_content_set_target(
+    /// [SET-1] makes such a target writable exactly when `p` is a reference
+    /// parameter whose declared row carries `writes` of that path
+    /// [EFF-1, EFF-5], or a local reference variable whose named path is
+    /// itself writable. `deref` of anything that is not a reference — a
+    /// `Box` included, whose content is its field `inner` — is [TYPE-7]'s
+    /// rejection, raised by the place resolver.
+    fn check_dereferenced_set_target(
         &self,
+        function: &FunctionSignature,
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-        form: MutationForm,
-        root: (LocalBinding, OwnedContent),
     ) -> Result<MutationTarget, CheckStop> {
-        let (local, content) = root;
-        if !local.live {
+        let place = self.resolve_explicit_place(node, node, bindings)?;
+        let local = bindings
+            .get(&place.declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        self.check_reference_valid(local, node)?;
+        if !self.reference_row_writes(function, &place.resolved, bindings)? {
             return self.issue_node(
-                SemanticRule::Own1,
+                SemanticRule::Set1,
                 node,
-                SemanticIssueKind::UseAfterMove {
-                    mechanical_fix: "introduce a new `let` binding before reuse",
+                SemanticIssueKind::InvalidSetTarget {
+                    root_class: "a reference whose declared row does not write this path"
+                        .to_owned(),
+                    required_classes: SET1_WRITABLE_ROOTS,
                 },
             );
         }
-        // The written suffix chain still selects a real field of the content
-        // type, so a wrong spelling stays a source rejection rather than being
-        // masked by the capability stop below [DIAG-1].
-        let suffixes = self.tree.children_with(node, Production::Psuffix)?;
-        let (fields, ty) = self.resolve_struct_path(&suffixes, content.ty())?;
-        // Owned indirection content is reached from the owning binding, so the
-        // resolved place is that root plus the selected field path — the same
-        // place the read path resolves for a `deref` of this binding.
-        self.check_loan_access(
-            bindings,
-            None,
-            &ResolvedPlace::fields(local.declaration, fields.clone()),
-            AccessKind::Write,
-            node,
-        )?;
-        self.check_mutation_target_class(node, ty, form)?;
-        // TEMPORARY capability stop, carried rather than raised: [LIV-2]'s
-        // commit conditions are source rejections and are judged first, so a
-        // live affine content target still reports [STOR-1] and only a form
-        // this compiler cannot lower reaches the stop.
-        let unsupported = Some(match content {
-            OwnedContent::Arena { .. } => UnsupportedSemanticFeature::ArenaRuntime,
-            OwnedContent::Boxed(_) => UnsupportedSemanticFeature::RegionsAndBorrows,
-        });
+        self.check_mutation_target_class(node, place.ty)?;
+        let mut effects = EffectSet::NONE;
+        for path in self.effect_paths_for_place(node, &place.resolved, bindings)? {
+            effects.add_write(path);
+        }
+        let (binding, path) = self.explicit_container_path(&place.expression, node)?;
         Ok(MutationTarget {
-            declaration: local.declaration,
-            access: MutationAccess::Place {
-                holder: None,
-                place: ResolvedPlace::fields(local.declaration, fields.clone()),
-            },
-            place: ResolvedPlace::fields(local.declaration, fields.clone()),
+            declaration: place.declaration,
+            place: place.resolved.clone(),
+            through_reference: Some(place.declaration),
             element: false,
-            target: CheckedSetTarget::Place(CheckedWritablePlace {
-                binding: local.binding,
-                fields,
-                ty,
-                declares: false,
+            target: CheckedSetTarget::Storage(super::super::model::CheckedContainerRoot {
+                root: crate::semantic::places::PlaceRoot::Binding(binding),
+                path,
+                ty: place.ty,
             }),
-            effects: EffectSet::NONE,
-            unsupported,
+            effects,
+            unsupported: None,
         })
     }
 
-    fn check_dereferenced_set_target(
+    /// [SET-1, EFF-1] whether this target is writable through the reference
+    /// it is reached by.
+    ///
+    /// A reference *variable* names a path of this body, which the resolver
+    /// has already replaced by the path itself, so the question is asked of
+    /// the resolved root: a live own-mode local root is writable on its own
+    /// [SET-1], and a reference-parameter root needs this callable's declared
+    /// row to carry `writes` of the path, which is the same fact [EFF-5]
+    /// substitutes at every call.
+    fn reference_row_writes(
         &self,
-        node: NodeId,
-        pbase: NodeId,
+        function: &FunctionSignature,
+        place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-        form: MutationForm,
-    ) -> Result<MutationTarget, CheckStop> {
-        if let Some(target) = self.check_box_storage_set_target(node, bindings, form)? {
-            return Ok(target);
+    ) -> Result<bool, CheckStop> {
+        let crate::semantic::places::PlaceRoot::Binding(binding) = place.root else {
+            // A named const is immutable static storage [CONST-2].
+            return Ok(false);
+        };
+        let Some(local) = bindings.values().find(|local| local.binding == binding) else {
+            return Ok(false);
+        };
+        if !local.mode.is_reference() {
+            return Ok(local.live);
         }
-        // [SET-1] makes a `deref` target writable through either of two roots:
-        // an explicit `deref` of a live usable `&uniq` holder, or a live
-        // own-mode binding whose storage the `deref` reaches [STOR-1]. Only
-        // the first has a holder to resolve. Routing every `deref` target
-        // through `resolve_dereference_holder` demanded one of an own-mode
-        // `box` or `arena` binding and cited TYPE-7 `MissingDereference`
-        // against source that wrote no holder — a compiler capability gap
-        // misreported as invalid source, and the mutation-target twin of the
-        // same defect in the borrow dispatch.
-        if let Some(root) = self.owned_content_deref_root(pbase, bindings)? {
-            return self.check_owned_content_set_target(node, bindings, form, root);
-        }
-        let (declaration, local, borrow) =
-            self.resolve_dereference_holder(node, pbase, bindings)?;
-        // [SET-1] states the shared-borrow referent as an [OWN-5] violation
-        // and gives that rule the citation; SET-1 owns only the residue of its
-        // writability relation.
-        if borrow.kind != super::borrows::BorrowKind::Unique {
-            return self.issue_node(SemanticRule::Own5, node, SemanticIssueKind::BorrowConflict);
-        }
-        self.check_holder_not_suspended(&local, node)?;
-        let suffixes = self.tree.children_with(node, Production::Psuffix)?;
-        let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
-        let mut resolved = borrow.place;
-        resolved.extend_fields(&fields);
-        self.check_loan_access(
-            bindings,
-            Some(declaration),
-            &resolved,
-            AccessKind::Write,
-            node,
-        )?;
-        self.check_mutation_target_class(node, ty, form)?;
-        let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(node, &resolved, bindings)? {
-            effects.add_write(path.clone());
-            if form.is_replace() {
-                // [SET-2, EFF-2]: the commit is one read and one write of
-                // the target's ultimate storage origin.
-                effects.add_read(path);
-            }
-        }
-        Ok(MutationTarget {
-            declaration,
-            access: MutationAccess::Place {
-                holder: Some(declaration),
-                place: resolved.clone(),
-            },
-            place: resolved,
-            element: false,
-            target: CheckedSetTarget::Place(CheckedWritablePlace {
-                binding: local.binding,
-                fields,
-                ty,
-                declares: false,
-            }),
-            effects,
-            unsupported: self.borrowed_descriptor_mutation_capability(ty)?,
-        })
+        let Some(target) = self.state_path(place, bindings)? else {
+            return Ok(false);
+        };
+        Ok(function.declared_effects.writes.iter().any(|declared| {
+            declared.root == target.root
+                && declared.steps.len() <= target.steps.len()
+                && declared
+                    .steps
+                    .iter()
+                    .zip(&target.steps)
+                    .all(|(left, right)| left == right)
+        }))
     }
 
     /// A borrowed descriptor replacement needs both writable descriptor-slot
@@ -1856,7 +1617,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// then compared against *its* declared field types by the ordinary exact
     /// [TYPE-5] equality, so a second operand naming a second store is a
     /// mismatch and not a second binding [PROV-1].
-    fn check_regional_construct(
+    fn check_instanced_construct(
         &self,
         function: &FunctionSignature,
         node: NodeId,
@@ -1882,10 +1643,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        // [FORM-8] a written region argument this construct's own operands
-        // determine carries no fact a reader can check, and the diagnostic
-        // names the one repair rather than an argument count.
-        self.reject_determined_region_arguments(node, site)?;
         let mut atoms = Vec::with_capacity(written_fields.len());
         let mut operands = Vec::with_capacity(written_fields.len());
         let mut effects = EffectSet::NONE;
@@ -1913,36 +1670,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             atoms.push(atom);
             operands.push(value);
         }
-        let mut determined = Vec::with_capacity(site.region_parameters.len());
-        for (slot, formal) in site.region_parameters.iter().enumerate() {
-            let Some(field) = site.shape.determining_field.get(slot).copied().flatten() else {
-                continue;
-            };
-            let operand = operands
-                .get(field)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let atom = *atoms
-                .get(field)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let ty = operand.expression.ty();
-            let matches = self.match_type_regions(&site.shape.field_regions[field], ty)?;
-            let Some((_, actual)) = matches
-                .into_iter()
-                .find(|(position, _)| position.formal == *formal)
-            else {
-                return self.issue_node(
-                    SemanticRule::Type5,
-                    atom,
-                    SemanticIssueKind::type_mismatch(
-                        "a value whose type names the store this field's declared type brands"
-                            .to_owned(),
-                        self.checked_type_name(ty)?,
-                    ),
-                );
-            };
-            determined.push((*formal, actual));
-        }
-        let nominal = self.constructed_nominal(node, site, &determined, &function.substitution)?;
+        let nominal = self.constructed_nominal(node, site, &[], &function.substitution)?;
         let declared_fields = match (&self.nominal(nominal)?.kind, site.variant) {
             (CheckedNominalKind::Struct { fields }, None) => fields.clone(),
             (CheckedNominalKind::Enum { variants }, Some(variant)) => variants
@@ -1990,61 +1718,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
         };
         Ok(TypedExpression::owned(expression, effects))
-    }
-
-    /// [FORM-8] a construct that writes a region argument its own field
-    /// operands determine.
-    ///
-    /// The old spelling wrote every region parameter, so the shape this
-    /// refuses is the complete list where a shorter one is legal, and the
-    /// repair is to delete the members the operands supply. A list that is
-    /// wrong in some other way stays the ordinary [TYPE-5] argument fault.
-    fn reject_determined_region_arguments(
-        &self,
-        node: NodeId,
-        site: &super::ConstructorSite,
-    ) -> Result<(), CheckStop> {
-        let determined = site
-            .shape
-            .determining_field
-            .iter()
-            .filter(|field| field.is_some())
-            .count();
-        if determined == 0 {
-            return Ok(());
-        }
-        let Some(targs) = self.tree.argument_list(node)? else {
-            return Ok(());
-        };
-        let arguments = self.tree.children_with(targs, Production::Targ)?;
-        let expected = site
-            .generic_parameters
-            .len()
-            .saturating_add(site.region_parameters.len())
-            .saturating_sub(determined);
-        if arguments.len() <= expected {
-            return Ok(());
-        }
-        for argument in arguments.iter().take(site.region_parameters.len()) {
-            if self
-                .tree
-                .first_child_with(*argument, Production::Type)?
-                .is_some()
-                || self
-                    .tree
-                    .first_child_with(*argument, Production::Const)?
-                    .is_some()
-            {
-                return Ok(());
-            }
-        }
-        self.issue_node(
-            SemanticRule::Form8,
-            node,
-            SemanticIssueKind::RegionSpelling {
-                mechanical_fix: "drop the region argument",
-            },
-        )
     }
 
     pub(super) fn check_construct(
@@ -2129,27 +1802,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 EffectSet::NONE,
             ));
         }
-        // [BLK-1] the four compiler-owned nominals contribute a constructor
-        // entry that exists to be refused: no `construct` produces a run, a
-        // provider, or a store.
+        // [TYPE-9] each of the three storage shapes contributes one nominal
+        // entry and one constructor entry of the same spelling, and the
+        // constructor entry exists to be refused: a shape is built by a
+        // construction function [OP-13], never by a `construct`. A `Box`
+        // constructor is refused by [TYPE-2] in the same words, its content
+        // being supplied by `box_new` and its friends.
         if let ResolvedTarget::Container(id) = usage.target() {
             let nominal =
                 crate::container_nominal(id).ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let restructuring = match nominal.shape {
-                crate::ContainerShape::Vector | crate::ContainerShape::FixedVector => {
-                    "form the run with a formation operation"
-                }
-                crate::ContainerShape::Heap | crate::ContainerShape::Arena => {
-                    "receive the provider as a parameter"
-                }
-                crate::ContainerShape::Box => "form the cell with heap_box or arena_box",
+            let rule = match nominal.shape {
+                crate::ContainerShape::Array
+                | crate::ContainerShape::Slots
+                | crate::ContainerShape::Ring => SemanticRule::Type9,
+                crate::ContainerShape::Box => SemanticRule::Type2,
             };
             return self.issue_node(
-                SemanticRule::Blk1,
+                rule,
                 node,
                 SemanticIssueKind::ContainerConstruction {
                     nominal: constructor_name,
-                    mechanical_fix: restructuring,
+                    mechanical_fix: "build it with a construction function [OP-13]",
                 },
             );
         }
@@ -2159,7 +1832,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // arguments determined by its field operands, so its
                 // instance is formed after they are checked and not before.
                 if let Some(site) = self.constructor_shape(declaration)? {
-                    return self.check_regional_construct(
+                    return self.check_instanced_construct(
                         function,
                         node,
                         bindings,

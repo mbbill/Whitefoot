@@ -3116,7 +3116,7 @@ fn for_each_implicit_bound(
             emit(id, ZERO, *value, ImplicitBoundKind::Constant);
             emit(ZERO, id, -value, ImplicitBoundKind::Constant);
         }
-        TermKind::Place(_, ty) | TermKind::ProjectedPlace(_, ty) => {
+        TermKind::Place(_, ty) => {
             let (minimum, maximum) = type_range(*ty);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
@@ -3135,7 +3135,7 @@ fn for_each_implicit_bound(
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
         }
-        TermKind::Measure(measure, _) | TermKind::ProjectedMeasure(measure, _) => {
+        TermKind::Measure(measure, _) => {
             let (minimum, maximum) = type_range(IntegerType::U64);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
@@ -4497,11 +4497,7 @@ mod tests {
         let mut terms = TermTable::new();
         let places = [0, 1, 2, 3].map(|binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(super::super::term::PlaceRoot::Binding(BindingId(binding)), false, Vec::new()),
                 IntegerType::U8,
             ))
         });
@@ -4589,11 +4585,7 @@ mod tests {
         let length = |terms: &mut TermTable, binding| {
             let term = terms.intern(TermKind::Measure(
                 CheckedMeasure::Length,
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(super::super::term::PlaceRoot::Binding(BindingId(binding)), false, Vec::new()),
             ));
             terms.set_measure_bound(term, MeasureBound::Equal(parameter));
             term
@@ -4665,11 +4657,7 @@ mod tests {
         let mut terms = TermTable::new();
         let mut place = |binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(super::super::term::PlaceRoot::Binding(BindingId(binding)), false, Vec::new()),
                 IntegerType::U8,
             ))
         };
@@ -4732,11 +4720,7 @@ mod tests {
         let mut terms = TermTable::new();
         let mut place = |binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(super::super::term::PlaceRoot::Binding(BindingId(binding)), false, Vec::new()),
                 IntegerType::U8,
             ))
         };
@@ -4781,11 +4765,7 @@ mod tests {
         let mut terms = TermTable::new();
         let mut place = |binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(super::super::term::PlaceRoot::Binding(BindingId(binding)), false, Vec::new()),
                 IntegerType::U8,
             ))
         };
@@ -4826,11 +4806,7 @@ mod tests {
         let mut terms = TermTable::new();
         let mut place = |binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(super::super::term::PlaceRoot::Binding(BindingId(binding)), false, Vec::new()),
                 IntegerType::U8,
             ))
         };
@@ -4879,19 +4855,11 @@ mod tests {
     fn ordinary_fallback_candidates_survive_join_and_materialization() {
         let mut terms = TermTable::new();
         let left = terms.intern(TermKind::Place(
-            super::super::term::PlaceTerm {
-                root: super::super::term::PlaceRoot::Binding(BindingId(0)),
-                deref: false,
-                fields: Vec::new(),
-            },
+            super::super::term::ResolvedPlace::spelled(super::super::term::PlaceRoot::Binding(BindingId(0)), false, Vec::new()),
             IntegerType::I32,
         ));
         let right = terms.intern(TermKind::Place(
-            super::super::term::PlaceTerm {
-                root: super::super::term::PlaceRoot::Binding(BindingId(1)),
-                deref: false,
-                fields: Vec::new(),
-            },
+            super::super::term::ResolvedPlace::spelled(super::super::term::PlaceRoot::Binding(BindingId(1)), false, Vec::new()),
             IntegerType::I32,
         ));
         let pair = (left, right);
@@ -5068,11 +5036,7 @@ mod tests {
         let mut terms = TermTable::new();
         let mut place = |binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(super::super::term::PlaceRoot::Binding(BindingId(binding)), false, Vec::new()),
                 IntegerType::I32,
             ))
         };

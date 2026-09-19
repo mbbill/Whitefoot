@@ -967,11 +967,11 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
             address,
             projection,
         } => match projection {
-            crate::IrPlaceProjection::Field { .. }
-            | crate::IrPlaceProjection::BoxReferent { .. }
-            | crate::IrPlaceProjection::EnumVariant { .. } => vec![*address],
-            crate::IrPlaceProjection::RunElement { offset, .. }
-            | crate::IrPlaceProjection::ArrayElement { offset, .. } => vec![*address, *offset],
+            crate::IrPlaceStep::Field { .. }
+            | crate::IrPlaceStep::BoxReferent { .. }
+            | crate::IrPlaceStep::EnumVariant { .. } => vec![*address],
+            crate::IrPlaceStep::RunElement { offset, .. }
+            | crate::IrPlaceStep::ArrayElement { offset, .. } => vec![*address, *offset],
         },
         IrOperation::LoopSplit {
             seed,

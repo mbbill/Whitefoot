@@ -325,6 +325,25 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         Ok(SyntaxCoordinate::new(source, start, end))
     }
 
+    /// Whether this node came from one of the fixed [PRE-1] prelude records
+    /// rather than from a writer's source file.
+    ///
+    /// [STOR-8]'s no-heap refusals are about the *program*'s types and calls.
+    /// The prelude declares `Box` and the runtime-capacity shapes in its own
+    /// allocating rows, and those declarations are part of every unit, so a
+    /// refusal that did not distinguish them would reject every no-heap
+    /// program at the prelude.
+    pub(super) fn is_prelude_node(&self, node: NodeId) -> Result<bool, SemanticCompilerFailure> {
+        let coordinate = self.coordinate(node)?;
+        Ok(self
+            .resolved
+            .syntax()
+            .classified_bundle()
+            .source_bundle()
+            .file(coordinate.source())
+            .is_some_and(|file| file.prelude().is_some()))
+    }
+
     /// Copies the exact canonical source spelling owned by one production
     /// node. Semantic metadata uses this only while the source bundle is
     /// live; it is not a portable source identity or a second parser.

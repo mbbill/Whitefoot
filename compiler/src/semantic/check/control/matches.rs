@@ -11,7 +11,8 @@ use super::super::super::model::{
     CheckedMatchBinder, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType,
 };
 use super::super::super::tree::ConditionalAlternative;
-use super::super::borrows::{BorrowInfo, RequiredReferent};
+use super::super::references::{ReferenceInfo, RequiredReferent};
+use super::super::super::places::PlaceStep;
 use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
 use super::{BlockResult, BreakState, ControlCounters, ControlScope, GiveContext};
 
@@ -35,6 +36,9 @@ pub(super) struct MatchResult {
     /// [GIVE-1] the mode and type the delivery set derived, or `None` for a
     /// statement `match` and for a value initializer that delivers nothing.
     pub(super) delivered: Option<(CheckedMode, CheckedType)>,
+    /// [REF-1] the union of the path sets the delivering arms name, where the
+    /// delivery set delivers references.
+    pub(super) delivered_reference: Option<ReferenceInfo>,
     pub(super) can_continue: bool,
     pub(super) all_paths_deliver: bool,
     pub(super) effects: EffectSet,
@@ -56,7 +60,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let header_loan_base = self.statement_loans.borrow().len();
         let scrutinee =
             self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
         // [OWN-13] matches an enum value or a place reached through a borrow.
@@ -78,12 +81,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let descriptor = self.match_descriptor(scrutinee.expression.ty(), expression_node)?;
-        // [OWN-6] an owned enum cannot carry an argument borrow through its
-        // payloads [STOR-5]. Its completed header ends only the temporaries
-        // created there; bound loans and enclosing evaluation loans survive.
-        if scrutinee.mode == CheckedMode::Own {
-            self.statement_loans.borrow_mut().truncate(header_loan_base);
-        }
         let base_bindings = bindings.clone();
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
         let base_key_set = base_keys.iter().copied().collect::<HashSet<_>>();
@@ -182,10 +179,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if !all_paths_deliver {
                 return self.issue_node(SemanticRule::Give1, node, SemanticIssueKind::InvalidGive);
             }
-            self.reject_slice_valued_delivery(
-                node,
-                local_give_context.as_ref().and_then(GiveContext::delivered),
-            )?;
             self.join_states(&base_keys, &give_states, &give_labels, node, bindings)?;
         } else {
             self.join_states(&base_keys, &normal_states, &normal_labels, node, bindings)?;
@@ -195,6 +188,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             enum_type: descriptor.enum_type,
             arms,
             delivered: local_give_context.as_ref().and_then(GiveContext::delivered),
+            delivered_reference: local_give_context
+                .as_ref()
+                .and_then(GiveContext::delivered_reference),
             can_continue: if value_match {
                 !give_states.is_empty()
             } else {
@@ -251,7 +247,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let header_loan_base = self.statement_loans.borrow().len();
         let condition =
             self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
         // [TYPE-7] exclusivity, which [GRAM-6] keeps: a condition reached
@@ -284,7 +279,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         // The exact owned Bool judgment gives the same non-escaping header
         // boundary as an owned enum match [OWN-6, GRAM-6].
-        self.statement_loans.borrow_mut().truncate(header_loan_base);
         let blocks = self.tree.conditional_blocks(node)?;
         self.reject_unspellable_else(node, &blocks.alternative, value_if)?;
 
@@ -399,10 +393,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if !all_paths_deliver {
                 return self.issue_node(SemanticRule::Give1, node, SemanticIssueKind::InvalidGive);
             }
-            self.reject_slice_valued_delivery(
-                node,
-                local_give_context.as_ref().and_then(GiveContext::delivered),
-            )?;
             self.join_states(&base_keys, &give_states, &give_labels, node, bindings)?;
         } else {
             self.join_states(&base_keys, &normal_states, &normal_labels, node, bindings)?;
@@ -412,6 +402,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             enum_type: CheckedEnumType::Bool,
             arms,
             delivered: local_give_context.as_ref().and_then(GiveContext::delivered),
+            delivered_reference: local_give_context
+                .as_ref()
+                .and_then(GiveContext::delivered_reference),
             can_continue: if opens_delivery {
                 !give_states.is_empty()
             } else {
@@ -611,41 +604,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 return self.invalid_match_fields(variant, written);
             }
-            if mode != CheckedMode::Own {
-                let box_payload = matches!(
-                    field.ty,
-                    CheckedType::Nominal(id)
-                        if matches!(self.nominal(id)?.kind, CheckedNominalKind::Box { .. })
-                );
-                if matches!(mode, CheckedMode::Unique(_))
-                    && !box_payload
-                    && !self.is_copy_type(field.ty)?
-                {
-                    return self
-                        .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, written);
-                }
-            }
             let declaration = self.declaration_at(written, DeclarationRole::MatchBinder)?;
             let binding = Self::allocate_binding(counters.next_binding)?;
             counters
                 .binding_names
                 .push(declaration.spelling().to_owned());
-            let borrow = if mode == CheckedMode::Own {
-                None
-            } else {
-                let parent = scrutinee
-                    .borrow
-                    .as_ref()
-                    .cloned()
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let mut place = parent.place;
-                place
-                    .extend_fields(&[u32::try_from(index)
-                        .map_err(|_| SemanticCompilerFailure::CounterOverflow)?]);
-                Some(BorrowInfo { place, ..parent })
-            };
             let field_ordinal =
                 u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            // [OWN-13] matching through a reference leaves the scrutinee live
+            // and binds each payload as a reference naming the scrutinee path
+            // extended by that payload step [REF-1], valid exactly while the
+            // arm's refinement fact holds [REF-2, ENT-3.S15]. Matching an own
+            // place moves it instead, and its binders receive own payloads.
+            let reference = if mode.is_reference() {
+                let parent = scrutinee
+                    .reference
+                    .as_ref()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let step = PlaceStep::Payload {
+                    variant: variant.tag,
+                    field: field_ordinal,
+                };
+                let mut payload = parent.clone();
+                payload.extend(step);
+                Some(payload)
+            } else {
+                None
+            };
             if bindings
                 .insert(
                     declaration.id(),
@@ -657,10 +642,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         live: true,
                         loop_depth,
                         compiler_updated: false,
-                        borrow,
-                        slice: None,
-                        slice_loans: Vec::new(),
-                        suspended: false,
+                        reference,
                     },
                 )
                 .is_some()
@@ -674,19 +656,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 mode,
                 ty: field.ty,
             });
-        }
-        // Creating the taken arm's binders from a `uniq`-mode root suspends
-        // that root binding [OWN-13, OWN-5]; the binders' own loans carry the
-        // exclusivity for the region remainder. Shared-mode roots stay plain
-        // overlapping shared borrows without suspension.
-        if matches!(mode, CheckedMode::Unique(_))
-            && !binders.is_empty()
-            && let Some(root) = scrutinee.holder
-        {
-            bindings
-                .get_mut(&root)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                .suspended = true;
         }
         Ok(binders)
     }
@@ -708,32 +677,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .collect(),
             },
         )
-    }
-
-    /// [OWN-5] a slice-valued delivery is prohibited outright, whatever its
-    /// mode and whatever the arms do to their bindings.
-    ///
-    /// It is judged here, before [`Self::join_states`], because the join is a
-    /// capability limit and a capability stop must never stand in front of a
-    /// source rejection. Judged after it, this rejection was unreachable for
-    /// exactly the sources that matter — arms delivering *different* bindings,
-    /// which is what a slice-valued join looks like when it is written on
-    /// purpose.
-    fn reject_slice_valued_delivery(
-        &self,
-        node: NodeId,
-        delivered: Option<(CheckedMode, CheckedType)>,
-    ) -> Result<(), CheckStop> {
-        if matches!(delivered, Some((_, CheckedType::Slice { .. }))) {
-            return self.issue_node(
-                SemanticRule::Own5,
-                node,
-                SemanticIssueKind::SliceValueMatch {
-                    mechanical_fix: "use a match or if statement whose branches return the slice directly, or call helpers with direct slice results",
-                },
-            );
-        }
-        Ok(())
     }
 
     /// [LIV-1] the join of every predecessor's ownership state.
@@ -791,13 +734,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                if !joined.same_except_region_loans(candidate) {
+                if !joined.agrees_with(candidate) {
                     return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
                 }
                 if joined.live {
                     live_predecessor.clone_from(label);
                 }
-                joined.merge_region_loans_from(candidate);
+                joined.join_from(candidate);
             }
             *bindings
                 .get_mut(key)

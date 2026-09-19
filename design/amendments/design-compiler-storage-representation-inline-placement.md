@@ -1,0 +1,6 @@
+Node: compiler/storage-representation
+
+Decision: [TYPE-9]'s refusal of a runtime-capacity shape outside `Box` content is made at the three written positions that store a value inline — a by-value parameter's `type`, a struct field's `type`, and an enum variant payload field's `type` — and the `Box` referent position and every reference-mode parameter make no such refusal, because the pending checker-shapes decision puts the refusal at the position that writes the type rather than in the type reader, and those are the positions whose value is laid out inside its owner: a reference parameter names a path into storage its caller owns and [OP-4] explicitly reaches a runtime-capacity form through `deref`, instead of refusing at the type reader, which cannot tell a `Box` content position from a field, or refusing every occurrence of the shape, which would delete the one placement the rule admits.
+
+Rejected:
+- Refusing in the type reader with a position parameter threaded through every caller: rejected because the reader is called from the signature walk, the nominal walk, the generic substitution and the call-argument walk, and a parameter naming the calling position would have to be kept correct at each, while the positions themselves already know what they are.

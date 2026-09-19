@@ -588,86 +588,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .unwrap_or(LinearityClass::Copy))
     }
 
-    /// [PROV-1, PROV-6, S37] the store class of one region, or `None` when
-    /// that region names no store.
-    ///
-    /// The answer is read from the region's own declaration and from the
-    /// reserving occurrences of the unit, never from a type over it: the entry
-    /// heap is the general store, a bounded region parameter is the class its
-    /// bound names, and a `region_stmt` region is a bump extent exactly when a
-    /// reserving occurrence [BLK-2] names it. Every other region — a loop
-    /// body's, an unwritten borrow position's, an unbounded region parameter's
-    /// — names no store, which is the answer that satisfies neither bound.
-    pub(in crate::semantic) fn region_store_class(
-        &self,
-        region: crate::DeclarationId,
-    ) -> Result<Option<LinearityClass>, CheckStop> {
-        let record = self
-            .resolved
-            .declarations()
-            .iter()
-            .find(|candidate| candidate.id() == region)
-            .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
-        let role = record.role();
-        let Some(node) = self.tree.node_with_path(record.origin().node()) else {
-            return Ok(None);
-        };
-        if role == crate::DeclarationRole::RegionParameter {
-            return self.written_linearity_bound(node);
-        }
-        if role != crate::DeclarationRole::LocalRegion {
-            return Ok(None);
-        }
-        for call in self
-            .tree
-            .descendants_with(self.tree.root(), Production::Call)?
-        {
-            if self.reserving_occurrence_names(call, region)? {
-                return Ok(Some(LinearityClass::Affine));
-            }
-        }
-        Ok(None)
-    }
-
-    /// [PROV-6, STOR-1, STOR-3] the release class of a run branded by one
-    /// region, decided from that region's own declaration.
-    ///
-    /// It is the store class read fail-closed: an `affine`-bounded region
-    /// parameter and a `region_stmt` region are bump extents, whose
-    /// reclamation is the region's own reset, and every other region — the
-    /// an unbounded region parameter or a `linear`-bounded one — is
-    /// a general store whose run is released by spending a provider. A
-    /// misclassification in the extent direction would drop a free, so the
-    /// two extent cases are the ones that must be positively identified.
-    pub(in crate::semantic) fn vector_release_class(
-        &self,
-        region: crate::DeclarationId,
-    ) -> Result<super::super::model::CheckedReleaseClass, CheckStop> {
-        use super::super::model::CheckedReleaseClass;
-        let Some(record) = self
-            .resolved
-            .declarations()
-            .iter()
-            .find(|candidate| candidate.id() == region)
-        else {
-            return Ok(CheckedReleaseClass::General);
-        };
-        Ok(match record.role() {
-            crate::DeclarationRole::LocalRegion => CheckedReleaseClass::Extent,
-            crate::DeclarationRole::RegionParameter => {
-                let node = self
-                    .tree
-                    .node_with_path(record.origin().node())
-                    .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
-                match self.written_linearity_bound(node)? {
-                    Some(LinearityClass::Affine) => CheckedReleaseClass::Extent,
-                    _ => CheckedReleaseClass::General,
-                }
-            }
-            _ => CheckedReleaseClass::General,
-        })
-    }
-
     /// [PROV-6, S37] an instantiation whose argument's class does not satisfy
     /// the written bound is refused at the call, naming the parameter, the
     /// bound and the argument.
@@ -695,43 +615,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 bound: bound.spelling(),
                 argument,
                 actual: actual.spelling(),
-            },
-        )?;
-        Ok(())
-    }
-
-    /// [PROV-6, S37] the region axis of the same check.
-    ///
-    /// A region argument's class is `affine` when the store it names is a bump
-    /// extent, whose reclamation is its own region reset, and `linear` when it
-    /// names a general store, whose reclamation spends a provider capability
-    /// [PROV-1]. A region that names no store — a loan region, or a region a
-    /// `region_stmt` introduced that no reserving occurrence names — has no
-    /// store class and satisfies neither bound.
-    ///
-    /// This axis is an equality and not the type axis' chain: a region bound
-    /// names *which kind of store* its region identifies, so an extent does
-    /// not stand in for a general store any more than a general store stands
-    /// in for an extent [PROV-6].
-    pub(in crate::semantic) fn check_region_linearity_bound(
-        &self,
-        parameter: &str,
-        bound: LinearityClass,
-        argument: crate::DeclarationId,
-        node: NodeId,
-    ) -> Result<(), CheckStop> {
-        let actual = self.region_store_class(argument)?;
-        if actual == Some(bound) {
-            return Ok(());
-        }
-        self.issue_node::<()>(
-            SemanticRule::Prov6,
-            node,
-            SemanticIssueKind::LinearityBoundMismatch {
-                parameter: parameter.to_owned(),
-                bound: bound.spelling(),
-                argument: self.region_phrase(argument)?,
-                actual: actual.map_or("a region that names no store", LinearityClass::spelling),
             },
         )?;
         Ok(())
@@ -867,7 +750,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ) {
                 writes.push(super::super::model::CheckedStatePath {
                     root: parameter.declaration,
-                    fields: Vec::new(),
+                    steps: Vec::new(),
                 });
             }
         }

@@ -43,20 +43,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         actual: &FunctionSignature,
     ) -> Result<(), CheckStop> {
         // Retain formal source identities for resolution, with the exact
-        // implementation types and alpha-renamed signature regions.
+        // implementation types.
         let mut normalized = formal.clone();
-        let mut regions = formal.substitution.region_arguments().to_vec();
-        regions.extend(
-            formal
-                .region_parameters
-                .iter()
-                .copied()
-                .zip(actual.region_parameters.iter().copied()),
-        );
-        normalized.substitution = normalized.substitution.with_regions(regions);
-        normalized
-            .region_parameters
-            .clone_from(&actual.region_parameters);
         for (left, right) in normalized.parameters.iter_mut().zip(&actual.parameters) {
             left.mode = right.mode;
             left.ty = right.ty;
@@ -68,8 +56,48 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         normalized.result = actual.result;
         normalized.result_mode = actual.result_mode;
         normalized.result_list = actual.result_list;
-        if self.behavior_contracts(&normalized)? != self.behavior_contracts(actual)? {
-            return self.behavior_mismatch(SemanticRule::Fn4, node, "ordered requirements and ensures match structurally after substitution and define expansion");
+        // [FN-4] the actual's `requires` must be WEAKER than the formal's and
+        // its `ensures` STRONGER, each decided by a fixed finite check inside
+        // the affine entailment fragment: the discharging set is the only
+        // premise set, and both sets are finite, so the check terminates.
+        //
+        // The refinement query itself is not yet wired to the declaration-level
+        // proof context, so this check admits only the case in which the goal
+        // is literally one of its own premises: a formal requirement the actual
+        // also states, and a formal ensures relation the actual also states.
+        // That is deliberately fail-closed [FN-4 has no permissive default]:
+        // it refuses refinements the language admits and admits none it
+        // refuses, and it is strictly weaker than the structural set equality
+        // it replaces only in that the two sets may now differ in size.
+        let formal_contracts = self.behavior_contracts(&normalized)?;
+        let actual_contracts = self.behavior_contracts(actual)?;
+        // Weaker precondition: every requirement the actual states must
+        // already be one the formal's callers establish.
+        if actual_contracts
+            .requires
+            .iter()
+            .any(|goal| !formal_contracts.requires.contains(goal))
+        {
+            return self.behavior_mismatch(
+                SemanticRule::Fn4,
+                node,
+                "a requirement no caller of the formal interface establishes",
+            );
+        }
+        // Stronger postcondition: every relation the formal promises must
+        // already be one the actual publishes.
+        if formal_contracts.ensures.iter().any(|promised| {
+            !actual_contracts.ensures.iter().any(|published| {
+                published.variant == promised.variant
+                    && published.field == promised.field
+                    && published.expression == promised.expression
+            })
+        }) {
+            return self.behavior_mismatch(
+                SemanticRule::Fn4,
+                node,
+                "a promised relation the supplied function does not publish",
+            );
         }
         Ok(())
     }

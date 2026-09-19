@@ -115,10 +115,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         live: true,
                         loop_depth: scope.loops.len(),
                         compiler_updated: false,
-                        borrow: None,
-                        slice: None,
-                        slice_loans: Vec::new(),
-                        suspended: false,
+                        reference: None,
                     },
                 )
                 .is_some()
@@ -232,10 +229,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         live: true,
                         loop_depth: scope.loops.len(),
                         compiler_updated: false,
-                        borrow: None,
-                        slice: None,
-                        slice_loans: Vec::new(),
-                        suspended: false,
+                        reference: None,
                     },
                 )
                 .is_some()
@@ -324,13 +318,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     kind: SemanticIssueKind::ReturnMismatch,
                 }));
             }
-            self.check_confined_destination(
-                function,
-                value.expression.ty(),
-                None,
-                *expression_node,
-            )?;
-            self.borrow_for_destination(CheckedMode::Own, &value, *expression_node)?;
+            // [REF-3] a result ordinal is owned, so a reference written at
+            // one is the escape violation itself.
+            self.reject_escaping_reference(&value, *expression_node)?;
             effects = effects.union(value.effects);
             fields.push(value.expression);
         }
@@ -423,10 +413,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     live: true,
                     loop_depth: scope.loops.len(),
                     compiler_updated: false,
-                    borrow: None,
-                    slice: None,
-                    slice_loans: Vec::new(),
-                    suspended: false,
+                    reference: None,
                 },
             )
             .is_some()

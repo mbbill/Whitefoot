@@ -1,6 +1,3 @@
-mod borrowed;
-mod slices;
-
 use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
@@ -12,20 +9,19 @@ use crate::{
 
 use super::super::super::model::{
     CheckedArrayRoot, CheckedArraySetTarget, CheckedBufferRoot, CheckedBufferSetTarget,
-    CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedFlatElement,
-    CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind,
-    CheckedPlaceStep, CheckedPlaceSubscript, CheckedRuntimeTargetObligations, CheckedSetTarget,
-    CheckedSliceRoot, CheckedSliceSetTarget, CheckedTargetDomainObligation, CheckedType,
-    IntegerType, LoanStrength, MeasureCell, NominalId,
+    CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedLayoutCeiling,
+    CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedPlaceStep,
+    CheckedPlaceSubscript, CheckedSetTarget, CheckedTargetDomainObligation, CheckedType,
+    IntegerType, MeasureCell, NominalId,
 };
-use super::super::super::places::{PlaceOffset, PlaceStep};
-use super::super::borrows::{
-    AccessKind, BorrowInfo, BorrowKind, RequiredReferent, ResolvedPlace, SliceInfo,
+use super::super::super::places::{
+    CaptureId, CapturedTerm, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace,
 };
+use super::super::references::{AccessKind, RequiredReferent};
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PlaceAccess, TypedExpression,
 };
-use super::{MutationAccess, MutationForm, MutationTarget, PlaceUseOptions};
+use super::{MutationTarget, PlaceUseOptions};
 
 #[derive(Clone)]
 pub(in crate::semantic::check) struct CheckedArrayPlace {
@@ -38,11 +34,10 @@ pub(in crate::semantic::check) struct CheckedArrayPlace {
 
 impl CheckedArrayPlace {
     fn resolved_place(&self) -> Option<ResolvedPlace> {
-        let declaration = self.declaration?;
-        let CheckedArrayRoot::Binding { fields, .. } = &self.root else {
+        let CheckedArrayRoot::Binding { binding, fields } = &self.root else {
             return None;
         };
-        Some(ResolvedPlace::fields(declaration, fields.clone()))
+        Some(ResolvedPlace::fields(*binding, fields.clone()))
     }
 }
 
@@ -51,24 +46,13 @@ pub(in crate::semantic::check) struct CheckedBufferPlace {
     root: CheckedBufferRoot,
     declaration: DeclarationId,
     element_type: CheckedType,
-    holder: Option<DeclarationId>,
     resolved: ResolvedPlace,
-    borrow_kind: Option<BorrowKind>,
-}
-
-#[derive(Clone)]
-pub(in crate::semantic::check) struct CheckedSlicePlace {
-    root: CheckedSliceRoot,
-    declaration: DeclarationId,
-    descriptor: Option<BorrowInfo>,
-    slice: SliceInfo,
 }
 
 #[derive(Clone)]
 pub(in crate::semantic::check) enum CheckedIndexedPlace {
     Array(CheckedArrayPlace),
     Buffer(CheckedBufferPlace),
-    Slice(CheckedSlicePlace),
     /// One run or bump extent [BLK-1, PROV-1]: the two runs are indexable
     /// bases [OP-4] and all three have a measure-table row [MSR-1].
     Container(CheckedContainerPlace),
@@ -78,7 +62,9 @@ pub(in crate::semantic::check) enum CheckedIndexedPlace {
 pub(in crate::semantic::check) struct CheckedContainerPlace {
     root: CheckedContainerRoot,
     resolved: ResolvedPlace,
-    holder: Option<DeclarationId>,
+    /// The source declaration this place is rooted in, where it has one; a
+    /// place rooted in a named const [CONST-2] has none.
+    declaration: Option<DeclarationId>,
     /// The effects and accesses of every offset occurring inside the place
     /// [EFF-2]: an offset that reads a binding is a read of that binding,
     /// wherever in the place it occurs.
@@ -145,7 +131,7 @@ impl CheckedIndexedPlace {
         };
         Ok(Self::Container(CheckedContainerPlace {
             root: CheckedContainerRoot {
-                root: crate::semantic::CheckedPlaceRoot::Binding(*binding),
+                root: PlaceRoot::Binding(*binding),
                 path: fields
                     .iter()
                     .copied()
@@ -156,7 +142,7 @@ impl CheckedIndexedPlace {
             resolved: array
                 .resolved_place()
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-            holder: None,
+            declaration: array.declaration,
             offsets: CarriedOperands::default(),
         }))
     }
@@ -168,15 +154,14 @@ impl CheckedIndexedPlace {
         match self {
             Self::Array(array) => array.declaration,
             Self::Buffer(buffer) => Some(buffer.declaration),
-            Self::Slice(slice) => Some(slice.declaration),
-            Self::Container(container) => Some(container.resolved.root),
+            Self::Container(container) => container.declaration,
         }
     }
 
     /// The complete path one element read selects below the base's root:
     /// the selections that reach the base, and the element `offset` selects
     /// [LIV-2].
-    fn indexed_element_path(&self, offset: PlaceOffset) -> Vec<PlaceStep> {
+    fn indexed_element_path(&self, offset: CapturedValue) -> Vec<PlaceStep> {
         let mut path = match self {
             Self::Array(array) => match &array.root {
                 CheckedArrayRoot::Binding { fields, .. } => {
@@ -191,15 +176,14 @@ impl CheckedIndexedPlace {
                 .copied()
                 .map(PlaceStep::Field)
                 .collect(),
-            Self::Slice(_) => Vec::new(),
             Self::Container(container) => container
                 .root
                 .path
                 .iter()
-                .filter_map(CheckedPlaceStep::place_step)
+                .map(CheckedPlaceStep::place_step)
                 .collect(),
         };
-        path.push(PlaceStep::Subscript(offset));
+        path.push(PlaceStep::Index(offset));
         path
     }
 
@@ -211,7 +195,6 @@ impl CheckedIndexedPlace {
             Self::Array(array) => array.resolved_place(),
             Self::Buffer(buffer) => Some(buffer.resolved.clone()),
             Self::Container(container) => Some(container.resolved.clone()),
-            Self::Slice(_) => None,
         }
     }
 
@@ -219,7 +202,6 @@ impl CheckedIndexedPlace {
         match self {
             Self::Array(array) => Ok(array.element_type),
             Self::Buffer(buffer) => Ok(buffer.element_type),
-            Self::Slice(slice) => Ok(slice.root.element.ty()),
             Self::Container(container) => checker.element_type(
                 container
                     .root
@@ -249,16 +231,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             loop_depth,
             require_named_offsets,
         )?;
-        let mut resolved = ResolvedPlace::fields(value.declaration, Vec::new());
-        resolved.extend_storage(&path);
+        let mut resolved = ResolvedPlace {
+            root: PlaceRoot::Constant(constant),
+            path: Vec::new(),
+        };
+        resolved
+            .path
+            .extend(path.iter().map(CheckedPlaceStep::place_step));
         Ok(CheckedContainerPlace {
             root: CheckedContainerRoot {
-                root: crate::semantic::CheckedPlaceRoot::Constant(constant),
+                root: PlaceRoot::Constant(constant),
                 path,
                 ty,
             },
             resolved,
-            holder: None,
+            // A place rooted in a named const [CONST-2] is immutable static
+            // storage and is rooted in no writable declaration.
+            declaration: None,
             offsets,
         })
     }
@@ -298,278 +287,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_storage_read(node, place, bindings, options)
     }
 
-    pub(in crate::semantic::check) fn check_array_new(
-        &self,
-        node: NodeId,
-        function: &FunctionSignature,
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        loop_depth: usize,
-    ) -> Result<TypedExpression, CheckStop> {
-        if self
-            .tree
-            .first_child_with(node, Production::FieldinitList)?
-            .is_some()
-        {
-            return self.issue_node(
-                SemanticRule::Gram11,
-                node,
-                SemanticIssueKind::InvalidNamedArguments {
-                    callee: "array_new".to_owned(),
-                    declared_parameters: Vec::new(),
-                },
-            );
-        }
-        self.reject_region_bearing_storage_operation_argument(node, "array_new", function, 2, 0)?;
-        // [DIAG-1] a table operation cites the rule [OP-2] selects, never FN-2,
-        // which belongs to a user-generic call; [TYPE-5] mandates `array_new`'s
-        // element and length, so their absence is its violation.
-        let targs = self.tree.argument_list(node)?.ok_or_else(|| {
-            self.issue_value(
-                SemanticRule::Type5,
-                node,
-                SemanticIssueKind::InvalidOperation,
-            )
-        })?;
-        let targs = self.tree.children_with(targs, Production::Targ)?;
-        let [element_arg, length_arg] = targs.as_slice() else {
-            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
-        };
-        let element_node = self
-            .tree
-            .first_child_with(*element_arg, Production::Type)?
-            .ok_or_else(|| {
-                self.issue_value(
-                    SemanticRule::Op1,
-                    *element_arg,
-                    SemanticIssueKind::InvalidOperation,
-                )
-            })?;
-        let element_type = self.parse_type_with(element_node, &function.substitution)?;
-        let element = match element_type {
-            CheckedType::Unit => CheckedFlatElement::Unit,
-            CheckedType::Integer(ty) => CheckedFlatElement::Integer(ty),
-            CheckedType::Float(ty) => CheckedFlatElement::Float(ty),
-            CheckedType::GenericInt(declaration) => CheckedFlatElement::GenericInt(declaration),
-            CheckedType::GenericFloat(declaration) => CheckedFlatElement::GenericFloat(declaration),
-            _ => {
-                return self.issue_node(
-                    SemanticRule::Op1,
-                    element_node,
-                    SemanticIssueKind::InvalidOperation,
-                );
-            }
-        };
-        let length_node = self
-            .tree
-            .first_child_with(*length_arg, Production::Const)?
-            .ok_or_else(|| {
-                self.issue_value(
-                    SemanticRule::Op1,
-                    *length_arg,
-                    SemanticIssueKind::InvalidOperation,
-                )
-            })?;
-        let length = self.parse_const_expression_with(length_node, &function.substitution)?;
-        let atoms = self.operation_atoms(node, 1)?;
-        let value = self.check_atom(function, atoms[0], bindings, loop_depth)?;
-        if value.expression.ty() != element_type || value.mode != CheckedMode::Own {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atoms[0],
-                SemanticIssueKind::type_mismatch(
-                    format!("own {}", self.checked_type_name(element_type)?),
-                    self.checked_value_name(value.mode, value.expression.ty())?,
-                ),
-            );
-        }
-        Ok(TypedExpression::owned(
-            CheckedExpression::ArrayFill {
-                carrier: self.tree.path(node)?.clone(),
-                ty: CheckedType::Array {
-                    element: self.intern_element(element.ty())?,
-                    length,
-                },
-                value: Box::new(value.expression),
-                target_domain: CheckedTargetDomainObligation::ElementAddress,
-            },
-            value.effects,
-        ))
-    }
-
-    pub(in crate::semantic::check) fn check_buffer_new(
-        &self,
-        node: NodeId,
-        function: &FunctionSignature,
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        loop_depth: usize,
-    ) -> Result<TypedExpression, CheckStop> {
-        self.reject_named_operation_arguments(node, "buffer_new")?;
-        self.reject_written_operation_type_argument(node)?;
-        let atoms = self.operation_atoms(node, 2)?;
-        let length = self.check_atom(function, atoms[0], bindings, loop_depth)?;
-        if length.expression.ty() != CheckedType::Integer(IntegerType::U64)
-            || length.mode != CheckedMode::Own
-        {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atoms[0],
-                SemanticIssueKind::type_mismatch(
-                    "own u64",
-                    self.checked_value_name(length.mode, length.expression.ty())?,
-                ),
-            );
-        }
-        // [OP-9] `buffer_new(n, v)` is the one deleted-class row whose
-        // selected type comes from its *second* operand: the first is the
-        // u64 element count, and the fill value supplies T.
-        let value = self.check_atom(function, atoms[1], bindings, loop_depth)?;
-        if value.mode != CheckedMode::Own {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atoms[1],
-                SemanticIssueKind::type_mismatch(
-                    format!("own {}", self.checked_type_name(value.expression.ty())?),
-                    self.checked_value_name(value.mode, value.expression.ty())?,
-                ),
-            );
-        }
-        let element_type = value.expression.ty();
-        let element = match element_type {
-            CheckedType::Unit => CheckedFlatElement::Unit,
-            CheckedType::Integer(ty) => CheckedFlatElement::Integer(ty),
-            CheckedType::Float(ty) => CheckedFlatElement::Float(ty),
-            CheckedType::GenericInt(declaration) => CheckedFlatElement::GenericInt(declaration),
-            CheckedType::GenericFloat(declaration) => CheckedFlatElement::GenericFloat(declaration),
-            _ => {
-                return self.issue_node(
-                    SemanticRule::Op1,
-                    node,
-                    SemanticIssueKind::InvalidOperation,
-                );
-            }
-        };
-        let layout_ceiling = self.layout_ceiling(element.ty(), node)?;
-        Ok(TypedExpression::owned(
-            CheckedExpression::BufferFill {
-                carrier: self.tree.path(node)?.clone(),
-                element,
-                length: Box::new(length.expression),
-                value: Box::new(value.expression),
-                layout_ceiling,
-                target_domains: CheckedRuntimeTargetObligations::new(),
-            },
-            length.effects.union(value.effects),
-        ))
-    }
-
-    /// The all-`None` affine-element constructor [OP-1, OP-9]: the written
-    /// element payload type is [TYPE-5] retained because no operand can
-    /// supply it, the one operand is the `own u64` length, and the result is
-    /// `own buffer<Option<T>>` over the interned `Option<T>` instance.
-    pub(in crate::semantic::check) fn check_buffer_vacant(
-        &self,
-        node: NodeId,
-        function: &FunctionSignature,
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        loop_depth: usize,
-    ) -> Result<TypedExpression, CheckStop> {
-        self.reject_region_bearing_storage_operation_argument(
-            node,
-            "buffer_vacant",
-            function,
-            1,
-            0,
-        )?;
-        let payload = self.retained_operation_type_argument(node, function)?;
-        if !payload.is_concrete(&self.elements.borrow()) {
-            // A generic payload defers to the concrete instantiation; the
-            // template-side judgment is not implemented yet.
-            return self.unsupported(UnsupportedSemanticFeature::Generics, node);
-        }
-        let element = self.prelude_nominal(super::super::PreludeType::Option(payload))?;
-        let layout_ceiling = self.layout_ceiling(CheckedType::Nominal(element), node)?;
-        let atoms = self.operation_atoms(node, 1)?;
-        let length = self.check_atom(function, atoms[0], bindings, loop_depth)?;
-        if length.expression.ty() != CheckedType::Integer(IntegerType::U64)
-            || length.mode != CheckedMode::Own
-        {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atoms[0],
-                SemanticIssueKind::type_mismatch(
-                    "own u64",
-                    self.checked_value_name(length.mode, length.expression.ty())?,
-                ),
-            );
-        }
-        Ok(TypedExpression::owned(
-            CheckedExpression::BufferVacant {
-                carrier: self.tree.path(node)?.clone(),
-                element,
-                length: Box::new(length.expression),
-                layout_ceiling,
-                target_domains: CheckedRuntimeTargetObligations::new(),
-            },
-            length.effects,
-        ))
-    }
-
-    /// The total OP-9 predicate over the exact retained buffer element type.
-    pub(in crate::semantic::check) fn check_buffer_fits(
-        &self,
-        node: NodeId,
-        function: &FunctionSignature,
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        loop_depth: usize,
-    ) -> Result<TypedExpression, CheckStop> {
-        self.reject_region_bearing_storage_operation_argument(node, "buffer_fits", function, 1, 0)?;
-        let ty = self.retained_operation_type_argument(node, function)?;
-        let element = match self.buffer_element(ty)? {
-            Some(_) => ty,
-            None if matches!(
-                ty,
-                CheckedType::Array { .. }
-                    | CheckedType::Buffer { .. }
-                    | CheckedType::FixedVector { .. }
-                    | CheckedType::Vector { .. }
-                    | CheckedType::Generic(_)
-            ) =>
-            {
-                ty
-            }
-            None => {
-                return self.issue_node(
-                    SemanticRule::Op1,
-                    node,
-                    SemanticIssueKind::InvalidOperation,
-                );
-            }
-        };
-        let atoms = self.operation_atoms(node, 1)?;
-        let length = self.check_atom(function, atoms[0], bindings, loop_depth)?;
-        if length.expression.ty() != CheckedType::Integer(IntegerType::U64)
-            || length.mode != CheckedMode::Own
-        {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atoms[0],
-                SemanticIssueKind::type_mismatch(
-                    "own u64",
-                    self.checked_value_name(length.mode, length.expression.ty())?,
-                ),
-            );
-        }
-        let layout_ceiling = self.layout_ceiling(ty, node)?;
-        Ok(TypedExpression::owned(
-            CheckedExpression::BufferFits {
-                carrier: self.tree.path(node)?.clone(),
-                element,
-                layout_ceiling,
-                length: Box::new(length.expression),
-            },
-            length.effects,
-        ))
-    }
 
     pub(in crate::semantic::check) fn layout_ceiling(
         &self,
@@ -769,16 +486,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // that place.
             CheckedIndexedPlace::Container(container) => {
                 self.check_commit_place_live(&container.resolved, atoms[0], true)?;
-                self.check_loan_access(
-                    bindings,
-                    container.holder,
-                    &container.resolved,
-                    AccessKind::Read,
+                for path in self.effect_paths_for_descriptor(
                     atoms[0],
-                )?;
-                for path in
-                    self.effect_paths_for_descriptor(atoms[0], &container.resolved, bindings)?
-                {
+                    &container.resolved,
+                    bindings,
+                    measure,
+                )? {
                     effects.add_read(path);
                 }
                 // [EFF-2] an offset occurring inside the measured place is
@@ -787,38 +500,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 effects = effects.union(container.offsets.effects.clone());
             }
             CheckedIndexedPlace::Buffer(buffer) => {
-                self.check_loan_access(
-                    bindings,
-                    buffer.holder,
-                    &buffer.resolved,
-                    AccessKind::Read,
-                    atoms[0],
-                )?;
                 for path in self.effect_paths_for_place(atoms[0], &buffer.resolved, bindings)? {
                     effects.add_read(path);
-                }
-            }
-            CheckedIndexedPlace::Slice(slice) => {
-                if let Some(descriptor) = &slice.descriptor {
-                    self.check_loan_access(
-                        bindings,
-                        Some(slice.declaration),
-                        &descriptor.place,
-                        AccessKind::Read,
-                        atoms[0],
-                    )?;
-                    for path in
-                        self.effect_paths_for_place(atoms[0], &descriptor.place, bindings)?
-                    {
-                        effects.add_read(path);
-                    }
-                }
-                // A view measure reads the immutable descriptor, not its
-                // elements. Live child loans do not freeze these cells.
-                for place in slice.slice.effect_places() {
-                    for path in self.effect_paths_for_place(atoms[0], &place, bindings)? {
-                        effects.add_read(path);
-                    }
                 }
             }
         }
@@ -848,10 +531,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedIndexedPlace::Buffer(buffer) => CheckedExpression::BufferMeasure {
                 measure,
                 root: buffer.root,
-            },
-            CheckedIndexedPlace::Slice(slice) => CheckedExpression::SliceMeasure {
-                measure,
-                root: slice.root,
             },
             CheckedIndexedPlace::Container(container) => {
                 // [MSR-1]: a measure the table gives no row is the
@@ -897,7 +576,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             loop_depth,
             false,
         )?;
-        place.resolved.extend_storage(&path);
+        place.resolved.path.extend(path.iter().map(CheckedPlaceStep::place_step));
         place.root.path.extend(path);
         place.root.ty = ty;
         place.offsets.effects = place.offsets.effects.union(offsets.effects);
@@ -951,13 +630,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        self.check_loan_access(
-            bindings,
-            place.holder,
-            &place.resolved,
-            AccessKind::Read,
-            node,
-        )?;
         let mut effects = place.offsets.effects;
         for path in self.effect_paths_for_place(node, &place.resolved, bindings)? {
             effects.add_read(path);
@@ -973,9 +645,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 root: place.root,
             },
             mode: CheckedMode::Own,
-            borrow: None,
-            slice: None,
-            holder: None,
+            reference: None,
             reference_value: false,
             effects,
             accesses,
@@ -1014,7 +684,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         }
         place.push_subscript(
-            Self::place_offset_of(&offset.expression).unwrap_or(PlaceOffset::Opaque),
+            Self::captured_of(offset_node, &offset.expression).unwrap_or(CapturedValue::unknown()),
         );
         Ok(self.take_commit_element_read_out(&place))
     }
@@ -1099,44 +769,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        match &indexed {
-            CheckedIndexedPlace::Array(array) => {
-                if let Some(resolved) = array.resolved_place() {
-                    self.check_loan_access(bindings, None, &resolved, AccessKind::Read, suffix)?;
-                }
-            }
-            CheckedIndexedPlace::Buffer(buffer) => {
-                self.check_loan_access(
-                    bindings,
-                    buffer.holder,
-                    &buffer.resolved,
-                    AccessKind::Read,
-                    suffix,
-                )?;
-            }
-            CheckedIndexedPlace::Slice(slice) => {
-                if let Some(descriptor) = &slice.descriptor {
-                    self.check_loan_access(
-                        bindings,
-                        Some(slice.declaration),
-                        &descriptor.place,
-                        AccessKind::Read,
-                        suffix,
-                    )?;
-                }
-                for (place, _) in slice.slice.source_places() {
-                    self.check_loan_access(
-                        bindings,
-                        Some(slice.declaration),
-                        &place,
-                        AccessKind::Read,
-                        suffix,
-                    )?;
-                }
-            }
-            CheckedIndexedPlace::Container(_) => {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
+        if matches!(indexed, CheckedIndexedPlace::Container(_)) {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         let offset_node = self
             .subscript_offset(suffix)?
@@ -1177,20 +811,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedIndexedPlace::Container(_) => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
-            CheckedIndexedPlace::Slice(slice) => {
-                if let Some(descriptor) = &slice.descriptor {
-                    accesses.push(PlaceAccess {
-                        place: descriptor.place.clone(),
-                        kind: AccessKind::Read,
-                    });
-                }
-                accesses.extend(slice.slice.source_places().into_iter().map(|(place, _)| {
-                    PlaceAccess {
-                        place,
-                        kind: AccessKind::Read,
-                    }
-                }));
-            }
         }
         let expression = match indexed {
             CheckedIndexedPlace::Array(array) => CheckedExpression::ArrayIndex {
@@ -1217,34 +837,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedIndexedPlace::Container(_) => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
-            CheckedIndexedPlace::Slice(slice) => {
-                if let Some(descriptor) = &slice.descriptor {
-                    for path in
-                        self.effect_paths_for_place(use_node, &descriptor.place, bindings)?
-                    {
-                        effects.add_read(path);
-                    }
-                }
-                for place in slice.slice.effect_places() {
-                    for path in self.effect_paths_for_place(use_node, &place, bindings)? {
-                        effects.add_read(path);
-                    }
-                }
-                CheckedExpression::SliceIndex {
-                    carrier: self.tree.path(use_node)?.clone(),
-                    root: slice.root,
-                    offset: Box::new(offset.expression),
-                    obligation,
-                    target_domain: CheckedTargetDomainObligation::ElementAddress,
-                }
-            }
         };
         Ok(TypedExpression {
             expression,
             mode: CheckedMode::Own,
-            borrow: None,
-            slice: None,
-            holder: None,
+            reference: None,
             reference_value: false,
             effects,
             accesses,
@@ -1260,7 +857,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         subscript: usize,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        form: MutationForm,
     ) -> Result<MutationTarget, CheckStop> {
         let suffix = suffixes[subscript];
         let indexed = self
@@ -1288,106 +884,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 function,
                 loop_depth,
             )?;
-            if let Some(holder) = container.holder {
-                let local = bindings
-                    .get(&holder)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                if local
-                    .borrow
-                    .as_ref()
-                    .is_some_and(|borrow| borrow.kind == BorrowKind::Shared)
-                {
-                    return self.issue_node(
-                        SemanticRule::Own5,
-                        node,
-                        SemanticIssueKind::BorrowConflict,
-                    );
-                }
-                self.check_holder_not_suspended(local, node)?;
-            }
-            self.check_mutation_target_class(node, container.root.ty, form)?;
-            self.check_loan_access(
-                bindings,
-                container.holder,
-                &container.resolved,
-                AccessKind::Write,
-                node,
-            )?;
+            self.check_mutation_target_class(node, container.root.ty)?;
             let mut effects = container.offsets.effects;
             for path in self.effect_paths_for_place(node, &container.resolved, bindings)? {
-                effects.add_write(path.clone());
-                if form.is_replace() {
-                    effects.add_read(path);
-                }
+                effects.add_write(path);
             }
-            let unsupported = if container.holder.is_some() {
-                self.borrowed_descriptor_mutation_capability(container.root.ty)?
-            } else {
-                None
+            let Some(declaration) = container.declaration else {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::ImmutableSetTarget,
+                );
             };
             return Ok(MutationTarget {
-                declaration: container.resolved.root,
-                access: MutationAccess::Place {
-                    holder: container.holder,
-                    place: container.resolved.clone(),
-                },
+                declaration,
                 place: container.resolved,
+                through_reference: None,
                 element: true,
                 target: CheckedSetTarget::Storage(container.root),
                 effects,
-                unsupported,
+                unsupported: None,
             });
         }
         if subscript + 1 != suffixes.len() {
             self.resolve_struct_path(&suffixes[subscript + 1..], indexed.element_type(self)?)?;
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
         }
-        match &indexed {
-            CheckedIndexedPlace::Array(array) => {
-                if let Some(resolved) = array.resolved_place() {
-                    self.check_loan_access(bindings, None, &resolved, AccessKind::Write, node)?;
-                }
-            }
-            CheckedIndexedPlace::Buffer(buffer) => {
-                if buffer.borrow_kind == Some(BorrowKind::Shared) {
-                    return self.issue_node(
-                        SemanticRule::Set1,
-                        node,
-                        SemanticIssueKind::InvalidSetTarget {
-                            root_class: "shared borrow".to_owned(),
-                            required_classes: "live own storage or a live usable &uniq referent",
-                        },
-                    );
-                }
-                self.check_loan_access(
-                    bindings,
-                    buffer.holder,
-                    &buffer.resolved,
-                    AccessKind::Write,
-                    node,
-                )?;
-            }
-            // [SET-1] as [PROV-3] amends it: a target path may traverse a
-            // view exactly when that view's loan strength on its resolved
-            // origin set is exclusive. A `MutSlice` root is admitted here and
-            // a `Slice` root is the refusal the rule states.
-            CheckedIndexedPlace::Slice(slice) => {
-                if slice.root.strength != LoanStrength::Exclusive {
-                    return self.issue_node(
-                        SemanticRule::Set1,
-                        node,
-                        SemanticIssueKind::InvalidSetTarget {
-                            root_class: "shared view".to_owned(),
-                            required_classes:
-                                "live own storage, a live usable &uniq referent, or an exclusive \
-view",
-                        },
-                    );
-                }
-            }
-            CheckedIndexedPlace::Container(_) => {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
+        if matches!(indexed, CheckedIndexedPlace::Container(_)) {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         let offset_node = self
             .subscript_offset(suffix)?
@@ -1416,44 +940,9 @@ view",
             CheckedIndexedPlace::Container(_) => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
-            CheckedIndexedPlace::Slice(slice) => slice.root.element.ty(),
         };
-        self.check_mutation_target_class(node, element_type, form)?;
-        let offset_place = Self::place_offset_of(&offset.expression).unwrap_or(PlaceOffset::Opaque);
-        let access = match &indexed {
-            CheckedIndexedPlace::Array(array) => MutationAccess::Place {
-                holder: None,
-                place: ResolvedPlace::from_path(
-                    array.declaration.ok_or_else(|| {
-                        self.issue_value(
-                            SemanticRule::Const2,
-                            node,
-                            SemanticIssueKind::ImmutableSetTarget,
-                        )
-                    })?,
-                    indexed.indexed_element_path(offset_place),
-                ),
-            },
-            CheckedIndexedPlace::Buffer(buffer) => {
-                let mut place = buffer.resolved.clone();
-                place.push_subscript(offset_place);
-                MutationAccess::Place {
-                    holder: buffer.holder,
-                    place,
-                }
-            }
-            CheckedIndexedPlace::Slice(slice) => MutationAccess::View {
-                descriptor: slice.declaration,
-                place: slice.descriptor.as_ref().map_or_else(
-                    || ResolvedPlace::fields(slice.declaration, Vec::new()),
-                    |borrow| borrow.place.clone(),
-                ),
-                origins: slice.slice.effect_places(),
-            },
-            CheckedIndexedPlace::Container(_) => {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-        };
+        self.check_mutation_target_class(node, element_type)?;
+        let offset_place = Self::captured_of(offset_node, &offset.expression).unwrap_or(CapturedValue::unknown());
         let mut effects = offset.effects;
         let (declaration, place, target) = match indexed {
             CheckedIndexedPlace::Array(array) => {
@@ -1491,12 +980,7 @@ view",
             }
             CheckedIndexedPlace::Buffer(buffer) => {
                 for path in self.effect_paths_for_place(node, &buffer.resolved, bindings)? {
-                    effects.add_write(path.clone());
-                    if form.is_replace() {
-                        // [SET-2, EFF-2]: one read and one write of the
-                        // target's ultimate storage origin.
-                        effects.add_read(path);
-                    }
+                    effects.add_write(path);
                 }
                 (
                     buffer.declaration,
@@ -1512,43 +996,16 @@ view",
             CheckedIndexedPlace::Container(_) => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
-            // [SET-1, PROV-3] one element-position store through an exclusive
-            // view. The storage written is the origin's, so the effect row
-            // names every place the view's origin set resolves to [EFF-1]
-            // 1386, while the target place stays the descriptor the statement
-            // writes through.
-            CheckedIndexedPlace::Slice(slice) => {
-                // [S31] the parent may not write its elements while a shared
-                // child reborrow of it lives.
-                self.check_child_reborrow_freeze(bindings, &slice.slice.effect_places(), node)?;
-                for origin in slice.slice.effect_places() {
-                    for path in self.effect_paths_for_place(node, &origin, bindings)? {
-                        effects.add_write(path.clone());
-                        if form.is_replace() {
-                            effects.add_read(path);
-                        }
-                    }
-                }
-                let resolved = ResolvedPlace::fields(slice.declaration, Vec::new());
-                (
-                    slice.declaration,
-                    resolved,
-                    CheckedSetTarget::SliceIndex(Box::new(CheckedSliceSetTarget {
-                        root: slice.root,
-                        offset: offset.expression,
-                        obligation,
-                        target_domain: CheckedTargetDomainObligation::ElementAddress,
-                    })),
-                )
-            }
         };
         // [MSR-2, LIV-2] a subscript target writes one element of `place`,
         // never the run's own storage, so disjointness and the measure kill
         // both read the element flag rather than the place alone.
+        let mut place = place;
+        place.push_subscript(offset_place);
         Ok(MutationTarget {
             declaration,
             place,
-            access,
+            through_reference: None,
             element: true,
             target,
             effects,
@@ -1625,11 +1082,11 @@ view",
                     ),
                 );
             }
-            let place_offset = Self::place_offset_of(&offset.expression);
-            if require_named_offsets && place_offset.is_none() {
+            let captured = Self::captured_of(offset_node, &offset.expression);
+            if require_named_offsets && captured.is_none() {
                 return self.unsupported(UnsupportedSemanticFeature::CompositeValues, offset_node);
             }
-            let place_offset = place_offset.unwrap_or(PlaceOffset::Opaque);
+            let captured = captured.unwrap_or(CapturedValue::unknown());
             carried.effects = carried.effects.union(offset.effects);
             carried.accesses.extend(offset.accesses);
             path.push(CheckedPlaceStep::Subscript(Box::new(
@@ -1639,7 +1096,7 @@ view",
                     offset: offset.expression,
                     obligation: self.tree.path(suffix)?.clone(),
                     target_domain: CheckedTargetDomainObligation::ElementAddress,
-                    place_offset,
+                    captured,
                 },
             )));
             ty = element_type;
@@ -1647,32 +1104,39 @@ view",
         Ok((path, ty, carried))
     }
 
-    /// One admitted offset as the place relations read it [OWN-7, ENT-5].
+    /// The immutable value one index expression produced at this occurrence
+    /// [REF-1, OWN-7].
     ///
-    /// The classification is over the checked operand and never over its
-    /// spelling: a literal or named integer const is its mathematical value,
-    /// a binding read is that binding, and a const generic is fixed at
-    /// instantiation [FN-2].
-    pub(in crate::semantic::check) fn place_offset_of(
+    /// `occurrence` is the source node the offset was evaluated at, which is
+    /// what names the captured value: [REF-1] fixes an index inside a path at
+    /// formation, and two steps carrying one occurrence hold one value
+    /// whatever the program did between the two places' formation. The term
+    /// beside it is how the entailment fragment reads that value, classified
+    /// over the checked operand and never over its spelling: a literal or
+    /// named integer const is its mathematical value, a binding read is that
+    /// binding, and a const generic is fixed at instantiation [FN-2].
+    pub(in crate::semantic::check) fn captured_of(
+        occurrence: NodeId,
         offset: &CheckedExpression,
-    ) -> Option<PlaceOffset> {
+    ) -> Option<CapturedValue> {
+        let capture = CaptureId(u32::try_from(occurrence.index()).unwrap_or(u32::MAX - 1));
         match offset {
             CheckedExpression::Constant(super::super::super::model::CheckedValue::Integer {
                 bits,
                 ..
-            }) => Some(PlaceOffset::Literal(*bits)),
+            }) => Some(CapturedValue::new(capture, CapturedTerm::Literal(*bits))),
             CheckedExpression::NamedConstant {
                 value: super::super::super::model::CheckedValue::Integer { bits, .. },
                 ..
-            } => Some(PlaceOffset::Literal(*bits)),
+            } => Some(CapturedValue::new(capture, CapturedTerm::Literal(*bits))),
             CheckedExpression::Constant(
                 super::super::super::model::CheckedValue::ConstGeneric { declaration, .. },
-            ) => Some(PlaceOffset::Const(*declaration)),
+            ) => Some(CapturedValue::new(capture, CapturedTerm::Const(*declaration))),
             CheckedExpression::Binding {
                 binding,
                 consume_root: false,
                 ..
-            } => Some(PlaceOffset::Binding(*binding)),
+            } => Some(CapturedValue::new(capture, CapturedTerm::Binding(*binding))),
             _ => None,
         }
     }
@@ -1711,6 +1175,112 @@ view",
         self.check_indexed_place(place, bindings, &suffixes, place, function, loop_depth)
     }
 
+    /// One indexable place written through an explicit `deref` [TYPE-7].
+    ///
+    /// The `deref` names a reference's referent, so the place is resolved by
+    /// the ordinary [REF-1] walk and the written suffixes continue it. The
+    /// v0.59 companion of this function also had to answer for a view
+    /// descriptor reached through a holder; views are gone, so one indexable
+    /// container place is the whole answer.
+    fn check_dereferenced_indexed_place(
+        &self,
+        node: NodeId,
+        pbase: NodeId,
+        base_suffixes: &[NodeId],
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        function: &FunctionSignature,
+        loop_depth: usize,
+    ) -> Result<CheckedIndexedPlace, CheckStop> {
+        let inner = self
+            .tree
+            .first_child_with(pbase, Production::Place)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let inner = self.resolve_explicit_place(node, inner, bindings)?;
+        let mut place = self.resolve_explicit_dereference(node, pbase, inner, bindings)?;
+        let (binding, mut path) = self.explicit_container_path(&place.expression, node)?;
+        let (suffix_path, ty, offsets) = self.resolve_storage_path(
+            base_suffixes,
+            place.ty,
+            bindings,
+            function,
+            loop_depth,
+            true,
+        )?;
+        place
+            .resolved
+            .path
+            .extend(suffix_path.iter().map(CheckedPlaceStep::place_step));
+        path.extend(suffix_path);
+        let fields = field_prefix(&path);
+        match ty {
+            CheckedType::Buffer { element } => {
+                let Some(fields) = fields else {
+                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+                };
+                Ok(CheckedIndexedPlace::Buffer(CheckedBufferPlace {
+                    root: CheckedBufferRoot {
+                        binding,
+                        fields,
+                        element,
+                    },
+                    declaration: place.declaration,
+                    element_type: element.ty(),
+                    resolved: place.resolved,
+                }))
+            }
+            // [OP-4] the indexable bases, reached through `deref` exactly as
+            // an inline one is: a run is one measured place wherever it is
+            // reached from [MSR-1].
+            CheckedType::Array { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Extent { .. } => {
+                Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
+                    root: CheckedContainerRoot {
+                        root: PlaceRoot::Binding(binding),
+                        path,
+                        ty,
+                    },
+                    resolved: place.resolved,
+                    declaration: Some(place.declaration),
+                    offsets,
+                }))
+            }
+            _ => self.issue_node(
+                SemanticRule::Op4,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "an indexable base",
+                    self.checked_type_name(ty)?,
+                ),
+            ),
+        }
+    }
+
+    /// The binding and typed storage path one checked place expression
+    /// selects, for a target or read the lowering addresses directly.
+    pub(in crate::semantic::check) fn explicit_container_path(
+        &self,
+        expression: &CheckedExpression,
+        node: NodeId,
+    ) -> Result<(crate::semantic::model::BindingId, Vec<CheckedPlaceStep>), CheckStop> {
+        match expression {
+            CheckedExpression::Binding { binding, .. }
+            | CheckedExpression::DerefAddressed { binding, .. } => Ok((*binding, Vec::new())),
+            CheckedExpression::BoxDeref { nominal, value, .. } => {
+                let (binding, mut path) = self.explicit_container_path(value, node)?;
+                path.push(CheckedPlaceStep::BoxReferent(*nominal));
+                Ok((binding, path))
+            }
+            CheckedExpression::ProjectValue { value, field, .. } => {
+                let (binding, mut path) = self.explicit_container_path(value, node)?;
+                path.push(CheckedPlaceStep::Field(*field));
+                Ok((binding, path))
+            }
+            _ => self.unsupported(UnsupportedSemanticFeature::CompositeValues, node),
+        }
+    }
+
     /// Checks "pbase plus the given suffix run" as one place of indexable
     /// storage. A subscript passes the chain before its own `psuffix` and
     /// anchors its wrong-base judgment there [OP-4]; a `len` or `slice_of`
@@ -1729,7 +1299,7 @@ view",
             .first_child_with(node, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
-            return self.check_dereferenced_buffer_place(
+            return self.check_dereferenced_indexed_place(
                 node,
                 pbase,
                 base_suffixes,
@@ -1745,7 +1315,7 @@ view",
         let ResolvedTarget::Source { declaration, class } = usage.target() else {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         };
-        let (root, binding, declaration, path, ty, slice, offsets) = match class {
+        let (root, binding, declaration, path, ty, offsets) = match class {
             DeclarationClass::Value => {
                 let local = bindings
                     .get(&declaration)
@@ -1796,7 +1366,6 @@ view",
                     Some(declaration),
                     path,
                     ty,
-                    local.slice,
                     offsets,
                 )
             }
@@ -1836,7 +1405,6 @@ view",
                     None,
                     Vec::new(),
                     self.constant(id)?.ty,
-                    None,
                     CarriedOperands::default(),
                 )
             }
@@ -1884,45 +1452,7 @@ view",
                     },
                     declaration,
                     element_type: element.ty(),
-                    holder: None,
-                    resolved: ResolvedPlace::fields(declaration, resolved_fields),
-                    borrow_kind: None,
-                }))
-            }
-            CheckedType::Slice {
-                region,
-                element,
-                strength,
-            } => {
-                let Some(fields) = fields else {
-                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, anchor);
-                };
-                if !fields.is_empty() {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                }
-                let (Some(binding), Some(declaration), Some(slice)) = (binding, declaration, slice)
-                else {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                };
-                if slice.region != region {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                }
-                self.check_loan_access(
-                    bindings,
-                    None,
-                    &ResolvedPlace::fields(declaration, Vec::new()),
-                    AccessKind::Read,
-                    node,
-                )?;
-                Ok(CheckedIndexedPlace::Slice(CheckedSlicePlace {
-                    root: CheckedSliceRoot {
-                        binding,
-                        element,
-                        strength,
-                    },
-                    declaration,
-                    descriptor: None,
-                    slice,
+                    resolved: ResolvedPlace::fields(binding, resolved_fields),
                 }))
             }
             // [TYPE-7] owns the implicit-read case exclusively: a `box` holder
@@ -1954,19 +1484,17 @@ view",
                 let (Some(binding), Some(declaration)) = (binding, declaration) else {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 };
-                let resolved_path = path
-                    .iter()
-                    .filter_map(CheckedPlaceStep::place_step)
-                    .collect();
+                let resolved_path: Vec<PlaceStep> =
+                    path.iter().map(CheckedPlaceStep::place_step).collect();
                 Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
                     root: CheckedContainerRoot {
-                        root: crate::semantic::CheckedPlaceRoot::Binding(binding),
+                        root: PlaceRoot::Binding(binding),
                         path,
                         ty,
                     },
-                    resolved: ResolvedPlace::from_path(declaration, resolved_path),
+                    resolved: ResolvedPlace::from_path(binding, resolved_path),
+                    declaration: Some(declaration),
                     offsets,
-                    holder: None,
                 }))
             }
             _ => self.issue_node(

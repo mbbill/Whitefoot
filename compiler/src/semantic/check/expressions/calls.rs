@@ -1,6 +1,5 @@
 mod conversions;
 mod floating;
-mod kernel;
 mod reinterpret;
 mod user;
 
@@ -16,11 +15,10 @@ use crate::{
 use super::super::super::model::{
     CheckedBooleanOperation, CheckedExpression, CheckedIntegerArgument,
     CheckedIntegerArgumentSource, CheckedIntegerErrorClass, CheckedIntegerOperation,
-    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedType, LoanStrength,
+    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedType,
 };
 use super::super::{
-    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PendingNominal, PreludeType,
-    TypedExpression,
+    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PreludeType, TypedExpression,
 };
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -63,11 +61,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ResolvedTarget::Operation(operation) => {
                 self.check_operation(node, operation, function, bindings, loop_depth)
             }
-            // One [BLK-0] kernel-domain row: a fourth callee class, checked
-            // from its own compiler-owned signature record.
-            ResolvedTarget::Kernel(id) => {
-                self.check_kernel_call(node, id.ordinal(), function, bindings, loop_depth)
-            }
             _ => Err(SemanticCompilerFailure::InvalidResolution.into()),
         }
     }
@@ -94,34 +87,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 loop_depth,
             );
         }
+        // [OP-1] v0.60's table carries no reader, view, or acquiring row: a
+        // measure is a place form [OP-15], a range reference is a
+        // `borrow_expr` [REF-4], and every construction is a [PRE-1] function
+        // [OP-13], so those twelve spellings are ordinary identifiers and
+        // reach no arm here.
         if floating::is_float_operation(spelling) {
             return self.check_float_operation(node, spelling, function, bindings, loop_depth);
-        }
-        if spelling == "arena_new" {
-            return self.check_arena_new(node, function, bindings, loop_depth);
-        }
-        if spelling == "array_new" {
-            return self.check_array_new(node, function, bindings, loop_depth);
-        }
-        if spelling == "buffer_new" {
-            return self.check_buffer_new(node, function, bindings, loop_depth);
-        }
-        if spelling == "buffer_vacant" {
-            return self.check_buffer_vacant(node, function, bindings, loop_depth);
-        }
-        if spelling == "buffer_fits" {
-            return self.check_buffer_fits(node, function, bindings, loop_depth);
-        }
-        if spelling == "box_new" {
-            return self.check_box_new(node, function, bindings, loop_depth);
-        }
-        if let Some(measure) = measure_former(spelling) {
-            return self.check_flat_measure(node, measure, function, bindings, loop_depth);
-        }
-        // [VIEW-2] the two formation rows are one judgment at two loan
-        // strengths, so the spelling selects the strength and nothing else.
-        if let Some(strength) = view_former(spelling) {
-            return self.check_slice_of(node, strength, function, bindings, loop_depth);
         }
         if spelling == "cvt" {
             return self.check_conversion(node, function, bindings, loop_depth);
@@ -396,150 +368,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .map_err(|_| SemanticCompilerFailure::InvalidCanonicalTree.into())
     }
 
-    /// [STOR-2] `arena_new::<'r, T>(v)` returns `own arena<'r, T>`: the content
-    /// moves into storage owned by region `'r` and registered on that
-    /// region's allocation list, which the region's exits release [STOR-3].
-    fn check_arena_new(
-        &self,
-        node: NodeId,
-        function: &FunctionSignature,
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        loop_depth: usize,
-    ) -> Result<TypedExpression, CheckStop> {
-        // GRAM-11 named-argument rejection plus [STOR-5] on the written
-        // content argument.
-        self.reject_region_bearing_storage_operation_argument(node, "arena_new", function, 2, 1)?;
-        let Some(targs) = self.tree.argument_list(node)? else {
-            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
-        };
-        let arguments = self.tree.children_with(targs, Production::Targ)?;
-        let [region_argument, content_argument] = arguments.as_slice() else {
-            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
-        };
-        if self
-            .tree
-            .direct_token_with(*region_argument, crate::TerminalPredicate::RegionIdentifier)?
-            .is_none()
-        {
-            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
-        }
-        let region_use = self.use_at(*region_argument, LexicalUseRole::TypeArgumentRegion)?;
-        let ResolvedTarget::Source {
-            declaration: region,
-            class: DeclarationClass::Region,
-        } = region_use.target()
-        else {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
-        };
-        let Some(content_node) = self
-            .tree
-            .first_child_with(*content_argument, Production::Type)?
-        else {
-            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
-        };
-        let content = self.parse_type_with(content_node, &function.substitution)?;
-        // The implemented content fragment carries no release action of its
-        // own [STOR-3]: flat scalars and arrays of them. Wider content stays
-        // an explicit capability stop rather than a silent storage leak.
-        if self.flat_element(content)?.is_none() && !matches!(content, CheckedType::Array { .. }) {
-            return self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, content_node);
-        }
-        let atoms = self.operation_atoms(node, 1)?;
-        let value = self.check_atom(function, atoms[0], bindings, loop_depth)?;
-        if value.mode != CheckedMode::Own || value.expression.ty() != content {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atoms[0],
-                SemanticIssueKind::type_mismatch(
-                    format!("own {}", self.checked_type_name(content)?),
-                    self.checked_value_name(value.mode, value.expression.ty())?,
-                ),
-            );
-        }
-        // The region's allocation list exists exactly for the local region
-        // blocks this checker opened [STOR-3]. A caller-supplied region has
-        // no local list; allocation into it is the explicit unimplemented
-        // remainder of the arena runtime.
-        let Some(list) = bindings.get(&region).map(|local| local.binding) else {
-            return self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, node);
-        };
-        let Some(nominal) = self.arena_nominals.get(&(region, content)).copied() else {
-            self.pending_nominals
-                .borrow_mut()
-                .push(PendingNominal::Arena(region, content));
-            return Err(CheckStop::DeferredNominal);
-        };
-        Ok(TypedExpression::owned(
-            CheckedExpression::ArenaNew {
-                carrier: self.tree.path(node)?.clone(),
-                nominal,
-                list,
-                value: Box::new(value.expression),
-            },
-            value.effects,
-        ))
-    }
-
-    fn check_box_new(
-        &self,
-        node: NodeId,
-        function: &FunctionSignature,
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        loop_depth: usize,
-    ) -> Result<TypedExpression, CheckStop> {
-        self.reject_named_operation_arguments(node, "box_new")?;
-        self.reject_written_operation_type_argument(node)?;
-        let atoms = self.operation_atoms(node, 1)?;
-        // [STOR-2] `box_new(v)` returns `own box<T>` for `v`'s exact type T.
-        let value = self.check_atom(function, atoms[0], bindings, loop_depth)?;
-        if value.mode != CheckedMode::Own {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atoms[0],
-                SemanticIssueKind::type_mismatch(
-                    format!("own {}", self.checked_type_name(value.expression.ty())?),
-                    self.checked_value_name(value.mode, value.expression.ty())?,
-                ),
-            );
-        }
-        let referent = value.expression.ty();
-        // [STOR-5] box content may not bear a region. The written referent
-        // type used to carry this judgment; the derived one carries it here,
-        // as STOR-5's region-bearing relation over the derived type: a
-        // directly slice-typed operand and an arena descriptor operand both
-        // place a region in box content, and the relation is structural, so
-        // any future region-bearing constructor is covered without listing
-        // it here.
-        if self.checked_type_is_region_bearing(referent)? {
-            return self.issue_node(
-                SemanticRule::Stor5,
-                atoms[0],
-                SemanticIssueKind::RegionBearingStorage {
-                    mechanical_fix:
-                        "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
-                },
-            );
-        }
-        // [STOR-2] the box nominal is derived from the operand, so the pass
-        // that interns from a written `box<T>` cannot have reached it: a
-        // purely local box names that type nowhere. Record the referent and
-        // let the driver intern it and check this function again.
-        let Some(nominal) = self.box_nominals.get(&referent).copied() else {
-            self.pending_nominals
-                .borrow_mut()
-                .push(PendingNominal::Box(referent));
-            return Err(CheckStop::DeferredNominal);
-        };
-        Ok(TypedExpression::owned(
-            CheckedExpression::BoxNew {
-                carrier: self.tree.path(node)?.clone(),
-                nominal,
-                value: Box::new(value.expression),
-            },
-            value.effects,
-        ))
-    }
-
     fn check_boolean_operation(
         &self,
         node: NodeId,
@@ -721,44 +549,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    pub(in crate::semantic::check) fn reject_region_bearing_storage_operation_argument(
-        &self,
-        node: NodeId,
-        spelling: &str,
-        function: &FunctionSignature,
-        expected_argument_count: usize,
-        type_argument_index: usize,
-    ) -> Result<(), CheckStop> {
-        if self
-            .tree
-            .first_child_with(node, Production::FieldinitList)?
-            .is_some()
-        {
-            return self.issue_node(
-                SemanticRule::Gram11,
-                node,
-                SemanticIssueKind::InvalidNamedArguments {
-                    callee: spelling.to_owned(),
-                    declared_parameters: Vec::new(),
-                },
-            );
-        }
-        let Some(arguments) = self.tree.argument_list(node)? else {
-            return Ok(());
-        };
-        let arguments = self.tree.children_with(arguments, Production::Targ)?;
-        if arguments.len() != expected_argument_count {
-            return Ok(());
-        }
-        let argument = *arguments
-            .get(type_argument_index)
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if let Some(ty) = self.tree.first_child_with(argument, Production::Type)? {
-            self.reject_region_bearing_storage_type(ty, &function.substitution)?;
-        }
-        Ok(())
-    }
-
     fn invalid_named_arguments(signature: &FunctionSignature) -> SemanticIssueKind {
         SemanticIssueKind::InvalidNamedArguments {
             callee: signature.name.clone(),
@@ -811,15 +601,3 @@ pub(in crate::semantic::check) const fn measure_former(spelling: &str) -> Option
     }
 }
 
-/// The [VIEW-1] loan strength one operation spelling forms, if it forms one.
-///
-/// The two view formation rows are one operation family over one borrowed
-/// place [VIEW-2]; this is the selection of the row within it, and the only
-/// place a spelling reaches a strength.
-pub(in crate::semantic::check) const fn view_former(spelling: &str) -> Option<LoanStrength> {
-    match spelling.as_bytes() {
-        b"slice_of" => Some(LoanStrength::Shared),
-        b"mut_slice_of" => Some(LoanStrength::Exclusive),
-        _ => None,
-    }
-}

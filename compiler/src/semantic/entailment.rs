@@ -29,7 +29,6 @@ mod state;
 mod term;
 
 pub(crate) use state::DerivationId;
-pub(crate) use state::DerivationRootKind;
 #[cfg(test)]
 pub(crate) use state::GoalId;
 pub(crate) use state::SourceAffineFactRef;
@@ -45,8 +44,7 @@ pub(crate) use state::{
 };
 #[cfg(test)]
 pub(crate) use term::{
-    CountedCaptureSide, MeasureBound, PlaceProjection, PlaceRoot, TermId, TermKind, ZERO,
-    type_range,
+    CountedCaptureSide, MeasureBound, PlaceRoot, TermId, TermKind, ZERO, type_range,
 };
 
 use std::collections::{BTreeSet, HashMap};
@@ -70,22 +68,22 @@ use crate::{DeclarationId, NodePath};
 /// declared parameter and is the same at every call site of it.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum CallTransport {
-    /// [CALL-1] A shared borrow. [OWN-5] admits no write through a shared
-    /// holder, so [EFF-2] can project no `writes` occurrence onto the
-    /// actual's place and the call is a kill event for no fact supported by
-    /// it.
-    SharedBorrow,
+    /// [CALL-1] A reference parameter whose declared row carries no `writes`
+    /// of any path rooted at it. [EFF-2]'s both-ways check then lets no
+    /// `writes` occurrence project onto the actual's place, so the call is a
+    /// kill event for no fact supported by it.
+    ReadOnlyReference,
     /// [CALL-2] A value delivered at an `own` parameter. An affine or linear
     /// actual is a consuming use, which kills every fact whose support
     /// contains that actual's root [ENT-5](c); a copy actual is a duplicate
     /// and kills nothing. Either way the result carries exactly the callee's
     /// declared relations.
     Value,
-    /// [CALL-3] A parameter of loan-bearing type, own or behind a borrow: a
-    /// projected write reaches the viewed range's element storage, which for
-    /// an element type with descriptor storage of its own includes that
-    /// element's measures, and reaches no measure of the origin place itself
-    /// nor of the view.
+    /// [CALL-3] A range reference parameter `&[T]` [REF-4]: a projected
+    /// write reaches the range's storage, which for an element type with
+    /// descriptor storage of its own includes that element's measures, and
+    /// reaches no measure of the origin place itself nor of the range
+    /// reference.
     ViewedRange,
     /// [CALL-5] No transport is selected, so a projected write kills
     /// conservatively: an ordinary descriptor-storage-overlapping [ENT-5]
@@ -96,39 +94,20 @@ pub(crate) enum CallTransport {
 
 impl CallTransport {
     /// The transport a declared parameter selects, read from its declared
-    /// mode and type alone [CALL-5].
+    /// reference kind and from whether its own declared row writes any path
+    /// rooted at it [CALL-5].
     ///
-    /// The loan-bearing type is tested before the mode because [CALL-3]
-    /// classifies a view "own or behind a borrow": an owned view descriptor
-    /// is still a window onto storage the caller keeps.
-    pub(crate) const fn of_declaration(mode: CheckedMode, ty: CheckedType) -> Self {
-        match ty {
-            CheckedType::Slice { .. } => Self::ViewedRange,
-            _ => match mode {
-                CheckedMode::Shared(_) => Self::SharedBorrow,
-                CheckedMode::Own => Self::Value,
-                CheckedMode::Unique(_) => Self::Conservative,
-            },
-        }
-    }
-
-    /// The transport one declared kernel-domain parameter selects [BLK-0].
-    ///
-    /// A row has no body either, so the same reading applies: the declared
-    /// shape and mode are the whole selector [CALL-5]. A row that takes a
-    /// view takes it as a viewed range [CALL-3]; a row's `&uniq` state
-    /// operand is a run or a provider whose descriptor the row changes, so
-    /// it selects no transport and kills conservatively.
-    pub(crate) const fn of_kernel_parameter(parameter: &super::kernel::KernelParameter) -> Self {
-        match parameter.shape {
-            super::kernel::KernelShape::Slice | super::kernel::KernelShape::MutSlice => {
-                Self::ViewedRange
-            }
-            _ => match parameter.mode {
-                super::kernel::KernelMode::Shared => Self::SharedBorrow,
-                super::kernel::KernelMode::Own => Self::Value,
-                super::kernel::KernelMode::Unique => Self::Conservative,
-            },
+    /// [CALL-1] is keyed on the row rather than on a mode, because v0.60 has
+    /// one reference kind and no shared/unique spelling: a reference the row
+    /// only reads keeps every fact, and a reference the row writes kills
+    /// conservatively. `&[T]` is [CALL-3]'s range reference whatever its row
+    /// carries, its own rule classifying how far such a write reaches.
+    pub(crate) const fn of_declaration(mode: CheckedMode, row_writes_here: bool) -> Self {
+        match mode {
+            CheckedMode::Range => Self::ViewedRange,
+            CheckedMode::Own => Self::Value,
+            CheckedMode::Reference if !row_writes_here => Self::ReadOnlyReference,
+            CheckedMode::Reference => Self::Conservative,
         }
     }
 
@@ -150,7 +129,11 @@ impl CallTransport {
 pub(crate) struct EntailmentCallee {
     pub(crate) parameter_declarations: Vec<crate::DeclarationId>,
     pub(crate) parameter_modes: Vec<CheckedMode>,
-    pub(crate) parameter_writes: Vec<Vec<Vec<u32>>>,
+    /// Per parameter, the `epsuffix*` of every declared `writes` entry
+    /// rooted at it [EFF-1]. The steps are complete: [EFF-5] substitutes the
+    /// path and [OWN-7] compares the result, so a truncated step list would
+    /// under-approximate the write.
+    pub(crate) parameter_writes: Vec<Vec<Vec<super::model::CheckedEffectStep>>>,
     pub(crate) parameter_transports: Vec<CallTransport>,
 }
 
@@ -177,13 +160,16 @@ impl EntailmentCallee {
                     writes
                         .iter()
                         .filter(|path| path.root == *declaration)
-                        .map(|path| path.fields.clone())
+                        .map(|path| path.steps.clone())
                         .collect()
                 })
                 .collect(),
             parameter_transports: parameters
                 .iter()
-                .map(|(_, mode, ty)| CallTransport::of_declaration(*mode, *ty))
+                .map(|(declaration, mode, _)| {
+                    let writes_here = writes.iter().any(|path| path.root == *declaration);
+                    CallTransport::of_declaration(*mode, writes_here)
+                })
                 .collect(),
             parameter_modes: parameters.into_iter().map(|(_, mode, _)| mode).collect(),
         }
@@ -259,7 +245,7 @@ impl EntailmentContext<'_> {
 /// The [ENT-6] obligation family one outcome belongs to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ObligationFamily {
-    /// A subscript bounds obligation `i < len_of(P)` [OP-4].
+    /// A subscript bounds obligation `i < P.len` [OP-4, WIN-1].
     Bounds,
     /// [PROV-6] a release using the pruned run graph must prove that the
     /// released run has no live elements at that exact edge.
@@ -269,17 +255,13 @@ pub(crate) enum ObligationFamily {
     IntegerDomain,
     /// A runtime-sized buffer allocation's canonical fit predicate [OP-9].
     AllocationFit,
-    /// One independent half-open view formation goal [VIEW-2].
-    ViewRange,
-    /// Two incompatible live range loans must be disjoint [OWN-5, OWN-7].
+    /// One range-reference formation goal `lo <= hi` or `hi <= x.len`,
+    /// submitted under [MSR-4] exactly as every other consumer's obligation
+    /// is [REF-4].
+    RangeFormation,
+    /// Two range steps of a compared pair of paths must be disjoint, by the
+    /// four non-strict orderings [OWN-7] submits under [ENT-6] [EFF-5].
     RangeSeparation,
-    /// Two [LIV-2] commit targets require a proved unequal pair of
-    /// corresponding subscript values [OWN-7].
-    IndexSeparation,
-    /// One declared requirement of a [BLK-0] kernel-domain row, submitted at
-    /// a call to that row and judged under [MSR-4] exactly as every other
-    /// consumer's obligation is.
-    KernelRequirement,
 }
 
 /// One exact single-binder affine image retained at a discharged OP-4 site.
@@ -304,7 +286,7 @@ pub(crate) struct ProvedAffineIndexMap {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProvedRangePartition {
     pub(crate) loop_id: CheckedLoopId,
-    pub(crate) range: super::places::RangeId,
+    pub(crate) range: super::places::CaptureId,
     pub(crate) stride: affine::AffineForm,
     pub(crate) base: affine::AffineForm,
     pub(crate) stride_nonnegative: DerivationId,
@@ -341,8 +323,8 @@ pub(crate) struct ObligationOutcome {
     /// offset atom's canonical source bytes, ` < len_of(`, the base place's
     /// canonical source bytes, `)`.
     pub(crate) residual: Option<String>,
-    /// The two rendered targets of an IndexSeparation obligation. Every
-    /// other family carries none.
+    /// The two rendered substituted paths of a [EFF-5] range-separation
+    /// obligation. Every other family carries none.
     pub(crate) overlap_targets: Option<(String, String)>,
     /// Exact ENT-4 derivation for an accepted obligation. Failed judgments
     /// deliberately carry no positive root.
@@ -360,15 +342,6 @@ pub(crate) struct ObligationOutcome {
     /// discharged Bounds occurrence. Every other family, and every unproved
     /// bounds occurrence, retains an empty list.
     pub(crate) affine_index_maps: Vec<ProvedAffineIndexMap>,
-    /// For a `KernelRequirement` occurrence, the row's zero-based
-    /// `container_declaration_ordinal` [BLK-0]. A record has no source node,
-    /// so the row's own identity is what the diagnostic names. Every other
-    /// family retains `None`.
-    pub(crate) kernel_row: Option<u8>,
-    /// Separation proved when one of these ranges was formed. Unlike a
-    /// later guarded access proof, this holds whenever both formations'
-    /// values coexist and may be reused by ordinary overlap consumers.
-    pub(crate) formed_range_separation: Option<(super::places::RangeId, super::places::RangeId)>,
     /// Adjacent-range images retained only at a discharged VIEW-2 formation.
     pub(crate) range_partitions: Vec<ProvedRangePartition>,
 }

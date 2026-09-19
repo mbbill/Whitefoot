@@ -1,80 +1,48 @@
-//! [LIV-2] the one `set` commit.
+//! [SET-1] the one `set` commit.
 //!
-//! One rule writes places, and one function checks every written form of it:
-//! `set p = e;`, `set (p, q) = f(...);` and `set (p, q) = e1, e2;` differ only
-//! in how many targets they name and where each ordinal's value comes from.
-//! The order is the rule's order — every target resolved and judged first,
-//! then the whole right-hand side, then the three admission conditions and one
-//! commit — so no shape of this statement can reach a commit the others do not.
+//! `set_stmt := "set" place "=" expr ";"` [GRAM-4] writes exactly one place,
+//! so this rule has one written form. The order is the rule's order — the
+//! target is resolved and evaluated without reading or consuming the value
+//! stored there, then the right-hand side, then the premises [SET-1] rechecks
+//! under [LIV-1], then the one commit.
+//!
+//! v0.59's multi-target commit is retired with [LIV-2]: the target list, the
+//! ordinal types a call's result list supplied, the pairwise overlap
+//! condition over two targets, the index-separation conflicts it deferred to
+//! entailment, and the declaring `set` target that minted its own binding all
+//! had more than one written place as their subject, and [GRAM-4] now writes
+//! one. What survives is the read-out, which is a fact about *this* target
+//! and its own right-hand side.
 
 use std::collections::HashMap;
 
 use crate::syntax::NodeId;
 use crate::{DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKind, SemanticRule};
 
-use super::super::super::model::{
-    CheckedCommitConflict, CheckedCommitValues, CheckedExpression, CheckedPlaceStep,
-    CheckedSetTarget, CheckedStatement, CheckedWritablePlace,
-};
-use super::super::super::places::{PlaceOffset, PlaceProjection, PlaceStep, paths_diverge};
-use super::super::borrows::{ResolvedPlace, places_overlap};
-use super::super::expressions::{MutationAccess, MutationTarget};
+use super::super::super::model::{CheckedSetTarget, CheckedStatement};
+use super::super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
+use super::super::expressions::{MutationTarget, WIN3_LINEAR_TARGET};
+use super::super::references::InvalidationEvent;
 use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
 use super::{ControlScope, StatementResult};
 
-/// [VIEW-4]'s exact restructuring: the rule's own mechanical fix.
-///
-/// A view is never repaired in place, because the repair the rule names is a
-/// second value: the loan the commit would displace belongs to the view that
-/// holds it, so a new view is formed and bound rather than written over the
-/// old one's place.
-const VIEW4_NEW_BINDING: &str =
-    "bind a new view under a new `let` rather than committing at this one";
-
-/// One target of the commit being checked, with the state the three admission
-/// conditions read at the commit.
-struct FormedTarget {
-    /// Source ordinal in this commit, retained across declaring-target insertion.
-    ordinal: usize,
-    /// The written `place`, where every rejection about this target is located.
-    node: NodeId,
-    mutation: MutationTarget,
-    /// [LIV-2] the target is a complete binding that was already dead when the
-    /// statement resolved it, so this commit reinitializes it and revives it.
-    revives: bool,
-    /// [LIV-2] the right-hand side read this target's previous value out.
-    read_out: bool,
-}
-
-enum CommitTargetStep<'expression> {
-    Field,
-    Subscript(&'expression CheckedExpression),
-}
-
-/// [LIV-2] one target place of the commit whose right-hand side is being
-/// checked, and whether that right-hand side has read it out.
-///
-/// `place.storage_path` retains the complete selected storage, including
-/// owning Box dereferences and the final subscript. Matching and spent-place
-/// liveness use this path; the conservative `place.path` still serves the
-/// existing overlap and loan relations.
+/// [SET-1] the target of the commit whose right-hand side is being checked,
+/// and whether that right-hand side has read it out.
 pub(in crate::semantic::check) struct CommitReadOut {
-    /// Source ordinal of this target in the enclosing commit.
-    ordinal: usize,
     place: ResolvedPlace,
-    /// Whether read-out owes the affine-element judgment, including literal
-    /// offset equality. A measured place can itself carry a subscript
-    /// [MSR-1], so `grid[0][1]` and `grid[1][1]` differ despite agreeing in
-    /// their last offset; the flag never substitutes for that complete path.
+    /// Whether the read-out owes the element-position judgment [MSR-2]. A
+    /// measured place can itself carry a subscript [MSR-1], so `grid[0][1]`
+    /// and `grid[1][1]` differ despite agreeing in their last offset; the
+    /// flag never substitutes for that complete path.
     element: bool,
     read_out: bool,
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// [LIV-2] a read-out spends that target for the rest of the RHS,
-    /// including later scalar reads or borrows of its descendants. A measure
-    /// reads only its descriptor, so reading an enclosing run's descriptor
-    /// does not read a spent element [MSR-2].
+    /// [SET-1] a read-out spends the target for the rest of the right-hand
+    /// side, including later scalar reads or references of its descendants. A
+    /// measure reads only its descriptor, so reading an enclosing run's
+    /// descriptor does not read a spent element [MSR-2].
     pub(in crate::semantic::check) fn check_commit_place_live(
         &self,
         place: &ResolvedPlace,
@@ -84,24 +52,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let targets = self.commit_read_outs.borrow();
         let spent = targets.iter().any(|target| {
             target.read_out
-                && target.place.root == place.root
-                && !target
-                    .place
-                    .storage_path
-                    .iter()
-                    .zip(&place.storage_path)
-                    .any(|(left, right)| match (left, right) {
-                        (PlaceProjection::Field(left), PlaceProjection::Field(right)) => {
-                            left != right
-                        }
-                        (PlaceProjection::Subscript(left), PlaceProjection::Subscript(right)) => {
-                            left.provably_distinct(*right)
-                        }
-                        (PlaceProjection::Deref, PlaceProjection::Deref) => false,
-                        _ => true,
-                    })
-                && !self.commit_target_access_is_deferred_separate(target.ordinal, place, &targets)
-                && (!descriptor || target.place.storage_path.len() <= place.storage_path.len())
+                && target.place.contains(place)
+                && (!descriptor || target.place.path.len() <= place.path.len())
         });
         if spent {
             return self.issue_node(
@@ -115,30 +67,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// Whether `place` is a read-out of a target of the commit now being
-    /// checked, recording that read-out when it is [LIV-2].
+    /// Whether `place` is the read-out of the target of the commit now being
+    /// checked, recording that read-out when it is [SET-1].
     ///
-    /// The rule's own sentence, and nothing else: the moved place is a target
-    /// place, or a place reached through one. A `move` of a strict prefix of a
-    /// target is an ordinary consuming use and is not answered here.
-    ///
-    /// One target is read out at most once, because after its read-out the
-    /// target is dead for the remainder of the evaluation [LIV-2]. A second
-    /// `move` of the same place is therefore an ordinary use of what that
-    /// read-out consumed and is judged as one.
+    /// The moved place is the target place, or a place reached through it. A
+    /// `move` of a strict prefix of the target is an ordinary consuming use
+    /// and is not answered here. The target is read out at most once, because
+    /// after its read-out it is dead for the remainder of the evaluation.
     pub(in crate::semantic::check) fn take_commit_read_out(&self, place: &ResolvedPlace) -> bool {
         self.take_commit_storage_read_out(place, false)
     }
 
     /// Whether `place[offset]` is the read-out of an element target of the
-    /// commit now being checked, recording that read-out when it is [LIV-2].
+    /// commit now being checked [SET-1, MSR-2].
     ///
     /// An element target is matched only at an offset provably the same as
-    /// its own: reading one element out and reinitialising another would
+    /// its own: reading one element out and reinitializing another would
     /// leave the second holding a value that never left and the first holding
-    /// none, so an offset this rule cannot decide keeps [STOR-1]'s rejection.
-    /// One target is read out at most once, exactly as a whole-place target
-    /// is.
+    /// none, so an offset this rule cannot decide keeps the refusal.
     pub(in crate::semantic::check) fn take_commit_element_read_out(
         &self,
         place: &ResolvedPlace,
@@ -149,11 +95,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn take_commit_storage_read_out(&self, place: &ResolvedPlace, element: bool) -> bool {
         let mut targets = self.commit_read_outs.borrow_mut();
         for target in targets.iter_mut() {
-            if target.read_out
-                || target.element != element
-                || target.place.root != place.root
-                || !self.storage_path_prefix(&target.place.storage_path, &place.storage_path)
-            {
+            if target.read_out || target.element != element || !target.place.contains(place) {
                 continue;
             }
             target.read_out = true;
@@ -162,409 +104,136 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         false
     }
 
-    /// A pending index-separation obligation belongs to two complete targets,
-    /// never to each candidate subscript pair it may prove. During RHS
-    /// checking this admits access only through the other complete target;
-    /// entailment must later discharge that target pair before the statement
-    /// is accepted. A cross-combination of their offsets is no target and
-    /// receives no provisional separation.
-    fn commit_target_access_is_deferred_separate(
-        &self,
-        spent: usize,
-        access: &ResolvedPlace,
-        targets: &[CommitReadOut],
-    ) -> bool {
-        let pairs = self.commit_separation_targets.borrow();
-        targets.iter().any(|target| {
-            pairs.contains(&(spent, target.ordinal))
-                && target.place.root == access.root
-                && self.storage_path_prefix(&target.place.storage_path, &access.storage_path)
-        })
-    }
-
-    fn storage_path_prefix(&self, target: &[PlaceProjection], read: &[PlaceProjection]) -> bool {
-        target.len() <= read.len()
-            && target
-                .iter()
-                .zip(read)
-                .all(|(target, read)| match (target, read) {
-                    (PlaceProjection::Field(left), PlaceProjection::Field(right)) => {
-                        PlaceStep::Field(*left).provably_same(PlaceStep::Field(*right))
-                    }
-                    (PlaceProjection::Deref, PlaceProjection::Deref) => true,
-                    (PlaceProjection::Subscript(left), PlaceProjection::Subscript(right)) => {
-                        left.provably_same(*right)
-                    }
-                    _ => false,
-                })
-    }
-
-    /// Extraction below a Box target needs an explicit account of the old
+    /// Extraction below a `Box` target needs an explicit account of the old
     /// target's unselected owning content. Retain that capability boundary.
     pub(in crate::semantic::check) fn is_box_descendant_read_out(
         &self,
         place: &ResolvedPlace,
     ) -> bool {
-        place.storage_path.contains(&PlaceProjection::Deref)
+        place.path.contains(&PlaceStep::Deref)
             && self.commit_read_outs.borrow().iter().any(|target| {
                 !target.read_out
-                    && target.place.root == place.root
-                    && target.place.storage_path.len() < place.storage_path.len()
-                    && self.storage_path_prefix(&target.place.storage_path, &place.storage_path)
+                    && target.place.path.len() < place.path.len()
+                    && target.place.contains(place)
             })
     }
 
-    /// [GRAM-4, SET-1, LIV-2] one `set` statement, in every written form.
+    /// [GRAM-4, SET-1] one `set` statement.
     pub(super) fn check_commit(
         &self,
         function: &FunctionSignature,
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        counters: &mut super::ControlCounters<'_>,
+        _counters: &mut super::ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
-        let target_nodes = self.tree.children_with(node, Production::Place)?;
-        let value_nodes = self.tree.children_with(node, Production::Expr)?;
-        if target_nodes.is_empty() || value_nodes.is_empty() {
+        let [target_node] = self.tree.children_with(node, Production::Place)?[..] else {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        let [value_node] = self.tree.children_with(node, Production::Expr)?[..] else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+
+        // [REF-1] a `set` whose target is a reference variable and whose
+        // right-hand side is a `borrow_expr` rebinds that name and writes no
+        // storage, so [SET-1]'s value-target judgment does not apply to it.
+        if let Some(result) =
+            self.check_reference_rebinding(function, node, target_node, value_node, bindings, scope)?
+        {
+            return Ok(result);
         }
 
-        // [LIV-2] every target place is resolved and judged in written order,
-        // before the right-hand side is evaluated, and the resolution is not
-        // re-taken at the commit. A target that declares its own binding has
-        // nothing to resolve and nothing to read out: it is formed below,
-        // once its ordinal has fixed its type.
-        let mut targets: Vec<FormedTarget> = Vec::with_capacity(target_nodes.len());
-        let mut index_conflicts = Vec::new();
-        let mut index_conflict_targets = Vec::new();
-        let mut declaring: Vec<(usize, NodeId, DeclarationId)> = Vec::new();
-        let mut effects = EffectSet::NONE;
-        for (ordinal, target_node) in target_nodes.iter().enumerate() {
-            if let Some(declaration) = self.declaring_commit_target(*target_node)? {
-                declaring.push((ordinal, *target_node, declaration));
-                continue;
-            }
-            let revives = self.commit_revives_binding(*target_node, bindings)?;
-            let mut mutation =
-                self.check_set_target(function, *target_node, bindings, scope.loops.len())?;
-            if revives {
-                // An entry-dead complete binding has no current owner whose
-                // state this initialization could write [LIV-2, EFF-2]. Its
-                // bare target evaluates no offsets or other expressions;
-                // ordinary target admission, the RHS and the commit kill
-                // still apply. Same-statement read-out keeps its own write.
-                mutation.effects = EffectSet::NONE;
-            }
-            for earlier in &targets {
-                if self.commit_targets_overlap(&earlier.mutation, &mutation) {
-                    let alternatives =
-                        Self::commit_index_alternatives(&earlier.mutation.target, &mutation.target);
-                    if !alternatives.is_empty() {
-                        index_conflict_targets.push((earlier.ordinal, ordinal));
-                        index_conflicts.push(CheckedCommitConflict {
-                            site: self.tree.path(*target_node)?.clone(),
-                            first: self.place_spelling(earlier.node)?,
-                            second: self.place_spelling(*target_node)?,
-                            alternatives,
-                        });
-                        continue;
-                    }
-                    return self.issue_node(
-                        SemanticRule::Liv2,
-                        *target_node,
-                        SemanticIssueKind::OverlappingCommitTargets {
-                            first: self.place_spelling(earlier.node)?,
-                            second: self.place_spelling(*target_node)?,
-                            mechanical_fix: "one commit writes pairwise non-overlapping places; \
-                                             write the overlapping target in a statement of its own",
-                        },
-                    );
-                }
-            }
-            effects = effects.union(mutation.effects.clone());
-            targets.push(FormedTarget {
-                ordinal,
-                node: *target_node,
-                mutation,
-                revives,
-                read_out: false,
-            });
+        // [SET-1] the target is resolved and evaluated first, without reading
+        // or consuming the value stored there.
+        let revives = self.commit_revives_binding(target_node, bindings)?;
+        let mut mutation =
+            self.check_set_target(function, target_node, bindings, scope.loops.len())?;
+        if revives {
+            // An entry-dead complete binding has no current owner whose state
+            // this initialization could write [SET-1, EFF-2]. Its bare target
+            // evaluates no offsets and no other expressions.
+            mutation.effects = EffectSet::NONE;
         }
+        let mut effects = mutation.effects.clone();
 
-        // [LIV-2] each target's previous value is read out at the start of the
+        // [SET-1] the target's previous value is read out at the start of the
         // right-hand side's evaluation, and the target is dead through it.
-        let (values, read_outs) = self.check_commit_values(
-            function,
-            &targets,
-            &index_conflict_targets,
-            &value_nodes,
-            bindings,
-            scope.loops.len(),
-        )?;
-        for (target, read_out) in targets.iter_mut().zip(read_outs) {
-            target.read_out = read_out;
-        }
-        for value in &values {
-            effects = effects.union(value.effects.clone());
-        }
+        let (value, read_out) =
+            self.check_commit_value(function, &mutation, value_node, bindings, scope.loops.len())?;
+        effects = effects.union(value.effects.clone());
 
-        // Condition 3, then the commit itself.
-        let ordinals = self.commit_ordinal_types(node, target_nodes.len(), &values)?;
-        // [LIV-2, TYPE-5] a declaring target's binding is minted here, dead,
-        // with its own ordinal's type; the ordinary target formation then
-        // judges it exactly as it judges a `let`-bound binding this commit
-        // revives, and the commit below makes it live.
-        for (ordinal, target_node, declaration) in declaring {
-            let ty = *ordinals
-                .get(ordinal)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let binding = Self::allocate_binding(counters.next_binding)?;
-            counters
-                .binding_names
-                .push(self.declaration_spelling(declaration)?);
-            if bindings
-                .insert(
-                    declaration,
-                    LocalBinding {
-                        binding,
-                        declaration,
-                        mode: crate::semantic::model::CheckedMode::Own,
-                        ty,
-                        live: false,
-                        loop_depth: scope.loops.len(),
-                        compiler_updated: false,
-                        borrow: None,
-                        slice: None,
-                        slice_loans: Vec::new(),
-                        suspended: false,
-                    },
-                )
-                .is_some()
-            {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-            // The target names no existing place, so there is nothing to
-            // resolve, nothing to read out and nothing to overlap: what the
-            // statement writes is this binding's own fresh storage, and
-            // [EFF-2] attributes the write to that storage exactly as a `let`
-            // attributes its initialization.
-            let place = ResolvedPlace::fields(declaration, Vec::new());
-            let mut target_effects = EffectSet::NONE;
-            for path in self.effect_paths_for_place(target_node, &place, bindings)? {
-                target_effects.add_write(path);
-            }
-            let mutation = MutationTarget {
-                declaration,
-                access: MutationAccess::Place {
-                    holder: None,
-                    place: place.clone(),
-                },
-                place,
-                element: false,
-                target: CheckedSetTarget::Place(CheckedWritablePlace {
-                    binding,
-                    fields: Vec::new(),
-                    ty,
-                    declares: true,
-                }),
-                effects: target_effects,
-                unsupported: None,
-            };
-            effects = effects.union(mutation.effects.clone());
-            targets.insert(
-                ordinal.min(targets.len()),
-                FormedTarget {
-                    ordinal,
-                    node: target_node,
-                    mutation,
-                    revives: true,
-                    read_out: false,
-                },
+        if mutation.target.ty() != value.expression.ty() {
+            return self.issue_node(
+                SemanticRule::Type5,
+                value_node,
+                SemanticIssueKind::type_mismatch(
+                    self.checked_type_name(mutation.target.ty())?,
+                    self.checked_type_name(value.expression.ty())?,
+                ),
             );
         }
-        for (target, ty) in targets.iter().zip(&ordinals) {
-            if target.mutation.target.ty() != *ty {
-                return self.issue_node(
-                    SemanticRule::Type5,
-                    value_nodes[0],
-                    SemanticIssueKind::type_mismatch(
-                        self.checked_type_name(target.mutation.target.ty())?,
-                        self.checked_type_name(*ty)?,
-                    ),
-                );
-            }
-        }
-        for target in &targets {
-            self.judge_commit_admission(target, bindings)?;
-        }
+        self.judge_commit_admission(&mutation, target_node, revives, read_out, bindings)?;
         // Every source rejection of this statement is judged above; a target
         // this compiler cannot lower stops here and nowhere earlier [DIAG-1].
-        for target in &targets {
-            if let Some(feature) = target.mutation.unsupported {
-                return self.unsupported(feature, target.node);
-            }
+        if let Some(feature) = mutation.unsupported {
+            return self.unsupported(feature, target_node);
         }
-        self.commit_bindings(&targets, &values, bindings)?;
+        // [REF-2] the write invalidates every live reference whose path this
+        // target is a proper prefix of. Writing the storage at the target's
+        // own path, or below it, is a content write and invalidates nothing.
+        Self::invalidate_references(bindings, &mutation.place, &InvalidationEvent::PrefixWritten);
+        if self.commit_reinitializes_binding(&mutation) {
+            bindings
+                .get_mut(&mutation.declaration)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .live = true;
+        }
 
-        let node_path = self.tree.path(node)?.clone();
-        let statement = if targets.len() == 1 && value_nodes.len() == 1 {
-            let target = targets
-                .into_iter()
-                .next()
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let value = values
-                .into_iter()
-                .next()
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(Self::continuing_statement(
             CheckedStatement::Set {
-                node_path,
-                target: target.mutation.target,
+                node_path: self.tree.path(node)?.clone(),
+                target: mutation.target,
                 value: value.expression,
-            }
-        } else {
-            let commit_values = if value_nodes.len() == 1 {
-                let value = values
-                    .into_iter()
-                    .next()
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let nominal = self
-                    .result_list_of(&value)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                CheckedCommitValues::ResultList {
-                    nominal,
-                    value: Box::new(value.expression),
-                }
-            } else {
-                CheckedCommitValues::Written(
-                    values.into_iter().map(|value| value.expression).collect(),
-                )
-            };
-            CheckedStatement::SetList {
-                node_path,
-                targets: targets
-                    .into_iter()
-                    .map(|target| target.mutation.target)
-                    .collect(),
-                values: commit_values,
-                index_conflicts,
-            }
-        };
-        Ok(Self::continuing_statement(statement, effects))
+            },
+            effects,
+        ))
     }
 
-    /// Every ordinal value, checked under the read-out context this commit
-    /// installs [LIV-2].
+    /// The right-hand side, checked under the read-out context this commit
+    /// installs [SET-1].
     ///
-    /// The context is removed before any rejection leaves this function, so no
-    /// later statement of any function can read a stale target.
-    fn check_commit_values(
+    /// The context is removed before any rejection leaves this function, so
+    /// no later statement of any function can read a stale target.
+    fn check_commit_value(
         &self,
         function: &FunctionSignature,
-        targets: &[FormedTarget],
-        index_conflict_targets: &[(usize, usize)],
-        value_nodes: &[NodeId],
+        mutation: &MutationTarget,
+        value_node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-    ) -> Result<(Vec<super::super::TypedExpression>, Vec<bool>), CheckStop> {
-        self.commit_separation_targets.borrow_mut().clear();
-        for (left, right) in index_conflict_targets {
-            self.commit_separation_targets
-                .borrow_mut()
-                .insert((*left, *right));
-            self.commit_separation_targets
-                .borrow_mut()
-                .insert((*right, *left));
-        }
-        self.commit_read_outs.replace(
-            targets
-                .iter()
-                .map(|target| {
-                    let mut place = target.mutation.place.clone();
-                    let offset = match &target.mutation.target {
-                        CheckedSetTarget::ArrayIndex(target) => Some(&target.offset),
-                        CheckedSetTarget::BufferIndex(target) => Some(&target.offset),
-                        CheckedSetTarget::SliceIndex(target) => Some(&target.offset),
-                        CheckedSetTarget::Place(_) | CheckedSetTarget::Storage(_) => None,
-                    };
-                    if let Some(offset) = offset {
-                        place.storage_path.push(PlaceProjection::Subscript(
-                            Self::place_offset_of(offset).unwrap_or(PlaceOffset::Opaque),
-                        ));
-                    }
-                    CommitReadOut {
-                        ordinal: target.ordinal,
-                        place,
-                        element: target.mutation.element,
-                        read_out: false,
-                    }
-                })
-                .collect(),
-        );
-        let mut values = Vec::with_capacity(value_nodes.len());
-        let mut outcome = Ok(());
-        for value_node in value_nodes {
-            match self.check_expression(function, *value_node, bindings, loop_depth) {
-                Ok(value) => values.push(value),
-                Err(stop) => {
-                    outcome = Err(stop);
-                    break;
-                }
-            }
-        }
-        let read_outs = self
+    ) -> Result<(super::super::TypedExpression, bool), CheckStop> {
+        self.commit_read_outs.replace(vec![CommitReadOut {
+            place: mutation.place.clone(),
+            element: mutation.element,
+            read_out: false,
+        }]);
+        let outcome = self.check_expression(function, value_node, bindings, loop_depth);
+        let read_out = self
             .commit_read_outs
             .take()
             .into_iter()
-            .map(|target| target.read_out)
-            .collect();
-        self.commit_separation_targets.borrow_mut().clear();
-        outcome?;
-        Ok((values, read_outs))
+            .any(|target| target.read_out);
+        Ok((outcome?, read_out))
     }
 
-    /// [LIV-2] condition 3's ordinal types: one call's declared result
-    /// ordinals, or the written value list's own types.
-    fn commit_ordinal_types(
-        &self,
-        node: NodeId,
-        targets: usize,
-        values: &[super::super::TypedExpression],
-    ) -> Result<Vec<super::super::super::model::CheckedType>, CheckStop> {
-        if values.len() == targets {
-            return Ok(values.iter().map(|value| value.expression.ty()).collect());
-        }
-        // More than one target and exactly one written expression: the
-        // right-hand side is the one call whose result ordinals the targets
-        // name [CALL-4].
-        let [value] = values else {
-            return self.issue_node(
-                SemanticRule::Type5,
-                node,
-                SemanticIssueKind::type_mismatch(
-                    format!("{targets} committed values"),
-                    format!("{} written values", values.len()),
-                ),
-            );
-        };
-        let call = self
-            .tree
-            .first_child_with(node, Production::Expr)?
-            .and_then(|expr| self.tree.first_child_with(expr, Production::Call).ok()?)
-            .unwrap_or(node);
-        let Some(nominal) = self.result_list_of(value) else {
-            return self.result_list_shape_rejection(call, targets, value);
-        };
-        let ordinals = self.result_list_ordinals(nominal)?;
-        if ordinals.len() != targets {
-            return self.result_list_shape_rejection(call, targets, value);
-        }
-        Ok(ordinals)
-    }
-
-    /// [LIV-2] condition 1, judged at the commit, target by target.
+    /// [SET-1] the premises rechecked after the right-hand side, under
+    /// [LIV-1].
     fn judge_commit_admission(
         &self,
-        target: &FormedTarget,
+        mutation: &MutationTarget,
+        target_node: NodeId,
+        revives: bool,
+        read_out: bool,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<(), CheckStop> {
         // The root's liveness is re-established after the right-hand side
@@ -572,103 +241,64 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // one dead root a commit revives — because it was already dead when
         // the statement resolved it, or because this statement's own read-out
         // took its value. Every projected, dereferenced or subscripted target
-        // still demands a live root, so a right-hand side that consumed the
-        // root by some other path is [OWN-1]'s rejection however this target
-        // was read out.
-        let reinitializes =
-            self.commit_reinitializes_binding(target) && (target.revives || target.read_out);
+        // still demands a live root.
+        let reinitializes = self.commit_reinitializes_binding(mutation) && (revives || read_out);
         if !reinitializes
             && !bindings
-                .get(&target.mutation.declaration)
+                .get(&mutation.declaration)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?
                 .live
         {
             return self.issue_node(
                 SemanticRule::Own1,
-                target.node,
+                target_node,
                 SemanticIssueKind::UseAfterMove {
                     mechanical_fix: "introduce a new `let` binding before reuse",
                 },
             );
         }
-        self.revalidate_mutation_access(&target.mutation.access, bindings, target.node)?;
-        let ty = target.mutation.target.ty();
-        // [VIEW-4] a commit may not displace a live loan. A commit that
-        // displaces a value of loan-bearing type is admitted exactly when the
-        // displaced value is consumed by that same statement's right-hand
-        // side: otherwise the displaced view survives — as the `replace`
-        // binding, or simply as the loan state of a copy target [VIEW-1] that
-        // [LIV-2] condition 1 makes dead at the commit with nothing consumed —
-        // and its loan would outlive the descriptor whose place it was held
-        // from. This is asked before the copy admission below, because the
-        // copy view is exactly the target the third disjunct would admit.
-        if Self::checked_type_is_loan_bearing(ty) && !target.read_out {
-            return self.issue_node(
-                SemanticRule::View4,
-                target.node,
-                SemanticIssueKind::LoanBearingCommitTarget {
-                    target_type: self.checked_type_name(ty)?,
-                    mechanical_fix: VIEW4_NEW_BINDING,
-                },
-            );
-        }
-        if self.is_copy_type(ty)? || target.read_out || target.revives {
+        self.revalidate_mutation_access(mutation.through_reference, bindings, target_node)?;
+        let ty = mutation.target.ty();
+        if self.is_copy_type(ty)? || read_out || revives {
             return Ok(());
         }
-        // A live affine target whose previous value the right-hand side does
-        // not read out is [STOR-1]'s error, kept for exactly that case.
+        // [WIN-3] assigning over any owned place releases the old value when
+        // it is affine. A linear one has no release, which the target-class
+        // judgment already refused at formation, so what remains here is the
+        // affine case, which this commit admits: the old value takes its
+        // compiler-derived release [STOR-3].
+        if !matches!(
+            self.linearity_class(ty)?,
+            super::super::linearity::LinearityClass::Linear
+        ) {
+            return Ok(());
+        }
         self.issue_node(
-            SemanticRule::Stor1,
-            target.node,
-            SemanticIssueKind::AffineSetTarget {
+            SemanticRule::Win3,
+            target_node,
+            SemanticIssueKind::LinearAssignmentTarget {
                 target_type: self.checked_type_name(ty)?,
-                mechanical_fix: super::super::expressions::STOR1_REPLACE,
+                mechanical_fix: WIN3_LINEAR_TARGET,
             },
         )
     }
 
-    /// Whether this target is the complete binding its own declaration names,
-    /// which is the one target shape a commit reinitializes [LIV-2].
+    /// [REF-1] a `set` whose target is a reference variable and whose
+    /// right-hand side is a `borrow_expr` rebinds that name.
     ///
-    /// A `deref` target writes a referent the holder does not own, and a
-    /// projected or subscripted target writes one component of a value, so
-    /// neither is that shape.
-    fn commit_reinitializes_binding(&self, target: &FormedTarget) -> bool {
-        matches!(&target.mutation.target, CheckedSetTarget::Place(place) if place.fields.is_empty())
-            && target.mutation.place.root == target.mutation.declaration
-            && target.mutation.place.path.is_empty()
-    }
-
-    /// The commit itself: every target is live afterwards, and a complete
-    /// binding takes the ordinal's own ownership identity [LIV-2, EFF-2].
-    fn commit_bindings(
+    /// The rebinding writes no storage, so it exhibits no effect and takes no
+    /// commit. [REF-1]'s static-shape rule is what bounds it: a loop-carried
+    /// rebinding may change only the index values inside the path and may
+    /// never extend the path through itself.
+    fn check_reference_rebinding(
         &self,
-        targets: &[FormedTarget],
-        _values: &[super::super::TypedExpression],
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<(), CheckStop> {
-        for target in targets {
-            if self.commit_reinitializes_binding(target) {
-                bindings
-                    .get_mut(&target.mutation.declaration)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                    .live = true;
-            }
-        }
-        Ok(())
-    }
-
-    /// [LIV-2] the declaration one `set` target mints, when its identifier
-    /// resolved to no binding.
-    ///
-    /// The resolver decides this, not the checker: a target identifier with no
-    /// visible binding is promoted there to an ordinary `let` declaration
-    /// owned by its own `pbase`, so the question here is exactly whether this
-    /// target's base owns one.
-    fn declaring_commit_target(
-        &self,
+        function: &FunctionSignature,
+        node: NodeId,
         target_node: NodeId,
-    ) -> Result<Option<DeclarationId>, CheckStop> {
+        value_node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        scope: ControlScope<'_>,
+    ) -> Result<Option<StatementResult>, CheckStop> {
         if !self
             .tree
             .children_with(target_node, Production::Psuffix)?
@@ -676,20 +306,75 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             return Ok(None);
         }
-        let Some(pbase) = self.tree.first_child_with(target_node, Production::Pbase)? else {
+        let Some(declaration) = self.complete_binding_target(target_node)? else {
             return Ok(None);
         };
-        if !self.tree.children(pbase)?.is_empty() {
+        let Some(local) = bindings.get(&declaration) else {
+            return Ok(None);
+        };
+        if local.reference.is_none() {
             return Ok(None);
         }
-        Ok(self
-            .declaration_at(pbase, crate::DeclarationRole::Let)
-            .ok()
-            .map(|declaration| declaration.id()))
+        let value = self.check_expression(function, value_node, bindings, scope.loops.len())?;
+        let Some(reference) = value.reference.clone() else {
+            // [TYPE-7] a `set` whose target is a reference variable and whose
+            // right-hand side is a value is not a rebinding.
+            return self.issue_node(
+                SemanticRule::Type7,
+                target_node,
+                SemanticIssueKind::MissingDereference {
+                    mechanical_fix: "write `deref(.)`",
+                },
+            );
+        };
+        let local = bindings
+            .get_mut(&declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        if let Some(previous) = &local.reference
+            && !reference.shape_agrees_with(previous)
+        {
+            return self.issue_node(
+                SemanticRule::Ref1,
+                node,
+                SemanticIssueKind::ReferenceShapeChanged {
+                    mechanical_fix: super::super::references::REF1_STATIC_SHAPE,
+                },
+            );
+        }
+        local.reference = Some(reference);
+        local.live = true;
+        Ok(Some(Self::continuing_statement(
+            CheckedStatement::Set {
+                node_path: self.tree.path(node)?.clone(),
+                target: CheckedSetTarget::Place(
+                    super::super::super::model::CheckedWritablePlace {
+                        binding: local.binding,
+                        fields: Vec::new(),
+                        ty: local.ty,
+                        declares: false,
+                    },
+                ),
+                value: value.expression,
+            },
+            value.effects,
+        )))
     }
 
-    /// Whether this written target is a complete binding that is already dead,
-    /// which is the one shape [LIV-2] reinitializes from dead.
+    /// Whether this target is the complete binding its own declaration names,
+    /// which is the one target shape a commit reinitializes [SET-1].
+    ///
+    /// A `deref` target writes a place the reference does not own, and a
+    /// projected or subscripted target writes one component of a value, so
+    /// neither is that shape.
+    fn commit_reinitializes_binding(&self, mutation: &MutationTarget) -> bool {
+        matches!(&mutation.target, CheckedSetTarget::Place(place) if place.fields.is_empty())
+            && mutation.through_reference.is_none()
+            && mutation.place.path.is_empty()
+            && matches!(mutation.place.root, PlaceRoot::Binding(_))
+    }
+
+    /// Whether this written target is a complete binding that is already
+    /// dead, which is the one shape [SET-1] reinitializes from dead.
     fn commit_revives_binding(
         &self,
         target_node: NodeId,
@@ -706,155 +391,5 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         };
         Ok(bindings.get(&declaration).is_some_and(|local| !local.live))
-    }
-
-    /// [LIV-2] condition 2 over two formed targets.
-    ///
-    /// Two places overlap when one is reached through the other [OWN-7]; two
-    /// element writes of one place additionally overlap unless some step of
-    /// their common prefix provably selects two different storages, which for
-    /// two subscripts is literals with unequal values. That is the same
-    /// judgment [OWN-7] states for two subscripted places, and it reads the
-    /// complete path because a measured place may carry a subscript of its
-    /// own: `grid[k]` and `grid[i][j]` are decided at `k` against `i`.
-    fn commit_targets_overlap(&self, first: &MutationTarget, second: &MutationTarget) -> bool {
-        if !places_overlap(&first.place, &second.place) {
-            return false;
-        }
-        if first.element && second.element && first.place == second.place {
-            return !paths_diverge(
-                &Self::commit_target_path(&first.target),
-                &Self::commit_target_path(&second.target),
-            );
-        }
-        true
-    }
-
-    fn commit_target_proof_path(target: &CheckedSetTarget) -> Vec<CommitTargetStep<'_>> {
-        let mut path = Vec::new();
-        match target {
-            CheckedSetTarget::Place(target) => {
-                path.extend(target.fields.iter().map(|_| CommitTargetStep::Field));
-            }
-            CheckedSetTarget::ArrayIndex(target) => {
-                path.extend(target.fields.iter().map(|_| CommitTargetStep::Field));
-                path.push(CommitTargetStep::Subscript(&target.offset));
-            }
-            CheckedSetTarget::BufferIndex(target) => {
-                path.extend(target.root.fields.iter().map(|_| CommitTargetStep::Field));
-                path.push(CommitTargetStep::Subscript(&target.offset));
-            }
-            CheckedSetTarget::Storage(target) => {
-                for step in &target.path {
-                    match step {
-                        CheckedPlaceStep::Field(_) => {
-                            path.push(CommitTargetStep::Field);
-                        }
-                        CheckedPlaceStep::BoxReferent(_) => {}
-                        CheckedPlaceStep::Subscript(index) => {
-                            path.push(CommitTargetStep::Subscript(&index.offset));
-                        }
-                    }
-                }
-            }
-            CheckedSetTarget::SliceIndex(target) => {
-                path.push(CommitTargetStep::Subscript(&target.offset));
-            }
-        }
-        path
-    }
-
-    /// Every corresponding index pair that could establish separation of two
-    /// otherwise-overlapping target paths. The entailment walk tries this
-    /// finite list at target-formation state; one proved disequality suffices.
-    fn commit_index_alternatives(
-        first: &CheckedSetTarget,
-        second: &CheckedSetTarget,
-    ) -> Vec<(CheckedExpression, CheckedExpression)> {
-        Self::commit_target_proof_path(first)
-            .into_iter()
-            .zip(Self::commit_target_proof_path(second))
-            .filter_map(|(first, second)| match (first, second) {
-                (CommitTargetStep::Subscript(first), CommitTargetStep::Subscript(second)) => {
-                    Some((first.clone(), second.clone()))
-                }
-                (CommitTargetStep::Field, CommitTargetStep::Field) => None,
-                _ => None,
-            })
-            .collect()
-    }
-
-    /// The complete path one element target writes below its root: the
-    /// selections that reach the base, and the element the offset selects.
-    ///
-    /// A measured place may itself carry a subscript [MSR-1], so this is a
-    /// path and never one offset: `grid[k]` and `grid[i][j]` are decided by
-    /// their *first* offsets and not by their last.
-    pub(in crate::semantic::check) fn commit_target_path(
-        target: &CheckedSetTarget,
-    ) -> Vec<PlaceStep> {
-        let (mut path, offset) = match target {
-            CheckedSetTarget::Place(target) => (
-                target
-                    .fields
-                    .iter()
-                    .copied()
-                    .map(PlaceStep::Field)
-                    .collect::<Vec<_>>(),
-                None,
-            ),
-            CheckedSetTarget::ArrayIndex(target) => (
-                target
-                    .fields
-                    .iter()
-                    .copied()
-                    .map(PlaceStep::Field)
-                    .collect(),
-                Some(Self::place_offset_of(&target.offset).unwrap_or(PlaceOffset::Opaque)),
-            ),
-            CheckedSetTarget::BufferIndex(target) => (
-                target
-                    .root
-                    .fields
-                    .iter()
-                    .copied()
-                    .map(PlaceStep::Field)
-                    .collect(),
-                Some(Self::place_offset_of(&target.offset).unwrap_or(PlaceOffset::Opaque)),
-            ),
-            CheckedSetTarget::Storage(target) => (target.place_path(), None),
-            // A view has no field path of its own: the descriptor is a
-            // direct binding [VIEW-6], so the target path is the one
-            // subscript the statement wrote.
-            CheckedSetTarget::SliceIndex(target) => (
-                Vec::new(),
-                Some(Self::place_offset_of(&target.offset).unwrap_or(PlaceOffset::Opaque)),
-            ),
-        };
-        if let Some(offset) = offset {
-            path.push(PlaceStep::Subscript(offset));
-        }
-        path
-    }
-
-    /// The written spelling of one `place`, rebuilt from its own tokens, for
-    /// the diagnostic that must name two targets at once.
-    fn place_spelling(&self, node: NodeId) -> Result<String, CheckStop> {
-        let mut terminals = Vec::new();
-        self.collect_terminals(node, &mut terminals)?;
-        terminals.sort_unstable();
-        let mut rendered = String::new();
-        for terminal in terminals {
-            rendered.push_str(&String::from_utf8_lossy(self.tree.token_bytes(terminal)?));
-        }
-        Ok(rendered)
-    }
-
-    fn collect_terminals(&self, node: NodeId, terminals: &mut Vec<usize>) -> Result<(), CheckStop> {
-        terminals.extend_from_slice(self.tree.direct_token_indices(node)?);
-        for child in self.tree.children(node)? {
-            self.collect_terminals(*child, terminals)?;
-        }
-        Ok(())
     }
 }

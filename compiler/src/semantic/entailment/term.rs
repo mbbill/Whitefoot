@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 
 use super::super::model::{CheckedMeasure, IntegerType};
-pub(crate) use super::super::places::{PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm};
+pub(crate) use super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
 use crate::DeclarationId;
 
 /// Which once-captured endpoint one private counted-range term denotes.
@@ -36,16 +36,13 @@ pub(crate) enum TermKind {
     Constant(i128),
     /// An in-scope integer-typed const-generic parameter, judged symbolically.
     ConstParameter(DeclarationId),
-    /// A tracked place whose final selected type is one fragment type.
-    Place(PlaceTerm, IntegerType),
-    /// The same [ENT-2] tracked-place class when field selections precede a
-    /// deref or more than one deref occurs in the canonical spelling.
-    ProjectedPlace(ProjectedPlaceTerm, IntegerType),
-    /// One measure term `len_of(P)`, `cap_of(P)`, `room_of(P)` or `head_of(P)` [MSR-1],
+    /// A tracked place [ENT-2] clause (a) whose final selected type is one
+    /// fragment type, carried as the one resolved path the checker has
+    /// [REF-1].
+    Place(ResolvedPlace, IntegerType),
+    /// One measure term `P.len`, `P.cap`, `P.room` or `P.head` [MSR-1, OP-15],
     /// of fragment type u64. Its support is P's descriptor storage [MSR-2].
-    Measure(CheckedMeasure, PlaceTerm),
-    /// A measure term whose place has interleaved field/deref projections.
-    ProjectedMeasure(CheckedMeasure, ProjectedPlaceTerm),
+    Measure(CheckedMeasure, ResolvedPlace),
     /// One immutable compiler-owned endpoint capture [ENT-2, S11]. The
     /// finalized `for_stmt` path plus the endpoint side is its complete
     /// function-local identity; source can neither name nor mutate it.
@@ -76,7 +73,7 @@ pub(crate) enum TermKind {
     CallDatum {
         call_path: Vec<u32>,
         formal: u32,
-        projections: Vec<CallDatumProjection>,
+        projections: Vec<PlaceStep>,
         measure: Option<CheckedMeasure>,
         ty: IntegerType,
     },
@@ -90,7 +87,7 @@ pub(crate) enum TermKind {
     /// is the same datum a caller substitutes as that call's call datum.
     EntryDatum {
         formal: u32,
-        projections: Vec<CallDatumProjection>,
+        projections: Vec<PlaceStep>,
         measure: CheckedMeasure,
     },
     /// One immutable compiler-owned measure datum [MSR-3]: the value one
@@ -141,15 +138,6 @@ pub(crate) enum MeasurePlacement {
     /// One payload binder of a `match` arm, carried out of the payload of
     /// the enum place the arm consumes.
     Payload,
-}
-
-/// Ordered projection identity inside one call datum's operand place.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum CallDatumProjection {
-    Deref,
-    Field(u32),
-    /// One [OP-4] subscript inside a datum's place [MSR-1, MSR-3].
-    Subscript(super::super::places::PlaceOffset),
 }
 
 /// Dense identity of one interned term.
@@ -221,9 +209,6 @@ impl TermTable {
     pub(crate) fn sibling_measure(&self, term: TermId, measure: CheckedMeasure) -> Option<TermId> {
         let sibling = match self.kind(term) {
             TermKind::Measure(_, place) => TermKind::Measure(measure, place.clone()),
-            TermKind::ProjectedMeasure(_, place) => {
-                TermKind::ProjectedMeasure(measure, place.clone())
-            }
             _ => return None,
         };
         self.interned(&sibling)
