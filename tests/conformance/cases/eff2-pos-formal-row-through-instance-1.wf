@@ -8,7 +8,8 @@ formal Inspect<T: affine> {
 }
 
 fn left(input: &Pair) -> result: own u64 reads(input.left) {
-  return deref(input).left;
+  doc "Reads one field through its reference parameter and states exactly that path.";
+  return input.left;
 }
 
 actual Left : Inspect<Pair> {
@@ -16,17 +17,18 @@ actual Left : Inspect<Pair> {
 }
 
 fn outer<Inspect<T>>(value: &T) -> result: own u64 reads(value) {
+  doc "Calls the formal member, so the formal row is the authoritative boundary.";
   return Inspect::read(value: value);
 }
 
 fn wrapper(value: &Pair) -> result: own u64 reads(value) {
+  doc "Declares the whole parameter the instantiated formal row exhibits, so EFF-2 agrees in both directions.";
   return outer::<Left>(value: value);
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "Builds the pair and calls the wrapper whose declared row matches its exhibited one.";
   let pair = Pair(left: 3_u64, right: 5_u64);
-  region {
-    let observed = wrapper(value: &pair);
-  }
+  let observed = wrapper(value: &pair);
   return exit_status(code: 0_u8);
 }

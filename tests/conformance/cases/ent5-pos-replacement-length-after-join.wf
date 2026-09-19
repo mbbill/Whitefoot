@@ -1,44 +1,15 @@
 fn main() -> status: own ExitStatus pure {
-  let arr_empty = fixed_vector::<u32, 4>();
-  region {
-    place_back(vector: &uniq arr_empty, value: 1_u32);
-  }
-  let arr_one = move arr_empty;
-  region {
-    place_back(vector: &uniq arr_one, value: 1_u32);
-  }
-  let arr_two = move arr_one;
-  region {
-    place_back(vector: &uniq arr_two, value: 1_u32);
-  }
-  let arr_three = move arr_two;
-  region {
-    place_back(vector: &uniq arr_three, value: 1_u32);
-  }
-  let arr = move arr_three;
+  doc "A replacement run delivers its initialized length after a prior control join: the whole-binding commit is the REBIND naming event, whose placement datum carries the source window's measures to the destination place [MSR-3, SET-1]. The old run length dies with the commit [ENT-5] and is not incorrectly used, while the delivered length discharges the later subscript [OP-4].";
+  let base = array_filled::<u32, 4>(value: 1_u32);
+  let arr = slots_from_array::<u32, 4>(values: move base);
   let before = arr[0_u64];
   let ok = before == 1_u32;
   if ok {
     return exit_status(code: 1_u8);
   }
-  let fresh_empty = fixed_vector::<u32, 4>();
-  region {
-    place_back(vector: &uniq fresh_empty, value: 9_u32);
-  }
-  let fresh_one = move fresh_empty;
-  region {
-    place_back(vector: &uniq fresh_one, value: 9_u32);
-  }
-  let fresh_two = move fresh_one;
-  region {
-    place_back(vector: &uniq fresh_two, value: 9_u32);
-  }
-  let fresh_three = move fresh_two;
-  region {
-    place_back(vector: &uniq fresh_three, value: 9_u32);
-  }
-  let fresh = move fresh_three;
-  let old = replace arr = move fresh;
+  let seed = array_filled::<u32, 4>(value: 9_u32);
+  let fresh = slots_from_array::<u32, 4>(values: move seed);
+  set arr = move fresh;
   let after = arr[0_u64];
   return exit_status(code: 0_u8);
 }

@@ -1,5 +1,5 @@
-struct Holder['s] {
-  data: Box<'s, u64>;
+struct Holder<T: affine> {
+  data: Box<T>;
 }
 
 fn spare() -> result: own unit pure {

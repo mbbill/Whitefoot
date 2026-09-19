@@ -1,0 +1,12 @@
+linear struct Token {
+  value: u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "OP-14: an undischarged requires window.len == 0_u64 is a hard error at the complete call; the restructuring is to empty the window and establish its zero length at this point.";
+  let r = slots_new::<Token, 2>();
+  let t = Token(value: 1_u64);
+  place_back(window: &r, value: move t);
+  free_empty(window: move r);
+  return exit_status(code: 0_u8);
+}

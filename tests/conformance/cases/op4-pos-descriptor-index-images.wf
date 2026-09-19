@@ -1,5 +1,5 @@
-fn window_last<const n: u64>(buf: own FixedVector<u8, n>, start: own u64, end: own u64) -> value: own u8 reads(buf) contract {
-  define spare = len_of(buf);
+fn window_last<const n: u64>(buf: own Slots<u8, n>, start: own u64, end: own u64) -> value: own u8 pure contract {
+  define spare = buf.len;
   requires start < end;
   requires end <= spare;
 } {
@@ -8,53 +8,53 @@ fn window_last<const n: u64>(buf: own FixedVector<u8, n>, start: own u64, end: o
   return value;
 }
 
-fn ring_slot<const n: u64>(buf: own FixedVector<u8, n>, front: own u64, used: own u64) -> value: own u8 reads(buf) contract {
-  define capacity = len_of(buf);
+fn ring_slot<const n: u64>(buf: own Slots<u8, n>, front: own u64, used: own u64) -> value: own u8 pure contract {
+  define capacity = buf.len;
   requires capacity > 0_u64;
 } {
-  let capacity = len_of(buf);
+  let modulus = buf.len;
   let raw = front +wrap used;
-  let slot = raw % capacity;
+  let slot = raw % modulus;
   let value = buf[slot];
   return value;
 }
 
-fn ring_slot_sub<const n: u64>(buf: own FixedVector<u8, n>, front: own u64, used: own u64) -> value: own u8 reads(buf) contract {
-  define capacity = len_of(buf);
+fn ring_slot_sub<const n: u64>(buf: own Slots<u8, n>, front: own u64, used: own u64) -> value: own u8 pure contract {
+  define capacity = buf.len;
   requires front < capacity;
   requires used < capacity;
   requires capacity <= 4294967296_u64;
 } {
-  let capacity = len_of(buf);
+  let modulus = buf.len;
   let raw = front + used;
-  let too_big = raw >= capacity;
+  let too_big = raw >= modulus;
   let value = if too_big {
-    let wrapped = raw - capacity;
-    invariant wrapped_ok: wrapped < capacity;
+    let wrapped = raw - modulus;
+    invariant wrapped_ok: wrapped < modulus;
     let byte = buf[wrapped];
     give byte;
   } else {
-    invariant raw_ok: raw < capacity;
+    invariant raw_ok: raw < modulus;
     let byte = buf[raw];
     give byte;
   }
   return value;
 }
 
-fn sum_chunks<const n: u64>(buf: own FixedVector<u8, n>, chunk_size: own u64) -> total: own u64 reads(buf) contract {
-  define spare = len_of(buf);
+fn sum_chunks<const n: u64>(buf: own Slots<u8, n>, chunk_size: own u64) -> total: own u64 pure contract {
+  define spare = buf.len;
   requires chunk_size > 0_u64;
   requires chunk_size <= 2147483648_u64;
   requires spare <= 2147483648_u64;
 } {
-  let spare = len_of(buf);
+  let room = buf.len;
   let cursor = 0_u64;
   let total = 0_u64;
   loop (
-    invariant cursor_in_range: cursor <= spare
+    invariant cursor_in_range: cursor <= room
   ) {
     let chunk_end = cursor + chunk_size;
-    let has_full_chunk = chunk_end <= spare;
+    let has_full_chunk = chunk_end <= room;
     if has_full_chunk {
       let first = buf[cursor];
       let widened = cvt::<u8, u64>(first);
@@ -67,16 +67,16 @@ fn sum_chunks<const n: u64>(buf: own FixedVector<u8, n>, chunk_size: own u64) ->
   return total;
 }
 
-fn shifted_read<const n: u64>(buf: own FixedVector<u8, n>, base: own u64, delta: own u64) -> value: own u8 reads(buf) contract {
-  define spare = len_of(buf);
+fn shifted_read<const n: u64>(buf: own Slots<u8, n>, base: own u64, delta: own u64) -> value: own u8 pure contract {
+  define spare = buf.len;
   requires spare <= 4294967296_u64;
   requires base < spare;
   requires delta < spare;
 } {
-  let spare = len_of(buf);
+  let room = buf.len;
   let offset = base + delta;
-  invariant offset_double_bounded: offset < 2_u64 * spare;
-  let too_far = offset >= spare;
+  invariant offset_double_bounded: offset < 2_u64 * room;
+  let too_far = offset >= room;
   if too_far {
     return buf[0_u64];
   } else {
@@ -85,10 +85,10 @@ fn shifted_read<const n: u64>(buf: own FixedVector<u8, n>, base: own u64, delta:
   }
 }
 
-fn block_checksum<const n: u64>(data: own FixedVector<u8, n>, block_size: own u64) -> total: own u32 reads(data) contract {
+fn block_checksum<const n: u64>(data: own Slots<u8, n>, block_size: own u64) -> total: own u32 pure contract {
   requires block_size > 0_u64;
 } {
-  let capacity = len_of(data);
+  let capacity = data.len;
   let pos = 0_u64;
   let sum = 0_u32;
   loop @blocks (

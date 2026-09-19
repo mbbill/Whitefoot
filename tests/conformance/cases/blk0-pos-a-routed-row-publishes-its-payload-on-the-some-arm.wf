@@ -1,24 +1,28 @@
+fn bounded(request: own u64) -> result: own Result<u64, Overflow> pure contract {
+  requires request <= 3_u64;
+  ensures when Ok(value: granted): granted <= 3_u64;
+} {
+  doc "Publishes a bound on its Ok payload alone; the Err exit is unselected and carries no relation.";
+  return Ok<u64, Overflow>(value: request);
+}
+
 fn main() -> status: own ExitStatus pure {
-  doc "BLK-0, CALL-6: a row whose result is an enum states part of its relation list per variant, and publication restricts each routed relation to the arm its route names. The Some arm binds the run the route's own binder spelling names, so the four measures that route publishes over it are the caller's, and place_back's room_of(vector) > 0_u64 is discharged from room_of(r) = count with no branch on room_of at all.";
-  region 'a {
-    let workspace = arena_frame::<4096, 16, 'a>();
-    region {
-      match arena_vector::<u8>(store: &uniq workspace, count: 8_u64) {
-        None() => {
-          return exit_status(code: 1_u8);
-        }
-        Some(value: run) => {
-          region {
-            place_back(vector: &uniq run, value: 7_u8);
-          }
-          let filled = move run;
-          let seen = filled[0_u64];
-          if seen == 7_u8 {
-          } else {
-            return exit_status(code: 2_u8);
-          }
-        }
+  doc "A declaration whose result is an enum states part of its relation list per variant, and publication restricts each routed relation to the arm its route names. The Ok arm binds the payload the route's own binder spelling names, so the bound that route publishes is the caller's and the subscript is discharged from it with no branch on the payload at all.";
+  let run = slots_new::<u8, 4>();
+  place_back(window: &run, value: 7_u8);
+  place_back(window: &run, value: 7_u8);
+  place_back(window: &run, value: 7_u8);
+  place_back(window: &run, value: 7_u8);
+  match bounded(request: 0_u64) {
+    Ok(value: granted) => {
+      let seen = run[granted];
+      if seen == 7_u8 {
+      } else {
+        return exit_status(code: 2_u8);
       }
+    }
+    Err(error: problem) => {
+      return exit_status(code: 1_u8);
     }
   }
   return exit_status(code: 0_u8);

@@ -8,11 +8,11 @@ enum Packet {
   Empty();
 }
 
-fn steal(packet: &Packet) -> return_value: own unit pure {
-  doc "OWN-5: a payload binder derived from a shared match is non-owning and cannot move its affine referent.";
-  match deref(packet) {
+fn steal(packet: &Packet) -> return_value: own unit reads(packet) {
+  doc "A payload binder derived from matching through a reference names the scrutinee path, which is not rooted in a live own-mode binding of this function, so its affine referent cannot be moved out.";
+  match packet {
     Data(item: element) => {
-      let stolen = move deref(element);
+      let stolen = move element;
     }
     Empty() => {
     }

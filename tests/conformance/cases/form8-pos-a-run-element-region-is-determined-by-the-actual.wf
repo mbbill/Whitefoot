@@ -1,51 +1,33 @@
-fn width_of['s: affine](blocks: &uniq FixedVector<Vector<'s, u8>, 4>) -> taken: own Option<Vector<'s, u8>> reads(blocks), writes(blocks) contract {
-  ensures head_of(deref(blocks)) == head_of(deref(entry(blocks)));
-  ensures len_of(deref(blocks)) <= len_of(deref(entry(blocks)));
+fn width_of<T: linear>(blocks: &Slots<T, 4>) -> taken: own Option<T> writes(blocks.last), writes(blocks.len) contract {
+  requires blocks.len > 0_u64;
 } {
-  doc "Takes one store-backed block off the back of a run of runs, generic over the store.";
-  let held = len_of(deref(blocks));
-  let any = held > 0_u64;
-  if any {
-    region {
-      let one = take_back(vector: &uniq deref(blocks));
-      return Some<Vector<'s, u8>>(value: move one);
-    }
-  }
-  return None<Vector<'s, u8>>();
+  doc "Takes one block off the back of a run of runs, generic over the element type [OP-10].";
+  let one = take_back(window: blocks);
+  return Some<T>(value: move one);
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "FORM-8: a formal region occupying a parameter position at any depth of its type is determined by the actual and is not written at the call. The lift puts a store region one level down, in a run's element type, and that position determines it exactly as a top-level one does, which is what lets a helper be generic over the store of the runs a run holds.";
-  region 'a {
-    let workspace = arena_frame::<1024, 16, 'a>();
-    region {
-      let blocks = fixed_vector::<Vector<'a, u8>, 4>();
-      let block = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
-      region {
-        place_back(vector: &uniq blocks, value: move block);
-      }
-      let one = move blocks;
-      region {
-        let taken = width_of(blocks: &uniq one);
-        match taken {
-          None() => {
-            return exit_status(code: 1_u8);
-          }
-          Some(value: got) => {
-            let width = cap_of(got);
-            if width == 16_u64 {
-            } else {
-              return exit_status(code: 2_u8);
-            }
-          }
-        }
-        let left = len_of(one);
-        if left == 0_u64 {
-        } else {
-          return exit_status(code: 3_u8);
-        }
+  doc "FN-2: a type parameter occupying a position at any depth of a written argument is supplied explicitly at the call exactly as a top-level one is. The element type here is itself a boxed runtime-capacity run [TYPE-9], which is what lets one helper serve a run of runs.";
+  let blocks = slots_new::<Box<Slots<u8>>, 4>();
+  let block = box_slots_new::<u8>(capacity: 16_u64);
+  place_back(window: &blocks, value: move block);
+  let taken = width_of::<Box<Slots<u8>>>(blocks: &blocks);
+  match taken {
+    None() => {
+      return exit_status(code: 1_u8);
+    }
+    Some(value: got) => {
+      let width = deref(got).cap;
+      if width == 16_u64 {
+      } else {
+        return exit_status(code: 2_u8);
       }
     }
+  }
+  let left = blocks.len;
+  if left == 0_u64 {
+  } else {
+    return exit_status(code: 3_u8);
   }
   return exit_status(code: 0_u8);
 }

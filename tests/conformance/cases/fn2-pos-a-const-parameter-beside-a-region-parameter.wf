@@ -1,28 +1,17 @@
-fn publish<const n: u64>['s](store: &uniq Heap<'s>, source: own FixedVector<u8, n>) -> made: own Option<Vector<'s, u8>> reads(store, source), writes(store), allocates(store) contract {
-  define size = len_of(source);
-  requires buffer_fits::<u8>(size);
-} {
-  doc "One declaration carrying both a const generic parameter [MSR-6] and a region parameter [FORM-8]: the instance is keyed on the const argument and the region is substituted positionally from the call's own operands [FN-2], so the two axes are independent and neither is a capability limit.";
-  let size = len_of(source);
-  region {
-    return heap_vector::<u8>(store: &uniq deref(store), count: size);
-  }
+fn publish<T: linear, const n: u64>(source: &Slots<T, n>) -> made: own Box<Slots<T>> pure {
+  doc "One declaration carrying both a const generic parameter [MSR-6] and a type parameter: the instance is keyed on both written arguments, the two axes are independent, and neither is a capability limit [FN-2]. Allocation is total and carries no effect entry, so the row stays `pure` [STOR-8].";
+  let capacity = source.cap;
+  return box_slots_new::<T>(capacity: capacity);
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "One instance, at the entry heap's store region.";
-  let run = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq run, value: 9_u8);
+fn main() -> status: own ExitStatus pure {
+  doc "One instance, over the one ambient heap.";
+  let run = slots_new::<u8, 4>();
+  place_back(window: &run, value: 9_u8);
+  let made = publish::<u8, 4>(source: &run);
+  let width = deref(made).cap;
+  if width == 4_u64 {
+    return exit_status(code: 0_u8);
   }
-  region {
-    match publish::<4>(store: &uniq heap, source: move run) {
-      Some(value: made) => {
-        return exit_status(code: 0_u8);
-      }
-      None() => {
-        return exit_status(code: 1_u8);
-      }
-    }
-  }
+  return exit_status(code: 1_u8);
 }

@@ -2,19 +2,14 @@ struct Sample {
   value: f32;
 }
 
-const values: FixedVector<f32, 2> =[1.5_f32, 2.5_f32];
+const values: Array<f32, 2> =[1.5_f32, 2.5_f32];
 
 fn main() -> status: own ExitStatus pure {
+  doc "An f32 constant element survives a struct field and a mutable run store and read with its exact representable value.";
   let sample = Sample(value: values[0_u64]);
-  let empty = fixed_vector::<f32, 2>();
-  region {
-    place_back(vector: &uniq empty, value: 0.0_f32);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0.0_f32);
-  }
-  let storage = move one;
+  let storage = slots_new::<f32, 2>();
+  place_back(window: &storage, value: 0.0_f32);
+  place_back(window: &storage, value: 0.0_f32);
   set storage[1_u64] = sample.value;
   let loaded = storage[1_u64];
   if feq(loaded, 1.5_f32) {

@@ -1,0 +1,24 @@
+fn exchange(window: &Slots<Box<u64>, 2>, i: own u64, j: own u64) -> result: own unit writes(window[i]), writes(window[j]) contract {
+  requires i < window.len;
+  requires j < window.len;
+} {
+  doc "OP-11: swap is the one operation whose two reference arguments may name the same place, so swap over two unproved-distinct slots needs no i != j branch.";
+  swap(first: &window[i], second: &window[j]);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "OP-11: the same-place admission concerns swap's own two arguments and nothing else, so an ordinary caller's substituted write paths are still judged by the pairwise rule.";
+  let r = slots_new::<Box<u64>, 2>();
+  let first = box_new::<u64>(value: 1_u64);
+  let second = box_new::<u64>(value: 2_u64);
+  place_back(window: &r, value: move first);
+  place_back(window: &r, value: move second);
+  exchange(window: &r, i: 0_u64, j: 1_u64);
+  let front = deref(r[0_u64]);
+  if front == 2_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,9 +1,9 @@
-fn drop_it['heap](run: own Vector<'heap, u8>) -> code: own u8 pure {
-  doc "PROV-6: the statement resolves the innermost live binding of this function whose type is the store's provider. This scope holds none, so the release it would run has no capability to spend and the refusal renders the parameter the scope is missing.";
-  dispose run;
+fn drop_it<T: linear>(run: own T) -> code: own u8 pure {
+  doc "PROV-6: the compiler never releases a linear value, and there is no release statement to write. A binding whose value is linear and which is live on the edge leaving its scope is refused at that edge, with the written bound that made it linear rendered and exactly the two remaining routes offered.";
   return 0_u8;
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "The rejection is in the generic template above; this entry point does nothing.";
   return exit_status(code: 0_u8);
 }

@@ -1,34 +1,11 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
-  ensures len_of(result) >= n;
-  ensures room_of(result) <= 0_u64;
-  ensures head_of(result) <= 0_u64;
-} {
-  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
-  let built = fixed_vector::<T, n>();
-  for @fill (
-    at in 0_u64..n,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= n,
-    invariant flat: head_of(built) <= 0_u64
-  ) {
-    place_back(vector: &uniq built, value: value);
-  }
-  return move built;
-}
-
 fn main() -> status: own ExitStatus pure {
-  doc "[MSR-2] a write to P's own descriptor storage kills every measure of P. The [SET-2] replace exchanges the whole run for one whose window holds two slots, which overlaps the descriptor storage the length fact is supported by, so `len_of(run) = 10` does not survive it and the later subscript of offset nine has nothing to discharge against. This is the other side of the element-position sentence: descriptor storage and element storage are disjoint parts of one value, and a write kills exactly the measures whose support it overlaps.";
-  let run = filled::<u8, 10>(value: 0_u8);
-  let empty = fixed_vector::<u8, 10>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0_u8);
-  }
-  let smaller = move one;
-  let old = replace run = move smaller;
+  doc "MSR-2: a write to P's own descriptor storage kills every measure of P. The swap exchanges the whole ten-slot window for one whose window holds two slots, which overlaps the descriptor storage the length fact is supported by, so run.len == 10 does not survive it and the later subscript of offset nine has nothing to discharge against. This is the other side of the element-position sentence: descriptor storage and element storage are disjoint parts of one value, and a write kills exactly the measures whose support it overlaps.";
+  let values = array_filled::<u8, 10>(value: 0_u8);
+  let run = slots_from_array::<u8, 10>(values: move values);
+  let smaller = slots_new::<u8, 10>();
+  place_back(window: &smaller, value: 0_u8);
+  place_back(window: &smaller, value: 0_u8);
+  swap(first: &run, second: &smaller);
   let tail = run[9_u64];
   return exit_status(code: 0_u8);
 }

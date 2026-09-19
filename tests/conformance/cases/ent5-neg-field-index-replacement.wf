@@ -3,15 +3,17 @@ struct Cursor {
   limit: u64;
 }
 
-fn cursor_read_at<const n: u64>(table: own FixedVector<u8, n>, cursor: own Cursor) -> value: own u8 reads(table, cursor.idx), writes(cursor.idx) contract {
-  define spare = len_of(table);
+fn cursor_read_at<const n: u64>(table: own Slots<u8, n>, cursor: own Cursor) -> value: own u8 pure contract {
+  define spare = table.len;
   requires cursor.idx < cursor.limit;
   requires cursor.limit <= spare;
 } {
+  doc "Replacing cursor.idx invalidates the old scalar field bound even when the disjoint cursor.limit remains. The old field image cannot prove the subscript for the replacement [ENT-5, OP-4].";
   set cursor.idx = 9_u64;
   return table[cursor.idx];
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "No construction is needed to exercise the field kill.";
   return exit_status(code: 0_u8);
 }

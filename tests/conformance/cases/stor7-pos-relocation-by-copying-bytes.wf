@@ -1,0 +1,16 @@
+struct Holder {
+  run: Array<u64, 4>;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "STOR-7: any value may be relocated by copying its bytes, because no value contains a reference; a shape moved into an aggregate and out again keeps its contents, and no judgment depends on its address being stable.";
+  let a = array_filled::<u64, 4>(value: 5_u64);
+  let h = Holder(run: move a);
+  let Holder(run: back) = move h;
+  let seen = back[0_u64];
+  if seen == 5_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

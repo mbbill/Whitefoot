@@ -1,16 +1,19 @@
-fn exchange['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: own Box<'s, u64> reads(slot), writes(slot) {
-  let previous = replace deref(slot) = move incoming;
-  return move previous;
+fn exchange(slot: &Box<u64>, incoming: &Box<u64>) -> result: own unit writes(slot), writes(incoming) {
+  doc "Exchanges the two cells with swap, which consumes neither root and leaves each root the sole owner of the value the other held.";
+  swap(first: slot, second: incoming);
+  return unit;
 }
 
-fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq Heap<'s>) -> result: own u64 reads(owner), writes(owner, store) {
-  region {
-    let previous = exchange(slot: &uniq owner, incoming: move incoming);
-  }
+fn observe(owner: own Box<u64>, incoming: own Box<u64>) -> result: own u64 pure {
+  doc "EFF-2: the exchange changes the value at owner without changing that storage place, and its later read names owner. Both parameters are by-value, so neither contributes an effect path and the row is the empty one.";
+  exchange(slot: &owner, incoming: &incoming);
   return deref(owner);
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "EFF-2: replacement changes the value at owner without changing that storage place. Its later read names owner, and provider reclamation writes store; no input ancestry is retained.";
+  doc "Builds two cells and exchanges them through the helper.";
+  let held = box_new::<u64>(value: 3_u64);
+  let spare = box_new::<u64>(value: 5_u64);
+  let seen = observe(owner: move held, incoming: move spare);
   return exit_status(code: 0_u8);
 }

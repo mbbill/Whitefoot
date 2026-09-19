@@ -1,11 +1,12 @@
-struct Block['s] {
-  bytes: Vector<'s, u8>;
+struct Block {
+  bytes: Slots<u8, 4>;
 }
 
-fn pass_block['s: affine](block: own Block<'s>) -> result: own Block<'s> pure contract {
-  ensures cap_of(result.bytes) == cap_of(block.bytes);
-  ensures len_of(result.bytes) == len_of(block.bytes);
+fn pass_block(block: own Block) -> result: own Block pure contract {
+  ensures result.bytes.cap == block.bytes.cap;
+  ensures result.bytes.len == block.bytes.len;
 } {
+  doc "FN-9 admits its specified whole-result forms and the explicit Result route; a nominal field such as `result.bytes` is not a selectable aggregate result datum.";
   return move block;
 }
 

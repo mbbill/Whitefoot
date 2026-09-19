@@ -1,5 +1,5 @@
-fn bsearch(table: own FixedVector<u32, 8>, spare: own u64, target: own u32, lo: own u64, hi: own u64) -> found: own Option<u64> reads(table) contract {
-  define length = len_of(table);
+fn bsearch(table: own Slots<u32, 8>, spare: own u64, target: own u32, lo: own u64, hi: own u64) -> found: own Option<u64> pure contract {
+  define length = table.len;
   requires spare == length;
   requires lo <= hi;
   requires hi <= spare;

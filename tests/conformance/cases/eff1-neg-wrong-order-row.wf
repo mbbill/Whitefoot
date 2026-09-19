@@ -1,6 +1,10 @@
-fn f['heap](heap: &uniq Heap<'heap>, x: &i32) -> result: own i32 allocates(heap), reads(x) {
-  doc "Row order violates EFF-1 canonical order: reads must precede allocates.";
-  return deref(x);
+fn f(y: &Slots<i32, 4>, x: &Slots<i32, 4>) -> result: own i32 writes(y), reads(x) contract {
+  requires y.room > 0_u64;
+  requires x.len > 0_u64;
+} {
+  doc "Row order violates EFF-1's canonical order: every reads entry must precede every writes entry.";
+  place_back(window: y, value: 1_i32);
+  return x[0_u64];
 }
 
 fn main() -> status: own ExitStatus pure {

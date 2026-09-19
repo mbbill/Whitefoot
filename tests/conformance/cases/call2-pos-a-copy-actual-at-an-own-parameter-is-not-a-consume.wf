@@ -1,32 +1,26 @@
-fn get_bounded(window: own Slice<u8>, i: own u64) -> value: own u8 reads(window) contract {
-  define spare = len_of(window);
-  requires i < spare;
+fn get_bounded(window: &Slots<u8, 4>, i: own u64, limit: own u64) -> value: own u8 reads(window) contract {
+  requires i < limit;
+  requires limit <= window.len;
 } {
-  doc "Reads one element of a view handed over by value.";
+  doc "Reads one element under a bound handed over by value.";
   return window[i];
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "[CALL-2] an own argument is a consuming use only where its type is affine or linear. A Slice is copy [OWN-1], so handing it at an own parameter is a duplicate and neither the caller's place nor any fact supported by it dies: the second call proves its own requirement from the same length the formation published, which a consume would have killed. This is the sentence that lets a view-taking helper be called more than once, and it is what a run passed by value does not get.";
-  let line = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq line, value: 7_u8);
+  doc "CALL-2 makes an own argument a consuming use only where its type is affine or linear. u64 is copy, so handing the saved bound at an own parameter is a duplicate: the caller's place and every fact supported by it survive, and the second call proves its own requirement from the same fact that a consume of an affine actual would have killed.";
+  let line = slots_new::<u8, 4>();
+  place_back(window: &line, value: 7_u8);
+  place_back(window: &line, value: 9_u8);
+  let bound = line.len;
+  let first = get_bounded(window: &line, i: 0_u64, limit: bound);
+  let second = get_bounded(window: &line, i: 1_u64, limit: bound);
+  if first == 7_u8 {
+  } else {
+    return exit_status(code: 201_u8);
   }
-  region {
-    place_back(vector: &uniq line, value: 9_u8);
-  }
-  region {
-    let window = slice_of(&line);
-    let first = get_bounded(window: window, i: 0_u64);
-    let second = get_bounded(window: window, i: 1_u64);
-    if first == 7_u8 {
-    } else {
-      return exit_status(code: 201_u8);
-    }
-    if second == 9_u8 {
-    } else {
-      return exit_status(code: 202_u8);
-    }
+  if second == 9_u8 {
+  } else {
+    return exit_status(code: 202_u8);
   }
   return exit_status(code: 0_u8);
 }

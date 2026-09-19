@@ -1,18 +1,19 @@
-fn pick['r](a: &uniq 'r i32, b: &uniq i32) -> result: &uniq 'r i32 pure {
-  doc "The accepted repair FN-1 names: give the source parameter its own region so exactly one parameter shares the result's region and kind. The result's debtor is `a`, the caller's holder resolves to the place `a` was borrowed from, and a write through the result reaches that place.";
-  return &uniq 'r deref(a);
+struct Cell {
+  value: i32;
+}
+
+fn store(target: &Cell, source: &Cell) -> result: own unit reads(source.value), writes(target.value) {
+  doc "The accepted repair: one parameter is the place written and the other is the place read, stated by the row rather than by a mode marker [EFF-1]. The write through `target` reaches exactly the place the caller named when it formed the reference [REF-1, SET-1].";
+  let taken = source.value;
+  set target.value = taken;
+  return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let v = 1_i32;
-  let w = 2_i32;
-  region 'a {
-    region {
-      let r = pick(a: &uniq 'a v, b: &uniq w);
-      set deref(r) = 7_i32;
-    }
-  }
-  if v == 7_i32 {
+  let v = Cell(value: 1_i32);
+  let w = Cell(value: 7_i32);
+  store(target: &v, source: &w);
+  if v.value == 7_i32 {
   } else {
     return exit_status(code: 1_u8);
   }

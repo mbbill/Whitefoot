@@ -1,37 +1,33 @@
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "The ordinary Args library value contains the arranged complete native argument vector. args_count reports three; arg_get returns the present HostString values and InvalidIndex beyond the last. No semantic qualification or special release authority is involved.";
-  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  let Inputs(args: arguments, cwd: root, handles: factory, ..) = move inputs;
+  close_directory(factory: &factory, directory: move root);
+  let count = args_count(args: &arguments);
+  let counted = count == 3_u64;
+  if counted {
+  } else {
+    return exit_status(code: 10_u8);
   }
-  region {
-    let count = args_count(args: &args);
-    let counted = count == 3_u64;
-    if counted {
-    } else {
-      return exit_status(code: 10_u8);
+  match arg_get(args: &arguments, position: 0_u64) {
+    Ok(value: invoked) => {
     }
-    match arg_get(args: &args, position: 0_u64) {
-      Ok(value: invoked) => {
-      }
-      Err(error: missing) => {
-        return exit_status(code: 11_u8);
-      }
+    Err(error: missing) => {
+      return exit_status(code: 11_u8);
     }
-    match arg_get(args: &args, position: 2_u64) {
-      Ok(value: last) => {
-      }
-      Err(error: absent) => {
-        return exit_status(code: 12_u8);
-      }
+  }
+  match arg_get(args: &arguments, position: 2_u64) {
+    Ok(value: last) => {
     }
-    match arg_get(args: &args, position: 3_u64) {
-      Ok(value: beyond) => {
-        return exit_status(code: 13_u8);
-      }
-      Err(error: past) => {
-        return exit_status(code: 0_u8);
-      }
+    Err(error: absent) => {
+      return exit_status(code: 12_u8);
+    }
+  }
+  match arg_get(args: &arguments, position: 3_u64) {
+    Ok(value: beyond) => {
+      return exit_status(code: 13_u8);
+    }
+    Err(error: past) => {
+      return exit_status(code: 0_u8);
     }
   }
 }

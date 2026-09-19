@@ -1,29 +1,11 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
-  ensures len_of(result) >= n;
-  ensures room_of(result) <= 0_u64;
-  ensures head_of(result) <= 0_u64;
-} {
-  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
-  let built = fixed_vector::<T, n>();
-  for @fill (
-    at in 0_u64..n,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= n,
-    invariant flat: head_of(built) <= 0_u64
-  ) {
-    place_back(vector: &uniq built, value: value);
-  }
-  return move built;
-}
-
-fn headroom(run: own FixedVector<u8, 8>) -> total: own u64 reads(run) contract {
-  requires 4_u64 <= len_of(run);
+fn headroom(run: &Slots<u8, 8>) -> total: own u64 reads(run) contract {
+  requires 4_u64 <= run.len;
 } {
   doc "The stated relation over the measure is wider than the requirement establishes.";
   let seen = 0_u64;
   for (
     at in 0_u64..4_u64,
-    invariant reserved: 8_u64 <= len_of(run)
+    invariant reserved: 8_u64 <= run.len
   ) {
     let byte = run[at];
   }
@@ -31,8 +13,15 @@ fn headroom(run: own FixedVector<u8, 8>) -> total: own u64 reads(run) contract {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "[INV-1] a measure factor is a proof obligation like any other affine factor: the caller's requirement gives four slots and the invariant states eight, so the base obligation fails at the loop header and the declaration is refused there rather than at the caller.";
-  let run = filled::<u8, 8>(value: 0_u8);
-  let total = headroom(run: move run);
+  doc "[INV-1] a measure factor is a proof obligation like any other affine factor rather than an assumption the spelling grants. The caller's requirement gives four slots and the header states eight, so the base obligation fails at the loop header and the residual names the writer's own measure place [MSR-1, OP-15].";
+  let run = slots_new::<u8, 8>();
+  for (
+    at in 0_u64..8_u64,
+    invariant grown: run.len >= at,
+    invariant spare: run.room + at >= 8_u64
+  ) {
+    place_back(window: &run, value: 0_u8);
+  }
+  let total = headroom(run: &run);
   return exit_status(code: 0_u8);
 }

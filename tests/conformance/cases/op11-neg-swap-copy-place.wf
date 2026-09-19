@@ -1,0 +1,11 @@
+fn main() -> status: own ExitStatus pure {
+  doc "OP-11: a swap over a copy place is a hard error at the first borrow expression; the restructuring is to read the two values and assign them back.";
+  let a = 1_u64;
+  let b = 2_u64;
+  swap(first: &a, second: &b);
+  if a == 2_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

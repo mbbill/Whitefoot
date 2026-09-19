@@ -1,24 +1,15 @@
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "The ordinary write_once requirement refuses a literal end past the source range length before any host transfer [FN-8, PRE-1].";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  let bytes = buffer_new(4_u64, 65_u8);
-  region {
-    region {
-      region {
-        let native_window_13 = slice_of(&bytes);
-        region {
-          match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_13, start: 1_u64, end: 9_u64) {
-            Ok(value: written) => {
-              return exit_status(code: 10_u8);
-            }
-            Err(error: problem) => {
-              return exit_status(code: 20_u8);
-            }
-          }
-        }
-      }
+  let closed = close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let bytes = array_filled::<u8, 4>(value: 65_u8);
+  let part = &bytes[0_u64..4_u64];
+  match write_once(factory: &entry_factory, output: &out, source: part, start: 1_u64, end: 9_u64) {
+    Ok(value: written) => {
+      return exit_status(code: 10_u8);
+    }
+    Err(error: problem) => {
+      return exit_status(code: 20_u8);
     }
   }
 }

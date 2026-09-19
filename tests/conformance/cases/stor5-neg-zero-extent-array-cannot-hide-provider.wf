@@ -1,8 +1,8 @@
-struct Hidden['s] {
-  providers: array<Heap<'s>, 0>;
+struct Hidden {
+  providers: Array<Slots<u8>, 0>;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "STOR-5's stored-content closure still reaches a provider through a full array at zero extent. General owning elements do not permit a provider to be hidden in a stored field.";
+  doc "A full array's complete element type still participates in the placement closure at zero extent: a runtime-capacity shape exists only as the content of a cell, and a stored array field cannot hide one behind an empty extent.";
   return exit_status(code: 0_u8);
 }

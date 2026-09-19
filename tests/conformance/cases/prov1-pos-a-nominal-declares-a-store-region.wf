@@ -1,8 +1,8 @@
-struct Chunk['s] {
-  page: Vector<'s, u8>;
+struct Chunk<T: affine, const n: u64> {
+  page: Slots<T, n>;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Declares a nominal whose region parameter brands its own field.";
+  doc "A source nominal declares its own type and const parameters and holds a constant-capacity window in a field, which TYPE-9 admits inline in its owner.";
   return exit_status(code: 0_u8);
 }

@@ -1,4 +1,10 @@
-fn overwrite['s](out: &uniq Box<'s, u64>, replacement: own Box<'s, u64>) -> function_result: own unit writes(out) {
+struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn overwrite(out: &Box<Pair>, replacement: own Pair) -> function_result: own unit writes(deref(out)) {
+  doc "A live affine-typed final place is stored whole through the deref of a heap-owned cell reached by a reference parameter whose row declares the write; the previous affine owner is released at the commit rather than discarded.";
   set deref(out) = move replacement;
   return unit;
 }

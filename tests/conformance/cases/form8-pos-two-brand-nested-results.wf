@@ -1,25 +1,24 @@
-struct Pair['left, 'right] {
-  left: Box<'left, u64>;
-  right: Box<'right, u64>;
+struct Pair<L: linear, R: linear> {
+  left: Box<L>;
+  right: Box<R>;
 }
 
-fn build['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>) -> slots: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
-  let pair = Pair(left: move left, right: move right);
-  let occupied = Some<Pair<'left, 'right>>(value: move pair);
-  let slots = fixed_vector::<Option<Pair<'left, 'right>>, 1>();
-  region {
-    place_back(vector: &uniq slots, value: move occupied);
-  }
+fn build<L: linear, R: linear>(left: own Box<L>, right: own Box<R>) -> slots: own Slots<Option<Pair<L, R>>, 1> pure {
+  let pair = Pair<L, R>(left: move left, right: move right);
+  let occupied = Some<Pair<L, R>>(value: move pair);
+  let slots = slots_new::<Option<Pair<L, R>>, 1>();
+  place_back(window: &slots, value: move occupied);
   return move slots;
 }
 
-fn pass['left, 'right](slots: own FixedVector<Option<Pair<'left, 'right>>, 1>) -> result: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
+fn pass<L: linear, R: linear>(slots: own Slots<Option<Pair<L, R>>, 1>) -> result: own Slots<Option<Pair<L, R>>, 1> pure {
   return move slots;
 }
 
-fn compose['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>) -> slots: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
-  let slots = build(left: move left, right: move right);
-  return pass(slots: move slots);
+fn compose<L: linear, R: linear>(left: own Box<L>, right: own Box<R>) -> slots: own Slots<Option<Pair<L, R>>, 1> pure {
+  doc "Nested aggregate and run results preserve two distinct written type arguments across composition [FN-1, FN-2].";
+  let slots = build::<L, R>(left: move left, right: move right);
+  return pass::<L, R>(slots: move slots);
 }
 
 fn main() -> status: own ExitStatus pure {

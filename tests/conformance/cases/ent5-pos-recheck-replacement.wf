@@ -1,6 +1,7 @@
 fn guarded_local(x: own u8, w: own u8) -> result: own u8 pure contract {
   requires x <= 5_u8;
 } {
+  doc "Only a fresh guard after the replacement admits the later exact arithmetic.";
   set x = w;
   let ok = x <= 5_u8;
   if ok {
@@ -15,7 +16,8 @@ struct Cell {
   v: u8;
 }
 
-fn guarded_field(b: own Cell, w: own u8) -> result: own u8 reads(b.v), writes(b.v) {
+fn guarded_field(b: own Cell, w: own u8) -> result: own u8 pure {
+  doc "The immutable old read remains an old-value fact, not a proof about the fresh field read.";
   let old = b.v;
   let bounded = old <= 5_u8;
   if bounded {
@@ -32,15 +34,16 @@ fn guarded_field(b: own Cell, w: own u8) -> result: own u8 reads(b.v), writes(b.
   }
 }
 
-fn guarded_element(buf: &uniq MutSlice<u8>, i: own u64, w: own u8) -> result: own u8 reads(buf), writes(buf) {
-  let limit = len_of(deref(buf));
+fn guarded_element(buf: &[u8], i: own u64, w: own u8) -> result: own u8 writes(buf) {
+  doc "The same recheck after an element write through a range reference the row declares.";
+  let limit = buf.len;
   let in_range = i < limit;
   if in_range {
-    let old = deref(buf)[i];
+    let old = buf[i];
     let bounded = old <= 5_u8;
     if bounded {
-      set deref(buf)[i] = w;
-      let cur = deref(buf)[i];
+      set buf[i] = w;
+      let cur = buf[i];
       let ok = cur <= 5_u8;
       if ok {
         let z = cur + 250_u8;
@@ -56,9 +59,10 @@ fn guarded_element(buf: &uniq MutSlice<u8>, i: own u64, w: own u8) -> result: ow
   }
 }
 
-fn second_or_zero(values: own FixedVector<u32, 6>, idx: own u64) -> result: own u32 reads(values) contract {
-  requires len_of(values) >= 6_u64;
+fn second_or_zero(values: own Slots<u32, 6>, idx: own u64) -> result: own u32 pure contract {
+  requires values.len >= 6_u64;
 } {
+  doc "The same recheck after an index replacement: only the new guard admits the second subscript [ENT-5, OP-4].";
   let in_range = idx < 6_u64;
   if in_range {
   } else {
@@ -77,5 +81,6 @@ fn second_or_zero(values: own FixedVector<u32, 6>, idx: own u64) -> result: own 
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "No construction is needed to exercise the rechecks.";
   return exit_status(code: 0_u8);
 }

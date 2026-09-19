@@ -1,37 +1,15 @@
-fn bounded_index(values: own FixedVector<u8, 8>, index: own u64) -> output: own u64 pure contract {
-  define capacity = len_of(values);
+fn bounded_index(values: own Slots<u8, 8>, index: own u64) -> output: own u64 pure contract {
+  define capacity = values.cap;
   requires index < capacity;
   ensures output < capacity;
 } {
+  doc "One erased definition is read by both the requirement and the ensured relation.";
   return index;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let values = fixed_vector::<u8, 8>();
-  region {
-    place_back(vector: &uniq values, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq values, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq values, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq values, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq values, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq values, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq values, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq values, value: 0_u8);
-  }
+  doc "One erased, pure contract definition is visible to both a requirement and an ensured normal-return relation.";
+  let values = slots_new::<u8, 8>();
   let output = bounded_index(values: move values, index: 7_u64);
   if output == 7_u64 {
     return exit_status(code: 0_u8);

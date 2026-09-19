@@ -1,22 +1,19 @@
 struct Cell {
-  payload: box<u64>;
   tag: u64;
+  weight: u64;
 }
 
-fn retag(taken: own Cell, tag: own u64) -> result: own Cell pure {
-  let Cell(payload: payload, tag: unused_tag) = move taken;
-  return Cell(payload: move payload, tag: tag);
-}
-
-fn invalid(values: &uniq FixedVector<array<Cell, 2>, 2>, i: own u64, j: own u64, k: own u64, l: own u64) -> result: own unit reads(values), writes(values) contract {
-  requires i < len_of(deref(values));
-  requires k < len_of(deref(values));
-  requires j < 2_u64;
-  requires l < 2_u64;
+fn invalid(i: own u64, k: own u64) -> result: own unit pure contract {
+  requires i < 2_u64;
+  requires k < 2_u64;
   requires i < k;
 } {
-  doc "The proved outer pair separates only the two complete targets. The unproved inner pair cannot be reused to treat the cross-path as different from the first target after its value has been read out.";
-  set (deref(values)[i][j], deref(values)[k][l]) = move deref(values)[i][j], retag(taken: move deref(values)[k][l], tag: deref(values)[i][l].tag);
+  doc "Index separation never keeps a later subscript live: one consuming use kills the whole binding that roots the place, so even a proved distinct candidate pair leaves the second read rooted in a dead binding.";
+  let seed = Cell(tag: 0_u64, weight: 0_u64);
+  let cells = array_filled::<Cell, 2>(value: seed);
+  let first = cells[i].tag;
+  let taken = move cells;
+  let observed = cells[k].tag;
   return unit;
 }
 

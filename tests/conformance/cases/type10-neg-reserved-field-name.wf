@@ -1,0 +1,8 @@
+struct Run {
+  len: u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "TYPE-10: the eight measure and window-part spellings occupy no declaration domain and are reserved from field, parameter, binder, and result binding, because r.len would otherwise carry two meanings.";
+  return exit_status(code: 0_u8);
+}

@@ -1,4 +1,4 @@
-fn keep(value: own array<Option<u32>, 2>) -> result: own unit pure {
+fn keep(value: own Array<Option<u32>, 2>) -> result: own unit pure {
   return unit;
 }
 

@@ -1,5 +1,9 @@
-fn peek['heap](cell: own Box<'heap, u8>) -> code: own u8 pure {
-  doc "S39, D3: a cell branded to a general store is linear in every scope holding no binding of that store's provider, exactly as a run branded to it is. This scope holds none, so the cell may not reach the return edge.";
+linear struct Ticket {
+  code: u8;
+}
+
+fn peek(cell: own Box<Ticket>) -> code: own u8 pure {
+  doc "A Box whose content is linear is itself linear, closed under ownership, so this binding may not reach the return edge by a compiler-derived release; the compiler never releases a linear value.";
   return 0_u8;
 }
 

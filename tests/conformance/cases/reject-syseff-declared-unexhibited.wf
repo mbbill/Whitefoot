@@ -1,11 +1,10 @@
-fn count_arguments(args: own Args) -> function_result: own u64 pure {
-  doc "args_count observes the explicit Args state, so omitting reads(args) is an undeclared state effect rejected by EFF-2.";
-  region {
-    let total = args_count(args: &args);
-    return total;
-  }
+fn count_arguments(args: &Args) -> function_result: own u64 pure {
+  doc "args_count declares reads(args), so this caller exhibits an ordinary read through its own reference parameter and a pure row omits it. EFF-2 checks rows both ways.";
+  let total = args_count(args: args);
+  return total;
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "The rejection is in the helper above; this entry point does nothing.";
   return exit_status(code: 0_u8);
 }

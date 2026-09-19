@@ -4,12 +4,13 @@ struct Pair {
 }
 
 formal Touch {
-  fn touch(value: &uniq Pair) -> result: own unit reads(value.left), writes(value.right);
+  fn touch(value: &Pair) -> result: own unit reads(value.left), writes(value.right);
 }
 
-fn apply(input: &uniq Pair) -> result: own unit reads(input.left), writes(input.left) {
-  let observed = deref(input).left;
-  set deref(input).left = observed;
+fn apply(input: &Pair) -> result: own unit writes(input.left) {
+  doc "Formal and actual effect paths compare parameter and field ordinals, not binder spelling; selecting another field is a mismatch.";
+  let observed = input.left;
+  set input.left = observed;
   return unit;
 }
 

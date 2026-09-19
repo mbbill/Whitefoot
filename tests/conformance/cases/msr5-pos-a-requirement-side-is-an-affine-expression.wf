@@ -1,30 +1,28 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
-  ensures len_of(result) >= n;
-  ensures room_of(result) <= 0_u64;
-  ensures head_of(result) <= 0_u64;
+fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+  ensures result.len >= n;
+  ensures result.room <= 0_u64;
 } {
-  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
-  let built = fixed_vector::<T, n>();
+  doc "Builds a window of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
+  let built = slots_new::<T, n>();
   for @fill (
     at in 0_u64..n,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= n,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len >= at,
+    invariant spare: built.room + at >= n
   ) {
-    place_back(vector: &uniq built, value: value);
+    place_back(window: &built, value: value);
   }
   return move built;
 }
 
-fn transposed(run: own FixedVector<u8, 8>, at: own u64) -> value: own u8 reads(run) contract {
-  requires at + 2_u64 <= len_of(run);
+fn transposed(run: own Slots<u8, 8>, at: own u64) -> value: own u8 pure contract {
+  requires at + 2_u64 <= run.len;
 } {
   doc "Reads one element under a requirement that leaves a second element beyond it.";
   return run[at];
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "MSR-5, FN-8: a requirement side is the whole affine expression, so the caller's obligation and the callee's subscript bound are the one relation the writer stated.";
+  doc "MSR-5, FN-8: a requirement side carries the whole affine expression rather than the difference-bound fragment a published relation is narrowed to, so at + 2_u64 <= run.len is both the caller's obligation and the premise the callee's own subscript bound discharges from.";
   let run = filled::<u8, 8>(value: 4_u8);
   let value = transposed(run: move run, at: 3_u64);
   if value == 4_u8 {

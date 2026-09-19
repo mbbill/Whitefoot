@@ -1,4 +1,4 @@
-fn preserve(value: own FixedVector<Bool, 4>) -> function_result: own FixedVector<Bool, 4> pure {
+fn preserve(value: own Slots<Bool, 4>) -> function_result: own Slots<Bool, 4> pure {
   return move value;
 }
 

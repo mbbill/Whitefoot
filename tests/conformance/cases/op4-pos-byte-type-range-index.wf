@@ -1,6 +1,6 @@
-fn selected(data: own Slice<u8>, table: own array<u8, 256>) -> result: own u8 reads(data, table) {
+fn selected(data: &[u8], table: own Array<u8, 256>) -> result: own u8 reads(data) {
   let peak = 0_u8;
-  let length = len_of(data);
+  let length = data.len;
   for (i in 0_u64..length) {
     let byte = data[i];
     set peak = imax(peak, byte);

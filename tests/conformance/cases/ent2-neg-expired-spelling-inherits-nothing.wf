@@ -1,6 +1,6 @@
-fn get(b: own Slice<u8>, pick: own Bool) -> result: own u8 reads(b) {
-  doc "Facts attach to terms, not to spellings. The arm-local `offset` is bounded by a checked branch, but that fact dies on the edge leaving its scope [ENT-5](d) before any join, and the later binding of the same spelling is a different term inheriting nothing [ENT-2], so its subscript is undischarged [OP-4].";
-  let spare = len_of(b);
+fn get(b: &[u8], pick: own Bool) -> result: own u8 reads(b) {
+  doc "Facts attach to terms, not to spellings. The arm-local offset is bounded by a checked branch, but that fact dies on the edge leaving its scope [ENT-5](d) before any join, and the later binding of the same spelling is a different term inheriting nothing [ENT-2], so its subscript is undischarged [OP-4].";
+  let spare = b.len;
   if pick {
     let offset = 0_u64;
     let inside = offset < spare;
@@ -14,5 +14,6 @@ fn get(b: own Slice<u8>, pick: own Bool) -> result: own u8 reads(b) {
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "No construction is needed to exercise the term identity.";
   return exit_status(code: 0_u8);
 }

@@ -1,16 +1,7 @@
-fn invalid['heap](store: &uniq Heap<'heap>, value: own Slice<u8>) -> function_result: own unit reads(store), writes(store), allocates(store) {
-  doc "heap_box accepts any ordinary operand type, but a direct slice in cell content is rejected by STOR-5 at that operand.";
-  region {
-    match heap_box(store: &uniq deref(store), value: value) {
-      Ok(value: cell) => {
-      }
-      Err(error: back) => {
-      }
-    }
-  }
-  return unit;
-}
+program no_heap;
 
 fn main() -> status: own ExitStatus pure {
+  doc "The cell constructor accepts any ordinary operand type, but the store its content would occupy must exist: a compilation unit that declares no heap cannot call an allocating construction, and the call is refused at the complete call.";
+  let cell = box_new::<u8>(value: 9_u8);
   return exit_status(code: 0_u8);
 }

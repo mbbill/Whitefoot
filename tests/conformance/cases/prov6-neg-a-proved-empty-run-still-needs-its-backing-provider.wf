@@ -1,11 +1,11 @@
-fn dispose_without_store<T: linear>['s](run: own Vector<'s, T>) -> result: own unit pure contract {
-  requires len_of(run) <= 0_u64;
+fn release_without_free<T: linear, const n: u64>(run: own Slots<T, n>) -> result: own unit pure contract {
+  requires run.len == 0_u64;
 } {
-  doc "PROV-6: proving the run empty removes only its element edge. The direct Vector node still releases its backing to the general store, and this function has no Heap provider for that retained action.";
-  dispose run;
+  doc "PROV-6: a zero-length fact says the window holds no element, and that is all it says. The window's own type is still linear, so the compiler-derived release never carries it and free_empty remains the one route that consumes the storage.";
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "The rejection is in the generic template above; this entry point does nothing.";
   return exit_status(code: 0_u8);
 }

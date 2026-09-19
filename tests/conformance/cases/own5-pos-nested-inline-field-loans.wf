@@ -4,21 +4,16 @@ struct Row {
 }
 
 struct Table {
-  rows: FixedVector<Row, 1>;
+  rows: Array<Row, 1>;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<Row, 1>();
-  let item = Row(left: 3_u64, right: 4_u64);
-  region {
-    place_back(vector: &uniq empty, value: move item);
-  }
-  let rows = move empty;
+  doc "A field-index-field path distinguishes disjoint scalar siblings inside one element, so the write to the sibling leaves the reference to the first field valid.";
+  let seed = Row(left: 3_u64, right: 4_u64);
+  let rows = array_filled::<Row, 1>(value: seed);
   let table = Table(rows: move rows);
-  region {
-    let left = &table.rows[0_u64].left;
-    let right = &uniq table.rows[0_u64].right;
-    set deref(right) = deref(left);
-  }
+  let left = &table.rows[0_u64].left;
+  set table.rows[0_u64].right = 9_u64;
+  let observed = left;
   return exit_status(code: 0_u8);
 }

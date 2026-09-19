@@ -1,7 +1,6 @@
 fn main() -> status: own ExitStatus pure {
-  let values = buffer_new(4_u64, 0_u64);
-  region {
-    let view = mut_slice_of(&uniq values, 3_u64, 2_u64);
-  }
+  doc "A range reference must independently prove start no greater than end [REF-4] before its length is the difference of the endpoints; a reversed pair is refused at the formation.";
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  let view = &values[3_u64..2_u64];
   return exit_status(code: 0_u8);
 }

@@ -1,8 +1,8 @@
-fn last_written(xs: own Slice<u8>) -> value: own u8 reads(xs) contract {
-  define n0 = len_of(xs);
+fn last_written(xs: &[u8]) -> value: own u8 reads(xs) contract {
+  define n0 = xs.len;
   requires n0 >= 1_u64;
 } {
-  let n = len_of(xs);
+  let n = xs.len;
   let idx = 0_u64;
   for (i in 0_u64..n) {
     let cur = xs[i];

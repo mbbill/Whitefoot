@@ -1,31 +1,26 @@
-fn nothing['s: affine]() -> made: own Option<Vector<'s, u8>> pure {
-  doc "Reports no run at all, over a store no parameter position names.";
-  return None<Vector<'s, u8>>();
+fn nothing<T: linear>() -> made: own Option<T> pure {
+  doc "Reports no value at all, over an element type no parameter position mentions.";
+  return None<T>();
 }
 
-fn absorb['s: affine](store: &uniq Arena<'s, 4096, 16>, spare: own Option<Vector<'s, u8>>) -> width: own u64 pure {
-  doc "Reports the capacity of a run of this store, or zero when there is none.";
+fn absorb<T: linear>(spare: own Option<T>) -> width: own u64 pure {
+  doc "Reports the capacity of the run it was handed, or zero when there is none.";
   match spare {
     None() => {
       return 0_u64;
     }
     Some(value: run) => {
-      return cap_of(run);
+      return run.cap;
     }
   }
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "FORM-8: a region parameter that occupies no input position of its declaration is written at the call, and FN-2 substitutes it into the result. The absorb call then fixes the same region from its own store operand, so the empty result is admitted at 'a and not at the declaration's own 's.";
-  region 'a {
-    let workspace = arena_frame::<4096, 16, 'a>();
-    region {
-      let spare = nothing::<'a>();
-      let width = absorb(store: &uniq workspace, spare: move spare);
-      if width == 0_u64 {
-        return exit_status(code: 0_u8);
-      }
-    }
+  doc "FN-2: a type parameter that occupies no input position of its declaration is still written at the call and substituted into the result; every instantiation argument is explicit. The `absorb` call fixes the same parameter from its own operand, so the empty result is admitted at the element type the caller chose.";
+  let spare = nothing::<Slots<u8, 4>>();
+  let width = absorb::<Slots<u8, 4>>(spare: move spare);
+  if width == 0_u64 {
+    return exit_status(code: 0_u8);
   }
   return exit_status(code: 1_u8);
 }

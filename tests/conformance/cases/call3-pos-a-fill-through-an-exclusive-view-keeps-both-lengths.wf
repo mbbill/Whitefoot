@@ -1,47 +1,34 @@
-fn fill(destination: &uniq MutSlice<u8>, value: own u8) -> written: own u64 writes(destination) contract {
-  requires 2_u64 <= len_of(deref(destination));
+fn fill(destination: &[u8], value: own u8) -> written: own u64 writes(destination) contract {
+  requires 2_u64 <= destination.len;
   ensures written == 2_u64;
 } {
-  doc "Fills the first two element positions of the destination view.";
-  set deref(destination)[0_u64] = value;
-  set deref(destination)[1_u64] = value;
+  doc "Fills the first two element positions of the destination range.";
+  set destination[0_u64] = value;
+  set destination[1_u64] = value;
   return 2_u64;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "[CALL-3] a projected callee write through a view reaches the viewed range's element storage and no measure term over the origin place nor over the view. The helper fills its &uniq MutSlice<u8> destination; after the call the caller still holds len_of(window) and len_of(table), so the length check and both subscripts of the origin are discharged, and the bytes the callee wrote are the ones the caller reads back. This is the destination [CALL-5] leaves a helper that writes a caller's storage.";
-  region 'a {
-    let workspace = arena_frame::<4, 1, 'a>();
-    region {
-      let table = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
-      region {
-        place_back(vector: &uniq table, value: 3_u8);
-      }
-      region {
-        place_back(vector: &uniq table, value: 3_u8);
-      }
-      region {
-        let window = mut_slice_of(&uniq table);
-        region {
-          let count = fill(destination: &uniq window, value: 200_u8);
-        }
-        let seen = len_of(window);
-        if seen == 2_u64 {
-        } else {
-          return exit_status(code: 201_u8);
-        }
-      }
-      let first = table[0_u64];
-      let second = table[1_u64];
-      if first == 200_u8 {
-      } else {
-        return exit_status(code: 202_u8);
-      }
-      if second == 200_u8 {
-      } else {
-        return exit_status(code: 203_u8);
-      }
-    }
+  doc "A projected callee write through a range reference reaches the range's element storage and no measure term over the origin place nor over the range reference. The helper fills its &[u8] destination; after the call the caller still holds window.len and table.len, so the length check and both subscripts of the origin are discharged, and the bytes the callee wrote are the ones the caller reads back. A reference that is itself an argument is the thing being accessed and does not invalidate itself.";
+  let table = slots_new::<u8, 4>();
+  place_back(window: &table, value: 3_u8);
+  place_back(window: &table, value: 3_u8);
+  let window = &table[0_u64..2_u64];
+  let count = fill(destination: window, value: 200_u8);
+  let seen = window.len;
+  if seen == 2_u64 {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  let first = table[0_u64];
+  let second = table[1_u64];
+  if first == 200_u8 {
+  } else {
+    return exit_status(code: 202_u8);
+  }
+  if second == 200_u8 {
+  } else {
+    return exit_status(code: 203_u8);
   }
   return exit_status(code: 0_u8);
 }

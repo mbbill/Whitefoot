@@ -1,15 +1,9 @@
-fn exercise(cwd: &DirectoryRead, entry_factory: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, entry_factory), writes(entry_factory) {
+fn exercise() -> status: own ExitStatus pure {
   doc "The ordinary relative_path parameter is HostString. Passing a run of u8 is a normal FN-1 argument type mismatch; no path-from-bytes conversion is declared.";
-  let name = fixed_vector::<u8, 3>();
-  region {
-    place_back(vector: &uniq name, value: 97_u8);
-  }
-  region {
-    place_back(vector: &uniq name, value: 98_u8);
-  }
-  region {
-    place_back(vector: &uniq name, value: 99_u8);
-  }
+  let name = slots_new::<u8, 3>();
+  place_back(window: &name, value: 97_u8);
+  place_back(window: &name, value: 98_u8);
+  place_back(window: &name, value: 99_u8);
   match relative_path(value: move name) {
     Ok(value: path) => {
       return exit_status(code: 7_u8);
@@ -21,11 +15,9 @@ fn exercise(cwd: &DirectoryRead, entry_factory: &uniq HandleFactory) -> status: 
 }
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  doc "PRE-1 ordinary Inputs are destructured once; the operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    let outcome = exercise(cwd: &cwd, entry_factory: &uniq entry_factory);
-    close_directory(factory: &uniq entry_factory, directory: move cwd);
-    return move outcome;
-  }
+  let outcome = exercise();
+  close_directory(factory: &entry_factory, directory: move cwd);
+  return move outcome;
 }

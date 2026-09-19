@@ -2,8 +2,8 @@ enum StepError {
   Failed();
 }
 
-fn forward(holder: &Result<i32, StepError>) -> function_result: own Result<i32, StepError> pure {
-  doc "TYPE-7: propagate cannot implicitly consume a Result through a reference holder; deref remains explicit.";
+fn forward(holder: &Result<i32, StepError>) -> function_result: own Result<i32, StepError> reads(holder) {
+  doc "Propagation is a consuming context [ERR-3], and a place rooted through a reference parameter is not rooted in a live own-mode binding, so it cannot be consumed and the rejection is OWN-1's. v0.60 TYPE-7 owns the Box-content step alone and no longer owns this refusal.";
   let value = propagate holder;
   return Ok<i32, StepError>(value: value);
 }

@@ -1,34 +1,27 @@
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  doc "The ordinary write_once signature borrows its output and shared invocation factory state. Its linked implementation makes one output attempt and returns the absolute accepted endpoint.";
+  doc "The ordinary write_once signature takes its output and shared invocation factory state by reference and declares the writes in its row. Its linked implementation makes one output attempt and returns the absolute accepted endpoint.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  let bytes = fixed_vector::<u8, 5>();
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let bytes = slots_new::<u8, 5>();
   for @fill (
     at in 0_u64..5_u64,
-    invariant grown: len_of(bytes) >= at,
-    invariant spare: room_of(bytes) + at >= 5_u64,
-    invariant flat: head_of(bytes) <= 0_u64
+    invariant grown: bytes.len >= at,
+    invariant vacancy: bytes.room + at >= 5_u64
   ) {
-    place_back(vector: &uniq bytes, value: 65_u8);
+    place_back(window: &bytes, value: 65_u8);
   }
-  region {
-    let payload = slice_of(&bytes);
-    region {
-      match write_once(factory: &uniq entry_factory, output: &uniq out, source: &payload, start: 0_u64, end: 5_u64) {
-        Ok(value: written) => {
-          let complete = written == 5_u64;
-          if complete {
-            return exit_status(code: 0_u8);
-          } else {
-            return exit_status(code: 10_u8);
-          }
-        }
-        Err(error: problem) => {
-          return exit_status(code: 11_u8);
-        }
+  let payload = &bytes[0_u64..5_u64];
+  match write_once(factory: &entry_factory, output: &out, source: payload, start: 0_u64, end: 5_u64) {
+    Ok(value: written) => {
+      let complete = written == 5_u64;
+      if complete {
+        return exit_status(code: 0_u8);
+      } else {
+        return exit_status(code: 10_u8);
       }
+    }
+    Err(error: problem) => {
+      return exit_status(code: 11_u8);
     }
   }
 }

@@ -1,17 +1,10 @@
-fn hold['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
-  let bytes = fixed_vector::<u8, 1>();
-  let other = fixed_vector::<u8, 1>();
-  region {
-    match heap_box(store: &uniq deref(store), value: move bytes) {
-      Ok(value: owner) => {
-        let old = replace deref(owner) = move other;
-        return unit;
-      }
-      Err(error: back) => {
-        return unit;
-      }
-    }
-  }
+fn hold() -> result: own unit pure {
+  doc "An owned cell's content is also a legal affine exchange place: swap exchanges the two window values at the cell content and at a local, consuming neither root.";
+  let bytes = slots_new::<u8, 1>();
+  let other = slots_new::<u8, 1>();
+  let owner = box_new::<Slots<u8, 1>>(value: move bytes);
+  swap::<Slots<u8, 1>>(first: &deref(owner), second: &other);
+  return unit;
 }
 
 fn main() -> status: own ExitStatus pure {

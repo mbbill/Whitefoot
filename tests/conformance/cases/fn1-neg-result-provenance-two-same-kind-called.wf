@@ -1,15 +1,16 @@
-fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> result: &uniq 'r i32 pure {
-  return &uniq 'r deref(a);
+struct Cell {
+  value: i32;
+}
+
+fn pick(a: &Cell, b: &Cell) -> result: own i32 reads(a.value), reads(b.value) {
+  let seen = a.value +wrap b.value;
+  return &a.value;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "The still-illegal form, rejected at the boundary rather than at this binding: `pick` writes two parameters as uniq borrows in the result's formal region, so two provenance candidates leave the result's source undetermined and FN-1 rejects at the callee's complete `rtype` [FN-1]. OWN-6's binding-side rejection is unreachable once no accepted declaration reaches a call site. The restructuring is to give the source parameter its own region so exactly one parameter shares the result's region and kind.";
-  let v = 1_i32;
-  let w = 2_i32;
-  region {
-    let ha = &uniq v;
-    let hb = &uniq w;
-    let r = pick(a: &uniq deref(ha), b: &uniq deref(hb));
-  }
+  doc "The still-illegal form with a call site present: `pick` hands a reference back out of its frame, which REF-3 refuses at the returned `borrow_expr` in the callee. The caller is retained deliberately, so the case pins that the declaration is still the reported error when a call exists; fn1-neg-result-provenance-two-same-kind pins the same declaration with no caller at all.";
+  let v = Cell(value: 1_i32);
+  let w = Cell(value: 2_i32);
+  let r = pick(a: &v, b: &w);
   return exit_status(code: 0_u8);
 }

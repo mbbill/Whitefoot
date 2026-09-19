@@ -1,15 +1,15 @@
 enum State {
   Ready();
+  Done();
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "TYPE-7: a borrow expression is a reference value, not an enum value; bind it and match deref(holder).";
+  doc "A borrow expression is an atom [GRAM-5] naming a path [REF-1], so it is an ordinary reference scrutinee and the match leaves the scrutinee live [OWN-13]. The same spelling was the v0.59 bind-and-deref rejection; v0.60 admits it.";
   let state = Ready();
-  region {
-    match &state {
-      Ready() => {
-        set state = Ready();
-      }
+  match &state {
+    Ready() => {
+    }
+    Done() => {
     }
   }
   return exit_status(code: 0_u8);

@@ -1,11 +1,13 @@
 fn main() -> status: own ExitStatus pure {
-  doc "BLK-0: the proved take's third requirement is room_of(store) >= advance<T>(count), and a store this small cannot discharge it; the general store has no proved form because no honest compile-time domain predicate exists for it.";
-  region 'a {
-    let workspace = arena_frame::<16, 8, 'a>();
-    region {
-      let page = arena_vector_proved::<u64>(store: &uniq workspace, count: 8_u64);
-      let held = len_of(page);
-    }
+  doc "split_off's second requirement is destination.room >= source.len - index, and a destination this small cannot discharge it; the undischarged requirement of an ordinary PRE-1 record is an FN-8 call-site rejection naming the clause and rendering the residual under MSR-4.";
+  let source = slots_new::<u64, 8>();
+  for (
+    i in 0_u64..8_u64,
+    invariant h: source.len == i
+  ) {
+    place_back(window: &source, value: i);
   }
+  let destination = slots_new::<u64, 2>();
+  split_off(source: &source, index: 0_u64, destination: &destination);
   return exit_status(code: 0_u8);
 }

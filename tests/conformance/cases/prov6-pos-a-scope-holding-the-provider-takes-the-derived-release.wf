@@ -1,27 +1,15 @@
-fn consume['heap](run: own Vector<'heap, u8>, store: &uniq Heap<'heap>) -> code: own u8 reads(run), writes(store) contract {
-  requires len_of(run) > 0_u64;
+fn consume(run: own Slots<u8, 2>) -> code: own u8 pure contract {
+  requires run.len > 0_u64;
 } {
-  doc "D3, PROV-6: the same helper holding the store's provider is where the run is affine again. The release the scope exit runs is derived, and the row says so: writes(store) is the provider place that release spends [EFF-2].";
+  doc "PROV-6: a window whose element type is affine is affine, so the release its scope exit runs is derived and the row stays empty. The pair with the linear refusal is what makes that refusal about the type rather than about the scope.";
   let byte = run[0_u64];
   return byte;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh) => {
-        region {
-          place_back(vector: &uniq fresh, value: 0_u8);
-        }
-        let filled = move fresh;
-        region {
-          let code = consume(run: move filled, store: &uniq heap);
-          return exit_status(code: code);
-        }
-      }
-    }
-  }
+fn main() -> status: own ExitStatus pure {
+  doc "The caller fills one slot, so the requirement holds at the call.";
+  let fresh = slots_new::<u8, 2>();
+  place_back(window: &fresh, value: 0_u8);
+  let code = consume(run: move fresh);
+  return exit_status(code: code);
 }

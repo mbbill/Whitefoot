@@ -1,4 +1,4 @@
-fn read['heap](holder: own Box<'heap, FixedVector<u8, 4>>) -> function_result: own u8 pure {
+fn read(holder: own Box<Slots<u8, 4>>) -> function_result: own u8 pure {
   doc "TYPE-7: a subscript cannot implicitly read through a cell holder; write deref(holder)[offset].";
   return holder[0_u64];
 }

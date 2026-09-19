@@ -1,37 +1,35 @@
-fn forward(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) reads(source, destination), writes(source, destination) contract {
+fn forward(source: &DirectorySource, destination: &[u8], start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) writes(source), writes(destination) contract {
   requires start <= end;
-  requires end <= len_of(deref(destination));
+  requires end <= destination.len;
   ensures start <= next;
   ensures next <= end;
 } {
-  region {
-    let (outcome, cursor, count) = directory_next(source: &uniq deref(source), destination: &uniq deref(destination), start: start, end: end);
-    match move outcome {
-      Ok(value: done) => {
-        return Ok<unit, ListStop>(value: unit), cursor, count;
-      }
-      Err(error: stopped) => {
-        return Err<unit, ListStop>(error: move stopped), start, count;
-      }
+  doc "An ordinary wrapper republishes the declared directory result bounds on both Result branches.";
+  let (outcome, cursor, count) = directory_next(source: source, destination: destination, start: start, end: end);
+  match move outcome {
+    Ok(value: done) => {
+      return Ok<unit, ListStop>(value: unit), cursor, count;
+    }
+    Err(error: stopped) => {
+      return Err<unit, ListStop>(error: move stopped), start, count;
     }
   }
 }
 
-fn observe(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own unit reads(source, destination), writes(source, destination) contract {
+fn observe(source: &DirectorySource, destination: &[u8], start: own u64, end: own u64) -> result: own unit writes(source), writes(destination) contract {
   requires start <= end;
-  requires end <= len_of(deref(destination));
+  requires end <= destination.len;
 } {
-  region {
-    let (outcome, cursor, count) = forward(source: &uniq deref(source), destination: &uniq deref(destination), start: start, end: end);
-    match move outcome {
-      Ok(value: done) => {
-        invariant bounded_low: start <= cursor;
-        invariant bounded_high: cursor <= end;
-      }
-      Err(error: stopped) => {
-        invariant bounded_low: start <= cursor;
-        invariant bounded_high: cursor <= end;
-      }
+  doc "The declared bounds cross the wrapper and remain available on both branches of the match.";
+  let (outcome, cursor, count) = forward(source: source, destination: destination, start: start, end: end);
+  match move outcome {
+    Ok(value: done) => {
+      invariant bounded_low: start <= cursor;
+      invariant bounded_high: cursor <= end;
+    }
+    Err(error: stopped) => {
+      invariant bounded_low: start <= cursor;
+      invariant bounded_high: cursor <= end;
     }
   }
   return unit;

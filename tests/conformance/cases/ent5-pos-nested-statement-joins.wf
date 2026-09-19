@@ -3,8 +3,9 @@ enum InnerKind {
   Tail();
 }
 
-fn fetch_from_if(b: own Slice<u8>, i: own u64, wide: own Bool, kind: own InnerKind) -> result: own u8 reads(b) {
-  let spare = len_of(b);
+fn fetch_from_if(b: &[u8], i: own u64, wide: own Bool, kind: own InnerKind) -> result: own u8 reads(b) {
+  doc "A match nested inside an if: direct and negated comparison edges establish the same strict bound on every reaching path, and both the inner and the outer join must retain it [ENT-5, OP-4].";
+  let spare = b.len;
   if wide {
     match kind {
       Head() => {
@@ -36,8 +37,9 @@ enum OuterKind {
   Margin();
 }
 
-fn fetch_from_match(b: own Slice<u8>, i: own u64, kind: own OuterKind, safe: own Bool) -> result: own u8 reads(b) {
-  let spare = len_of(b);
+fn fetch_from_match(b: &[u8], i: own u64, kind: own OuterKind, safe: own Bool) -> result: own u8 reads(b) {
+  doc "The opposite nesting order, an if inside a match, must retain the same common bound.";
+  let spare = b.len;
   match kind {
     Exact() => {
       let inside = i < spare;
@@ -65,5 +67,6 @@ fn fetch_from_match(b: own Slice<u8>, i: own u64, kind: own OuterKind, safe: own
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "No construction is needed to exercise the nested joins.";
   return exit_status(code: 0_u8);
 }

@@ -1,25 +1,21 @@
-fn rebuild(vector: own FixedVector<u8, 4>) -> result: own FixedVector<u8, 4> reads(vector), writes(vector) contract {
-  requires len_of(vector) == 1_u64;
-  ensures len_of(result) == len_of(vector) + 1_u64;
+fn rebuild(vector: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure contract {
+  requires vector.len == 1_u64;
+  ensures result.len == vector.len + 1_u64;
 } {
-  doc "Constructs a new run and installs it in the incoming owner's local binding before return.";
-  let fresh = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq fresh, value: 7_u8);
-    place_back(vector: &uniq fresh, value: 9_u8);
-  }
-  let old = replace vector = move fresh;
+  doc "Constructs a new window and commits it into the incoming owner's local binding before return.";
+  let made = slots_new::<u8, 4>();
+  place_back(window: &made, value: 7_u8);
+  place_back(window: &made, value: 9_u8);
+  set vector = move made;
   return move vector;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "MSR-3: an own parameter's measure in ensures keeps its entry datum even after a freshly constructed value replaces that local binding.";
-  let input = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq input, value: 3_u8);
-  }
+  doc "MSR-3: an own parameter's measure in ensures denotes the immutable entry datum, so it keeps meaning the incoming length even after a freshly constructed value is committed into that local binding, and at the caller it denotes this call's call datum. The result carries the new length through the rebind placement; the contract still relates it to the incoming one.";
+  let input = slots_new::<u8, 4>();
+  place_back(window: &input, value: 3_u8);
   let rebuilt = rebuild(vector: move input);
-  invariant complete: len_of(rebuilt) >= 2_u64;
+  invariant complete: rebuilt.len >= 2_u64;
   let value = rebuilt[1_u64];
   if value == 9_u8 {
     return exit_status(code: 0_u8);

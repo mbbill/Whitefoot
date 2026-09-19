@@ -1,62 +1,46 @@
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "The ordinary read_next operation borrows the input and shared invocation factory state. Repeated Ok endpoints advance the source total to the arranged twenty-one bytes; a later Err(ReadEnd) ends the loop.";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "The ordinary read_next operation takes the input and shared invocation factory state by reference and declares the writes in its row. Repeated Ok endpoints advance the source total to the arranged twenty-one bytes; a later Err(ReadEnd) ends the loop.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: input) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let chunk = slots_new::<u8, 8>();
+  for @scratch (
+    at in 0_u64..8_u64,
+    invariant grown: chunk.len >= at,
+    invariant vacancy: chunk.room + at >= 8_u64
+  ) {
+    place_back(window: &chunk, value: 0_u8);
   }
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
+  let total = 0_u64;
+  let outcome = 0_u8;
+  let window = &chunk[0_u64..8_u64];
+  loop @chunks {
+    let ended = 0_u8;
+    match read_next(factory: &entry_factory, input: &input, destination: window, start: 0_u64, end: 8_u64) {
+      Ok(value: endpoint) => {
+        set total = total +wrap endpoint;
       }
-      Some(value: fresh) => {
-        let chunk = move fresh;
-        for @scratch (
-          at in 0_u64..8_u64,
-          invariant grown: len_of(chunk) >= at,
-          invariant spare: room_of(chunk) + at >= 8_u64,
-          invariant flat: head_of(chunk) <= 0_u64
-        ) {
-          place_back(vector: &uniq chunk, value: 0_u8);
-        }
-        let total = 0_u64;
-        let outcome = 0_u8;
-        region {
-          let window = mut_slice_of(&uniq chunk);
-          loop @chunks {
-            let ended = 0_u8;
-            region {
-              match read_next(factory: &uniq entry_factory, input: &uniq input, destination: &uniq window, start: 0_u64, end: 8_u64) {
-                Ok(value: endpoint) => {
-                  set total = total +wrap endpoint;
-                }
-                Err(error: read_stop_23) => {
-                  match read_stop_23 {
-                    ReadEnd() => {
-                      set ended = 1_u8;
-                    }
-                    ReadFailed(error: problem) => {
-                      set outcome = 3_u8;
-                      set ended = 1_u8;
-                    }
-                  }
-                }
-              }
-            }
-            if ended == 1_u8 {
-              break @chunks;
-            }
+      Err(error: read_stop_23) => {
+        match read_stop_23 {
+          ReadEnd() => {
+            set ended = 1_u8;
+          }
+          ReadFailed(error: problem) => {
+            set outcome = 3_u8;
+            set ended = 1_u8;
           }
         }
-        if outcome == 0_u8 {
-          let complete = total == 21_u64;
-          if complete {
-          } else {
-            set outcome = 4_u8;
-          }
-        }
-        return exit_status(code: outcome);
       }
     }
+    if ended == 1_u8 {
+      break @chunks;
+    }
   }
+  if outcome == 0_u8 {
+    let complete = total == 21_u64;
+    if complete {
+    } else {
+      set outcome = 4_u8;
+    }
+  }
+  return exit_status(code: outcome);
 }

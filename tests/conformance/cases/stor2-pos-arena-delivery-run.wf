@@ -1,17 +1,16 @@
 fn main() -> status: own ExitStatus pure {
+  doc "A value if delivers an owned cell from either branch, and deref returns the selected payload. Allocation is total, so neither branch carries a failure arm.";
   let flag = True();
-  region 'r {
-    let picked = if flag {
-      let a = arena_new::<'r, i32>(11_i32);
-      give move a;
-    } else {
-      let b = arena_new::<'r, i32>(22_i32);
-      give move b;
-    }
-    let v = deref(picked);
-    if v != 11_i32 {
-      return exit_status(code: 1_u8);
-    }
+  let picked = if flag {
+    let a = box_new::<i32>(value: 11_i32);
+    give move a;
+  } else {
+    let b = box_new::<i32>(value: 22_i32);
+    give move b;
+  }
+  let v = deref(picked);
+  if v != 11_i32 {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

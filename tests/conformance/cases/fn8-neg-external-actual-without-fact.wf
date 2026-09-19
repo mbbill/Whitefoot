@@ -1,35 +1,23 @@
-fn read_at_index(bytes: own FixedVector<u8, 4>, index: own u64) -> result: own u8 reads(bytes) contract {
-  define spare = len_of(bytes);
+fn read_at_index(bytes: &Slots<u8, 4>, index: own u64) -> result: own u8 reads(bytes) contract {
+  define spare = bytes.len;
   requires index < spare;
 } {
   return bytes[index];
 }
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "Passing an ordinary call-produced index to a requires-protected callee without a caller fact leaves the instantiated requirement unproved. The callee requirement cannot bootstrap its own caller proof.";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  let closed = close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let index = args_count(args: &args);
+  let bytes = slots_new::<u8, 4>();
+  for (
+    at in 0_u64..4_u64,
+    invariant grown: bytes.len >= at,
+    invariant spare: bytes.room + at >= 4_u64
+  ) {
+    place_back(window: &bytes, value: 0_u8);
   }
-  region {
-    let index = args_count(args: &args);
-    let empty = fixed_vector::<u8, 4>();
-    region {
-      place_back(vector: &uniq empty, value: 0_u8);
-    }
-    let one = move empty;
-    region {
-      place_back(vector: &uniq one, value: 0_u8);
-    }
-    let two = move one;
-    region {
-      place_back(vector: &uniq two, value: 0_u8);
-    }
-    let three = move two;
-    region {
-      place_back(vector: &uniq three, value: 0_u8);
-    }
-    let bytes = move three;
-    let value = read_at_index(bytes: move bytes, index: index);
-    return exit_status(code: value);
-  }
+  let value = read_at_index(bytes: &bytes, index: index);
+  return exit_status(code: value);
 }

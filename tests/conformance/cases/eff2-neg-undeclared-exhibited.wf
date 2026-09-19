@@ -1,13 +1,14 @@
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap) {
-  doc "The body takes a run from the general store, which exhibits `allocates(heap)` over the provider its take names, and declares only the other two categories [EFF-2, S23].";
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
-      None() => {
-        return exit_status(code: 1_u8);
-      }
-      Some(value: run) => {
-        return exit_status(code: 0_u8);
-      }
-    }
-  }
+fn fill(target: &Slots<u8, 4>) -> result: own unit pure contract {
+  requires target.room > 0_u64;
+} {
+  doc "The body places one value into the window behind its reference parameter, which exhibits writes(target.next) and writes(target.len), and declares the empty row instead [EFF-2, OP-10].";
+  place_back(window: target, value: 7_u8);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "Builds an empty window whose room is its whole capacity and hands it to the helper.";
+  let block = slots_new::<u8, 4>();
+  fill(target: &block);
+  return exit_status(code: 0_u8);
 }

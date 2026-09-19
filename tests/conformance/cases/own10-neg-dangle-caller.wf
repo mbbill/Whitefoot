@@ -1,5 +1,6 @@
-fn dangle['r0](x: own i32) -> return_value: &'r0 i32 pure {
-  return &'r0 x;
+fn dangle(x: own i32) -> return_value: own i32 pure {
+  doc "A reference never escapes: it may not be returned, so a function that found something returns an index or other owned data and the caller forms the reference.";
+  return &x;
 }
 
 fn main() -> return_value: own ExitStatus pure {

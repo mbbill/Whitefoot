@@ -1,4 +1,4 @@
-fn scan(data: own array<u8, 5>) -> result: own u8 reads(data) {
+fn scan(data: own Array<u8, 5>) -> result: own u8 pure {
   let total = 0_u8;
   for (i in 0_u64..5_u64) {
     let back = 5_u64 - i;

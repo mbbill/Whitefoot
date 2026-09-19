@@ -1,27 +1,17 @@
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "PROV-6: `dispose p;` runs at the point it is written exactly the release walk the scope exit would have run for `p`. The run is reclaimed before the entry's own exit edge, which is the difference between a peak of one run and a peak of two.";
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh) => {
-        let run = move fresh;
-        let size = len_of(run);
-        dispose run;
-        region {
-          match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
-            None() => {
-              return exit_status(code: 71_u8);
-            }
-            Some(value: next) => {
-              let second = move next;
-              dispose second;
-              return exit_status(code: 0_u8);
-            }
-          }
-        }
-      }
-    }
+fn release_now(cell: own Box<Slots<u8>>) -> result: own unit pure {
+  doc "Consuming the value here runs, at this call, the same release walk the caller's scope exit would have run for it.";
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "PROV-6: an affine value is released early by moving it into a function that consumes it and ends, and there is no release operation. The two windows are reclaimed one after the other rather than both at the entry's own exit edge, which is the difference between a peak of one window and a peak of two.";
+  let first = box_slots_new::<u8>(capacity: 4_u64);
+  let size = deref(first).len;
+  release_now(cell: move first);
+  let second = box_slots_new::<u8>(capacity: 4_u64);
+  release_now(cell: move second);
+  if size == 0_u64 {
+    return exit_status(code: 0_u8);
   }
+  return exit_status(code: 1_u8);
 }

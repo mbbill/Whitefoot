@@ -1,19 +1,7 @@
 fn main() -> status: own ExitStatus pure {
-  doc "A move of a copy value is the OWN-1 error, and VIEW-1 makes Slice copy: the shared view is used bare. The rejection is at the use, not at the formation, and its restructuring is to drop the move spelling.";
-  let data = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq data, value: 13_u8);
-  }
-  region {
-    place_back(vector: &uniq data, value: 13_u8);
-  }
-  region {
-    let window = slice_of(&data);
-    let taken = move window;
-    let width = len_of(taken);
-    if width == 2_u64 {
-      return exit_status(code: 0_u8);
-    }
-  }
+  doc "A move of a copy value is OWN-1's refusal, and a reference is a name for a path [REF-1], so move on a reference variable resolves to the path that reference names. v0.59 stated this over a copy Slice descriptor; v0.60 has no view value, so the surviving question is the same refusal over the resolved place. The rejection is at the use rather than at the formation, and its restructuring is to drop the move spelling.";
+  let count = 13_u64;
+  let window = &count;
+  let taken = move window;
   return exit_status(code: 1_u8);
 }

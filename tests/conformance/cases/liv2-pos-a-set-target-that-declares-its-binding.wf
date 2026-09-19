@@ -1,5 +1,5 @@
 fn split(value: own u64) -> (low: own u64, high: own u64) pure {
-  doc "Two declared results, so one commit has two ordinals.";
+  doc "Two declared results, so one call has two ordinals.";
   let half = value /checked 2_u64;
   match half {
     Ok(value: quotient) => {
@@ -12,9 +12,9 @@ fn split(value: own u64) -> (low: own u64, high: own u64) pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "LIV-2: a target identifier that resolves to no binding declares one exactly as a `let` binder does - a fresh declaration of the enclosing block, visible after the complete `set` statement and not inside it, with the mode and type of its own ordinal.";
+  doc "CALL-4, GRAM-4: a call that declares two result ordinals lands them on a parenthesized let binder list, ordinal i at binder i, each binder taking that ordinal's written mode and type and becoming visible after the complete statement. A set no longer declares anything, because SET-1 requires a target already in scope, so the binder list is the one spelling that names two results.";
   let start = 8_u64;
-  set (low, high) = split(value: start);
+  let (low, high) = split(value: start);
   if low == 4_u64 {
   } else {
     return exit_status(code: 1_u8);

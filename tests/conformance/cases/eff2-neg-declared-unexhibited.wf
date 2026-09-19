@@ -1,11 +1,11 @@
-fn f['heap](heap: &uniq Heap<'heap>, x: own i32) -> result: own i32 allocates(heap) {
-  doc "Declares `allocates(heap)` over its provider parameter but the body reaches no allocation [EFF-2].";
+fn f(cell: &Box<Slots<u64>>, x: own i32) -> result: own i32 writes(deref(cell)) {
+  doc "Declares a write of the cell content that the body never performs.";
   return x;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  region {
-    let a = f(heap: &uniq heap, x: 7_i32);
-  }
+fn main() -> status: own ExitStatus pure {
+  doc "A function declaring a write whose body performs none is rejected as declared-but-unexhibited; allocation and release carry no effect entry at all, so no row can be justified by them.";
+  let cell = box_slots_new::<u64>(capacity: 4_u64);
+  let a = f(cell: &cell, x: 7_i32);
   return exit_status(code: 0_u8);
 }

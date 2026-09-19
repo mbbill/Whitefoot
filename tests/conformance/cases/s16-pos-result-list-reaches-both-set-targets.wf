@@ -1,9 +1,9 @@
-fn split(taken: own FixedVector<u8, 8>) -> (kept: own u64, spare: own u64) reads(taken) contract {
-  ensures kept == len_of(taken);
-  ensures spare == len_of(taken);
+fn split(taken: own Slots<u8, 8>) -> (kept: own u64, spare: own u64) pure contract {
+  ensures kept == taken.len;
+  ensures spare == taken.len;
 } {
   doc "Two results, each related to the measure of the run this call consumed.";
-  let measured = len_of(taken);
+  let measured = taken.len;
   return measured, measured;
 }
 
@@ -15,35 +15,20 @@ fn needs_eight(bound: own u64) -> ok: own unit pure contract {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "S16, CALL-4: a set target list commits both result ordinals, and each target receives its own ordinal's published relation over the value the commit left.";
-  let run = fixed_vector::<u8, 8>();
-  region {
-    place_back(vector: &uniq run, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq run, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq run, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq run, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq run, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq run, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq run, value: 0_u8);
-  }
-  region {
-    place_back(vector: &uniq run, value: 0_u8);
+  doc "The multi-target set form is retired: one statement is one commit. The two result ordinals reach a destructuring let's binders, and each binder then reaches its own set target in its own commit, which establishes the post-write equality that carries that ordinal's published relation to the later requirement.";
+  let run = slots_new::<u8, 8>();
+  for @fill (
+    at in 0_u64..8_u64,
+    invariant grown: run.len >= at,
+    invariant vacancy: run.room + at >= 8_u64
+  ) {
+    place_back(window: &run, value: 0_u8);
   }
   let kept = 0_u64;
   let spare = 0_u64;
-  set (kept, spare) = split(taken: move run);
+  let (first_result, second_result) = split(taken: move run);
+  set kept = first_result;
+  set spare = second_result;
   let first = needs_eight(bound: kept);
   let second = needs_eight(bound: spare);
   return exit_status(code: 0_u8);

@@ -1,40 +1,36 @@
-fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
-  doc "Writes one byte through the borrow and returns the next position.";
-  let spare = len_of(deref(destination));
+fn fill(destination: &Slots<u8, 64>, at: own u64) -> result: own u64 writes(destination) {
+  doc "Writes one byte through the reference and returns the next position.";
+  let spare = destination.len;
   let inside = at < spare;
   if inside {
-    set deref(destination)[at] = 65_u8;
+    set destination[at] = 65_u8;
   }
   let next = at +wrap 1_u64;
   return next;
 }
 
-fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
-  define capacity = len_of(deref(source));
+fn emit(source: &Slots<u8, 64>, length: own u64) -> result: own u64 reads(source) contract {
+  define capacity = source.len;
   requires length <= capacity;
 } {
   doc "Consumes a prefix whose length the caller has proved.";
   let first = 0_u8;
   let present = 0_u64 < length;
   if present {
-    set first = deref(source)[0_u64];
+    set first = source[0_u64];
   }
   return length;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Hoists the length above a write the callee makes through a unique buffer borrow.";
-  let line = buffer_new(64_u64, 0_u8);
-  let spare = len_of(line);
+  doc "Hoists the length above a call whose substituted row writes the whole run: that write kills the saved measure image [EFF-5, ENT-5], so the branch on the stale image establishes nothing about the current length and the later requirement is unproved.";
+  let line = slots_new::<u8, 64>();
+  let spare = line.len;
   let end = 0_u64;
-  region {
-    set end = fill(destination: &uniq line, at: end);
-  }
+  set end = fill(destination: &line, at: end);
   let fits = end <= spare;
   if fits {
-    region {
-      let sent = emit(source: &line, length: end);
-    }
+    let sent = emit(source: &line, length: end);
   }
   return exit_status(code: 0_u8);
 }

@@ -1,5 +1,6 @@
 fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(4_u64, 7_u8);
-  let count = len_of(data);
+  doc "TYPE-5: a let binder's mode and type are derived from its construction call alone, never written; the fill operand fixes the element type and the resulting array supports its declared measure [OP-13, OP-15].";
+  let data = array_filled::<u8, 4>(value: 7_u8);
+  let count = data.len;
   return exit_status(code: 0_u8);
 }

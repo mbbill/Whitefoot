@@ -1,0 +1,17 @@
+fn main() -> status: own ExitStatus pure {
+  doc "OP-10: place_front and take_front admit Ring alone and shift every logical index of the ring, and a ring position is a logical index whose wrap is the storage's business.";
+  let r = ring_new::<u64, 4>();
+  place_back(window: &r, value: 2_u64);
+  place_front(window: &r, value: 1_u64);
+  let front = take_front(window: &r);
+  let n = r.len;
+  if front == 1_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if n == 1_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

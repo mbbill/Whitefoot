@@ -1,0 +1,13 @@
+fn main() -> status: own ExitStatus pure {
+  doc "REF-2: a reference is invalidated when a proper prefix of its path is written, and using it after that event is a hard error.";
+  let a = array_filled::<u64, 4>(value: 0_u64);
+  let p = &a[1_u64];
+  let b = array_filled::<u64, 4>(value: 5_u64);
+  set a = move b;
+  let seen = p;
+  if seen == 5_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

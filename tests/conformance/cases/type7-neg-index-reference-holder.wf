@@ -1,9 +1,7 @@
 fn main() -> status: own ExitStatus pure {
-  doc "TYPE-7 applies to an index base: a reference holder requires explicit deref(.) before indexing its referent.";
-  let items = fixed_vector::<u8, 2>();
-  region {
-    let holder = &items;
-    let value = holder[0_u64];
-  }
+  doc "A reference names a path [REF-1], so indexing a reference holder reaches the array it names with no dereference step. The same spelling was the v0.59 index-through-holder rejection; v0.60 admits it because TYPE-7 owns the Box-content step alone.";
+  let items = array_filled::<u8, 2>(value: 5_u8);
+  let holder = &items;
+  let value = holder[0_u64];
   return exit_status(code: 0_u8);
 }

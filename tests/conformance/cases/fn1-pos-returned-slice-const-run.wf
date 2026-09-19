@@ -1,24 +1,24 @@
-const fixed_bytes: FixedVector<u8, 3> =[7_u8, 13_u8, 19_u8];
+const fixed_bytes: Array<u8, 3> =[7_u8, 13_u8, 19_u8];
 
-fn fixed_view['r]() -> result: own Slice<'r, u8> pure {
-  let view = slice_of(&'r fixed_bytes);
-  return view;
+fn second_byte(part: &[u8]) -> value: own u8 reads(part) contract {
+  requires 1_u64 < part.len;
+} {
+  doc "Reads the original const bytes through the range reference its caller formed.";
+  return part[1_u64];
 }
 
 fn main() -> status: own ExitStatus pure {
-  region 'view {
-    let view = fixed_view::<'view>();
-    let view_room = len_of(view);
-    let view_ok = 1_u64 < view_room;
-    if view_ok {
-    } else {
-      return exit_status(code: 211_u8);
-    }
-    let observed = view[1_u64];
-    if observed == 13_u8 {
-    } else {
-      return exit_status(code: 201_u8);
-    }
+  doc "A range reference over immutable const storage is formed by the reader that uses it: a reference is never a result [REF-3, REF-4], so the caller writes `&fixed_bytes[0..3]` and hands it to the callee, whose own measure `part.len` discharges the requirement [MSR-1].";
+  let part = &fixed_bytes[0_u64..3_u64];
+  let width = part.len;
+  if width == 3_u64 {
+  } else {
+    return exit_status(code: 211_u8);
+  }
+  let observed = second_byte(part: part);
+  if observed == 13_u8 {
+  } else {
+    return exit_status(code: 201_u8);
   }
   return exit_status(code: 0_u8);
 }

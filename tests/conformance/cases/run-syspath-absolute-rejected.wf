@@ -1,28 +1,24 @@
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "The ordinary relative_path implementation returns PathInvalid for the arranged absolute name. This is an ordinary runtime error value, not a source rejection.";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text) => {
-        match relative_path(value: move text) {
-          Ok(value: path) => {
-            return exit_status(code: 10_u8);
-          }
-          Err(error: rejected) => {
-            match rejected {
-              PathInvalid() => {
-                return exit_status(code: 0_u8);
-              }
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  match arg_get(args: &args, position: 1_u64) {
+    Ok(value: text) => {
+      match relative_path(value: move text) {
+        Ok(value: path) => {
+          return exit_status(code: 10_u8);
+        }
+        Err(error: rejected) => {
+          match rejected {
+            PathInvalid() => {
+              return exit_status(code: 0_u8);
             }
           }
         }
       }
-      Err(error: absent) => {
-        return exit_status(code: 11_u8);
-      }
+    }
+    Err(error: absent) => {
+      return exit_status(code: 11_u8);
     }
   }
 }

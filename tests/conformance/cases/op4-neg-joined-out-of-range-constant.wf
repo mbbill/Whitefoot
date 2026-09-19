@@ -1,7 +1,8 @@
-fn indexed_byte(b: own Slice<u8>, flag: own Bool) -> result: own u8 reads(b) contract {
-  define spare = len_of(b);
+fn indexed_byte(b: &[u8], flag: own Bool) -> result: own u8 reads(b) contract {
+  define spare = b.len;
   requires spare == 5_u64;
 } {
+  doc "The two incoming index values are three and seven while the range reference's length is five, so the joined constant interval must include seven.";
   let idx = 0_u64;
   if flag {
     set idx = idx +wrap 3_u64;
