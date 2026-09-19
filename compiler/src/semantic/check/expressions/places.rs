@@ -79,6 +79,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 effects.add_read(path);
             }
             let (binding, path) = self.explicit_container_path(&place.expression, node)?;
+            // [REF-4, MSR-1] a range reference's one measure is its element
+            // count, and the row it belongs to is fixed by the written base
+            // rather than by the type the dereference selects [TYPE-7].
+            if place.range_referent {
+                if !path.is_empty() {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                let Some(element) = self.flat_element(place.ty)? else {
+                    return self
+                        .unsupported(UnsupportedSemanticFeature::CompositeValues, use_node);
+                };
+                return Ok(TypedExpression {
+                    expression: CheckedExpression::RangeMeasure {
+                        measure,
+                        root: super::super::super::model::CheckedRangeRoot { binding, element },
+                    },
+                    mode: CheckedMode::Own,
+                    reference: None,
+                    reference_value: false,
+                    effects,
+                    accesses: vec![PlaceAccess {
+                        place: place.resolved,
+                        kind: AccessKind::Read,
+                    }],
+                });
+            }
             return Ok(TypedExpression {
                 expression: CheckedExpression::ContainerMeasure {
                     measure,
@@ -97,6 +123,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     kind: AccessKind::Read,
                 }],
             });
+        }
+        // [TYPE-8] `&[T]` is a reference kind and not a type, so `deref(p)`
+        // of a range reference denotes the run it names and never a value of
+        // its own: the admitted readers are its one measure above and one
+        // subscript [MSR-1, OP-4], both of which resolve before this point.
+        if place.range_referent {
+            return self.issue_node(
+                SemanticRule::Type5,
+                use_node,
+                SemanticIssueKind::type_mismatch(
+                    "a value place",
+                    "the run a range reference names, which is read by `deref(p)[i]` or \
+                     `deref(p).len` [REF-4, MSR-1]",
+                ),
+            );
         }
         let copy = self.is_copy_type(place.ty)?;
         let read_out = !copy && options.explicit_move && self.take_commit_read_out(&place.resolved);
@@ -284,6 +325,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // path before this walker sees it, so a spelling arriving here is
             // one of the positions TYPE-10 refuses.
             if let Some(measure) = super::super::types::measure_named(&name) {
+                // [OP-14, PRE-1] at a boxed argument a compiler-owned row's
+                // measure place instantiates as `window.inner`: the shape
+                // parameter W admits `Box<Slots<T>>` and `Box<Ring<T>>`, and
+                // the clause then reads the content's measure, exactly as any
+                // `Box` content is reached [TYPE-9]. Only a row's own clause
+                // takes this step; source code writes the `inner` field
+                // itself.
+                if !place.range_referent
+                    && self.tree.is_prelude_node(suffix)?
+                    && let CheckedType::Nominal(nominal) = place.ty
+                    && let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind
+                    && super::super::expressions::flat_storage::measured_kind_of(place.ty)
+                        .is_none()
+                    && super::super::expressions::flat_storage::measured_kind_of(referent)
+                        .is_some()
+                {
+                    place.expression = CheckedExpression::BoxDeref {
+                        carrier: self.tree.path(carrier)?.clone(),
+                        nominal,
+                        referent,
+                        value: Box::new(place.expression),
+                    };
+                    place.ty = referent;
+                    place.resolved.path.push(PlaceStep::Deref);
+                }
                 let measured = if place.range_referent {
                     Some(super::super::super::model::MeasuredKind::Range)
                 } else {

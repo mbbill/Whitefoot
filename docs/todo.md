@@ -3,6 +3,31 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
+- **A window operation's call kills no measure fact of the window it writes.**
+  A `place_back`, `take_back`, `append`, `grow` or other [OP-10] call whose row
+  declares `writes(window)` leaves the pre-call [MSR-1] measure relations of
+  the actual alive, so the state after it holds both the construction's
+  `len_of(r) == 0` and the operation's `len_of(r) == entry + 1`. Two
+  consequences follow and both are wrong. Where the two relations contradict,
+  `prove_bounded_relation` returns `Proved` by `ProofRoute::Contradiction` and
+  every later obligation is discharged: `win1-neg-subscript-above-len` writes
+  `r[2_u64]` after one `place_back` into a four-slot window and is accepted.
+  Where they do not, the stale relation *refutes* a true goal before the
+  affine route runs: after `for at in 0_u64..4_u64` with
+  `invariant grown: built.len >= at`, the [INV-1] exhaustion export publishes
+  `len_of(built) >= 4` as an affine fact, and `built[3_u64]` is still rejected
+  because L0 derives `len_of(built) <= 0` from the construction and
+  `closed.derives(&relation.negated())` returns `Refuted` at
+  `compiler/src/semantic/entailment/flow.rs` before `goal.direct_affine` is
+  consulted. The kill event for such a call is built in
+  `collect_expression_kills`'s `CheckedExpression::UserCall` arm from
+  `EntailmentCallee::parameter_writes`, which comes from the instance's
+  `declared_effects.writes`; an operand-directed [PRE-1] instance
+  [OP-10, OP-11, OP-14] whose row entry is missing there produces no event and
+  therefore no kill. Confirm whether that instance's `writes(window)` survives
+  `parse_effects` in `generics.rs`, fix the missing row or the missing event,
+  and keep the reproducers above as tests.
+
 - **A field projected after dereferencing a runtime-indexed composite element
   stops as unsupported.** The specification admits ordinary chained element,
   dereference, and field selection, but

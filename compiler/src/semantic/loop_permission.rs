@@ -622,6 +622,7 @@ impl<'check> Survey<'check, '_> {
             CheckedSetTarget::Place(_) => {}
             CheckedSetTarget::ArrayIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
+            CheckedSetTarget::RangeIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::Storage(target) => {
                 for offset in target.offsets() {
                     self.expression(offset);
@@ -646,6 +647,9 @@ impl<'check> Survey<'check, '_> {
             // subscript carries its own base type.
             CheckedSetTarget::ArrayIndex(target) => &target.obligation,
             CheckedSetTarget::BufferIndex(target) => &target.obligation,
+            // [REF-4] a range reference names a run of elements directly;
+            // the base is never a `Ring`, which [REF-4] refuses a range over.
+            CheckedSetTarget::RangeIndex(target) => &target.obligation,
             CheckedSetTarget::Storage(target) => {
                 let index = target.path.iter().rev().find_map(|step| match step {
                     CheckedPlaceStep::Subscript(index) => Some(index),
@@ -845,6 +849,13 @@ impl<'check> Survey<'check, '_> {
                 *binding,
                 self.places.resolve(PlaceRoot::Binding(*binding), &[]),
             )),
+            // [REF-4, MSR-2] a read through a range reference reads the path
+            // the reference names; its own offset is this node's child.
+            CheckedExpression::RangeMeasure { root, .. }
+            | CheckedExpression::RangeIndex { root, .. } => Some((
+                root.binding,
+                self.places.resolve(PlaceRoot::Binding(root.binding), &[]),
+            )),
             CheckedExpression::Project {
                 binding, fields, ..
             } => Some((
@@ -900,6 +911,9 @@ impl<'check> Survey<'check, '_> {
             | CheckedExpression::ArrayFill { .. }
             | CheckedExpression::ConstructStruct { .. }
             | CheckedExpression::ConstructEnum { .. }
+            // Naming a path reads no element content [REF-1, REF-4]; the
+            // endpoints are this node's children.
+            | CheckedExpression::RangeOf { .. }
             | CheckedExpression::ProjectValue { .. } => None,
             // Expression forms whose v0.60 operation left [OP-1]'s table and
             // which the checker no longer builds. An occurrence would be

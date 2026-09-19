@@ -524,6 +524,7 @@ impl FunctionDependencies {
                 self.expression(&target.offset);
             }
             CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
+            CheckedSetTarget::RangeIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::Storage(root) => {
                 self.root_types(root);
                 for offset in root.offsets() {

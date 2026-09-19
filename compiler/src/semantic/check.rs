@@ -2161,6 +2161,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     &mut target.offset,
                                     requirements,
                                 )?,
+                            CheckedSetTarget::RangeIndex(target) => self
+                                .install_expression_call_requirements(
+                                    &mut target.offset,
+                                    requirements,
+                                )?,
                             CheckedSetTarget::Storage(target) => {
                                 for offset in target.offsets_mut() {
                                     self.install_expression_call_requirements(
@@ -2185,6 +2190,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 requirements,
                             )?,
                         CheckedSetTarget::BufferIndex(target) => self
+                            .install_expression_call_requirements(
+                                &mut target.offset,
+                                requirements,
+                            )?,
+                        CheckedSetTarget::RangeIndex(target) => self
                             .install_expression_call_requirements(
                                 &mut target.offset,
                                 requirements,
@@ -2294,8 +2304,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
-            | CheckedExpression::BufferIndex { offset, .. } => {
+            | CheckedExpression::BufferIndex { offset, .. }
+            | CheckedExpression::RangeIndex { offset, .. } => {
                 self.install_expression_call_requirements(offset, requirements)?;
+            }
+            // [REF-4] both endpoints are ordinary operands evaluated at the
+            // formation, and a storage source carries its own offsets.
+            CheckedExpression::RangeOf {
+                source,
+                start,
+                end,
+                ..
+            } => {
+                if let super::model::CheckedRangeSource::Storage(root) = source {
+                    for offset in root.offsets_mut() {
+                        self.install_expression_call_requirements(offset, requirements)?;
+                    }
+                }
+                self.install_expression_call_requirements(start, requirements)?;
+                self.install_expression_call_requirements(end, requirements)?;
             }
             CheckedExpression::BufferFill { length, value, .. } => {
                 self.install_expression_call_requirements(length, requirements)?;
@@ -2311,6 +2338,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ArrayMeasure { .. }
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
+            | CheckedExpression::RangeMeasure { .. }
             | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
@@ -2385,6 +2413,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     bounds,
                                 )?;
                             }
+                            CheckedSetTarget::RangeIndex(target) => {
+                                Self::install_expression_allocation_bounds(
+                                    &mut target.offset,
+                                    bounds,
+                                )?;
+                            }
                             CheckedSetTarget::Storage(target) => {
                                 for offset in target.offsets_mut() {
                                     Self::install_expression_allocation_bounds(offset, bounds)?;
@@ -2404,6 +2438,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
                         }
                         CheckedSetTarget::BufferIndex(target) => {
+                            Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
+                        }
+                        CheckedSetTarget::RangeIndex(target) => {
                             Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
                         }
                         CheckedSetTarget::Storage(target) => {
@@ -2505,8 +2542,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
-            | CheckedExpression::BufferIndex { offset, .. } => {
+            | CheckedExpression::BufferIndex { offset, .. }
+            | CheckedExpression::RangeIndex { offset, .. } => {
                 Self::install_expression_allocation_bounds(offset, bounds)?;
+            }
+            CheckedExpression::RangeOf {
+                source,
+                start,
+                end,
+                ..
+            } => {
+                if let super::model::CheckedRangeSource::Storage(root) = source {
+                    for offset in root.offsets_mut() {
+                        Self::install_expression_allocation_bounds(offset, bounds)?;
+                    }
+                }
+                Self::install_expression_allocation_bounds(start, bounds)?;
+                Self::install_expression_allocation_bounds(end, bounds)?;
             }
             CheckedExpression::BufferFits { length, .. } => {
                 Self::install_expression_allocation_bounds(length, bounds)?;
@@ -2517,6 +2569,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ArrayMeasure { .. }
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
+            | CheckedExpression::RangeMeasure { .. }
             | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
@@ -2699,13 +2752,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     maximum_length,
                 }
             }
-            GoalOperation::SliceMeasure {
+            GoalOperation::RangeMeasure { measure, element } => GoalOperation::RangeMeasure {
                 measure,
-                region,
-                element,
-            } => GoalOperation::SliceMeasure {
-                measure,
-                region: self.instantiate_goal_region(region, signature, regions)?,
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
             GoalOperation::ContainerMeasure {
@@ -2734,8 +2782,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .map(|constant| self.instantiate_goal_const(constant, signature))
                     .transpose()?,
             },
-            GoalOperation::SliceIndex { region, element } => GoalOperation::SliceIndex {
-                region: self.instantiate_goal_region(region, signature, regions)?,
+            GoalOperation::RangeIndex { element } => GoalOperation::RangeIndex {
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
         })

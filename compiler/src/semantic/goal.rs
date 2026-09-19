@@ -246,9 +246,11 @@ pub(crate) enum GoalOperation {
         element: CheckedType,
         maximum_length: u64,
     },
-    SliceMeasure {
+    /// [MSR-1] the one measure a range reference has, its element count
+    /// [REF-4]. A range reference carries no region and no capacity, so the
+    /// element type is the whole of the row's identity beside the measure.
+    RangeMeasure {
         measure: CheckedMeasure,
-        region: DeclarationId,
         element: CheckedFlatElement,
     },
     /// One [MSR-1] measure of a run [BLK-1] or a bump extent [PROV-1]. The
@@ -271,10 +273,10 @@ pub(crate) enum GoalOperation {
         element: CheckedElement,
         constant: Option<CheckedConst>,
     },
-    /// One slice element value whose own OP-4 obligation has already been
-    /// discharged before this expression is used as a proof operand.
-    SliceIndex {
-        region: DeclarationId,
+    /// One element of the run a range reference names, whose own [OP-4]
+    /// obligation has already been discharged before this expression is used
+    /// as a proof operand [REF-4].
+    RangeIndex {
         element: CheckedFlatElement,
     },
 }

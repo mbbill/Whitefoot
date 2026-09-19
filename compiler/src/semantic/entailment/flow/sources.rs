@@ -793,6 +793,14 @@ impl Analyzer<'_, '_> {
                 MeasuredKind::RuntimeArray,
                 None,
             ),
+            // [MSR-1, REF-4] a range reference's one measure, over the place
+            // the reference names [REF-1].
+            CheckedExpression::RangeMeasure { measure, root } => (
+                *measure,
+                ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), Vec::new()),
+                MeasuredKind::Range,
+                None,
+            ),
             // [MSR-1] a run's or a bump extent's measure reader names the
             // same [ENT-2] term the clause and the invariant name, so a `let`
             // over one is the ordinary [ENT-3.S6] equality a buffer's is.

@@ -45,6 +45,9 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                         CheckedSetTarget::BufferIndex(target) => {
                             collect_expression(&target.offset, bindings);
                         }
+                        CheckedSetTarget::RangeIndex(target) => {
+                            collect_expression(&target.offset, bindings);
+                        }
                         CheckedSetTarget::Storage(root) => {
                             bindings.extend(root.binding());
                             collect_place(root, bindings);
@@ -64,6 +67,9 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                         collect_expression(&target.offset, bindings);
                     }
                     CheckedSetTarget::BufferIndex(target) => {
+                        collect_expression(&target.offset, bindings);
+                    }
+                    CheckedSetTarget::RangeIndex(target) => {
                         collect_expression(&target.offset, bindings);
                     }
                     CheckedSetTarget::Storage(root) => {
@@ -172,7 +178,23 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => collect_expression(value, bindings),
         CheckedExpression::ArrayIndex { offset, .. }
-        | CheckedExpression::BufferIndex { offset, .. } => collect_expression(offset, bindings),
+        | CheckedExpression::BufferIndex { offset, .. }
+        | CheckedExpression::RangeIndex { offset, .. } => collect_expression(offset, bindings),
+        // [REF-4] the formation reads the source place's own offsets and
+        // evaluates both endpoints.
+        CheckedExpression::RangeOf {
+            source,
+            start,
+            end,
+            ..
+        } => {
+            if let crate::semantic::CheckedRangeSource::Storage(root) = source {
+                bindings.extend(root.binding());
+                collect_place(root, bindings);
+            }
+            collect_expression(start, bindings);
+            collect_expression(end, bindings);
+        }
         CheckedExpression::BufferFill { length, value, .. } => {
             collect_expression(length, bindings);
             collect_expression(value, bindings);
@@ -184,6 +206,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::Binding { .. }
         | CheckedExpression::ArrayMeasure { .. }
         | CheckedExpression::BufferMeasure { .. }
+        | CheckedExpression::RangeMeasure { .. }
         | CheckedExpression::PostconditionResultMeasure { .. }
         | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::ReborrowAddressed { .. }

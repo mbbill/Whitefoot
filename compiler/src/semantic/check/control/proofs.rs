@@ -40,6 +40,10 @@ impl AffineProofOwner {
 struct OrderedRelationNormalization {
     reverse: bool,
     bound: i128,
+    /// [INV-1] `a == b` normalizes to the bound pair `a-b <= 0` and
+    /// `b-a <= 0`; the record below carries the first and this flag the
+    /// second.
+    equality: bool,
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -264,7 +268,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// [INV-1] the `compare_op` between the two affine expressions selects
     /// the proof-domain relation: the four ordered symbols normalize to one
-    /// bounded `<=`, and equality or disequality is not an invariant relation.
+    /// bounded `<=`, `==` in an invariant target normalizes to the bound pair
+    /// `a-b <= 0` and `b-a <= 0`, and disequality is no relation here.
+    ///
+    /// `==` is admitted in a `header_invariant` and an `invariant_stmt` and
+    /// refused in a `use_premise`, which adds one normalized premise into one
+    /// sum [PRF-1]; the owning position selects which rule the refusal cites.
     fn ordered_relation_normalization(
         &self,
         owner: AffineProofOwner,
@@ -281,25 +290,44 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             b"<=" => OrderedRelationNormalization {
                 reverse: false,
                 bound: 0,
+                equality: false,
             },
             b"<" => OrderedRelationNormalization {
                 reverse: false,
                 bound: -1,
+                equality: false,
             },
             b">=" => OrderedRelationNormalization {
                 reverse: true,
                 bound: 0,
+                equality: false,
             },
             b">" => OrderedRelationNormalization {
                 reverse: true,
                 bound: -1,
+                equality: false,
             },
+            b"==" if matches!(owner, AffineProofOwner::InvariantTarget) => {
+                OrderedRelationNormalization {
+                    reverse: false,
+                    bound: 0,
+                    equality: true,
+                }
+            }
+            b"==" => {
+                return self.invalid_affine_proof(
+                    owner,
+                    node,
+                    "a certificate premise is one inequality, and equality is a bound pair",
+                    "write `<=`, `<`, `>=`, or `>` in a `use` premise, and state the two bounds as two premises",
+                );
+            }
             _ => {
                 return self.invalid_affine_proof(
                     owner,
                     node,
                     "the invariant relation is not an admitted ordered integer relation",
-                    "write `<=`, `<`, `>=`, or `>` between the two affine expressions; equality and disequality are not invariant relations",
+                    "write `<=`, `<`, `>=`, `>`, or `==` between the two affine expressions; disequality is not an invariant relation",
                 );
             }
         };
@@ -322,6 +350,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             std::mem::swap(&mut relation.left, &mut relation.right);
         }
         relation.bound = normalization.bound;
+        relation.equality = normalization.equality;
         self.validate_affine_relation(node, &relation, owner)?;
         Ok(relation)
     }
@@ -360,6 +389,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             left,
             right,
             bound: 0,
+            equality: false,
         })
     }
 
@@ -711,16 +741,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if self.has_fixed(pbase, crate::syntax::terminal::FixedTerminal::Deref)? {
-            // [INV-1] a measure place's root names a live own-mode value of
-            // measured type, which a reference variable is not.
-            return self.invalid_affine_proof(
-                owner,
-                node,
-                "an affine factor dereferences a holder",
-                "bind the integer value with a `let` and use that binding",
-            );
-        }
+        // [INV-1] a measure place's root resolves in the same context a bare
+        // IDENT does, except that it names a live own-mode value of measured
+        // type *or a live reference whose referent is reached through*
+        // `deref` [REF-1, TYPE-7], which is how section 16's example writes
+        // `deref(p).len`. A bare `deref(p)` naming no measure is still no
+        // affine atom, and the refusal for it stands below.
+        let dereferenced =
+            self.has_fixed(pbase, crate::syntax::terminal::FixedTerminal::Deref)?;
         // [INV-1, OP-15] one `place` formed from an admitted measure place by
         // one measure-member `psuffix`. The relation evaluates nothing and
         // reads no storage, so the factor reaches the resolved place and the
@@ -757,6 +785,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
                 None,
             ));
+        }
+        if dereferenced {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine factor reads a referent that is not a measure",
+                "read one measure member of the dereferenced place, or bind the integer value with a `let` and use that binding",
+            );
         }
         if !suffixes.is_empty() {
             return self.invalid_affine_proof(

@@ -33,7 +33,8 @@ use super::super::model::{
     CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
     CheckedLoopId, CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure, CheckedMode,
     CheckedNominal, CheckedNominalKind, CheckedNumericType, CheckedPlaceStep,
-    CheckedProofMultiplicity, CheckedProofUseSource, CheckedReleaseMode, CheckedSetTarget,
+    CheckedProofMultiplicity, CheckedProofUseSource, CheckedRangeSource, CheckedReleaseMode,
+    CheckedSetTarget,
     CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType, MeasureCell,
     MeasuredKind, ValueInitializerKind,
 };
@@ -1930,7 +1931,7 @@ impl Analyzer<'_, '_> {
                 row:
                     GoalOperation::ArrayMeasure { .. }
                     | GoalOperation::BufferMeasure { .. }
-                    | GoalOperation::SliceMeasure { .. }
+                    | GoalOperation::RangeMeasure { .. }
                     | GoalOperation::ContainerMeasure { .. },
                 ..
             } => {
@@ -2329,6 +2330,10 @@ impl Analyzer<'_, '_> {
             }
             CheckedExpression::BorrowBuffer { root, .. }
             | CheckedExpression::BufferMeasure { root, .. } => {
+                self.append_holder_chain(root.binding, holders);
+            }
+            CheckedExpression::RangeMeasure { root, .. }
+            | CheckedExpression::RangeIndex { root, .. } => {
                 self.append_holder_chain(root.binding, holders);
             }
             CheckedExpression::ArrayMeasure {
@@ -3663,6 +3668,9 @@ impl Analyzer<'_, '_> {
             CheckedSetTarget::Place(target) => ResolvedPlace::spelled(PlaceRoot::Binding(target.binding), self.is_holder(target.binding), target.fields.clone()),
             CheckedSetTarget::ArrayIndex(target) => ResolvedPlace::spelled(PlaceRoot::Binding(target.binding), self.is_holder(target.binding), target.fields.clone()),
             CheckedSetTarget::BufferIndex(target) => ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), target.root.fields.clone()),
+            // [REF-4, REF-1] a range reference names one path; writing an
+            // element of it writes that path.
+            CheckedSetTarget::RangeIndex(target) => ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), Vec::new()),
             CheckedSetTarget::Storage(target) => {
                 return self
                     .places
@@ -5220,6 +5228,34 @@ impl Analyzer<'_, '_> {
                     vec![argument],
                 )
             }
+            // [MSR-1, REF-4] the one measure a range reference has.
+            CheckedExpression::RangeMeasure { measure, root } => {
+                let argument =
+                    self.goal_binding_place(root.binding, Vec::new(), root.element.ty());
+                build_operation(
+                    GoalOperation::RangeMeasure {
+                        measure: *measure,
+                        element: root.element,
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    CheckedType::Integer(IntegerType::U64),
+                    vec![argument],
+                )
+            }
+            CheckedExpression::RangeIndex { root, offset, .. } if admitted_partial => {
+                let collection =
+                    self.goal_binding_place(root.binding, Vec::new(), root.element.ty());
+                build_operation(
+                    GoalOperation::RangeIndex {
+                        element: root.element,
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    root.element.ty(),
+                    vec![collection, self.goal_expression(offset, admitted_partial)?],
+                )
+            }
             CheckedExpression::BufferIndex { root, offset, .. } if admitted_partial => {
                 let collection_type = CheckedType::Buffer {
                     element: root.element,
@@ -5266,6 +5302,8 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::BufferFill { .. }
             | CheckedExpression::BufferVacant { .. }
             | CheckedExpression::BufferIndex { .. }
+            | CheckedExpression::RangeIndex { .. }
+            | CheckedExpression::RangeOf { .. }
             | CheckedExpression::BoxNew { .. }
             | CheckedExpression::ArenaNew { .. }
             | CheckedExpression::ArenaDeref { .. }
@@ -5786,7 +5824,7 @@ impl Analyzer<'_, '_> {
                 let node_measure = match row {
                     GoalOperation::ArrayMeasure { measure, .. }
                     | GoalOperation::BufferMeasure { measure, .. }
-                    | GoalOperation::SliceMeasure { measure, .. }
+                    | GoalOperation::RangeMeasure { measure, .. }
                     | GoalOperation::ContainerMeasure { measure, .. } => Some(*measure),
                     _ => None,
                 };
@@ -5930,7 +5968,7 @@ impl Analyzer<'_, '_> {
                     row,
                     GoalOperation::ArrayMeasure { .. }
                         | GoalOperation::BufferMeasure { .. }
-                        | GoalOperation::SliceMeasure { .. }
+                        | GoalOperation::RangeMeasure { .. }
                         | GoalOperation::ContainerMeasure { .. }
                 ) =>
             {
@@ -5948,7 +5986,7 @@ impl Analyzer<'_, '_> {
                     GoalOperation::BufferMeasure { measure, .. } => {
                         (*measure, MeasuredKind::RuntimeArray, None)
                     }
-                    GoalOperation::SliceMeasure { measure, .. } => {
+                    GoalOperation::RangeMeasure { measure, .. } => {
                         (*measure, MeasuredKind::Range, None)
                     }
                     // [MSR-1]'s row for a run or a bump extent. The written
@@ -6591,6 +6629,71 @@ impl Analyzer<'_, '_> {
                 ExpressionJudgment {
                     prepared_call: None,
                     reached: reaches_index && self.obligations_since_discharged(obligation_start),
+                }
+            }
+            // [OP-4, REF-4] one element of the run a range names owes
+            // `i < deref(p).len`, the range's one measure [MSR-1].
+            CheckedExpression::RangeIndex {
+                root,
+                offset,
+                obligation,
+                ..
+            } => {
+                let reaches_index =
+                    self.judge_children_reach_parent(std::iter::once(offset.as_ref()), states);
+                let obligation_start = self.obligations.len();
+                if reaches_index {
+                    let base = ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), Vec::new());
+                    self.judge_obligation(
+                        base,
+                        MeasuredKind::Range,
+                        None,
+                        offset,
+                        obligation.clone(),
+                        states,
+                    );
+                }
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached: reaches_index && self.obligations_since_discharged(obligation_start),
+                }
+            }
+            // [REF-4] the formation's two conjuncts, `lo <= hi` and
+            // `hi <= x.len`, over the source's own one measure.
+            CheckedExpression::RangeOf {
+                source,
+                start,
+                end,
+                obligation,
+                ..
+            } => {
+                let reaches_endpoints = self.judge_children_reach_parent(
+                    [start.as_ref(), end.as_ref()].into_iter(),
+                    states,
+                );
+                let obligation_start = self.obligations.len();
+                let source_subscripts = match source {
+                    CheckedRangeSource::Storage(root) => self.judge_place_subscripts(root, states),
+                    CheckedRangeSource::Range(_) => true,
+                };
+                if reaches_endpoints && source_subscripts {
+                    let length = match source {
+                        CheckedRangeSource::Storage(root) => CheckedExpression::ContainerMeasure {
+                            measure: CheckedMeasure::Length,
+                            root: root.clone(),
+                        },
+                        CheckedRangeSource::Range(root) => CheckedExpression::RangeMeasure {
+                            measure: CheckedMeasure::Length,
+                            root: root.clone(),
+                        },
+                    };
+                    self.judge_view_range(obligation, start, end, &length, states);
+                }
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached: reaches_endpoints
+                        && source_subscripts
+                        && self.obligations_since_discharged(obligation_start),
                 }
             }
             // that place's own subscripts are discharged [OP-4].
@@ -7753,7 +7856,9 @@ impl Analyzer<'_, '_> {
             }
             // No flat element domain names the offset its commit wrote, so
             // none has an element place a measure could be stated over.
-            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => None,
+            CheckedSetTarget::ArrayIndex(_)
+            | CheckedSetTarget::BufferIndex(_)
+            | CheckedSetTarget::RangeIndex(_) => None,
         }
     }
 
@@ -8695,8 +8800,17 @@ impl Analyzer<'_, '_> {
             bound: 0,
             distinct: false,
         });
-        let direct_affine = self.affine_goal_ordering_target(&root, &states.affine);
         let affine_left = left.and_then(|term| self.affine_term_value(term, &states.affine));
+        // [MSR-4] the relation submits its own normalized target so the
+        // affine route ranges over each side's own atom, exactly as a
+        // subscript's bound does, rather than only over the goal expression
+        // the two operands render to.
+        let direct_affine = self.affine_goal_ordering_target(&root, &states.affine).or_else(|| {
+            let left = affine_left.clone()?;
+            let right = right.and_then(|term| self.affine_term_value(term, &states.affine))?;
+            let mut check = AffineCheckState::new();
+            AffineInequality::from_bounded_forms(&left, &right, 0, &mut check).ok()
+        });
         let proof = self.prove(
             ProofContext::new(&states.facts, &states.affine),
             ProofGoal::BoundedRelation(BoundedRelationGoal {
@@ -9792,6 +9906,7 @@ impl Analyzer<'_, '_> {
         match expression {
             CheckedExpression::ArrayMeasure { .. }
             | CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::RangeMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. } => self
                 .checked_measure_term(expression)
                 .map(|term| self.measure_atom(term, state)),
@@ -9954,6 +10069,25 @@ impl Analyzer<'_, '_> {
                     self.judge_obligation(
                         base,
                         MeasuredKind::RuntimeArray,
+                        None,
+                        &target.offset,
+                        target.obligation.clone(),
+                        states,
+                    );
+                }
+                reaches_target && self.obligations_since_discharged(obligation_start)
+            }
+            // [OP-4, REF-4] the range's own obligation is `i < deref(p).len`:
+            // its one measure is the element count of the run it names.
+            CheckedSetTarget::RangeIndex(target) => {
+                let reaches_target =
+                    self.judge_children_reach_parent(std::iter::once(&target.offset), states);
+                let obligation_start = self.obligations.len();
+                if reaches_target {
+                    let base = ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), Vec::new());
+                    self.judge_obligation(
+                        base,
+                        MeasuredKind::Range,
                         None,
                         &target.offset,
                         target.obligation.clone(),
@@ -10970,6 +11104,7 @@ impl Analyzer<'_, '_> {
         let formed = match expression {
             CheckedExpression::ArrayMeasure { .. }
             | CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::RangeMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. } => self
                 .checked_measure_term(expression)
                 .map(|term| self.measure_atom(term, state)),
@@ -11140,6 +11275,68 @@ impl Analyzer<'_, '_> {
             .ok()
     }
 
+    /// [INV-1] the second member of an `==` target, `b-a <= 0` beside the
+    /// `a-b <= 0` the record carries. A relation written with one of the four
+    /// ordered symbols has no second member and answers `None`.
+    fn checked_affine_relation_partner(
+        &mut self,
+        relation: &CheckedAffineRelation,
+        state: &mut AffineFlowState,
+        check: &mut AffineCheckState,
+    ) -> Option<Result<AffineInequality, AffineCheckError>> {
+        if !relation.equality {
+            return None;
+        }
+        let left = match self.checked_affine_form(&relation.left, state, check) {
+            Ok(form) => form,
+            Err(error) => return Some(Err(error)),
+        };
+        let right = match self.checked_affine_form(&relation.right, state, check) {
+            Ok(form) => form,
+            Err(error) => return Some(Err(error)),
+        };
+        Some(AffineInequality::from_bounded_forms(&right, &left, 0, check))
+    }
+
+    /// Whether every member of one written invariant's batch is proved in
+    /// this state [INV-1]: one inequality, or both bounds of an equality.
+    fn prove_affine_relation_batch(
+        &mut self,
+        relation: &CheckedAffineRelation,
+        state: &mut ProofFlowState,
+    ) -> bool {
+        let target = self
+            .checked_affine_relation_inequality(
+                relation,
+                &mut state.affine,
+                &mut AffineCheckState::new(),
+            )
+            .ok();
+        let partner = self
+            .checked_affine_relation_partner(
+                relation,
+                &mut state.affine,
+                &mut AffineCheckState::new(),
+            )
+            .map(|partner| partner.ok());
+        let mut members = vec![target];
+        if let Some(partner) = partner {
+            members.push(partner);
+        }
+        members.into_iter().all(|member| {
+            member.is_some_and(|inequality| {
+                self.prove(
+                    ProofContext::new(&state.facts, &state.affine),
+                    ProofGoal::Affine {
+                        inequality: &inequality,
+                    },
+                )
+                .disposition
+                    == ProofDisposition::Proved
+            })
+        })
+    }
+
     /// INV-1 base is a simultaneous batch: every target is checked against
     /// the same preheader state before any invariant from the batch becomes an
     /// assumption.
@@ -11150,21 +11347,7 @@ impl Analyzer<'_, '_> {
     ) -> Vec<bool> {
         invariants
             .iter()
-            .map(|invariant| {
-                let target = self.checked_loop_invariant_inequality(
-                    invariant,
-                    &mut state.affine,
-                    &mut AffineCheckState::new(),
-                );
-                target.as_ref().is_some_and(|target| {
-                    self.prove(
-                        ProofContext::new(&state.facts, &state.affine),
-                        ProofGoal::Affine { inequality: target },
-                    )
-                    .disposition
-                        == ProofDisposition::Proved
-                })
-            })
+            .map(|invariant| self.prove_affine_relation_batch(&invariant.relation, state))
             .collect()
     }
 
@@ -11184,23 +11367,34 @@ impl Analyzer<'_, '_> {
                 state,
                 &mut AffineCheckState::new(),
             );
+            let partner = self
+                .checked_affine_relation_partner(
+                    &invariant.relation,
+                    state,
+                    &mut AffineCheckState::new(),
+                )
+                .and_then(Result::ok);
             self.invariant_targets
                 .insert(invariant.declaration, target.clone());
             if base_batch && let Ok(inequality) = target {
                 state
                     .published_invariants
                     .insert(invariant.declaration, inequality.clone());
-                state.facts.push(ActiveAffineFact {
-                    inequality,
-                    evidence: AffineFactEvidence::Source(SourceAffineFactRef::LoopInvariant(
-                        SourceLoopInvariantRef {
-                            loop_id,
-                            source_ordinal: u32::try_from(source_ordinal)
-                                .expect("loop invariant ordinal exceeds u32"),
-                        },
-                    )),
-                    active_loops: vec![loop_id],
-                });
+                // [INV-1] an `==` target is one batch of two bounds, and both
+                // become assumptions together once the base batch succeeded.
+                for inequality in std::iter::once(inequality).chain(partner) {
+                    state.facts.push(ActiveAffineFact {
+                        inequality,
+                        evidence: AffineFactEvidence::Source(SourceAffineFactRef::LoopInvariant(
+                            SourceLoopInvariantRef {
+                                loop_id,
+                                source_ordinal: u32::try_from(source_ordinal)
+                                    .expect("loop invariant ordinal exceeds u32"),
+                            },
+                        )),
+                        active_loops: vec![loop_id],
+                    });
+                }
             }
         }
     }
@@ -11316,6 +11510,9 @@ impl Analyzer<'_, '_> {
             } => (*measure, *binding, fields.clone()),
             CheckedExpression::BufferMeasure { measure, root } => {
                 (*measure, root.binding, root.fields.clone())
+            }
+            CheckedExpression::RangeMeasure { measure, root } => {
+                (*measure, root.binding, Vec::new())
             }
             // [MSR-1] a measured place may carry a subscript, so this one is
             // rendered from the same source-order path every other consumer
@@ -12626,6 +12823,8 @@ impl Analyzer<'_, '_> {
         let mut judgment = self.judge_expression(expression, state);
         let mut events = Vec::new();
         self.collect_expression_kills(expression, &mut events);
+        if matches!(expression, CheckedExpression::UserCall { .. }) {
+        }
         if let Some(prepared) = &mut judgment.prepared_call {
             if !events.is_empty() {
                 self.promote_flow_contradiction(state);
@@ -12752,6 +12951,14 @@ impl Analyzer<'_, '_> {
                     source: node_path.clone(),
                 });
             }
+            CheckedSetTarget::RangeIndex(target) => {
+                let spelled = ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), Vec::new());
+                target_kills.push(KillEvent::Write {
+                    place: element_write_place(self.resolve(&spelled), CapturedValue::unknown()),
+                    element: true,
+                    source: node_path.clone(),
+                });
+            }
             // [MSR-2] an element store into a run overlaps the descriptor
             // storage of `v[i]` and none of `v`'s own, so it kills the
             // measures of the element and none of the run's.
@@ -12868,6 +13075,7 @@ impl Analyzer<'_, '_> {
             )),
             CheckedSetTarget::ArrayIndex(_)
             | CheckedSetTarget::BufferIndex(_)
+            | CheckedSetTarget::RangeIndex(_)
             | CheckedSetTarget::Storage(_) => None,
         };
         match values {
@@ -13103,6 +13311,19 @@ impl Analyzer<'_, '_> {
                 value,
             } => {
                 let affine_value = self.affine_expression_form(value, &mut state.affine);
+                // [REF-4, MSR-1] a range reference's one measure is `len`,
+                // equal to `hi - lo`, and the endpoints are the immutable
+                // values the formation captured, so the binder's measure has
+                // that image from the moment it exists.
+                let range_length = if let CheckedExpression::RangeOf { start, end, .. } = value {
+                    self.affine_expression_form(start, &mut state.affine)
+                        .zip(self.affine_expression_form(end, &mut state.affine))
+                        .and_then(|(start, end)| {
+                            end.subtract(&start, &mut AffineCheckState::new()).ok()
+                        })
+                } else {
+                    None
+                };
                 // [MSR-3] the rebind placement is minted before the
                 // initializer's own kills, because the datum it forms is the
                 // value the transferred place had immediately before them.
@@ -13180,6 +13401,16 @@ impl Analyzer<'_, '_> {
                             value,
                             &mut state.affine,
                         );
+                    }
+                    if let Some(length) = range_length {
+                        let place = self.bound_place(*binding);
+                        let term = self.place_measure_term(
+                            CheckedMeasure::Length,
+                            place,
+                            MeasuredKind::Range,
+                            None,
+                        );
+                        state.affine.measure_atoms.borrow_mut().insert(term, length);
                     }
                 }
                 true
@@ -13367,6 +13598,22 @@ impl Analyzer<'_, '_> {
                     .copied()
                     .map(Self::source_proof_formation_failure);
                 let target = target_result.as_ref().ok().cloned();
+                // [INV-1] an `==` statement target is one batch of two
+                // bounds: both are proved here, and both are published.
+                let partner_result = self.checked_affine_relation_partner(
+                    &proof.target,
+                    &mut state.affine,
+                    &mut AffineCheckState::new(),
+                );
+                let partner_failure = partner_result
+                    .as_ref()
+                    .and_then(|partner| partner.as_ref().err().copied())
+                    .map(Self::source_proof_formation_failure);
+                let partner = partner_result
+                    .as_ref()
+                    .and_then(|partner| partner.as_ref().ok().cloned());
+                let partner_written = partner_result.is_some();
+                let target_failure = target_failure.or(partner_failure);
                 self.invariant_targets
                     .insert(proof.declaration, target_result);
                 let formed_premises = proof
@@ -13449,7 +13696,17 @@ impl Analyzer<'_, '_> {
                     )
                     .disposition
                         == ProofDisposition::Proved
-                });
+                }) && (!partner_written
+                    || partner.as_ref().is_some_and(|partner| {
+                        self.prove(
+                            ProofContext::new(&state.facts, &state.affine),
+                            ProofGoal::Affine {
+                                inequality: partner,
+                            },
+                        )
+                        .disposition
+                            == ProofDisposition::Proved
+                    }));
                 let redundant = !proof.uses.is_empty() && auto_proved;
                 let certificate_sum = if proof.uses.is_empty() || source_failure.is_some() {
                     None
@@ -13498,12 +13755,26 @@ impl Analyzer<'_, '_> {
                         target.as_ref(),
                         certificate_sum.as_ref().and_then(|sum| sum.as_ref().ok()),
                     ) {
-                        (Some(target), Some(sum)) => self.source_proof_certificate_residual(
-                            target,
-                            sum,
-                            &state.affine,
-                            &state.facts,
-                        ),
+                        (Some(target), Some(sum)) => {
+                            // [INV-1] every member of the batch is closed by
+                            // the one written certificate.
+                            let forward = self.source_proof_certificate_residual(
+                                target,
+                                sum,
+                                &state.affine,
+                                &state.facts,
+                            );
+                            match (&forward, partner.as_ref()) {
+                                (Ok(true), Some(partner)) => self
+                                    .source_proof_certificate_residual(
+                                        partner,
+                                        sum,
+                                        &state.affine,
+                                        &state.facts,
+                                    ),
+                                _ => forward,
+                            }
+                        }
                         _ => Err(SourceProofCertificateFailure::FormationCapacity),
                     }
                 };
@@ -13522,15 +13793,16 @@ impl Analyzer<'_, '_> {
                 };
 
                 if let Some(target) = target {
-                    let fact = ActiveAffineFact {
-                        inequality: target.clone(),
-                        evidence: AffineFactEvidence::Source(SourceAffineFactRef::SourceProof {
-                            source_ordinal,
-                        }),
-                        active_loops: Vec::new(),
-                    };
                     if check.discharged() {
-                        state.affine.facts.push(fact);
+                        for inequality in std::iter::once(target.clone()).chain(partner) {
+                            state.affine.facts.push(ActiveAffineFact {
+                                inequality,
+                                evidence: AffineFactEvidence::Source(
+                                    SourceAffineFactRef::SourceProof { source_ordinal },
+                                ),
+                                active_loops: Vec::new(),
+                            });
+                        }
                         state
                             .affine
                             .published_invariants
@@ -13780,19 +14052,9 @@ impl Analyzer<'_, '_> {
                 let mut step = vec![None; invariants.len()];
                 if body_falls_through {
                     for (index, invariant) in invariants.iter().enumerate() {
-                        let target = self.checked_loop_invariant_inequality(
-                            invariant,
-                            &mut body_state.affine,
-                            &mut AffineCheckState::new(),
+                        step[index] = Some(
+                            self.prove_affine_relation_batch(&invariant.relation, &mut body_state),
                         );
-                        step[index] = Some(target.as_ref().is_some_and(|target| {
-                            self.prove(
-                                ProofContext::new(&body_state.facts, &body_state.affine),
-                                ProofGoal::Affine { inequality: target },
-                            )
-                            .disposition
-                                == ProofDisposition::Proved
-                        }));
                     }
                 }
                 self.record_loop_invariant_outcomes(*id, invariants, &base, &step, None);
@@ -14011,17 +14273,32 @@ impl Analyzer<'_, '_> {
                             &mut next_affine,
                             &mut AffineCheckState::new(),
                         );
-                        step[index] = Some(
-                            hidden_update
-                                && next_target.as_ref().is_some_and(|target| {
-                                    self.prove(
-                                        ProofContext::new(&body_state.facts, &body_state.affine),
-                                        ProofGoal::Affine { inequality: target },
-                                    )
-                                    .disposition
-                                        == ProofDisposition::Proved
-                                }),
-                        );
+                        // [INV-1] both bounds of an `==` next-header target
+                        // are proved, in the same substituted state.
+                        let next_partner = self
+                            .checked_affine_relation_partner(
+                                &invariant.relation,
+                                &mut next_affine,
+                                &mut AffineCheckState::new(),
+                            )
+                            .map(|partner| partner.ok());
+                        let mut members = vec![next_target];
+                        if let Some(partner) = next_partner {
+                            members.push(partner);
+                        }
+                        let proved = members.into_iter().all(|member| {
+                            member.is_some_and(|inequality| {
+                                self.prove(
+                                    ProofContext::new(&body_state.facts, &body_state.affine),
+                                    ProofGoal::Affine {
+                                        inequality: &inequality,
+                                    },
+                                )
+                                .disposition
+                                    == ProofDisposition::Proved
+                            })
+                        });
+                        step[index] = Some(hidden_update && proved);
                     }
                 }
 
@@ -14055,25 +14332,34 @@ impl Analyzer<'_, '_> {
                         ) else {
                             continue;
                         };
-                        if !self.affine_fact_uses_only_outer_values(
-                            &inequality,
-                            &normalized,
-                            *binder,
-                        ) {
-                            continue;
+                        let partner = self
+                            .checked_affine_relation_partner(
+                                &invariant.relation,
+                                &mut normalized,
+                                &mut AffineCheckState::new(),
+                            )
+                            .and_then(Result::ok);
+                        for inequality in std::iter::once(inequality).chain(partner) {
+                            if !self.affine_fact_uses_only_outer_values(
+                                &inequality,
+                                &normalized,
+                                *binder,
+                            ) {
+                                continue;
+                            }
+                            let fact = ActiveAffineFact {
+                                inequality,
+                                evidence: AffineFactEvidence::Source(
+                                    SourceAffineFactRef::LoopInvariant(SourceLoopInvariantRef {
+                                        loop_id: *id,
+                                        source_ordinal: u32::try_from(source_ordinal)
+                                            .expect("loop invariant ordinal exceeds u32"),
+                                    }),
+                                ),
+                                active_loops: Vec::new(),
+                            };
+                            exhaustion.affine.facts.push(fact);
                         }
-                        let fact = ActiveAffineFact {
-                            inequality,
-                            evidence: AffineFactEvidence::Source(
-                                SourceAffineFactRef::LoopInvariant(SourceLoopInvariantRef {
-                                    loop_id: *id,
-                                    source_ordinal: u32::try_from(source_ordinal)
-                                        .expect("loop invariant ordinal exceeds u32"),
-                                }),
-                            ),
-                            active_loops: Vec::new(),
-                        };
-                        exhaustion.affine.facts.push(fact);
                     }
                 }
                 Self::remove_active_loop_invariants(
@@ -14593,6 +14879,14 @@ impl Analyzer<'_, '_> {
                     source: node_path.clone(),
                 });
             }
+            CheckedSetTarget::RangeIndex(target) => {
+                let spelled = ResolvedPlace::spelled(PlaceRoot::Binding(target.root.binding), self.is_holder(target.root.binding), Vec::new());
+                events.push(KillEvent::Write {
+                    place: element_write_place(self.resolve(&spelled), CapturedValue::unknown()),
+                    element: true,
+                    source: node_path.clone(),
+                });
+            }
             CheckedSetTarget::Storage(target) => {
                 events.push(KillEvent::Write {
                     place: self.container_root_place(target),
@@ -15094,6 +15388,11 @@ impl Analyzer<'_, '_> {
                 measure.spelling(),
                 self.render_place(&ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone())),
             ),
+            CheckedExpression::RangeMeasure { measure, root } => format!(
+                "{}({})",
+                measure.spelling(),
+                self.render_place(&ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), Vec::new())),
+            ),
             CheckedExpression::ArrayMeasure { measure, root, .. } => format!(
                 "{}({})",
                 measure.spelling(),
@@ -15139,6 +15438,14 @@ impl Analyzer<'_, '_> {
             CheckedExpression::ReadStorage { root, .. } => self.render_storage_place(root),
             CheckedExpression::BufferIndex { root, offset, .. } => {
                 let base = ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), root.fields.clone());
+                format!(
+                    "{}[{}]",
+                    self.render_place(&base),
+                    self.render_expression(offset)
+                )
+            }
+            CheckedExpression::RangeIndex { root, offset, .. } => {
+                let base = ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), Vec::new());
                 format!(
                     "{}[{}]",
                     self.render_place(&base),
@@ -15262,7 +15569,7 @@ fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
         GoalOperation::ArrayFill { .. } => render_operation_spelling("array_new", arguments),
         GoalOperation::ArrayMeasure { .. }
         | GoalOperation::BufferMeasure { .. }
-        | GoalOperation::SliceMeasure { .. } => render_operation_spelling("len_of", arguments),
+        | GoalOperation::RangeMeasure { .. } => render_operation_spelling("len_of", arguments),
         // [MSR-1]: one quantity, one name, term and reader alike, so the
         // residual names the measure the row reads rather than one of them.
         GoalOperation::ContainerMeasure { measure, .. } => {
@@ -15271,7 +15578,7 @@ fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
         GoalOperation::ArrayIndex { .. }
         | GoalOperation::BufferIndex { .. }
         | GoalOperation::RunIndex { .. }
-        | GoalOperation::SliceIndex { .. } => match arguments {
+        | GoalOperation::RangeIndex { .. } => match arguments {
             [collection, offset] => format!("{collection}[{offset}]"),
             _ => "<invalid index goal>".to_owned(),
         },

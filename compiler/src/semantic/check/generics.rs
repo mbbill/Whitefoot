@@ -2460,8 +2460,8 @@ impl Checker<'_, '_, '_, '_> {
             } => self.collect_type_nominals(operand_type, output)?,
             GoalOperation::BufferMeasure { element, .. }
             | GoalOperation::BufferIndex { element }
-            | GoalOperation::SliceMeasure { element, .. }
-            | GoalOperation::SliceIndex { element, .. } => {
+            | GoalOperation::RangeMeasure { element, .. }
+            | GoalOperation::RangeIndex { element, .. } => {
                 self.collect_flat_element_nominals(element, output)?;
             }
             GoalOperation::ArrayFill { element, .. }
@@ -2621,8 +2621,8 @@ impl Checker<'_, '_, '_, '_> {
             } => self.rewrite_type_nominals(operand_type, checkpoint, replacements)?,
             GoalOperation::BufferMeasure { element, .. }
             | GoalOperation::BufferIndex { element }
-            | GoalOperation::SliceMeasure { element, .. }
-            | GoalOperation::SliceIndex { element, .. } => {
+            | GoalOperation::RangeMeasure { element, .. }
+            | GoalOperation::RangeIndex { element, .. } => {
                 self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
             }
             GoalOperation::ArrayFill { element, .. }

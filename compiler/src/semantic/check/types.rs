@@ -446,27 +446,98 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.intern_element(element_type)?,
                 length,
             }),
-            (crate::ContainerShape::Array, None) => match self.buffer_element(element_type)? {
-                Some(element) => Ok(CheckedType::Buffer { element }),
-                None => self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node),
-            },
+            (crate::ContainerShape::Array, None) => {
+                self.reject_unboxed_runtime_capacity(node)?;
+                match self.buffer_element(element_type)? {
+                    Some(element) => Ok(CheckedType::Buffer { element }),
+                    None => {
+                        self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node)
+                    }
+                }
+            }
             // The two window shapes in both placements [WIN-1]: the filled
             // prefix is `r.len` and a `Ring` additionally carries the window
             // origin `head`.
-            (crate::ContainerShape::Slots, capacity) => Ok(CheckedType::Window {
-                shape: WindowShape::Slots,
-                element: self.intern_element(element_type)?,
-                capacity,
-            }),
-            (crate::ContainerShape::Ring, capacity) => Ok(CheckedType::Window {
-                shape: WindowShape::Ring,
-                element: self.intern_element(element_type)?,
-                capacity,
-            }),
+            (crate::ContainerShape::Slots, capacity) => {
+                if capacity.is_none() {
+                    self.reject_unboxed_runtime_capacity(node)?;
+                }
+                Ok(CheckedType::Window {
+                    shape: WindowShape::Slots,
+                    element: self.intern_element(element_type)?,
+                    capacity,
+                })
+            }
+            (crate::ContainerShape::Ring, capacity) => {
+                if capacity.is_none() {
+                    self.reject_unboxed_runtime_capacity(node)?;
+                }
+                Ok(CheckedType::Window {
+                    shape: WindowShape::Ring,
+                    element: self.intern_element(element_type)?,
+                    capacity,
+                })
+            }
             (crate::ContainerShape::Box, _) => {
                 Err(SemanticCompilerFailure::InvalidResolution.into())
             }
         }
+    }
+
+    /// [TYPE-9] a runtime-capacity `Array<T>`, `Slots<T>`, or `Ring<T>`
+    /// appears only as the content of a `Box`, the type of its `inner`
+    /// field, and never inline in another value and never as a local
+    /// binding; every other written position is this rule's hard error at
+    /// the complete `type`.
+    fn reject_unboxed_runtime_capacity(&self, node: NodeId) -> Result<(), CheckStop> {
+        if self.is_box_content_position(node)? {
+            return Ok(());
+        }
+        self.issue_node(
+            SemanticRule::Type9,
+            node,
+            SemanticIssueKind::type_mismatch(
+                "the content of a Box, which is the one position a runtime-capacity shape occupies",
+                "a stored, element, parameter, local, or type-argument position",
+            ),
+        )
+    }
+
+    /// Whether this written `type` is the one type argument of a `Box`.
+    ///
+    /// The judgment is over the written form and not over a substituted
+    /// instance: [TYPE-9] refuses the *occurrence*, and a generic parameter
+    /// bound to `Box<Slots<T>>` writes no runtime-capacity type of its own.
+    fn is_box_content_position(&self, node: NodeId) -> Result<bool, CheckStop> {
+        let Some(argument) = self.tree.parent(node)? else {
+            return Ok(false);
+        };
+        if self.tree.production(argument)? != Production::Targ {
+            return Ok(false);
+        }
+        let Some(list) = self.tree.parent(argument)? else {
+            return Ok(false);
+        };
+        if self.tree.production(list)? != Production::Targs {
+            return Ok(false);
+        }
+        let Some(owner) = self.tree.parent(list)? else {
+            return Ok(false);
+        };
+        if self.tree.production(owner)? != Production::Type {
+            return Ok(false);
+        }
+        if self
+            .tree
+            .direct_token_with(owner, TerminalPredicate::TypeIdentifier)?
+            .is_none()
+        {
+            return Ok(false);
+        }
+        let usage = self.use_at(owner, LexicalUseRole::Type)?;
+        Ok(matches!(usage.target(), ResolvedTarget::Container(id)
+            if crate::container_nominal(id)
+                .is_some_and(|entry| entry.shape == crate::ContainerShape::Box)))
     }
 
     pub(super) fn option_type_argument_with(

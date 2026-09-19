@@ -1309,6 +1309,9 @@ pub(super) fn collect_statement_calls(
                         CheckedSetTarget::BufferIndex(target) => {
                             collect_expression_calls(caller, &target.offset, calls);
                         }
+                        CheckedSetTarget::RangeIndex(target) => {
+                            collect_expression_calls(caller, &target.offset, calls);
+                        }
                         CheckedSetTarget::Storage(target) => {
                             for offset in target.offsets() {
                                 collect_expression_calls(caller, offset, calls);
@@ -1328,6 +1331,9 @@ pub(super) fn collect_statement_calls(
                         collect_expression_calls(caller, &target.offset, calls);
                     }
                     CheckedSetTarget::BufferIndex(target) => {
+                        collect_expression_calls(caller, &target.offset, calls);
+                    }
+                    CheckedSetTarget::RangeIndex(target) => {
                         collect_expression_calls(caller, &target.offset, calls);
                     }
                     CheckedSetTarget::Storage(target) => {

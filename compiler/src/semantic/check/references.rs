@@ -32,9 +32,10 @@ use crate::{
 
 use super::super::model::{
     BindingId, CheckedContainerRoot, CheckedEffectStep, CheckedExpression, CheckedMeasure,
-    CheckedMode, CheckedNominalKind, CheckedPlaceStep, CheckedStatePath, CheckedType,
+    CheckedMode, CheckedNominalKind, CheckedPlaceStep, CheckedRangeRoot, CheckedRangeSource,
+    CheckedStatePath, CheckedType, WindowShape,
 };
-use super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
+use super::super::places::{CapturedRange, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace};
 use super::{
     CheckStop, Checker, EffectPath, FunctionSignature, LocalBinding, PlaceAccess, TypedExpression,
 };
@@ -700,6 +701,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         };
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
+        // [REF-4] `&x[lo..hi]` forms a range reference. The range step is the
+        // whole of the formation and selects no element place, so it is
+        // resolved here rather than by the ordinary storage walk, and it is
+        // the last written `psuffix`: a range reference is not storage
+        // [TYPE-8], so nothing below it is written.
+        if let Some(position) = self.range_suffix_position(&suffixes)? {
+            if position + 1 != suffixes.len() {
+                return self
+                    .unsupported(UnsupportedSemanticFeature::ReferenceFormation, place_node);
+            }
+            return self.check_range_formation(
+                carrier,
+                place_node,
+                suffixes[position],
+                &suffixes[..position],
+                root,
+                root_type,
+                root_binding.as_ref(),
+                written_deref,
+                function,
+                bindings,
+                loop_depth,
+            );
+        }
         let (path, ty, carried) =
             self.resolve_storage_path(&suffixes, root_type, bindings, function, loop_depth, true)?;
         let mut place = ResolvedPlace {
@@ -717,19 +742,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             resolved.path.extend(place.path.iter().copied());
             place = resolved;
         }
-        // [REF-4] the range step is the last `psuffix` when one is written;
-        // its obligations `lo <= hi` and `hi <= x.len` are submitted by
-        // `resolve_storage_path` at the step itself.
-        let kind = if place
-            .path
-            .last()
-            .is_some_and(|step| matches!(step, PlaceStep::Range(_)))
-        {
-            self.reject_range_over_ring(&path, place_node)?;
-            ReferenceKind::Range
-        } else {
-            ReferenceKind::Single
-        };
+        let kind = ReferenceKind::Single;
         let expression = CheckedExpression::BorrowAddressed {
             carrier: self.tree.path(carrier)?.clone(),
             root: CheckedContainerRoot {
@@ -756,38 +769,197 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// [REF-4] a range reference over a `Ring` is a hard error, because a
-    /// wrapped window is two extents and `&[T]` has one `len`.
-    fn reject_range_over_ring(
-        &self,
-        path: &[CheckedPlaceStep],
-        node: NodeId,
-    ) -> Result<(), CheckStop> {
-        let Some(CheckedPlaceStep::Subscript(subscript)) = path.last() else {
-            return Ok(());
-        };
-        if Self::checked_type_is_ring(subscript.base_type) {
-            return self.issue_node(
-                SemanticRule::Ref4,
-                node,
-                SemanticIssueKind::RangeOverRing {
-                    mechanical_fix: REF4_RING,
-                },
-            );
+    /// The position of the one `psuffix` written as a range step, if any
+    /// [GRAM-5, REF-4].
+    fn range_suffix_position(&self, suffixes: &[NodeId]) -> Result<Option<usize>, CheckStop> {
+        for (position, &suffix) in suffixes.iter().enumerate() {
+            if self
+                .tree
+                .first_child_with(suffix, Production::RangeTail)?
+                .is_some()
+            {
+                return Ok(Some(position));
+            }
         }
-        Ok(())
+        Ok(None)
     }
 
-    /// Whether a checked type is a `Ring` [TYPE-9].
-    ///
-    /// No checked type is one at this stage of the port: the checker has no
-    /// representation for the window origin `head` that separates a `Ring`
-    /// from a `Slots`, and forming a `Ring` type therefore stops as an
-    /// unimplemented compiler capability before any place over it exists.
-    /// The [REF-4] refusal above is written against this question so that
-    /// supplying the representation supplies the refusal with it.
-    const fn checked_type_is_ring(_ty: CheckedType) -> bool {
-        false
+    /// [REF-4] `&x[lo..hi]`, over an indexable place or over another range
+    /// reference, under `lo <= hi` and `hi <= x.len`.
+    #[allow(clippy::too_many_arguments)]
+    fn check_range_formation(
+        &self,
+        carrier: NodeId,
+        place_node: NodeId,
+        suffix: NodeId,
+        base_suffixes: &[NodeId],
+        root: PlaceRoot,
+        root_type: CheckedType,
+        root_binding: Option<&LocalBinding>,
+        written_deref: bool,
+        function: &FunctionSignature,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<TypedExpression, CheckStop> {
+        let start_node = self
+            .subscript_offset(suffix)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let tail = self
+            .tree
+            .first_child_with(suffix, Production::RangeTail)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let end_node = self
+            .tree
+            .first_child_with(tail, Production::Atom)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        // [REF-4] re-slicing: the base is the run another range names, whose
+        // element type the `deref` already selected [TYPE-7].
+        let range_base = written_deref
+            && root_binding.is_some_and(|local| local.mode == CheckedMode::Range);
+        let mut carried = super::expressions::flat_storage::CarriedOperands::default();
+        let (source, base_place, element_type) = if range_base {
+            if !base_suffixes.is_empty() {
+                return self
+                    .unsupported(UnsupportedSemanticFeature::ReferenceFormation, place_node);
+            }
+            let local = root_binding.ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let Some(element) = self.flat_element(local.ty)? else {
+                return self
+                    .unsupported(UnsupportedSemanticFeature::ReferenceFormation, place_node);
+            };
+            let named = local
+                .reference
+                .as_ref()
+                .and_then(|reference| reference.paths.first().cloned())
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            (
+                CheckedRangeSource::Range(CheckedRangeRoot {
+                    binding: local.binding,
+                    element,
+                }),
+                named,
+                local.ty,
+            )
+        } else {
+            let (path, ty, offsets) = self.resolve_storage_path(
+                base_suffixes,
+                root_type,
+                bindings,
+                function,
+                loop_depth,
+                true,
+            )?;
+            carried = offsets;
+            // [REF-4] a range over a `Ring` is refused: a wrapped window is
+            // two extents and `&[T]` has one `len`.
+            if matches!(
+                ty,
+                CheckedType::Window {
+                    shape: WindowShape::Ring,
+                    ..
+                }
+            ) {
+                return self.issue_node(
+                    SemanticRule::Ref4,
+                    suffix,
+                    SemanticIssueKind::RangeOverRing {
+                        mechanical_fix: REF4_RING,
+                    },
+                );
+            }
+            let element = match ty {
+                CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+                    self.element_type(element)?
+                }
+                // [OP-4] a runtime-capacity `Array<T>` is an indexable base
+                // exactly as the constant-capacity one is [TYPE-9].
+                CheckedType::Buffer { element } => element.ty(),
+                _ => {
+                    return self.issue_node(
+                        SemanticRule::Op4,
+                        suffix,
+                        SemanticIssueKind::type_mismatch(
+                            "an indexable base",
+                            self.checked_type_name(ty)?,
+                        ),
+                    );
+                }
+            };
+            let mut base = ResolvedPlace {
+                root,
+                path: path.iter().map(CheckedPlaceStep::place_step).collect(),
+            };
+            if let Some(local) = root_binding
+                && let Some(reference) = &local.reference
+                && let Some(named) = reference.paths.first()
+            {
+                let mut resolved = named.clone();
+                resolved.path.extend(base.path.iter().copied());
+                base = resolved;
+            }
+            (
+                CheckedRangeSource::Storage(CheckedContainerRoot { root, path, ty }),
+                base,
+                element,
+            )
+        };
+        let Some(element) = self.flat_element(element_type)? else {
+            return self.unsupported(UnsupportedSemanticFeature::ReferenceFormation, place_node);
+        };
+        let mut endpoints = Vec::with_capacity(2);
+        for node in [start_node, end_node] {
+            let mut probe = bindings.clone();
+            let value = self.check_atom(function, node, &mut probe, loop_depth)?;
+            if value.expression.ty() != CheckedType::Integer(crate::semantic::model::IntegerType::U64)
+                || value.mode != CheckedMode::Own
+            {
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    node,
+                    SemanticIssueKind::type_mismatch(
+                        "own u64",
+                        self.checked_value_name(value.mode, value.expression.ty())?,
+                    ),
+                );
+            }
+            carried.effects = carried.effects.union(value.effects.clone());
+            carried.accesses.extend(value.accesses.clone());
+            endpoints.push(value);
+        }
+        let end = endpoints.pop().ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let start = endpoints.pop().ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let captured_start = Checker::captured_of(start_node, &start.expression)
+            .unwrap_or(CapturedValue::unknown());
+        let captured_end =
+            Checker::captured_of(end_node, &end.expression).unwrap_or(CapturedValue::unknown());
+        // [OWN-7] the formed reference names the base path extended by its
+        // own range step; every later separation question reads that step.
+        let mut place = base_place;
+        place.path.push(PlaceStep::Range(CapturedRange {
+            start: captured_start,
+            end: captured_end,
+        }));
+        let expression = CheckedExpression::RangeOf {
+            carrier: self.tree.path(carrier)?.clone(),
+            source,
+            element,
+            start: Box::new(start.expression),
+            end: Box::new(end.expression),
+            obligation: self.tree.path(suffix)?.clone(),
+        };
+        let mut accesses = carried.accesses;
+        accesses.push(PlaceAccess {
+            place: place.clone(),
+            kind: AccessKind::Reference,
+        });
+        Ok(TypedExpression {
+            expression,
+            mode: CheckedMode::Range,
+            reference: Some(ReferenceInfo::formed(ReferenceKind::Range, place)),
+            reference_value: true,
+            effects: carried.effects,
+            accesses,
+        })
     }
 
     /// Converts a resolved runtime place into the static state path a

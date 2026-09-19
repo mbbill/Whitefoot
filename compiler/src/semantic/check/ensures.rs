@@ -1100,7 +1100,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 row:
                     GoalOperation::ArrayMeasure { measure, .. }
                     | GoalOperation::BufferMeasure { measure, .. }
-                    | GoalOperation::SliceMeasure { measure, .. }
+                    | GoalOperation::RangeMeasure { measure, .. }
                     | GoalOperation::ContainerMeasure { measure, .. },
                 arguments,
                 ..

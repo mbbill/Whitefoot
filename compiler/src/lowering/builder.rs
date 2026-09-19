@@ -4,6 +4,7 @@ mod buffers;
 mod loops;
 mod prelude;
 mod probe;
+mod ranges;
 mod results;
 mod runs;
 mod scalar_grain;
@@ -453,6 +454,7 @@ fn lower_source_argument(argument: &CheckedExpression) -> IrSourceArgument {
         CheckedExpression::BorrowAddressed { .. }
         | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::BorrowBox { .. }
+        | CheckedExpression::RangeOf { .. }
         | CheckedExpression::ReborrowAddressed { .. } => IrSourceArgument::Borrow,
         CheckedExpression::ReadStorage { .. }
         | CheckedExpression::DerefAddressed { .. }
@@ -469,7 +471,37 @@ fn lower_parameter_type(
     parameter: &CheckedParameter,
     nominals: &[IrNominal],
 ) -> Result<IrType, LoweringFailure> {
+    // [REF-4, TYPE-8] a `&[T]` parameter's written type is the element type
+    // and its kind is its mode, so the descriptor type is formed here and
+    // never from the type alone.
+    if parameter.mode == CheckedMode::Range {
+        return Ok(IrType::Range {
+            element: range_element(erasure, parameter.ty)?,
+        });
+    }
     lower_borrow_mode_type(parameter.mode, lower_type(erasure, parameter.ty)?, nominals)
+}
+
+/// The flat element one range reference names [REF-4, TYPE-2].
+///
+/// A range's element is exactly one flat element: [REF-4] forms a range over
+/// an indexable place, and a run of runs or of descriptors is not one.
+fn range_element(
+    erasure: TypeLowering<'_>,
+    ty: CheckedType,
+) -> Result<IrFlatElement, LoweringFailure> {
+    Ok(match lower_type(erasure, ty)? {
+        IrType::Unit => IrFlatElement::Unit,
+        IrType::Bool => IrFlatElement::Bool,
+        IrType::Integer { width, signed } => IrFlatElement::Integer { width, signed },
+        IrType::Float { width } => IrFlatElement::Float { width },
+        IrType::Nominal(id) => IrFlatElement::Nominal(id),
+        IrType::Buffer { .. }
+        | IrType::Range { .. }
+        | IrType::Array { .. }
+        | IrType::Window { .. }
+        | IrType::Address(_) => return Err(LoweringFailure::InvalidCheckedProgram),
+    })
 }
 
 /// The representation a borrow-mode value carries.
@@ -1339,10 +1371,18 @@ impl<'program> IrBuilder<'program> {
                 } else {
                     value
                 };
+                // [REF-4, TYPE-8] a range reference read bare delivers its
+                // own pointer-and-count descriptor; `&[T]` is a reference
+                // kind and not a type, so the checked type beside it is the
+                // element type the range names.
                 if self.value_type(value)? != expected
                     && !matches!(
                         (actual, expected),
                         (IrType::Address(referent), _) if referent.ty() == expected
+                    )
+                    && !matches!(
+                        (actual, expected),
+                        (IrType::Range { element }, _) if element.ty() == expected
                     )
                 {
                     return Err(LoweringFailure::InvalidCheckedProgram);
@@ -1651,6 +1691,27 @@ impl<'program> IrBuilder<'program> {
                 target_domain,
                 ..
             } => self.lower_buffer_index(root, offset, *target_domain),
+            // [REF-4] the range reference: its formation, its one measure,
+            // and one discharged element read.
+            CheckedExpression::RangeOf {
+                source,
+                element,
+                start,
+                end,
+                ..
+            } => self.lower_range_of(source, start, end, *element),
+            CheckedExpression::RangeMeasure { measure, root } => {
+                match fixed_measure(*measure, MeasuredKind::Range) {
+                    Some(constant) => self.lower_fixed_measure(constant),
+                    None => self.lower_range_measure(root),
+                }
+            }
+            CheckedExpression::RangeIndex {
+                root,
+                offset,
+                target_domain,
+                ..
+            } => self.lower_range_index(root, offset, *target_domain),
             CheckedExpression::BoxNew { nominal, value, .. } => {
                 let value = self.expression(value)?;
                 let nominal = self.erased(*nominal);

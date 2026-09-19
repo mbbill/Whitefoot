@@ -11,8 +11,9 @@ use super::super::super::model::{
     CheckedArrayRoot, CheckedArraySetTarget, CheckedBufferRoot, CheckedBufferSetTarget,
     CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedLayoutCeiling,
     CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedPlaceStep,
-    CheckedPlaceSubscript, CheckedSetTarget, CheckedTargetDomainObligation, CheckedType,
-    IntegerType, MeasureCell, NominalId,
+    CheckedPlaceSubscript, CheckedRangeRoot, CheckedRangeSetTarget, CheckedSetTarget,
+    CheckedTargetDomainObligation, CheckedType,
+    IntegerType, MeasureCell, MeasuredKind, NominalId,
 };
 use super::super::super::places::{
     CaptureId, CapturedTerm, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace,
@@ -41,6 +42,20 @@ impl CheckedArrayPlace {
     }
 }
 
+/// One indexable base reached through a `&[T]` range reference [REF-4].
+///
+/// [TYPE-7] makes the referent a `deref` of a range reference selects the
+/// element type, so the measure-table row [MSR-1] gives `&[T]` cannot be
+/// recovered from that type; this place carries the row by construction.
+#[derive(Clone)]
+pub(in crate::semantic::check) struct CheckedRangePlace {
+    root: CheckedRangeRoot,
+    declaration: DeclarationId,
+    element_type: CheckedType,
+    /// The place the reference names [REF-1], for effects and [OWN-7].
+    resolved: ResolvedPlace,
+}
+
 #[derive(Clone)]
 pub(in crate::semantic::check) struct CheckedBufferPlace {
     root: CheckedBufferRoot,
@@ -53,6 +68,8 @@ pub(in crate::semantic::check) struct CheckedBufferPlace {
 pub(in crate::semantic::check) enum CheckedIndexedPlace {
     Array(CheckedArrayPlace),
     Buffer(CheckedBufferPlace),
+    /// The run of elements a `&[T]` range reference names [REF-4, OP-4].
+    Range(CheckedRangePlace),
     /// One run or bump extent [BLK-1, PROV-1]: the two runs are indexable
     /// bases [OP-4] and all three have a measure-table row [MSR-1].
     Container(CheckedContainerPlace),
@@ -154,6 +171,7 @@ impl CheckedIndexedPlace {
         match self {
             Self::Array(array) => array.declaration,
             Self::Buffer(buffer) => Some(buffer.declaration),
+            Self::Range(range) => Some(range.declaration),
             Self::Container(container) => container.declaration,
         }
     }
@@ -176,6 +194,9 @@ impl CheckedIndexedPlace {
                 .copied()
                 .map(PlaceStep::Field)
                 .collect(),
+            // [REF-1] the reference names one path; the element is that path
+            // extended by this subscript.
+            Self::Range(range) => range.resolved.path.clone(),
             Self::Container(container) => container
                 .root
                 .path
@@ -194,6 +215,7 @@ impl CheckedIndexedPlace {
         match self {
             Self::Array(array) => array.resolved_place(),
             Self::Buffer(buffer) => Some(buffer.resolved.clone()),
+            Self::Range(range) => Some(range.resolved.clone()),
             Self::Container(container) => Some(container.resolved.clone()),
         }
     }
@@ -202,6 +224,7 @@ impl CheckedIndexedPlace {
         match self {
             Self::Array(array) => Ok(array.element_type),
             Self::Buffer(buffer) => Ok(buffer.element_type),
+            Self::Range(range) => Ok(range.element_type),
             Self::Container(container) => checker.element_type(
                 container
                     .root
@@ -588,6 +611,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     effects.add_read(path);
                 }
             }
+            // [MSR-2] a measure over a range reference reads the descriptor
+            // the reference itself holds and the place it names.
+            CheckedIndexedPlace::Range(range) => {
+                for path in self.effect_paths_for_descriptor(
+                    atoms[0],
+                    &range.resolved,
+                    bindings,
+                    measure,
+                )? {
+                    effects.add_read(path);
+                }
+            }
         }
         Ok(TypedExpression::owned(
             self.measure_of_indexed_place(measure, place, atoms[0])?,
@@ -616,6 +651,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 measure,
                 root: buffer.root,
             },
+            // [MSR-1] `&[T]` has exactly one row cell, `len`; every other
+            // measure is the ordinary [TYPE-5] operand rejection.
+            CheckedIndexedPlace::Range(range) => {
+                if matches!(measure.cell(MeasuredKind::Range), MeasureCell::Absent) {
+                    return self.issue_node(
+                        SemanticRule::Type5,
+                        operand,
+                        SemanticIssueKind::type_mismatch(
+                            "a measured place whose measure table has this row",
+                            "a range reference, whose one measure is `len` [REF-4]",
+                        ),
+                    );
+                }
+                CheckedExpression::RangeMeasure {
+                    measure,
+                    root: range.root,
+                }
+            }
             CheckedIndexedPlace::Container(container) => {
                 // [MSR-1]: a measure the table gives no row is the
                 // ordinary [TYPE-5] operand rejection, carried by the
@@ -892,6 +945,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 place: buffer.resolved.clone(),
                 kind: AccessKind::Read,
             }),
+            CheckedIndexedPlace::Range(range) => accesses.push(PlaceAccess {
+                place: range.resolved.clone(),
+                kind: AccessKind::Read,
+            }),
             CheckedIndexedPlace::Container(_) => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
@@ -913,6 +970,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedExpression::BufferIndex {
                     carrier: self.tree.path(use_node)?.clone(),
                     root: buffer.root,
+                    offset: Box::new(offset.expression),
+                    obligation,
+                    target_domain: CheckedTargetDomainObligation::ElementAddress,
+                }
+            }
+            CheckedIndexedPlace::Range(range) => {
+                for path in self.effect_paths_for_place(use_node, &range.resolved, bindings)? {
+                    effects.add_read(path);
+                }
+                CheckedExpression::RangeIndex {
+                    carrier: self.tree.path(use_node)?.clone(),
+                    root: range.root,
                     offset: Box::new(offset.expression),
                     obligation,
                     target_domain: CheckedTargetDomainObligation::ElementAddress,
@@ -1021,6 +1090,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let element_type = match &indexed {
             CheckedIndexedPlace::Array(array) => array.element_type,
             CheckedIndexedPlace::Buffer(buffer) => buffer.root.element.ty(),
+            CheckedIndexedPlace::Range(range) => range.element_type,
             CheckedIndexedPlace::Container(_) => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
@@ -1071,6 +1141,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     buffer.resolved.clone(),
                     CheckedSetTarget::BufferIndex(Box::new(CheckedBufferSetTarget {
                         root: buffer.root,
+                        offset: offset.expression,
+                        obligation,
+                        target_domain: CheckedTargetDomainObligation::ElementAddress,
+                    })),
+                )
+            }
+            CheckedIndexedPlace::Range(range) => {
+                for path in self.effect_paths_for_place(node, &range.resolved, bindings)? {
+                    effects.add_write(path);
+                }
+                (
+                    range.declaration,
+                    range.resolved.clone(),
+                    CheckedSetTarget::RangeIndex(Box::new(CheckedRangeSetTarget {
+                        root: range.root,
                         offset: offset.expression,
                         obligation,
                         target_domain: CheckedTargetDomainObligation::ElementAddress,
@@ -1306,6 +1391,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let inner = self.resolve_explicit_place(node, inner, bindings)?;
         let mut place = self.resolve_explicit_dereference(node, pbase, inner, bindings)?;
+        // [REF-4, OP-4] the run a range reference names is an indexable base
+        // reached through `deref` [TYPE-7]. [TYPE-8] makes `&[T]` a reference
+        // kind rather than a type, so the referent selects the element type
+        // and the row [MSR-1] gives the range is carried by this place.
+        if place.range_referent {
+            if !base_suffixes.is_empty() {
+                // A range reference is never stored in an aggregate [REF-3],
+                // so no field step reaches one and none descends from it
+                // before the subscript.
+                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+            }
+            let (binding, path) = self.explicit_container_path(&place.expression, node)?;
+            if !path.is_empty() {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            let Some(element) = self.flat_element(place.ty)? else {
+                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+            };
+            return Ok(CheckedIndexedPlace::Range(CheckedRangePlace {
+                root: CheckedRangeRoot { binding, element },
+                declaration: place.declaration,
+                element_type: place.ty,
+                resolved: place.resolved,
+            }));
+        }
         let (binding, mut path) = self.explicit_container_path(&place.expression, node)?;
         let (suffix_path, ty, offsets) = self.resolve_storage_path(
             base_suffixes,

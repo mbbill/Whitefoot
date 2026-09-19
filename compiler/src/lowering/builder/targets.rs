@@ -107,6 +107,18 @@ impl IrBuilder<'_> {
                     target_domain,
                 }
             }
+            // [REF-4, SET-1] one element position of the run a range names.
+            CheckedSetTarget::RangeIndex(target) => {
+                let slice = self.range_root(&target.root)?;
+                let index = self.expression(&target.offset)?;
+                let target_domain = target.target_domain.into();
+                self.check_target_offset(index, target_domain)?;
+                TargetStorage::Slice {
+                    slice,
+                    index,
+                    target_domain,
+                }
+            }
         };
         Ok(PreparedTarget { ty, kind })
     }

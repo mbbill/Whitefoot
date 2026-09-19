@@ -1,0 +1,19 @@
+Node: compiler/checker-facts
+
+Decision: A `&[T]` range reference [REF-4] is carried in the checked program by three expression forms and one `set` target of its own  -  the formation `&x[lo..hi]`, its one measure `deref(p).len`, one discharged element read `deref(p)[i]`, and one element write target  -  rather than by the ordinary container place, because [TYPE-8] makes `&[T]` a reference kind and not a type, so the referent a `deref` selects is the *element* type and the measure-table row [MSR-1] gives the range cannot be recovered from that type at all, instead of adding a checked type for the run a range names, which would then have to be refused in every field, element, parameter and result position a type is admitted in.
+
+Decision: A range reference's checked root is the reference binding alone together with the element type the range names, because [TYPE-8] keeps a range reference out of every storage position, so no field path and no subscript ever reaches one and there is nothing below the binding to record, instead of a general place root, which would carry a path no source can write.
+
+Decision: A range formation's checked expression carries the *source place* it is formed over  -  an addressed indexable place, or another range reference for a re-slice  -  and its two endpoints, and the resolved place it publishes is that source place extended by one [OWN-7] range step, because [REF-4] admits exactly those two sources and [OWN-7] decides two ranges under one containing path by their captured endpoints, instead of publishing the source place alone, which would make two disjoint ranges of one run overlap.
+
+Decision: A range formation submits `lo <= hi` and `hi <= x.len` as the two conjuncts of one [REF-4] obligation family, taking the length operand from the source's own measure former  -  the container measure of an indexable place, the range measure of a re-sliced range  -  because [MSR-4] receives the obligation against the measured base rather than against a rendered spelling, instead of re-deriving the base's length from the formation site.
+
+Decision: The affine route of an exact ordered relation obligation falls back to the target formed from each side's own atom when the goal expression yields no ordering target, because [MSR-4] has the relation submit its own normalized target, which is what lets a range formation's `hi <= x.len` range over the measure's affine atom exactly as a subscript's `i < len` already does, instead of leaving that obligation with only the goal-expression route, which fails whenever an operand renders as an occurrence-local datum.
+
+Decision: A `let` whose initializer is a range formation installs `hi - lo` as the affine image of the binder's `len` measure term, because [MSR-1] gives `&[T]` exactly one measure and [REF-4] states it equals `hi - lo`, and the endpoints are immutable captured values, so the image is fixed the moment the binding exists, instead of leaving the new measure a free atom, which would make a re-slice of a just-formed range unprovable.
+
+Decision: A bare `deref(p)` of a range reference in value position is refused citing TYPE-5, because [TYPE-8] makes `&[T]` a reference kind rather than a type, so the dereference denotes the run of elements and never a value, and its two admitted readers are the measure and one subscript, instead of delivering the element type, which would silently read one element the writer never indexed.
+
+Rejected:
+- Reusing the runtime-capacity `Array<T>` checked shape for the run a range names: rejected because that shape's measure row has `cap` and `room` cells while [MSR-1] gives `&[T]` only `len`, so every absent-cell refusal would answer from the wrong row.
+- Giving the range's element position the general element handle rather than the flat element: rejected because the lowered descriptor's element is a flat element, so a general handle would only move the refusal from the checker to lowering.

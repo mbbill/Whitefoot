@@ -1000,6 +1000,15 @@ pub(super) fn set_target_place(
             steps.push(PlaceStep::Index(CapturedValue::unknown()));
             places.resolve(PlaceRoot::Binding(target.root.binding), &steps)
         }
+        // [REF-4] a range reference names one path, so the element a
+        // subscript through it writes is that path extended by the index.
+        CheckedSetTarget::RangeIndex(target) => {
+            collect_operand_reads(places, &target.offset, node, footprint);
+            places.resolve(
+                PlaceRoot::Binding(target.root.binding),
+                &[PlaceStep::Index(CapturedValue::unknown())],
+            )
+        }
         CheckedSetTarget::Storage(target) => {
             for offset in target.offsets() {
                 collect_operand_reads(places, offset, node, footprint);
@@ -1109,6 +1118,8 @@ pub(super) fn visit_read_bindings(
         CheckedExpression::BorrowBuffer { root, .. }
         | CheckedExpression::BufferMeasure { root, .. }
         | CheckedExpression::BufferIndex { root, .. } => note(root.binding),
+        CheckedExpression::RangeMeasure { root, .. }
+        | CheckedExpression::RangeIndex { root, .. } => note(root.binding),
         CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => {
             if let CheckedArrayRoot::Binding { binding, .. } = root {
@@ -1185,6 +1196,18 @@ fn collect_operand_reads(
         | CheckedExpression::ReadStorage { root, .. } => {
             read(footprint, places.resolve(root.root, &container_steps(root)));
         }
+        // [REF-4, MSR-2] a measure or element read through a range reference
+        // reads the path the reference names; the subscript's own offset is
+        // this expression's child and is walked below.
+        CheckedExpression::RangeMeasure { root, .. }
+        | CheckedExpression::RangeIndex { root, .. } => {
+            read(
+                footprint,
+                places.resolve(PlaceRoot::Binding(root.binding), &[]),
+            );
+        }
+        // Forming a range names a path and reads no content [REF-1, REF-4].
+        CheckedExpression::RangeOf { .. } => {}
         CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => match root {
             CheckedArrayRoot::Binding { binding, fields } => read(

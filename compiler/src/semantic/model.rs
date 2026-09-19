@@ -196,6 +196,11 @@ pub(crate) struct CheckedAffineRelation {
     pub(crate) left: CheckedAffineExpression,
     pub(crate) right: CheckedAffineExpression,
     pub(crate) bound: i128,
+    /// [INV-1] the written relation was `a == b`, which normalizes to the
+    /// bound *pair* `a-b <= 0` and `b-a <= 0`, each proved as one batch
+    /// member. The record carries `a-b <= 0`; this flag says the second
+    /// member exists and is the same two sides reversed.
+    pub(crate) equality: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1463,6 +1468,40 @@ pub(crate) struct CheckedBufferRoot {
     pub(crate) element: CheckedFlatElement,
 }
 
+/// One range reference's own root [REF-4].
+///
+/// A range reference is the pointer-and-count pair the binding itself holds:
+/// [TYPE-8] makes `&[T]` a reference kind and not a type, so no storage ever
+/// holds one and no field path reaches one, and the root is that binding
+/// alone. The element type travels beside it because [TYPE-7] makes the
+/// referent a `deref` selects the element type, so [MSR-1]'s one `len` row
+/// cannot be recovered from the selected type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedRangeRoot {
+    pub(crate) binding: BindingId,
+    pub(crate) element: CheckedFlatElement,
+}
+
+/// The storage one range reference is formed over [REF-4].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedRangeSource {
+    /// One indexable owner place [OP-4]: a complete `Array` [TYPE-9] or a
+    /// run's initialized window [BLK-1], addressed where it is stored.
+    Storage(CheckedContainerRoot),
+    /// Re-slicing another range reference, `&deref(part)[a..b]` [REF-4].
+    Range(CheckedRangeRoot),
+}
+
+/// One `set` target selecting an element of the run a range reference names
+/// [REF-4, OP-4, SET-1].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedRangeSetTarget {
+    pub(crate) root: CheckedRangeRoot,
+    pub(crate) offset: CheckedExpression,
+    pub(crate) obligation: NodePath,
+    pub(crate) target_domain: CheckedTargetDomainObligation,
+}
+
 /// A typed storage place used by a borrow or a compiler-owned measure.
 ///
 /// [MSR-2] makes a measure's support the resolved place of the measured value
@@ -1770,6 +1809,34 @@ pub(crate) enum CheckedExpression {
         measure: CheckedMeasure,
         root: CheckedBufferRoot,
     },
+    /// [REF-4] `&x[lo..hi]`: one range reference over an indexable place or
+    /// over another range reference, under the obligations `lo <= hi` and
+    /// `hi <= x.len` submitted at `obligation`.
+    ///
+    /// The expression's own type is the element type, exactly as a `&[T]`
+    /// parameter's is: [TYPE-8] makes the range kind a mode and not a type,
+    /// so the value's kind travels in [`CheckedMode::Range`] beside it.
+    RangeOf {
+        carrier: NodePath,
+        source: CheckedRangeSource,
+        element: CheckedFlatElement,
+        start: Box<CheckedExpression>,
+        end: Box<CheckedExpression>,
+        obligation: NodePath,
+    },
+    /// [MSR-1] the one measure a range reference has, its element count.
+    RangeMeasure {
+        measure: CheckedMeasure,
+        root: CheckedRangeRoot,
+    },
+    /// [OP-4] one discharged subscript read of the run a range names.
+    RangeIndex {
+        carrier: NodePath,
+        root: CheckedRangeRoot,
+        offset: Box<CheckedExpression>,
+        obligation: NodePath,
+        target_domain: CheckedTargetDomainObligation,
+    },
     /// One [MSR-1] measure of one declared result place [CALL-4].
     ///
     /// A result binder is the clause's own datum and not a place, so a
@@ -1899,6 +1966,7 @@ impl CheckedExpression {
             | Self::ArrayMeasure { .. }
             | Self::BufferMeasure { .. }
             | Self::ContainerMeasure { .. }
+            | Self::RangeMeasure { .. }
             | Self::PostconditionResultMeasure { .. } => None,
             Self::UserCall { call, .. } => Some(call),
             Self::Binding { carrier, .. }
@@ -1914,6 +1982,8 @@ impl CheckedExpression {
             | Self::BufferVacant { carrier, .. }
             | Self::BufferFits { carrier, .. }
             | Self::BufferIndex { carrier, .. }
+            | Self::RangeOf { carrier, .. }
+            | Self::RangeIndex { carrier, .. }
             | Self::ReadStorage { carrier, .. }
             | Self::BoxNew { carrier, .. }
             | Self::BoxDeref { carrier, .. }
@@ -1957,8 +2027,14 @@ impl CheckedExpression {
             Self::BufferFits { .. } => CheckedType::Bool,
             Self::BufferMeasure { .. }
             | Self::ContainerMeasure { .. }
+            | Self::RangeMeasure { .. }
             | Self::PostconditionResultMeasure { .. } => CheckedType::Integer(IntegerType::U64),
             Self::BufferIndex { root, .. } => root.element.ty(),
+            // [TYPE-8] `&[T]` is a reference kind, not a type: the value's
+            // own type is the element type and its kind is its mode, exactly
+            // as a `&[T]` parameter carries them [GRAM-2, REF-4].
+            Self::RangeOf { element, .. } => element.ty(),
+            Self::RangeIndex { root, .. } => root.element.ty(),
             Self::ReadStorage { root, .. } => root.ty,
             Self::BoxNew { nominal, .. } | Self::ArenaNew { nominal, .. } => {
                 CheckedType::Nominal(*nominal)
@@ -2074,6 +2150,8 @@ pub(crate) enum CheckedSetTarget {
     Place(CheckedWritablePlace),
     ArrayIndex(Box<CheckedArraySetTarget>),
     BufferIndex(Box<CheckedBufferSetTarget>),
+    /// One element position of the run a range reference names [REF-4].
+    RangeIndex(Box<CheckedRangeSetTarget>),
     /// A typed storage path including all subscripts and terminal fields.
     Storage(CheckedContainerRoot),
 }
@@ -2084,6 +2162,7 @@ impl CheckedSetTarget {
             Self::Place(target) => target.binding,
             Self::ArrayIndex(target) => target.binding,
             Self::BufferIndex(target) => target.root.binding,
+            Self::RangeIndex(target) => target.root.binding,
             Self::Storage(target) => target
                 .binding()
                 .expect("checked mutation targets have local roots"),
@@ -2095,6 +2174,7 @@ impl CheckedSetTarget {
             Self::Place(target) => target.ty,
             Self::ArrayIndex(target) => target.element_type,
             Self::BufferIndex(target) => target.root.element.ty(),
+            Self::RangeIndex(target) => target.root.element.ty(),
             Self::Storage(target) => target.ty,
         }
     }
@@ -2531,6 +2611,7 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::BorrowBox { .. }
         | CheckedExpression::ReborrowAddressed { .. }
         | CheckedExpression::DerefAddressed { .. }
+        | CheckedExpression::RangeMeasure { .. }
         | CheckedExpression::Project { .. } => Vec::new(),
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ContainerMeasure { root, .. }
@@ -2554,7 +2635,23 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         }
         CheckedExpression::BufferVacant { length, .. }
         | CheckedExpression::BufferFits { length, .. } => vec![length.as_ref()],
-        CheckedExpression::BufferIndex { offset, .. } => vec![offset.as_ref()],
+        CheckedExpression::BufferIndex { offset, .. }
+        | CheckedExpression::RangeIndex { offset, .. } => vec![offset.as_ref()],
+        // [REF-4] both endpoints are evaluated once where the range is
+        // formed, in written order, and the source place's own offsets are
+        // read with them.
+        CheckedExpression::RangeOf {
+            source,
+            start,
+            end,
+            ..
+        } => match source {
+            CheckedRangeSource::Storage(root) => root
+                .offsets()
+                .chain([start.as_ref(), end.as_ref()])
+                .collect(),
+            CheckedRangeSource::Range(_) => vec![start.as_ref(), end.as_ref()],
+        },
         CheckedExpression::ConstructStruct { fields, .. }
         | CheckedExpression::ConstructEnum { fields, .. } => fields.iter().collect(),
     }

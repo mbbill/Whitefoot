@@ -47,6 +47,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     effects,
                                 )?;
                             }
+                            CheckedSetTarget::RangeIndex(target) => {
+                                self.collect_expression_release_effects(
+                                    function,
+                                    &target.offset,
+                                    effects,
+                                )?;
+                            }
                             CheckedSetTarget::Storage(target) => {
                                 for offset in target.offsets() {
                                     self.collect_expression_release_effects(
@@ -83,6 +90,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             )?;
                         }
                         CheckedSetTarget::BufferIndex(target) => {
+                            self.collect_expression_release_effects(
+                                function,
+                                &target.offset,
+                                effects,
+                            )?;
+                        }
+                        CheckedSetTarget::RangeIndex(target) => {
                             self.collect_expression_release_effects(
                                 function,
                                 &target.offset,
@@ -228,8 +242,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
-            | CheckedExpression::BufferIndex { offset, .. } => {
+            | CheckedExpression::BufferIndex { offset, .. }
+            | CheckedExpression::RangeIndex { offset, .. } => {
                 self.collect_expression_release_effects(function, offset, effects)?;
+            }
+            CheckedExpression::RangeOf {
+                source,
+                start,
+                end,
+                ..
+            } => {
+                if let crate::semantic::CheckedRangeSource::Storage(root) = source {
+                    for offset in root.offsets() {
+                        self.collect_expression_release_effects(function, offset, effects)?;
+                    }
+                }
+                self.collect_expression_release_effects(function, start, effects)?;
+                self.collect_expression_release_effects(function, end, effects)?;
             }
             CheckedExpression::BufferFill { length, value, .. } => {
                 self.collect_expression_release_effects(function, length, effects)?;
@@ -245,6 +274,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ArrayMeasure { .. }
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
+            | CheckedExpression::RangeMeasure { .. }
             | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
