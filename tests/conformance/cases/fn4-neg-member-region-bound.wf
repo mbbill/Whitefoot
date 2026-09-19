@@ -4,7 +4,7 @@ formal Inspect<T: linear> {
 
 fn shorter(values: &Array<u64, 4>) -> result: own u64 reads(values) {
   doc "The instantiated member takes a reference to an eight-slot array; this actual takes a four-slot one.";
-  return values[0_u64];
+  return deref(values)[0_u64];
 }
 
 actual Narrow : Inspect<Array<u64, 8>> {

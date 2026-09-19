@@ -1,7 +1,7 @@
 fn free_empty_boxed<T: linear>(run: own Box<Slots<T>>) -> result: own unit pure contract {
-  requires deref(run).len == 0_u64;
+  requires run.inner.len == 0_u64;
 } {
-  doc "OP-14: free_empty's shape parameter also admits a boxed runtime-capacity window, so the one route consumes the window and frees its cell with it; at a boxed argument the row's measure place instantiates as deref(window).";
+  doc "OP-14: free_empty's shape parameter also admits a boxed runtime-capacity window, so the one route consumes the window and frees its cell with it; at a boxed argument the row's measure place instantiates as window.inner.";
   free_empty(window: move run);
   return unit;
 }

@@ -3,11 +3,11 @@ struct Payload {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "A cell is one value of T at the one heap. It carries no measure at all, a cell never being empty, so a read of one needs no proof, and move deref takes the value out and frees the cell in one expression. The exit code adds the read and the taken value, so a cell read or released wrongly reports rather than passing quietly.";
+  doc "A cell is one value of T at the one heap. It carries no measure at all, a cell never being empty, so a read of one needs no proof, and a move of its field inner takes the value out and frees the cell in one expression. The exit code adds the read and the taken value, so a cell read or released wrongly reports rather than passing quietly.";
   let value = Payload(code: 7_u8);
   let cell = box_new::<Payload>(value: move value);
-  let seen = deref(cell).code;
-  let taken = move deref(cell);
+  let seen = cell.inner.code;
+  let taken = move cell.inner;
   let total = seen +wrap taken.code;
   return exit_status(code: total);
 }

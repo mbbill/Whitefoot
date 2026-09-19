@@ -9,8 +9,8 @@ formal Touch {
 
 fn apply(input: &Pair) -> result: own unit writes(input.left) {
   doc "Formal and actual effect paths compare parameter and field ordinals, not binder spelling; selecting another field is a mismatch.";
-  let observed = input.left;
-  set input.left = observed;
+  let observed = deref(input).left;
+  set deref(input).left = observed;
   return unit;
 }
 

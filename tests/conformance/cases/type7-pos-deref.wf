@@ -1,7 +1,8 @@
 fn main() -> status: own ExitStatus pure {
-  doc "Reaching Box content is explicit via deref(place) [TYPE-7]; reads 42 back out of the cell and runs to exit 0.";
-  let cell = box_new::<i32>(value: 42_i32);
-  let v = deref(cell);
+  doc "Reaching a referent is explicit via deref(place) [TYPE-7]; a reference variable denotes the reference [REF-1], so the stored 42 is read back through deref and the program runs to exit 0.";
+  let a = 42_i32;
+  let p = &a;
+  let v = deref(p);
   if v == 42_i32 {
   } else {
     return exit_status(code: 1_u8);

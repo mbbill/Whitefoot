@@ -3,7 +3,7 @@ enum State {
 }
 
 fn inspect(holder: own Box<State>) -> function_result: own unit pure {
-  doc "TYPE-7: a cell holder cannot be matched as its enclosed enum without the explicit deref(holder) place spelling.";
+  doc "TYPE-5: a match scrutinee must have an enum type, and a Box holder is an opaque struct; the enclosed enum is the field inner, so the scrutinee is written holder.inner [TYPE-9].";
   match holder {
     Ready() => {
     }

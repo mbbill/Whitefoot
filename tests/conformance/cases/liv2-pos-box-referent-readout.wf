@@ -14,33 +14,33 @@ fn refresh(old: own Payload) -> result: own Payload pure {
 
 fn direct(owner: own Box<Payload>) -> result: own Box<Payload> pure {
   doc "The atomic update at Box content reached from a local binding.";
-  set deref(owner) = refresh(old: move deref(owner));
+  set owner.inner = refresh(old: move owner.inner);
   return move owner;
 }
 
 fn borrowed(owner: &Box<Payload>) -> result: own unit writes(deref(owner)) {
   doc "The atomic update at Box content reached through a reference parameter whose row writes that path.";
-  set deref(owner) = refresh(old: move deref(owner));
+  set deref(owner).inner = refresh(old: move deref(owner).inner);
   return unit;
 }
 
 fn nested(owner: own Box<Box<Payload>>) -> result: own Box<Box<Payload>> pure {
   doc "The atomic update two cells down.";
-  set deref(deref(owner)) = refresh(old: move deref(deref(owner)));
+  set owner.inner.inner = refresh(old: move owner.inner.inner);
   return move owner;
 }
 
 fn field(owner: own Box<Pair>) -> result: own Box<Pair> pure {
   doc "The atomic update at one field of the cell's content, which leaves the other field and the root alone.";
-  set deref(owner).left = refresh(old: move deref(owner).left);
+  set owner.inner.left = refresh(old: move owner.inner.left);
   return move owner;
 }
 
-fn append(storage: own Box<Slots<u64, 16>>, value: own u64) -> result: own Box<Slots<u64, 16>> pure contract {
-  requires deref(storage).room > 0_u64;
+fn append_one(storage: own Box<Slots<u64, 16>>, value: own u64) -> result: own Box<Slots<u64, 16>> pure contract {
+  requires storage.inner.room > 0_u64;
 } {
   doc "An ordinary window operation through the cell's content, which is not an atomic update and needs none.";
-  place_back(window: &deref(storage), value: value);
+  place_back(window: &storage.inner, value: value);
   return move storage;
 }
 

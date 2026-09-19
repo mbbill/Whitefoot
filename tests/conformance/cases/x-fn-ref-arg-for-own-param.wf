@@ -4,7 +4,7 @@ fn takesown(n: own i32) -> function_result: own i32 pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "The caller writes a reference where the signature declares an own value. A reference is a name for a path [REF-1], so the argument resolves to that path and is read bare at the own parameter; this is the admitted half of the mode pair whose other half, an own value at a reference parameter, stays a TYPE-5 mismatch. v0.59 rejected this spelling under TYPE-7.";
+  doc "The caller writes a reference where the signature declares an own value. A reference variable denotes the reference [REF-1] and its referent is reached only through deref, so the bare reference at an own parameter is the missing dereference [TYPE-7], whose fix is deref(b); the other half of the mode pair, an own value at a reference parameter, is instead a TYPE-5 mismatch.";
   let a = 5_i32;
   let b = &a;
   let r = takesown(n: b);

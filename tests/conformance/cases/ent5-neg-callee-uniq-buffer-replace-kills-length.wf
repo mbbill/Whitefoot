@@ -9,6 +9,6 @@ fn main() -> status: own ExitStatus pure {
   doc "The callee exchanges the whole referent of its reference parameter. [EFF-2] projects writes(handle) onto the actual place line, which is the support member of every measure over it, so [ENT-5] must kill the old length fact and [OP-4] must reject offset 9 after replacement by a two-slot allocation.";
   let line = box_array_filled::<u8>(count: 10_u64, value: 0_u8);
   shrink(handle: &line);
-  let tail = deref(line)[9_u64];
+  let tail = line.inner[9_u64];
   return exit_status(code: 0_u8);
 }

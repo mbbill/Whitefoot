@@ -1,6 +1,6 @@
 fn f(x: &i32) -> function_result: own i32 reads(x), reads(x) {
   doc "Two entries naming one path duplicate that entry rather than being the one canonical reads(x); each entry is the one spelling of one path [EFF-1, FORM-1].";
-  return x;
+  return deref(x);
 }
 
 fn main() -> status: own ExitStatus pure {

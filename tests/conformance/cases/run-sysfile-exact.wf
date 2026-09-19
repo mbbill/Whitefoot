@@ -1,6 +1,6 @@
 fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   doc "Matching through a reference leaves the scrutinee live and binds each payload as a reference naming the scrutinee path.";
-  match error {
+  match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
     }
@@ -65,7 +65,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
       return False();
     }
     ResourceExhausted(code: native_code, origin: native_origin) => {
-      return native_origin == 0_u8;
+      return deref(native_origin) == 0_u8;
     }
     FileTooLarge(code: native_code, origin: native_origin) => {
       return False();
@@ -91,7 +91,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
 fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(args), reads(cwd), writes(files) {
   doc "The ordinary read_at implementation returns Ok(end) when the file fills the requested range; a later call observes Err(ReadEnd). Exact byte and endpoint observations are retained.";
   let page = box_array_filled::<u8>(count: 8_u64, value: 0_u8);
-  let window = &deref(page)[0_u64..8_u64];
+  let window = &page.inner[0_u64..8_u64];
   match arg_get(args: args, position: 1_u64) {
     Ok(value: text) => {
       match relative_path(value: move text) {

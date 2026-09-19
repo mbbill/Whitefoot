@@ -1,5 +1,5 @@
 fn push(values: &Slots<u64, 4>, value: own u64) -> result: own unit writes(values) contract {
-  requires values.room > 0_u64;
+  requires deref(values).room > 0_u64;
 } {
   doc "No postcondition, so the caller learns nothing about the window's length from this call.";
   place_back(window: values, value: value);

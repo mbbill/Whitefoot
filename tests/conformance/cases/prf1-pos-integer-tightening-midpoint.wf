@@ -1,5 +1,5 @@
 fn probe(table: &Slots<u8, 4>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
-  define spare = table.len;
+  define spare = deref(table).len;
   requires lo < hi;
   requires hi <= spare;
 } {
@@ -11,7 +11,7 @@ fn probe(table: &Slots<u8, 4>, lo: own u64, hi: own u64) -> found: own u8 reads(
     use (lo < hi);
     use (2_u64 * half <= span);
   }
-  let byte = table[mid];
+  let byte = deref(table)[mid];
   return byte;
 }
 

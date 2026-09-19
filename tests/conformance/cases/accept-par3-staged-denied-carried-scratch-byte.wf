@@ -1,5 +1,5 @@
 fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
-  match error {
+  match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
     }
@@ -64,7 +64,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
       return False();
     }
     ResourceExhausted(code: native_code, origin: native_origin) => {
-      return native_origin == 0_u8;
+      return deref(native_origin) == 0_u8;
     }
     FileTooLarge(code: native_code, origin: native_origin) => {
       return False();
@@ -105,13 +105,13 @@ fn component() -> made: own Slots<u8, 16> pure contract {
 
 fn stamp(slot: &[u8], index: own u64) -> result: own unit writes(slot) {
   doc "Writes one marker byte on odd indices only, so its written extent is not a fact of the signature.";
-  let spare = slot.len;
+  let spare = deref(slot).len;
   let sized = 0_u64 < spare;
   if sized {
     let parity = index % 2_u64;
     let odd = parity == 1_u64;
     if odd {
-      set slot[0_u64] = 7_u8;
+      set deref(slot)[0_u64] = 7_u8;
     }
   }
   return unit;
@@ -119,13 +119,13 @@ fn stamp(slot: &[u8], index: own u64) -> result: own unit writes(slot) {
 
 fn first_byte(source: &[u8]) -> result: own u64 reads(source) {
   doc "Reports the first byte of the ranged reference, or zero when it has none.";
-  let spare = source.len;
+  let spare = deref(source).len;
   let sized = 0_u64 < spare;
   if sized {
   } else {
     return 0_u64;
   }
-  let byte = source[0_u64];
+  let byte = deref(source)[0_u64];
   let widened = cvt::<u8, u64>(byte);
   return widened;
 }

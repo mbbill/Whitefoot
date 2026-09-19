@@ -4,7 +4,7 @@ struct Cursor {
 
 fn change(index: &Cursor) -> result: own u64 writes(index.at) {
   doc "Writes the separate scalar index through its reference parameter and returns the value the caller commits.";
-  set index.at = 1_u64;
+  set deref(index).at = 1_u64;
   return 41_u64;
 }
 

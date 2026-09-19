@@ -1,5 +1,5 @@
 fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
-  match error {
+  match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
     }

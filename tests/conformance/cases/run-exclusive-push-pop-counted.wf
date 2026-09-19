@@ -1,7 +1,7 @@
 fn push(values: &Slots<u64, 4>, value: own u64) -> result: own unit writes(values) contract {
-  requires values.room > 0_u64;
-  ensures values.len == entry(values).len + 1_u64;
-  ensures values.cap == entry(values).cap;
+  requires deref(values).room > 0_u64;
+  ensures deref(values).len == deref(entry(values)).len + 1_u64;
+  ensures deref(values).cap == deref(entry(values)).cap;
 } {
   doc "One boundary move up, with both two-state relations published.";
   place_back(window: values, value: value);
@@ -9,13 +9,13 @@ fn push(values: &Slots<u64, 4>, value: own u64) -> result: own unit writes(value
 }
 
 fn pop(values: &Slots<u64, 4>) -> (value: own u64, count: own u64) writes(values) contract {
-  requires values.len > 0_u64;
-  ensures values.len == entry(values).len - 1_u64;
-  ensures count == values.len;
+  requires deref(values).len > 0_u64;
+  ensures deref(values).len == deref(entry(values)).len - 1_u64;
+  ensures count == deref(values).len;
 } {
   doc "One boundary move down, with the element and the resulting length handed back together.";
   let value = take_back(window: values);
-  let count = values.len;
+  let count = deref(values).len;
   return value, count;
 }
 

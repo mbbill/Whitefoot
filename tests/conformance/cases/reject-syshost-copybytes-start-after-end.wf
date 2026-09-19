@@ -3,7 +3,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: arguments, cwd: root, handles: factory, ..) = move inputs;
   close_directory(factory: &factory, directory: move root);
   let bytes = box_array_filled::<u8>(count: 4_u64, value: 0_u8);
-  let window = &deref(bytes)[0_u64..4_u64];
+  let window = &bytes.inner[0_u64..4_u64];
   match arg_get(args: &arguments, position: 1_u64) {
     Ok(value: text) => {
       match host_copy_bytes(value: &text, destination: window, start: 18446744073709551615_u64, end: 0_u64) {

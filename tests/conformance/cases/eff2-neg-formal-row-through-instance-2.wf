@@ -9,7 +9,7 @@ formal Inspect<T: affine> {
 
 fn left(input: &Pair) -> result: own u64 reads(input.left) {
   doc "Reads one field through its reference parameter and states exactly that path.";
-  return input.left;
+  return deref(input).left;
 }
 
 actual Left : Inspect<Pair> {

@@ -3,7 +3,7 @@ fn takes(value: own i32) -> function_result: own unit pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "A reference is read bare [TYPE-7]: it is a name for a path [REF-1], so writing it where a value of the referent type is declared reads that path. The same spelling was the v0.59 implicit-read rejection; v0.60 admits it, deref being the Box-content step alone.";
+  doc "A reference variable denotes the reference [REF-1], and the storage it names is reached only through deref, so writing the bare reference where a value of the referent type is declared is the missing dereference [TYPE-7], whose mechanical fix is deref(p).";
   let a = 1_i32;
   let p = &a;
   takes(value: p);

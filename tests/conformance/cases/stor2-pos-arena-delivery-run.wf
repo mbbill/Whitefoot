@@ -1,5 +1,5 @@
 fn main() -> status: own ExitStatus pure {
-  doc "A value if delivers an owned cell from either branch, and deref returns the selected payload. Allocation is total, so neither branch carries a failure arm.";
+  doc "A value if delivers an owned cell from either branch, and the field inner returns the selected payload. Allocation is total, so neither branch carries a failure arm.";
   let flag = True();
   let picked = if flag {
     let a = box_new::<i32>(value: 11_i32);
@@ -8,7 +8,7 @@ fn main() -> status: own ExitStatus pure {
     let b = box_new::<i32>(value: 22_i32);
     give move b;
   }
-  let v = deref(picked);
+  let v = picked.inner;
   if v != 11_i32 {
     return exit_status(code: 1_u8);
   }

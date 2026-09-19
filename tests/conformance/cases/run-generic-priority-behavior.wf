@@ -9,11 +9,11 @@ fn ascending_compare(env: &Ascending, left: &Item, right: &Item) -> order: own i
   ensures order >= -1_i32;
   ensures order <= 1_i32;
 } {
-  doc "A reference parameter is read bare, so the compared fields are ordinary place reads.";
-  if left.rank < right.rank {
+  doc "A reference parameter denotes the reference, so the compared fields are reached through deref.";
+  if deref(left).rank < deref(right).rank {
     return -1_i32;
   }
-  if left.rank > right.rank {
+  if deref(left).rank > deref(right).rank {
     return 1_i32;
   }
   return 0_i32;
@@ -35,60 +35,60 @@ actual ItemOrder : Order<Item, Ascending> {
 }
 
 fn exchange_at<T: linear>(heap: &Slots<T, 16>, left: own u64, right: own u64) -> result: own unit writes(heap) contract {
-  requires left < heap.len;
-  requires right < heap.len;
-  ensures heap.len == entry(heap).len;
-  ensures heap.cap == entry(heap).cap;
+  requires left < deref(heap).len;
+  requires right < deref(heap).len;
+  ensures deref(heap).len == deref(entry(heap)).len;
+  ensures deref(heap).cap == deref(entry(heap)).cap;
 } {
   doc "swap is the one operation whose two reference arguments may name the same place, so no left-equals-right branch is needed and no temporary hole ever exists.";
-  swap::<T>(first: &heap[left], second: &heap[right]);
+  swap::<T>(first: &deref(heap)[left], second: &deref(heap)[right]);
   return unit;
 }
 
 fn sift_rise<Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
-  requires queue.heap.len == count;
+  requires deref(queue).heap.len == count;
   requires count >= 1_u64;
-  ensures queue.heap.len == count;
-  ensures queue.heap.cap == entry(queue).heap.cap;
+  ensures deref(queue).heap.len == count;
+  ensures deref(queue).heap.cap == deref(entry(queue)).heap.cap;
 } {
   doc "The header carries the position bound and both window measures across every backedge.";
   let at = count - 1_u64;
   loop @rise (
     invariant live: at < count,
-    invariant count_low: queue.heap.len >= count,
-    invariant count_high: queue.heap.len <= count,
-    invariant cap_low: queue.heap.cap >= 16_u64,
-    invariant cap_high: queue.heap.cap <= 16_u64
+    invariant count_low: deref(queue).heap.len >= count,
+    invariant count_high: deref(queue).heap.len <= count,
+    invariant cap_low: deref(queue).heap.cap >= 16_u64,
+    invariant cap_high: deref(queue).heap.cap <= 16_u64
   ) {
     if at == 0_u64 {
       return unit;
     }
     let before = at - 1_u64;
     let parent = before / 2_u64;
-    let order = Order::compare(env: env, left: &queue.heap[parent], right: &queue.heap[at]);
+    let order = Order::compare(env: env, left: &deref(queue).heap[parent], right: &deref(queue).heap[at]);
     if order <= 0_i32 {
       return unit;
     }
-    exchange_at::<T>(heap: &queue.heap, left: parent, right: at);
+    exchange_at::<T>(heap: &deref(queue).heap, left: parent, right: at);
     set at = parent;
   }
   return unit;
 }
 
 fn sift_sink<Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
-  requires queue.heap.len == count;
+  requires deref(queue).heap.len == count;
   requires count >= 1_u64;
-  ensures queue.heap.len == count;
-  ensures queue.heap.cap == entry(queue).heap.cap;
+  ensures deref(queue).heap.len == count;
+  ensures deref(queue).heap.cap == deref(entry(queue)).heap.cap;
 } {
   doc "The same header, walking down instead of up.";
   let at = 0_u64;
   loop @sink (
     invariant live: at < count,
-    invariant count_low: queue.heap.len >= count,
-    invariant count_high: queue.heap.len <= count,
-    invariant cap_low: queue.heap.cap >= 16_u64,
-    invariant cap_high: queue.heap.cap <= 16_u64
+    invariant count_low: deref(queue).heap.len >= count,
+    invariant count_high: deref(queue).heap.len <= count,
+    invariant cap_low: deref(queue).heap.cap >= 16_u64,
+    invariant cap_high: deref(queue).heap.cap <= 16_u64
   ) {
     let doubled = at * 2_u64;
     let left = doubled + 1_u64;
@@ -98,46 +98,46 @@ fn sift_sink<Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, env: &E) -
     let best = left;
     let right = left + 1_u64;
     if right < count {
-      let sibling_order = Order::compare(env: env, left: &queue.heap[right], right: &queue.heap[left]);
+      let sibling_order = Order::compare(env: env, left: &deref(queue).heap[right], right: &deref(queue).heap[left]);
       if sibling_order < 0_i32 {
         set best = right;
       }
     }
-    let order = Order::compare(env: env, left: &queue.heap[at], right: &queue.heap[best]);
+    let order = Order::compare(env: env, left: &deref(queue).heap[at], right: &deref(queue).heap[best]);
     if order <= 0_i32 {
       return unit;
     }
-    exchange_at::<T>(heap: &queue.heap, left: at, right: best);
+    exchange_at::<T>(heap: &deref(queue).heap, left: at, right: best);
     set at = best;
   }
   return unit;
 }
 
 fn push<Order<T, E>>(queue: &Queue<Order<T, E>>, value: own T, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
-  requires queue.heap.room >= 1_u64;
-  ensures queue.heap.len == entry(queue).heap.len + 1_u64;
-  ensures queue.heap.room == entry(queue).heap.room - 1_u64;
+  requires deref(queue).heap.room >= 1_u64;
+  ensures deref(queue).heap.len == deref(entry(queue)).heap.len + 1_u64;
+  ensures deref(queue).heap.room == deref(entry(queue)).heap.room - 1_u64;
 } {
   doc "An owned scalar or owner enters the window and then rises into place.";
-  let entering = queue.heap.len;
+  let entering = deref(queue).heap.len;
   let count = entering + 1_u64;
-  place_back(window: &queue.heap, value: move value);
+  place_back(window: &deref(queue).heap, value: move value);
   sift_rise::<Order<T, E>>(queue: queue, count: count, env: env);
   return unit;
 }
 
 fn pop<Order<T, E>>(queue: &Queue<Order<T, E>>, env: &E) -> minimum: own T reads(env), writes(queue.heap) contract {
-  requires queue.heap.len >= 1_u64;
-  ensures queue.heap.len == entry(queue).heap.len - 1_u64;
+  requires deref(queue).heap.len >= 1_u64;
+  ensures deref(queue).heap.len == deref(entry(queue)).heap.len - 1_u64;
 } {
   doc "The tail is taken out and exchanged with the root by swap, so no slot is ever empty inside the window.";
-  let last = take_back(window: &queue.heap);
-  let count = queue.heap.len;
+  let last = take_back(window: &deref(queue).heap);
+  let count = deref(queue).heap.len;
   if count == 0_u64 {
     return move last;
   }
   let minimum = move last;
-  swap::<T>(first: &queue.heap[0_u64], second: &minimum);
+  swap::<T>(first: &deref(queue).heap[0_u64], second: &minimum);
   sift_sink::<Order<T, E>>(queue: queue, count: count, env: env);
   return move minimum;
 }
@@ -150,11 +150,11 @@ fn word_compare(env: &Ascending, left: &u64, right: &u64) -> order: own i32 read
   ensures order >= -1_i32;
   ensures order <= 1_i32;
 } {
-  doc "Scalar elements compared through bare reference reads.";
-  if left < right {
+  doc "Scalar elements compared through deref reads.";
+  if deref(left) < deref(right) {
     return -1_i32;
   }
-  if left > right {
+  if deref(left) > deref(right) {
     return 1_i32;
   }
   return 0_i32;
@@ -165,14 +165,14 @@ fn directed_compare(env: &Direction, left: &Item, right: &Item) -> order: own i3
   ensures order <= 1_i32;
 } {
   doc "A stateful comparison whose environment path is declared beside the two element paths.";
-  if left.rank < right.rank {
-    if env.descending {
+  if deref(left).rank < deref(right).rank {
+    if deref(env).descending {
       return 1_i32;
     }
     return -1_i32;
   }
-  if left.rank > right.rank {
-    if env.descending {
+  if deref(left).rank > deref(right).rank {
+    if deref(env).descending {
       return -1_i32;
     }
     return 1_i32;

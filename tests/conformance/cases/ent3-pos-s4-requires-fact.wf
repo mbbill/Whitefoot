@@ -1,10 +1,10 @@
 fn get(b: &[u8], i: own u64) -> result: own u8 reads(b) contract {
-  define spare = b.len;
+  define spare = deref(b).len;
   define inside = i < spare;
   requires inside;
 } {
   doc "Source S4: the static requires expression, after every shared define is expanded, is the one relation admitted as an axiom at body entry [ENT-3.S4] and the only fact crossing into the body from outside [ENT-2]. Every ordinary caller must prove that complete goal before the call [FN-8].";
-  return b[i];
+  return deref(b)[i];
 }
 
 fn main() -> status: own ExitStatus pure {

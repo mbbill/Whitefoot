@@ -1,5 +1,5 @@
 fn width_of<T: linear>(blocks: &Slots<T, 4>) -> taken: own Option<T> writes(blocks.last), writes(blocks.len) contract {
-  requires blocks.len > 0_u64;
+  requires deref(blocks).len > 0_u64;
 } {
   doc "Takes one block off the back of a run of runs, generic over the element type [OP-10].";
   let one = take_back(window: blocks);
@@ -17,7 +17,7 @@ fn main() -> status: own ExitStatus pure {
       return exit_status(code: 1_u8);
     }
     Some(value: got) => {
-      let width = deref(got).cap;
+      let width = got.inner.cap;
       if width == 16_u64 {
       } else {
         return exit_status(code: 2_u8);

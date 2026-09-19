@@ -1,14 +1,14 @@
 fn slice_len(part: &[u64]) -> result: own u64 pure {
   doc "REF-4: a range reference's one measure is len, equal to hi - lo.";
-  let n = part.len;
+  let n = deref(part).len;
   return n;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "REF-4: &x[lo..hi] forms a range reference under lo <= hi and hi <= x.len, re-slicing &part[a..b] under a <= b <= part.len is admitted, and the kind's one measure len is hi - lo.";
+  doc "REF-4: &x[lo..hi] forms a range reference under lo <= hi and hi <= x.len, re-slicing &deref(part)[a..b] under a <= b <= deref(part).len is admitted, and the kind's one measure len is hi - lo.";
   let a = array_filled::<u64, 8>(value: 1_u64);
   let part = &a[2_u64..6_u64];
-  let inner = &part[1_u64..3_u64];
+  let inner = &deref(part)[1_u64..3_u64];
   let outer_len = slice_len(part: part);
   let inner_len = slice_len(part: inner);
   if outer_len == 4_u64 {

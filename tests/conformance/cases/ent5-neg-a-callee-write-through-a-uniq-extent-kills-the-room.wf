@@ -1,5 +1,5 @@
 fn reserve(store: &Slots<u8, 64>) -> result: own unit writes(store.next), writes(store.len) contract {
-  requires store.room > 0_u64;
+  requires deref(store).room > 0_u64;
 } {
   doc "Fills one slot of the window it was handed, which moves that window's own boundary.";
   place_back(window: store, value: 0_u8);

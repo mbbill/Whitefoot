@@ -6,6 +6,6 @@ fn main() -> status: own ExitStatus pure {
   doc "FN-2: an identity instantiated with a boxed runtime-capacity run returns that same exact type. There is one heap [STOR-8], so no store brand confines the value and the instance is keyed on the element type alone; the runtime-capacity shape lives inside the `Box` [TYPE-9].";
   let run = box_slots_new::<u64>(capacity: 4_u64);
   let kept = identity::<Box<Slots<u64>>>(value: move run);
-  let size = deref(kept).room;
+  let size = kept.inner.room;
   return exit_status(code: 0_u8);
 }

@@ -1,5 +1,5 @@
 fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
-  match error {
+  match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
     }
@@ -64,7 +64,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
       return False();
     }
     ResourceExhausted(code: native_code, origin: native_origin) => {
-      return native_origin == 0_u8;
+      return deref(native_origin) == 0_u8;
     }
     FileTooLarge(code: native_code, origin: native_origin) => {
       return False();
@@ -88,7 +88,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
 }
 
 fn advance(first: &DirectorySource, second: &DirectorySource, destination: &[u8]) -> result: own unit writes(first), writes(second), writes(destination) contract {
-  requires 1024_u64 <= destination.len;
+  requires 1024_u64 <= deref(destination).len;
 } {
   doc "Advances two enumerations into one destination, so a call must prove its three substituted write paths pairwise disjoint.";
   let (first_result, first_next, first_entries) = directory_next(source: first, destination: destination, start: 0_u64, end: 1024_u64);

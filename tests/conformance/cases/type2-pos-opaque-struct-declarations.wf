@@ -1,0 +1,23 @@
+opaque struct Token {
+  value: u64;
+}
+
+opaque linear struct Ticket {
+  serial: u64;
+}
+
+fn doubled(x: own u64) -> result: own u64 pure {
+  doc "An ordinary declaration beside the two opaque ones.";
+  let sum = x +wrap x;
+  return sum;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "TYPE-2: a struct declaration may carry the opaque modifier, written before linear when both are present [GRAM-2]. An opaque struct has fields and no usable constructor, and no source-declared opaque struct has a construction function, so neither Token nor Ticket is ever formed here; declaring them leaves the rest of the unit ordinary and the program is accepted.";
+  let twice = doubled(x: 21_u64);
+  if twice == 42_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,7 +1,7 @@
 fn main() -> status: own ExitStatus pure {
-  doc "Construction: box_new(value: v) returns own Box<T> with no store argument and no failure arm, because allocation is total; content is read through deref.";
+  doc "Construction: box_new(value: v) returns own Box<T> with no store argument and no failure arm, because allocation is total; content is read as the field inner.";
   let b = box_new::<i32>(value: 5_i32);
-  let v = deref(b);
+  let v = b.inner;
   if v == 5_i32 {
   } else {
     return exit_status(code: 1_u8);

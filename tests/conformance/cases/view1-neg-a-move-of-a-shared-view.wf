@@ -1,7 +1,7 @@
 fn main() -> status: own ExitStatus pure {
-  doc "A move of a copy value is OWN-1's refusal, and a reference is a name for a path [REF-1], so move on a reference variable resolves to the path that reference names. v0.59 stated this over a copy Slice descriptor; v0.60 has no view value, so the surviving question is the same refusal over the resolved place. The rejection is at the use rather than at the formation, and its restructuring is to drop the move spelling.";
+  doc "A move of a copy value is OWN-1's refusal. A reference variable denotes the reference and its referent is reached through deref [REF-1, TYPE-7], so move deref(window) resolves to the copy u64 the reference names. The rejection is at the use rather than at the formation, and its restructuring is to drop the move spelling.";
   let count = 13_u64;
   let window = &count;
-  let taken = move window;
+  let taken = move deref(window);
   return exit_status(code: 1_u8);
 }

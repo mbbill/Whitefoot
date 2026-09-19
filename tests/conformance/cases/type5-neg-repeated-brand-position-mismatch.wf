@@ -8,7 +8,7 @@ struct Pair<A: copy, B: copy> {
 }
 
 fn same_parameter<T: copy>(pair: &Pair<T, T>) -> value: own T reads(pair.first.value) {
-  return pair.first.value;
+  return deref(pair).first.value;
 }
 
 fn main() -> status: own ExitStatus pure {

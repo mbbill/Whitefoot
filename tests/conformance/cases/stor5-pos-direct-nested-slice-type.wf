@@ -1,10 +1,10 @@
 fn nested_length(values: &[u8], lo: own u64, hi: own u64) -> function_result: own u64 pure contract {
   requires lo <= hi;
-  requires hi <= values.len;
+  requires hi <= deref(values).len;
 } {
   doc "A range reference re-sliced from another range reference is admitted, and len is its one measure; no reference is stored, so the reference-free closure is untouched.";
-  let part = &values[lo..hi];
-  let width = part.len;
+  let part = &deref(values)[lo..hi];
+  let width = deref(part).len;
   return width;
 }
 

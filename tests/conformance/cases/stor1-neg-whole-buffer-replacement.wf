@@ -1,6 +1,6 @@
 fn overwrite(out: &Box<Slots<u8, 4>>, replacement: own Slots<u8, 4>) -> result: own unit writes(deref(out)) {
-  doc "The heap-owned cell is reached by deref and its content is stored whole through a reference parameter whose row declares the write; the affine previous owner takes its ordinary release at the commit, so no read-out of it is required.";
-  set deref(out) = move replacement;
+  doc "The heap-owned cell is reached by deref and its content, the field inner, is stored whole through a reference parameter whose row declares the write; the affine previous owner takes its ordinary release at the commit, so no read-out of it is required.";
+  set deref(out).inner = move replacement;
   return unit;
 }
 

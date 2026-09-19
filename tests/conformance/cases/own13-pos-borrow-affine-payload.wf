@@ -10,9 +10,9 @@ enum Packet {
 
 fn inspect(packet: &Packet) -> return_value: own i32 reads(packet) {
   doc "OWN-13: matching through a reference derives a Pair payload binder naming that path, and a field of it is read without transferring ownership.";
-  match packet {
+  match deref(packet) {
     Data(item: payload) => {
-      return payload.left;
+      return deref(payload).left;
     }
     Empty() => {
       return 0_i32;

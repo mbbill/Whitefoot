@@ -3,9 +3,9 @@ struct StaticBlock {
 }
 
 fn take_static(pool: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(pool) contract {
-  requires pool.len > 0_u64;
-  ensures pool.len + 1_u64 == entry(pool).len;
-  ensures pool.room == entry(pool).room + 1_u64;
+  requires deref(pool).len > 0_u64;
+  ensures deref(pool).len + 1_u64 == deref(entry(pool)).len;
+  ensures deref(pool).room == deref(entry(pool)).room + 1_u64;
 } {
   doc "Takes the last stocked block out of the pool and publishes what that did to the pool alone.";
   let block = take_back(window: pool);
@@ -13,8 +13,8 @@ fn take_static(pool: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(po
 }
 
 fn return_static(pool: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(pool) contract {
-  requires pool.room > 0_u64;
-  ensures pool.len == entry(pool).len + 1_u64;
+  requires deref(pool).room > 0_u64;
+  ensures deref(pool).len == deref(entry(pool)).len + 1_u64;
 } {
   doc "Puts one block back into the pool.";
   place_back(window: pool, value: move block);

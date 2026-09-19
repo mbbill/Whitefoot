@@ -1,5 +1,5 @@
 fn fill(target: &Slots<u8, 4>) -> result: own unit pure contract {
-  requires target.room > 0_u64;
+  requires deref(target).room > 0_u64;
 } {
   doc "The body places one value into the window behind its reference parameter, which exhibits writes(target.next) and writes(target.len), and declares the empty row instead [EFF-2, OP-10].";
   place_back(window: target, value: 7_u8);

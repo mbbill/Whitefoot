@@ -1,10 +1,10 @@
 fn get(b: &[u8], i: own u64) -> result: own u8 reads(b) {
   doc "An else-free guard whose body falls through also has a reaching false edge. A bound available only on the true edge cannot prove the subscript after the join [ENT-5, OP-4].";
-  let spare = b.len;
+  let spare = deref(b).len;
   let inside = i < spare;
   if inside {
   }
-  return b[i];
+  return deref(b)[i];
 }
 
 fn main() -> status: own ExitStatus pure {

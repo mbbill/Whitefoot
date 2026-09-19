@@ -1,6 +1,6 @@
 fn store(cell: &Box<i32>) -> function_result: own unit reads(cell) {
   doc "Declares a read of the cell it was handed and then writes through it.";
-  set deref(cell) = 9_i32;
+  set deref(cell).inner = 9_i32;
   return unit;
 }
 

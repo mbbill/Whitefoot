@@ -3,8 +3,8 @@ struct Cell {
 }
 
 fn two(a: &Cell, b: &Cell) -> return_value: own unit writes(a.value), writes(b.value) {
-  set a.value = 0_i32;
-  set b.value = 1_i32;
+  set deref(a).value = 0_i32;
+  set deref(b).value = 1_i32;
   return unit;
 }
 

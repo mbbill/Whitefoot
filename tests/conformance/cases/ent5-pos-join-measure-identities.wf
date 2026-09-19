@@ -1,26 +1,26 @@
 fn get(b: &[u8], i: own u64, pick: own Bool) -> result: own u8 reads(b) {
   doc "Independent branch-local length reads denote the same measure term after scope exit [MSR-1], so the common bound survives the ordinary join and the subscript discharges [ENT-5, OP-4].";
   if pick {
-    let span_a = b.len;
+    let span_a = deref(b).len;
     let inside_a = i < span_a;
     if inside_a {
     } else {
       return 0_u8;
     }
   } else {
-    let span_b = b.len;
+    let span_b = deref(b).len;
     let inside_b = i < span_b;
     if inside_b {
     } else {
       return 0_u8;
     }
   }
-  return b[i];
+  return deref(b)[i];
 }
 
 fn store_byte(out: &[u8], i: own u64, value: own u8, pick: own Bool) -> result: own unit writes(out) {
   doc "Opposite comparison spellings prove one joined bound for a write through a range reference the row declares.";
-  let spare = out.len;
+  let spare = deref(out).len;
   if pick {
     let direct_bound = i < spare;
     if direct_bound {
@@ -34,7 +34,7 @@ fn store_byte(out: &[u8], i: own u64, value: own u8, pick: own Bool) -> result: 
       return unit;
     }
   }
-  set out[i] = value;
+  set deref(out)[i] = value;
   return unit;
 }
 

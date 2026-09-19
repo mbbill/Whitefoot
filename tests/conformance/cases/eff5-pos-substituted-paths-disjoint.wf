@@ -4,8 +4,8 @@ struct Cell {
 
 fn copy_across(source: &Cell, destination: &Cell) -> result: own unit reads(source.value), writes(destination.value) {
   doc "EFF-5: the callee declares one formal-path row that the call site substitutes.";
-  let v = source.value;
-  set destination.value = v;
+  let v = deref(source).value;
+  set deref(destination).value = v;
   return unit;
 }
 

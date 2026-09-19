@@ -3,7 +3,7 @@ fn main() -> status: own ExitStatus pure {
   let b = box_new::<u64>(value: 1_u64);
   let c = box_new::<u64>(value: 2_u64);
   set b = move c;
-  let seen = deref(b);
+  let seen = b.inner;
   if seen == 2_u64 {
   } else {
     return exit_status(code: 1_u8);

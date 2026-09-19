@@ -1,14 +1,14 @@
-fn measures(window: &Ring<u64, 4>) -> (length: own u64, capacity: own u64, spare: own u64, origin: own u64) pure {
-  doc "OP-15: reading a measure performs no operation, allocates nothing, reads only the descriptor storage, and carries the empty effect row.";
-  let l = window.len;
-  let c = window.cap;
-  let s = window.room;
-  let h = window.head;
+fn measures(window: &Ring<u64, 4>) -> (length: own u64, capacity: own u64, spare: own u64, origin: own u64) reads(window.len), reads(window.cap), reads(window.room), reads(window.head) {
+  doc "OP-15: reading a measure performs no operation, allocates nothing, and reads only the descriptor storage; read through a reference parameter it still exhibits reads of those four measure paths, and the declared row states exactly that.";
+  let l = deref(window).len;
+  let c = deref(window).cap;
+  let s = deref(window).room;
+  let h = deref(window).head;
   return l, c, s, h;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "OP-15: r.len, r.cap, r.room and r.head are field selections on a measured place and are not calls; one quantity, one spelling, with no reader operation beside the place form.";
+  doc "OP-15: r.len, r.cap, r.room and r.head are field selections on a measured place and are not calls; one quantity, one spelling, with no reader operation beside the place form. A measure read rooted in a local exhibits nothing, so main stays pure.";
   let r = ring_new::<u64, 4>();
   let (length, capacity, spare, origin) = measures(window: &r);
   if length == 0_u64 {

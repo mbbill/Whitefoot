@@ -1,8 +1,8 @@
 fn overwrite(slots: &Slots<u64, 2>, at: own u64) -> result: own unit writes(slots[at]) contract {
-  requires at < slots.len;
+  requires at < deref(slots).len;
 } {
   doc "Writes exactly the element position its declared row names; the index enters the row through a value parameter, evaluated once at the call [EFF-1].";
-  set slots[at] = 9_u64;
+  set deref(slots)[at] = 9_u64;
   return unit;
 }
 
@@ -14,10 +14,10 @@ fn read_if_valid(index: own u64) -> result: own unit pure {
   let data = slots_new::<u8, 1>();
   place_back(window: &data, value: 7_u8);
   let guarded = &indices[0_u64];
-  let valid = guarded < 1_u64;
+  let valid = deref(guarded) < 1_u64;
   if valid {
     overwrite(slots: &indices, at: 1_u64);
-    let observed = data[guarded];
+    let observed = data[deref(guarded)];
   }
   return unit;
 }

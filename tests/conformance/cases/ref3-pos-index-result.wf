@@ -1,8 +1,8 @@
 fn head_value(values: &[u64]) -> result: own u64 reads(values) contract {
-  requires values.len > 0_u64;
+  requires deref(values).len > 0_u64;
 } {
   doc "REF-3: a function that finds something returns owned data, with its bounds relation in the contract, and never hands a reference back.";
-  let first = values[0_u64];
+  let first = deref(values)[0_u64];
   return first;
 }
 

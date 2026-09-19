@@ -76,7 +76,7 @@ fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 p
 
 fn probe(slot: &Slot, key: own u64) -> result: own Probe reads(slot) {
   doc "Matching through a reference leaves the scrutinee live and binds each payload as a reference naming the scrutinee path.";
-  match slot {
+  match deref(slot) {
     Vacant() => {
       return Stop();
     }
@@ -84,7 +84,7 @@ fn probe(slot: &Slot, key: own u64) -> result: own Probe reads(slot) {
       return Skip();
     }
     Occupied(fingerprint: saved, key: present, payload: owner) => {
-      if present == key {
+      if deref(present) == key {
         return Match();
       }
       return Miss();
@@ -93,38 +93,38 @@ fn probe(slot: &Slot, key: own u64) -> result: own Probe reads(slot) {
 }
 
 fn fill_slots(slots: &Slots<Slot, 2>, count: own u64) -> result: own unit writes(slots) contract {
-  requires slots.len == 0_u64;
-  requires slots.room >= count;
-  ensures slots.len == count;
+  requires deref(slots).len == 0_u64;
+  requires deref(slots).room >= count;
+  ensures deref(slots).len == count;
 } {
   doc "One vacant slot per position, under a counted header that carries the length and the remaining room.";
   for (
     index in 0_u64..count,
-    invariant filled: slots.len >= index,
-    invariant bounded: slots.len <= index,
-    invariant spare: slots.room + index >= count
+    invariant filled: deref(slots).len >= index,
+    invariant bounded: deref(slots).len <= index,
+    invariant spare: deref(slots).room + index >= count
   ) {
     let vacant = Vacant();
     place_back(window: slots, value: move vacant);
   }
-  invariant complete_min: slots.len >= count;
-  invariant complete_max: slots.len <= count;
+  invariant complete_min: deref(slots).len >= count;
+  invariant complete_max: deref(slots).len <= count;
   return unit;
 }
 
 fn put(slots: &Slots<Slot, 2>, key: own u64, payload: own Box<Resource>) -> outcome: own PutOutcome writes(slots) contract {
-  requires slots.len > 0_u64;
-  ensures slots.len == entry(slots).len;
+  requires deref(slots).len > 0_u64;
+  ensures deref(slots).len == deref(entry(slots)).len;
 } {
   doc "The probe loop only selects a destination, so the owning payload is never moved inside a loop body; the one insertion is written after it and exchanges the old occupant out by swap.";
-  let count = slots.len;
+  let count = deref(slots).len;
   let first_deleted = count;
   let destination = count;
   for (step in 0_u64..count) {
     if destination == count {
       let home = key % count;
       let index = probe_index(home: home, step: step, count: count);
-      let action = probe(slot: &slots[index], key: key);
+      let action = probe(slot: &deref(slots)[index], key: key);
       match action {
         Match() => {
           set destination = index;
@@ -157,7 +157,7 @@ fn put(slots: &Slots<Slot, 2>, key: own u64, payload: own Box<Resource>) -> outc
   }
   let tag = fingerprint(key: key);
   let replacement = Occupied(fingerprint: tag, key: key, payload: move payload);
-  swap::<Slot>(first: &slots[destination], second: &replacement);
+  swap::<Slot>(first: &deref(slots)[destination], second: &replacement);
   match replacement {
     Occupied(fingerprint: old_tag, key: old_key, payload: old_payload) => {
       return Replaced(previous: move old_payload);
@@ -172,8 +172,8 @@ fn put(slots: &Slots<Slot, 2>, key: own u64, payload: own Box<Resource>) -> outc
 }
 
 fn allocate_put(slots: &Slots<Slot, 2>, key: own u64, id: own u64) -> outcome: own PutOutcome writes(slots) contract {
-  requires slots.len > 0_u64;
-  ensures slots.len == entry(slots).len;
+  requires deref(slots).len > 0_u64;
+  ensures deref(slots).len == deref(entry(slots)).len;
 } {
   doc "Allocation is total, so the wrapper has no refusal arm and the cell reaches the insertion unconditionally.";
   let data0 = id *wrap 17_u64;
@@ -199,7 +199,7 @@ fn check_put(outcome: own PutOutcome, kind: own u64, expected: own u64) -> code:
       if kind != 2_u64 {
         return 2_u8;
       }
-      let seen = deref(old).id;
+      let seen = old.inner.id;
       if seen != expected {
         return 3_u8;
       }
@@ -209,7 +209,7 @@ fn check_put(outcome: own PutOutcome, kind: own u64, expected: own u64) -> code:
       if kind != 3_u64 {
         return 4_u8;
       }
-      let seen = deref(back).id;
+      let seen = back.inner.id;
       if seen != expected {
         return 5_u8;
       }

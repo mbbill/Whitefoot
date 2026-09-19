@@ -1,10 +1,10 @@
 fn blend(target: &[u8], source: &[u8]) -> result: own unit reads(source), writes(target) contract {
-  requires target.len > 0_u64;
-  requires source.len > 0_u64;
+  requires deref(target).len > 0_u64;
+  requires deref(source).len > 0_u64;
 } {
   doc "Copies one element from the read range into the written range.";
-  let first = source[0_u64];
-  set target[0_u64] = first;
+  let first = deref(source)[0_u64];
+  set deref(target)[0_u64] = first;
   return unit;
 }
 

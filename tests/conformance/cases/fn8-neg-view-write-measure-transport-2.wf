@@ -1,23 +1,23 @@
 fn fill(destination: &Slots<u8, 64>, at: own u64) -> result: own u64 writes(destination) {
   doc "Writes one byte through the reference and returns the next position.";
-  let spare = destination.len;
+  let spare = deref(destination).len;
   let inside = at < spare;
   if inside {
-    set destination[at] = 65_u8;
+    set deref(destination)[at] = 65_u8;
   }
-  let next = at +wrap 1_u64;
-  return next;
+  let advanced = at +wrap 1_u64;
+  return advanced;
 }
 
 fn emit(source: &Slots<u8, 64>, length: own u64) -> result: own u64 reads(source) contract {
-  define capacity = source.len;
+  define capacity = deref(source).len;
   requires length <= capacity;
 } {
   doc "Consumes a prefix whose length the caller has proved.";
   let first = 0_u8;
   let present = 0_u64 < length;
   if present {
-    set first = source[0_u64];
+    set first = deref(source)[0_u64];
   }
   return length;
 }

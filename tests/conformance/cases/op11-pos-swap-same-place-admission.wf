@@ -1,9 +1,9 @@
 fn exchange(window: &Slots<Box<u64>, 2>, i: own u64, j: own u64) -> result: own unit writes(window[i]), writes(window[j]) contract {
-  requires i < window.len;
-  requires j < window.len;
+  requires i < deref(window).len;
+  requires j < deref(window).len;
 } {
   doc "OP-11: swap is the one operation whose two reference arguments may name the same place, so swap over two unproved-distinct slots needs no i != j branch.";
-  swap(first: &window[i], second: &window[j]);
+  swap(first: &deref(window)[i], second: &deref(window)[j]);
   return unit;
 }
 
@@ -15,7 +15,7 @@ fn main() -> status: own ExitStatus pure {
   place_back(window: &r, value: move first);
   place_back(window: &r, value: move second);
   exchange(window: &r, i: 0_u64, j: 1_u64);
-  let front = deref(r[0_u64]);
+  let front = r[0_u64].inner;
   if front == 2_u64 {
   } else {
     return exit_status(code: 1_u8);

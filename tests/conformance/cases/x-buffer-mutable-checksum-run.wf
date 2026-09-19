@@ -3,18 +3,18 @@ fn main() -> status: own ExitStatus pure {
   let cell = box_slots_new::<u64>(capacity: 8_u64);
   for @build (
     at in 0_u64..8_u64,
-    invariant grown: deref(cell).len >= at,
-    invariant spare: deref(cell).room + at >= 8_u64
+    invariant grown: cell.inner.len >= at,
+    invariant spare: cell.inner.room + at >= 8_u64
   ) {
-    place_back(window: &deref(cell), value: 0_u64);
+    place_back(window: &cell.inner, value: 0_u64);
   }
-  let length = deref(cell).len;
+  let length = cell.inner.len;
   for (fill_index in 0_u64..length) {
-    set deref(cell)[fill_index] = fill_index +wrap 1_u64;
+    set cell.inner[fill_index] = fill_index +wrap 1_u64;
   }
   let total = 0_u64;
   for (fold_index in 0_u64..length) {
-    let value = deref(cell)[fold_index];
+    let value = cell.inner[fold_index];
     set total = total +wrap value;
   }
   if total == 36_u64 {

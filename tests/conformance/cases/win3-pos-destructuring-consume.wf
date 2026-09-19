@@ -9,7 +9,7 @@ fn main() -> status: own ExitStatus pure {
   let b = box_new::<u64>(value: 4_u64);
   let p = Pair(left: move a, right: move b);
   let Pair(left: first, ..) = move p;
-  let seen = deref(first);
+  let seen = first.inner;
   if seen == 3_u64 {
   } else {
     return exit_status(code: 1_u8);

@@ -1,13 +1,13 @@
 fn headroom(run: &Slots<u8, 8>) -> total: own u64 reads(run) contract {
-  requires 4_u64 <= run.len;
+  requires 4_u64 <= deref(run).len;
 } {
   doc "The stated relation over the measure is wider than the requirement establishes.";
   let seen = 0_u64;
   for (
     at in 0_u64..4_u64,
-    invariant reserved: 8_u64 <= run.len
+    invariant reserved: 8_u64 <= deref(run).len
   ) {
-    let byte = run[at];
+    let byte = deref(run)[at];
   }
   return seen;
 }

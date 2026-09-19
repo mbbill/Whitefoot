@@ -3,14 +3,14 @@ struct Seed {
 }
 
 fn seed_hash(env: &Seed, key: &u64) -> hash: own u64 reads(env.salt), reads(key) {
-  doc "Reference parameters are read bare, so the salt and the key are ordinary place reads.";
-  let mixed = key +wrap env.salt;
+  doc "Reference parameters are read through deref, so the salt and the key are ordinary place reads.";
+  let mixed = deref(key) +wrap deref(env).salt;
   return mixed;
 }
 
 fn seed_equal(env: &Seed, left: &u64, right: &u64) -> equal: own Bool reads(left), reads(right) {
   doc "The supplied row is a subset of the formal's, which FN-4 admits.";
-  let same = left == right;
+  let same = deref(left) == deref(right);
   return same;
 }
 
@@ -59,12 +59,12 @@ struct Empty {
 
 fn word_hash(env: &Empty, key: &u64) -> hash: own u64 reads(key) {
   doc "An empty-environment hash.";
-  return key;
+  return deref(key);
 }
 
 fn word_equal(env: &Empty, left: &u64, right: &u64) -> equal: own Bool reads(left), reads(right) {
   doc "An empty-environment equality.";
-  let same = left == right;
+  let same = deref(left) == deref(right);
   return same;
 }
 
@@ -124,7 +124,7 @@ fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 p
 
 fn key_probe<Key<K, E>>(slot: &Slot<K>, tag: own u8, key: &K, env: &E) -> action: own Probe reads(slot), reads(key), reads(env) {
   doc "Matching through a reference leaves the scrutinee live and binds each payload as a reference naming the scrutinee path.";
-  match slot {
+  match deref(slot) {
     Vacant() => {
       return Stop();
     }
@@ -132,7 +132,7 @@ fn key_probe<Key<K, E>>(slot: &Slot<K>, tag: own u8, key: &K, env: &E) -> action
       return Skip();
     }
     Occupied(fingerprint: saved, key: present, payload: owner) => {
-      if saved == tag {
+      if deref(saved) == tag {
         let same = Key::equal(env: env, left: present, right: key);
         if same {
           return Match();
@@ -144,19 +144,19 @@ fn key_probe<Key<K, E>>(slot: &Slot<K>, tag: own u8, key: &K, env: &E) -> action
 }
 
 fn key_put<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: own K, payload: own Box<Resource>, env: &E) -> outcome: own KeyPut<K> reads(env), writes(deref(slots)) contract {
-  ensures deref(slots).len == deref(entry(slots)).len;
+  ensures deref(slots).inner.len == deref(entry(slots)).inner.len;
 } {
   doc "The probe loop only selects a destination, so the owning key and payload are never moved inside a loop body; the one installation is written after it and exchanges the old occupant out by swap.";
   let hash = Key::hash(env: env, key: &key);
   let tag = fingerprint(key: hash);
-  let count = deref(slots).len;
+  let count = deref(slots).inner.len;
   let first_deleted = count;
   let destination = count;
   for (step in 0_u64..count) {
     if destination == count {
       let home = hash % count;
       let index = probe_index(home: home, step: step, count: count);
-      let action = key_probe::<Key<K, E>>(slot: &deref(slots)[index], tag: tag, key: &key, env: env);
+      let action = key_probe::<Key<K, E>>(slot: &deref(slots).inner[index], tag: tag, key: &key, env: env);
       match action {
         Match() => {
           set destination = index;
@@ -188,32 +188,32 @@ fn key_put<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: own K, payload: own Box<
     return Rejected<K>(key: move key, payload: move payload);
   }
   let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
-  swap::<Slot<K>>(first: &deref(slots)[destination], second: &offered);
+  swap::<Slot<K>>(first: &deref(slots).inner[destination], second: &offered);
   return Installed<K>(previous: move offered);
 }
 
 fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: own unit writes(deref(slots)) contract {
-  requires deref(slots).len == 0_u64;
-  requires deref(slots).room >= count;
-  ensures deref(slots).len == count;
+  requires deref(slots).inner.len == 0_u64;
+  requires deref(slots).inner.room >= count;
+  ensures deref(slots).inner.len == count;
 } {
   doc "One vacant slot per position, under a counted header that carries the length and the remaining room.";
   for (
     index in 0_u64..count,
-    invariant filled: deref(slots).len >= index,
-    invariant bounded: deref(slots).len <= index,
-    invariant spare: deref(slots).room + index >= count
+    invariant filled: deref(slots).inner.len >= index,
+    invariant bounded: deref(slots).inner.len <= index,
+    invariant spare: deref(slots).inner.room + index >= count
   ) {
     let vacant = Vacant<K>();
-    place_back(window: &deref(slots), value: move vacant);
+    place_back(window: &deref(slots).inner, value: move vacant);
   }
-  invariant complete_min: deref(slots).len >= count;
-  invariant complete_max: deref(slots).len <= count;
+  invariant complete_min: deref(slots).inner.len >= count;
+  invariant complete_max: deref(slots).inner.len <= count;
   return unit;
 }
 
 fn key_create<K: linear>(count: own u64) -> result: own Box<Slots<Slot<K>>> pure contract {
-  ensures deref(result).len == count;
+  ensures result.inner.len == count;
 } {
   doc "Allocation is total, so the creation has no failure arm and the static allocation-size obligation is discharged at the constructor.";
   let spare = box_slots_new::<Slot<K>>(capacity: count);
@@ -223,7 +223,7 @@ fn key_create<K: linear>(count: own u64) -> result: own Box<Slots<Slot<K>>> pure
 
 fn key_inspect<Key<K, E>>(slot: &Slot<K>, tag: own u8, key: &K, env: &E) -> (action: own Probe, id: own u64) reads(slot), reads(key), reads(env) {
   doc "The same probe, reporting the occupant's identifier beside its verdict.";
-  match slot {
+  match deref(slot) {
     Vacant() => {
       return Stop(), 0_u64;
     }
@@ -231,10 +231,10 @@ fn key_inspect<Key<K, E>>(slot: &Slot<K>, tag: own u8, key: &K, env: &E) -> (act
       return Skip(), 0_u64;
     }
     Occupied(fingerprint: saved, key: present, payload: owner) => {
-      if saved == tag {
+      if deref(saved) == tag {
         let same = Key::equal(env: env, left: present, right: key);
         if same {
-          let found = deref(owner).id;
+          let found = deref(owner).inner.id;
           return Match(), found;
         }
       }
@@ -247,12 +247,12 @@ fn key_find<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> (found:
   doc "The lookup walks the same probe order and reports how many positions it examined.";
   let hash = Key::hash(env: env, key: key);
   let tag = fingerprint(key: hash);
-  let count = deref(slots).len;
+  let count = deref(slots).inner.len;
   for (offset in 0_u64..count) {
     let home = hash % count;
     let index = probe_index(home: home, step: offset, count: count);
     let work = offset + 1_u64;
-    let (action, id) = key_inspect::<Key<K, E>>(slot: &deref(slots)[index], tag: tag, key: key, env: env);
+    let (action, id) = key_inspect::<Key<K, E>>(slot: &deref(slots).inner[index], tag: tag, key: key, env: env);
     match action {
       Stop() => {
         return None<u64>(), work;
@@ -275,15 +275,15 @@ struct Branded {
 
 fn branded_hash(env: &Seed, key: &Branded) -> hash: own u64 reads(env.salt), reads(key.value) {
   doc "An owning key whose content is reached through the cell step.";
-  let value = deref(key.value);
-  let mixed = value +wrap env.salt;
+  let value = deref(key).value.inner;
+  let mixed = value +wrap deref(env).salt;
   return mixed;
 }
 
 fn branded_equal(env: &Seed, left: &Branded, right: &Branded) -> equal: own Bool reads(left.value), reads(right.value) {
   doc "Two owning keys compared by their contents.";
-  let a = deref(left.value);
-  let b = deref(right.value);
+  let a = deref(left).value.inner;
+  let b = deref(right).value.inner;
   let same = a == b;
   return same;
 }

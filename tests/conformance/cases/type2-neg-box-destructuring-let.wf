@@ -1,0 +1,10 @@
+fn main() -> status: own ExitStatus pure {
+  doc "TYPE-2: a destructuring let_stmt whose TYPEID names an opaque struct is a hard error citing TYPE-2 at the complete let_stmt, with the restructuring build it with a construction function. A Box's content is reached by the ordinary field step inner, and the one unboxing spelling is let n = move b.inner [TYPE-9].";
+  let b = box_new::<u64>(value: 7_u64);
+  let Box(inner: n) = move b;
+  if n == 7_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

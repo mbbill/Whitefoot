@@ -3,7 +3,7 @@ fn main() -> status: own ExitStatus pure {
   let v = array_filled::<u64, 4>(value: 6_u64);
   let p = &v[1_u64];
   let w = move v;
-  let seen = p;
+  let seen = deref(p);
   if seen == 6_u64 {
   } else {
     return exit_status(code: 1_u8);

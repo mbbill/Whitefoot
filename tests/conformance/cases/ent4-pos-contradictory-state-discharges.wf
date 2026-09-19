@@ -1,9 +1,9 @@
 fn get(b: &[u8], j: own u64) -> result: own u8 reads(b) {
   doc "This case admits the subscript only on ordinary executed control that establishes its real bound. A written proof conclusion creates a fact only after its premises are checked, so it cannot manufacture an unreachable state or use explosion to admit a partial operation [ENT-3, OP-4].";
-  let spare = b.len;
+  let spare = deref(b).len;
   let inside = j < spare;
   if inside {
-    return b[j];
+    return deref(b)[j];
   }
   return 0_u8;
 }

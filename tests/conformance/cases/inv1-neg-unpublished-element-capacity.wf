@@ -1,7 +1,7 @@
 fn take_block(pool: &Slots<Box<Slots<u8>>, 2>) -> block: own Box<Slots<u8>> writes(pool) contract {
-  requires pool.len > 0_u64;
-  ensures pool.len + 1_u64 == entry(pool).len;
-  ensures pool.room == entry(pool).room + 1_u64;
+  requires deref(pool).len > 0_u64;
+  ensures deref(pool).len + 1_u64 == deref(entry(pool)).len;
+  ensures deref(pool).room == deref(entry(pool)).room + 1_u64;
 } {
   doc "Takes the last stocked cell out of the pool and publishes what that did to the pool alone.";
   let block = take_back(window: pool);
@@ -9,8 +9,8 @@ fn take_block(pool: &Slots<Box<Slots<u8>>, 2>) -> block: own Box<Slots<u8>> writ
 }
 
 fn return_block(pool: &Slots<Box<Slots<u8>>, 2>, block: own Box<Slots<u8>>) -> result: own unit writes(pool) contract {
-  requires pool.room > 0_u64;
-  ensures pool.len == entry(pool).len + 1_u64;
+  requires deref(pool).room > 0_u64;
+  ensures deref(pool).len == deref(entry(pool)).len + 1_u64;
 } {
   doc "Puts one cell back into the pool.";
   place_back(window: pool, value: move block);
@@ -23,7 +23,7 @@ fn main() -> status: own ExitStatus pure {
   let pool = slots_new::<Box<Slots<u8>>, 2>();
   place_back(window: &pool, value: move block);
   let taken = take_block(pool: &pool);
-  invariant capacity: deref(taken).cap >= 4_u64;
+  invariant capacity: taken.inner.cap >= 4_u64;
   return_block(pool: &pool, block: move taken);
   return exit_status(code: 0_u8);
 }

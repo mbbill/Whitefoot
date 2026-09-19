@@ -18,8 +18,8 @@ fn bump(cell: own u64) -> back: own u64 pure contract {
 }
 
 fn refill(out: &Box<u64>) -> done: own unit writes(deref(out)) {
-  doc "The atomic update at a deref: the old value enters the callee by value and the result is committed with no program point between.";
-  set deref(out) = bump(cell: deref(out));
+  doc "The atomic update at a cell's content reached through a reference parameter: the old value enters the callee by value and the result is committed with no program point between.";
+  set deref(out).inner = bump(cell: deref(out).inner);
   return unit;
 }
 
@@ -32,7 +32,7 @@ fn main() -> status: own ExitStatus pure {
   set holder.run = regrow(old: move holder.run);
   let target = box_new::<u64>(value: 5_u64);
   refill(out: &target);
-  let seen = deref(target);
+  let seen = target.inner;
   if seen == 6_u64 {
     return exit_status(code: 0_u8);
   }

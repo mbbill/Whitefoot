@@ -7,16 +7,16 @@ fn main() -> status: own ExitStatus pure {
   doc "Repeated matches through one reference each derive their own arm-scoped payload binder, and the scrutinee stays live between them.";
   let packet = Data(value: 4_i32);
   let holder = &packet;
-  match holder {
+  match deref(holder) {
     Data(value: payload) => {
-      let saved = payload;
+      let saved = deref(payload);
     }
     Idle() => {
     }
   }
-  match holder {
+  match deref(holder) {
     Data(value: payload) => {
-      let again = payload;
+      let again = deref(payload);
     }
     Idle() => {
     }

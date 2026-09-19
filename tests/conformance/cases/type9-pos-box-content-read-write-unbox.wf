@@ -1,0 +1,23 @@
+struct Payload {
+  value: u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "TYPE-9: Box<T> is the prelude's opaque struct opaque struct Box<T> { inner: T; }, whose one field inner is its content, reached by the ordinary field step and never by deref [TYPE-7]. The cell is read as b.inner, written as set b.inner = v, and consumed by let n = move b.inner, which yields the content and frees the cell [WIN-3]; the observed content reaches the exit status.";
+  let first = Payload(value: 40_u64);
+  let b = box_new::<Payload>(value: move first);
+  let seen = b.inner.value;
+  if seen == 40_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let replacement = Payload(value: 42_u64);
+  set b.inner = move replacement;
+  let taken = move b.inner;
+  let final_value = taken.value;
+  if final_value == 42_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

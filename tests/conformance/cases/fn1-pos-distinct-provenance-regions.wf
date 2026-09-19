@@ -1,6 +1,6 @@
 fn pick(a: &i32, b: &i32) -> result: own i32 reads(a) {
   doc "One input supplies the result and the other stays unrelated. That is settled by value: the result is owned data read out of `a`, so no region relation is needed to say where it came from and `b` is neither read nor written [FN-1, REF-1].";
-  return a;
+  return deref(a);
 }
 
 fn main() -> status: own ExitStatus pure {

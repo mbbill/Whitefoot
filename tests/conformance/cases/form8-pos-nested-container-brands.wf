@@ -1,6 +1,6 @@
 fn read(values: &Slots<Box<Slots<Box<u8>>>, 2>) -> result: own u64 pure {
   doc "A measure read is a place form and carries the empty effect row, so the declaration is `pure` [OP-15, EFF-1].";
-  return values.len;
+  return deref(values).len;
 }
 
 fn relay(values: &Slots<Box<Slots<Box<u8>>>, 2>) -> result: own u64 pure {

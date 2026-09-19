@@ -1,17 +1,17 @@
 fn fill(first: &[u64], second: &[u64], output: &[u64]) -> result: own u64 writes(output) contract {
-  requires first.len <= 16_u64;
-  requires second.len <= 16_u64;
-  requires first.len + second.len <= output.len;
+  requires deref(first).len <= 16_u64;
+  requires deref(second).len <= 16_u64;
+  requires deref(first).len + deref(second).len <= deref(output).len;
 } {
   doc "Two length observations are read as place forms rather than calls [OP-15], so the affine requirement constrains their images directly; their sum bounds the one write into the caller-provided output. A measure read carries the empty effect row, so only the write appears in the row.";
-  let a = first.len;
-  let b = second.len;
-  let capacity = output.len;
+  let a = deref(first).len;
+  let b = deref(second).len;
+  let capacity = deref(output).len;
   let total = a + b;
   invariant fits: total <= capacity;
   if total > 0_u64 {
     let end_index = total - 1_u64;
-    set output[end_index] = 7_u64;
+    set deref(output)[end_index] = 7_u64;
   }
   return total;
 }

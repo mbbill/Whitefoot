@@ -7,7 +7,7 @@ fn exchange(slot: &Box<u64>, incoming: &Box<u64>) -> result: own unit writes(slo
 fn observe(owner: own Box<u64>, incoming: own Box<u64>) -> result: own u64 pure {
   doc "EFF-2: the exchange changes the value at owner without changing that storage place, and its later read names owner. Both parameters are by-value, so neither contributes an effect path and the row is the empty one.";
   exchange(slot: &owner, incoming: &incoming);
-  return deref(owner);
+  return owner.inner;
 }
 
 fn main() -> status: own ExitStatus pure {

@@ -1,11 +1,11 @@
 fn get_bounded<const n: u64>(b: &Slots<u8, n>, i: own u64) -> (value: own u8, length: own u64) reads(b) contract {
-  define spare = b.len;
+  define spare = deref(b).len;
   requires i < spare;
   ensures length == spare;
 } {
   doc "A two-result helper hands back the read byte and the run's unchanged length; the owner itself stays with the caller, so the helper reaches it through a reference [REF-1].";
-  let value = b[i];
-  return value, b.len;
+  let value = deref(b)[i];
+  return value, deref(b).len;
 }
 
 fn main() -> status: own ExitStatus pure {

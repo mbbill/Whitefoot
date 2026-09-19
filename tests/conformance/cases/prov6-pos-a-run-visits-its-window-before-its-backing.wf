@@ -5,8 +5,8 @@ struct Holder {
 fn hold(value: own u8) -> made: own Holder pure {
   doc "Takes one two-slot window from the one heap, fills it, and wraps it in the nominal that owns it.";
   let fresh = box_slots_new::<u8>(capacity: 2_u64);
-  place_back(window: &deref(fresh), value: value);
-  place_back(window: &deref(fresh), value: value);
+  place_back(window: &fresh.inner, value: value);
+  place_back(window: &fresh.inner, value: value);
   let wrapped = Holder(data: move fresh);
   return move wrapped;
 }
@@ -23,7 +23,7 @@ fn walk(first: own Holder) -> code: own u8 pure {
     return 1_u8;
   }
   let back = take_back(window: &run);
-  let width = deref(back.data).len;
+  let width = back.data.inner.len;
   if width == 2_u64 {
   } else {
     return 2_u8;

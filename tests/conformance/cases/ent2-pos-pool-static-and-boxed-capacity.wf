@@ -3,8 +3,8 @@ struct StaticBlock {
 }
 
 fn take_static(free_list: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(free_list.last), writes(free_list.len) contract {
-  requires free_list.len > 0_u64;
-  ensures free_list.len + 1_u64 == entry(free_list).len;
+  requires deref(free_list).len > 0_u64;
+  ensures deref(free_list).len + 1_u64 == deref(entry(free_list)).len;
 } {
   doc "Takes the last filled slot of the pool and hands the block back; the boundary move is published as the declared exit relation.";
   let taken = take_back(window: free_list);
@@ -12,8 +12,8 @@ fn take_static(free_list: &Slots<StaticBlock, 2>) -> block: own StaticBlock writ
 }
 
 fn return_static(free_list: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(free_list.next), writes(free_list.len) contract {
-  requires free_list.room > 0_u64;
-  ensures free_list.len == entry(free_list).len + 1_u64;
+  requires deref(free_list).room > 0_u64;
+  ensures deref(free_list).len == deref(entry(free_list)).len + 1_u64;
 } {
   doc "Puts one block back into the pool's append slot and publishes the boundary move.";
   place_back(window: free_list, value: move block);
@@ -53,8 +53,8 @@ fn plain() -> status: own ExitStatus pure {
 }
 
 fn take_boxed(free_list: &Slots<Box<Slots<u8, 4>>, 2>) -> block: own Box<Slots<u8, 4>> writes(free_list.last), writes(free_list.len) contract {
-  requires free_list.len > 0_u64;
-  ensures free_list.len + 1_u64 == entry(free_list).len;
+  requires deref(free_list).len > 0_u64;
+  ensures deref(free_list).len + 1_u64 == deref(entry(free_list)).len;
 } {
   doc "The same pool helper over boxed blocks; the cell is an ordinary owned value.";
   let taken = take_back(window: free_list);
@@ -62,13 +62,13 @@ fn take_boxed(free_list: &Slots<Box<Slots<u8, 4>>, 2>) -> block: own Box<Slots<u
 }
 
 fn boxed() -> status: own ExitStatus pure {
-  doc "The boxed helper remains instantiated as the distinct compilation trigger: the capacity of the boxed window is still the static extent of its content type, reached through deref [TYPE-7, ENT-2].";
+  doc "The boxed helper remains instantiated as the distinct compilation trigger: the capacity of the boxed window is still the static extent of its content type, reached by the ordinary field step inner [TYPE-9, ENT-2].";
   let payload = slots_new::<u8, 4>();
   let cell = box_new::<Slots<u8, 4>>(value: move payload);
   let free_list = slots_new::<Box<Slots<u8, 4>>, 2>();
   place_back(window: &free_list, value: move cell);
   let block = take_boxed(free_list: &free_list);
-  invariant boxed_capacity: deref(block).cap >= 4_u64;
+  invariant boxed_capacity: block.inner.cap >= 4_u64;
   place_back(window: &free_list, value: move block);
   return exit_status(code: 0_u8);
 }

@@ -1,6 +1,6 @@
 fn source(x: &i32) -> result: own i32 reads(x) {
   doc "A function hands back owned data rather than a reference; the caller keeps the reference it formed.";
-  return x;
+  return deref(x);
 }
 
 fn main() -> status: own ExitStatus pure {

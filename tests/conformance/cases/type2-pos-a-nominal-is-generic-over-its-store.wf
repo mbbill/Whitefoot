@@ -4,7 +4,7 @@ struct Chunk<T: linear> {
 
 fn chunk_room<T: linear>(held: own Chunk<T>) -> (rest: own Chunk<T>, width: own u64) pure {
   doc "Reads one chunk's own capacity and hands the chunk back.";
-  let spare = deref(held.page).room;
+  let spare = held.page.inner.room;
   return move held, spare;
 }
 

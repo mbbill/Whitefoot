@@ -7,7 +7,7 @@ enum Combo {
 
 fn get(b: &[u8], i: own u64, combo: own Combo) -> result: own u8 reads(b) {
   doc "One of four reaching match arms supplies no index bound. An absent relation is not an unconstrained proof witness; ENT-5's all-predecessor join drops the relation and OP-4 rejects.";
-  let spare = b.len;
+  let spare = deref(b).len;
   match combo {
     BothTrue() => {
       let inside_a = i < spare;
@@ -33,7 +33,7 @@ fn get(b: &[u8], i: own u64, combo: own Combo) -> result: own u8 reads(b) {
     BothFalse() => {
     }
   }
-  return b[i];
+  return deref(b)[i];
 }
 
 fn main() -> status: own ExitStatus pure {

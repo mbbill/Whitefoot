@@ -1,8 +1,8 @@
 fn fill(output: &[u64]) -> result: own u64 writes(output) {
   doc "Fills every element of the range reference it was handed.";
-  let count = output.len;
+  let count = deref(output).len;
   for (i in 0_u64..count) {
-    set output[i] = 7_u64;
+    set deref(output)[i] = 7_u64;
   }
   return count;
 }
@@ -19,7 +19,7 @@ fn rows(width: own u64) -> result: own Box<Array<u64>> pure contract {
     invariant bounded: end <= cells {
       use width times (i + 1_u64 <= 3_u64);
     }
-    let row = &deref(values)[start..end];
+    let row = &values.inner[start..end];
     let filled = fill(output: row);
   }
   return move values;
@@ -28,18 +28,18 @@ fn rows(width: own u64) -> result: own Box<Array<u64>> pure contract {
 fn main() -> status: own ExitStatus pure {
   doc "The retained exact products and the explicit endpoint proof permit the adjacent range assignment; zero stride is also a valid empty assignment.";
   let values = rows(width: 5_u64);
-  let count = deref(values).len;
+  let count = values.inner.len;
   if count != 15_u64 {
     return exit_status(code: 1_u8);
   }
   for (i in 0_u64..count) {
-    let seen = deref(values)[i];
+    let seen = values.inner[i];
     if seen != 7_u64 {
       return exit_status(code: 2_u8);
     }
   }
   let empty = rows(width: 0_u64);
-  let zero = deref(empty).len;
+  let zero = empty.inner.len;
   if zero != 0_u64 {
     return exit_status(code: 3_u8);
   }

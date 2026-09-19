@@ -8,8 +8,8 @@ fn main() -> status: own ExitStatus pure {
   swap(first: &blocks[0_u64], second: &second);
   let renamed = move blocks;
   swap(first: &renamed[0_u64], second: &third);
-  place_back(window: &deref(third), value: 9_u8);
-  let seen = deref(third)[0_u64];
+  place_back(window: &third.inner, value: 9_u8);
+  let seen = third.inner[0_u64];
   if seen == 9_u8 {
   } else {
     return exit_status(code: 1_u8);

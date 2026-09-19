@@ -12,7 +12,7 @@ actual First : BorrowedSum {
 
 fn add_borrowed(first: &Cell, second: &Cell) -> total: own u64 reads(first.value), reads(second.value) {
   doc "FN-3 and EFF-1: formal and actual rows compare by parameter ordinal and path, never by binder spelling, so renaming both inputs preserves the boundary. The entries themselves stay in canonical order, every `reads` before every `writes` and each in written argument order.";
-  return first.value +wrap second.value;
+  return deref(first).value +wrap deref(second).value;
 }
 
 fn main() -> status: own ExitStatus pure {

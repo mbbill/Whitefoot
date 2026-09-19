@@ -9,6 +9,6 @@ fn main() -> status: own ExitStatus pure {
   let rows = array_filled::<Row, 4>(value: seed);
   let saved = &rows[0_u64];
   let moved = move rows;
-  let observed = saved.left;
+  let observed = deref(saved).left;
   return exit_status(code: 0_u8);
 }

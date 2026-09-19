@@ -1,5 +1,5 @@
 fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
-  match error {
+  match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
     }
@@ -64,7 +64,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
       return False();
     }
     ResourceExhausted(code: native_code, origin: native_origin) => {
-      return native_origin == 0_u8;
+      return deref(native_origin) == 0_u8;
     }
     FileTooLarge(code: native_code, origin: native_origin) => {
       return False();

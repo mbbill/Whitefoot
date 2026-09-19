@@ -1,7 +1,7 @@
 fn stamp(left: &Array<u8, 4>, right: &Array<u8, 4>, value: own u8) -> result: own unit writes(left), writes(right) {
   doc "One element write through each reference parameter.";
-  set left[1_u64] = value;
-  set right[1_u64] = value;
+  set deref(left)[1_u64] = value;
+  set deref(right)[1_u64] = value;
   return unit;
 }
 

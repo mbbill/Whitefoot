@@ -1,5 +1,5 @@
 fn indexed_byte(b: &[u8], flag: own Bool) -> result: own u8 reads(b) contract {
-  define spare = b.len;
+  define spare = deref(b).len;
   requires spare == 5_u64;
 } {
   doc "The two incoming index values are three and seven while the range reference's length is five, so the joined constant interval must include seven.";
@@ -9,7 +9,7 @@ fn indexed_byte(b: &[u8], flag: own Bool) -> result: own u8 reads(b) contract {
   } else {
     set idx = idx +wrap 7_u64;
   }
-  return b[idx];
+  return deref(b)[idx];
 }
 
 fn main() -> status: own ExitStatus pure {

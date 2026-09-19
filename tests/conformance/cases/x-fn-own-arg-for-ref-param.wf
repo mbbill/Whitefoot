@@ -1,6 +1,6 @@
 fn takesref(x: &i32) -> function_result: own i32 reads(x) {
-  doc "Parameter x is a reference &i32 [FN-1]; it is read bare.";
-  return x;
+  doc "Parameter x is a reference &i32 [FN-1]; the storage it names is reached through deref(x) [TYPE-7].";
+  return deref(x);
 }
 
 fn main() -> status: own ExitStatus pure {

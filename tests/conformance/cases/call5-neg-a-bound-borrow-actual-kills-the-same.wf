@@ -1,5 +1,5 @@
 fn consume_room(run: &Slots<u8, 64>) -> result: own unit writes(run) contract {
-  requires run.room > 1_u64;
+  requires deref(run).room > 1_u64;
 } {
   doc "Moves the back boundary twice and hands nothing back, so the amount its body moved the boundary by is not a fact of the signature.";
   place_back(window: run, value: 0_u8);
@@ -8,7 +8,7 @@ fn consume_room(run: &Slots<u8, 64>) -> result: own unit writes(run) contract {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "No transport reads the actual's spelling. This is the same program with the reference bound to a name and handed at the argument position rather than written there, which is a different checked argument shape reaching the same declared parameter. The two spellings differ in nothing a transport may read, so the declared whole-state write kills the caller's length exactly as before and take_back's requires window.len > 0_u64 is undischarged.";
+  doc "No transport reads the actual's spelling. This is the same program with the reference bound to a name and handed at the argument position rather than written there, which is a different checked argument shape reaching the same declared parameter. The two spellings differ in nothing a transport may read, so the declared whole-state write kills the caller's length exactly as before and take_back's requires deref(window).len > 0_u64 is undischarged.";
   let workspace = slots_new::<u8, 64>();
   let handle = &workspace;
   let taken = consume_room(run: handle);

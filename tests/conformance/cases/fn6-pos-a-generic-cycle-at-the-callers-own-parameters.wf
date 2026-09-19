@@ -1,14 +1,14 @@
 fn walk<const n: u64>(run: &Slots<u8, n>, at: own u64) -> total: own u64 reads(run) contract {
-  requires at <= run.len;
+  requires at <= deref(run).len;
 } {
   doc "[FN-6] permits recursion and refuses only polymorphic recursion. A call that writes exactly the caller's own parameters, as this one writes `n`, is the caller's own instance and mints no second one, so the cycle's instance set is finite and it monomorphizes.";
-  let held = run.len;
+  let held = deref(run).len;
   let more = at < held;
   if more {
   } else {
     return 0_u64;
   }
-  let here = run[at];
+  let here = deref(run)[at];
   let widened = cvt::<u8, u64>(here);
   let next = at + 1_u64;
   let rest = walk::<n>(run: run, at: next);

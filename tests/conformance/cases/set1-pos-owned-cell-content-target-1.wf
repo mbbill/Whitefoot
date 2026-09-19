@@ -1,7 +1,7 @@
 fn hold() -> result: own unit pure {
-  doc "An owned cell's content is a legal scalar set target, reached through deref of a live cell binding and distinct from a target reached through a reference parameter.";
+  doc "An owned cell's content is a legal scalar set target, reached as the field inner of a live cell binding and distinct from a target reached through a reference parameter.";
   let b = box_new::<i32>(value: 4_i32);
-  set deref(b) = 7_i32;
+  set b.inner = 7_i32;
   return unit;
 }
 

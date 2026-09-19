@@ -1,5 +1,5 @@
 fn two_in_a_row(window: &Slots<u8, 4>) -> result: own unit writes(window) contract {
-  requires window.room > 1_u64;
+  requires deref(window).room > 1_u64;
 } {
   doc "The first placement publishes its exit length and its exit capacity against its entry ones, and that is the only premise the second placement's own room requirement has.";
   place_back(window: window, value: 1_u8);

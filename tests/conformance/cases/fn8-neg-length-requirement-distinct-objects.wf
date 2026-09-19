@@ -1,8 +1,8 @@
 fn get_bounded(b: &[u8], i: own u64) -> value: own u8 reads(b) contract {
-  define spare = b.len;
+  define spare = deref(b).len;
   requires i < spare;
 } {
-  return b[i];
+  return deref(b)[i];
 }
 
 fn main() -> status: own ExitStatus pure {

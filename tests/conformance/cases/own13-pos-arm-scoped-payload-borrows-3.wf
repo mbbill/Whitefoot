@@ -11,11 +11,11 @@ fn main() -> status: own ExitStatus pure {
   let leaf = Leaf(value: 7_i32);
   let packet = Wrap(inner: move leaf);
   let holder = &packet;
-  match holder {
+  match deref(holder) {
     Wrap(inner: nested) => {
-      match nested {
+      match deref(nested) {
         Leaf(value: payload) => {
-          let saved = payload;
+          let saved = deref(payload);
         }
       }
     }

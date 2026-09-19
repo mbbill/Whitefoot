@@ -1,5 +1,5 @@
 fn consume(x: &i32) -> return_value: own unit reads(x) {
-  let seen = x;
+  let seen = deref(x);
   return unit;
 }
 

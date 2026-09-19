@@ -1,5 +1,5 @@
 fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
-  match error {
+  match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
     }
@@ -64,7 +64,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
       return False();
     }
     ResourceExhausted(code: native_code, origin: native_origin) => {
-      return native_origin == 0_u8;
+      return deref(native_origin) == 0_u8;
     }
     FileTooLarge(code: native_code, origin: native_origin) => {
       return False();
@@ -105,7 +105,7 @@ fn component() -> made: own Slots<u8, 16> pure contract {
 
 fn fold_prefix(source: &[u8], produced: own u64, seed: own u64) -> result: own u64 reads(source) {
   doc "Folds one read prefix into a running order-sensitive checksum.";
-  let spare = source.len;
+  let spare = deref(source).len;
   let sum = seed;
   let at = 0_u64;
   loop @fold {
@@ -118,7 +118,7 @@ fn fold_prefix(source: &[u8], produced: own u64, seed: own u64) -> result: own u
     } else {
       break @fold;
     }
-    let byte = source[at];
+    let byte = deref(source)[at];
     let widened = cvt::<u8, u64>(byte);
     set sum = sum *wrap 31_u64;
     set sum = sum +wrap widened;

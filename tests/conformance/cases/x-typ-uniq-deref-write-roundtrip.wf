@@ -1,8 +1,8 @@
 fn main() -> status: own ExitStatus pure {
-  doc "Writing Box content with set deref(cell) and reading the content back exercises the explicit content step [TYPE-7] together with SET-1's writable-target relation through a live own cell binding; a positive combination that runs to exit 0.";
+  doc "Writing Box content with set cell.inner and reading the content back exercises the Box content field step [TYPE-9] together with SET-1's writable-target relation through a live own cell binding; a positive combination that runs to exit 0.";
   let cell = box_new::<i32>(value: 40_i32);
-  set deref(cell) = 42_i32;
-  let seen = deref(cell);
+  set cell.inner = 42_i32;
+  let seen = cell.inner;
   if seen == 42_i32 {
   } else {
     return exit_status(code: 1_u8);

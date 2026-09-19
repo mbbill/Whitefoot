@@ -1,11 +1,11 @@
 fn record(destination: &Slots<u8, 4>, value: own u8) -> available: own u64 writes(destination) contract {
-  requires destination.room > 0_u64;
-  ensures available == destination.room;
-  ensures destination.room + 1_u64 == entry(destination).room;
+  requires deref(destination).room > 0_u64;
+  ensures available == deref(destination).room;
+  ensures deref(destination).room + 1_u64 == deref(entry(destination)).room;
 } {
   doc "Fills one slot of the window it is handed and reports the room that remains.";
   place_back(window: destination, value: value);
-  let spare = destination.room;
+  let spare = deref(destination).room;
   return spare;
 }
 

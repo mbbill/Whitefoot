@@ -7,10 +7,10 @@ fn main() -> status: own ExitStatus pure {
   place_back(window: &grid, value: move large);
   swap(first: &grid[0_u64], second: &grid[1_u64]);
   let back = take_back(window: &grid);
-  let width = deref(back).cap;
+  let width = back.inner.cap;
   if width == 256_u64 {
     let front = take_back(window: &grid);
-    let other = deref(front).cap;
+    let other = front.inner.cap;
     if other == 512_u64 {
       return exit_status(code: 0_u8);
     }

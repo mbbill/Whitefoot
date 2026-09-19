@@ -10,7 +10,7 @@ fn make() -> result: own Box<State> pure {
 }
 
 fn inspect() -> function_result: own unit pure {
-  doc "TYPE-7: a cell-returning call yields an owned holder temporary, not the enclosed enum, so it cannot be matched directly; the result must be bound and reached with deref(holder).";
+  doc "TYPE-5: a cell-returning call yields an owned Box temporary, not the enclosed enum, so it cannot be matched directly; the result must be bound and reached with holder.inner [TYPE-9].";
   match make() {
     Ready() => {
     }

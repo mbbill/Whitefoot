@@ -1,11 +1,11 @@
 fn pop(values: &Slots<u64, 4>) -> (value: own u64, count: own u64) writes(values) contract {
-  requires values.len > 0_u64;
-  ensures values.len == entry(values).len - 1_u64;
-  ensures count == values.len;
+  requires deref(values).len > 0_u64;
+  ensures deref(values).len == deref(entry(values)).len - 1_u64;
+  ensures count == deref(values).len;
 } {
   doc "The window operation returns only its element; this function returns that element beside a scalar measure.";
   let value = take_back(window: values);
-  let count = values.len;
+  let count = deref(values).len;
   return value, count;
 }
 

@@ -4,7 +4,7 @@ formal Inspect<T: linear> {
 
 fn shorter(values: &Array<u64, 4>) -> result: own u64 reads(values) {
   doc "Parameter mode and exact type agree with the instantiated member, so the binding is admitted before any call exists.";
-  return values[0_u64];
+  return deref(values)[0_u64];
 }
 
 actual Narrow : Inspect<Array<u64, 4>> {

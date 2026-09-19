@@ -4,7 +4,7 @@ struct Cell {
 
 fn drain(cell: &Cell) -> code: own u64 pure {
   doc "EFF-2 checks rows both ways, so the ordinary read this body exhibits through its reference parameter must be declared, and a pure row declares nothing. Before this statement existed the same function exhibited nothing at all and pure was exactly right.";
-  let seen = cell.count;
+  let seen = deref(cell).count;
   return seen;
 }
 

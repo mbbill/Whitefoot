@@ -26,7 +26,7 @@ fn open<T: linear, const n: u64>(values: own Array<T, n>) -> result: own Slots<T
 
 fn lead_tag(values: &Array<Record, 3>) -> result: own u64 reads(values) {
   doc "Reads one scalar field of the first element through a shared reference.";
-  return values[0_u64].tag;
+  return deref(values)[0_u64].tag;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -49,7 +49,7 @@ fn main() -> status: own ExitStatus pure {
   if old_tag != 11_u64 {
     return exit_status(code: 2_u8);
   }
-  let held = deref(old_owner);
+  let held = old_owner.inner;
   if held != 11_u64 {
     return exit_status(code: 3_u8);
   }

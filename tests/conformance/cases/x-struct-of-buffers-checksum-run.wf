@@ -8,39 +8,39 @@ fn main() -> status: own ExitStatus pure {
   let left = box_slots_new::<u64>(capacity: 6_u64);
   for @build_left (
     at in 0_u64..6_u64,
-    invariant grown: deref(left).len >= at,
-    invariant spare: deref(left).room + at >= 6_u64
+    invariant grown: left.inner.len >= at,
+    invariant spare: left.inner.room + at >= 6_u64
   ) {
-    place_back(window: &deref(left), value: 0_u64);
+    place_back(window: &left.inner, value: 0_u64);
   }
   let right = box_slots_new::<u64>(capacity: 6_u64);
   for @build_right (
     at in 0_u64..6_u64,
-    invariant grown: deref(right).len >= at,
-    invariant spare: deref(right).room + at >= 6_u64
+    invariant grown: right.inner.len >= at,
+    invariant spare: right.inner.room + at >= 6_u64
   ) {
-    place_back(window: &deref(right), value: 0_u64);
+    place_back(window: &right.inner, value: 0_u64);
   }
   let columns = Columns(left: move left, right: move right);
-  let length = deref(columns.left).len;
+  let length = columns.left.inner.len;
   for (fill_index in 0_u64..length) {
-    set deref(columns.left)[fill_index] = fill_index;
+    set columns.left.inner[fill_index] = fill_index;
     let doubled = fill_index *wrap 2_u64;
-    let right_room = deref(columns.right).len;
+    let right_room = columns.right.inner.len;
     let fill_right_ok = fill_index < right_room;
     if fill_right_ok {
-      set deref(columns.right)[fill_index] = doubled;
+      set columns.right.inner[fill_index] = doubled;
     } else {
       return exit_status(code: 202_u8);
     }
   }
   let total = 0_u64;
   for (fold_index in 0_u64..length) {
-    let left_value = deref(columns.left)[fold_index];
-    let right_room = deref(columns.right).len;
+    let left_value = columns.left.inner[fold_index];
+    let right_room = columns.right.inner.len;
     let fold_right_ok = fold_index < right_room;
     if fold_right_ok {
-      let right_value = deref(columns.right)[fold_index];
+      let right_value = columns.right.inner[fold_index];
       set total = total +wrap left_value;
       set total = total +wrap right_value;
     } else {
