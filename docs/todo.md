@@ -86,6 +86,15 @@ of them is a decision. Remove an item when its fix and test land.
   distinct evaluations, dropping possible targets or imposing an acceptance
   budget. Close this item with representative positive and hostile cases,
   cost measurements, and any required precision repair or explicit limitation.
+- **Runtime-capacity Array element suffixes retain a flat-buffer limitation.**
+  A valid field selection such as `values.inner[i].field` on a
+  `Box<Array<CopyStruct>>` can still reach `CompositeValues` instead of the
+  general storage-place path. The checker resolves the suffix before reporting
+  this capability gap; it is not a source-language rejection. Whole-element
+  reads into a copy local and whole-element replacements avoid this path,
+  while range-reference element suffixes already use the general path. Unify
+  the remaining flat-buffer projections with it and cover field reads, writes,
+  and borrows before removing this item.
 - **Pair-scoped parallel proofs need scaling and coverage work.** The current
   PAR-1 planner constructs questions for every ordered source pair in a segment
   and retains range separation only for that pair's first-statement state;

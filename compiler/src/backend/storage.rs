@@ -47,6 +47,7 @@ pub(super) fn is_stored_aggregate(
         | IrType::Buffer { .. }
         | IrType::Window { capacity: None, .. }
         | IrType::Range { .. }
+        | IrType::RuntimeBoxPayload { .. }
         | IrType::Address(_) => false,
     })
 }
@@ -913,6 +914,8 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
         | IrOperation::BoxNew { value, .. }
         | IrOperation::BoxTake { value, .. }
         | IrOperation::BoxDeref { value, .. }
+        | IrOperation::RuntimeBoxPayload { owner: value, .. }
+        | IrOperation::RuntimeBoxOwner { payload: value, .. }
         | IrOperation::AddressOf { value, .. } => vec![*value],
         IrOperation::ArrayIndex { root, offset, .. } => array_root_operand(*root)
             .into_iter()

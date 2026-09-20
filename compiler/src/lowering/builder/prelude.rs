@@ -562,6 +562,8 @@ fn ceiling_pair(
         // `Array<T>` is a pointer and a length.
         IrType::Buffer { .. } | IrType::Range { .. } => (Finite(16), 8),
         IrType::Address(_) => (Finite(8), 8),
+        // This compiler-only task capture has no source layout ceiling.
+        IrType::RuntimeBoxPayload { .. } => return None,
         IrType::Array { element, length } => {
             if length == 0 {
                 return Some((Finite(0), 1));

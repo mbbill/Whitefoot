@@ -1108,7 +1108,7 @@ impl LayoutComputer<'_, '_, '_, '_> {
             }
             IrType::Float { .. } => Err(TargetLayoutFailure::InvalidIr),
             IrType::Nominal(id) => self.nominal_layout(id),
-            IrType::Address(_) => Ok(POINTER_LAYOUT),
+            IrType::Address(_) | IrType::RuntimeBoxPayload { .. } => Ok(POINTER_LAYOUT),
             IrType::Array { length: 0, .. } => Ok(Layout { size: 0, align: 1 }),
             IrType::Array { element, length } => {
                 let element = self.element(element)?;

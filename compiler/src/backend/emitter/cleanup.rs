@@ -277,6 +277,7 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
             IrType::Range { element } => {
                 pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?);
             }
+            IrType::RuntimeBoxPayload { .. } => {}
             IrType::Address(referent) => pending.push(referent.ty()),
             IrType::Nominal(id) => {
                 let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
@@ -526,6 +527,7 @@ fn emit_cleanup_jobs(
                 | IrType::Integer { .. }
                 | IrType::Float { .. }
                 | IrType::Range { .. }
+                | IrType::RuntimeBoxPayload { .. }
                 | IrType::Address(_) => {}
             },
         }

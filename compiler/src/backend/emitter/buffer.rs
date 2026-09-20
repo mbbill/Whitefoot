@@ -82,6 +82,58 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         Ok(format!("%{pointer}"))
     }
 
+    /// Projects the first-element address carried by a synthesized task
+    /// capture. This changes only the compiler's internal capture ABI; the
+    /// source Box value remains the allocation-base pointer.
+    pub(super) fn emit_runtime_box_payload(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        nominal: IrNominalId,
+        owner: IrValueId,
+    ) -> Result<(), BackendFailure> {
+        if ty != (IrType::RuntimeBoxPayload { nominal })
+            || self.value_type(owner) != Some(IrType::Nominal(nominal))
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let block = self.buffer_block_type(nominal)?;
+        writeln!(
+            self.output,
+            "  {} = getelementptr inbounds {}, ptr {}, i64 0, i32 {ELEMENTS_FIELD}, i64 0",
+            self.value_name(result),
+            llvm_type(self.program, block)?,
+            self.value_name(owner),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    /// Reverses [`Self::emit_runtime_box_payload`] before ordinary chunk
+    /// lowering rebuilds its borrowed local Box slot.
+    pub(super) fn emit_runtime_box_owner(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        nominal: IrNominalId,
+        payload: IrValueId,
+    ) -> Result<(), BackendFailure> {
+        if ty != IrType::Nominal(nominal)
+            || self.value_type(payload) != Some(IrType::RuntimeBoxPayload { nominal })
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let block = self.buffer_block_type(nominal)?;
+        let negative_header = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{negative_header} = sub i64 0, {}\n  {} = getelementptr inbounds i8, ptr {}, i64 %{negative_header}",
+            self.buffer_header_size(block)?,
+            self.value_name(result),
+            self.value_name(payload),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
     /// [OP-13] `box_array_filled`: one block `[len | elements]`, every
     /// element holding the supplied copy value, and the cell that owns it,
     /// which is that same pointer.

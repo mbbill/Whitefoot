@@ -1799,6 +1799,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::BoxDeref { nominal, value } => {
                 self.emit_box_deref(result, ty, *nominal, *value)
             }
+            IrOperation::RuntimeBoxPayload { nominal, owner } => {
+                self.emit_runtime_box_payload(result, ty, *nominal, *owner)
+            }
+            IrOperation::RuntimeBoxOwner { nominal, payload } => {
+                self.emit_runtime_box_owner(result, ty, *nominal, *payload)
+            }
             IrOperation::ConstructStruct { nominal, fields } => {
                 self.emit_struct(result, ty, *nominal, fields)
             }
@@ -2250,7 +2256,7 @@ pub(crate) fn llvm_type(
                 IrWindowShape::Ring => format!("{{ i64, i64, i64, [0 x {element}] }}"),
             })
         }
-        IrType::Address(_) => Ok("ptr".to_owned()),
+        IrType::Address(_) | IrType::RuntimeBoxPayload { .. } => Ok("ptr".to_owned()),
         IrType::Nominal(id) => {
             let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
             if matches!(nominal.kind(), IrNominalKind::Box { .. }) {

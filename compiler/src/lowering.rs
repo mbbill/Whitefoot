@@ -208,7 +208,7 @@ impl IrAddressed {
             IrType::Float { width } => Self::Float { width },
             IrType::Nominal(id) => Self::Nominal(id),
             IrType::Buffer { element } => Self::Buffer { element },
-            IrType::Range { .. } => return None,
+            IrType::Range { .. } | IrType::RuntimeBoxPayload { .. } => return None,
             IrType::Array { element, length } => Self::Array { element, length },
             IrType::Window {
                 shape,
@@ -271,6 +271,14 @@ pub enum IrType {
     /// holds one and nothing is ever released through one.
     Range {
         element: IrElement,
+    },
+    /// One compiler-synthesized task capture of the first element address of
+    /// a runtime-capacity `Array` block. The pointer may be one-past for an
+    /// empty array, so it is not an [`IrType::Address`] and cannot be loaded
+    /// or stored through directly. Its nominal identifies the ordinary Box
+    /// owner that [`IrOperation::RuntimeBoxOwner`] may reconstruct.
+    RuntimeBoxPayload {
+        nominal: IrNominalId,
     },
     /// One `Slots<T, N>`, `Slots<T>`, `Ring<T, N>` or `Ring<T>` [TYPE-9].
     ///
@@ -452,6 +460,9 @@ pub(crate) fn type_derives_release(
             // [REF-4, TYPE-8] a range reference is a name for elements it
             // does not own, so nothing of it is ever released.
             | IrType::Range { .. }
+            // A synthesized payload capture borrows the source Box allocation
+            // and never carries ownership or cleanup authority.
+            | IrType::RuntimeBoxPayload { .. }
             | IrType::Address(_) => {}
         }
     }
@@ -1281,6 +1292,21 @@ pub enum IrOperation {
     BoxDeref {
         nominal: IrNominalId,
         value: IrValueId,
+    },
+    /// The first-element pointer used only by a synthesized split capture of
+    /// a `Box<Array<T>>`. The source Box value remains the allocation-base
+    /// pointer and retains sole cleanup authority.
+    RuntimeBoxPayload {
+        nominal: IrNominalId,
+        owner: IrValueId,
+    },
+    /// Recovers the ordinary allocation-base Box pointer from a synthesized
+    /// payload capture before rebuilding borrowed local owner storage in a
+    /// chunk. The inverse uses the same target-layout field offset as the
+    /// forward projection.
+    RuntimeBoxOwner {
+        nominal: IrNominalId,
+        payload: IrValueId,
     },
     ConstructStruct {
         nominal: IrNominalId,

@@ -63,7 +63,7 @@ const PLAIN_ENTRY: &str =
     "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
-fn a_split_snapshots_a_thin_box_owner_but_keeps_inline_affine_storage_addressed() {
+fn a_split_captures_an_array_payload_but_keeps_owner_and_inline_storage_addressed() {
     let source = br#"nocopy struct Inline {
   values: Array<u8, 16>;
 }
@@ -95,30 +95,41 @@ fn main() -> status: own ExitStatus pure {
             .iter()
             .find(|function| function.name() == "mapped")
             .expect("mapped function");
-        let captures = function
+        let (captures, chunk) = function
             .blocks()
             .iter()
             .flat_map(|block| block.instructions())
             .find_map(|instruction| match instruction {
                 IrInstruction::Define {
-                    operation: IrOperation::LoopSplit { captures, .. },
+                    operation:
+                        IrOperation::LoopSplit {
+                            captures, chunk, ..
+                        },
                     ..
-                } => Some(captures),
+                } => Some((captures, *chunk)),
                 _ => None,
             })
             .expect("the independent element writes must remain a split loop");
 
-        let mut thin_box_values = 0;
+        let mut payload_capture = None;
         let mut inline_addresses = 0;
         for capture in captures {
             match function.value_type(*capture).expect("capture type") {
-                IrType::Nominal(nominal)
-                    if matches!(
-                        program.nominal(nominal).expect("nominal").kind(),
-                        IrNominalKind::Box { .. }
-                    ) =>
-                {
-                    thin_box_values += 1;
+                IrType::RuntimeBoxPayload { nominal } => {
+                    assert!(
+                        matches!(
+                            program
+                                .nominal(nominal)
+                                .expect("payload owner nominal")
+                                .kind(),
+                            IrNominalKind::Box {
+                                referent: IrType::Buffer { .. },
+                                ..
+                            }
+                        ),
+                        "only a Box<Array<T>> payload may use the internal capture type"
+                    );
+                    assert!(payload_capture.replace((*capture, nominal)).is_none());
                 }
                 IrType::Address(IrAddressed::Nominal(nominal))
                     if matches!(
@@ -131,13 +142,74 @@ fn main() -> status: own ExitStatus pure {
                 _ => {}
             }
         }
-        assert_eq!(
-            thin_box_values, 1,
-            "the split must snapshot the Box pointer once"
-        );
+        let (payload, nominal) = payload_capture.expect("one projected Box<Array<T>> capture");
         assert_eq!(
             inline_addresses, 1,
             "an inline nocopy aggregate must retain its addressed representation"
+        );
+
+        let forward = function
+            .blocks()
+            .iter()
+            .flat_map(IrBlock::instructions)
+            .filter_map(|instruction| match instruction {
+                IrInstruction::Define {
+                    result,
+                    operation:
+                        IrOperation::RuntimeBoxPayload {
+                            nominal: operation_nominal,
+                            owner,
+                        },
+                    ..
+                } if *result == payload => Some((*operation_nominal, *owner)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(forward.len(), 1, "the parent must derive the payload once");
+        assert_eq!(forward[0].0, nominal);
+        assert_eq!(
+            function.value_type(forward[0].1),
+            Some(IrType::Nominal(nominal)),
+            "the forward projection must read the real source-owned Box value"
+        );
+
+        let chunk = &program.functions()[chunk as usize];
+        let payload_parameter = chunk
+            .parameters()
+            .iter()
+            .find_map(|(value, ty)| {
+                (*ty == IrType::RuntimeBoxPayload { nominal }).then_some(*value)
+            })
+            .expect("the chunk must take the projected payload in its one-word frame");
+        let inverse = chunk
+            .blocks()
+            .iter()
+            .flat_map(IrBlock::instructions)
+            .filter_map(|instruction| match instruction {
+                IrInstruction::Define {
+                    result,
+                    operation:
+                        IrOperation::RuntimeBoxOwner {
+                            nominal: operation_nominal,
+                            payload,
+                        },
+                    ..
+                } => Some((*result, *operation_nominal, *payload)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let [inverse] = inverse.as_slice() else {
+            panic!("the chunk must reconstruct exactly one local Box value: {inverse:?}");
+        };
+        assert_eq!(
+            (inverse.1, inverse.2),
+            (nominal, payload_parameter),
+            "the chunk must reconstruct exactly one local Box value from the captured payload"
+        );
+        assert_eq!(
+            chunk.value_type(inverse.0),
+            Some(IrType::Nominal(nominal)),
+            "the inverse exists only to feed ordinary Box projection lowering"
         );
     });
 }

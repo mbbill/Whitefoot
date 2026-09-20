@@ -109,6 +109,20 @@ enum Decline {
     NoIdentity,
 }
 
+/// How a synthesized chunk restores the binding representation used by the
+/// ordinary statement lowering from the value carried in its task frame.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CaptureReconstruction {
+    Direct,
+    BoxSlot {
+        referent: IrAddressed,
+    },
+    RuntimeBoxPayload {
+        nominal: crate::IrNominalId,
+        referent: IrAddressed,
+    },
+}
+
 impl Decline {
     fn reason(self) -> String {
         match self {
@@ -237,7 +251,7 @@ impl IrBuilder<'_> {
 
         let mut capture_types = Vec::with_capacity(captures.len());
         let mut capture_values = Vec::with_capacity(captures.len());
-        let mut capture_slots = Vec::with_capacity(captures.len());
+        let mut capture_reconstructions = Vec::with_capacity(captures.len());
         for binding in &captures {
             let stored = self
                 .bindings
@@ -245,15 +259,16 @@ impl IrBuilder<'_> {
                 .copied()
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?;
             let stored_type = self.value_type(stored)?;
-            // A promoted Box owner is one thin pointer held in a stable local
-            // slot. PAR-2 has already proved that independent iterations do
-            // not replace or consume that whole owner, and the structured
-            // join keeps its source scope alive. Capture the pointer value
-            // once instead of making every worker repeatedly follow the
-            // active caller's stack slot. The chunk rebuilds only a local
-            // address for the existing projection lowering; it acquires no
-            // owner and therefore no release action. Inline affine aggregates
-            // retain their address representation.
+            // A promoted Box is one pointer in a stable local slot. Snapshot
+            // that pointer, encoding a runtime Array by its element base.
+            // PAR-2 excludes whole-owner replacement or consumption by the
+            // iterations, and the structured join preserves the owners they
+            // use. The chunk reverses the Array projection before rebuilding
+            // borrowed local owner storage; it acquires no cleanup authority.
+            // Capture-all can also carry a consumed but still represented
+            // binding. Conversion neither dereferences that allocation nor
+            // assumes it is live. Other Box kinds retain the block pointer,
+            // and inline affine aggregates retain their address form.
             let local_slot = if self.addressed_bindings.contains(binding)
                 && let IrType::Address(referent @ IrAddressed::Nominal(nominal)) = stored_type
                 && matches!(
@@ -264,14 +279,33 @@ impl IrBuilder<'_> {
             } else {
                 None
             };
-            let captured = if local_slot.is_some() {
-                self.load_storage_value(stored)?
-            } else {
-                stored
+            let (captured, reconstruction) = match local_slot {
+                Some(referent @ IrAddressed::Nominal(nominal)) => {
+                    let owner = self.load_storage_value(stored)?;
+                    if matches!(
+                        &self.nominals[nominal.index()].kind,
+                        IrNominalKind::Box {
+                            referent: IrType::Buffer { .. },
+                            ..
+                        }
+                    ) {
+                        (
+                            self.define(
+                                IrType::RuntimeBoxPayload { nominal },
+                                IrOperation::RuntimeBoxPayload { nominal, owner },
+                            )?,
+                            CaptureReconstruction::RuntimeBoxPayload { nominal, referent },
+                        )
+                    } else {
+                        (owner, CaptureReconstruction::BoxSlot { referent })
+                    }
+                }
+                Some(_) => return Err(LoweringFailure::InvalidCheckedProgram),
+                None => (stored, CaptureReconstruction::Direct),
             };
             capture_types.push(self.value_type(captured)?);
             capture_values.push(captured);
-            capture_slots.push(local_slot);
+            capture_reconstructions.push(reconstruction);
         }
 
         // A false result promises to leave the ordinary lowering untouched, so
@@ -295,7 +329,7 @@ impl IrBuilder<'_> {
             result_type,
             &captures,
             &capture_types,
-            &capture_slots,
+            &capture_reconstructions,
         )?;
         let splitter_function =
             self.build_splitter(splitter, chunk, actualization, result_type, &capture_types)?;
@@ -430,7 +464,7 @@ impl IrBuilder<'_> {
         result_type: IrType,
         captures: &[BindingId],
         capture_types: &[IrType],
-        capture_slots: &[Option<IrAddressed>],
+        capture_reconstructions: &[CaptureReconstruction],
     ) -> Result<IrFunction, LoweringFailure> {
         let mut builder = IrBuilder::new(
             self.context(),
@@ -448,24 +482,51 @@ impl IrBuilder<'_> {
         {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        if captures.len() != capture_types.len() || captures.len() != capture_slots.len() {
+        if captures.len() != capture_types.len() || captures.len() != capture_reconstructions.len()
+        {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        for ((binding, ty), local_slot) in captures.iter().zip(capture_types).zip(capture_slots) {
+        for ((binding, ty), reconstruction) in captures
+            .iter()
+            .zip(capture_types)
+            .zip(capture_reconstructions)
+        {
             let value = builder.new_parameter(*ty)?;
-            let value = if let Some(referent) = local_slot {
-                if referent.ty() != *ty {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+            let value = match reconstruction {
+                CaptureReconstruction::Direct => value,
+                CaptureReconstruction::BoxSlot { referent } => {
+                    if referent.ty() != *ty {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                    builder.define(
+                        IrType::Address(*referent),
+                        IrOperation::AddressOf {
+                            value,
+                            referent: *referent,
+                        },
+                    )?
                 }
-                builder.define(
-                    IrType::Address(*referent),
-                    IrOperation::AddressOf {
-                        value,
-                        referent: *referent,
-                    },
-                )?
-            } else {
-                value
+                CaptureReconstruction::RuntimeBoxPayload { nominal, referent } => {
+                    if *ty != (IrType::RuntimeBoxPayload { nominal: *nominal })
+                        || referent.ty() != IrType::Nominal(*nominal)
+                    {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                    let owner = builder.define(
+                        IrType::Nominal(*nominal),
+                        IrOperation::RuntimeBoxOwner {
+                            nominal: *nominal,
+                            payload: value,
+                        },
+                    )?;
+                    builder.define(
+                        IrType::Address(*referent),
+                        IrOperation::AddressOf {
+                            value: owner,
+                            referent: *referent,
+                        },
+                    )?
+                }
             };
             if builder.bindings.insert(*binding, value).is_some() {
                 return Err(LoweringFailure::InvalidCheckedProgram);
@@ -842,7 +903,7 @@ fn frame_bytes(ty: IrType) -> u64 {
         // A descriptor is a pointer and a length; a borrow and a box handle
         // are one pointer each.
         IrType::Buffer { .. } | IrType::Range { .. } => 2 * FRAME_FIELD_ALIGN,
-        IrType::Address(_) => FRAME_FIELD_ALIGN,
+        IrType::Address(_) | IrType::RuntimeBoxPayload { .. } => FRAME_FIELD_ALIGN,
         // A nominal travels by value. Charging it the whole frame refuses every
         // loop that would capture one, which is the fail-closed direction until
         // a program asks for it.
