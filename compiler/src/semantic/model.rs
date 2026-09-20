@@ -6,6 +6,12 @@ pub(crate) struct FunctionId(pub(crate) u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct BindingId(pub(crate) u32);
 
+/// Checked-program-private identity of one exact instantiated FN-4
+/// implication query. It names the retained query record, never a dense term,
+/// goal, or derivation identity inside that query's isolated proof arena.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ContractQueryId(pub(crate) u32);
+
 /// The three kinds a parameter, a binder, or a result may have [GRAM-3].
 ///
 /// `mode := "own" | "&"`, plus the `&[T]` range-reference kind, which
@@ -1786,11 +1792,12 @@ pub(crate) enum CheckedExpression {
         /// the selected concrete callee's parameter declarations. It is
         /// proof-only: lowering still calls `function` directly.
         formal_effects: Option<Box<CheckedEffects>>,
-        /// [FN-5] the instantiated formal requirements at a bound call. The
-        /// selected actual remains `function` for execution, while acceptance
-        /// uses this authoritative interface boundary. Direct calls carry
-        /// `None` and take their requirements from `function` as usual.
-        formal_requirements: Option<Vec<super::goal::CheckedRequirement>>,
+        /// [FN-4, FN-5] the exact instantiated formal contract and the
+        /// retained implication queries authorizing execution/publication
+        /// through the selected actual. The actual remains `function` for
+        /// execution. Direct calls carry `None` and use that function's own
+        /// contract and verified summaries.
+        formal_contract: Option<Box<CheckedCallContract>>,
         /// Exact source call occurrence and declared-order argument atoms.
         call: NodePath,
         argument_nodes: Vec<NodePath>,
@@ -2570,10 +2577,35 @@ pub(crate) struct CheckedProgramData {
 /// identities; the proof carries its own dense term, goal and DAG namespace.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedContractQuery {
+    /// Concrete containing function instance whose bound call uses this
+    /// implication. Declaration-only FN-4 validation carries `None`; only
+    /// `Some` identities are referenced by checked calls.
+    pub(crate) instance: Option<FunctionId>,
     pub(crate) site: NodePath,
     pub(crate) premises: Vec<NodePath>,
     pub(crate) goal: NodePath,
     pub(crate) proof: super::entailment::FunctionEntailment,
+}
+
+/// The authoritative contract surface of one bound call [FN-5].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedCallContract {
+    pub(crate) requirements: Vec<super::goal::CheckedRequirement>,
+    /// One accepted formal-requires => actual-requires implication for every
+    /// actual requirement, in that declaration's source order.
+    pub(crate) requirement_queries: Vec<ContractQueryId>,
+    /// Formal relations callers may observe, in formal source order.
+    pub(crate) postconditions: Vec<CheckedBoundPostcondition>,
+}
+
+/// One formal relation plus the exact accepted implication and actual premise
+/// ordinals that authorize publishing it at a bound call.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedBoundPostcondition {
+    pub(crate) selector: super::postcondition::CheckedPostconditionSelector,
+    pub(crate) relation: super::postcondition::RelationTemplate,
+    pub(crate) query: ContractQueryId,
+    pub(crate) actual_premises: Vec<u32>,
 }
 
 /// Every direct subexpression, for uniform recursion.

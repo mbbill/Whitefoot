@@ -1220,6 +1220,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let concrete_signatures = std::mem::take(&mut self.signatures);
         let concrete_functions_by_declaration = std::mem::take(&mut self.functions_by_declaration);
         let concrete_postcondition_selectors = std::mem::take(&mut self.postcondition_selectors);
+        // Bound calls checked in the scratch symbolic FunctionId inventory
+        // retain exact FN-4 queries for that pass only. Preserve any earlier
+        // declaration-level records, then discard the scratch suffix before
+        // concrete replay assigns checked-program identities.
+        let contract_query_checkpoint = self.contract_queries.borrow().len();
         let nominal_checkpoint = self.nominal_checkpoint();
         // Record only the initial source-canonical symbolic instance for each
         // generic. Transitive discovery below may instantiate another
@@ -1298,6 +1303,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &canonical_generic_signatures,
             &callees,
         )?;
+        self.contract_queries
+            .borrow_mut()
+            .truncate(contract_query_checkpoint);
         self.signatures.clear();
         self.functions_by_declaration.clear();
         self.postcondition_selectors.clear();

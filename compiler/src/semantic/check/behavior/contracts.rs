@@ -13,7 +13,8 @@ use super::super::super::entailment::{
 };
 use super::super::super::goal::{CheckedRequirement, GoalDatum, GoalExpression, GoalTemplate};
 use super::super::super::model::{
-    BindingId, CheckedContractQuery, CheckedFunction, CheckedParameter, CheckedType,
+    BindingId, CheckedBoundPostcondition, CheckedCallContract, CheckedContractQuery,
+    CheckedFunction, CheckedParameter, CheckedType, ContractQueryId,
 };
 use super::super::super::postcondition::PostconditionConstantOrigin;
 use super::super::requires::{ExpandedClauseDatum, ExpandedClauseExpression};
@@ -39,6 +40,9 @@ struct InterfaceEnsures {
     field: Option<crate::BuiltinPreludeId>,
     result_type: CheckedType,
     expression: ExpandedClauseExpression,
+    relation_ordinal: u32,
+    selector: super::super::super::postcondition::CheckedPostconditionSelector,
+    relation: super::super::super::postcondition::RelationTemplate,
 }
 
 #[derive(Clone, Copy)]
@@ -48,21 +52,6 @@ struct ContractVariable {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    pub(in crate::semantic::check) fn formal_call_requirements(
-        &self,
-        signature: &FunctionSignature,
-    ) -> Result<Vec<CheckedRequirement>, CheckStop> {
-        Ok(self
-            .behavior_contracts(signature)?
-            .requires
-            .into_iter()
-            .map(|requirement| CheckedRequirement {
-                template: requirement.template,
-                clause: requirement.clause,
-            })
-            .collect())
-    }
-
     pub(super) fn check_formal_contract_formation(
         &self,
         signature: &FunctionSignature,
@@ -75,9 +64,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn check_behavior_contracts(
         &self,
         node: NodeId,
+        instance: Option<super::super::super::model::FunctionId>,
         formal: &FunctionSignature,
         actual: &FunctionSignature,
-    ) -> Result<(), CheckStop> {
+    ) -> Result<CheckedCallContract, CheckStop> {
         // Retain formal source identities for resolution, with the exact
         // implementation types.
         let mut normalized = formal.clone();
@@ -133,6 +123,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             finalize_function_entailment(&mut proof);
             accepted_queries.push(CheckedContractQuery {
+                instance,
                 site: site.clone(),
                 premises: formal_requirement_paths.clone(),
                 goal: required.clause.clone(),
@@ -144,6 +135,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // parameter, exit parameter and result identities are distinct even
         // where their selected types and written projections agree.
         let parameter_count = normalized.parameters.len();
+        let mut postcondition_premises = Vec::with_capacity(formal_contracts.ensures.len());
         for promised in &formal_contracts.ensures {
             let available = actual_contracts
                 .ensures
@@ -179,19 +171,61 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             finalize_function_entailment(&mut proof);
             accepted_queries.push(CheckedContractQuery {
+                instance,
                 site: site.clone(),
                 premises: premise_paths,
                 goal: promised.clause.clone(),
                 proof,
             });
+            postcondition_premises.push(
+                available
+                    .iter()
+                    .map(|published| published.relation_ordinal)
+                    .collect::<Vec<_>>(),
+            );
         }
         let mut retained = self.contract_queries.borrow_mut();
+        let mut query_ids = Vec::with_capacity(accepted_queries.len());
         for query in accepted_queries {
-            if !retained.contains(&query) {
+            let index = if let Some(index) = retained.iter().position(|existing| *existing == query)
+            {
+                index
+            } else {
                 retained.push(query);
-            }
+                retained.len() - 1
+            };
+            query_ids.push(ContractQueryId(
+                u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+            ));
         }
-        Ok(())
+        let requirement_count = actual_contracts.requires.len();
+        let postcondition_queries = query_ids.split_off(requirement_count);
+        let postconditions = formal_contracts
+            .ensures
+            .into_iter()
+            .zip(postcondition_queries)
+            .zip(postcondition_premises)
+            .map(
+                |((promised, query), actual_premises)| CheckedBoundPostcondition {
+                    selector: promised.selector,
+                    relation: promised.relation,
+                    query,
+                    actual_premises,
+                },
+            )
+            .collect();
+        Ok(CheckedCallContract {
+            requirements: formal_contracts
+                .requires
+                .into_iter()
+                .map(|requirement| CheckedRequirement {
+                    template: requirement.template,
+                    clause: requirement.clause,
+                })
+                .collect(),
+            requirement_queries: query_ids,
+            postconditions,
+        })
     }
 
     /// One finite [FN-4] query over alpha-renamed declaration datums. The
@@ -268,6 +302,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             constant_ids: &self.constants,
             nominals: &self.nominals,
             elements: &elements,
+            contract_queries: &[],
             verified_postconditions: &[],
             verified_postcondition_proofs: &[],
             binding_names: &binding_names,
@@ -323,13 +358,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut ensures = Vec::new();
         let selectors = self.postcondition_selectors_from_source(signature)?;
         let mut relations = Vec::with_capacity(selectors.len());
-        for selector in &selectors {
-            relations.push(self.check_postcondition_clause(
+        for (relation_ordinal, selector) in selectors.iter().enumerate() {
+            let relation = self.check_postcondition_clause(
                 signature,
                 selector,
                 &mut bindings.clone(),
                 &mut counters,
-            )?);
+            )?;
+            relations.push(relation.clone());
             let mut expression = self.expand_postcondition_clause(
                 signature,
                 selector,
@@ -344,6 +380,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 field: selector.field.as_ref().map(|field| field.declaration),
                 result_type: selector.result_type,
                 expression,
+                relation_ordinal: u32::try_from(relation_ordinal)
+                    .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+                selector: selector.clone(),
+                relation,
             });
         }
         self.check_published_relation_consistency(signature, &selectors, &relations)?;

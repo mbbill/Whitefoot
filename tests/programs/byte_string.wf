@@ -20,10 +20,11 @@ const digit_glyphs: Array<u8, 10> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54
 
 fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(s) contract {
   requires total >= deref(s).inner.cap;
+  requires total <= 9223372036854775791_u64;
   ensures deref(s).inner.cap == total;
   ensures deref(s).inner.len == deref(entry(s)).inner.len;
 } {
-  doc "Grows the backing window to total slots, preserving byte order. grow is defined on Box<Slots<T>> alone, remakes the cell's content whole, may reallocate in place, and carries the length across, so there is no superseded run to release and allocation has no failure arm [OP-10, STOR-8].";
+  doc "Grows the backing window to total slots, preserving byte order. The native fixture's total bound leaves 16 descriptor bytes in the signed 64-bit allocation/address domain [STOR-6]. grow is defined on Box<Slots<T>> alone, remakes the cell's content whole, may reallocate in place, and carries the length across, so there is no superseded run to release and allocation has no failure arm [OP-10, STOR-8].";
   grow(cell: s, capacity: total);
   return unit;
 }
@@ -74,10 +75,11 @@ fn bs_append_range(s: &Box<Slots<u8>>, capacity: own u64, text: &[u8], total: ow
 }
 
 fn bs_from(text: &[u8]) -> made: own Box<Slots<u8>> reads(text) contract {
+  requires deref(text).len <= 9223372036854775791_u64;
   ensures made.inner.cap == deref(text).len;
   ensures made.inner.len == deref(text).len;
 } {
-  doc "Builds one byte string holding exactly the bytes of one static message.";
+  doc "Builds one byte string holding exactly the bytes of one static message. The explicit input-length bound qualifies its complete native allocation, including the 16-byte descriptor [STOR-6]; allocation remains total within the stated domain.";
   let count = deref(text).len;
   let made = box_slots_new::<u8>(capacity: count);
   bs_append_range(s: &made, capacity: count, text: text, total: count);

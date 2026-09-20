@@ -1264,13 +1264,14 @@ fn main() -> status: own ExitStatus pure {
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
-        let host = super::owned_places::allocation_observer(2, 0);
+        let host = super::owned_places::u64_allocation_observer(2);
         let output = super::compile_link_and_run(&observed, Some(&host), &[]);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
-        // KEPT AS WRITTEN for the lowering port: the two cells three window
-        // layers down are released in logical index order after the generic
-        // handoff returns.
-        assert_eq!(output.stdout, b"A1;A2;F1;F2;", "{output:?}");
+        // STOR-3 releases elements in logical index order. PAR-1 permits the
+        // two independent allocations to reach the host in either order, so
+        // their payloads identify the elements even when allocation IDs swap.
+        // The observer still rejects unknown and duplicate releases.
+        assert_eq!(output.stdout, b"A1;A2;V17;V29;", "{output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
     }
 }

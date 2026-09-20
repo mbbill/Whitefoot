@@ -189,6 +189,7 @@ enum DerivationConclusion {
     AffineConsequence,
     UnsignedDivisionProduct,
     RequirementAffineImage,
+    ContractCall,
     Contradiction,
     PostconditionAggregate,
 }
@@ -1484,11 +1485,21 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ..
                 } = detail.as_ref();
                 assert_relation_terms_resolve(summary, relation);
-                // A source callee publishes a verified summary
-                // [ENT-3.S13, CALL-6].
-                let crate::semantic::entailment::RelationProvenance::Verified(published) =
-                    &reference.summary;
-                assert!(!published.block.components().is_empty());
+                match &reference.summary {
+                    crate::semantic::entailment::RelationProvenance::Verified(published) => {
+                        assert!(!published.block.components().is_empty());
+                    }
+                    crate::semantic::entailment::RelationProvenance::FormalBoundary {
+                        premises,
+                        ..
+                    } => {
+                        assert!(
+                            premises
+                                .iter()
+                                .all(|premise| { !premise.block.components().is_empty() })
+                        );
+                    }
+                }
                 for parent in parents {
                     assert!(summary.derivations.nodes.get(parent.0 as usize).is_some());
                 }
@@ -1505,6 +1516,16 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ));
                 }
                 DerivationConclusion::Relation(relation.clone())
+            }
+            DerivationNode::ContractCall { parents, .. } => {
+                assert!(
+                    parents.iter().all(|parent| summary
+                        .derivations
+                        .nodes
+                        .get(parent.0 as usize)
+                        .is_some())
+                );
+                DerivationConclusion::ContractCall
             }
             DerivationNode::PostconditionDirectResult {
                 relation, parent, ..
@@ -1659,6 +1680,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         | DerivationConclusion::AffineConsequence
                         | DerivationConclusion::UnsignedDivisionProduct
                         | DerivationConclusion::RequirementAffineImage
+                        | DerivationConclusion::ContractCall
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("delivery join parent must be a relation or contradiction")
                         }
@@ -1830,6 +1852,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         | DerivationConclusion::AffineConsequence
                         | DerivationConclusion::UnsignedDivisionProduct
                         | DerivationConclusion::RequirementAffineImage
+                        | DerivationConclusion::ContractCall
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("this obligation root cannot conclude that goal")
                         }
@@ -1935,10 +1958,18 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     | DerivationConclusion::AffineConsequence
                     | DerivationConclusion::UnsignedDivisionProduct
                     | DerivationConclusion::RequirementAffineImage
-                    | DerivationConclusion::PostconditionAggregate => {
+                    | DerivationConclusion::PostconditionAggregate
+                    | DerivationConclusion::ContractCall => {
                         panic!("a discharged call root cannot be a postcondition aggregate")
                     }
                 }
+            }
+            DerivationRootKind::CallContract(_) => {
+                assert_eq!(conclusion, &DerivationConclusion::ContractCall);
+                assert!(matches!(
+                    &summary.derivations.nodes[root.node.0 as usize],
+                    DerivationNode::ContractCall { .. }
+                ));
             }
             DerivationRootKind::ContractGoal(ordinal) => {
                 let ordinal = ordinal as usize;

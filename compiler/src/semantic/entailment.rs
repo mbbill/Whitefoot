@@ -187,6 +187,10 @@ pub(crate) struct EntailmentContext<'check> {
     pub(crate) constant_ids: &'check HashMap<DeclarationId, CheckedConstantId>,
     pub(crate) nominals: &'check [CheckedNominal],
     pub(crate) elements: &'check [CheckedType],
+    /// Accepted instantiated FN-4 implications. Bound-call evidence refers
+    /// to these records by checked-program-private index and never imports a
+    /// query-local term, goal, or derivation identity.
+    pub(crate) contract_queries: &'check [super::model::CheckedContractQuery],
     /// Published earlier-component FN-9 declarations and proofs, indexed by
     /// concrete [`FunctionId`]. Same-component entries remain absent until
     /// the component's atomic publication boundary.
@@ -205,6 +209,13 @@ impl EntailmentContext<'_> {
     pub(crate) fn constant(&self, declaration: DeclarationId) -> Option<&CheckedConstant> {
         let id = self.constant_ids.get(&declaration)?;
         self.constants.get(id.0 as usize)
+    }
+
+    pub(crate) fn contract_query(
+        &self,
+        query: super::model::ContractQueryId,
+    ) -> Option<&super::model::CheckedContractQuery> {
+        self.contract_queries.get(query.0 as usize)
     }
 
     pub(crate) fn constant_declaration(
@@ -239,6 +250,20 @@ impl EntailmentContext<'_> {
                 .then_some((postcondition, proof))
             })
             .collect()
+    }
+
+    pub(crate) fn verified_postcondition(
+        &self,
+        function: FunctionId,
+        relation_ordinal: u32,
+    ) -> Option<(&CheckedPostcondition, &FunctionPostconditionProof)> {
+        self.verified_postconditions(function)?
+            .into_iter()
+            .find(|(_, proof)| {
+                proof.summary.as_ref().is_some_and(|summary| {
+                    summary.function == function && summary.relation_ordinal == relation_ordinal
+                })
+            })
     }
 }
 
@@ -928,20 +953,47 @@ pub(crate) struct VerifiedPostconditionSummary {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum RelationProvenance {
     Verified(VerifiedPostconditionSummary),
+    /// One formal relation exported through a bound call. The isolated FN-4
+    /// query proves the implication; every non-hypothetical premise is named
+    /// by its independently verified actual FN-9 summary. No query-local DAG
+    /// identity crosses into the caller.
+    FormalBoundary {
+        query: super::model::ContractQueryId,
+        actual: FunctionId,
+        premises: Vec<VerifiedPostconditionSummary>,
+    },
 }
 
 impl RelationProvenance {
-    /// The stable identity pair this provenance contributes to a derivation
-    /// node's structural key.
-    pub(crate) const fn identity(&self) -> [u32; 2] {
+    /// Stable checked-program identities this provenance contributes to a
+    /// derivation node's structural key. These are external record identities,
+    /// never caller- or query-local derivation IDs.
+    pub(crate) fn identity(&self) -> Vec<u32> {
         match self {
-            Self::Verified(summary) => [summary.function.0, summary.component],
+            Self::Verified(summary) => vec![summary.function.0, summary.component],
+            Self::FormalBoundary {
+                query,
+                actual,
+                premises,
+            } => {
+                let mut identity = vec![query.0, actual.0];
+                for premise in premises {
+                    identity.extend([
+                        premise.function.0,
+                        premise.relation_ordinal,
+                        premise.component,
+                    ]);
+                }
+                identity
+            }
         }
     }
 }
 
-/// Caller-local reference to an earlier-component verified
-/// summary. It intentionally carries no callee-local [`DerivationId`].
+/// Caller-local reference to one authorized S12 publication. Direct
+/// provenance names an earlier-component verified summary; formal-boundary
+/// provenance additionally names the retained FN-4 query and its verified
+/// actual premises. It carries no callee- or query-local [`DerivationId`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct VerifiedPostconditionSummaryRef {
     pub(crate) summary: RelationProvenance,
@@ -1010,7 +1062,9 @@ pub(crate) struct CallGoalOutcome {
     /// Exact source `call` occurrence.
     pub(crate) node_path: NodePath,
     pub(crate) callee: FunctionId,
-    /// Exact `requires_clause` occurrence in the concrete callee.
+    /// Exact authoritative `requires_clause` occurrence: the concrete
+    /// callee for a direct call and the instantiated formal for a bound call
+    /// [FN-5].
     pub(crate) requires_clause: NodePath,
     pub(crate) goal: ConcreteGoal,
     /// The same goal in the terms the source wrote it in, rendered here

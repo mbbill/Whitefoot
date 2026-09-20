@@ -541,6 +541,210 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn bound_calls_publish_only_the_formal_postcondition_with_fn4_fn9_authority() {
+    let source = br#"interface LimitedResult {
+  fn get() -> result: own u64 pure contract {
+    ensures result <= 10_u64;
+  };
+}
+
+fn nine() -> result: own u64 pure contract {
+  ensures result <= 9_u64;
+} {
+  return 9_u64;
+}
+
+binding Nine : LimitedResult {
+  get = nine;
+}
+
+fn require_ten(value: own u64) -> result: own unit pure contract {
+  requires value <= 10_u64;
+} {
+  return unit;
+}
+
+fn apply<interface LimitedResult>() -> result: own u64 pure {
+  let value = LimitedResult::get();
+  require_ten(value: value);
+  return value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let value = apply::<Nine>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the formal postcondition must publish: {outcome:?}");
+        };
+        let main = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("entry function");
+        let Some(CheckedExpression::UserCall {
+            function: apply_id, ..
+        }) = main.body.as_deref().and_then(|body| {
+            body.iter().find_map(|statement| match statement {
+                CheckedStatement::Let { value, .. } => Some(value),
+                _ => None,
+            })
+        })
+        else {
+            panic!("main must call the concrete apply instance");
+        };
+        let apply = checked
+            .data
+            .functions
+            .get(apply_id.0 as usize)
+            .filter(|function| function.id == *apply_id && function.name == "apply")
+            .expect("main's concrete apply instance");
+        let authority = apply
+            .entailment
+            .derivations
+            .nodes
+            .iter()
+            .find_map(|node| match node {
+                super::super::entailment::DerivationNode::PostconditionCall { detail } => {
+                    match &detail.summary.summary {
+                        super::super::entailment::RelationProvenance::FormalBoundary {
+                            query,
+                            actual,
+                            premises,
+                        } => Some((*query, *actual, premises)),
+                        super::super::entailment::RelationProvenance::Verified(_) => None,
+                    }
+                }
+                _ => None,
+            })
+            .expect("the requirement proof must use the formal S12 relation");
+        let query = checked
+            .data
+            .contract_queries
+            .get(authority.0.0 as usize)
+            .expect("formal boundary query");
+        assert_eq!(query.instance, Some(apply.id));
+        assert_eq!(query.premises.len(), 1);
+        assert_eq!(authority.2.len(), 1);
+        assert_eq!(authority.1, authority.2[0].function);
+    });
+
+    // The actual's tighter `<= 9` relation proves the formal `<= 10`
+    // promise, but FN-5 does not expose that stronger implementation detail
+    // to the generic caller.
+    assert_behavior_rule(
+        &String::from_utf8(source.to_vec())
+            .expect("source text")
+            .replace("requires value <= 10_u64;", "requires value <= 9_u64;"),
+        SemanticRule::Fn8,
+    );
+}
+
+#[test]
+fn a_bound_routed_relation_publishes_only_at_its_direct_selected_arm() {
+    let source = r#"interface RoutedIdentity {
+  fn choose(value: own i32) -> outcome: own Result<i32, u8> pure contract {
+    ensures when Ok(value: selected): selected == value;
+  };
+}
+
+fn choose(value: own i32) -> outcome: own Result<i32, u8> pure contract {
+  ensures when Ok(value: selected): selected == value;
+} {
+  return Ok<i32, u8>(value: value);
+}
+
+binding RoutedChoice : RoutedIdentity {
+  choose = choose;
+}
+
+fn require_same(left: own i32, right: own i32) -> result: own unit pure contract {
+  requires left == right;
+} {
+  return unit;
+}
+
+fn apply<interface RoutedIdentity>(value: own i32) -> result: own unit pure {
+  match RoutedIdentity::choose(value: value) {
+    Ok(value: selected) => {
+      require_same(left: selected, right: value);
+    }
+    Err(error: problem) => {
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  apply::<RoutedChoice>(value: 7_i32);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the formal routed relation must reach its direct selected arm: {outcome:?}"
+        );
+    });
+
+    // A routed relation is not an unrouted token carried by a named whole
+    // outcome. Only making the call the direct match scrutinee selects it.
+    let indirect = source.replace(
+        "  match RoutedIdentity::choose(value: value) {",
+        "  let outcome = RoutedIdentity::choose(value: value);\n  match outcome {",
+    );
+    assert_behavior_rule(&indirect, SemanticRule::Fn8);
+}
+
+/// A bound call cannot form a recursive postcondition component with its
+/// selected concrete actual: returning from that actual to the generic
+/// wrapper replaces the wrapper's function argument instead of forwarding
+/// its complete template vector. FN-6 rejects that source cycle before FN-9,
+/// so this fixture cannot use formal-boundary publication to bootstrap the
+/// selected actual's same-component summary.
+#[test]
+fn a_recursive_bound_call_stops_at_fn6_before_summary_publication() {
+    let source = r#"interface Identity {
+  fn get(value: own i32) -> result: own i32 pure contract {
+    ensures result == value;
+  };
+}
+
+fn apply<interface Identity>(value: own i32) -> result: own i32 pure contract {
+  ensures result == value;
+} {
+  let selected = Identity::get(value: value);
+  return selected;
+}
+
+fn actual(value: own i32) -> result: own i32 pure contract {
+  ensures result == value;
+} {
+  cycle(value: value);
+  return value;
+}
+
+binding Selected : Identity {
+  get = actual;
+}
+
+fn cycle(value: own i32) -> result: own unit pure {
+  let ignored = apply::<Selected>(value: value);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let ignored = apply::<Selected>(value: 1_i32);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_behavior_rule(source, SemanticRule::Fn6);
+}
+
+#[test]
 fn raw_function_binders_are_visible_and_emit_no_symbolic_hypotheses() {
     let source = br#"fn zero() -> result: own u64 pure {
   return 0_u64;

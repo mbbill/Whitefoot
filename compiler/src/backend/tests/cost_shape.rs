@@ -124,6 +124,51 @@ fn is_aggregate_destination<'module>(function: &'module str, mut pointer: &'modu
     }
 }
 
+/// A compact pointer-provenance trace for optimizer-version failures in the
+/// aggregate-initialization oracle. It stops at the first instruction the
+/// classifier does not follow, so CI reports the missing spelling without
+/// dumping a whole optimized module.
+fn aggregate_destination_trace<'module>(
+    function: &'module str,
+    mut pointer: &'module str,
+) -> String {
+    let header = function
+        .lines()
+        .next()
+        .unwrap_or("<missing function header>");
+    let mut trace = vec![
+        format!("function: {header}"),
+        format!("destination: {pointer}"),
+    ];
+    let mut seen = Vec::new();
+    loop {
+        if seen.contains(&pointer) {
+            trace.push(format!("cycle at {pointer}"));
+            break;
+        }
+        seen.push(pointer);
+        let prefix = format!("  {pointer} = ");
+        let Some(definition) = function.lines().find_map(|line| line.strip_prefix(&prefix)) else {
+            trace.push(format!("{pointer}: no local definition"));
+            break;
+        };
+        trace.push(format!("{pointer} = {definition}"));
+        if !definition.starts_with("getelementptr ") {
+            break;
+        }
+        let Some((_, base)) = definition.split_once(", ptr ") else {
+            trace.push("getelementptr: no `, ptr ` base operand".to_owned());
+            break;
+        };
+        let Some((base, _)) = base.split_once(',') else {
+            trace.push("getelementptr: base operand has no following index".to_owned());
+            break;
+        };
+        pointer = base.trim();
+    }
+    trace.join("\n")
+}
+
 fn source_function<'module>(module: &'module str, symbol: &str) -> &'module str {
     let needle = format!(" @{symbol}(");
     let start = module
@@ -290,7 +335,8 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
                 .expect("a memset has a destination");
             assert!(
                 is_aggregate_destination(function, pointer),
-                "bulk initialization must not reach reused heap run backing: {line}"
+                "bulk initialization must not reach reused heap run backing: {line}\n{}",
+                aggregate_destination_trace(function, pointer)
             );
         }
     }

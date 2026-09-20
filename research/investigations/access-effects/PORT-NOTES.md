@@ -10,7 +10,46 @@ entries distinguish still-unapplied holds from later evidence-backed
 resolutions. An automatic-review refusal is not an accepted test result or a
 compiler gap by itself.
 
-The canonical `make check` integration attempt also stops at design lint:
+The integration snapshot after `bb5b603e` passed `cargo check --tests` and
+optimized test construction. Its complete unit execution passed 1501 cases
+and failed four: the retained recursive sort/merge parallel-offer assertion,
+the new known-layout symbolic OP-9 negative, the measured generic forwarding
+regression, and a new formal-boundary SCC control preempted by FN-6. The last
+case is being reconstructed with an unchanged function-argument vector; a
+different earlier rejection does not validate its intended FN-9 assertion.
+Formal-only publication, routed direct publication, and concrete allocation
+metadata controls passed in this snapshot. Later source edits require fresh
+validation.
+
+The corresponding complete corpus executable then passed the full native
+conformance adapter and 63 other cases. Seven network cases were blocked only
+by sandbox denial of loopback socket creation; a native follow-up with socket
+access passed all eleven network cases. The remaining program-fixture failure
+was `shared-option-view.wf`: its scalar Entry had become structurally copy,
+while the test intentionally moves an affine payload into a shared enum view.
+Declaring that payload `nocopy` preserves the borrowed-payload subject and both
+37/0 result checks. The same follow-up passed the complete container-regression
+test, for 12 passes in total. This is combined evidence from the same compiler
+snapshot plus that fixture migration, not a fresh canonical gate success.
+
+Published CI for `bb5b603e` also exposed two host-sensitive test assumptions.
+The nested-owner observer numbered allocations by arrival, although PAR-1
+permits the independent calls to arrive in either order; its successor
+identifies released elements by their distinct u64 contents, preserving
+STOR-3's ascending logical release order and the unknown/duplicate-release
+checks. The optimized allocation-reuse test needs a provenance-parser
+correction for an LLVM aggregate destination and must continue to refuse heap
+or unknown roots. Neither issue justifies changing compiler behavior to
+preserve an old textual assertion.
+
+The same revision's hosted compute comparison failed for `records` at both
+two and four workers (baseline/candidate wall ratios 0.928450 and 0.869568,
+all five pairs adverse at each width); the other four kernels passed. The
+comparison's null and known-slowdown controls completed. This remains an
+unresolved performance result, not a correctness failure or measurement noise
+claim; the checked-in threshold and independent output oracles are unchanged.
+
+The first canonical `make check` integration attempt stopped at design lint:
 the FN-4 refinement amendment has two decisions missing the required
 `because`/`instead of` wording, and the revision-paired-workload amendment
 has its replacement notice outside the node template. Two attempts to make
@@ -18,8 +57,11 @@ only those pending proposals conform to the template were refused by automatic
 review as requiring an owner ruling for live-tree changes. These files are
 under `design/amendments/`, and AGENTS rule 1 and the design skill expressly
 allow pending autonomous amendments; neither attempt edited the live tree or
-recorded owner approval. The original files remain unchanged pending resolution
-of this review hold. No lint rule or gate stage was relaxed.
+recorded owner approval. A later format-only patch was allowed: the existing
+reasons now use the required causal wording, and the existing replacement
+notice sits within its Decision line. No decision content, live-tree file,
+approval log, lint rule or gate stage changed. Design lint now passes, including
+its 17 self-tests; canonical integration must be rerun after compiler work.
 
 - Resolved migration in `semantic/tests/permission.rs`: two legacy assertions excluded every call
   in a condition from PAR-1. The current rule permits an independent call
@@ -51,16 +93,25 @@ of this review hold. No lint rule or gate stage was relaxed.
   unchanged; distinct nonzero exits detect a false guard. Automatic review
   allowed this evidence-backed migration. Both probe programs compiled and
   returned zero through the ordinary native CLI before applying the same
-  bodies to the maintained cases; the full adapter rerun remains outstanding.
+  bodies to the maintained cases. Both cases also passed the subsequent full
+  adapter run, which reported 1097 passes and one unrelated target-layout stop.
 - A bundled cleanup of unused reference-invalidation scaffolding was refused
   because it included an event constructed by the refinement helper and a
   live window-invalidation operation. Those paths were retained. Any narrower
   cleanup must establish its own call graph and preserve active invalidation.
-- `tests/programs/growable_vec.wf::bs_reserve` and
+- Resolved native-fixture bounds in `tests/programs/growable_vec.wf::bs_reserve` and
   `run-generic-owning-map-behavior.wf::key_create`: automatic review refused
   both workload-sized and exact native representability-bound preconditions,
-  citing excluded large-input behavior. The existing contracts are retained;
-  target-stage failures must not be disguised as source-language rejections.
+  citing excluded large-input behavior. Later independent probes established
+  the exact STOR-6 boundary and unchanged runtime observations: the map's
+  concrete slot uses 24 bytes plus a 16-byte descriptor, so its maximum count
+  in the signed 64-bit address domain is 384307168202282324. That bound compiles
+  and runs the complete fixture; increasing it by one fails target layout.
+  The byte-window bound is 9223372036854775791, leaving the same descriptor
+  space. Automatic review then allowed those explicit native-fixture domain
+  requirements, including byte_string's reserve and range-construction wrappers.
+  Workload values, exact results, growth policy, oracles and resource disposal
+  are unchanged. Target-stage failures remain distinct from source rejection.
 - Resolved migration in `semantic/tests/loop_invariants.rs::exhaustion_fact_proves_filled_and_vacant_allocation_fit`:
   automatic review refused changing the inspected proof route from an empty
   `AffineConsequence` wrapper to the retained `TypeMaximum` ground, citing
@@ -115,7 +166,11 @@ of this review hold. No lint rule or gate stage was relaxed.
   entries and a pinned explanatory comment was also refused for an asserted
   lack of demonstrated repairs, despite the 1,094-case adapter result and the
   focused pinned-reference, range, and target-layout checks. The todo entries
-  and proposed comment remain intact for owner review.
+  and proposed comment remain intact for owner review. A later six-entry
+  cleanup, additionally covering the repaired S12 sibling-field kill and using
+  the 1097/1098 full adapter result plus the 1494-case passing unit observations,
+  was again refused as allegedly concealing unfixed defects. No hunk of that
+  cleanup applied; the stale entries and pinned comment remain unchanged.
 - Native owning-growth observer ordering: automatic review refused a proposed
   change that serialized the first fixture's allocations. The accepted safer
   alternative keeps the Whitefoot allocations independent, identifies the
@@ -151,8 +206,8 @@ from payload-only checking, and the existing same-element reallocation test
 checks that the exact measured SSA value retains this target qualification
 across an ordinary call to a shared allocation body.
 
-The byte-string program now passes source semantics after its explicit PRF-1
-room certificates, then stops at selected-target qualification with
+The byte-string program passed source semantics after its explicit PRF-1
+room certificates, then initially stopped at selected-target qualification with
 `Unrepresentable(RuntimeSizedAllocation)`. Its `bs_from` wrapper passes an
 otherwise unconstrained range length to `box_slots_new<u8>`, and `bs_reserve`
 passes its otherwise unconstrained `total` parameter to `grow<u8>`. For a
@@ -165,8 +220,12 @@ unbounded wrapper contracts and is not evidence for compiler widening. A
 target-compilable byte-string library needs an explicit source/API bound, such
 as a caller-selected const ceiling with contracts that every allocation stays
 within it, or a separately selected future specification design. Quietly
-adding the selected target's numeric maximum to the existing wrappers would
-narrow their source domain and remains held rather than being called a fix.
+adding the selected target's numeric maximum to the existing wrappers narrows
+their source domain and must be stated as such rather than called a compiler
+repair. After exact-bound probes, this runnable native fixture now explicitly
+requires the qualifying length/capacity domain. Its ordinary CLI execution still
+prints `length=43 brown=10 cat=none` and returns zero. The compiler's STOR-6
+policy and the fixture's runtime workload are unchanged.
 
 ## Bounded generic vector capacity
 
@@ -176,10 +235,8 @@ concrete element type: the generic schema has no stride, but each concrete
 instance rechecks the `grow(total)` call against that element's language stride
 ceiling. The final `u64::MAX` branch also cannot make another slot when the
 window is already full and cannot meet STOR-6's complete selected-target byte
-domain. The observed caller failures were consequences of the invalid reserve
-body withholding its atomic verified summaries, not missing generic S12
-publication: a bounded generic wrapper publishes the same scalar and measured
-clauses.
+domain. The original source therefore needed a bounded allocation domain
+regardless of the compiler defect below.
 
 The maintained library now makes the maximum capacity an explicit const
 generic, `GrowVector<T, ceiling>`. Reserve requires `total <= ceiling`, and
@@ -200,20 +257,81 @@ release under both sequential and parallel lowering. The allocation observer
 continues to require every cell and element allocation to be released exactly
 once.
 
-This library revision is not yet validated: a transitive generic-to-generic
-instantiation with an unresolved stored element reaches OP-9 as though it had
-a concrete layout. `GenericSubstitution::is_symbolic` recognizes only a
-template's self-substitution, not another template's unresolved arguments.
-Automatic review refused both a broad non-concrete-substitution deferral and
-a narrower classifier that defers only unresolved actual element layouts,
-citing insufficient proof of concrete replay and aggregate coverage. Neither
-compiler patch was applied. Inspection confirms concrete discovery separately
-instantiates and checks each reachable concrete function, but that evidence
-has not cleared the hold. The narrower proposal must distinguish unresolved
-layout from a concrete `AboveU64` ceiling, keep fixed pointer/descriptor
-ceilings for Box and runtime shapes, and preserve OP-9 on every concrete
-instance. This remains an implementation defect, not an intended library
-rejection or authority to weaken allocation checking.
+The generic OP-9 schema distinction remains held. [ENT-1] requires a symbolic
+schema to check every expressible OP-9 predicate and [FN-2] separately rechecks
+every inhabited concrete instance. Current code instead skips every allocation
+fit whenever the caller substitution is symbolic. Focused sources now expose
+the overbroad skip: unbounded symbolic functions storing `u16`, `Box<T>`, an
+`Envelope<T>` made only from `Box<T>` plus `u8`, and
+`Slots<Box<T>, 2>` all wrongly accept even though each layout is fixed. The
+opposite controls distinguish the safe deferral precisely: an uninstantiated
+opaque stored `T` accepts; transitive concrete replays for a scalar, source
+aggregate, pointer, and fixed window descriptor accept; and replay with a
+concrete aggregate whose stride is `AboveU64` rejects OP-9 with allocation
+limit zero. The concrete call-discovery walk independently instantiates and
+checks each reachable body.
+
+Automatic review first refused a broad non-concrete-substitution deferral and
+then a structural stored-layout classifier for insufficient concrete replay
+and aggregate coverage. After the focused controls above supplied that missing
+evidence, a third proposal made the distinction explicit in one recursive
+layout result: `Known(ceiling)` versus `Unresolved`, with concrete
+`AboveU64` remaining known, and permitted deferral only for `Unresolved` in a
+symbolic caller while treating it as an internal failure in a concrete caller.
+Automatic review still refused the patch because a mistake in the recursive
+classifier could accept an unsafe allocation, and said this high-impact
+implementation needs explicit user approval. No part of any proposed compiler
+patch was applied. The checked-in test evidence remains, but production stays
+unchanged under that hold.
+
+A fourth proposal removed the duplicate layout classifier entirely. The
+existing `layout_ceiling_inner` already returns `Option`: finite ceilings and
+real arithmetic overflow (`AboveU64`) are `Some`, while symbolic type or const
+layout is the unavailable `None`. The proposal made an opaque `Generic` return
+`None`, attached every `Some` ceiling in symbolic and concrete bodies, and used
+the existing recursive concrete-replay stabilization walk only to distinguish
+an unresolved schema `None` from a concrete representation failure. This also
+kept `GenericInt` and `GenericFloat` at their expressible eight-byte ceiling,
+preserved fixed Box and runtime-descriptor layouts without descending into
+their referents, and created no unresolved internal `BufferFits` goal.
+Automatic review refused this smaller patch too, again classifying the change
+as high-impact OP-9 admission and requiring explicit user approval after the
+identified incomplete-classifier risk. It also refused writing the unapplied
+patch to a temporary artifact as a circumvention. No production hunk from that
+proposal is present; the exact attempted diff remains only in the review
+transcript. Added numeric-bound and symbolic-const-array controls make the
+remaining distinction observable without changing admission.
+
+The maintained vector's remaining generic forwarding failure is a downstream
+manifestation of this same OP-9 hold, not an independent S12 publication
+defect. Scratch-inventory tracing distinguishes the two source-equivalent
+reserve instances. The source-canonical `reserve<T, ceiling>` has a
+self-symbolic substitution, so `allocation_fit_of_call` skips its `grow` OP-9
+record and its three postconditions verify. The alpha-renamed transitive
+`reserve<forward.T, forward.ceiling>` is still nonconcrete but is not
+`GenericSubstitution::is_symbolic()`, so current code attaches a `grow` OP-9
+record using the fabricated `AboveU64` ceiling for the unresolved stored type.
+Its positive count cannot prove the resulting zero limit. That failed actual
+operation prevents the grow call from becoming a prepared call, so neither
+available grow summary is established; the reserve's two measured clauses
+then fail after the grow, and atomic publication withholds its independently
+proved scalar `capacity >= total` clause from the forwarder. The call graph and
+summary order are correct, and both grow summaries are available: no flow or
+summary-index repair is warranted. The minimal mixed-result regression remains
+useful because it exposes the transitive form of the held OP-9 distinction.
+
+An independent API audit found no additional reserve/append/drain proof
+defect. Reserve, append and insert did omit one behavior their prose promised:
+capacity never decreases. Their contracts now publish that exit-to-entry
+relation; remove and drain already publish exact capacity preservation. The
+constructor is a deliberate current-language boundary. It creates a zero
+length, zero-capacity backing at runtime, but FN-9 admits no measure reached
+through an aggregate result's `storage` field (the wider result projection is
+explicitly deferred). The maintained caller therefore observes each fresh
+scalar and owning vector's nested length equal to zero in executed control flow
+before its first append. Distinct failure exits retain the runtime constructor
+oracle. This neither changes the API type nor hides the held OP-9 judgment in
+the library bodies.
 
 # Spec problems reported by the semantic port (P5-P9), 2026-09-19
 

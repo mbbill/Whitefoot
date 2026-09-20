@@ -70,8 +70,8 @@ use super::{
     LoopInvariantProof, ObligationFamily, ObligationOutcome, PostconditionAggregate,
     PostconditionDisposition, PostconditionEntryImage, PostconditionEntryImageOutcome,
     PostconditionExit, S7Derivation, SourceProofCertificateFailure, SourceProofCheck,
-    SourceProofOutcome, VerifiedPostconditionSummary, VerifiedPostconditionSummaryRef,
-    fragment_type, overflow_conjuncts_for_values,
+    SourceProofOutcome, VerifiedPostconditionSummaryRef, fragment_type,
+    overflow_conjuncts_for_values,
 };
 
 /// One [ENT-5] kill event gathered from a statement or expression.
@@ -735,11 +735,14 @@ struct IntegerDomainOperand {
 /// pending publication token.
 #[derive(Clone, Debug)]
 struct PreparedCall {
-    /// The declared callee this call publishes from [CALL-6, ENT-3.S13]: a
-    /// `fn_decl` with a verified [FN-9] summary, which is the whole
-    /// population now that a window or construction operation is an ordinary
-    /// [PRE-1] declaration.
+    /// The selected executable callee [CALL-6, ENT-3.S13]. Direct calls
+    /// publish its verified FN-9 relations; bound calls use its parameter
+    /// metadata while `postconditions` carries the formal FN-5 surface.
     callee: super::super::model::FunctionId,
+    /// Exact [FN-5] publication surface selected for this call. A bound call
+    /// carries formal relations with FN-4/FN-9 authority; a direct call
+    /// carries its callee's verified relations.
+    postconditions: Vec<AvailablePostcondition>,
     call: crate::NodePath,
     parents: Vec<DerivationId>,
     transfer_events: Vec<FlowEventId>,
@@ -763,8 +766,7 @@ struct AvailablePostcondition {
     relation: RelationTemplate,
     variant: Option<crate::BuiltinPreludeId>,
     field: Option<crate::BuiltinPreludeId>,
-    summary: VerifiedPostconditionSummary,
-    discharged: bool,
+    authority: super::RelationProvenance,
 }
 
 /// [MSR-3] one payload placement's datums, held between the mint before the
@@ -1109,6 +1111,7 @@ impl<'check, 'unit> Analyzer<'check, 'unit> {
             encountered_counted: 0,
             completed_counted_roots: 0,
             s12_roots: 0,
+            contract_call_roots: 0,
             delivery_give_roots: HashSet::new(),
             delivery_join_roots: 0,
             scopes: Vec::new(),
@@ -1424,6 +1427,7 @@ struct Analyzer<'check, 'unit> {
     encountered_counted: u32,
     completed_counted_roots: u32,
     s12_roots: u32,
+    contract_call_roots: u32,
     delivery_give_roots: HashSet<DerivationId>,
     delivery_join_roots: u32,
     /// Lexical scope stack: the bindings declared in each open block.
@@ -2390,8 +2394,68 @@ impl Analyzer<'_, '_> {
                         .field
                         .as_ref()
                         .map(|field| field.declaration),
-                    summary: proof.summary.clone()?,
-                    discharged: proof.aggregate.discharged,
+                    authority: super::RelationProvenance::Verified(proof.summary.clone()?),
+                })
+            })
+            .collect()
+    }
+
+    /// The relations one exact call may publish [FN-5]. A direct call uses
+    /// its actual's verified FN-9 surface. A bound call uses the retained
+    /// formal surface only when its exact FN-4 query is discharged and every
+    /// actual premise selected by that query has an earlier-component FN-9
+    /// summary. A zero-premise implication needs only its retained query.
+    fn available_call_postconditions(
+        &self,
+        function: super::super::model::FunctionId,
+        formal: Option<&super::super::model::CheckedCallContract>,
+    ) -> Vec<AvailablePostcondition> {
+        let Some(formal) = formal else {
+            return self.available_postconditions(function);
+        };
+        formal
+            .postconditions
+            .iter()
+            .filter_map(|boundary| {
+                let query = self.context.contract_query(boundary.query)?;
+                let [outcome] = query.proof.contract_goals.as_slice() else {
+                    return None;
+                };
+                if outcome.disposition != CallGoalDisposition::Discharged
+                    || outcome.derivation.is_none()
+                    || query.instance != Some(self.function.id)
+                    || query.goal != boundary.selector.block
+                    || query.premises.len() != boundary.actual_premises.len()
+                {
+                    return None;
+                }
+                let premises = boundary
+                    .actual_premises
+                    .iter()
+                    .zip(&query.premises)
+                    .map(|(ordinal, clause)| {
+                        let (postcondition, proof) =
+                            self.context.verified_postcondition(function, *ordinal)?;
+                        let summary = proof.summary.as_ref()?;
+                        (postcondition.selector.block == *clause
+                            && summary.function == function
+                            && summary.relation_ordinal == *ordinal)
+                            .then(|| summary.clone())
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                Some(AvailablePostcondition {
+                    relation: boundary.relation.clone(),
+                    variant: boundary.selector.variant,
+                    field: boundary
+                        .selector
+                        .field
+                        .as_ref()
+                        .map(|field| field.declaration),
+                    authority: super::RelationProvenance::FormalBoundary {
+                        query: boundary.query,
+                        actual: function,
+                        premises,
+                    },
                 })
             })
             .collect()
@@ -2811,6 +2875,7 @@ impl Analyzer<'_, '_> {
         function: super::super::model::FunctionId,
         call: &crate::NodePath,
         goal_arguments: &[GoalExpression],
+        postconditions: &[AvailablePostcondition],
         state: &mut ProofFlowState,
     ) {
         let Some(callee) = self.context.callee(function) else {
@@ -2823,7 +2888,7 @@ impl Analyzer<'_, '_> {
             Option<CheckedMeasure>,
             CheckedType,
         )> = Vec::new();
-        for available in self.available_postconditions(function) {
+        for available in postconditions {
             for operand in &available.relation.operands {
                 let datum = &operand.datum;
                 match datum {
@@ -3129,11 +3194,9 @@ impl Analyzer<'_, '_> {
         &self,
         available: &AvailablePostcondition,
     ) -> Option<VerifiedPostconditionSummaryRef> {
-        available
-            .discharged
-            .then(|| VerifiedPostconditionSummaryRef {
-                summary: super::RelationProvenance::Verified(available.summary.clone()),
-            })
+        Some(VerifiedPostconditionSummaryRef {
+            summary: available.authority.clone(),
+        })
     }
 
     fn retain_postcondition_call(
@@ -3218,7 +3281,7 @@ impl Analyzer<'_, '_> {
         let result_term = fragment_type(*result)
             .and_then(|_| self.postcondition_place_term(PlaceRoot::Binding(binding), &[], *result));
         let result_place = Some((PlaceRoot::Binding(binding), Vec::new(), *result));
-        for available in self.available_postconditions(*function) {
+        for available in prepared.postconditions.iter().cloned() {
             if available.variant.is_some()
                 || !available
                     .relation
@@ -3318,7 +3381,7 @@ impl Analyzer<'_, '_> {
         let Some(anchor) = anchor else {
             return;
         };
-        for available in self.available_postconditions(*function) {
+        for available in prepared.postconditions.iter().cloned() {
             // A variant-routed relation is restricted to its arm [CALL-6];
             // a binder or target list enters no arm.
             if available.variant.is_some()
@@ -3509,8 +3572,10 @@ impl Analyzer<'_, '_> {
         else {
             return Vec::new();
         };
-        self.available_postconditions(*function)
-            .into_iter()
+        prepared
+            .postconditions
+            .iter()
+            .cloned()
             .filter_map(|available| {
                 if available.variant.is_some()
                     || !available
@@ -3651,7 +3716,7 @@ impl Analyzer<'_, '_> {
             return Vec::new();
         };
         let mut established = Vec::new();
-        for available in self.available_postconditions(*function) {
+        for available in prepared.postconditions.iter().cloned() {
             let (Some(selector_variant), Some(selector_field)) =
                 (available.variant, available.field)
             else {
@@ -7008,6 +7073,7 @@ impl Analyzer<'_, '_> {
                 arguments,
                 goal_arguments,
                 requirements,
+                formal_contract,
                 allocation,
                 ..
             } => {
@@ -7091,21 +7157,37 @@ impl Analyzer<'_, '_> {
                     }
                 }
                 let reached = actuals_reached && goals_ok;
+                let contract_parents = if reached {
+                    formal_contract.as_deref().and_then(|contract| {
+                        self.retain_contract_call_authorities(call, contract, &goal_parents)
+                    })
+                } else {
+                    None
+                };
+                let reached = reached
+                    && formal_contract
+                        .as_ref()
+                        .is_none_or(|_| contract_parents.as_ref().is_some());
+                let postconditions =
+                    self.available_call_postconditions(*function, formal_contract.as_deref());
                 let prepared_call = (|| {
                     let mut parents = actual_parents?;
                     if !reached || goal_parents.len() != requirements.len() {
                         return None;
                     }
                     parents.extend(goal_parents);
-                    // Only an earlier-component verified summary can publish
-                    // an S12 carrier. Calls without one retain the exact
-                    // pre-H3 kill path and create no transient postcondition
-                    // events, but are still successfully evaluated.
-                    if self.context.verified_postconditions(*function)?.is_empty() {
+                    parents.extend(contract_parents.unwrap_or_default());
+                    // A direct call needs an earlier-component verified FN-9
+                    // summary. A bound call needs either those actual
+                    // premises plus its retained FN-4 implication, or a
+                    // zero-premise formal implication. Calls with no
+                    // authorized relation retain the pre-S12 kill path.
+                    if postconditions.is_empty() {
                         return None;
                     }
                     Some(PreparedCall {
                         callee: *function,
+                        postconditions,
                         call: call.clone(),
                         parents,
                         transfer_events: Vec::new(),
@@ -7117,8 +7199,14 @@ impl Analyzer<'_, '_> {
                 // establishment: instantiating at the call is what lets a
                 // relation over an `own` operand outlive the consume the same
                 // statement performs.
-                if prepared_call.is_some() {
-                    self.establish_call_datums(*function, call, goal_arguments, states);
+                if let Some(prepared) = &prepared_call {
+                    self.establish_call_datums(
+                        *function,
+                        call,
+                        goal_arguments,
+                        &prepared.postconditions,
+                        states,
+                    );
                 }
                 ExpressionJudgment {
                     prepared_call,
@@ -7394,6 +7482,57 @@ impl Analyzer<'_, '_> {
             derivation,
         });
         (disposition, derivation)
+    }
+
+    /// Retains the external FN-4 authority that turns proofs of the formal
+    /// requirements into permission to execute the selected actual [FN-5].
+    /// The referenced query has its own proof arena; this caller-local node
+    /// contains only the exact query ID and the caller proofs of its formal
+    /// premises.
+    fn retain_contract_call_authorities(
+        &mut self,
+        call: &crate::NodePath,
+        contract: &super::super::model::CheckedCallContract,
+        parents: &[DerivationId],
+    ) -> Option<Vec<DerivationId>> {
+        let premise_paths = contract
+            .requirements
+            .iter()
+            .map(|requirement| &requirement.clause)
+            .collect::<Vec<_>>();
+        if premise_paths.len() != parents.len() {
+            return None;
+        }
+        let mut retained = Vec::with_capacity(contract.requirement_queries.len());
+        for query_id in &contract.requirement_queries {
+            let query = self.context.contract_query(*query_id)?;
+            let [outcome] = query.proof.contract_goals.as_slice() else {
+                return None;
+            };
+            if query.instance != Some(self.function.id)
+                || outcome.disposition != CallGoalDisposition::Discharged
+                || outcome.derivation.is_none()
+                || query.premises.iter().ne(premise_paths.iter().copied())
+            {
+                return None;
+            }
+            let node = self
+                .derivations
+                .intern(super::state::DerivationNode::ContractCall {
+                    call: call.clone(),
+                    query: *query_id,
+                    parents: parents.to_vec(),
+                });
+            let occurrence = self.contract_call_roots;
+            self.contract_call_roots = self
+                .contract_call_roots
+                .checked_add(1)
+                .expect("FN-4 call roots exceed the u32 identity space");
+            self.derivations
+                .add_root(DerivationRootKind::CallContract(occurrence), node);
+            retained.push(node);
+        }
+        Some(retained)
     }
 
     fn call_goal_disposition(
@@ -13548,7 +13687,7 @@ impl Analyzer<'_, '_> {
         else {
             return;
         };
-        for available in self.available_postconditions(*function) {
+        for available in prepared.postconditions.iter().cloned() {
             if available.variant.is_some()
                 || available
                     .relation
@@ -13832,10 +13971,9 @@ impl Analyzer<'_, '_> {
         // target's commit and kills — which is exactly this point. The
         // destination list is one entry long because a single-target `set`
         // takes result ordinal zero, and the route is the same one a `let`
-        // binder and a `set` target list take: a kernel-domain row publishes
-        // from its own declared relation list [BLK-0] and a source callee
-        // from its verified summary [FN-9], with the target's own kills the
-        // events every substitution must survive.
+        // binder and a `set` target list take. `PreparedCall` already holds
+        // the exact direct or formal-boundary publication surface, with the
+        // target's own kills the events every substitution must survive.
         if commit_reached
             && let Some(prepared) = prepared.as_ref()
             && let CheckedSetTarget::Place(place) = target

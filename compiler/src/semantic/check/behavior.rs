@@ -1365,9 +1365,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn behavior_call_signature(
         &self,
         node: NodeId,
+        instance: Option<super::super::model::FunctionId>,
         formal: &FunctionSignature,
         actual: &FunctionSignature,
-    ) -> Result<(FunctionSignature, super::super::model::CheckedEffects), CheckStop> {
+    ) -> Result<
+        (
+            FunctionSignature,
+            super::super::model::CheckedEffects,
+            super::super::model::CheckedCallContract,
+        ),
+        CheckStop,
+    > {
         let bound_actual = actual.clone();
         if formal.parameters.len() != actual.parameters.len()
             || formal.results.len() != actual.results.len()
@@ -1443,7 +1451,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
         }
-        self.check_behavior_contracts(node, formal, &bound_actual)?;
+        let contract = self.check_behavior_contracts(node, instance, formal, &bound_actual)?;
         // [FN-5] the immediate call judgment stays wholly in the formal
         // parameter namespace, including its row roots. Keep a second copy of
         // the same row rebased onto the actual parameter declarations only
@@ -1462,6 +1470,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 writes: boundary.writes,
                 allocates: boundary.allocates,
             },
+            contract,
         ))
     }
 
@@ -1494,7 +1503,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     &substitution,
                     target,
                 )?;
-                let _ = self.behavior_call_signature(*binding, &signature, actual)?;
+                let _ = self.behavior_call_signature(*binding, None, &signature, actual)?;
             }
         }
         let mut contexts = self
@@ -1519,7 +1528,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let formal = self.formal_signature(*key, substitution, target)?;
                 let source = self.behavior_binding_site(node, *key, substitution)?;
-                let _ = self.behavior_call_signature(source, &formal, actual)?;
+                let _ = self.behavior_call_signature(source, None, &formal, actual)?;
             }
         }
         Ok(())

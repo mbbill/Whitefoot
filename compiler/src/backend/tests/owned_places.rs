@@ -1185,6 +1185,12 @@ pub(super) fn allocation_observer(limit: usize, refused: usize) -> String {
     allocation_observer_body(limit, &refused.to_string(), false)
 }
 
+/// For fixtures whose allocations all contain one u64, identify releases by
+/// the stored value rather than the order in which worker allocations arrive.
+pub(super) fn u64_allocation_observer(limit: usize) -> String {
+    allocation_observer_body(limit, "0", true)
+}
+
 pub(super) fn allocation_observer_by_process(limit: usize) -> String {
     let body = allocation_observer_body(limit, "wf_test_refusal()", false);
     format!(

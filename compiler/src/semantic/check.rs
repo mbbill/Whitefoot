@@ -1056,11 +1056,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if signature.substitution.len() == 0 {
             return syntactic;
         }
-        self.written_body_effect_rows
+        let mut written = self
+            .written_body_effect_rows
             .borrow()
             .get(&signature.declaration)
             .cloned()
-            .unwrap_or(syntactic)
+            .unwrap_or_else(|| syntactic.clone());
+        // [EFF-3, FN-2] the cached symbolic body fixes the source-written
+        // path row for every instance, but allocation has no source entry and
+        // can become known only after a function argument is concrete. Keep
+        // that instance fact instead of replacing it with the symbolic
+        // schema's necessarily absent metadata.
+        written.allocates |= syntactic.allocates;
+        written
     }
 
     /// [GRAM-2, STOR-8] whether this unit wrote `program no_heap;`.
@@ -2049,6 +2057,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         analyzed: Option<&[bool]>,
     ) -> Result<PostconditionSchedule, CheckStop> {
         let selected = |index: usize| analyzed.is_none_or(|analyzed| analyzed[index]);
+        let contract_queries = self.contract_queries.borrow().clone();
         // ENT is the single acceptance-bearing proof path for ordinary
         // obligations, call requirements, invariants and postconditions.
         let mut schedule =
@@ -2065,6 +2074,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     constant_ids: &self.constants,
                     nominals: &self.nominals,
                     elements: &self.elements.borrow(),
+                    contract_queries: &contract_queries,
                     verified_postconditions: &[],
                     verified_postcondition_proofs: &[],
                     binding_names: &checked.binding_names,
@@ -2136,6 +2146,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         constant_ids: &self.constants,
                         nominals: &self.nominals,
                         elements: &self.elements.borrow(),
+                        contract_queries: &contract_queries,
                         verified_postconditions: &verified_postconditions,
                         verified_postcondition_proofs: &verified_postcondition_proofs,
                         binding_names: &checked.binding_names,
@@ -2309,7 +2320,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 arguments,
                 goal_arguments,
                 goal_regions,
-                formal_requirements,
+                formal_contract,
                 requirements: call_requirements,
                 ..
             } => {
@@ -2320,8 +2331,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .signatures
                     .get(function.0 as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let boundary = match formal_requirements {
-                    Some(boundary) => boundary.as_slice(),
+                let boundary = match formal_contract {
+                    Some(boundary) => boundary.requirements.as_slice(),
                     None => requirements
                         .get(function.0 as usize)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?,

@@ -509,10 +509,19 @@ pub(crate) enum DerivationNode {
         block: NodePath,
         relation_ordinal: u32,
     },
-    /// Caller-local S12 evidence for one instantiated earlier-component
-    /// summary, held out of line by [`PostconditionCallDetail`].
+    /// Caller-local S12 evidence for one instantiated authorized relation,
+    /// held out of line by [`PostconditionCallDetail`].
     PostconditionCall {
         detail: Box<PostconditionCallDetail>,
+    },
+    /// Caller-local evidence that proving the formal requirements authorizes
+    /// execution under one exact accepted FN-4 implication. `query` names an
+    /// external checked-program record; its isolated proof DAG is never
+    /// imported into this ledger.
+    ContractCall {
+        call: NodePath,
+        query: super::super::model::ContractQueryId,
+        parents: Vec<DerivationId>,
     },
     PostconditionDirectResult {
         statement: NodePath,
@@ -689,6 +698,11 @@ impl DerivationNode {
                     visit(*parent);
                 }
             }
+            Self::ContractCall { parents, .. } => {
+                for parent in parents {
+                    visit(*parent);
+                }
+            }
             Self::PostconditionAggregate { parents, .. }
             | Self::IntegerDomain { parents, .. }
             | Self::AffineConsequence { parents, .. }
@@ -753,6 +767,7 @@ impl DerivationNode {
             | Self::GoalNormalization { parents, .. }
             | Self::BooleanIntroduction { parents, .. } => parents.len(),
             Self::PostconditionCall { detail } => detail.parents.len(),
+            Self::ContractCall { parents, .. } => parents.len(),
             Self::SourceBound { .. }
             | Self::SourceDistinct { .. }
             | Self::SourceGoal { .. }
@@ -811,6 +826,7 @@ impl DerivationNode {
             Self::AffineConsequence { .. } => 33,
             Self::GoalAffineConsequence { .. } => 34,
             Self::RequirementAffineImage { .. } => 37,
+            Self::ContractCall { .. } => 38,
         }
     }
 }
@@ -846,6 +862,7 @@ pub(crate) enum DerivationRootKind {
     },
     IntegerDomainObligation(u32),
     CallGoal(u32),
+    CallContract(u32),
     /// One declaration-only [FN-4] compatibility query. Its ledger and dense
     /// identity namespace belong only to the retained contract query.
     ContractGoal(u32),
@@ -1450,6 +1467,9 @@ impl DerivationLedger {
                             + detail.transfer_events.capacity() * size_of::<FlowEventId>()
                             + detail.parents.capacity() * size_of::<DerivationId>()
                     }
+                    DerivationNode::ContractCall { parents, .. } => {
+                        parents.capacity() * size_of::<DerivationId>()
+                    }
                     _ => 0,
                 })
                 .sum::<usize>()
@@ -1461,6 +1481,7 @@ impl DerivationLedger {
                     DerivationNode::PostconditionAggregate { block, .. }
                     | DerivationNode::SignatureContract { block, .. } => Some(block),
                     DerivationNode::PostconditionCall { detail } => Some(&detail.call),
+                    DerivationNode::ContractCall { call, .. } => Some(call),
                     DerivationNode::PostconditionDirectMatch { call, .. } => Some(call),
                     DerivationNode::PostconditionDirectResult { statement, .. }
                     | DerivationNode::PostconditionDirectReceiver { statement, .. }
@@ -1682,6 +1703,13 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
                     transfer_events.get(index).map(|event| event.0)
                 })
         }
+        DerivationNode::ContractCall { query, parents, .. } => {
+            if index == 0 {
+                Some(query.0)
+            } else {
+                parents.get(index - 1).map(|parent| parent.0)
+            }
+        }
         DerivationNode::PostconditionDirectResult {
             binding, parent, ..
         } => [binding.0, parent.0].get(index).copied(),
@@ -1888,6 +1916,11 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         }
         DerivationNode::PostconditionCall { detail } => {
             for parent in &mut detail.parents {
+                remap_id(parent, remap);
+            }
+        }
+        DerivationNode::ContractCall { parents, .. } => {
+            for parent in parents {
                 remap_id(parent, remap);
             }
         }

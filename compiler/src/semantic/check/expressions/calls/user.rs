@@ -94,14 +94,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let formal = self.formal_signature(key, &function.substitution, target)?;
         let binding_site = self.behavior_binding_site(node, key, &function.substitution)?;
-        let (effective, formal_effects) =
-            self.behavior_call_signature(binding_site, &formal, actual)?;
-        let formal_requirements = self.formal_call_requirements(&formal)?;
+        let (effective, formal_effects, formal_contract) =
+            self.behavior_call_signature(binding_site, Some(function.id), &formal, actual)?;
         self.check_selected_user_call(
             node,
             &effective,
             Some(formal_effects),
-            Some(formal_requirements),
+            Some(formal_contract),
             function,
             bindings,
             loop_depth,
@@ -113,7 +112,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         signature: &FunctionSignature,
         formal_effects: Option<super::super::super::super::model::CheckedEffects>,
-        formal_requirements: Option<Vec<super::super::super::super::goal::CheckedRequirement>>,
+        formal_contract: Option<super::super::super::super::model::CheckedCallContract>,
         function: &FunctionSignature,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
@@ -328,7 +327,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             expression: CheckedExpression::UserCall {
                 function: target,
                 formal_effects: formal_effects.map(Box::new),
-                formal_requirements,
+                formal_contract: formal_contract.map(Box::new),
                 call,
                 argument_nodes,
                 arguments,

@@ -16,10 +16,11 @@ fn bs_new() -> made: own Box<Slots<u8>> pure contract {
 
 fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(s) contract {
   requires total >= deref(s).inner.cap;
+  requires total <= 9223372036854775791_u64;
   ensures deref(s).inner.cap == total;
   ensures deref(s).inner.len == deref(entry(s)).inner.len;
 } {
-  doc "Grows the backing window to total slots, preserving element order. grow is defined on Box<Slots<T>> alone, remakes the cell's content whole, may reallocate in place, and carries the static allocation-size obligation, so there is no superseded run to release and no refusal arm [OP-10, STOR-8].";
+  doc "Grows the backing window to total slots, preserving element order. The native fixture's total bound leaves 16 descriptor bytes in the signed 64-bit allocation/address domain [STOR-6]. grow is defined on Box<Slots<T>> alone, remakes the cell's content whole, may reallocate in place, and carries the static allocation-size obligation, so there is no superseded run to release and no refusal arm [OP-10, STOR-8].";
   grow(cell: s, capacity: total);
   return unit;
 }
