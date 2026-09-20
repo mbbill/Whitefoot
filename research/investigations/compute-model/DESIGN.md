@@ -300,6 +300,90 @@ permission-only selection still exposes two unchanged upstream tests,
 #70's call-rooted match support. They are recorded for its owner, not rewritten
 as part of scatter.
 
+#### Reference-model scatter result (2026-09-20)
+
+The [retained samples](../../experiments/compute-bench/radix-scatter-reference-2026-09-20.tsv)
+identify compiler, source and image hashes, flags, the two source-shape
+checkpoints, every sample and the reductions. The final source is
+`ebd3e4b7:tests/programs/compute/radix_scatter.wf`. Construct its owned control
+from `2d8ce0d7` by restoring the same `write_chunk` range parameter and
+`block..after` destination on both arms; swap the complete tally definition
+and count-loop section to obtain the two intermediate arms. The compiler
+implementation is `b6aef587`, unchanged through these source revisions, on
+PR #70 at `206c0cc1`. The host is an unpinned Apple M1 Pro with eight CPUs,
+with other guarded builds excluded and ordinary background applications still
+present. Apple clang 21 compiles WF and its runtime at `-O2`; the retained
+native controls use the bundle's scalar `-O3` flags. Native support, harness
+objects and link order are shared within each source comparison.
+
+Every final WF image passes sequential emission and the parallel emission at
+1, 2, 4 and 8 workers against 109 configurations / 3,466,725 values. Both
+oneTBB controls pass the same matrix at those widths. Those 28 process
+invocations take 2.46 s, including launches, and contain no timing protocol.
+The reference measurement image's complete construction takes 2.04 s;
+emitting the other three arms in both modes takes 0.75 s, and constructing
+their native objects/images takes 10.50 s with the common objects reused.
+
+The final identical-image session takes 4.71 s and the six-form measurement
+session 19.18 s. These are total session costs, not kernel times. The following
+kernel medians exclude input/oracle preparation and result checking/release,
+but include the kernel's allocations, initialization, temporary releases and
+parallel joins. Each process first executes a verified warm-up and then five
+verified warm calls, over five alternating passes with zero call gap.
+
+For 1,048,593 mixed keys at one worker, the independent source changes show
+where the removed cost was paid:
+
+| Source arm | Warm wall (ms) | Process CPU (ms) |
+|---|---:|---:|
+| Owned tally and packing | 11.575 | 11.563 |
+| Reference tally only | 8.078 | 8.068 |
+| Reference packing only | 7.057 | 7.018 |
+| Both reference reads | 3.531 | 3.523 |
+
+The two reductions are nearly additive here: about 3.5 ms from count
+extraction and 4.5 ms from packing transfers. This is a controlled attribution
+to those source regions, supported by the isolated tally code-shape probe;
+it is not a claim that their reference implementations take zero time.
+
+| Workers | Owned wall / CPU (ms) | Reference wall / CPU (ms) | Paired wall speedup |
+|---|---:|---:|---:|
+| 1 | 11.575 / 11.563 | 3.531 / 3.523 | 3.29x |
+| 2 | 10.933 / 11.973 | 2.740 / 3.692 | 3.96x |
+| 4 | 10.442 / 12.350 | 2.236 / 4.159 | 4.73x |
+| 8 | 10.285 / 13.779 | 2.058 / 5.415 | 4.98x |
+
+Ratios are medians of within-pass ratios, not quotients of the displayed
+medians. At eight workers the all-low and skewed inputs improve by 4.79x and
+4.61x respectively. Large-input identical-image controls all remain within
+the predeclared three-percent wall condition. The 257-key control fails that
+condition at four and eight workers, so those latency comparisons remain
+inconclusive. This is one host and workload family, not a portable speedup
+guarantee or an automatic performance-regression verdict.
+
+The improvement does not finish scatter's cost investigation. At eight
+workers the reference WF image takes 2.058 ms wall / 5.415 ms CPU, versus
+oneTBB chain's 1.489 / 5.894 and direct scatter's 0.437 / 2.021. The chain
+retains the chunk/padded-stream decomposition but has a different callable
+representation and recursive-budget realization: WF currently crosses two
+functions per recursive chunk, while the native control decrements its
+explicit budget once. The direct control also removes local element streams
+and the packing chain, changing the algorithm and storage. Neither is a
+same-source compiler comparison.
+
+CPU divided by wall is about 2.63 occupied CPUs for WF versus 3.96 for the
+native chain, even though WF uses less total CPU. Actual helper input and
+output work are now verified, but these totals do not distinguish serial
+initialization/counting and the packing continuation's span from runnable
+work waiting for a worker. The surviving costs are padded storage and its
+construction, payload construction during partitioning, the linear packing
+continuation, final copies, and remaining scheduling/placement effects.
+Attribute those before choosing a different task shape or scheduler policy.
+The native direct result motivates further investigation of a safe tight
+destination representation; it does not supply the missing content/count
+proof for the current direct WF candidate. General profile/PGO policy and
+I/O remain outside this result.
+
 ## Consumers and discriminating criteria
 
 These criteria are recorded before the new experiments. All source programs

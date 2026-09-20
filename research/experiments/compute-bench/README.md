@@ -111,10 +111,19 @@ input scans. `WFB_SCATTER_GRID=large|small|skew|low|high` selects 1,048,593
 mixed keys, 257 keys, a skewed digit, all-low digits, or all-high digits at
 bit 63. The independent oracle covers tails, empty input, stable order,
 unchanged input, and bits 0, 7, and 63. Its separately instrumented correctness
-module checks steals during output packing and nonempty copies completed on
-another thread, after earlier maps have joined;
+module checks nonempty input partitions and output copies completed on
+another thread, resetting its observer only after the earlier maps join;
 the timed module has no such instrumentation. This consumer is opt-in for
 timing and included in `programs-check` and the compiler's native oracle suite.
+
+[`radix-scatter-reference-2026-09-20.tsv`](radix-scatter-reference-2026-09-20.tsv)
+retains the owned/reference source attribution on PR #70's model. It includes
+separate tally and packing arms, identical-image host controls, and native
+chain/direct context, with source/image hashes and all raw intervals. The
+[interpretation and reproduction boundaries](../../investigations/compute-model/DESIGN.md#reference-model-scatter-result-2026-09-20)
+explain the shared helper shape, restored input range map, qualified large-input
+improvements and inconclusive small-input widths. These are opt-in research
+measurements, separate from the formal performance-regression workflow.
 
 [`radix-scatter-2026-09-14.tsv`](radix-scatter-2026-09-14.tsv) retains the
 stable-scatter trial at `e2ced20c` in the same fixture/record-kind format as
