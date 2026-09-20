@@ -361,8 +361,16 @@ asked the complete MSR-4 disposition and incorrectly rejected a valid written
 four-premise certificate. The repair separates those authorities: a blockless
 INV-1 target gets full MSR-4, while certificate redundancy and relation-form
 use admission both remain AUTO-only. The byte-string source and its complete
-output oracle remain unchanged. Fresh verification is pending; the canonical
-rerun must have ordinary loopback permissions rather than skip network tests.
+output oracle remain unchanged. The new regression pairs a blockless target
+with the same target's four-premise certificate and requires both to discharge,
+with the certificate retained as nonredundant. Canonical `make check` on
+`c5919f4a` passes all groups in 351.31 seconds: static, 1548 library and 14 CLI
+unit tests, all 72 corpus tests including the full native conformance adapter,
+runtime, and maintained libraries. Network cases execute with ordinary
+loopback permissions; none are skipped. Both sequential and parallel Vector
+observers see 12 allocations released exactly once. This is a complete local
+correctness result, not completion of the held schema repair or performance
+investigation.
 
 Pending compiler amendments were reconciled with the current specification
 and implementation: allocation metadata propagates across checked calls but
@@ -384,6 +392,34 @@ out a new generated-code change between those revisions. The hosts differ
 (AMD EPYC 7763 versus Intel Xeon 6973P-C), so the magnitude change establishes
 no compiler cause. The code-placement and allocation-alignment questions
 remain open; no threshold or workload was changed.
+
+On published head `c5919f4a`, hosted correctness run 35530960316 passes all
+five groups on Linux and macOS, and IO run 35530960286 passes Linux and
+Windows. Compute run 35530963907 compares synthetic merge `38d32f6e` against
+`c12d6dd1` on AMD EPYC 7763. Its records LLVM modules, objects and executables
+for both arms are byte-identical to those from 35527433610. The current
+records ratios are 1.069483 at one worker, 0.930765 at two and 0.899990 at
+four; both parallel widths are adverse in every paired pass. The other four
+kernels pass, as does the identical-image null control; the known-slowdown
+control detects all five kernels. This preserves the unresolved parallel
+performance failure despite the now-green correctness groups.
+
+A disposable manual-only worker-placement replay at research revision
+`1bc39a55` ran once as workflow 35531551236. It holds the candidate's exact
+440-byte worker, ordinary code and data, sequential clone, and native runtime
+fixed, apart from the audited four-byte tail-jump relocation to that worker.
+All four constructed residues pass the existing oracle at one, two and four
+workers. The prewritten primary is residue 48 versus residue 16, preceded by
+an identical-image null; no other residue is timed. Supporting the hypothesis
+requires both parallel ratios below 0.97 with at least four adverse pairs,
+one-worker neutrality in [0.97, 1.03], and passing unchanged-kernel controls.
+On AMD EPYC 9V74 with Clang 18.1.3 the null and controls pass, but records
+instead measures 0.999960, 1.054869 and 1.038302, with zero and one adverse
+pair at the parallel widths. This does not support the proposed mechanism
+on that host. It does not rule out every placement effect on the different
+EPYC 7763 host of the original failure, and selects no production alignment
+policy. The run's `worker-placement-replay-ubuntu-24.04` artifact retains
+provenance, static checks, images, oracle logs and both raw comparisons.
 
 The first canonical `make check` integration attempt stopped at design lint:
 the FN-4 refinement amendment has two decisions missing the required
@@ -967,7 +1003,7 @@ library validation of that source migration is pending.
 
 ## Checker round 2 (range references), 2026-09-20
 
-- OWNER: FN-9's difference-bound fragment admits one datum per side, but PRE-1's own append/split_off rows write `ensures deref(destination).len == deref(entry(destination)).len + deref(entry(source)).len [- index]` (two/three datums). Compiler faithfully refuses the prelude (4 cases stop). Options: (a) restate the two rows inside the fragment (e.g. `ensures deref(source).len == 0_u64; ensures deref(destination).len >= deref(entry(destination)).len;` losing the exact sum), (b) widen FN-9/ENT-4 to two datums on a side (prover change). 
+- OWNER: FN-9's difference-bound fragment admits one datum per side, but PRE-1's own append/split_off rows write `ensures deref(destination).len == deref(entry(destination)).len + deref(entry(source)).len [- index]` (two/three datums). Compiler faithfully refuses the prelude (4 cases stop). Options: (a) restate the two rows inside the fragment (e.g. `ensures deref(source).len == 0_u64; ensures deref(destination).len >= deref(entry(destination)).len;` losing the exact sum), (b) widen FN-9/ENT-4 to two datums on a side (prover change).
 - corpus: OWN-1 makes a struct of copy fields affine; 6 own5/own1 cases build Array<Slot,2> with array_filled (copy-only). Restate via slots_new + place_back + slots_into_array (assigned to checker round 3).
 - FIXED spec: OP-14 states its operand refusal; INV-1 measure place through deref.
 - todo.md: window-operation calls kill no measure fact of the window they write (root of ~30 remaining failures and several unsound accepts).
