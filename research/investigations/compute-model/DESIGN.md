@@ -11,6 +11,52 @@ protocol merges. The containers handover added at that revision describes a
 separate, unmerged implementation; it is not this experiment's language or
 compiler. The active specification and executable cases remain authoritative.
 
+## Reference-model scatter investigation
+
+The reference/effect/storage port in PR #70 changes the source mechanisms
+behind the earlier results. This continuation starts at `efd6ebc9`, not at an
+uncommitted port workspace. Later upstream revisions are integrated at named
+checkpoints; correctness and timing observations identify the exact revision
+they describe. The older measurements below remain evidence for their older
+sources and compiler, not measurements of the reference model.
+
+The immediate question is whether temporary references remove the owned
+chunk transfers from stable scatter without losing its independent result
+checks or its useful output parallelism. First reuse the maintained prefix,
+histogram, stencil, sort/graph, and scatter observations in
+`compiler/src/backend/tests/ranges.rs`. Their formal sources and native
+oracles live in `tests/programs/compute/`; this investigation adds no daily
+gate dependency on research. Unrelated port defects are recorded with a
+reproducer and revision for the port's owner, rather than expanding this
+investigation into completion of the entire language migration.
+
+Before selecting an implementation, the discriminating criteria are:
+
+- The unchanged input, stable output, output length, empty/uneven/skewed
+  cases, and runtime bit selection satisfy the existing independent oracle
+  in sequential and overlapping emissions. The overlapping image must still
+  hand out nonempty output work, not just the input partition map.
+- First compare the current take/restore source with reads through references
+  while keeping the block size, chunk representation, packing chain, output
+  allocation, and scheduler fixed. Elimination of aggregate transfers must
+  be visible in generated code; a shorter source alone establishes no cost
+  reduction. Any later algorithm change is a separate comparison.
+- Measure compiler construction, WF analysis/lowering, native construction,
+  and native execution separately. Timing uses bounded, host-locked runs on
+  an otherwise idle host, retaining wall time, process CPU, worker count,
+  input shape, exact sources/build flags, and observer perturbation. Loaded
+  or unverified runs do not select an optimization.
+- Attribute remaining costs to partitioning, count tally, packing, final
+  copies, and allocation/initialization before selecting a scheduler change.
+  Reuse the existing native chain and direct-scatter controls with their
+  different representations stated explicitly. Keep correctness observers
+  separate from timing images.
+
+Reference-based access may remove copies; it does not supply a quantified
+relation between input contents and tight scatter offsets. Padded streams,
+linear packing depth, and final-copy span remain separate questions. This
+continuation does not select a general grain/PGO policy or an I/O mechanism.
+
 ## Consumers and discriminating criteria
 
 These criteria are recorded before the new experiments. All source programs
