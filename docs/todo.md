@@ -355,10 +355,6 @@ condition under which it is taken up.
   prose terms defined once in OWN-1 (copy: copyable; affine: droppable but
   not copyable; linear: neither). Rewrite the several hundred prose uses in
   capability words when a specification pass can afford the review.
-- **Generic linearity bound spelling.** `T: linear` accepts every class and
-  `T: copy` only copy types; the bound names how the body treats `T`, which
-  reads backwards. The current spelling never had an explicit owner ruling;
-  find one that reads in the intuitive direction.
 - **Performance floor after the port.** Re-measure the existing kernels and
   the eight engineering tasks of the matrix rounds once the compiler
   implements v0.60, so that the recorded costs (data-determined index

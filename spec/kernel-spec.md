@@ -176,9 +176,9 @@ program      := item*
 item         := fn_decl | struct_decl | enum_decl | formal_decl | actual_decl | const_decl
               | heap_decl
 heap_decl    := "program" "no_heap" ";"
-struct_decl  := "opaque"? "linear"? "struct" TYPEID generics? "{" doc? field* "}"
+struct_decl  := "opaque"? ("nocopy" | "nodrop")? "struct" TYPEID generics? "{" doc? field* "}"
 field        := "readonly"? IDENT ":" type ";"
-enum_decl    := "linear"? "enum" TYPEID generics? "{" doc? variant* "}"
+enum_decl    := ("nocopy" | "nodrop")? "enum" TYPEID generics? "{" doc? variant* "}"
 variant      := TYPEID "(" vfield_list? ")" ";"
 vfield_list  := vfield ("," vfield)*
 vfield       := IDENT ":" type
@@ -202,9 +202,9 @@ const_decl   := "const" IDENT ":" type "=" cvalue ";"
 fn_bind      := IDENT "=" callee ("::" targs)? ";"
 doc          := "doc" STRING ";"
 generics     := "<" gparam ("," gparam)* ">"
-gparam       := TYPEID ":" (TYPEID | linearity_bound)
+gparam       := TYPEID (":" (TYPEID | capability_bound))?
               | "const" IDENT ":" type | fn_sig | pack_use
-linearity_bound:= "copy" | "affine" | "linear"
+capability_bound:= "copy" | "drop"
 param_list   := param ("," param)*
 param        := IDENT ":" (mode type | "&" "[" type "]")
 ```
@@ -381,13 +381,13 @@ Callee kind is resolved by name lookup [OP-1], the same partition that already s
 [TYPE-2] Composite types: `struct` and `enum`; the three storage shapes `Array`, `Slots`, and `Ring` and the cell `Box` are the prelude's opaque structs [TYPE-9, PRE-1].
 The four are ordinary nominals of the nominal-type TYPEID domain [TYPE-6], written as a TYPEID with `targs` [GRAM-3]; what a declaration cannot state — element storage, the omitted-capacity form, placement, and element domains — is [TYPE-9]'s.
 In this specification's prose `N` stands for a written const argument; source writes a `const` IDENT, lowercase under [FORM-3], as the [PRE-1] rows do.
-Every value of the four is affine [OWN-1] unless its element or content type makes it linear [PROV-6].
-A `struct` or `enum` declaration may carry the `linear` modifier [GRAM-2], which states a logical must-consume obligation on values of that nominal in every scope and changes no component, layout, or construction route [PROV-6].
+`Slots`, `Ring`, and `Box` are declared `nocopy`, so their values are affine unless an element or content type makes them linear, and an `Array` has exactly the capabilities of its element type [OWN-1, PROV-6].
+A `struct` or `enum` declaration may carry one capability modifier [GRAM-2]: `nodrop`, which states a logical must-consume obligation on values of that nominal in every scope, or `nocopy`, which makes its values non-duplicable although every part could be copied; neither changes a component, layout, or construction route [OWN-1, PROV-6].
 A `struct` declaration may carry the `opaque` modifier [GRAM-2], written before `linear` when both are present: an opaque struct has fields and no usable constructor. Its constructor entry [TYPE-6] exists to be refused: a constructor `call` whose leading TYPEID names an opaque struct is a hard error citing TYPE-2 at the complete `call`, and a destructuring `let_stmt` whose TYPEID names one is a hard error citing TYPE-2 at the complete `let_stmt`, each with the restructuring `build it with a construction function [OP-13, PRE-1]`. Its fields obey the ordinary field, ownership, and release rules [OWN-1, PROV-6, STOR-3], and a `move` out of one of its fields is the ordinary [WIN-3] consume. No source-declared opaque struct has a construction function, so a value of one is never formed; the prelude declares the three storage shapes, `Box<T>`, and every host handle as opaque structs and supplies their construction rows [PRE-1].
 A `field` may carry the `readonly` modifier [GRAM-2], in any struct. A path that ends at or passes through a readonly field is never a write target: a `set` whose target is such a path [SET-1], and an argument naming such a path at a reference parameter whose callee row writes that parameter [EFF-5], are each a hard error citing TYPE-2 at the complete target `place` or argument `atom`, with the restructuring `use the operation that changes it, or replace the whole value`. Construction gives a readonly field its value like any other field [GRAM-8], and a whole-value assignment replaces it together with its owner. Its value otherwise changes only through a compiler-owned [PRE-1] operation whose row declares `writes` of it [OP-10]; a declared row may name a readonly field in `writes`, because a row reports every change its callees make [EFF-2]. `readonly` states that the field is not assignable, not that its value is constant.
 
 [TYPE-3] Nameability: every constructible type/mode/effect has a canonical, finite, writable name requiring no compiler execution.
-The `linear` modifier and a generic parameter's linearity bound are properties of a declaration and not components of a type name: two instances of one nominal have one name whether or not its declaration is marked, and no name spells a linearity class [PROV-6].
+A capability modifier and a generic parameter's capability bound are properties of a declaration and not components of a type name: two instances of one nominal have one name whether or not its declaration is marked, and no name spells a capability [PROV-6].
 
 [TYPE-4] There are no implicit conversions.
 Numeric value conversion is the single explicit op `cvt::<Src, Dst>(x)`.
@@ -430,7 +430,7 @@ The grammar role, never an inferred type or expected result, selects the domain 
 | lexical IDENT | top-level `fn_decl`; raw function-kind `gparam`; top-level `const_decl`; const `gparam`; `param`; `let_stmt`; `for_stmt` binder; arm `fieldbind` binders; `contract_define`; FN-9-owned result and route candidates; PRE-1 functions | a `callee` IDENT admits a top-level function, in-scope function parameter, or PRE-1 function; an unqualified `function_arg` or `fn_bind` right side admits an ordinary function or function parameter; `const` IDENT admits an in-scope const generic or earlier named const; `cvalue` IDENT admits an earlier named const; `pbase` admits an in-scope runtime value binding, contract definition, admitted symbolic result datum, named const, or in-scope const generic [MSR-6] |
 | nominal-type TYPEID | source `struct_decl` and `enum_decl` names; source formal and actual groups; PRE-1 nominal types; lexical type `gparam`s overlay this domain while live | a runtime `type` or generic-numeric suffix admits only its ordinary type class; an explicit `targ` additionally admits a formal or actual abbreviation; a `pack_use` admits a formal or actual group, with FN-3/FN-5 checking its position and member selection |
 | constructor TYPEID | each source struct constructor under its struct TYPEID; every source enum `variant`; PRE-1 variants, classified as struct-constructor or enum-variant; PRE-1 struct constructors; an opaque struct's constructor, existing only to be refused [TYPE-2] | the leading TYPEID of constructor `call` admits either class; the leading TYPEID of `arm` or `result_route` admits only enum-variant |
-| numeric-bound TYPEID | the two built-in bounds `Int` and `Float` [PRE-1] | the bound TYPEID of a type `gparam`; a linearity bound instead uses its fixed grammar spelling [GRAM-2, PROV-6] |
+| numeric-bound TYPEID | the two built-in bounds `Int` and `Float` [PRE-1] | the bound TYPEID of a type `gparam`; a capability bound instead uses its fixed grammar spelling [GRAM-2, PROV-6] |
 | LABEL | an optional LABEL written by `loop_stmt` or `for_stmt` | an optional LABEL written by `break_stmt` |
 | invariant IDENT | names written by `header_invariant` and `invariant_stmt` | the IDENT premise alternative of `use_premise` |
 
@@ -515,7 +515,7 @@ Every aggregate therefore holds only owned values, which is what [STOR-7] rests 
 `Array`, `Slots`, and `Ring` are the prelude's opaque structs [TYPE-2, PRE-1], each declared with a const capacity parameter N and its measures as readonly fields [MSR-1]; their element storage is compiler-owned and reached only by a subscript [OP-4] and the window operations [OP-10].
 `Array<T, N>`, `Slots<T, N>`, and `Ring<T, N>` are the constant-capacity forms, whose capacity is the type constant N [CONST-1] and whose storage is inline in the owner or the stack frame [STOR-1].
 `Array<T>`, `Slots<T>`, and `Ring<T>` are the runtime-capacity forms, written by omitting the const argument N, whose capacity is fixed at construction and read as the readonly field `cap`, or as `len` for an `Array<T>` [MSR-1]; a runtime-capacity form may appear only as the content of a `Box` — the type of its `inner` field — and never inline in another value and never as a local binding; every other position is a hard error citing TYPE-9 at the complete `type`, with the restructuring `wrap it in a Box, or write the constant-capacity form`.
-`Box<T>` is the prelude's opaque struct `opaque struct Box<T: linear> { inner: T; }` [TYPE-2, PRE-1]: its one field `inner` is its content, stored in exactly one heap object the `Box` value owns [STOR-1]; T is any nameable type [TYPE-3], including a runtime-capacity form; there is one heap [STOR-8], a `Box` carries no brand, and it may be moved, stored in an aggregate, and returned freely.
+`Box<T>` is the prelude's opaque struct `opaque nocopy struct Box<T> { inner: T; }` [TYPE-2, PRE-1]: its one field `inner` is its content, stored in exactly one heap object the `Box` value owns [STOR-1]; T is any nameable type [TYPE-3], including a runtime-capacity form; there is one heap [STOR-8], a `Box` carries no brand, and it may be moved, stored in an aggregate, and returned freely.
 The content is reached by the ordinary field step, `b.inner`, and through a reference to the cell as `deref(cell).inner`, where `deref` steps through the reference and `inner` through the cell; `deref` never reaches the content itself [TYPE-7, REF-1]. `let n = move b.inner;` consumes the `Box`, yields its content, and frees the cell [WIN-3].
 A `move` of a runtime-capacity content is a hard error citing TYPE-9 at the complete `place`, with the restructuring `let the Box release it at scope exit, or empty it and call free_empty(move b) [OP-14]`.
 The element type of any shape is any nameable type, copy, affine, or linear [OWN-1, PROV-6].
@@ -597,10 +597,12 @@ Enum-typed consts and written generic construction arguments in const position a
 ## 5. Ownership and references
 
 [OWN-1] Every value has exactly one owner.
-A type is copy, affine, or linear [PROV-6]: primitives (TYPE-1) and tag-only enums (every variant nullary; `Bool` is the canonical case) are copy, and every other owned composite, including `Array`, `Slots`, `Ring`, and `Box` [TYPE-9], is affine unless [PROV-6] makes it linear.
+A type has two capabilities, copy and drop, and its class is read from them: a type with both is *copy*, a type with drop alone is *affine*, and a type with neither is *linear* [PROV-6]; no type has copy without drop.
+Primitives (TYPE-1) have both. Every other type has a capability exactly when every part it owns has it [PROV-6] — its fields, its variant payload fields, its `Box` content, and the elements of a storage shape — and its declaration does not remove it [GRAM-2]: `nocopy` removes copy, and `nodrop` removes drop and copy with it. A tag-only enum and a struct of copy fields are therefore copy, `Bool` being the canonical case; the prelude declares `Slots`, `Ring`, `Box`, and every host handle `nocopy` or `nodrop` [PRE-1], so a type owning one of them is not copy, and an `Array` has the capabilities of its element type [TYPE-9].
+A type parameter has the capabilities its bound grants [PROV-6], so a generic nominal's class is decided at each instance from its arguments.
 An affine or linear place rooted in a live own-mode binding is consumed exactly once by an explicit `move p`, by use as an own-place match scrutinee under [OWN-13], by use as the direct bare affine `Result<T, E>` place operand of `propagate` under [ERR-3], or by the `move place` of a destructuring consume [PROV-6].
 Every other bare `place` expression of affine type is a hard error, and `move p` on a copy value is a hard error (copy values are used bare — one spelling per meaning, FORM-1).
-That spelling judgment is made once per written body: at a concrete instance of a generic template it is not re-made, and a `move` of a value whose type parameter was bounded `affine` or `linear` denotes a copy there [FN-2, PROV-6].
+That spelling judgment is made once per written body: at a concrete instance of a generic template it is not re-made, and a `move` of a value whose type parameter was bounded `drop` or left unbounded denotes a copy there [FN-2, PROV-6].
 The bare-affine mechanical fix is position-conditional: in a function body it is write `move p`, while in a `contract_block`, where [FN-8] rejects `move` itself, it is restate the definition or clause over copy operands or non-consuming admitted reads, so the repair never instructs a spelling FN-8 forbids.
 Resolving and evaluating the target of SET-1 does not by itself read, copy, or move the selected value or its affine owner.
 After any consuming use, the whole binding rooting `p` is dead (partial moves kill the whole binding) [WIN-3]; any later use of a dead binding, and any write or `set` of a place projected, dereferenced, or subscripted from a dead root, is an error at the later use or target place.
@@ -684,14 +686,14 @@ A binding whose value is linear [PROV-6] takes no compiler-derived release on su
 This rule states the liveness premise [SET-1] rechecks after a right-hand side, and the premise [OWN-11] reads at a backedge; it adds no scope-exit action and removes none.
 
 [PROV-6] Linearity is a property of the type, closed under ownership.
-A type is linear exactly when its declaration carries the `linear` modifier [GRAM-2] or it owns, at any depth, a linear type; a struct, an enum, an `Array`, a `Slots`, a `Ring`, or a `Box` [TYPE-9] owning a linear part is linear, and every other type is copy or affine by [OWN-1].
+A type is linear, lacking the drop capability [OWN-1], exactly when its declaration carries the `nodrop` modifier [GRAM-2] or it owns, at any depth, a linear type; a struct, an enum, an `Array`, a `Slots`, a `Ring`, or a `Box` [TYPE-9] owning a linear part is linear, and every other type is copy or affine by [OWN-1].
 Linearity is a property of the type and not of a scope.
 This rule refines [OWN-1]'s classification and replaces none of it: a copy value is never linear, and a value this rule does not make linear keeps exactly the disposition [OWN-1] and [STOR-3] give it.
 A type owns its fields, its enum variant payloads, its `Box` content [TYPE-9], and the elements of an `Array`, a `Slots`, or a `Ring` it is.
 A full `Array` has the same element-type ownership closure as a window [WIN-1]: if T is linear then `Array<T, N>` is linear, including when N is zero; a zero extent changes the executed element count, not this type-level judgment.
 A written type argument is owned through the field, payload, or element position it lands in and never by the type that writes it.
 
-The `linear` modifier is one optional atom on `struct_decl` and `enum_decl` [GRAM-2] and states a logical obligation, holding in every scope.
+The `nodrop` modifier is one optional atom on `struct_decl` and `enum_decl`, written in the place `nocopy` may be written instead [GRAM-2], and states a logical obligation, holding in every scope.
 It is admitted only on a nominal [OWN-1] classifies as affine; `linear` on a tag-only enum, which [OWN-1] makes copy, is a hard error citing PROV-6 at that `enum_decl`, with the restructuring `give a variant a payload, or put the obligation on the value the issuer hands out`.
 
 A linear value leaves a scope by exactly two routes: moved out whole, or destructured whole [WIN-3].
@@ -720,14 +722,14 @@ A consume of a proper sub-place of a value one of whose remaining parts is linea
 A partial consume is a hard error citing PROV-6 at the complete consumed `place`, naming the residual linear part, with the restructuring `destructure the whole value with let N(f: a, ...) = move v;`.
 The refusal is stated over the consume, so it reaches every consuming use of that sub-place [OWN-1].
 
-A type parameter is written `T: copy`, `T: affine`, or `T: linear` [GRAM-2]: the bound names the linearity class the declaration is written for, and every judgment of this rule inside that declaration's body reads the bound.
-The three classes form the strict chain `copy < affine < linear`, ordered by what a body may do with a value of the class: under `copy` the body may duplicate the value, use it bare, and drop it; under `affine` it may `move` it at most once and may drop it; under `linear` it must consume it exactly once and may never drop it.
-`copy` names [OWN-1]'s copy class; `affine` names the class whose values the compiler-derived release reclaims; `linear` names the class whose values carry the modifier or own a part that does.
-A type parameter's bound is always written and never inferred, and every type parameter of a function or a nominal carries exactly one [FN-2, GRAM-2].
-Satisfaction is that chain read left to right: an argument of class C instantiates a bound B exactly when C <= B, so `copy` accepts copy arguments only, `affine` accepts copy and affine, and `linear` accepts every class.
+A type parameter's bound is a capability filter on its argument [GRAM-2]: `T: copy` requires an argument that can be copied, `T: drop` requires one that can be dropped, and a parameter written with no bound requires nothing; every judgment of this rule inside that declaration's body reads the bound.
+What the bound requires of the argument is what it grants the body: under `T: copy` the body may duplicate the value, use it bare, and drop it; under `T: drop` it may `move` it at most once and may drop it; with no bound it must consume it exactly once and may never drop it. These are the classes copy, affine, and linear of [OWN-1] read at the parameter, and they form the strict chain `copy < affine < linear`.
+`copy` names [OWN-1]'s copy capability and `drop` the capability by which the compiler-derived release reclaims a value; a parameter with no bound also admits a type whose declaration carries `nodrop` or that owns a part that does.
+A type parameter's bound is never inferred: an absent bound means no capability, and a type parameter carries at most one bound [FN-2, GRAM-2].
+Satisfaction is the filter itself: `T: copy` accepts copy arguments only, `T: drop` accepts copy and affine arguments, and a parameter with no bound accepts every class.
 An instantiation whose argument's class does not satisfy the written bound is a hard error citing PROV-6 at that instantiation's `call`, naming the parameter, the bound, and the argument.
-A type parameter bounded `linear` is linear at the one symbolic instance its body is checked at [FN-2], so a body that lets such a parameter's value reach a scope exit receives this rule's own not-consumed rejection there, naming the written bound in place of a `linear` declaration.
-The bound is a linearity class: it supplies no function-kind argument, selects no behavior, and creates no bound-satisfaction judgment other than this one [FN-2, FN-3].
+A type parameter with no bound is linear at the one symbolic instance its body is checked at [FN-2], so a body that lets such a parameter's value reach a scope exit receives this rule's own not-consumed rejection there, naming the absent bound in place of a `nodrop` declaration.
+The bound is a capability filter: it supplies no function-kind argument, selects no behavior, and creates no bound-satisfaction judgment other than this one [FN-2, FN-3].
 
 The checked program retains, before lowering [DIAG-2], each type's linearity class, each release edge's release graph, each destructuring consume's binder list, and each declaration bound that was checked.
 
@@ -791,7 +793,7 @@ A `const` item [CONST-2] is never released.
 Every other frame-resident owned value [STOR-1] has no release action.
 
 A prelude host handle [PRE-1] has no fields, so its release is empty; every other opaque struct [TYPE-2] takes the release its fields give it under this rule, `Box` the cell case above.
-An opaque struct's `linear` modifier, and only the ordinary ownership closure of [PROV-6], requires explicit consumption.
+An opaque struct's `nodrop` modifier, and only the ordinary ownership closure of [PROV-6], requires explicit consumption.
 No source declaration, annotation, attribute, contract, or binding attaches a finalizer or any other user-defined action to a value's release.
 
 A successful [SET-1] assignment derives no finalizer or cleanup edge and no release beyond the old value's own: a copy target's previous value needs none, and an affine target's previous value takes the release [WIN-3] states.
@@ -1197,10 +1199,10 @@ The [FN-8] uninhabited judgment is likewise instance-local and never propagates 
 Every explicit type argument supplied to a function, source nominal, or [PRE-1] nominal generic parameter must be a value type, so a reference kind is a hard error citing FN-2 at that complete `targ` [TYPE-8], with the restructuring `make the reference a direct written parameter instead of a generic argument`.
 Arguments this rule admits remain governed by the ordinary bound and substitution rules.
 A generic type parameter's numeric bound is admitted only when it resolves to the built-in `Int` or `Float` bound [PRE-1]. A formal or actual group is not a numeric bound; it occupies its own explicit argument-list position [FN-3].
-A written `copy`, `affine` or `linear` bound on a type parameter is [PROV-6]'s linearity class, written and never inferred, read once at the declaration and checked at every instantiation by that rule. It selects no behavior; function-kind parameters supply behavior separately.
-Every type parameter of a function or of a nominal carries exactly one bound, written and never inferred, with no default: one built-in numeric bound, `Int` or `Float` [PRE-1], or one of the three linearity classes [GRAM-2, PROV-6]; a numeric bound selects the numeric rows [OP-1] and implies the copy class.
+A written `copy` or `drop` bound on a type parameter is [PROV-6]'s capability filter, never inferred, read once at the declaration and checked at every instantiation by that rule. It selects no behavior; function-kind parameters supply behavior separately.
+Every type parameter of a function or of a nominal carries at most one bound, never inferred: one built-in numeric bound, `Int` or `Float` [PRE-1], or one capability bound, `copy` or `drop` [GRAM-2, PROV-6]; an absent bound grants the body no capability; a numeric bound selects the numeric rows [OP-1] and implies copy.
 The template is the spelling authority: a generic body is checked once at the symbolic instance of its own parameters, under each parameter's written bound, and the concrete-instance recheck this rule performs does not re-judge the spellings [FORM-1] keys on a value's copy/affine class — `move p` against a bare `p` [OWN-1].
-At a concrete instance a `move` of a value whose parameter was bounded `affine` or `linear` denotes a copy where the argument is copy; every other judgment of that rule is made at the instance, because each is a property of the instance and not of the written spelling.
+At a concrete instance a `move` of a value whose parameter was bounded `drop` or left unbounded denotes a copy where the argument is copy; every other judgment of that rule is made at the instance, because each is a property of the instance and not of the written spelling.
 
 [FN-3] A function-kind generic parameter is one `fn_sig`: an ordered ordinary callable signature with its own effect row, requirements, and ensures. It is a compile-time parameter, never a value, field, receiver, or implicit argument.
 A `formal` declaration names one ordered parameter group. Its header declares type and const parameters with their ordinary bounds; its body declares the function-kind parameters in source order, with distinct member names. A formal header cannot contain another group or a function-kind parameter: groups are flat abbreviations, not functions that construct interfaces.
@@ -1992,68 +1994,68 @@ This rule uses [CAP-1]'s ordinary ownership boundary directly; it introduces no 
 
 [PRE-1] The prelude contributes ordinary nominal, constructor, numeric-bound and function declarations to every compilation unit. Their source visibility, whole-unit collisions, typing, ownership and calls are the ordinary rules; an entry's prelude origin supplies only its deterministic diagnostic ordinal [TYPE-6, DIAG-1].
 
-The prelude's opaque structs [TYPE-2] are the three storage shapes and the cell `Box` [TYPE-9], and the host handles. A host handle has no fields and a host-supplied representation [OP-9], its release is empty [STOR-3], and only a host function row below returns one; the shapes and `Box` are built by the construction rows [OP-13]. An opaque struct is neither copy nor const-eligible [OWN-1, CONST-2]; its `linear` modifier and the ordinary ownership closure are exactly [PROV-6]. Their declarations are:
+The prelude's opaque structs [TYPE-2] are the three storage shapes and the cell `Box` [TYPE-9], and the host handles. A host handle has no fields and a host-supplied representation [OP-9], its release is empty [STOR-3], and only a host function row below returns one; the shapes and `Box` are built by the construction rows [OP-13]. An opaque struct is not const-eligible [CONST-2]; its capability modifier and the ordinary ownership closure are exactly [OWN-1, PROV-6]. Their declarations are:
 
 ```
-opaque struct Array<T: linear, const n: u64> {
+opaque struct Array<T, const n: u64> {
   readonly len: u64;
 }
 
-opaque struct Slots<T: linear, const n: u64> {
+opaque nocopy struct Slots<T, const n: u64> {
   readonly len: u64;
   readonly cap: u64;
 }
 
-opaque struct Ring<T: linear, const n: u64> {
+opaque nocopy struct Ring<T, const n: u64> {
   readonly len: u64;
   readonly cap: u64;
   readonly head: u64;
 }
 
-opaque struct Box<T: linear> {
+opaque nocopy struct Box<T> {
   inner: T;
 }
 
-opaque struct Args {
+opaque nocopy struct Args {
 }
 
-opaque struct HostString {
+opaque nocopy struct HostString {
 }
 
-opaque struct RelativePath {
+opaque nocopy struct RelativePath {
 }
 
-opaque linear struct DirectoryRead {
+opaque nodrop struct DirectoryRead {
 }
 
-opaque linear struct ReadFile {
+opaque nodrop struct ReadFile {
 }
 
-opaque struct OutputStream {
+opaque nocopy struct OutputStream {
 }
 
-opaque struct ExitStatus {
+opaque nocopy struct ExitStatus {
 }
 
-opaque linear struct DirectorySource {
+opaque nodrop struct DirectorySource {
 }
 
-opaque struct HandleFactory {
+opaque nocopy struct HandleFactory {
 }
 
-opaque struct InputStream {
+opaque nocopy struct InputStream {
 }
 
-opaque struct SocketAddress {
+opaque nocopy struct SocketAddress {
 }
 
-opaque linear struct TcpListener {
+opaque nodrop struct TcpListener {
 }
 
-opaque linear struct TcpReceive {
+opaque nodrop struct TcpReceive {
 }
 
-opaque linear struct TcpSend {
+opaque nodrop struct TcpSend {
 }
 ```
 
@@ -2065,12 +2067,12 @@ enum Bool {
   False();
 }
 
-enum Option<T: linear> {
+enum Option<T> {
   None();
   Some(value: T);
 }
 
-enum Result<T: linear, E: linear> {
+enum Result<T, E> {
   Ok(value: T);
   Err(error: E);
 }
@@ -2250,15 +2252,15 @@ fn send_once(send: &TcpSend, source: &[u8], start: own u64, end: own u64) -> res
 fn close_listener(factory: &HandleFactory, listener: own TcpListener) -> result: own Result<unit, IoError> writes(factory);
 fn close_receive(factory: &HandleFactory, receive: own TcpReceive) -> result: own Result<unit, IoError> writes(factory);
 fn close_send(factory: &HandleFactory, send: own TcpSend) -> result: own Result<unit, IoError> writes(factory);
-fn box_new<T: linear>(value: own T) -> result: own Box<T> pure;
+fn box_new<T>(value: own T) -> result: own Box<T> pure;
 fn array_filled<T: copy, const n: u64>(value: own T) -> result: own Array<T, n> pure contract {
   ensures result.len == n;
 };
-fn slots_new<T: linear, const n: u64>() -> result: own Slots<T, n> pure contract {
+fn slots_new<T, const n: u64>() -> result: own Slots<T, n> pure contract {
   ensures result.len == 0_u64;
   ensures result.cap == n;
 };
-fn ring_new<T: linear, const n: u64>() -> result: own Ring<T, n> pure contract {
+fn ring_new<T, const n: u64>() -> result: own Ring<T, n> pure contract {
   ensures result.len == 0_u64;
   ensures result.cap == n;
   ensures result.head == 0_u64;
@@ -2266,72 +2268,72 @@ fn ring_new<T: linear, const n: u64>() -> result: own Ring<T, n> pure contract {
 fn box_array_filled<T: copy>(count: own u64, value: own T) -> result: own Box<Array<T>> pure contract {
   ensures result.inner.len == count;
 };
-fn box_slots_new<T: linear>(capacity: own u64) -> result: own Box<Slots<T>> pure contract {
+fn box_slots_new<T>(capacity: own u64) -> result: own Box<Slots<T>> pure contract {
   ensures result.inner.len == 0_u64;
   ensures result.inner.cap == capacity;
 };
-fn box_ring_new<T: linear>(capacity: own u64) -> result: own Box<Ring<T>> pure contract {
+fn box_ring_new<T>(capacity: own u64) -> result: own Box<Ring<T>> pure contract {
   ensures result.inner.len == 0_u64;
   ensures result.inner.cap == capacity;
   ensures result.inner.head == 0_u64;
 };
-fn slots_from_array<T: linear, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pure contract {
+fn slots_from_array<T, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pure contract {
   ensures result.len == n;
   ensures result.cap == n;
 };
-fn slots_into_array<T: linear, const n: u64>(values: own Slots<T, n>) -> result: own Array<T, n> pure contract {
+fn slots_into_array<T, const n: u64>(values: own Slots<T, n>) -> result: own Array<T, n> pure contract {
   requires values.len == n;
   ensures result.len == n;
 };
-fn place_back<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window.next), writes(window.len) contract {
+fn place_back<W, T>(window: &W, value: own T) -> result: own unit writes(window.next), writes(window.len) contract {
   requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
 };
-fn take_back<W: linear, T: linear>(window: &W) -> value: own T writes(window.last), writes(window.len) contract {
+fn take_back<W, T>(window: &W) -> value: own T writes(window.last), writes(window.len) contract {
   requires deref(window).len > 0_u64;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
 };
-fn insert_at<W: linear, T: linear>(window: &W, index: own u64, value: own T) -> result: own unit writes(window.filled), writes(window.next), writes(window.len) contract {
+fn insert_at<W, T>(window: &W, index: own u64, value: own T) -> result: own unit writes(window.filled), writes(window.next), writes(window.len) contract {
   requires index <= deref(window).len;
   requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
 };
-fn remove_at<W: linear, T: linear>(window: &W, index: own u64) -> value: own T writes(window.filled), writes(window.len) contract {
+fn remove_at<W, T>(window: &W, index: own u64) -> value: own T writes(window.filled), writes(window.len) contract {
   requires index < deref(window).len;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
 };
-fn append<W: linear, X: linear>(destination: &W, source: &X) -> result: own unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
+fn append<W, X>(destination: &W, source: &X) -> result: own unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
   requires deref(source).len <= deref(destination).cap - deref(destination).len;
   ensures deref(destination).len >= deref(entry(destination)).len;
   ensures deref(source).len == 0_u64;
 };
-fn split_off<W: linear, X: linear>(source: &W, index: own u64, destination: &X) -> result: own unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
+fn split_off<W, X>(source: &W, index: own u64, destination: &X) -> result: own unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
   requires index <= deref(source).len;
   requires deref(source).len - index <= deref(destination).cap - deref(destination).len;
   ensures deref(source).len == index;
   ensures deref(destination).len >= deref(entry(destination)).len;
 };
-fn grow<T: linear>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(cell) contract {
+fn grow<T>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(cell) contract {
   requires capacity >= deref(cell).inner.cap;
   ensures deref(cell).inner.cap == capacity;
   ensures deref(cell).inner.len == deref(entry(cell)).inner.len;
 };
-fn place_front<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window) contract {
+fn place_front<W, T>(window: &W, value: own T) -> result: own unit writes(window) contract {
   requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
   ensures deref(window).cap == deref(entry(window)).cap;
   ensures deref(window).head >= 0_u64;
   ensures deref(window).head <= deref(window).cap;
 };
-fn take_front<W: linear, T: linear>(window: &W) -> value: own T writes(window) contract {
+fn take_front<W, T>(window: &W) -> value: own T writes(window) contract {
   requires deref(window).len > 0_u64;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
   ensures deref(window).cap == deref(entry(window)).cap;
   ensures deref(window).head >= 0_u64;
   ensures deref(window).head <= deref(window).cap;
 };
-fn swap<T: linear>(first: &T, second: &T) -> result: own unit writes(first), writes(second);
-fn free_empty<W: linear>(window: own W) -> result: own unit pure contract {
+fn swap<T>(first: &T, second: &T) -> result: own unit writes(first), writes(second);
+fn free_empty<W>(window: own W) -> result: own unit pure contract {
   requires window.len == 0_u64;
 };
 ```
