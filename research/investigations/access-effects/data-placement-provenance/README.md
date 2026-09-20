@@ -147,7 +147,8 @@ about residues within the one controlled image.
 Before either controlled contrast, the exact unmodified baseline/candidate pair
 from the same artifact must reproduce the records failure on the experiment
 host under the unchanged formal `tests/performance/compare.sh`. The live runner,
-checked before any construction, must identify exactly as an AMD EPYC 7763;
+checked before any construction, must identify exactly as an AMD EPYC 7763
+64-Core Processor or AMD EPYC 9V45 96-Core Processor;
 the workflow archives its `lscpu`, kernel, Clang, and linker identity. Records must be
 below 0.97 with at least four of five adverse pairs at both W2 and W4, while the
 identical-image null has no `FAIL` or `suspect`, and every unchanged kernel has
@@ -190,7 +191,7 @@ Prewritten interpretation:
   residues or threshold.
 
 A supporting result establishes only forced-residue sensitivity on this custom
-overallocated path on the measured EPYC 7763 host. A neutral result establishes
+overallocated path on the one measured, qualified host. A neutral result establishes
 only its absence on that path. Same-host reproduction and the earlier pointer
 observations motivate the test but do not isolate causality in the original
 images. Neither outcome selects an alignment policy, Box ABI, header order, or
@@ -223,3 +224,21 @@ identity, so the observed mismatch has no recorded model string. The workflow
 now records identity before testing the same requirement. No timing result or
 experimental criterion changed; retries of these pre-measurement infrastructure
 stops do not select from timing outcomes.
+
+Run [35539370298](https://github.com/mbbill/Whitefoot/actions/runs/35539370298)
+at `383577a1` recorded an EPYC 9V74 and stopped at the original 7763-only
+qualification. No controlled diagnostic has collected timing data.
+
+Before any diagnostic timing, eligibility was revised to the two model strings
+above. Independent formal run
+[35538118987](https://github.com/mbbill/Whitefoot/actions/runs/35538118987)
+had already observed the same pinned baseline/candidate records images failing
+at W2/W4 on an EPYC 9V45 (ratios 0.959639/0.942219, five adverse pairs each).
+This supplies a ground to test that model as well, not a pass under the old
+protocol or a forced-residue result. The formal run also had quadrature/stencil
+suspects, so it does not satisfy this diagnostic's stricter qualification:
+either admitted host still must pass fresh same-host reproduction and all
+strict controls before residue comparisons have meaning. The comparison stays
+within one host, does not pool models, and transfers neither the old 7763
+address observations nor a result between models. Outcomes are not resampled;
+the fixed residues, oracle, counts, and thresholds are unchanged.

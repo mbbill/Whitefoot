@@ -5,8 +5,10 @@ if [[ ${WF_RUN_APPROVED:-} != 1 || $# != 4 ]]; then
   exit 2
 fi
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || exit 2
-test "$(lscpu | sed -n 's/^Model name:[[:space:]]*//p')" = \
-  'AMD EPYC 7763 64-Core Processor'
+case "$(lscpu | sed -n 's/^Model name:[[:space:]]*//p')" in
+  'AMD EPYC 7763 64-Core Processor'|'AMD EPYC 9V45 96-Core Processor') ;;
+  *) echo 'runner model is outside the preregistered set' >&2; exit 2 ;;
+esac
 checkout=$(realpath "$1")
 artifact=$(realpath "$2")
 built=$(realpath "$3")

@@ -51,7 +51,10 @@ jobs:
             clang --version
             ld --version
           } > "$RUNNER_TEMP/current-host.txt"
-          test "$model" = 'AMD EPYC 7763 64-Core Processor'
+          case "$model" in
+            'AMD EPYC 7763 64-Core Processor'|'AMD EPYC 9V45 96-Core Processor') ;;
+            *) echo 'runner model is outside the preregistered set' >&2; exit 1 ;;
+          esac
       - name: Construct and statically audit one controlled image
         env:
           WHITEFOOT_CHECK_TIMEOUT: 300
