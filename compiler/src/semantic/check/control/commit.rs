@@ -173,6 +173,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         self.judge_commit_admission(&mutation, target_node, revives, read_out, bindings)?;
+        // [WIN-3, STOR-3] "Assigning over any owned place releases the old
+        // value when it is affine." A directly named binding is the one
+        // target whose old value may already be gone: the commit revives an
+        // entry-dead binding, and a right-hand side that reads the target out
+        // takes the value the write would otherwise displace. Both were
+        // admitted just above, and neither is readable from the target's type
+        // or path, so the judgment that settled them records its answer here
+        // for lowering [SET-1, LIV-1, DIAG-2].
+        if let CheckedSetTarget::Place(place) = &mut mutation.target {
+            place.displaces_live_value = !place.declares && !revives && !read_out;
+        }
         // Every source rejection of this statement is judged above; a target
         // this compiler cannot lower stops here and nowhere earlier [DIAG-1].
         if let Some(feature) = mutation.unsupported {
@@ -352,6 +363,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         fields: Vec::new(),
                         ty: local.ty,
                         declares: false,
+                        // [REF-1] a reference rebinding writes no storage, so
+                        // it displaces no owner.
+                        displaces_live_value: false,
                     },
                 ),
                 value: value.expression,

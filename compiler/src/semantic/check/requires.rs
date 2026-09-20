@@ -821,7 +821,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get()
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?
                 .result_type;
-            if let Some(expanded) = self.build_clause_result_place(atom)? {
+            if let Some(expanded) =
+                self.build_clause_result_place(atom, bindings, expanded_bindings)?
+            {
                 return Ok(expanded);
             }
             return Ok(ExpandedClauseExpression::InvalidSelectorUse {
@@ -901,6 +903,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn build_clause_result_place(
         &self,
         atom: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
     ) -> Result<Option<ExpandedClauseExpression>, CheckStop> {
         let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
             return Ok(None);
@@ -922,7 +926,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(None);
         };
         let (projections, measured_type) =
-            self.clause_member_projections(&suffixes[..suffixes.len() - 1], datum_type)?;
+            self.clause_member_projections(
+                &suffixes[..suffixes.len() - 1],
+                datum_type,
+                bindings,
+                expanded_bindings,
+            )?;
         let row = self.clause_measure_row(measure, measured_type, false)?;
         Ok(Some(ExpandedClauseExpression::Operation {
             row,
@@ -950,9 +959,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         suffixes: &[NodeId],
         mut ty: CheckedType,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
     ) -> Result<(Vec<GoalProjection>, CheckedType), CheckStop> {
         let mut projections = Vec::with_capacity(suffixes.len());
         for suffix in suffixes {
+            // [MSR-1] "An admitted measure place is a `place` formed with any
+            // number of field-selection and enum-payload `psuffix`es, `deref`
+            // wrappings, and subscripts. The subscript admission is what makes
+            // `table[i].len` a term." A clause reads that place exactly as the
+            // body does, so a subscript written here is one projection and not
+            // a composite value this version cannot represent.
+            if self.subscript_offset(*suffix)?.is_some() {
+                let (projection, element) =
+                    self.clause_subscript_projection(*suffix, ty, bindings, expanded_bindings)?;
+                projections.push(projection);
+                ty = element;
+                continue;
+            }
             if let CheckedType::Nominal(nominal) = ty
                 && let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind
             {
@@ -979,6 +1003,131 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ty = reached;
         }
         Ok((projections, ty))
+    }
+
+    /// One written subscript inside a clause measure place [MSR-1].
+    ///
+    /// [MSR-1] fixes what may stand there: "An offset occurring inside a
+    /// measure place is a written integer literal, a live `own`
+    /// fragment-integer place, or an in-scope const generic [MSR-6], because
+    /// the place's identity is decided over it." A clause is no evaluation,
+    /// so the offset carries no occurrence of its own: [ENT-2] makes two
+    /// places one term when "their canonical source spellings are
+    /// byte-identical", which is exactly what keys this projection, and
+    /// [MSR-2] puts the offset's own support into every enclosing measure
+    /// term so a write to it kills them all.
+    ///
+    /// A parameter offset is kept as the formal it names, because a caller
+    /// substitutes its own actual there [FN-8, CALL-6]; a literal and a const
+    /// are values and need no substitution. "An offset of any other form in a
+    /// measure place is not this rule's rejection: it is a place this version
+    /// does not represent, reported as the compiler capability it is."
+    fn clause_subscript_projection(
+        &self,
+        suffix: NodeId,
+        base: CheckedType,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
+    ) -> Result<(GoalProjection, CheckedType), CheckStop> {
+        let element = match base {
+            CheckedType::Buffer { element } => element.ty(),
+            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+                self.element_type(element)?
+            }
+            _ => {
+                return self
+                    .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+            }
+        };
+        let offset = self
+            .subscript_offset(suffix)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let capture = crate::semantic::places::CapturedValue::unknown().capture;
+        let value = |term| {
+            crate::semantic::places::CapturedValue::new(capture, term).goal_identity()
+        };
+        if let Some(literal) = self
+            .tree
+            .direct_token_with(offset, crate::TerminalPredicate::Literal)?
+        {
+            let bytes = self.tree.token_bytes(literal)?;
+            let CheckedValue::Integer { bits, .. } = self.parse_literal(offset, bytes)? else {
+                return self.unsupported(
+                    crate::UnsupportedSemanticFeature::CompositeValues,
+                    suffix,
+                );
+            };
+            return Ok((
+                GoalProjection::Subscript(value(
+                    crate::semantic::places::CapturedTerm::Literal(bits),
+                )),
+                element,
+            ));
+        }
+        if let Some(declaration) = self.clause_const_generic_base(offset)? {
+            return Ok((
+                GoalProjection::Subscript(value(
+                    crate::semantic::places::CapturedTerm::Const(declaration),
+                )),
+                element,
+            ));
+        }
+        let Some(place) = self.tree.first_child_with(offset, Production::Place)? else {
+            return self
+                .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+        };
+        if !self
+            .tree
+            .children_with(place, Production::Psuffix)?
+            .is_empty()
+        {
+            return self
+                .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+        }
+        let pbase = self
+            .tree
+            .first_child_with(place, Production::Pbase)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+        let ResolvedTarget::Source { declaration, class } = usage.target() else {
+            return self
+                .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+        };
+        if class == DeclarationClass::NamedConst {
+            let constant = self
+                .constants
+                .get(&declaration)
+                .copied()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let CheckedValue::Integer { bits, .. } = self.constant(constant)?.value else {
+                return self
+                    .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+            };
+            return Ok((
+                GoalProjection::Subscript(value(
+                    crate::semantic::places::CapturedTerm::Literal(bits),
+                )),
+                element,
+            ));
+        }
+        if class != DeclarationClass::Value {
+            return self
+                .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+        }
+        let local = bindings
+            .get(&declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        match expanded_bindings.get(&local.binding) {
+            Some(ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
+                ordinal,
+                projections,
+                ..
+            })) if projections.is_empty() && local.mode == CheckedMode::Own => Ok((
+                GoalProjection::FormalSubscript { ordinal: *ordinal },
+                element,
+            )),
+            _ => self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix),
+        }
     }
 
     /// The [MSR-1] row one written measure selects over a place of this type
@@ -1166,7 +1315,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if !fields_only.is_empty() {
             let (projections, final_ty) =
-                self.clause_member_projections(fields_only, expression.ty())?;
+                self.clause_member_projections(
+                    fields_only,
+                    expression.ty(),
+                    bindings,
+                    expanded_bindings,
+                )?;
             for projection in projections {
                 expression = expression
                     .with_projection(projection, final_ty)

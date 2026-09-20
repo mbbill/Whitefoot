@@ -1217,21 +1217,19 @@ fn remap_postcondition(
 /// language has one.
 ///
 /// A goal datum's place is a tracked place [ENT-2] clause (a) or a measure
-/// place clause (b): field selections, `deref` wrappings and subscripts. A
-/// payload step, a range step and a window part are steps of the [OWN-7]
-/// relation that no goal datum spells, so a support path stops there. A
-/// shorter support path is the conservative direction: it is a prefix of the
-/// place the fact really rests on, so every event that killed the longer one
-/// still kills it.
+/// place clause (b): field selections, `deref` wrappings, subscripts, and the
+/// one range step the image of an anonymous `&[T]` actual carries [REF-4]. A
+/// payload step and a window part are steps of the [OWN-7] relation that no
+/// goal datum spells, so a support path stops there. A shorter support path
+/// is the conservative direction: it is a prefix of the place the fact really
+/// rests on, so every event that killed the longer one still kills it.
 fn goal_projection_of_step(step: &PlaceStep) -> Option<GoalProjection> {
     match step {
         PlaceStep::Deref => Some(GoalProjection::Deref),
         PlaceStep::Field(field) => Some(GoalProjection::Field(*field)),
         PlaceStep::Index(offset) => Some(GoalProjection::Subscript(offset.goal_identity())),
-        PlaceStep::Payload { .. }
-        | PlaceStep::Range(_)
-        | PlaceStep::Part(_)
-        | PlaceStep::Measure(_) => None,
+        PlaceStep::Range(range) => Some(GoalProjection::Range(range.goal_identity())),
+        PlaceStep::Payload { .. } | PlaceStep::Part(_) | PlaceStep::Measure(_) => None,
     }
 }
 
@@ -2060,6 +2058,7 @@ impl Analyzer<'_, '_> {
                         PlaceRoot::Binding(binding),
                         &place.projections,
                         place.ty,
+                        self.formal_is_range(ordinal),
                     )
                 }
                 PostconditionPlaceRoot::ExitParameter { ordinal } => {
@@ -2069,6 +2068,7 @@ impl Analyzer<'_, '_> {
                         PlaceRoot::Binding(binding),
                         &place.projections,
                         place.ty,
+                        self.formal_is_range(ordinal),
                     )
                 }
                 // [CALL-4] a measure over a result place is instantiated at
@@ -2080,7 +2080,13 @@ impl Analyzer<'_, '_> {
                         return None;
                     };
                     let root = self.postcondition_return_place_root(place.root)?;
-                    self.postcondition_measure_term(*measure, root, &place.projections, place.ty)
+                    self.postcondition_measure_term(
+                        *measure,
+                        root,
+                        &place.projections,
+                        place.ty,
+                        false,
+                    )
                 }
             },
         }
@@ -2094,7 +2100,13 @@ impl Analyzer<'_, '_> {
             }
             PostconditionReturnDatum::Measure(measure, place) => {
                 let root = self.postcondition_return_place_root(place.root)?;
-                self.postcondition_measure_term(*measure, root, &place.projections, place.ty)
+                self.postcondition_measure_term(
+                    *measure,
+                    root,
+                    &place.projections,
+                    place.ty,
+                    false,
+                )
             }
         }
     }
@@ -2168,6 +2180,14 @@ impl Analyzer<'_, '_> {
                 GoalProjection::Field(field) => PlaceStep::Field(*field),
                 GoalProjection::Deref => PlaceStep::Deref,
                 GoalProjection::Subscript(offset) => PlaceStep::Index(*offset),
+                GoalProjection::Range(range) => PlaceStep::Range(*range),
+                // [ENT-2] a formal-valued subscript belongs to a template
+                // alone; both readers replace it before a term is interned,
+                // so an unknown offset here is the conservative reading that
+                // no admitted family separates.
+                GoalProjection::FormalSubscript { .. } => {
+                    PlaceStep::Index(CapturedValue::unknown())
+                }
             })
             .collect::<Vec<_>>();
         let path = ResolvedPlace {
@@ -2177,12 +2197,22 @@ impl Analyzer<'_, '_> {
         Some(self.terms.intern(TermKind::Place(path, fragment)))
     }
 
+    /// [TYPE-8, REF-4] whether the formal at this ordinal is a `&[T]`, whose
+    /// one [MSR-1] row is the range's and not the element type's.
+    fn formal_is_range(&self, ordinal: u32) -> bool {
+        self.function
+            .parameters
+            .get(ordinal as usize)
+            .is_some_and(|parameter| parameter.mode == CheckedMode::Range)
+    }
+
     fn postcondition_measure_term(
         &mut self,
         measure: CheckedMeasure,
         root: PlaceRoot,
         projections: &[GoalProjection],
         ty: CheckedType,
+        range_referent: bool,
     ) -> Option<TermId> {
         let projections = self.body_projections(root, projections);
         let projections = projections
@@ -2191,9 +2221,27 @@ impl Analyzer<'_, '_> {
                 GoalProjection::Field(field) => PlaceStep::Field(*field),
                 GoalProjection::Deref => PlaceStep::Deref,
                 GoalProjection::Subscript(offset) => PlaceStep::Index(*offset),
+                GoalProjection::Range(range) => PlaceStep::Range(*range),
+                // [ENT-2] a formal-valued subscript belongs to a template
+                // alone; both readers replace it before a term is interned,
+                // so an unknown offset here is the conservative reading that
+                // no admitted family separates.
+                GoalProjection::FormalSubscript { .. } => {
+                    PlaceStep::Index(CapturedValue::unknown())
+                }
             })
             .collect::<Vec<_>>();
-        let measured = measured_kind(ty)?;
+        // [MSR-1] gives `&[T]` a row of its own, and [TYPE-8] makes the
+        // range kind a mode and not a type: the checked type of a `&[T]`
+        // parameter is its element type, so the measured row cannot be
+        // recovered from it and comes from the parameter's mode instead.
+        // Without this a clause naming `deref(part).len` of a range
+        // parameter had no term at all, so [FN-9] selected no exit for it.
+        let measured = if range_referent && projections.is_empty() {
+            MeasuredKind::Range
+        } else {
+            measured_kind(ty)?
+        };
         // [MSR-2] the written constant a cell the table fixes as the type's
         // own reads: an `array`'s length, a `FixedVector`'s capacity, and an
         // `Arena`'s byte extent.
@@ -2613,7 +2661,16 @@ impl Analyzer<'_, '_> {
         }
         let (root, projections) = self.call_parameter_place(actual, projections)?;
         if let Some(measure) = measure {
-            self.postcondition_measure_term(measure, root, &projections, ty)
+            // [TYPE-8, REF-4] the callee's own parameter kind supplies the
+            // [MSR-1] row: the caller's actual may be any place that names a
+            // range, and the element type it carries has no row at all.
+            self.postcondition_measure_term(
+                measure,
+                root,
+                &projections,
+                ty,
+                mode == CheckedMode::Range,
+            )
         } else {
             self.postcondition_place_term(root, &projections, ty)
         }
@@ -2638,6 +2695,10 @@ impl Analyzer<'_, '_> {
                     GoalProjection::Deref => PlaceStep::Deref,
                     GoalProjection::Field(field) => PlaceStep::Field(*field),
                     GoalProjection::Subscript(offset) => PlaceStep::Index(*offset),
+                    GoalProjection::Range(range) => PlaceStep::Range(*range),
+                    GoalProjection::FormalSubscript { .. } => {
+                        PlaceStep::Index(CapturedValue::unknown())
+                    }
                 })
                 .collect(),
             measure,
@@ -2892,6 +2953,7 @@ impl Analyzer<'_, '_> {
                                 *root,
                                 &projections,
                                 place.ty,
+                                false,
                             )?,
                             None,
                         )
@@ -4056,6 +4118,7 @@ impl Analyzer<'_, '_> {
                 PlaceRoot::Binding(binding),
                 &image.projections,
                 ty,
+                self.formal_is_range(image.parameter),
             ) else {
                 continue;
             };
@@ -4093,6 +4156,10 @@ impl Analyzer<'_, '_> {
                     GoalProjection::Deref => PlaceStep::Deref,
                     GoalProjection::Field(field) => PlaceStep::Field(*field),
                     GoalProjection::Subscript(offset) => PlaceStep::Index(*offset),
+                    GoalProjection::Range(range) => PlaceStep::Range(*range),
+                    GoalProjection::FormalSubscript { .. } => {
+                        PlaceStep::Index(CapturedValue::unknown())
+                    }
                 })
                 .collect(),
             measure,
@@ -4344,6 +4411,15 @@ impl Analyzer<'_, '_> {
                 GoalProjection::Field(field) => resolved.path.push(PlaceStep::Field(*field)),
                 GoalProjection::Subscript(offset) => {
                     resolved.path.push(PlaceStep::Index(*offset));
+                }
+                // [REF-4] the anonymous range an actual formed at a call. Its
+                // support is the storage the range was formed over, reached
+                // through this step [MSR-2].
+                GoalProjection::Range(range) => {
+                    resolved.path.push(PlaceStep::Range(*range));
+                }
+                GoalProjection::FormalSubscript { .. } => {
+                    resolved.path.push(PlaceStep::Index(CapturedValue::unknown()));
                 }
                 GoalProjection::Deref => {
                     if let PlaceRoot::Binding(binding) = resolved.root
@@ -5627,6 +5703,16 @@ impl Analyzer<'_, '_> {
             // [MSR-1] admits in a measure place and [BLK-1] gives the one
             // slot a run holds.
             GoalProjection::Subscript(_) => element_type(input, self.context.elements),
+            // [REF-4, TYPE-8] a range step selects the run of T elements the
+            // range names, and `&[T]` is a reference kind and not a type, so
+            // that run's checked image is its element type, exactly as a
+            // `&[T]` parameter's is.
+            GoalProjection::Range(_) => element_type(input, self.context.elements),
+            // [MSR-1] the same element selection a written subscript makes;
+            // the offset is what the reader substitutes, not the type.
+            GoalProjection::FormalSubscript { .. } => {
+                element_type(input, self.context.elements)
+            }
         }
     }
 
@@ -6093,10 +6179,67 @@ impl Analyzer<'_, '_> {
                     } => (*measure, *measured, *constant),
                     _ => return None,
                 };
+                // [REF-4, MSR-1] a range whose path ends in a range step is
+                // the anonymous one an actual formed at its call: it names no
+                // binding, so its `len` is the mathematical difference of the
+                // endpoint values the formation captured rather than a
+                // measure of the storage below the step. Where both endpoints
+                // are value-determined that difference is a constant, which
+                // is the pre-transfer term [MSR-3] of that measure. An
+                // endpoint this relation cannot name leaves the opaque
+                // measure term, which carries no fact and only under-derives.
+                if measure == CheckedMeasure::Length
+                    && let Some(PlaceStep::Range(range)) = path.path.last()
+                    && let Some(length) = range.constant_length()
+                {
+                    return Some(self.terms.intern(TermKind::Constant(length)));
+                }
                 Some(self.measure_term(measure, path, measured, array_length))
             }
             GoalExpression::Operation { .. } => None,
         }
+    }
+
+    /// [ENT-3.S6] the equality one range formation establishes on its
+    /// binder's `len`: `deref(part).len = hi - lo`, read over the exact
+    /// current-value images captured where the endpoints are evaluated.
+    ///
+    /// L0 is a difference-bound fragment [ENT-4], so the equality is stored
+    /// exactly when the mathematical difference is one term displaced by a
+    /// constant: two constant endpoints give the constant length, and an
+    /// endpoint pair sharing a term gives the same. A pair naming two
+    /// different terms — `&p[a..b]` — is outside the fragment and keeps only
+    /// the affine image, which only under-derives [ENT-1].
+    fn range_length_relation(
+        &mut self,
+        length: TermId,
+        start: &CheckedExpression,
+        end: &CheckedExpression,
+    ) -> Option<Relation> {
+        let start_goal = self.admitted_value_goal_expression(start)?;
+        let end_goal = self.admitted_value_goal_expression(end)?;
+        let (start_term, start_constant) = self.goal_affine_side(&start_goal)?;
+        let (end_term, end_constant) = self.goal_affine_side(&end_goal)?;
+        let difference = end_constant.checked_sub(start_constant)?;
+        let right = match (start_term, end_term) {
+            (None, None) => self.terms.intern(TermKind::Constant(difference)),
+            (None, Some(term)) => {
+                return Some(Relation::Equal {
+                    left: length,
+                    right: term,
+                    difference,
+                });
+            }
+            (Some(start), Some(end)) if start == end => {
+                self.terms.intern(TermKind::Constant(difference))
+            }
+            _ => return None,
+        };
+        Some(Relation::Equal {
+            left: length,
+            right,
+            difference: 0,
+        })
     }
 
     fn goal_place_path(&self, datum: &GoalDatum) -> Option<ResolvedPlace> {
@@ -6124,6 +6267,10 @@ impl Analyzer<'_, '_> {
                     GoalProjection::Deref => PlaceStep::Deref,
                     GoalProjection::Field(field) => PlaceStep::Field(*field),
                     GoalProjection::Subscript(offset) => PlaceStep::Index(*offset),
+                    GoalProjection::Range(range) => PlaceStep::Range(*range),
+                    GoalProjection::FormalSubscript { .. } => {
+                        PlaceStep::Index(CapturedValue::unknown())
+                    }
                 })
                 .collect(),
             })
@@ -6142,11 +6289,34 @@ impl Analyzer<'_, '_> {
             }) => {
                 let parameter = self.function.parameters.get(*ordinal as usize)?;
                 let binding = parameter.binding;
+                // [MSR-1, ENT-2] a formal-valued subscript names a value
+                // parameter of this same callable, so inside the body it is
+                // that parameter's own binding: `deref(rows)[i].len` written
+                // in the clause and written in the body are one term because
+                // their canonical spellings are byte-identical there.
+                let projections = self
+                    .body_projections(PlaceRoot::Binding(binding), projections)
+                    .iter()
+                    .map(|projection| match projection {
+                        GoalProjection::FormalSubscript { ordinal } => self
+                            .function
+                            .parameters
+                            .get(*ordinal as usize)
+                            .map(|offset| {
+                                GoalProjection::Subscript(
+                                    CapturedValue::new(
+                                        CaptureId(u32::MAX),
+                                        CapturedTerm::Binding(offset.binding),
+                                    )
+                                    .goal_identity(),
+                                )
+                            }),
+                        other => Some(*other),
+                    })
+                    .collect::<Option<Vec<_>>>()?;
                 Some(GoalExpression::Datum(GoalDatum::Place {
                     root: binding,
-                    projections: self
-                        .body_projections(PlaceRoot::Binding(binding), projections)
-                        .to_vec(),
+                    projections,
                     ty: *ty,
                 }))
             }
@@ -13543,7 +13713,25 @@ impl Analyzer<'_, '_> {
                             MeasuredKind::Range,
                             None,
                         );
-                        state.affine.measure_atoms.borrow_mut().insert(term, length);
+                        state
+                            .affine
+                            .measure_atoms
+                            .borrow_mut()
+                            .insert(term, length);
+                        // [ENT-3.S6] the same formation establishes
+                        // `deref(part).len = hi - lo` as an ordinary fact, so
+                        // a requirement stated over the range's length is
+                        // judged against the length the range has and not
+                        // merely against an affine premise.
+                        if let CheckedExpression::RangeOf { start, end, .. } = value
+                            && let Some(relation) = self.range_length_relation(term, start, end)
+                        {
+                            let formation =
+                                self.proof_event(FlowEventKind::S6, Some(node_path));
+                            state
+                                .facts
+                                .establish(&relation, &mut self.derivations, formation);
+                        }
                     }
                 }
                 true
@@ -13968,9 +14156,26 @@ impl Analyzer<'_, '_> {
                 // query point and its kills are applied after. Nothing reads
                 // the state between the two, because a return has no normal
                 // continuation.
-                let judgment = self.judge_expression(value, state);
+                //
+                // [MSR-3] a call in return position is not that transfer. The
+                // exit-state measure of a written reference parameter
+                // "evaluates over that parameter's resolved referent
+                // immediately before each selected return, after the return's
+                // ordinary effects and kills", and a call's projected writes
+                // and its published exit relation are exactly those effects
+                // [CALL-6]. Judging the clause before them read the referent's
+                // entry state at the exit, which made `deref(p).len ==
+                // deref(entry(p)).len` hold over a callee that had just
+                // changed it.
+                let judgment = if matches!(value, CheckedExpression::UserCall { .. }) {
+                    self.expression_effects(value, state)
+                } else {
+                    self.judge_expression(value, state)
+                };
                 let mut events = Vec::new();
-                self.collect_expression_kills(value, &mut events);
+                if !matches!(value, CheckedExpression::UserCall { .. }) {
+                    self.collect_expression_kills(value, &mut events);
+                }
                 self.judge_postcondition_return(
                     node_path,
                     state,
@@ -15111,7 +15316,21 @@ impl Analyzer<'_, '_> {
     fn render_place(&self, place: &ResolvedPlace) -> String {
         let (mut rendered, mut ty) = match place.root {
             PlaceRoot::Binding(binding) => (
-                self.binding_name(binding),
+                {
+                    // [REF-1, OP-15] a reference variable names a path and is
+                    // not storage of its own, so the storage it names is
+                    // reached only through `deref`. A term over a reference
+                    // anchors at the binding and carries no step of its own,
+                    // so the spelling the writer reads puts the step back.
+                    let name = self.binding_name(binding);
+                    if self.places.is_reference(binding)
+                        && !matches!(place.path.first(), Some(PlaceStep::Deref))
+                    {
+                        format!("deref({name})")
+                    } else {
+                        name
+                    }
+                },
                 self.summary(binding).and_then(|summary| summary.ty),
             ),
             PlaceRoot::Constant(id) => (
@@ -15381,10 +15600,16 @@ impl Analyzer<'_, '_> {
             } => {
                 let base = self.binding_name(*root);
                 let ty = self.summary(*root).and_then(|summary| summary.ty);
-                // A holder's own name selects the holder; the source spells
-                // the referent `deref(h)`, and the goal carries that deref as
-                // a projection only where the source wrote one.
-                let implicit = self.is_holder(*root)
+                // [REF-1, OP-15] a reference variable names a path and is not
+                // storage of its own, so every place that goes through one is
+                // written under a `deref` step: `deref(p)`, `deref(p).field`,
+                // `deref(part).len`. A term rooted at a reference anchors at
+                // that binding and carries no step of its own — the parameter
+                // name *is* the path inside the body — so the spelling the
+                // writer reads has to put the step back here. It is added only
+                // where the goal does not already carry one, so a datum that
+                // kept its written `deref` is never doubled.
+                let implicit = self.places.is_reference(*root)
                     && !matches!(projections.first(), Some(GoalProjection::Deref));
                 let base = if implicit {
                     format!("deref({base})")
@@ -15453,6 +15678,21 @@ impl Analyzer<'_, '_> {
                 }
                 GoalProjection::Subscript(offset) => {
                     rendered.push_str(&format!("[{}]", self.render_offset(*offset)));
+                    ty = ty.and_then(|ty| element_type(ty, self.context.elements));
+                }
+                // [REF-4] the range the actual formed, spelled exactly as it
+                // was written: the range names no binding, so its two
+                // endpoints are what identifies it to the writer.
+                GoalProjection::Range(range) => {
+                    rendered.push_str(&format!(
+                        "[{}..{}]",
+                        self.render_offset(range.start),
+                        self.render_offset(range.end)
+                    ));
+                    ty = ty.and_then(|ty| element_type(ty, self.context.elements));
+                }
+                GoalProjection::FormalSubscript { ordinal } => {
+                    rendered.push_str(&format!("[parameter #{ordinal}]"));
                     ty = ty.and_then(|ty| element_type(ty, self.context.elements));
                 }
             }
@@ -15873,6 +16113,7 @@ mod goal_origin_kill_tests {
             fields: vec![1],
             ty: CheckedType::Bool,
             declares: false,
+            displaces_live_value: false,
         });
 
         invalidate_goal_origin_for_set(&mut state, &target);

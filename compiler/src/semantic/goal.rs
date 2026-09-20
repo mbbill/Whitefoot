@@ -187,6 +187,28 @@ pub(crate) enum GoalProjection {
     /// logical one, its captured value is immutable once the place is formed
     /// [REF-1], and the obligation it owes is discharged there [MSR-4].
     Subscript(super::places::CapturedValue),
+    /// One [REF-4] range step of the base reached so far, both endpoints
+    /// captured where the range was formed [REF-1].
+    ///
+    /// It occurs in exactly one position: the image of a `&[T]` actual that
+    /// formed its range at the call and therefore names no binding. A range
+    /// reference a binding names carries no step of its own, that binding
+    /// being the [ENT-2] measure place `deref(view)`; this projection is what
+    /// keeps an anonymous range distinct from the storage it was formed over,
+    /// whose `len` is a different quantity [MSR-1].
+    Range(super::places::CapturedRange),
+    /// One [OP-4] subscript of a measure place inside a `contract_block`,
+    /// whose written offset is a value parameter of the same callable.
+    ///
+    /// [MSR-1] admits an offset that is "a written integer literal, a live
+    /// `own` fragment-integer place, or an in-scope const generic", and in a
+    /// declaration-boundary template a parameter is named by its ordinal and
+    /// not by any binding: the caller substitutes its own actual for it, as
+    /// [EFF-5] already substitutes a row's index positions. It occurs only
+    /// under [`GoalDatum::Parameter`], and both readers -- the caller's
+    /// instantiation and the callee body's own reading -- replace it with an
+    /// ordinary [`GoalProjection::Subscript`] before any term is interned.
+    FormalSubscript { ordinal: u32 },
 }
 
 /// One structural goal row and its exact selected type/domain identity.

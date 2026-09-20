@@ -2622,8 +2622,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 let final_type = self.instantiate_goal_type(*ty, signature, regions)?;
                 for projection in remaining {
+                    // [MSR-1, EFF-5] a formal-valued subscript names a value
+                    // parameter of the callee, and the caller substitutes its
+                    // own actual for it exactly as it substitutes a row's
+                    // index positions: the offset the place is identified
+                    // over is the value that argument names here.
+                    let projection = match projection {
+                        GoalProjection::FormalSubscript { ordinal } => {
+                            GoalProjection::Subscript(Self::goal_argument_offset(
+                                arguments.get(*ordinal as usize),
+                            )?)
+                        }
+                        other => *other,
+                    };
                     image = image
-                        .with_projection(*projection, final_type)
+                        .with_projection(projection, final_type)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 }
                 if image.ty() != final_type {
@@ -2671,6 +2684,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .collect::<Result<Vec<_>, _>>()?,
             }),
         }
+    }
+
+    /// The offset one actual supplies to a formal-valued subscript [MSR-1].
+    ///
+    /// [ENT-2] decides a place's identity by its canonical spelling, so an
+    /// argument that names a literal, a named or generic const, or a live
+    /// binding supplies exactly that, and an argument that names none of
+    /// them supplies the unknown offset, which no admitted family separates
+    /// -- the conservative reading in both directions [OWN-7].
+    fn goal_argument_offset(
+        argument: Option<&GoalExpression>,
+    ) -> Result<super::places::CapturedValue, CheckStop> {
+        use super::places::{CapturedTerm, CapturedValue};
+        let unknown = CapturedValue::unknown();
+        let Some(GoalExpression::Datum(datum)) = argument else {
+            return Ok(unknown);
+        };
+        Ok(match datum {
+            GoalDatum::Literal(CheckedValue::Integer { bits, .. }) => {
+                CapturedValue::new(unknown.capture, CapturedTerm::Literal(*bits))
+            }
+            GoalDatum::Literal(CheckedValue::ConstGeneric { declaration, .. }) => {
+                CapturedValue::new(unknown.capture, CapturedTerm::Const(*declaration))
+            }
+            GoalDatum::Place { root, projections, .. } if projections.is_empty() => {
+                CapturedValue::new(unknown.capture, CapturedTerm::Binding(*root))
+            }
+            _ => return Ok(unknown),
+        }
+        .goal_identity())
     }
 
     fn instantiate_goal_operation(

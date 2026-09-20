@@ -1,0 +1,8 @@
+Node: compiler/checker-facts
+
+Decision: A diagnostic that renders a term or residual whose root is a reference variable spells that root under a `deref` step, because [REF-1] states that "the storage it names is reached only through `deref`: every place expression, subscript, field selection, payload step, and measure read that goes through a reference variable `p` is written under that step  -  `deref(p)`, `deref(p).field`, `deref(part)[i]`, `deref(part).len`", and [OP-15] spells a range reference's one measure `deref(part).len`, so a residual printing `names.len` or `deref(order)`-free `order.len` names an expression the writer cannot write, instead of printing the anchored root, which a term carries only because [REF-1] makes the parameter name the path inside the body.
+
+Decision: Whether a binding is a reference variable is recorded on the binding prepass beside the path set it names, because a range reference names a path this prepass cannot spell  -  [REF-4] puts the formation's two captured endpoints in that path and those captures belong to the checker's own place resolution  -  so an empty path set is not the same question as "this binding is storage of its own", instead of reading the emptiness of the path set, which left every range-reference binding rendered and supported as if it owned storage.
+
+Rejected:
+- Synthesizing the `deref` step into the term's path so the ordinary place renderer prints it: rejected because the step names no place of its own inside the body [REF-1], and putting it in the path would make `deref(p).len` and the caller's substituted `a.len` two different terms at a call.

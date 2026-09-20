@@ -2177,6 +2177,16 @@ pub(crate) struct CheckedWritablePlace {
     /// does: the target identifier resolved to none, so the statement is the
     /// binding's own initialization and nothing before it holds its storage.
     pub(crate) declares: bool,
+    /// [WIN-3, STOR-3] whether the binding this commit names still holds a
+    /// value at the commit, so the write displaces an owner that owes its
+    /// compiler-derived release there.
+    ///
+    /// Only the checker can answer it: a binding is revived from dead by a
+    /// [SET-1] commit whose target is that complete binding, and a
+    /// right-hand side that reads the target's own value out leaves nothing
+    /// for the write to displace. Both are accepted programs, and neither is
+    /// readable from the target's type or path [SET-1, LIV-1].
+    pub(crate) displaces_live_value: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

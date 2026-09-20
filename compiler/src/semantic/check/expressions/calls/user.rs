@@ -776,6 +776,47 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         passed_place: Option<&ResolvedPlace>,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<GoalExpression, CheckStop> {
+        if expected_mode == CheckedMode::Range {
+            // [REF-4, MSR-1] a range reference's one measure is `len`, equal
+            // to `hi - lo`, and that is no measure of the storage the range
+            // was formed over: `&a[2..4]` names two elements whatever `a.len`
+            // is. [ENT-2] clause (b) admits `deref(view)` as a measure place
+            // — a root with `deref` wrappings, field selections and
+            // subscripts — and admits no place formed with a range step, so
+            // the term this instantiation names is the reference the actual
+            // names and never that reference's base. Resolving through the
+            // reference here would drop the range step and read
+            // `deref(part).len` as the owner's `len`, which admits an index
+            // outside the range and outside the storage.
+            //
+            // An actual that forms its range at the call names no binding, so
+            // it has no such measure place; its image is the resolved path
+            // the formation names, ending in that formation's own range step,
+            // whose captured endpoints are what [REF-4] makes the range's
+            // `len`.
+            return Ok(match &argument.expression {
+                CheckedExpression::Binding { binding, .. } => {
+                    GoalExpression::Datum(GoalDatum::Place {
+                        root: *binding,
+                        projections: Vec::new(),
+                        ty: expected_type,
+                    })
+                }
+                _ => match passed_place {
+                    Some(place) => self.goal_referent_image(place, expected_type, bindings)?,
+                    None => GoalExpression::Datum(GoalDatum::EvaluatedValue {
+                        function: caller,
+                        occurrence: EvaluatedValueOccurrence::CallArgument {
+                            call: call.clone(),
+                            argument: ordinal,
+                        },
+                        captured_type: expected_type,
+                        projections: Vec::new(),
+                        ty: expected_type,
+                    }),
+                },
+            });
+        }
         if expected_mode != CheckedMode::Own {
             if let Some(place) = passed_place {
                 return self.goal_referent_image(place, expected_type, bindings);
@@ -885,13 +926,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 PlaceStep::Index(index) => {
                     projections.push(GoalProjection::Subscript(index.goal_identity()));
                 }
+                // [REF-4] the range a `&[T]` actual names. Dropping this step
+                // would read the actual's `len` as the `len` of the storage
+                // the range was formed over, which are two different
+                // quantities [MSR-1], so it is kept and never collapsed onto
+                // its base.
+                PlaceStep::Range(range) => {
+                    projections.push(GoalProjection::Range(range.goal_identity()));
+                }
                 // [ENT-2] a goal datum's place carries field selections,
-                // `deref` wrappings and subscripts; a payload, range, part or
+                // `deref` wrappings and subscripts; a payload, part or
                 // measure step is no datum spelling, so the image stops here.
-                PlaceStep::Payload { .. }
-                | PlaceStep::Range(_)
-                | PlaceStep::Part(_)
-                | PlaceStep::Measure(_) => break,
+                PlaceStep::Payload { .. } | PlaceStep::Part(_) | PlaceStep::Measure(_) => break,
             }
         }
         let _ = bindings;

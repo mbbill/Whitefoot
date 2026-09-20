@@ -20,8 +20,9 @@ pub(super) struct PreparedTarget<'target> {
     /// element inside a window's filled prefix or an array's slots always
     /// holds a value [WIN-1]. A directly named binding path is not: a
     /// binding whose owner was moved out is re-initialized by a `set` that
-    /// displaces nothing, and which of the two a given commit is, is a
-    /// liveness judgment of the checker's and not readable here.
+    /// displaces nothing. Which of the two a given commit is, is a liveness
+    /// judgment of the checker's, so the checked target carries its answer
+    /// [SET-1, LIV-1, DIAG-2].
     displaces_live_value: bool,
 }
 
@@ -49,7 +50,16 @@ impl IrBuilder<'_> {
         target: &'target CheckedSetTarget,
     ) -> Result<PreparedTarget<'target>, LoweringFailure> {
         let ty = lower_type(self.erasure, target.ty())?;
-        let displaces_live_value = !matches!(target, CheckedSetTarget::Place(_));
+        // [WIN-3] every other target shape always holds a value at the
+        // commit: a referent, a field, and an element inside a window's
+        // filled prefix or an array's slots are storage that is there. A
+        // directly named binding is the one shape whose old value may
+        // already be gone, and the checker recorded which of the two this
+        // commit is [SET-1, LIV-1].
+        let displaces_live_value = match target {
+            CheckedSetTarget::Place(place) => place.displaces_live_value,
+            _ => true,
+        };
         let address_kind = |address, referent| TargetStorage::Address { address, referent };
         let kind = match target {
             CheckedSetTarget::Storage(root) => {
@@ -150,11 +160,11 @@ impl IrBuilder<'_> {
     /// and a linear target never reaches lowering at all because [WIN-3]
     /// makes that assignment a hard error.
     ///
-    /// A directly named binding path returns `None` here. The checked program
-    /// carries no record of whether such a target still holds a value at the
-    /// commit [STOR-3, DIAG-2], and re-initializing a moved-out binding is an
-    /// accepted program, so deriving the release from the type alone would
-    /// release a value that is already gone.
+    /// A directly named binding path is decided by the record the checker
+    /// carries on it [DIAG-2]: re-initializing a moved-out binding is an
+    /// accepted program and displaces nothing, so deriving the release from
+    /// the type alone would release a value that is already gone, while
+    /// deriving none at all leaked the cell a live binding still held.
     pub(super) fn displaced_release(
         &mut self,
         target: &PreparedTarget<'_>,

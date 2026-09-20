@@ -306,6 +306,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 fields,
                 ty,
                 declares: false,
+                // [SET-1] the premise is rechecked after the right-hand side
+                // under [LIV-1], so the commit itself records it.
+                displaces_live_value: false,
             }),
             effects,
             unsupported: None,

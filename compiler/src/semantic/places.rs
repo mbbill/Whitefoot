@@ -50,6 +50,18 @@ pub(crate) struct CaptureId(pub(crate) u32);
 /// and not where it was written [REF-1, ENT-2].
 const VALUE_DETERMINED_CAPTURE: CaptureId = CaptureId(u32::MAX - 2);
 
+/// The occurrence a binding-valued capture carries in a goal datum.
+///
+/// [ENT-2] decides term identity by spelling: "Two places are the same term
+/// exactly when their roots resolve to the same declaration event and their
+/// canonical source spellings are byte-identical." `rows[i].len` written in a
+/// clause and written again in the body is therefore one term, and the
+/// occurrence that evaluated `i` carries no identity of its own. What keeps
+/// that sound is [MSR-2]: the offset's own support is part of every enclosing
+/// measure term's support, so a write to `i` kills every term `i` occurs in
+/// rather than silently retargeting one.
+const SPELLING_DETERMINED_CAPTURE: CaptureId = CaptureId(u32::MAX - 3);
+
 /// How the entailment fragment reads one captured value [ENT-2].
 ///
 /// A written literal and a named or generic const are values this relation
@@ -111,7 +123,15 @@ impl CapturedValue {
             CapturedTerm::Literal(_) | CapturedTerm::Const(_) => {
                 Self::new(VALUE_DETERMINED_CAPTURE, self.term)
             }
-            CapturedTerm::Binding(_) | CapturedTerm::Opaque => self,
+            // [ENT-2] a binding is a spelling, and two byte-identical
+            // spellings rooted at one declaration are one term. The
+            // occurrence is dropped here and not in [`Self::provably_same`]:
+            // term identity under-approximates aliasing while [OWN-7]'s
+            // overlap relation over-approximates it, and a binding's two
+            // reads may still straddle a write when the question is which
+            // storage each selects.
+            CapturedTerm::Binding(_) => Self::new(SPELLING_DETERMINED_CAPTURE, self.term),
+            CapturedTerm::Opaque => self,
         }
     }
 
@@ -161,6 +181,32 @@ impl CapturedValue {
 pub(crate) struct CapturedRange {
     pub(crate) start: CapturedValue,
     pub(crate) end: CapturedValue,
+}
+
+impl CapturedRange {
+    /// The identity this range carries inside a goal datum [ENT-2]: each
+    /// endpoint's own [`CapturedValue::goal_identity`].
+    pub(crate) const fn goal_identity(self) -> Self {
+        Self {
+            start: self.start.goal_identity(),
+            end: self.end.goal_identity(),
+        }
+    }
+
+    /// The range's one [MSR-1] measure as a mathematical value, where both
+    /// endpoints are value-determined [REF-4]: `hi - lo`.
+    ///
+    /// A binding or computed endpoint denotes no value this relation can
+    /// name, so the length is no constant there and the caller falls back to
+    /// the opaque measure term, which only under-derives [ENT-1].
+    pub(crate) const fn constant_length(self) -> Option<i128> {
+        let (CapturedTerm::Literal(start), CapturedTerm::Literal(end)) =
+            (self.start.term, self.end.term)
+        else {
+            return None;
+        };
+        (end as i128).checked_sub(start as i128)
+    }
 }
 
 /// The four window parts [WIN-2]: vocabulary for effect rows and this
@@ -642,6 +688,18 @@ pub(crate) struct BindingSummary {
     /// The paths this binding names, empty when the binding is storage of
     /// its own.
     pub(crate) reference_paths: Vec<ResolvedPlace>,
+    /// Whether this binding is a reference variable [REF-1] — a name for a
+    /// path rather than storage of its own.
+    ///
+    /// It is not `!reference_paths.is_empty()`: a range reference names a
+    /// path this prepass cannot spell, because [REF-4] puts the formation's
+    /// two captured endpoints in that path and the captures belong to the
+    /// checker's own place resolution. Such a binding is still a reference
+    /// variable, and every judgment that asks *whether* a binding names a
+    /// path — [MSR-2]'s holder support, the body reading of a `deref`
+    /// projection, and the spelling a diagnostic prints [OP-15] — has to see
+    /// it as one.
+    pub(crate) reference: bool,
 }
 
 /// Dense per-binding summaries for one checked function, the place resolution
@@ -669,6 +727,7 @@ impl PlaceMap {
             // path by substitution [EFF-5]; inside this body the parameter
             // name is the path, so it anchors at itself.
             if !matches!(parameter.mode, CheckedMode::Own) {
+                summary.reference = true;
                 summary.reference_paths = vec![ResolvedPlace::binding(parameter.binding)];
             }
         }
@@ -714,7 +773,7 @@ impl PlaceMap {
     /// Whether this binding is a reference variable rather than storage.
     pub(crate) fn is_reference(&self, binding: BindingId) -> bool {
         self.summary(binding)
-            .is_some_and(|summary| !summary.reference_paths.is_empty())
+            .is_some_and(|summary| summary.reference || !summary.reference_paths.is_empty())
     }
 
     /// Resolves a spelled place to the [OWN-7] resolved places it may name.
@@ -781,8 +840,15 @@ impl PlaceMap {
             match statement {
                 CheckedStatement::Let { binding, value, .. } => {
                     let reference_paths = self.reference_paths_of(value);
+                    // [REF-4] a range formation makes its binder a reference
+                    // variable exactly as a `borrow_expr` does; the path it
+                    // names carries the formation's two captured endpoints,
+                    // which this prepass cannot spell, so the binding is
+                    // recorded as a reference that names no path here.
+                    let names_range = matches!(value, CheckedExpression::RangeOf { .. });
                     let summary = self.summary_mut(*binding);
                     summary.ty = Some(value.ty());
+                    summary.reference = names_range || !reference_paths.is_empty();
                     summary.reference_paths = reference_paths;
                 }
                 // [CALL-4] every binder of a destructuring `let` is an
@@ -818,6 +884,7 @@ impl PlaceMap {
                     let delivered = self.delivered_reference_paths(arms);
                     let summary = self.summary_mut(*binding);
                     summary.ty = Some(*result_type);
+                    summary.reference = !delivered.is_empty();
                     summary.reference_paths = delivered;
                 }
                 CheckedStatement::Match { arms, .. } => {
@@ -848,6 +915,7 @@ impl PlaceMap {
             // so the binder anchors at itself and every consumer reads that
             // as the conservative place.
             if !matches!(binder.mode, CheckedMode::Own) {
+                summary.reference = true;
                 summary.reference_paths = vec![ResolvedPlace::binding(binder.binding)];
             }
         }
