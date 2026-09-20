@@ -248,6 +248,16 @@ condition under which it is taken up.
   Known price: two live cursors under one root invalidate each other on a
   link write, and a live cursor is the whole subtree's footprint for the
   parallel judgments.
+  INCOMPLETE as recorded (independent study, 2026-09-20, branch
+  `research/x1-wildcard-path`, `research/investigations/wildcard-path/`):
+  the basic loop is still refused, because the rebinding goes through the
+  payload step `.Some.value` and [ENT-3.S15] ends the refinement fact at the
+  arm's exit, which [REF-2] makes an invalidation, so the rebound reference
+  is invalid in the next iteration. The design needs a rule that a payload
+  place already selected keeps existing until the enum is written; a
+  widened path is a may-alias cover and never one term of the fact system;
+  ancestor moves and window removals must still invalidate; "recheck once"
+  must become a fixed point over a finite domain. Start from that study.
 - **`musttail` at the call.** Owner's ruling (2026-09-20): a call-site marker
   named `musttail`, rejected with the failing condition named when the call
   is not a guaranteed tail call. Conditions for a self call: it is the
