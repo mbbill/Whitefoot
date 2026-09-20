@@ -1422,18 +1422,26 @@ fn conditional(part: &[u64], left_end: own u64, right_start: own u64) -> result:
   return unit;
 }
 
-fn carried(part: &[u64]) -> result: own unit writes(part) contract {
+fn rebound(part: &[u64]) -> result: own unit writes(part) contract {
   requires 2_u64 <= deref(part).len;
 } {
-  let previous = &deref(part)[0_u64..1_u64];
-  let current = &deref(part)[0_u64..1_u64];
-  for (i in 0_u64..2_u64) {
-    set previous = current;
-    let end = i + 1_u64;
-    set current = &deref(part)[i..end];
-    let a = fill(part: previous);
-    let b = fill(part: current);
-  }
+  let first = &deref(part)[0_u64..1_u64];
+  let second = &deref(part)[1_u64..2_u64];
+  set first = second;
+  let a = fill(part: first);
+  let b = fill(part: second);
+  return unit;
+}
+
+fn run_union(part: &[u64]) -> result: own unit writes(part) contract {
+  requires 2_u64 <= deref(part).len;
+} {
+  let first = &deref(part)[0_u64..1_u64];
+  let second = &deref(part)[1_u64..2_u64];
+  let again = &deref(part)[0_u64..1_u64];
+  let a = fill(part: first);
+  let b = fill(part: second);
+  let c = fill(part: again);
   return unit;
 }
 
@@ -1451,16 +1459,12 @@ fn main() -> status: own ExitStatus pure {
                 .verdict
                 .is_eligible()
         );
-        assert!(
-            !pair_of(table, "overlapping", "fill", "fill")
-                .verdict
-                .is_eligible()
-        );
-        assert!(
-            !pair_of(table, "carried", "fill", "fill")
-                .verdict
-                .is_eligible()
-        );
+        for name in ["overlapping", "rebound"] {
+            assert!(matches!(
+                pair_of(table, name, "fill", "fill").verdict,
+                PermissionVerdict::Denied(Denial::Footprint { .. })
+            ));
+        }
         let conditional = function_table(table, "conditional")
             .pairs
             .iter()
@@ -1468,7 +1472,27 @@ fn main() -> status: own ExitStatus pure {
             .map(|pair| pair.verdict.is_eligible())
             .collect::<Vec<_>>();
         assert_eq!(conditional, [true, false]);
-        for name in ["split", "conditional"] {
+        // Both adjacencies may overlap, but the first and third calls write
+        // the same cells. A run must still compare against its whole union.
+        let union = function_table(table, "run_union");
+        let adjacent = pairs_of(table, "run_union", "fill", "fill");
+        assert_eq!(adjacent.len(), 2);
+        assert!(adjacent.iter().all(|pair| pair.verdict.is_eligible()));
+        assert!(union.runs.iter().any(|run| {
+            run.sites
+                .iter()
+                .filter(|site| site.callee_name == "fill")
+                .count()
+                == 2
+        }));
+        assert!(union.runs.iter().all(|run| {
+            run.sites
+                .iter()
+                .filter(|site| site.callee_name == "fill")
+                .count()
+                < 3
+        }));
+        for name in ["split", "conditional", "run_union"] {
             let function = program
                 .data
                 .functions

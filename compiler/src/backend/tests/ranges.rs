@@ -573,9 +573,9 @@ fn stable_scatter_matches_an_independent_oracle_and_hands_out_output_work() {
             llvm.push_str(
                 "\ndeclare void @wf_scatter_pack_begin()\n\
 declare void @wf_scatter_pack_end()\n\
-define i64 @wf_pack_chunks({ ptr, i64 } %chunks, { ptr, i64 } %low, { ptr, i64 } %high) {\n\
+define i64 @wf_pack_chunks(ptr %chunks, i64 %first, { ptr, i64 } %low, { ptr, i64 } %high) {\n\
   call void @wf_scatter_pack_begin()\n\
-  %r = call i64 @wf_scatter_original_pack({ ptr, i64 } %chunks, { ptr, i64 } %low, { ptr, i64 } %high)\n\
+  %r = call i64 @wf_scatter_original_pack(ptr %chunks, i64 %first, { ptr, i64 } %low, { ptr, i64 } %high)\n\
   call void @wf_scatter_pack_end()\n\
   ret i64 %r\n}\n",
             );

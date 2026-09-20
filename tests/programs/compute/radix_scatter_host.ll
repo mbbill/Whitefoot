@@ -11,10 +11,6 @@
 ; every element type here being `u64`, `f64` or `u8`, none of which [OP-9]
 ; aligns past 8. The same pointer is handed back as the retained handle, which
 ; is the only value the release row accepts.
-;
-; NOT YET EXERCISED. This fixture stops at an unimplemented composite-value
-; capability before it is compiled, so the oracle that would run this adapter
-; does not reach it; the other eight adapters share its shape and do run.
 define void @wf_bench_radix_scatter(ptr %input, i64 %count, i32 %bit, ptr %out, ptr %out_len, ptr %out_cell) {
   %a = insertvalue { ptr, i64 } poison, ptr %input, 0
   %b = insertvalue { ptr, i64 } %a, i64 %count, 1

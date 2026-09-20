@@ -202,6 +202,51 @@ shape is not a valid comparison with the old chain's recursion budget; a
 timing comparison must give both arms the same helper boundaries or remove
 that helper after the upstream contract-image repair.
 
+#### Integrated reference checkpoint
+
+The investigation now builds on PR #70's committed `206c0cc1`. Its broader
+reference/storage work subsumes the initial nominal-range repair, and its
+overlap lowering includes contiguous call subruns. Those duplicate compiler
+changes are absent from this branch's diff; the strengthened conformance case
+and non-call-prefix regression remain. Constructing the integrated gate-profile
+compiler executable took 42.05 s (41.94 s reported by Cargo).
+
+The new optional permission transport passes a direct ledger probe for a
+split whose scalar endpoint is subsequently assigned, refuses an overlapping
+split formed after endpoint assignment, and permits a conditional split only
+inside its proving branch. These probes exercise the ordinary compiler;
+retained-proof replay and the full native scatter observer are still pending
+at this checkpoint. No acceptance requirement or source rule is changed.
+
+Two upstream limitations remain reproducible on this committed base. Direct
+reference packing stops at the first `copy_run` requirement, now correctly
+spelled `deref(chunks).inner[first].Some.value.low.len <=
+deref(first_low).len` but unproved. Separately, a loop that starts with
+`previous` and `current` both referring to `[0..1]`, then assigns
+`previous = current` and `current = &part[i..i+1]`, stops as unsupported
+`OwnershipJoin`. That loop was an exploratory negative permission control;
+it cannot yet exercise this branch's overlap judgment. Its normative behavior
+has not been changed, and completing reference flow through that loop belongs
+to #70. The permission test uses an ordinary supported rebinding instead.
+
+The complete source comparison uses the same Box/position packing boundary
+and a separate payload helper on both arms. The owned control retains
+take/restore tally and consumes each chunk while packing; the reference arm
+reads both in place. Both have the same two-function recursive component,
+block size, allocations, output copies and scheduling options. This ports the
+formal consumer to an executable control before selecting the reference
+rewrite; the control is preserved by its git revision for reproduction.
+
+On the integrated compiler, both arms pass the unchanged oracle at one, two
+and four workers: 109 configurations and 3,466,725 values per invocation.
+The reference observer reports 27,383 and 41,247 nonempty helper output words
+at two and four workers; the owned control reports 29,734 and 47,068. These
+varying counts establish useful output work, not a performance ranking.
+The reference and owned native observer constructions took 0.65 s and 2.47 s;
+their three-process verification invocations took 0.53 s and 0.64 s. Runtime
+objects were reused after checking that their sources match the integrated
+base. Kernel-only elapsed-time comparisons remain separate.
+
 ## Consumers and discriminating criteria
 
 These criteria are recorded before the new experiments. All source programs
@@ -269,7 +314,7 @@ bounds do not authorize the write. It is not a normative rejection of stable
 distribution or a proof that no other source formulation works.
 
 The executable alternative in
-[`radix_scatter.wf`](../../experiments/compute-bench/programs/radix_scatter.wf)
+[`radix_scatter.wf`](../../../tests/programs/compute/radix_scatter.wf)
 first partitions each input block into two `FixedVector<u64, 256>` runs.
 Their ordinary measures bound each stored count without an array-content
 theorem. A scalar prefix phase computes total lengths; a recursive continuation
