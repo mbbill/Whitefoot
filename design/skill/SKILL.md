@@ -102,6 +102,20 @@ or separate design commits. A PR may open before coding and hold reviewable
 artifacts and supporting discussion. Use documents, experiments, and changes
 to code, specifications, or tests as needed, following project conventions.
 
+At each code-structure choice, examine responsibilities, interfaces,
+representations and affected consumers: does the change expose an existing
+design gap, and would another implementation or focused refactor serve better?
+Reconsider as implementation reveals new information. Fix concrete gaps within
+scope or record their impact, deferral reason and reopening condition in the
+project's maintained backlog; revisit them when later changes touch or enlarge
+them. Keep this proportional to the change, within the continuous workflow.
+
+When discussing implementation choices or handing back work, include a short,
+separate **Design suitability** paragraph in the owner's language. State
+concerns and their fix or deferral; if none were found, say so within the
+assessed scope and give the reason. This does not replace amendment or DCR
+explanations.
+
 Present a complete design for the agreed scope with its proposed tree
 revision: mechanism, requirements, alternatives, evidence, uncertainty, and
 exactly which decisions change and why. Scale the explanation to the work;
@@ -184,6 +198,11 @@ G2. Consistency scan. Check changed nodes and amendments against ancestors
 and siblings, extending to related decisions as needed. A change governing a
 whole concept requires reading its subtree. Report nodes read and conflicts,
 narrowings, or broken dependencies, naming both sides.
+
+G3. Architectural fit. Check that structural choices received the Workflow
+assessment when made or revised, and that the result is visible to the owner.
+Report concrete gaps left without a fix or maintained backlog entry; do not
+demand speculative generality or reconstruct a missing rationale after coding.
 
 ## Correspondence: design and implementation
 
