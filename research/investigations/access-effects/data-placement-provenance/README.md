@@ -27,3 +27,12 @@ exactly baseline plus eight modulo 64. Otherwise it stops as inconclusive. A
 zero-aligned residue is never substituted or selected from a mixed sample.
 
 This branch and its workflow are deleted after the one-shot investigation.
+
+Run 35532641001 stopped before downloading or executing either image because
+the Ubuntu image did not contain gdb. The corrected one-shot workflow records
+the exact images' mapped libc package, path, SHA-256 and ELF Build ID, installs
+only GNU gdb from the image's official Ubuntu source with
+`--no-install-recommends`, then records and compares the same identity. Any
+libc/allocator change stops before observation. This is a documented departure
+from the first run's no-install infrastructure gate; it does not relax any
+address or interpretation criterion.

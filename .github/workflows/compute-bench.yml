@@ -17,29 +17,9 @@ jobs:
   provenance:
     name: observe records result pointers (ubuntu-24.04)
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Identify host and debugger
-        run: |
-          mkdir -p "$RUNNER_TEMP/data-placement"
-          {
-            printf 'workflow_run=%s\nworkflow_sha=%s\nworkflow_ref=%s\n' \
-              "$GITHUB_RUN_ID" "$GITHUB_SHA" "$GITHUB_REF"
-            date -u '+date=%Y-%m-%dT%H:%M:%SZ'
-            uname -a
-            nproc
-            lscpu
-            taskset -pc $$
-            if command -v gdb >/dev/null; then
-              gdb --version
-            else
-              echo 'gdb=unavailable; stopping without installing infrastructure'
-              exit 3
-            fi
-          } > "$RUNNER_TEMP/data-placement/PROVENANCE.txt"
-          test "$(uname -s)" = Linux
-          test "$(uname -m)" = x86_64
       - name: Download and identify the exact ac34 images
         env:
           GH_TOKEN: ${{ github.token }}
@@ -53,6 +33,10 @@ jobs:
           grep -Fx 'candidate=8609625800d60cab59e302b744917ed1073536ed' "$identity"
           grep -Fx 'baseline=c12d6dd10d7a536507b30523dd9837a52c915028' "$identity"
           grep -Fx 'native=-O2; ordinary host runtime; no alignment overrides' "$identity"
+      - name: Install the debugger without changing the mapped allocator
+        run: |
+          bash research/investigations/access-effects/data-placement-provenance/prepare-debugger.sh \
+            "$RUNNER_TEMP/ac34" "$RUNNER_TEMP/data-placement"
       - name: Observe release pointers outside the measured interval
         env:
           WHITEFOOT_CHECK_TIMEOUT: 300
