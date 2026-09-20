@@ -13,7 +13,7 @@ staged=$(realpath "$2")
 primary_results=$(realpath -m "$3")
 null_results=$(realpath -m "$4")
 compare="$checkout/tests/performance/compare.sh"
-[[ -x $compare ]] || exit 2
+[[ -f $compare ]] || exit 2
 [[ ! -e $primary_results && ! -e $null_results ]] || {
     echo 'timing result paths must be fresh' >&2
     exit 2
@@ -27,13 +27,13 @@ for kernel in mandelbrot records fir quadrature stencil; do
     ln "$source" "$staged/null-a/$kernel"
     ln "$source" "$staged/null-b/$kernel"
 done
-"$compare" "$staged/null-a" "$staged/null-b" "$null_results"
+bash "$compare" "$staged/null-a" "$staged/null-b" "$null_results"
 
 # This is the only timed placement pair. A failing regression verdict is the
 # expected form of positive evidence, so preserve its status and full output
 # rather than turning the research job into an infrastructure failure.
 status=0
-"$compare" "$staged/pad48" "$staged/pad16" "$primary_results" || status=$?
+bash "$compare" "$staged/pad48" "$staged/pad16" "$primary_results" || status=$?
 printf '%s\n' "$status" > "$primary_results/comparison-exit-status.txt"
 if ((status == 1)); then
     grep -Eq '^VERDICT: FAIL -- [1-9][0-9]* kernel\(s\) adverse at two widths$' \
