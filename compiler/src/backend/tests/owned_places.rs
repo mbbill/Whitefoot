@@ -1485,3 +1485,100 @@ fn main() -> status: own ExitStatus pure {
         assert!(output.stderr.is_empty(), "{output:?}");
     }
 }
+
+/// A [SET-1] commit over a directly named binding releases exactly the owner
+/// it displaces: the one the target held, once, at the commit, and nothing
+/// when the target's type has no release action.
+///
+/// [WIN-3]: "Assigning over any owned place releases the old value when it is
+/// affine". [STOR-3] sites it and bounds it: "A successful [SET-1] assignment
+/// derives no finalizer or cleanup edge and no release beyond the old value's
+/// own: a copy target's previous value needs none, and an affine target's
+/// previous value takes the release [WIN-3] states." The same rule fixes what
+/// happens with no commit at all -- "Release actions run on every source
+/// control-flow edge that leaves their owner scope, in reverse declaration
+/// order" -- which is the first body's control trace.
+///
+/// So the three bodies below differ in exactly one statement and their ledgers
+/// differ in exactly the way the two rules say:
+///
+/// - no commit: both cells live to the scope exit and are released newest
+///   first, `A1;A2;F2;F1;`;
+/// - a commit over a live affine binding: the displaced first cell is released
+///   at the commit and the installed second at the scope exit, `A1;A2;F1;F2;`;
+/// - a commit over a `u64` binding: the previous value "needs none", so the
+///   program's one cell is released once at the scope exit, `A1;F1;`.
+///
+/// A lowering that derived the release from the target's type alone would
+/// still produce the first two and would free nothing extra in the third; one
+/// that emitted no release for a named binding leaks the first cell of the
+/// second body and prints `A1;A2;F2;`.
+#[test]
+fn a_commit_over_a_named_binding_releases_exactly_the_owner_it_displaces() {
+    let program = |body: &str, expected: &str| {
+        format!(
+            r#"fn probe() -> result: own u64 pure {{
+{body}
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  let total = probe();
+  if total != {expected} {{
+    return exit_status(code: 1_u8);
+  }}
+  return exit_status(code: 0_u8);
+}}
+"#
+        )
+    };
+    let cases = [
+        (
+            program(
+                "  let cell = box_new::<u64>(value: 11_u64);\n  \
+                 let fresh = box_new::<u64>(value: 22_u64);\n  \
+                 let seen = cell.inner;\n  \
+                 let other = fresh.inner;\n  \
+                 return seen +wrap other;",
+                "33_u64",
+            ),
+            2,
+            &b"A1;A2;F2;F1;"[..],
+        ),
+        (
+            program(
+                "  let cell = box_new::<u64>(value: 11_u64);\n  \
+                 let fresh = box_new::<u64>(value: 22_u64);\n  \
+                 set cell = move fresh;\n  \
+                 let seen = cell.inner;\n  \
+                 return seen;",
+                "22_u64",
+            ),
+            2,
+            &b"A1;A2;F1;F2;"[..],
+        ),
+        (
+            program(
+                "  let cell = box_new::<u64>(value: 11_u64);\n  \
+                 let seen = cell.inner;\n  \
+                 set seen = 22_u64;\n  \
+                 return seen;",
+                "22_u64",
+            ),
+            1,
+            &b"A1;F1;"[..],
+        ),
+    ];
+    for (source, limit, trace) in cases {
+        for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
+            let module = super::emit_lowered(source.as_bytes(), overlap);
+            let observed = retain_calls(&module)
+                .replace("@malloc(", "@wf_test_allocate(")
+                .replace("@free(", "@wf_test_release(");
+            let output =
+                compile_link_and_run(&observed, Some(&allocation_observer(limit, 0)), &[]);
+            assert_eq!(output.status.code(), Some(0), "{source}\n{output:?}");
+            assert_eq!(output.stdout, trace, "{source}\n{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
+}

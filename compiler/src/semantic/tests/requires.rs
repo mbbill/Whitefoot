@@ -1601,3 +1601,67 @@ fn affine_requirement_measure_observations_survive_as_values_without_retargeting
         });
     }
 }
+
+/// A subscript inside a clause measure place names the element it indexes, and
+/// a fact about a different element is a different term.
+///
+/// [MSR-1]: an admitted measure place is formed "with any number of
+/// field-selection and enum-payload `psuffix`es, `deref` wrappings, and
+/// subscripts", and "The subscript admission is what makes `table[i].len` a
+/// term, so a storage whose elements are themselves storages has provable
+/// operations." [ENT-2] then decides identity by spelling: "Two places are the
+/// same term exactly when their roots resolve to the same declaration event
+/// and their canonical source spellings are byte-identical." So a caller that
+/// has proved the measure of row zero has proved nothing about row one, and
+/// the call at index one is an ordinary [FN-8] failure rather than an
+/// acceptance the subscript was dropped from.
+///
+/// The offset here is a value parameter of the callee, which the template
+/// carries by ordinal and each reader substitutes: the caller by its own
+/// actual, the body by that parameter's binding (compiler/checker-facts,
+/// pending). The rendered goal text is not pinned: [DIAG-3] requires byte
+/// identity "only where this specification explicitly fixes both selection and
+/// encoding", and no rule fixes how a subscript inside a measure place prints.
+#[test]
+fn a_clause_subscript_names_the_element_it_indexes() {
+    let program = |index: &str| {
+        format!(
+            r#"fn cell_at(rows: &Array<Slots<u8, 4>, 2>, i: own u64, k: own u64) -> result: own u8 reads(rows) contract {{
+  requires i < 2_u64;
+  requires k < deref(rows)[i].len;
+}} {{
+  return deref(rows)[i][k];
+}}
+
+fn read_first(rows: &Array<Slots<u8, 4>, 2>) -> result: own u8 reads(rows) contract {{
+  requires 1_u64 < deref(rows)[0_u64].len;
+}} {{
+  return cell_at(rows: rows, i: {index}, k: 1_u64);
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+        )
+    };
+    with_semantics(program("0_u64").as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the caller's own subscripted requirement discharges the call's: {outcome:?}"
+        );
+    });
+    with_semantics(program("1_u64").as_bytes(), |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a fact about row zero proves nothing about row one: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn8);
+        assert!(
+            matches!(
+                issue.kind(),
+                SemanticIssueKind::UndischargedCallRequirement(_)
+            ),
+            "the failure is the call's own requirement: {issue:?}"
+        );
+    });
+}

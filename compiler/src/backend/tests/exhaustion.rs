@@ -369,14 +369,22 @@ fn main() -> status: own ExitStatus pure {
 /// and receives no payload, and an exhausted heap ends the process from the
 /// trusted base with the one record naming the resource class.
 ///
-/// Re-derived from the ported lowering: [STOR-1] places a boxed runtime-capacity
-/// shape as a cell plus the storage its content needs, and the emitted rows
-/// answer that per shape. `box_array_filled` takes two — the element block and
-/// the cell that holds its `{ data, count }` content — while `box_slots_new`,
-/// `box_ring_new` and `box_new` each take one, because a window's block is
-/// header-first and the cell *is* that block. The four-form image is therefore
-/// five interposed allocations, and the observer limit, the refusal range and
-/// both identity lists below say exactly that.
+/// One [OP-13] cell construction is one interposed allocation, for every one
+/// of the four forms. [TYPE-9] fixes it in the language: a `Box`'s one field
+/// `inner` is its content, "stored in exactly one heap object the `Box` value
+/// owns [STOR-1]", and [STOR-1] repeats that a `Box<T>` is "one
+/// compiler-derived allocation released by one compiler-derived free at owner
+/// scope exit [STOR-3]" while a runtime-capacity shape "exists only as `Box`
+/// content [TYPE-9] and is heap-owned with that `Box`" -- one owner, one
+/// object, not a cell beside a block. The implementation choice under that
+/// rule is the pending amendment compiler/storage-representation: "A boxed
+/// runtime-capacity shape is thin: `Box<Slots<T>>`, `Box<Ring<T>>` and
+/// `Box<Array<T>>` are each one pointer to one block laid out `[len | cap |
+/// elements]`". The four-form image is therefore four interposed allocations
+/// and four frees, and the observer limit, the refusal range and both
+/// identity lists below say exactly that. It is the same count
+/// `a_runtime_capacity_window_crosses_functions_updates_and_frees_once` reads
+/// as one `@free` per boxed `Array`.
 #[test]
 fn each_generated_allocation_form_reaches_its_refusal_record() {
     let directory = test_directory();
@@ -385,10 +393,10 @@ fn each_generated_allocation_form_reaches_its_refusal_record() {
         .replace("@free(", "@wf_test_release(");
     let host = format!(
         "{}\n__attribute__((constructor)) static void unbuffer(void) {{ setvbuf(stdout, NULL, _IONBF, 0); }}\n",
-        super::owned_places::allocation_observer_by_process(5)
+        super::owned_places::allocation_observer_by_process(4)
     );
     let executable = build_linked_executable(&observed, Some(&host), &[], &directory);
-    for refused in 0..=5 {
+    for refused in 0..=4 {
         let output = Command::new(&executable)
             .env("WF_TEST_REFUSE_ALLOCATION", refused.to_string())
             .output()
@@ -397,13 +405,13 @@ fn each_generated_allocation_form_reaches_its_refusal_record() {
         if refused == 0 {
             assert_eq!(output.status.code(), Some(18), "{output:?}");
             assert!(output.stderr.is_empty());
-            assert!(trace.starts_with("A1;A2;A3;A4;A5;"), "{trace}");
+            assert!(trace.starts_with("A1;A2;A3;A4;"), "{trace}");
             let mut freed = trace
                 .split(';')
                 .filter_map(|event| event.strip_prefix('F'))
                 .collect::<Vec<_>>();
             freed.sort_unstable();
-            assert_eq!(freed, ["1", "2", "3", "4", "5"], "{trace}");
+            assert_eq!(freed, ["1", "2", "3", "4"], "{trace}");
         } else {
             use std::os::unix::process::ExitStatusExt;
             assert_eq!(
@@ -428,24 +436,50 @@ fn each_generated_allocation_form_reaches_its_refusal_record() {
 /// The subject is [STOR-6]'s separation: a target-qualification failure stops
 /// compilation and may not become a runtime guard. That rule is unchanged.
 ///
-/// Re-derived from the ported lowering: a construction row is emitted as its
-/// own out-of-line body [PRE-1], so the allocation and its refusal edge are in
-/// `wf_box_array_filled$instance$N` and `wf_box_slots_new$instance$N` rather
-/// than at the call in `shapes`. The block names the port chose are
-/// `buffer.fill.` for the filled element block and `window.block.` for a
-/// window's header-first block; `buffer.vacant.` went with `buffer_vacant`.
+/// A construction row is emitted as its own out-of-line body [PRE-1], so the
+/// allocation and its refusal edge are in `wf_box_array_filled$instance$N` and
+/// `wf_box_slots_new$instance$N` rather than at the call in `shapes`. The
+/// emitted block names are `buffer.fill.` for a boxed `Array`'s block and
+/// `window.block.` for a `Slots` or `Ring` block.
+///
+/// The former `*.target.` label probes were vacuous: the emitter has no
+/// target-domain label, symbol or record at all, so no module could ever
+/// contain one and the assertion could not fail. The falsifiable statement of
+/// the same subject is the module's resource-record inventory: [STOR-6] makes
+/// a failed qualification "a target-layout failure under [DIAG-1], not a
+/// source-language rejection", and [DIAG-2] forbids target lowering to
+/// "replace a missing proof with a runtime guard", so the only runtime
+/// resource class an accepted module names is the heap [STOR-8]. A second
+/// record constant, or a written record naming anything but the heap one,
+/// fails an assertion below.
 #[test]
 fn target_qualified_buffers_keep_only_the_heap_refusal_path() {
     let module = heap_module();
-    for absent in [
-        "buffer.fill.target.",
-        "window.block.target.",
-        "@wf_target_domain_abort",
-        "@.wf_resource.target_domain",
-    ] {
+    let records: Vec<&str> = module
+        .lines()
+        .filter(|line| line.starts_with("@.wf_resource."))
+        .collect();
+    assert_eq!(
+        records.len(),
+        1,
+        "an accepted module names exactly one runtime resource class: {records:?}"
+    );
+    assert!(
+        records[0].starts_with("@.wf_resource.heap = "),
+        "and that class is the heap: {records:?}"
+    );
+    let written = module
+        .lines()
+        .filter(|line| line.trim_start().starts_with("call void @wf_resource_record_abort("))
+        .collect::<Vec<_>>();
+    assert!(
+        !written.is_empty(),
+        "the fixture must reach a resource record:\n{module}"
+    );
+    for line in written {
         assert!(
-            !module.contains(absent),
-            "a target-qualified buffer must not emit {absent}:\n{module}"
+            line.contains("ptr @.wf_resource.heap"),
+            "every record written names the heap class: {line}"
         );
     }
 
@@ -459,11 +493,18 @@ fn target_qualified_buffers_keep_only_the_heap_refusal_path() {
             .iter()
             .position(|line| line.starts_with(refusal_label))
             .expect("the allocator's null result must retain a refusal block");
-        let allocation_path = lines[..refusal].join("\n");
+        // Block ordering, restored: the allocator call is reached first and
+        // the refusal block is its null-result successor, never a block the
+        // row falls into before it has asked for storage.
+        let allocation = lines
+            .iter()
+            .position(|line| line.contains("call ptr @malloc"))
+            .expect("the row must reach the allocator");
         assert!(
-            allocation_path.contains("call ptr @malloc"),
-            "the row must reach the allocator before its refusal block:\n{body}"
+            allocation < refusal,
+            "the allocation precedes its refusal block:\n{body}"
         );
+        let allocation_path = lines[allocation..refusal].join("\n");
         assert!(
             allocation_path.contains("icmp ne ptr"),
             "the refusal edge is the allocator's own null test:\n{body}"
@@ -487,13 +528,15 @@ fn target_qualified_buffers_keep_only_the_heap_refusal_path() {
 /// OWN-4, OWN-10, FORM-8, STOR-4]; the form no longer exists, so it has no
 /// successor edge. The fourth form of the image above is `box_ring_new`.
 ///
-/// Re-derived from the ported lowering: the emitted label names the storage a
-/// construction takes rather than the row that takes it, so the four [OP-13]
-/// cell constructions publish three distinct refusal edges. `box_new` and the
-/// cell half of `box_array_filled` take `box.new.oom.`, the element block of
-/// `box_array_filled` takes `buffer.fill.oom.`, and `box_slots_new` and
-/// `box_ring_new` share `window.block.oom.`, because a window's block is
-/// header-first and one address computation serves both [STOR-1, WIN-1].
+/// The emitted label names the storage a construction takes rather than the
+/// row that takes it, so the four [OP-13] cell constructions publish three
+/// distinct refusal edges over four allocations: `box_new`'s scalar cell takes
+/// `box.new.oom.`, the one block of `box_array_filled` takes
+/// `buffer.fill.oom.`, and `box_slots_new` and `box_ring_new` share
+/// `window.block.oom.`, because a window's block is header-first and one
+/// address computation serves both [STOR-1, WIN-1]. Each construction takes
+/// exactly one block: [TYPE-9] stores a `Box`'s content "in exactly one heap
+/// object the `Box` value owns".
 #[test]
 fn every_allocation_refusal_edge_reaches_the_resource_abort() {
     let module = heap_module();

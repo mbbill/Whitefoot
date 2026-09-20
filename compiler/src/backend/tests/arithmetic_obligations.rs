@@ -25,10 +25,19 @@ fn increment(x: own u64) -> result: own u64 pure {
   return stepped;
 }
 
+fn wrapping_increment(x: own u64) -> result: own u64 pure {
+  let stepped = x +wrap 1_u64;
+  return stepped;
+}
+
 fn main() -> status: own ExitStatus pure {
   let total = increment(x: 6_u64);
   if total != 7_u64 {
     return exit_status(code: 1_u8);
+  }
+  let around = wrapping_increment(x: 6_u64);
+  if around != 7_u64 {
+    return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
 }
@@ -45,10 +54,15 @@ fn overflow_call_count(module: &str) -> usize {
 /// shipped emission and the forced-on entry are byte-identical: there is one
 /// acceptance and lowering path, not a switchable pair.
 ///
-/// The `add` carries `nuw` because the `exact` family is exactly the one
-/// whose [OP-2] domain obligation the checker discharged before lowering, and
-/// the backend states a proved fact rather than leaving the optimizer to
-/// rediscover it (compiler/backend-facts). The flag is a statement about the
+/// The `add` carries `nuw`, and the `+wrap` beside it carries nothing.
+/// [DIAG-2]: "every fact the checker has proved may be supplied to the
+/// backend, as target attributes, instruction flags, metadata, or
+/// assumptions: ... and a discharged integer-domain obligation [OP-2], the
+/// last being what licenses a no-wrap flag on an exact operation", bounded by
+/// the same sentence's "only a fact the checker has actually discharged may be
+/// supplied, never one a writer states". `+` is [OP-2]'s exact family and
+/// carries that obligation; `+wrap` is total and carries none, so there is
+/// nothing to supply at the second site. The flag is a statement about the
 /// same one instruction, not a second branch.
 #[test]
 fn a_proved_exact_site_emits_no_overflow_branch() {
@@ -58,11 +72,22 @@ fn a_proved_exact_site_emits_no_overflow_branch() {
         0,
         "an accepted exact add has no runtime overflow branch",
     );
-    assert!(
-        shipped
-            .lines()
-            .any(|line| line.trim_start().starts_with('%') && line.contains("= add nuw i64")),
+    let flagged = shipped
+        .lines()
+        .filter(|line| line.trim_start().starts_with('%') && line.contains("= add nuw i64"))
+        .count();
+    assert_eq!(
+        flagged, 1,
         "the discharged site compiles to one exact add carrying its proved domain",
+    );
+    let wrapping = super::emitted_function(&shipped, "wrapping_increment");
+    assert!(
+        wrapping.contains("= add i64"),
+        "the wrap-mode site is a plain add: {wrapping}"
+    );
+    assert!(
+        !wrapping.contains(" nuw ") && !wrapping.contains(" nsw "),
+        "and carries no no-wrap flag, because nothing was discharged there: {wrapping}"
     );
     assert_eq!(
         shipped,

@@ -153,6 +153,10 @@ fn weigh_invariant_proves_domains_then_erases_before_llvm() {
   return sum;
 }
 
+fn tally(left: own u32, right: own u32) -> total: own u32 pure {
+  return left +wrap right;
+}
+
 fn main() -> status: own ExitStatus pure {
   let weights = slots_new::<u8, 4>();
   for @fill (
@@ -168,6 +172,10 @@ fn main() -> status: own ExitStatus pure {
   if total != 28_u32 {
     set code = 1_u8;
   }
+  let around = tally(left: total, right: 0_u32);
+  if around != 28_u32 {
+    set code = 2_u8;
+  }
   return exit_status(code: code);
 }
 "#;
@@ -176,15 +184,31 @@ fn main() -> status: own ExitStatus pure {
 
     // INV-1 and OP-2 discharge before lowering. The loop therefore contains
     // one plain integer addition and no runtime representation of `per_byte`.
-    // The addition is spelled `add nuw i32`: `+` is [OP-2]'s exact family,
-    // whose domain obligation the checker discharged here, and the emitted
-    // flag states that proved fact over an unsigned operand. It remains one
-    // addition, with no runtime check of its own.
+    //
+    // The addition is spelled `add nuw i32`. [DIAG-2]: "every fact the checker
+    // has proved may be supplied to the backend, as target attributes,
+    // instruction flags, metadata, or assumptions: ... and a discharged
+    // integer-domain obligation [OP-2], the last being what licenses a
+    // no-wrap flag on an exact operation", bounded by the same sentence's
+    // "only a fact the checker has actually discharged may be supplied, never
+    // one a writer states". Both directions are read: `+` here carries the
+    // discharged obligation and the flag, and the `+wrap` in `tally` carries
+    // no obligation and therefore no flag.
     assert!(weigh.contains("add nuw i32"));
     assert_eq!(weigh.matches("add nuw i32").count(), 1);
     assert!(!weigh.contains(".with.overflow."));
     assert!(!weigh.contains("call void @wf_trap"));
     assert!(!llvm.contains("per_byte"));
+
+    let tally = emitted_function(&llvm, "tally");
+    assert!(
+        tally.contains("= add i32"),
+        "the wrap-mode addition is a plain add: {tally}"
+    );
+    assert!(
+        !tally.contains(" nuw ") && !tally.contains(" nsw "),
+        "and carries no no-wrap flag: {tally}"
+    );
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
@@ -586,7 +610,26 @@ fn chunk_summary_instances_preserve_window_abi_and_avoid_allocation() {
         .filter(|line| line.starts_with("define ") && line.contains(" @wf_summarize$instance$"))
         .map(|header| {
             assert!(header.starts_with("define i8 @wf_summarize$instance$"));
-            assert!(header.contains("%v0, ptr %wf.arg.v1)"), "{header}");
+            // Both parameters are `ptr`-typed: the reference `out` by
+            // [REF-1], and the owned `Slots<u8, n>` because the aggregate ABI
+            // hands a frame-resident block by address. The reference's
+            // attribute set (compiler/backend-facts) sits between its type
+            // and its name, so the type is read at the head of the parameter
+            // rather than immediately before `%v0`.
+            let parameters = header
+                .split_once('(')
+                .expect("parameter list")
+                .1
+                .rsplit_once(')')
+                .expect("parameter list closes")
+                .0
+                .split(", ")
+                .collect::<Vec<_>>();
+            let [out, input] = parameters.as_slice() else {
+                panic!("summarize takes exactly two parameters: {header}");
+            };
+            assert!(out.starts_with("ptr ") && out.ends_with(" %v0"), "{header}");
+            assert_eq!(*input, "ptr %wf.arg.v1", "{header}");
             let name = header
                 .split_once("@wf_")
                 .expect("WF symbol")
@@ -614,19 +657,38 @@ fn chunk_summary_instances_preserve_window_abi_and_avoid_allocation() {
     );
     let combine = emitted_function(&llvm, "combine");
     assert!(combine.starts_with("define i8 @wf_combine(ptr "));
-    // Re-derived for v0.60: each of the three reference parameters is one
-    // pointer, and the emitted head now carries the callee-visible
-    // `dereferenceable` the constant-capacity block's own size gives it, so
-    // the parameter ordinals rather than a bare `ptr %v` are what count.
-    assert_eq!(
-        combine
-            .lines()
-            .next()
-            .expect("combine signature")
-            .matches(" %v")
-            .count(),
-        3
-    );
+    // Each of `combine`'s three reference parameters is one pointer and
+    // nothing else: [REF-1] makes a reference "a local name for a path" and
+    // [REF-3] keeps it from escaping, so there is nothing beside the address
+    // to carry. The emitted head also carries the attribute set the pending
+    // amendment compiler/backend-facts fixes -- "`noalias`, `captures(none)`,
+    // `nonnull` and `dereferenceable` on every reference parameter" -- so the
+    // parameter's *type* is read past its attributes rather than by matching
+    // a bare `ptr %v`.
+    let signature = combine
+        .lines()
+        .next()
+        .expect("combine signature")
+        .split_once('(')
+        .expect("parameter list")
+        .1
+        .rsplit_once(')')
+        .expect("parameter list closes")
+        .0;
+    let parameters: Vec<&str> = signature.split(", ").collect();
+    assert_eq!(parameters.len(), 3, "three reference parameters: {combine}");
+    for parameter in parameters {
+        assert!(
+            parameter.starts_with("ptr "),
+            "a reference parameter is one pointer: {parameter}"
+        );
+        assert!(
+            parameter.rsplit(' ').next().is_some_and(|name| name
+                .strip_prefix("%v")
+                .is_some_and(|ordinal| ordinal.bytes().all(|byte| byte.is_ascii_digit()))),
+            "and is named by its ordinal: {parameter}"
+        );
+    }
     assert!(!llvm.contains("call ptr @malloc"));
     assert!(!llvm.contains("call void @free"));
 }

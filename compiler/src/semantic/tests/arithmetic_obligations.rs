@@ -413,13 +413,18 @@ fn an_owning_box_index_renders_its_content_step_as_a_dereference() {
     });
 }
 
-/// [REF-1] a reference is a local name for a path, and resolving a `deref`
-/// step replaces it with the path the reference names. Inside the callee that
-/// path is the parameter itself, so the residual renders the indexed operand
-/// at the parameter and not at the `deref` spelling; the operand is still no
-/// term, which is what the rejection states.
+/// [REF-1] "A reference variable denotes the reference, and the storage it
+/// names is reached only through `deref` [TYPE-7]: every place expression,
+/// subscript, field selection, payload step, and measure read that goes
+/// through a reference variable `p` is written under that step -- `deref(p)`,
+/// `deref(p).field`, `deref(part)[i]`, `deref(part).len`, and
+/// `deref(p).Some.value`." The residual therefore spells the indexed operand
+/// under its `deref` step, which is what the writer wrote and the only
+/// spelling the writer can write. Resolving that step away is what [OWN-7]
+/// does to decide overlap, not what a diagnostic prints. The operand is still
+/// no term, which is what the rejection states.
 #[test]
-fn a_reference_parameter_index_renders_at_the_path_the_reference_names() {
+fn a_reference_parameter_index_renders_under_its_deref_step() {
     let source = br#"fn increment(values: &Array<u8, 2>) -> result: own u8 reads(values) {
   return deref(values)[0_u64] + 1_u8;
 }
@@ -436,7 +441,7 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(
             issue.kind(),
             &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "values[0_u64] +defined 1_u8".to_owned(),
+                residual: "deref(values)[0_u64] +defined 1_u8".to_owned(),
                 disposition: StaticObligationDisposition::Unproved,
                 mechanical_fix: OVERFLOW_FIX,
             },

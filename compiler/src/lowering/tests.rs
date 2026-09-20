@@ -323,9 +323,10 @@ fn main() -> status: own ExitStatus pure {
                 .iter()
                 .filter(|variant| variant.source == function.id)
                 .count();
-            assert!(
-                variants <= 1,
-                "{}: one heap leaves one release environment, got {variants}",
+            assert_eq!(
+                variants, 1,
+                "{}: one heap leaves one release environment, and every source \
+                 definition is still emitted",
                 function.name
             );
         }
@@ -343,6 +344,69 @@ fn main() -> status: own ExitStatus pure {
                 .windows(2)
                 .all(|pair| pair[0].source.0 <= pair[1].source.0)
         );
+    });
+}
+
+/// Retired subject: `physical_call_inventory_closes_captured_regions_and_recursive_edges`,
+/// whose first half measured two release classes over the store axis. That
+/// axis is gone with regions and store parameters [STOR-8]. Its second half is
+/// not: a recursive source function's own call still has to name a variant of
+/// this inventory, and under one heap that variant is the caller's own, so the
+/// edge closes on itself. A `Box` release is "its content's compiler-derived
+/// release followed by one compiler-derived heap free" [STOR-3] with nothing
+/// left for a second environment to vary.
+#[test]
+fn physical_call_inventory_closes_a_recursive_edge_on_its_own_variant() {
+    let source = br#"fn descend(cell: &Box<u64>, again: own Bool) -> result: own unit reads(cell) {
+  if again {
+    let stop = False();
+    descend(cell: cell, again: stop);
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let held = box_new::<u64>(value: 1_u64);
+  let start = True();
+  descend(cell: &held, again: start);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_checked(source, |checked| {
+        let plan = super::specialize::PhysicalFunctions::build(&checked.data)
+            .expect("accepted recursive call inventory must close");
+        let recursive = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "descend")
+            .expect("recursive source declaration")
+            .id;
+        let variants = plan
+            .variants
+            .iter()
+            .enumerate()
+            .filter(|(_, variant)| variant.source == recursive)
+            .collect::<Vec<_>>();
+        let [(index, variant)] = variants.as_slice() else {
+            panic!("one heap leaves one variant of a recursive function: {variants:?}");
+        };
+        let [(_, target)] = variant.calls.as_slice() else {
+            panic!("the body's one call must be retained: {:?}", variant.calls);
+        };
+        assert_eq!(
+            *target as usize, *index,
+            "the recursive call names the caller's own variant"
+        );
+        for variant in &plan.variants {
+            assert!(
+                variant
+                    .calls
+                    .iter()
+                    .all(|(_, target)| (*target as usize) < plan.variants.len()),
+                "every call names a variant of this inventory"
+            );
+        }
     });
 }
 
@@ -474,6 +538,21 @@ fn source_signature_modes_are_not_invented_for_synthesized_functions() {
     });
 }
 
+/// UNGROUNDED PREMISE, ORIGINAL ASSERTION RESTORED. The port flipped the
+/// first assertion from `assert_eq` to `assert_ne` on the ground that "a
+/// reference parameter is an address of the owner's storage and an own
+/// parameter is the value itself [REF-1, OWN-2]". There is no rule OWN-2 in
+/// `spec/kernel-spec.md` at all, and nothing else decides this: [REF-1] fixes
+/// what a reference *names* and [STOR-7] says only that a value may be
+/// relocated by copying its bytes, neither of which says whether a borrow and
+/// a consume of one binding reach the emitted call as one IR operand or two;
+/// `design/compiler` has no node for it either. Whether the two share an
+/// operand is therefore the lowering's own choice, unrecorded, and this test
+/// keeps the assertion it was written with rather than a new one invented to
+/// match the port. Its subject is the half that *is* determined: whichever
+/// operand each call gets, the retained use records distinguish a borrow from
+/// a consume, which is what the first three assertions read; the restored
+/// fourth is the undetermined one and stands last so it cannot hide them.
 #[test]
 fn source_call_uses_distinguish_borrow_and_consume_of_the_same_ir_value() {
     let source = format!(
@@ -482,18 +561,18 @@ fn source_call_uses_distinguish_borrow_and_consume_of_the_same_ir_value() {
     with_ir(source.as_bytes(), |program| {
         let (borrow, borrowed_values) = source_call(program, "run", "inspect");
         let (consume, consumed_values) = source_call(program, "run", "consume");
-        // Retired half: the two calls passing one identical IR value. A
-        // reference parameter is an address of the owner's storage and an own
-        // parameter is the value itself [REF-1, OWN-2], so the borrow and the
-        // consume of one source binding no longer share an operand; what the
-        // records still have to distinguish is the *use*, which is what the
-        // two assertions below read.
-        assert_ne!(borrowed_values, consumed_values);
+        // The determined half runs first, so that the undetermined one below
+        // cannot hide it.
         assert_ne!(borrow.result, consume.result);
         assert_eq!(borrow.arguments, [IrSourceArgument::Borrow]);
         assert_eq!(
             consume.arguments,
             [IrSourceArgument::Binding { consume_root: true }]
+        );
+        assert_eq!(
+            borrowed_values, consumed_values,
+            "this is the original assertion, restored; no rule and no design \
+             node decides whether the two calls share one operand"
         );
     });
 }
@@ -971,6 +1050,20 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [STOR-6]: "The accepted [OP-9] judgment retains a numeric upper bound for
+/// the source length **at that allocation site**; target qualification
+/// multiplies that bound by the actual target stride ... before lowering the
+/// operation." The bound is a property of the site, not of the construction
+/// row, so two callers with two different proved ceilings own two different
+/// bounds and neither may be read from the other. [OP-9] says the same from
+/// the other side: "Each runtime-capacity construction [OP-13] and `grow`
+/// [OP-10] carries it over that operation's own stored type and count."
+///
+/// The second caller is what makes that falsifiable. With one caller a shared
+/// row body carrying that caller's bound is indistinguishable from a
+/// per-site bound; with two, a shared body can carry at most one of 1000 and
+/// 7, and the grouping below names the function each retained bound was found
+/// in, so the failure says where the bound actually landed.
 #[test]
 fn buffer_allocations_lower_the_source_proved_length_ceiling_into_target_obligations() {
     let source = br#"fn allocate(n: own u64) -> result: own unit pure contract {
@@ -981,40 +1074,52 @@ fn buffer_allocations_lower_the_source_proved_length_ceiling_into_target_obligat
   return unit;
 }
 
+fn small(n: own u64) -> result: own unit pure contract {
+  requires n <= 7_u64;
+} {
+  let packed = box_array_filled::<u16>(count: n, value: 7_u16);
+  let vacant = box_slots_new::<u16>(capacity: n);
+  return unit;
+}
+
 fn main() -> status: own ExitStatus pure {
   allocate(n: 4_u64);
+  small(n: 3_u64);
   return exit_status(code: 0_u8);
 }
 "#;
-    // Re-derived for v0.60: the two constructions are [OP-13] rows emitted as
-    // their own out-of-line bodies (compiler/prelude-records), so the filled
-    // element block and the window block are allocated in
-    // `box_array_filled$instance$N` and `box_slots_new$instance$N` rather than
-    // in `allocate`. The source-proved ceiling must still reach each one, so
-    // the whole program is searched and both allocation forms are read.
     with_ir(source, |program| {
-        let bounds = program
-            .functions()
-            .iter()
-            .flat_map(IrFunction::blocks)
-            .flat_map(IrBlock::instructions)
-            .filter_map(|instruction| {
-                let IrInstruction::Define { operation, .. } = instruction else {
-                    return None;
-                };
-                match operation {
-                    IrOperation::BufferFill { target_domains, .. }
-                    | IrOperation::BufferVacant { target_domains, .. } => {
-                        Some(target_domains.source_length_upper_bound())
+        let mut sites: Vec<(&str, Vec<u64>)> = Vec::new();
+        for function in program.functions() {
+            let bounds = function
+                .blocks()
+                .iter()
+                .flat_map(IrBlock::instructions)
+                .filter_map(|instruction| {
+                    let IrInstruction::Define { operation, .. } = instruction else {
+                        return None;
+                    };
+                    match operation {
+                        IrOperation::BufferFill { target_domains, .. }
+                        | IrOperation::BufferVacant { target_domains, .. } => {
+                            Some(target_domains.source_length_upper_bound())
+                        }
+                        IrOperation::WindowBlockNew { obligations, .. } => {
+                            Some(obligations.target_domains.source_length_upper_bound())
+                        }
+                        _ => None,
                     }
-                    IrOperation::WindowBlockNew { obligations, .. } => {
-                        Some(obligations.target_domains.source_length_upper_bound())
-                    }
-                    _ => None,
-                }
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(bounds, vec![1000, 1000]);
+                })
+                .collect::<Vec<_>>();
+            if !bounds.is_empty() {
+                sites.push((function.name(), bounds));
+            }
+        }
+        assert_eq!(
+            sites,
+            vec![("allocate", vec![1000, 1000]), ("small", vec![7, 7])],
+            "each allocation site keeps its own caller's proved ceiling"
+        );
     });
 }
 

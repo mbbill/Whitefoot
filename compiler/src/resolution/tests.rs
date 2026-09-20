@@ -2425,8 +2425,14 @@ fn parsed_prelude_declarations_are_ordinary_visible_targets() {
     );
 }
 
+/// Renamed from `..._and_opaque_types_have_no_constructor`: an opaque struct
+/// does have a constructor entry, and this test asserts that it resolves.
+/// [TYPE-2]: "Its constructor entry [TYPE-6] exists to be refused: a
+/// constructor `call` whose leading TYPEID names an opaque struct is a hard
+/// error citing TYPE-2 at the complete `call`" -- the refusal is the checker's,
+/// over a name resolution supplied here.
 #[test]
-fn ordinary_prelude_names_cannot_be_shadowed_and_opaque_types_have_no_constructor() {
+fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_resolves() {
     for source in [
         "struct HostString {\n}\n",
         "enum Collision {\n  NotFound();\n}\n",

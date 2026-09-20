@@ -64,26 +64,31 @@ fn executes_every_negation_mode_for_every_signed_width() {
             "only the declaration and two checked {ty} negations need the overflow intrinsic"
         );
         assert!(llvm.contains(&format!("icmp ne i{width}")));
-        // `nsw` appears exactly on the exact-mode negation and on no
-        // wrap-mode negation, which is what keeps this module free of
-        // undefined behavior. [OP-2] gives the `exact` family a domain
-        // obligation the checker discharged before lowering, so `0 - (-42)`
-        // provably does not overflow and the flag states a proved fact; the
-        // `wrap` family is defined at every operand, including the minimum
-        // this program hands it, so the same flag there would state the
-        // opposite of the rule and hand the optimizer a false premise about
-        // an operand the language defines. No negation is unsigned, so no row
-        // states `nuw` at all.
+        // [DIAG-2]: "every fact the checker has proved may be supplied to the
+        // backend, as target attributes, instruction flags, metadata, or
+        // assumptions: ... and a discharged integer-domain obligation [OP-2],
+        // the last being what licenses a no-wrap flag on an exact operation."
+        // The same sentence bounds it: "only a fact the checker has actually
+        // discharged may be supplied". The `wrap` family carries no [OP-2]
+        // obligation and is defined at every operand, including the minimum
+        // this program hands it, so nothing has been discharged there and no
+        // flag may be supplied. Both directions are read below.
         assert_eq!(
             llvm.matches(&format!("sub nsw i{width} 0,")).count(),
             1,
             "exactly the exact-mode {ty} negation carries nsw"
         );
         assert_eq!(
+            llvm.matches(&format!("sub i{width} 0,")).count(),
+            1,
+            "and the wrap-mode {ty} negation carries no flag at all"
+        );
+        assert_eq!(
             llvm.matches(" nsw ").count(),
             1,
-            "and no other {ty} row in the module carries it"
+            "no other {ty} row in the module carries it"
         );
+        // No negation is unsigned, so no row of this module states `nuw`.
         assert!(!llvm.contains(" nuw "));
         let output = compile_and_run(&llvm);
         assert!(

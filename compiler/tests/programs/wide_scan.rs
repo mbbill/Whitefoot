@@ -1,38 +1,49 @@
 //! Typed-outcome oracle for proof-gated wide-probe lowering.
 //!
-//! The program below carries five recognized byte-walk loops. The
-//! equivalence walks pin the exact per-byte results (needle positions at
-//! every probe-lane boundary, an absent needle, and a bound below the
-//! buffer length). The argument-selected boundary walks deliberately use
-//! loop bounds past their buffers, but express exhaustion as distinct exit
-//! statuses: at the first byte of an empty buffer, and one past the last
-//! byte at an offset inside a would-be wide stride, with every pre-failure
-//! published effect identical to the scalar reference. Expectations are
-//! fixed input/output/status triples;
+//! The program below carries five byte-walk loops of the recognized shape.
+//! The equivalence walks pin the exact per-byte results (needle positions at
+//! every probe-lane boundary, an absent needle, and a bound below the run's
+//! length). The argument-selected boundary walks deliberately use loop bounds
+//! past their runs, but express exhaustion as distinct exit statuses: at the
+//! first byte of an empty run, and one past the last byte at an offset inside
+//! a would-be wide stride, with every pre-failure published effect identical
+//! to the scalar reference. Expectations are fixed input/output/status
+//! triples;
 //! the compiler has no optimizer-fact channel, so this single ordinary
 //! mode is the facts-off mode.
 //!
-//! **LEFT ON `buffer<T>` DELIBERATELY, and the reason is the probe itself.**
-//! The subject of this oracle is the wide probe, and the wide probe is a
-//! buffer-only lowering at both ends: the recognizer matches a
+//! **THE FIXTURE IS NO LONGER ON `buffer<T>`, AND THAT IS WHAT THIS ORACLE
+//! NOW DEMANDS OF THE PROBE.** The module doc used to say the fixture was left
+//! on `buffer<T>` deliberately, because the wide probe was a buffer-only
+//! lowering at both ends: the recognizer matched a
 //! `CheckedExpression::BufferIndex` walk and nothing else, and the emitter
-//! refuses any operand whose IR type is not `IrType::Buffer`. A run walk is
-//! therefore not recognized at all, so a migrated oracle would assert three
-//! wide loads and find none, and the case would stop being evidence of
-//! anything.
+//! refused any operand whose IR type was not `IrType::Buffer`. The v0.60 port
+//! migrated the fixture anyway. The three equivalence walks below now walk a
+//! constant-capacity `Array<u8, N>` and read its length as the readonly field
+//! `data.len` [TYPE-9, MSR-1, OP-15], and the two boundary walks index a boxed
+//! `Array<u8>` and an `Array<u8, 37>`. The `count == 3` assertion below is
+//! therefore a demand on the probe rather than a description of it, and it
+//! stays exactly as written: while the recognizer still matches only a buffer
+//! walk it finds no wide load at all and this test fails, and it passes again
+//! when the recognizer and the emitter reach `Array` and window walks.
 //!
-//! Extending the probe to a run is not a rename. A buffer is one contiguous
-//! range whose descriptor's second word is its length, which is exactly what
-//! the probe's window guard reads; a run is a *window* — `len_of` slots
-//! beginning at `head_of` modulo `cap_of` [BLK-1] — so `base + index` is the
-//! right address only where `head_of` is proved identically zero, and the
-//! guard needs the run's own three measure words rather than one. That is a
-//! backend change with its own proof obligation and its own cases, and it is
-//! a precondition of the retirement rather than part of this batch.
+//! Extending the probe is not a rename, and the shapes differ in what its
+//! guard has to read. An `Array<T, N>` is a contiguous run whose `len` is the
+//! type constant N and whose `cap` is absent [MSR-1], so `base + index` is
+//! always the right address and the guard reads one constant; an `Array<T>`
+//! is the same run with a runtime length. A `Slots` or a `Ring` is a
+//! *window* -- `P.len` slots beginning at the origin `P.head` taken modulo
+//! `P.cap`, under the map `i |-> (origin + i) mod P.cap` [MSR-1] -- so
+//! `base + index` is the right address only where the origin is proved
+//! identically zero: always for a `Slots`, whose row gives `head` as
+//! *absent*, and never for a `Ring` after a front operation, `head` being the
+//! one *bounded* cell of that table. A range reference `&[T]` carries one
+//! base and the range's own `len` and is the `Array` case again. That is a
+//! backend change with its own proof obligation and its own cases
+//! (compiler/wide-probe-lowering), not part of the port that moved the
+//! fixture.
 //!
-//! Publication uses an ordinary slice view of the retained buffer fixture.
-//! Migrating the fixtures to store-backed runs would also require an ordinary
-//! `Heap` entry parameter.
+//! Publication uses a range reference over the retained fixture [REF-4].
 
 use super::support::{build_program, compile_sources, fixture_directory};
 

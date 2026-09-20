@@ -2971,3 +2971,80 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(name, "stale");
     });
 }
+
+/// Asserts that one source is rejected by [FN-9] at a selected return.
+///
+/// The disposition is deliberately not pinned. [DIAG-3] fixes that it is
+/// "exactly `unproved` or `refuted`" and that entry-image unavailability fixes
+/// `unproved`, but which of the two a provable contradiction reaches depends
+/// on the [ENT-4] closure rather than on a rule, and this test is about the
+/// two states being two terms.
+fn assert_fn9_rejects(source: &[u8]) {
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("the exit relation must be rejected: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn9);
+        assert!(
+            matches!(
+                issue.kind(),
+                SemanticIssueKind::UndischargedPostcondition(_)
+            ),
+            "FN-9 must reject at the relation: {issue:?}"
+        );
+    });
+}
+
+/// The entry and the exit measure of a written reference parameter are two
+/// distinct terms, and both are read at the selected return whether the
+/// callee's own call is that return or a statement before it.
+///
+/// [MSR-3]'s table gives `ensures, deref(reference parameter the row writes)`
+/// the exit-state term and `ensures, deref(entry(reference parameter the row
+/// writes))` the immutable entry datum, and says so in one sentence: "Entry
+/// and exit measures are distinct terms even when both project from the same
+/// formal and actual." [FN-9] reads the bare measure "over that parameter's
+/// resolved referent immediately before each selected return, after the
+/// return's ordinary effects and kills", so a `return take_back(window: free);`
+/// must apply that call's own boundary -- its projected write kills and its
+/// published exit relation -- before the clause is queried, exactly as the
+/// two-statement form does (compiler/checker-facts, pending).
+///
+/// Under `requires deref(free).len == 2_u64` the entry length is two and
+/// `take_back`'s `ensures deref(window).len + 1_u64 == deref(entry(window)).len`
+/// makes the exit length one. So `+ 1_u64 == entry` and `== 1_u64` hold and
+/// `== entry` and `== 2_u64` do not, in both body forms. A reading that took
+/// the entry state at the exit would accept `== entry` and `== 2_u64` and
+/// reject the other two.
+#[test]
+fn entry_and_exit_measures_are_two_states_at_a_returned_call_and_at_a_statement() {
+    let program = |clause: &str, body: &str| {
+        format!(
+            r#"fn take_one(free: &Slots<u8, 4>) -> taken: own u8 writes(free.last), writes(free.len) contract {{
+  requires deref(free).len == 2_u64;
+  ensures {clause};
+}} {{
+{body}
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  let free = slots_new::<u8, 4>();
+  place_back(window: &free, value: 1_u8);
+  place_back(window: &free, value: 2_u8);
+  let value = take_one(free: &free);
+  return exit_status(code: value);
+}}
+"#
+        )
+    };
+    let returned_call = "  return take_back(window: free);";
+    let own_statement = "  let one = take_back(window: free);\n  return one;";
+    for body in [returned_call, own_statement] {
+        assert_complete(
+            program("deref(free).len + 1_u64 == deref(entry(free)).len", body).as_bytes(),
+        );
+        assert_fn9_rejects(program("deref(free).len == deref(entry(free)).len", body).as_bytes());
+        assert_complete(program("deref(free).len == 1_u64", body).as_bytes());
+        assert_fn9_rejects(program("deref(free).len == 2_u64", body).as_bytes());
+    }
+}

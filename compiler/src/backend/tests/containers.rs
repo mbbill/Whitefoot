@@ -34,7 +34,19 @@ fn observe_allocations(module: &str) -> String {
 
 /// Retired subject: the allocation-refusal sweep, which [STOR-8]'s total
 /// allocation leaves without a source-visible subject; successor: this test,
-/// which keeps the owner-identity half the observer still observes.
+/// which keeps the owner-identity half the observer still observes, including
+/// the `Full(offered:)` owner return the sweep used to check.
+///
+/// The counts are derived from the fixture, not read back from it. `main`
+/// runs `exercise` for the sixteen seeds `0_u64..16_u64`; each `exercise`
+/// makes twelve `allocate_put` calls and each of those one
+/// `box_new::<u64>(value: v)`, and [STOR-1] gives a `Box<T>` "one
+/// compiler-derived allocation released by one compiler-derived free at owner
+/// scope exit [STOR-3]" while [TYPE-9] stores its content "in exactly one heap
+/// object the `Box` value owns". So 16 x 12 = 192 owners and 192 frees, and
+/// the twelfth of each seed is the owner offered to a genuinely full table and
+/// handed straight back as `Full(offered: back)`: 16 of those. An open
+/// `allocations=` would let an owner go missing without this line changing.
 #[test]
 fn owning_map_collision_and_tombstone_preserve_every_owner_identity() {
     let source = include_bytes!("../../../../tests/programs/containers/owning-map.wf");
@@ -43,8 +55,10 @@ fn owning_map_collision_and_tombstone_preserve_every_owner_identity() {
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
     let report = String::from_utf8(output.stdout).unwrap();
-    assert!(report.starts_with("PASS status=0 allocations="), "{report}");
-    assert!(report.ends_with(" live=0\n"), "{report}");
+    assert_eq!(
+        report,
+        "PASS status=0 allocations=192 releases=192 full_original_owners=16 live=0\n"
+    );
 }
 
 fn check_migration(source: &[u8], behavior: bool) {

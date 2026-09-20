@@ -155,8 +155,27 @@ fn a_run_of_store_backed_runs_is_a_block_pool() {
     let llvm = compile_program("block_pool.wf");
     // One slot holds a whole constant-capacity block, so the outer window's
     // storage is eight of them and the element load is that aggregate
-    // [WIN-1, OP-9].
+    // [WIN-1, OP-9]. The alias name alone says nothing about what a slot
+    // holds, so the element type's own definition is pinned beside it: the
+    // slot is a `Block`, whose one field is a `Slots<u8, 256>`, and [OP-9]
+    // prices that shape as "T's pair N times and then ... that block followed
+    // by one `(8,8)` word, its length", one runtime word and 256 element
+    // bytes. Header first, by the pending amendment
+    // compiler/storage-representation: "The constant-capacity form carries the
+    // same header ahead of its elements so that the two placements share one
+    // layout."
     assert!(llvm.contains("[8 x %wf.t0]"));
+    let element = llvm
+        .lines()
+        .find(|line| line.starts_with("%wf.t0 = type "))
+        .expect("the aliased element type must be declared");
+    let (header, _) = element
+        .split_once("[256 x i8]")
+        .unwrap_or_else(|| panic!("a slot holds 256 element bytes: {element}"));
+    assert!(
+        header.ends_with("{ i64, "),
+        "and its one length word stands ahead of them: {element}"
+    );
     // Re-derived for v0.60: the blocks themselves stay frame-resident, and the
     // one heap object the program owns is the boxed run the entry hands to the
     // lease, so exactly one allocation is emitted [STOR-1, STOR-8].

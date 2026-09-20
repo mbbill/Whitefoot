@@ -1,19 +1,26 @@
 ; Descriptor-only entry for stable binary distribution and its independent oracle.
-; The owned runtime-capacity result is a `Box<Array<T>>` cell pointer, not the
-; `{ ptr, i64 }` descriptor v0.59 returned: a runtime-capacity shape exists only
-; as the content of a cell [TYPE-9], the cell is what the call hands back, and
-; one compiler-derived free at the owner's scope exit releases it [STOR-1,
-; STOR-3]. The adapter therefore loads the cell's `{ data, count }` content for
-; the oracle to read and hands the cell itself back as the retained handle; the
-; release entry consumes exactly that handle, which is the only value the
-; release row accepts.
+; The owned runtime-capacity result is a `Box<Array<T>>`, whose content
+; [TYPE-9] stores "in exactly one heap object the `Box` value owns" and which
+; [STOR-1] releases with "one compiler-derived free at the owner's scope exit
+; [STOR-3]". That one object is thin: the pending amendment
+; compiler/storage-representation makes `Box<Array<T>>` "one pointer to one
+; block laid out `[len | cap | elements]`", with "an `Array`, whose `len` equals
+; its `cap` [WIN-1], storing that one runtime number once". So the block behind
+; the returned pointer is `[len | elements]`: the adapter reads the length out
+; of its first word and takes the element base one 8-byte header word past it,
+; every element type here being `u64`, `f64` or `u8`, none of which [OP-9]
+; aligns past 8. The same pointer is handed back as the retained handle, which
+; is the only value the release row accepts.
+;
+; NOT YET EXERCISED. This fixture stops at an unimplemented composite-value
+; capability before it is compiled, so the oracle that would run this adapter
+; does not reach it; the other eight adapters share its shape and do run.
 define void @wf_bench_radix_scatter(ptr %input, i64 %count, i32 %bit, ptr %out, ptr %out_len, ptr %out_cell) {
   %a = insertvalue { ptr, i64 } poison, ptr %input, 0
   %b = insertvalue { ptr, i64 } %a, i64 %count, 1
   %r = call ptr @wf_radix_scatter({ ptr, i64 } %b, i32 %bit)
-  %content = load { ptr, i64 }, ptr %r
-  %p = extractvalue { ptr, i64 } %content, 0
-  %n = extractvalue { ptr, i64 } %content, 1
+  %n = load i64, ptr %r
+  %p = getelementptr inbounds i8, ptr %r, i64 8
   store ptr %p, ptr %out
   store i64 %n, ptr %out_len
   store ptr %r, ptr %out_cell

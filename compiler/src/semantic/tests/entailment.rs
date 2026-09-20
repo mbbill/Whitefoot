@@ -5737,6 +5737,15 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
+/// The range half's residual spells its measure through the `deref` step.
+/// [REF-1]: "the storage it names is reached only through `deref` [TYPE-7]:
+/// every place expression, subscript, field selection, payload step, and
+/// measure read that goes through a reference variable `p` is written under
+/// that step -- `deref(p)`, `deref(p).field`, `deref(part)[i]`,
+/// `deref(part).len`", and [OP-15] gives the same one spelling: "`deref(part).len`
+/// of a range reference is the one measure no declaration states [REF-4]".
+/// A residual printing `order.len` names an expression the writer cannot
+/// write.
 #[test]
 fn a_window_offset_renders_the_outer_subscript_and_a_failed_range_offset_stops_there() {
     let source = br#"const count: u64 = 4_u64;
@@ -5780,7 +5789,10 @@ fn main() -> status: own ExitStatus pure {
         1,
         "the failed inner range index prevents the outer site from being reached"
     );
-    assert_eq!(ranged[0].residual.as_deref(), Some("0_u64 < order.len"));
+    assert_eq!(
+        ranged[0].residual.as_deref(),
+        Some("0_u64 < deref(order).len")
+    );
 }
 
 #[test]

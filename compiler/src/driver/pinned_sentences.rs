@@ -15,24 +15,38 @@
 //! and this table proves no sentence is missing from that set. A sentence
 //! removed from the compiler fails here; a sentence reworded fails here.
 //!
-//! Seven sentences are not rows, because no source program reaches them. Each
-//! is a defensive arm behind an earlier rejection, and the reason is checkable
-//! one by one:
+//! The sentences listed below are not rows, because no source program reaches
+//! them. Each is a defensive arm behind an earlier rejection or behind a
+//! spelling v0.60 removed, and the reason is checkable one by one. The list is
+//! kept complete rather than counted: a count is a second record of the same
+//! thing and drifts, and this one already had.
 //!
-//! - `'region#{}` in `check::expressions::region_spelling` renders a region
-//!   whose declaration is unreachable; every region in a checked mode came
-//!   from a resolved declaration.
-//! - `parameter #{ordinal}` in `entailment::flow::render_goal_datum` names a
-//!   formal, and only *concrete* goals are rendered.
+//! - `parameter #{ordinal}` in `entailment::flow::render_goal_datum`, and the
+//!   `[parameter #{ordinal}]` subscript step beside it, name a formal, and
+//!   only *concrete* goals are rendered.
 //! - `no operand in position {index} for this row` in
 //!   `check::expressions::calls` needs more operands than the selected row
 //!   takes; [OP-1] rejects the arity first.
 //! - [EFF-1]'s non-parameter-root reason and its repair need an effect root
 //!   that resolves to a value and is not a parameter; the resolver rejects
 //!   every such root as an unresolved `EffectRoot` use first.
-//! - `slice_of`'s "a borrow of a runtime value binding or a named const" pair
-//!   needs a place base that resolves to neither; the resolver admits only
-//!   those two classes in a `PlaceBase` use.
+//! - The two subscript-operand sentences of `check::expressions::flat_storage`
+//!   -- "a written move, which consumes rather than indexes" and "an atom that
+//!   is not a place", both under the expectation "a place, which a subscript
+//!   indexes" -- were reached in v0.59 through the measure-former call
+//!   `len_of(...)`, whose operand was an ordinary atom. v0.60 reads a measure
+//!   as the `psuffix` `P.len` [OP-15, MSR-1], and [GRAM-5] writes a subscript
+//!   only below a `place`, so no source presents either operand shape.
+//! - "an array, buffer, or slice place", the same module's scalar-base
+//!   sentence, retires with the same former for the same reason: a measure
+//!   member read on an unmeasured place is [MSR-1]'s own [TYPE-5] rejection
+//!   carrying the measured types, not this one.
+//!
+//! Two bullets this list used to carry are gone with their sentences rather
+//! than with their reachability: `check::expressions::region_spelling` and
+//! `slice_of`'s "a borrow of a runtime value binding or a named const" pair no
+//! longer exist anywhere in the compiler, regions and view formers having left
+//! the language [REF-1, REF-4].
 //!
 //! C2 deletes the PAR-3 staging report and its three exclusive sentences.
 //! Ordinary call diagnostics remain pinned below.
@@ -594,7 +608,11 @@ fn main() -> status: own ExitStatus pure {
     // [REF-1, EFF-1] and there is no shared-versus-unique defect left to
     // publish. The successors are the two [EFF-1] row defects pinned below.
     Probe {
-        name: "repeated-effect-category.wf",
+        // Renamed from `repeated-effect-category.wf`: the source repeats one
+        // *path* within one category, `reads(left), reads(left)`, which is
+        // exactly what the pinned sentence says a row may not do. Nothing here
+        // repeats a category.
+        name: "repeated-effect-path.wf",
         source: br#"fn touch(left: &u64, right: &u64) -> out: own u64 reads(left), reads(left), reads(right) {
   let a = deref(left);
   let b = deref(right);
@@ -717,7 +735,29 @@ fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "u64", found: "u8" }"#],
+        // The actual here is the range reference `view`, whose kind is
+        // `&[u8]`: [TYPE-8] states that "`&T` and `&[T]` are reference kinds
+        // and not types", and [REF-4] gives the formation `&digits[0..2]`
+        // exactly that kind. The element type `u8` is the type of
+        // `deref(view)[i]` and of nothing at this argument position, so a
+        // payload naming it describes a value the program does not contain.
+        //
+        // [TYPE-5] fixes that "argument types match declared parameter types
+        // exactly" and therefore that this call is rejected; it does not fix
+        // the rendering of a call-argument mismatch, and [DIAG-3] requires
+        // byte identity "only where this specification explicitly fixes both
+        // selection and encoding". Pinned here are the two facts the
+        // specification does fix, inside the `expected`/`found` framing every
+        // other TYPE-5 probe in this module shares: the declared parameter's
+        // mode and type, written the way [TYPE-5] writes a `set` target's
+        // ("carrying expected `own T` and the actual mode and type") because
+        // [FN-1] makes a parameter a mode and a type together; and the actual,
+        // named as the range reference it is. The actual carries no mode
+        // because a reference kind has none.
+        sentences: &[
+            r#"expected: "own u64""#,
+            r#"found: "&[u8]""#,
+        ],
     },
     // -------------------------------------------------------------------
     // [TYPE-5] and [FORM-5]: projections, replacement, and operands.
@@ -770,7 +810,13 @@ fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "Ticket", found: "u64" }"#],
+        // [TYPE-5] fixes both halves of this payload: "the right-hand side of
+        // `set p = e;` must produce exactly `own T`", and "a different
+        // right-hand-side mode or type is a hard error citing TYPE-5 at the
+        // complete `expr` child of the `set_stmt`, carrying expected `own T`
+        // and the actual mode and type". A bare type on either side drops the
+        // mode the rule names.
+        sentences: &[r#"TypeMismatch { expected: "own Ticket", found: "own u64" }"#],
     },
     Probe {
         name: "boolean-operand-is-an-integer.wf",
