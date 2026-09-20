@@ -242,3 +242,9 @@ strict controls before residue comparisons have meaning. The comparison stays
 within one host, does not pool models, and transfers neither the old 7763
 address observations nor a result between models. Outcomes are not resampled;
 the fixed residues, oracle, counts, and thresholds are unchanged.
+
+Run [35539634206](https://github.com/mbbill/Whitefoot/actions/runs/35539634206)
+at `1a8b207f` received an Intel Xeon Platinum 8573C and stopped before
+construction at the revised hardware gate. The identity was retained. These
+attempts have produced no forced-residue timing or new performance conclusion;
+the formal PR regression remains unresolved.
