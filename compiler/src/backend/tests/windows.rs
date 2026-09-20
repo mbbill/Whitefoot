@@ -68,6 +68,27 @@ const U64_CELL: &[u8] = br#"fn main() -> status: own ExitStatus pure {
 }
 "#;
 
+/// OP-9 admits zero even when the mathematical language ceiling exceeds
+/// u64. Lowering must preserve that result so STOR-6, rather than an internal
+/// compiler failure, reports the unrepresentable concrete element layout.
+#[test]
+fn an_above_u64_zero_count_reaches_target_qualification() {
+    for generic in ["", "<T>"] {
+        let source = format!(
+            "struct Giant {{\n  words: Array<u64, 2305843009213693952>;\n}}\n\nfn allocate{generic}(count: own u64) -> result: own unit pure contract {{\n  requires count <= 0_u64;\n}} {{\n  let cells = box_slots_new::<Giant>(capacity: count);\n  free_empty(window: move cells);\n  return unit;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        with_ir(source.as_bytes(), |program| {
+            let host = TargetLayout::host().expect("the test host is supported");
+            assert_eq!(
+                validate_program(host, program),
+                Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::Representation
+                ))
+            );
+        });
+    }
+}
+
 /// [STOR-6] multiplies the retained source bound for a runtime-capacity
 /// construction by the actual target stride, adds its emitted header, and
 /// requires the result to fit the

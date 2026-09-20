@@ -340,9 +340,6 @@ fn lower_nominals(
                     referent: lower_type(erasure, *referent)?,
                     release: lower_release_class(*release),
                 },
-                CheckedNominalKind::Arena { content, .. } => IrNominalKind::Arena {
-                    content: lower_type(erasure, *content)?,
-                },
                 CheckedNominalKind::Opaque => IrNominalKind::Opaque,
             };
             Ok(IrNominal {
@@ -1874,10 +1871,7 @@ impl<'program> IrBuilder<'program> {
                 }
                 // An opaque system resource has no writer-visible field, so no
                 // struct path reaches through one.
-                IrNominalKind::Enum { .. }
-                | IrNominalKind::Box { .. }
-                | IrNominalKind::Arena { .. }
-                | IrNominalKind::Opaque => {
+                IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } | IrNominalKind::Opaque => {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
             };
@@ -1920,10 +1914,7 @@ impl<'program> IrBuilder<'program> {
             }
             // An opaque system resource has no writer-visible field, so no
             // struct path reaches through one.
-            IrNominalKind::Enum { .. }
-            | IrNominalKind::Box { .. }
-            | IrNominalKind::Arena { .. }
-            | IrNominalKind::Opaque => {
+            IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } | IrNominalKind::Opaque => {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
         };

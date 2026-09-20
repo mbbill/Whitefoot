@@ -37,7 +37,7 @@ pub(super) fn is_stored_aggregate(
             match nominal.kind() {
                 IrNominalKind::Struct { .. } | IrNominalKind::Opaque => true,
                 IrNominalKind::Enum { .. } => !nominal.is_tag_only_enum(),
-                IrNominalKind::Box { .. } | IrNominalKind::Arena { .. } => false,
+                IrNominalKind::Box { .. } => false,
             }
         }
         IrType::Unit

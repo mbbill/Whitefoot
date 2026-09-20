@@ -787,7 +787,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         // TYPE-7 precedes the endpoint's TYPE-5 exact-value judgment. Use the
-        // consuming-position atom path so a box/arena or borrow holder reaches
+        // consuming-position atom path so a box or borrow holder reaches
         // that exclusive judgment instead of stopping first at OWN-1's bare
         // affine spelling rule.
         let endpoint = self.check_consuming_atom(function, node, bindings, loop_depth)?;

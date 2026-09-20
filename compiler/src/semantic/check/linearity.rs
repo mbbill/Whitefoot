@@ -100,7 +100,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// The types one nominal owns directly [PROV-6]: its fields, its enum
-    /// variant payloads, its `box` referent, and its `arena` content.
+    /// variant payloads and its `box` referent.
     fn owned_components(&self, id: NominalId) -> Result<Vec<CheckedType>, CheckStop> {
         Ok(match &self.nominal(id)?.kind {
             CheckedNominalKind::Struct { fields } => fields.iter().map(|field| field.ty).collect(),
@@ -109,7 +109,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
                 .collect(),
             CheckedNominalKind::Box { referent, .. } => vec![*referent],
-            CheckedNominalKind::Arena { content, .. } => vec![*content],
             CheckedNominalKind::Opaque => Vec::new(),
         })
     }

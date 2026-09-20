@@ -501,7 +501,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     measure: *measure,
                     element,
                 },
-                // [MSR-1] a run's or a bump extent's measure. The measured
+                // [MSR-1] a storage shape's measure. The measured
                 // kind and the written constant are the row's identity, and
                 // the operand's own type is what fixes both.
                 (CheckedExpression::ContainerMeasure { measure, root }, argument_type)
@@ -1538,7 +1538,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if matches!(
             spelling,
-            "ineg" | "iabs" | "ishl" | "ishr" | "buffer_new" | "box_new" | "arena_new"
+            "ineg" | "iabs" | "ishl" | "ishr" | "buffer_new" | "box_new"
         ) {
             return self.invalid_clause(clause, entry);
         }

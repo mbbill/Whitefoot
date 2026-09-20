@@ -496,18 +496,14 @@ impl CheckedFlatElement {
     }
 }
 
-/// [PROV-6, STOR-1, STOR-3] which release action a store-backed run's own
-/// reclamation is, decided from its store region's declaration alone.
+/// [STOR-1, STOR-3] which release action a compiler-owned cell performs.
 ///
-/// A general store's run is released by spending that store's provider
-/// capability; a bump extent's is reclaimed by its region's own reset and has
-/// no action of its own [BLK-2]. Nothing else decides it: the class is read
-/// off the region declaration and travels in the type, which is what lets a
-/// region-erased lowering still select the right action.
+/// The active language has one heap and therefore one represented action:
+/// free the cell after releasing its content. The checked class travels into
+/// the IR so lowering preserves that decision rather than rederiving it.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedReleaseClass {
-    /// An unbounded region parameter or a `linear`-bounded one: the release is a free to that store, and an unbounded parameter is
-    /// this class fail-closed [PROV-6].
+    /// Release the cell to the language's one heap.
     General,
 }
 
@@ -666,8 +662,8 @@ pub(crate) enum MeasureCell {
     ExactExtent,
     /// The measure is exactly this compile-time constant.
     ExactConstant(u64),
-    /// The measure is exactly the type's own written constant: an `array`'s
-    /// or a `FixedVector`'s capacity, or an `Arena`'s byte extent.
+    /// The measure is exactly the type's own written constant: an `Array`'s
+    /// length or a constant-capacity window's capacity.
     ExactTypeConstant,
     /// The measure is exact and is an independent runtime quantity of the
     /// value's own descriptor: a run's `len` and a runtime-capacity window's
@@ -906,14 +902,6 @@ pub(crate) enum CheckedNominalKind {
         /// extent's cell is reclaimed by its region's own reset.
         release: CheckedReleaseClass,
     },
-    /// One `arena<'r, T>` instance [STOR-1, STOR-2]. The region is part of
-    /// the type's identity, so `arena<'r, T>` and `arena<'s, T>` are two
-    /// nominals. Its storage is released with its region rather than with an
-    /// owner scope [STOR-3, STOR-4], so the value itself derives no drop.
-    Arena {
-        region: DeclarationId,
-        content: CheckedType,
-    },
     /// An ordinary opaque nominal has no fields or constructor.
     Opaque,
 }
@@ -929,9 +917,8 @@ pub(crate) struct CheckedNominal {
     /// linear.
     pub(crate) linear: bool,
     /// [OWN-1, GRAM-2] whether this nominal's declaration removes the copy
-    /// capability alone: the written `nocopy` modifier, and the cell and
-    /// arena nominals this compiler interns for declarations [PRE-1] writes
-    /// `nocopy`.
+    /// capability alone: the written `nocopy` modifier and the cell nominals
+    /// this compiler interns for declarations [PRE-1] writes `nocopy`.
     pub(crate) nocopy: bool,
 }
 
@@ -1008,7 +995,7 @@ pub(crate) fn type_has_copy_capability(
                             .flat_map(|variant| variant.fields.iter().map(|field| field.ty)),
                     ),
                     CheckedNominalKind::Opaque => {}
-                    CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. } => {
+                    CheckedNominalKind::Box { .. } => {
                         return Some(false);
                     }
                 }
@@ -2001,9 +1988,8 @@ pub(crate) enum CheckedExpression {
         carrier: NodePath,
         place: Box<CheckedRangeElementPlace>,
     },
-    /// One [MSR-1] measure of a run [TYPE-9] or a bump extent [PROV-1], read
-    /// as its [OP-1] reader row. One quantity, one name, term and reader
-    /// alike.
+    /// One [MSR-1] measure of a storage shape [TYPE-9], read as its [OP-1]
+    /// reader row. One quantity, one name, term and reader alike.
     ContainerMeasure {
         measure: CheckedMeasure,
         root: CheckedContainerRoot,

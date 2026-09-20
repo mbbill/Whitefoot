@@ -291,9 +291,6 @@ fn collect_regions(
                     }
                     collect_regions(program, *referent, regions, visited, defaults)?;
                 }
-                CheckedNominalKind::Arena { content, .. } => {
-                    collect_regions(program, *content, regions, visited, defaults)?;
-                }
                 CheckedNominalKind::Opaque => {}
             }
         }

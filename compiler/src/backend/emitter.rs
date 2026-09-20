@@ -247,12 +247,10 @@ pub(super) fn emit_llvm_with_layout(
     let drop_helpers = emit_resource_drop_helpers(program, target)?;
     let has_heap_storage = !drop_helpers.is_empty()
         || program.functions().iter().any(IrFunction::contains_buffer)
-        || program.nominals().iter().any(|nominal| {
-            matches!(
-                nominal.kind(),
-                IrNominalKind::Box { .. } | IrNominalKind::Arena { .. }
-            )
-        });
+        || program
+            .nominals()
+            .iter()
+            .any(|nominal| matches!(nominal.kind(), IrNominalKind::Box { .. }));
     let heap_record_type = TargetStorageType::bytes(
         u64::try_from(HEAP_RECORD.len()).map_err(|_| BackendFailure::CounterOverflow)?,
     );
@@ -698,7 +696,7 @@ fn emit_nominal_declarations(
         if nominal.is_tag_only_enum()
             || matches!(
                 nominal.kind(),
-                IrNominalKind::Box { .. } | IrNominalKind::Arena { .. } | IrNominalKind::Opaque
+                IrNominalKind::Box { .. } | IrNominalKind::Opaque
             )
         {
             continue;
@@ -724,7 +722,7 @@ fn emit_nominal_declarations(
                     }
                 }
             }
-            IrNominalKind::Box { .. } | IrNominalKind::Arena { .. } | IrNominalKind::Opaque => {
+            IrNominalKind::Box { .. } | IrNominalKind::Opaque => {
                 return Err(BackendFailure::InvalidIr);
             }
         }
@@ -2040,7 +2038,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 match self.nominal(nominal)?.kind() {
                     // The checker supplied separate component records. The
                     // struct node must not recursively release them again.
-                    IrNominalKind::Struct { .. } | IrNominalKind::Arena { .. } => false,
+                    IrNominalKind::Struct { .. } => false,
                     IrNominalKind::Opaque => false,
                     IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } => {
                         type_requires_cleanup(self.program, drop.ty())?
@@ -2255,10 +2253,7 @@ pub(crate) fn llvm_type(
         IrType::Address(_) => Ok("ptr".to_owned()),
         IrType::Nominal(id) => {
             let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
-            if matches!(
-                nominal.kind(),
-                IrNominalKind::Box { .. } | IrNominalKind::Arena { .. }
-            ) {
+            if matches!(nominal.kind(), IrNominalKind::Box { .. }) {
                 return Ok("ptr".to_owned());
             }
             if matches!(nominal.kind(), IrNominalKind::Opaque) {

@@ -839,8 +839,8 @@ fn frame_bytes(ty: IrType) -> u64 {
     let raw = match ty {
         IrType::Unit | IrType::Bool => 1,
         IrType::Integer { width, .. } | IrType::Float { width } => u64::from(width).div_ceil(8),
-        // A descriptor is a pointer and a length; a borrow, a box, and an arena
-        // handle are one pointer each.
+        // A descriptor is a pointer and a length; a borrow and a box handle
+        // are one pointer each.
         IrType::Buffer { .. } | IrType::Range { .. } => 2 * FRAME_FIELD_ALIGN,
         IrType::Address(_) => FRAME_FIELD_ALIGN,
         // A nominal travels by value. Charging it the whole frame refuses every

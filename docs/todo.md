@@ -3,21 +3,6 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
-- **A symbolic [OP-9] schema cannot always distinguish an unresolved layout
-  from a real non-finite layout.** Concrete allocation sites carry their
-  proved count ceilings through lowering and target qualification, including
-  exact shape headers, and every inhabited generic instance is rechecked with
-  its concrete layout. The remaining schema gap is narrower: the current
-  layout authority can report `AboveU64` both for a type whose layout still
-  depends on an opaque parameter and for an aggregate already known to exceed
-  the target-independent `u64` domain. The symbolic caller defers both, even
-  though [ENT-1] requires the latter's expressible zero-count ceiling to be
-  checked at the schema. Direct opaque `T`, bounded numeric parameters and
-  fixed-layout wrappers have focused handling and controls; the general
-  unresolved-layout classifier still needs a representation that preserves
-  this distinction without granting a deferred schema any proof summary or
-  lowering authority.
-
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)

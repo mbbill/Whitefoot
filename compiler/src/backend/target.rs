@@ -1233,10 +1233,7 @@ impl LayoutComputer<'_, '_, '_, '_> {
             self.nominal.insert(id, layout);
             return Ok(layout);
         }
-        let layout = if matches!(
-            nominal.kind(),
-            IrNominalKind::Box { .. } | IrNominalKind::Arena { .. }
-        ) {
+        let layout = if matches!(nominal.kind(), IrNominalKind::Box { .. }) {
             POINTER_LAYOUT
         } else if nominal.is_tag_only_enum() {
             let IrNominalKind::Enum { variants } = nominal.kind() else {
@@ -1265,10 +1262,10 @@ impl LayoutComputer<'_, '_, '_, '_> {
                             .map(|field| field.ty()),
                     );
                 }
-                // A box or arena has its own pointer layout above, and an
-                // opaque nominal returned with its uniform representation
+                // A box has its own pointer layout above, and an opaque
+                // nominal returned with its uniform representation
                 // before this match; none reaches the field walk.
-                IrNominalKind::Box { .. } | IrNominalKind::Arena { .. } | IrNominalKind::Opaque => {
+                IrNominalKind::Box { .. } | IrNominalKind::Opaque => {
                     return Err(TargetLayoutFailure::InvalidIr);
                 }
             }

@@ -293,7 +293,6 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
                         );
                     }
                     IrNominalKind::Box { referent, .. } => pending.push(*referent),
-                    IrNominalKind::Arena { content } => pending.push(*content),
                     IrNominalKind::Opaque => {}
                 }
             }
@@ -433,10 +432,8 @@ fn emit_cleanup_jobs(
                             }
                         }
                         IrNominalKind::Opaque => {}
-                        // [PROV-6, S39] the referent is released first and
-                        // the cell's own storage after it: a general store's
-                        // cell frees, and a bump extent's is reclaimed by its
-                        // region's own reset and has no action of its own.
+                        // [PROV-6, STOR-3] release the referent first, then
+                        // free the cell back to the one heap.
                         IrNominalKind::Box { referent, release } => {
                             // A boxed runtime-capacity shape is thin: the
                             // cell pointer is the block, whose header and
@@ -502,10 +499,6 @@ fn emit_cleanup_jobs(
                                 operand: format!("%{loaded}"),
                             });
                         }
-                        // An arena value's storage is released with its
-                        // region, never by an owner-scope cleanup
-                        // [STOR-3].
-                        IrNominalKind::Arena { .. } => {}
                     }
                 }
                 // A runtime-capacity window exists only as `Box` content

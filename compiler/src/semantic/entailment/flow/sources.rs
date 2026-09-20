@@ -649,9 +649,7 @@ impl Analyzer<'_, '_> {
                     }
                 }
             }
-            CheckedNominalKind::Box { .. }
-            | CheckedNominalKind::Arena { .. }
-            | CheckedNominalKind::Opaque => {}
+            CheckedNominalKind::Box { .. } | CheckedNominalKind::Opaque => {}
         }
         found
     }
@@ -808,7 +806,7 @@ impl Analyzer<'_, '_> {
                 MeasuredKind::Range,
                 None,
             ),
-            // [MSR-1] a run's or a bump extent's measure reader names the
+            // [MSR-1] a storage shape's measure reader names the
             // same [ENT-2] term the clause and the invariant name, so a `let`
             // over one is the ordinary [ENT-3.S6] equality a buffer's is.
             CheckedExpression::ContainerMeasure { measure, root } => {

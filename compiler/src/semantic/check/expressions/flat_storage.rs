@@ -73,8 +73,8 @@ pub(in crate::semantic::check) enum CheckedIndexedPlace {
     Buffer(CheckedBufferPlace),
     /// The run of elements a `&[T]` range reference names [REF-4, OP-4].
     Range(CheckedRangePlace),
-    /// One run or bump extent [TYPE-9, PROV-1]: the two runs are indexable
-    /// bases [OP-4] and all three have a measure-table row [MSR-1].
+    /// One storage shape [TYPE-9]: its measure-table row is [MSR-1], and its
+    /// indexability is [OP-4].
     Container(CheckedContainerPlace),
 }
 
@@ -646,21 +646,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_storage_read(node, place, bindings, options)
     }
 
-    pub(in crate::semantic::check) fn layout_ceiling(
-        &self,
-        ty: CheckedType,
-        node: NodeId,
-    ) -> Result<CheckedLayoutCeiling, CheckStop> {
-        let mut visiting = HashSet::new();
-        self.layout_ceiling_inner(ty, &mut visiting).ok_or_else(|| {
-            self.issue_value(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation)
-        })
-    }
-
     /// Recomputes the OP-9 ceiling after a generic GoalTemplate's element
     /// type has been instantiated. Keeping this calculation at the type
-    /// authority prevents a symbolic template's conservative ceiling from
-    /// becoming the identity of a concrete call requirement.
+    /// authority prevents an unresolved schema layout from becoming the
+    /// identity of a concrete call requirement. None is unresolved; AboveU64
+    /// is a known mathematical result whose allocation limit is zero.
     pub(in crate::semantic::check) fn instantiated_layout_ceiling(
         &self,
         ty: CheckedType,
@@ -700,7 +690,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let element =
                     self.layout_ceiling_inner(self.element_type(element).ok()?, visiting)?;
                 finish(
-                    multiply_layout_magnitude(element.stride, length),
+                    multiply_layout_magnitude(element.size, length),
                     element.align,
                 )
             }
@@ -717,13 +707,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 capacity: Some(length),
             } => {
                 let length = length.value()?;
-                let element =
-                    self.layout_ceiling_inner(self.element_type(element).ok()?, visiting)?;
                 let words = match shape {
                     super::super::super::model::WindowShape::Slots => 1,
                     super::super::super::model::WindowShape::Ring => 2,
                 };
-                let mut size = multiply_layout_magnitude(element.stride, length);
+                if length == 0 {
+                    return finish(CheckedLayoutMagnitude::Finite(8 * words), 8);
+                }
+                let element =
+                    self.layout_ceiling_inner(self.element_type(element).ok()?, visiting)?;
+                let mut size = multiply_layout_magnitude(element.size, length);
                 let mut align = element.align.max(1);
                 for _ in 0..words {
                     size = round_up_layout_magnitude(size, 8);
@@ -756,7 +749,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     // [OP-9] `Box<T>` is `(8,8)`, one pointer; its `inner`
                     // field lives in the heap object and enters no sequence.
                     CheckedNominalKind::Box { .. } => finish(CheckedLayoutMagnitude::Finite(8), 8),
-                    CheckedNominalKind::Arena { .. } => None,
                     CheckedNominalKind::Opaque => finish(CheckedLayoutMagnitude::Finite(32), 16),
                     CheckedNominalKind::Struct { fields } => {
                         self.aggregate_layout_ceiling(fields.iter().map(|field| field.ty), visiting)
@@ -783,16 +775,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // expression shape; every concrete instance is checked again and
             // receives its exact ceiling. Int and Float are at most 64 bits.
             CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => primitive(8),
-            // FN-2's symbolic pass retains an abstract upper observation for
-            // an opaque parameter. Allocation-fit predicates, including a
-            // direct buffer_fits::<T>, are checked again at every concrete
-            // instance with that instance's exact ceiling. This does not
-            // broaden the legacy buffer element domain.
-            CheckedType::Generic(_) => Some(CheckedLayoutCeiling {
-                size: CheckedLayoutMagnitude::AboveU64,
-                align: 16,
-                stride: CheckedLayoutMagnitude::AboveU64,
-            }),
+            // An opaque parameter has no known pair. Propagate that absence
+            // through by-value aggregates; Box and runtime shape shells
+            // already stop expansion above. It is not mathematical overflow.
+            CheckedType::Generic(_) => None,
         }
     }
 
@@ -2078,10 +2064,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ),
                 )
             }
-            // [MSR-1] gives the two runs and the bump extent a measure-table
-            // row and [OP-4] makes the two runs indexable bases; a `Heap<'s>`
-            // has neither, so it falls through to the operand rejection
-            // below.
+            // [MSR-1] gives each storage shape a measure-table row and [OP-4]
+            // makes it an indexable base.
             CheckedType::Array { .. } | CheckedType::Window { .. } => {
                 let (Some(binding), Some(declaration)) = (binding, declaration) else {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());

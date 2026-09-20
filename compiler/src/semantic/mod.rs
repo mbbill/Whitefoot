@@ -1120,10 +1120,6 @@ pub enum UnsupportedSemanticFeature {
     DuplicateMatchArm,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.
     OperationFamily,
-    /// Arena values at runtime: the region-tied allocation and release
-    /// lowering [STOR-2, STOR-3] is not implemented yet, so a checked
-    /// function that would carry an arena value to execution stops here.
-    ArenaRuntime,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

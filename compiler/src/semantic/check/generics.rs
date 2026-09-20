@@ -127,10 +127,6 @@ enum StableCheckedType {
         region: Option<DeclarationId>,
         referent: Box<StableCheckedType>,
     },
-    Arena {
-        region: DeclarationId,
-        content: Box<StableCheckedType>,
-    },
     Array {
         element: StableElement,
         length: CheckedConst,
@@ -363,10 +359,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     *region = Self::substituted_region(regions, *region);
                 }
                 self.substitute_stable_type_regions(referent, regions)?;
-            }
-            StableCheckedType::Arena { region, content } => {
-                *region = Self::substituted_region(regions, *region);
-                self.substitute_stable_type_regions(content, regions)?;
             }
             StableCheckedType::Array { element, .. }
             | StableCheckedType::Window { element, .. } => {
@@ -1585,22 +1577,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 referent: Box::new(referent),
                             }
                         }
-                        CheckedNominalKind::Arena { region, content } => {
-                            let Some(content) = self.stabilize_type(
-                                content,
-                                nominal_checkpoint,
-                                visiting,
-                                allow_symbolic,
-                            )?
-                            else {
-                                visiting.remove(&id);
-                                return Ok(None);
-                            };
-                            StableCheckedType::Arena {
-                                region,
-                                content: Box::new(content),
-                            }
-                        }
                         CheckedNominalKind::Opaque => {
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }
@@ -1835,10 +1811,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // [STOR-8], so one referent is one cell nominal.
                 let _ = region;
                 CheckedType::Nominal(self.intern_box_nominal(referent)?)
-            }
-            StableCheckedType::Arena { region, content } => {
-                let content = self.reify_concrete_type(content)?;
-                CheckedType::Nominal(self.intern_arena_nominal(*region, content)?)
             }
             StableCheckedType::Array { element, length } => CheckedType::Array {
                 element: self.reify_element(element)?,

@@ -22,7 +22,7 @@ use crate::syntax::NodeId;
 use crate::{
     DeclarationId, DeclarationRole, NodePath, Production, ResolvedSyntaxUnit,
     SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome,
-    SemanticRule, StaticObligationDisposition, UnsupportedSemanticFeature,
+    SemanticRule, StaticObligationDisposition,
 };
 
 use super::entailment::{
@@ -207,8 +207,6 @@ enum PendingNominal {
     /// an ordered result list [CALL-4]. A row's list is fixed by its own
     /// instance and has no written form for the interning pass to find.
     ResultList(Vec<(String, CheckedType)>),
-    /// [STOR-2] an `arena<'r, T>` instance over this region and content.
-    Arena(DeclarationId, CheckedType),
     /// A prelude instance, such as the `Result<T, E>` a checked row produces.
     Prelude(PreludeType),
     /// [S20, FN-2] one source nominal instance at a region a call determined.
@@ -518,10 +516,6 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     nominal_states: Vec<u8>,
     source_nominal_instances: Vec<Option<(usize, GenericSubstitution)>>,
     box_nominals: HashMap<CheckedType, NominalId>,
-    /// S39 one `Box<'s, T>` nominal per (store region, referent).
-    /// `arena<'r, T>` instances by (region declaration, content type): the
-    /// region is part of the type's identity [OWN-3, STOR-4].
-    arena_nominals: HashMap<(DeclarationId, CheckedType), NominalId>,
     /// The compiler-owned result-list nominal of a `fn_decl` that declares an
     /// ordered result list [GRAM-2, CALL-4], keyed by the ordered result
     /// binder spellings and types. Two declarations whose result lists agree
@@ -1135,7 +1129,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             nominal_states: Vec::new(),
             source_nominal_instances: Vec::new(),
             box_nominals: HashMap::new(),
-            arena_nominals: HashMap::new(),
             result_list_nominals: HashMap::new(),
             pending_nominals: RefCell::new(Vec::new()),
             pending_instances: RefCell::new(Vec::new()),
@@ -1611,9 +1604,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             PendingNominal::ResultList(results) => {
                                 self.intern_result_list_nominal(&results)?;
                             }
-                            PendingNominal::Arena(region, content) => {
-                                self.intern_arena_nominal(region, content)?;
-                            }
                             PendingNominal::Prelude(ty) => {
                                 self.intern_prelude_nominal(ty)?;
                             }
@@ -1878,22 +1868,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .flatten()
                 .collect()
         };
-        // TEMPORARY capability stop, judged only after every source rejection
-        // above had its chance: arena-typed parameters check under their
-        // ownership and [STOR-4] confinement rules, but the region-tied
-        // allocation and release lowering is not implemented yet, so a clean
-        // function that would carry an arena value to execution stops as an
-        // explicit unsupported capability rather than lowering wrong code.
-        for parameter in &signature.parameters {
-            if self.arena_instance(parameter.ty)?.is_some() {
-                return self.unsupported(
-                    UnsupportedSemanticFeature::ArenaRuntime,
-                    self.tree
-                        .node_with_path(&parameter.node_path)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                );
-            }
-        }
         let function = CheckedFunction {
             formal_hypothesis: signature.formal_parameter.is_some(),
             id: signature.id,

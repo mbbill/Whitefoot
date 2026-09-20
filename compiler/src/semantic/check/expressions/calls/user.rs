@@ -11,8 +11,7 @@ use super::super::super::super::goal::{
 };
 use super::super::super::super::model::{
     CheckedCallContract, CheckedCallSeparation, CheckedEffectStep, CheckedEffects,
-    CheckedExpression, CheckedLayoutMagnitude, CheckedMode, CheckedNominalKind, CheckedStatePath,
-    CheckedType,
+    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedStatePath, CheckedType,
 };
 use super::super::super::super::places::{
     CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations, places_overlap,
@@ -353,7 +352,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 requirements: Vec::new(),
                 result,
                 result_borrow: None,
-                allocation: self.allocation_fit_of_call(node, function, signature)?,
+                allocation: self.allocation_fit_of_call(function, signature)?,
             },
             mode: result_mode,
             // [REF-3] no call delivers a reference: FN-1 returns owned values
@@ -379,7 +378,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// obligation.
     fn allocation_fit_of_call(
         &self,
-        node: NodeId,
         caller: &FunctionSignature,
         signature: &FunctionSignature,
     ) -> Result<Option<super::super::super::super::model::CheckedAllocationFit>, CheckStop> {
@@ -396,36 +394,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(element) = self.runtime_capacity_content_element(cell)? else {
             return Ok(None);
         };
-        if matches!(element, CheckedType::Generic(_))
-            && !caller.substitution.is_concrete(&self.elements.borrow())
-        {
-            // [ENT-1, FN-2] forwarding an opaque type parameter changes its
-            // declaration key, not its unknown layout. This exact direct-T
-            // schema case has no expressible OP-9 ceiling, just as in the
-            // canonical schema. Its scratch judgment publishes no allocation
-            // proof or lowering authority; every concrete instance follows
-            // the ordinary layout and allocation checks below. Numeric
-            // parameters, fixed-layout shells and aggregates do not match.
-            return Ok(None);
-        }
-        let layout_ceiling = if caller.substitution.is_symbolic() {
-            // [ENT-1, OP-9] a source schema must judge every expressible
-            // allocation bound. A symbolic caller can still store a scalar,
-            // Box<T>, or aggregate with a finite layout supplied by the
-            // existing type authority. Adding that obligation grants no
-            // callable summary or lowering authority to the schema.
-            let Some(ceiling) = self.instantiated_layout_ceiling(element) else {
-                return Ok(None);
-            };
-            if !matches!(ceiling.stride, CheckedLayoutMagnitude::Finite(_)) {
-                // The existing schema deferral remains for non-finite
-                // ceilings. Distinguishing an actual AboveU64 layout from
-                // an opaque parameter's placeholder is still outstanding.
+        let layout_ceiling = match self.instantiated_layout_ceiling(element) {
+            Some(ceiling) => ceiling,
+            None if !caller.substitution.is_concrete(&self.elements.borrow()) => {
+                // [ENT-1, FN-2] only a layout depending on an unresolved
+                // type or const parameter may defer the schema obligation.
+                // This includes an opaque parameter inside an aggregate,
+                // but not a fixed-layout Box shell or a known AboveU64
+                // ceiling. No deferred record grants proof or lowering
+                // authority; every concrete replay recomputes its bound.
                 return Ok(None);
             }
-            ceiling
-        } else {
-            self.layout_ceiling(element, node)?
+            None => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
         Ok(Some(
             super::super::super::super::model::CheckedAllocationFit {

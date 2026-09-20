@@ -273,10 +273,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         | CheckedNominalKind::Opaque => {
                             drops.push((path, current));
                         }
-                        // An arena value's storage is released with its
-                        // region, never with an owner scope [STOR-3, STOR-4],
-                        // so the value derives no drop here.
-                        CheckedNominalKind::Arena { .. } => {}
                     }
                 }
             }

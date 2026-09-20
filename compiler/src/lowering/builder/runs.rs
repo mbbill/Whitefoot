@@ -29,7 +29,7 @@ pub(super) const fn lower_measure(measure: CheckedMeasure) -> IrMeasure {
 }
 
 impl IrBuilder<'_> {
-    /// One [MSR-1] measure of a run or a bump extent.
+    /// One [MSR-1] measure of a storage shape.
     ///
     /// A cell the table fixes as a compile-time constant is that constant and
     /// loads nothing; every other cell is one descriptor word [MSR-2].
@@ -43,8 +43,8 @@ impl IrBuilder<'_> {
             .ok_or(LoweringFailure::InvalidCheckedProgram)?;
         match measure.cell(measured) {
             MeasureCell::ExactConstant(value) => self.lower_fixed_measure(value),
-            // A `FixedVector`'s capacity and a bump extent's byte extent are
-            // the type's own written constant and are stored nowhere.
+            // An `Array` length and a constant window capacity are the type's
+            // own written constant and are stored nowhere.
             MeasureCell::ExactTypeConstant => {
                 let constant = root
                     .type_constant()

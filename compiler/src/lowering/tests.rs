@@ -1115,6 +1115,67 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// The schema and the shared constructor body must retain the same OP-9
+/// pair, including empty repeated pairs and a fixed type deeper than the
+/// former lowering-only limit of 64. Expected sizes come from OP-9's
+/// sequence rule, independently of either implementation.
+#[test]
+fn stored_layout_ceilings_agree_across_lowering() {
+    let mut declarations =
+        "struct Giant {\n  words: Array<u64, 2305843009213693952>;\n}\n\n".to_owned();
+    declarations.push_str("struct Layer0 {\n  value: u64;\n}\n\n");
+    for depth in 1..=66 {
+        declarations.push_str(&format!(
+            "struct Layer{depth} {{\n  value: Layer{};\n}}\n\n",
+            depth - 1
+        ));
+    }
+    for (stored, size, align) in [
+        ("Array<Array<u64, 0>, 4>", 0_u64, 1_u64),
+        ("Slots<Array<u64, 0>, 4>", 8, 8),
+        ("Ring<Array<u64, 0>, 4>", 16, 8),
+        ("Array<Giant, 0>", 0, 1),
+        ("Slots<Giant, 0>", 8, 8),
+        ("Ring<Giant, 0>", 16, 8),
+        ("Layer66", 8, 8),
+    ] {
+        let source = format!(
+            "{declarations}fn main() -> status: own ExitStatus pure {{\n  let cells = box_slots_new::<{stored}>(capacity: 0_u64);\n  free_empty(window: move cells);\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        with_ir(source.as_bytes(), |program| {
+            let expected = super::IrLayoutCeiling {
+                size: super::IrLayoutMagnitude::Finite(size),
+                align,
+                stride: super::IrLayoutMagnitude::Finite(size.max(1)),
+            };
+            let source_ceilings = program
+                .functions()
+                .iter()
+                .flat_map(IrFunction::source_calls)
+                .filter_map(|call| {
+                    call.allocation()
+                        .map(|allocation| allocation.layout_ceiling())
+                })
+                .collect::<Vec<_>>();
+            let body_ceilings = program
+                .functions()
+                .iter()
+                .flat_map(IrFunction::blocks)
+                .flat_map(IrBlock::instructions)
+                .filter_map(|instruction| match instruction {
+                    IrInstruction::Define {
+                        operation: IrOperation::WindowBlockNew { obligations, .. },
+                        ..
+                    } => Some(obligations.layout_ceiling),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(source_ceilings, vec![expected], "checked {stored}");
+            assert_eq!(body_ceilings, vec![expected], "lowered {stored}");
+        });
+    }
+}
+
 /// [STOR-6]: "The accepted [OP-9] judgment retains a numeric upper bound for
 /// the source length **at that allocation site**; target qualification
 /// multiplies that bound by the actual target stride ... before lowering the

@@ -1793,7 +1793,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
             }
-            // [MSR-1, CALL-4] a measure of a run or a bump extent, in the same
+            // [MSR-1, CALL-4] a measure of a storage shape, in the same
             // return position the three flat measures already occupy. Its
             // checked path already names the one ENT-2 place, including an
             // ordinary field, Box content, or admitted measured subscript.

@@ -179,7 +179,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// [MSR-1] one measure of a run or a bump extent, read at run time.
+    /// [MSR-1] one measure of a storage shape, read at run time.
     pub(super) fn emit_container_measure(
         &mut self,
         result: IrValueId,

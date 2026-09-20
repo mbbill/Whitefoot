@@ -365,6 +365,12 @@ fn a_runtime_capacity_construction_owes_the_size_obligation() {
 /// const or type parameter.
 #[test]
 fn known_stored_layouts_keep_op9_in_symbolic_schemas() {
+    assert_op9_allocation_fit(
+        include_bytes!(
+            "../../../../tests/conformance/cases/op9-neg-known-overflow-in-unused-schema.wf"
+        ),
+        "known AboveU64 layout in an unused generic schema",
+    );
     for (case, source) in [
         br#"fn unchecked<const unused: u64>(count: own u64) -> result: own unit pure {
   let cells = box_slots_new::<u16>(capacity: count);
@@ -430,6 +436,9 @@ fn main() -> status: own ExitStatus pure {
 /// generic caller.
 #[test]
 fn unresolved_stored_layouts_defer_to_every_concrete_replay() {
+    assert_accepts(include_bytes!(
+        "../../../../tests/conformance/cases/op9-pos-unresolved-aggregate-layout.wf"
+    ));
     let unresolved_schema = br#"fn allocate<T>(count: own u64) -> result: own unit pure {
   let cells = box_slots_new::<T>(capacity: count);
   free_empty(window: move cells);
@@ -473,8 +482,8 @@ fn main() -> status: own ExitStatus pure {
     assert_accepts(concrete_replays);
 }
 
-/// [ENT-1, FN-2, OP-9] only a directly opaque stored type may take the
-/// source-schema deferral. When a generic relay instantiates that same
+/// [ENT-1, FN-2, OP-9] only a layout depending on an unresolved parameter may
+/// take the source-schema deferral. When a generic relay instantiates that same
 /// allocation template with a numeric type or a fixed-layout wrapper, the
 /// alpha-renamed instance has a known ceiling and must prove its allocation
 /// bound. The scratch instance's OP-9 issue is not published as a canonical

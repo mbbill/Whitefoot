@@ -442,9 +442,6 @@ pub(crate) fn type_derives_release(
                 IrNominalKind::Box { .. } => {
                     return Some(true);
                 }
-                // An arena value's storage is released with its region,
-                // never by an owner-scope cleanup [STOR-3].
-                IrNominalKind::Arena { .. } => {}
                 // Ordinary opaque values have empty release [PRE-1].
                 IrNominalKind::Opaque => {}
             },
@@ -557,12 +554,6 @@ pub enum IrNominalKind {
         /// store both free their cell; a `Box<'s, T>` at a bump extent is
         /// reclaimed by its region's own reset and has no action of its own.
         release: IrReleaseClass,
-    },
-    /// One `arena<'r, T>` instance: a pointer-shaped handle to region-owned
-    /// heap content, released with its region rather than with an owner
-    /// scope [STOR-3].
-    Arena {
-        content: IrType,
     },
     /// An ordinary opaque nominal supplied by PRE-1.
     Opaque,

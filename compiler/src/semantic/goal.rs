@@ -286,17 +286,17 @@ pub(crate) enum GoalOperation {
         element: CheckedType,
         maximum_length: u64,
     },
-    /// One [MSR-1] measure of a run [BLK-1] or a bump extent [PROV-1]. The
-    /// measured kind is part of the row identity because the measure table
-    /// gives each its own row, and the written constant is what a
-    /// `FixedVector`'s capacity and an `Arena`'s byte extent are [MSR-2].
+    /// One [MSR-1] measure of a storage shape [TYPE-9]. The measured kind is
+    /// part of the row identity because the measure table gives each its own
+    /// row, and the written constant is what a fixed-capacity row carries
+    /// [MSR-2].
     ContainerMeasure {
         measure: CheckedMeasure,
         measured: MeasuredKind,
-        /// The element type of a run; a bump extent has none.
+        /// The element type of the measured storage shape.
         element: Option<CheckedElement>,
-        /// A `FixedVector`'s capacity or an `Arena`'s byte extent; a
-        /// `Vector`'s capacity is a descriptor word and has none.
+        /// An `Array` length or constant window capacity; a runtime-capacity
+        /// shape stores the corresponding measure and has none here.
         constant: Option<CheckedConst>,
     },
     /// One run element value whose own [OP-4] obligation has already been

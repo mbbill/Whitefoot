@@ -67,7 +67,6 @@ pub(super) fn base_elements(
                     .map(|field| field.ty),
             ),
             CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
-            CheckedNominalKind::Arena { content, .. } => pending.push(*content),
             CheckedNominalKind::Opaque => {}
         }
     }
@@ -294,9 +293,6 @@ impl<'a> PhysicalTypes<'a> {
                 referent: self.ty(referent, releases)?,
                 release: lower_release_class(effective_release(releases, region, release)),
             },
-            CheckedNominalKind::Arena { content, .. } => IrNominalKind::Arena {
-                content: self.ty(content, releases)?,
-            },
             CheckedNominalKind::Opaque => self.nominals[id.index()].kind.clone(),
         };
         self.nominals[id.index()].kind = lowered;
@@ -412,10 +408,6 @@ impl<'a> PhysicalTypes<'a> {
                             }
                             pending.push((*lt, *rt));
                         }
-                        (
-                            CheckedNominalKind::Arena { content: left, .. },
-                            CheckedNominalKind::Arena { content: right, .. },
-                        ) => pending.push((*left, *right)),
                         (
                             CheckedNominalKind::Struct { fields: left },
                             CheckedNominalKind::Struct { fields: right },

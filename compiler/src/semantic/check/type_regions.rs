@@ -127,9 +127,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             referent,
                             ..
                         } => (brand.map(one_region).unwrap_or_default(), vec![referent]),
-                        CheckedNominalKind::Arena { region, content } => {
-                            (one_region(region), vec![content])
-                        }
                         _ => match self.prelude_type(id) {
                             Some(PreludeType::Option(value)) => (vec![], vec![value]),
                             Some(PreludeType::Result(ok, error)) => (vec![], vec![ok, error]),

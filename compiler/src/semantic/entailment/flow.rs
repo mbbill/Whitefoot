@@ -2372,8 +2372,7 @@ impl Analyzer<'_, '_> {
             measured_kind(ty)?
         };
         // [MSR-2] the written constant a cell the table fixes as the type's
-        // own reads: an `array`'s length, a `FixedVector`'s capacity, and an
-        // `Arena`'s byte extent.
+        // own reads: an `Array`'s length or a constant window's capacity.
         let array_length = type_constant(ty);
         Some(self.measure_term(
             measure,
@@ -5256,7 +5255,7 @@ impl Analyzer<'_, '_> {
                 root: PlaceRoot::Binding(*binding),
                 // A reference binding is the body-local name of its referent
                 // path [REF-1]. The written `deref` is that boundary wrapper;
-                // concrete Box/Arena content steps are appended below.
+                // concrete Box content steps are appended below.
                 path: Vec::new(),
             }),
             CheckedExpression::BoxDeref { value, .. } => {
@@ -5647,7 +5646,7 @@ impl Analyzer<'_, '_> {
                     vec![collection, self.goal_expression(offset, admitted_partial)?],
                 )
             }
-            // [MSR-1] a measure of a run or a bump extent, read as the same
+            // [MSR-1] a measure of a storage shape, read as the same
             // quantity the reader row loads.
             CheckedExpression::ContainerMeasure { measure, root } => {
                 let measured = root.measured()?;
@@ -6518,7 +6517,7 @@ impl Analyzer<'_, '_> {
                     GoalOperation::BufferMeasure { measure, .. } => {
                         (*measure, MeasuredKind::RuntimeArray, None)
                     }
-                    // [MSR-1]'s row for a run or a bump extent. The written
+                    // [MSR-1]'s row for a storage shape. The written
                     // constant is what `measure_term` reads for a cell the
                     // table fixes as the type's own constant [MSR-2].
                     GoalOperation::ContainerMeasure {
