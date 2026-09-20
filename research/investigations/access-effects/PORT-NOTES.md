@@ -2,6 +2,24 @@
 
 Working notes kept during the port: specification problems reported by port agents, owner rulings pending at the time, verified audit findings, and compiler gaps. Not normative; superseded by docs/todo.md and the design tree where those record the same item. Delete when PR 70 merges.
 
+## Owner-directed OP-9 and Arena follow-up
+
+The owner's explicit approval of OP-9 and deletion of the retired Arena
+resolved the automatic-review holds on those two changes. Commit `819e1286`
+distinguishes unknown generic layout from known overflow in source checking
+and lowering, retains zero-count target qualification, and removes the
+unconstructible Arena representation and consumers. The complete canonical
+gate and hosted correctness/IO checks pass; the affected independent review
+has no new finding. Earlier hold descriptions below are historical for these
+items, not current permission requests.
+
+The outstanding bounded-stack cleanup commitment is still not implemented.
+The [continuation models](cleanup-continuations/README.md) preserve exact
+postorder on selected recursive layouts without a stack or auxiliary
+allocation, but do not establish a general encoding for all current WF types.
+The hosted `records` parallel regression also remains unresolved; the latest
+formal observation and exact validation are maintained on PR 70.
+
 ## Automatic approval review holds during integration
 
 The owner authorized principled migrations to the current specification and
