@@ -741,7 +741,7 @@ Char and Unicode text are out-of-v0, recorded.
 
 [WIN-1] A `Slots` or `Ring` is a run of `cap` slots whose initialized storage is a window: exactly the `len` slots beginning at `head` modulo `cap`, every other slot holding nothing.
 `head` exists on `Ring` alone; on `Slots` the window begins at slot zero.
-An `Array` has no window: every slot always holds a value and `a.len == a.cap`.
+An `Array` has no window: every slot always holds a value, and its one measure `a.len` is its slot count [MSR-1].
 No slot carries a tag, no occupancy bitmap, and no runtime discriminant; the window is the complete typestate, and no program point can observe a slot inside the window as empty.
 `len` is a runtime number stored with the block [STOR-1] and is changed only by the operations of [OP-10] and [OP-13].
 A subscript `r[i]` selects the element at logical offset `i` and carries [OP-4]'s obligation `i < r.len`, stated against `len` and never against `cap` or `head`; the storage it selects is slot `(r.head + i) mod r.cap`, which is the coordinate system [MSR-1] fixes.
