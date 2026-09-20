@@ -91,7 +91,7 @@ fn main() -> status: own ExitStatus pure {
   for @clear (
     at in 0_u64..4_u64,
     invariant grown: output.inner.len >= at,
-    invariant spare: output.inner.room + at >= 4_u64
+    invariant spare: output.inner.cap + at >= output.inner.len + 4_u64
   ) {
     place_back(window: &output.inner, value: 0_u8);
   }
@@ -99,7 +99,7 @@ fn main() -> status: own ExitStatus pure {
   for @fill (
     at in 0_u64..4_u64,
     invariant grown: source.inner.len >= at,
-    invariant spare: source.inner.room + at >= 4_u64
+    invariant spare: source.inner.cap + at >= source.inner.len + 4_u64
   ) {
     place_back(window: &source.inner, value: 7_u8);
   }

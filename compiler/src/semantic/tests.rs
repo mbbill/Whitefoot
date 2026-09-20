@@ -725,7 +725,7 @@ fn effect_mismatch_is_located_at_the_written_effect_row() {
     // [OP-10, WIN-2], and the declaration writes the empty row instead. The
     // citation lands on the written row, which is the `pure` atom.
     let source = br#"fn fill(target: &Slots<u8, 4>) -> result: own unit pure contract {
-  requires deref(target).room > 0_u64;
+  requires deref(target).len < deref(target).cap;
 } {
   place_back(window: target, value: 7_u8);
   return unit;

@@ -1002,7 +1002,6 @@ impl From<CheckedTargetDomainObligation> for IrTargetDomainObligation {
 pub enum IrMeasure {
     Length,
     Capacity,
-    Room,
     Head,
 }
 
@@ -1268,7 +1267,7 @@ pub enum IrOperation {
     /// [BLK-1] or a complete array with its type's length and zero head.
     ///
     /// The window is `len` slots beginning at `head`, and the row's own
-    /// requirement `head_of(vector) <= room_of(vector)` was discharged before
+    /// requirement `vector.head <= vector.cap` was discharged before
     /// this operation exists, so the window is one contiguous range and the
     /// descriptor is the slot at `head` together with `len`.
     SliceFromRun {

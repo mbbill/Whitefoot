@@ -976,7 +976,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.ensure_nominal_type(ty, substitution)?;
             let parsed = self.parse_type_with(ty, substitution)?;
             self.reject_inline_runtime_capacity(ty, parsed)?;
-            fields.push(CheckedField { name, ty: parsed });
+            // [TYPE-2, GRAM-2] `field := "readonly"? IDENT ":" type ";"`: the
+            // written modifier is what makes the field unassignable.
+            let readonly = self
+                .tree
+                .direct_token_with(
+                    field,
+                    TerminalPredicate::Fixed(crate::FixedTerminal::Readonly),
+                )?
+                .is_some();
+            fields.push(CheckedField {
+                name,
+                ty: parsed,
+                readonly,
+            });
         }
         Ok(fields)
     }
@@ -1018,9 +1031,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.ensure_nominal_type(ty, substitution)?;
                     let parsed = self.parse_type_with(ty, substitution)?;
                     self.reject_inline_runtime_capacity(ty, parsed)?;
+                    // [GRAM-2] a `vfield` carries no modifier: `readonly` is
+                    // a `field` alternative and an enum payload has none.
                     fields.push(CheckedField {
                         name: field_name,
                         ty: parsed,
+                        readonly: false,
                     });
                 }
             }

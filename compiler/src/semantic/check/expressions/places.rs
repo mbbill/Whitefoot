@@ -47,7 +47,7 @@ pub(super) struct ExplicitPlace {
     pub(super) mode: CheckedMode,
     pub(super) expression: CheckedExpression,
     pub(super) resolved: ResolvedPlace,
-    /// [OP-15, MSR-1] the measure a trailing `.len`, `.cap`, `.room` or
+    /// [OP-15, MSR-1] the measure a trailing `.len`, `.cap` or
     /// `.head` reads. A measure selects no storage below itself, so it is
     /// always the last written suffix and the place it is read over is the
     /// one this record otherwise describes.
@@ -452,33 +452,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 } else {
                     super::super::expressions::flat_storage::measured_kind_of(place.ty)
                 };
-                let Some(measured) = measured else {
-                    return self.issue_node(
-                        SemanticRule::Type5,
-                        suffix,
-                        SemanticIssueKind::type_mismatch(
-                            "a measured place [MSR-1]",
-                            self.checked_type_name(place.ty)?,
-                        ),
-                    );
-                };
-                if matches!(
-                    measure.cell(measured),
-                    super::super::super::model::MeasureCell::Absent
-                ) {
-                    return self.issue_node(
-                        SemanticRule::Type5,
-                        suffix,
-                        SemanticIssueKind::type_mismatch(
-                            "a measured place whose measure table has this row",
-                            self.checked_type_name(place.ty)?,
-                        ),
-                    );
+                // x1 [TYPE-10]: the measure spellings reserve nothing, so
+                // `len` selects a measure only where the type of the place it
+                // follows has a row for it. Everywhere else the suffix falls
+                // through to the ordinary field walk below, which is how a
+                // source struct declares its own field named `len`.
+                if let Some(measured) = measured {
+                    if matches!(
+                        measure.cell(measured),
+                        super::super::super::model::MeasureCell::Absent
+                    ) {
+                        return self.issue_node(
+                            SemanticRule::Type5,
+                            suffix,
+                            SemanticIssueKind::type_mismatch(
+                                "a measured place whose measure table has this row",
+                                self.checked_type_name(place.ty)?,
+                            ),
+                        );
+                    }
+                    place.measure = Some(measure);
+                    continue;
                 }
-                place.measure = Some(measure);
-                continue;
             }
-            self.reject_reserved_pseudo_field(suffix, &name)?;
+            self.reject_window_part(suffix, &name, place.ty, place.range_referent)?;
             // [TYPE-9] a `Box`'s content is its field `inner`, reached by the
             // ordinary field step and never by `deref`.
             if let CheckedType::Nominal(nominal) = place.ty
@@ -663,15 +660,71 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(false)
     }
 
-    /// [TYPE-10] the eight measure and window-part spellings are names, not
-    /// declarations, and occupy no field domain.
-    pub(in crate::semantic::check) fn reject_reserved_pseudo_field(
+    /// [TYPE-2] refuses an argument naming a path that ends at or passes
+    /// through a readonly field, at a reference parameter whose callee row
+    /// writes that parameter.
+    ///
+    /// The path is read from the written `borrow_expr` because that is what
+    /// the rule names -- the argument `atom` -- and because the readonly
+    /// modifier belongs to the declaration the path walks through rather than
+    /// to the reference's referent type. A `deref`-rooted base is not walked
+    /// here: its root is whatever path the reference names, which the
+    /// explicit-place resolver owns.
+    pub(in crate::semantic::check) fn reject_readonly_written_argument(
+        &self,
+        atom: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<(), CheckStop> {
+        let Some(borrow) = self.tree.first_child_with(atom, Production::BorrowExpr)? else {
+            return Ok(());
+        };
+        let Some(place) = self.tree.first_child_with(borrow, Production::Place)? else {
+            return Ok(());
+        };
+        let Some(pbase) = self.tree.first_child_with(place, Production::Pbase)? else {
+            return Ok(());
+        };
+        if !self.tree.children(pbase)?.is_empty() {
+            return Ok(());
+        }
+        let suffixes = self.tree.children_with(place, Production::Psuffix)?;
+        if suffixes.is_empty() {
+            return Ok(());
+        }
+        let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::Value,
+        } = self.use_at(pbase, LexicalUseRole::PlaceBase)?.target()
+        else {
+            return Ok(());
+        };
+        let Some(local) = bindings.get(&declaration) else {
+            return Ok(());
+        };
+        self.reject_reserved_write_members(place, &suffixes, local.ty)
+    }
+
+    /// [TYPE-10] a window part is effect-row vocabulary and never a place.
+
+    ///
+    /// x1 makes the four spellings reserve nothing: they are "selected by the
+    /// window type of the place they follow", so `node.next` on a source
+    /// struct is that struct's declared field and only `r.next` on a measured
+    /// place is the refusal. The measure spellings left this rule with the
+    /// reservation: they are the readonly fields [PRE-1] declares, refused as
+    /// write targets by [TYPE-2] and read as ordinary fields everywhere else.
+    pub(in crate::semantic::check) fn reject_window_part(
         &self,
         suffix: NodeId,
         name: &str,
+        followed: CheckedType,
+        range_referent: bool,
     ) -> Result<(), CheckStop> {
-        if super::super::types::measure_named(name).is_none()
-            && super::super::types::window_part_named(name).is_none()
+        if super::super::types::window_part_named(name).is_none() {
+            return Ok(());
+        }
+        if !range_referent
+            && super::super::expressions::flat_storage::measured_kind_of(followed).is_none()
         {
             return Ok(());
         }
@@ -683,5 +736,87 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 mechanical_fix: "use the operation that moves the window boundary [OP-10]",
             },
         )
+    }
+
+    /// The restructuring [TYPE-2] states for a readonly write target.
+    pub(in crate::semantic::check) const READONLY_WRITE_TARGET_FIX: &'static str =
+        "use the operation that changes it, or replace the whole value";
+
+    /// [TYPE-2, TYPE-10] refuses a write target whose path names a readonly
+    /// field or a window part of the place it follows.
+    ///
+    /// The walk is type-directed because x1 reserves neither vocabulary from a
+    /// declaration: a suffix names a measure or a part only where the type of
+    /// the place it follows has one, and it is an ordinary field everywhere
+    /// else. A path whose step this walk cannot follow is left to the
+    /// ordinary resolver, which reports the step that failed.
+    pub(in crate::semantic::check) fn reject_reserved_write_members(
+        &self,
+        target: NodeId,
+        suffixes: &[NodeId],
+        mut ty: CheckedType,
+    ) -> Result<(), CheckStop> {
+        for &suffix in suffixes {
+            if self.subscript_offset(suffix)?.is_some() {
+                // [MSR-2] a write at an element position reaches that
+                // element's own storage; the offset carries no member name.
+                ty = match ty {
+                    CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+                        self.element_type(element)?
+                    }
+                    CheckedType::Buffer { element } => element.ty(),
+                    _ => return Ok(()),
+                };
+                continue;
+            }
+            let name = self
+                .deferred_use_at(suffix, DeferredUseRole::ProjectedField)?
+                .spelling()
+                .to_owned();
+            self.reject_window_part(suffix, &name, ty, false)?;
+            // A measure of a measured place is a readonly field of that
+            // shape's [PRE-1] declaration, so a `set` on it is [TYPE-2]'s
+            // refusal and never a struct-field rejection.
+            if super::super::types::measure_named(&name).is_some()
+                && super::super::expressions::flat_storage::measured_kind_of(ty).is_some()
+            {
+                return self.issue_node(
+                    SemanticRule::Type2,
+                    target,
+                    SemanticIssueKind::ReadonlyWriteTarget {
+                        spelling: name,
+                        mechanical_fix: Self::READONLY_WRITE_TARGET_FIX,
+                    },
+                );
+            }
+            let CheckedType::Nominal(nominal) = ty else {
+                return Ok(());
+            };
+            let kind = &self.nominal(nominal)?.kind;
+            if let CheckedNominalKind::Box { referent, .. } = kind {
+                // [TYPE-9] `b.inner` is the cell's content, a dereference
+                // step rather than a field of the cell.
+                ty = *referent;
+                continue;
+            }
+            let CheckedNominalKind::Struct { fields } = kind else {
+                return Ok(());
+            };
+            let Some(field) = fields.iter().find(|field| field.name == name) else {
+                return Ok(());
+            };
+            if field.readonly {
+                return self.issue_node(
+                    SemanticRule::Type2,
+                    target,
+                    SemanticIssueKind::ReadonlyWriteTarget {
+                        spelling: name,
+                        mechanical_fix: Self::READONLY_WRITE_TARGET_FIX,
+                    },
+                );
+            }
+            ty = field.ty;
+        }
+        Ok(())
     }
 }

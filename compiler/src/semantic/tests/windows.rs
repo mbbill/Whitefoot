@@ -26,8 +26,8 @@
 //!   `free_empty(window: move r)` on a proved-empty window, and for an affine
 //!   value, moving it into a function that consumes it [PROV-6].
 //! - The `len_of` / `cap_of` / `vacant_of` / `extent_of` former family retires.
-//!   The successor is [OP-15]: `r.len`, `r.cap`, `r.room` and `r.head` are
-//!   place forms, not calls.
+//!   The successor is [OP-15]: `r.len`, `r.cap` and `r.head` are place forms,
+//!   not calls.
 //!
 //! The sources are the already-ported v0.60 conformance cases; these tests add
 //! the rule and issue kind the corpus manifest does not pin.
@@ -100,18 +100,56 @@ fn a_window_part_is_row_vocabulary_and_not_a_place() {
     });
 }
 
-/// [TYPE-10] a measure is read like a field and can never be assigned; only
-/// [OP-10] and [OP-13] change one.
+/// [TYPE-2] a measure is a readonly field of the shape's [PRE-1]
+/// declaration: it is read like any field and is never a write target, and
+/// only [OP-10] and [OP-13] change one.
 #[test]
 fn a_measure_is_read_only() {
     assert_accepts(include_bytes!(
         "../../../../tests/conformance/cases/type10-pos-measures-are-read-only.wf"
     ));
-    let written =
-        include_bytes!("../../../../tests/conformance/cases/type10-neg-measure-write-target.wf");
-    assert_rule_kind(written, SemanticRule::Type10, |kind| {
-        matches!(kind, SemanticIssueKind::ReservedPseudoField { .. })
+    let written = include_bytes!(
+        "../../../../tests/conformance/cases/type2-neg-readonly-measure-write-target.wf"
+    );
+    assert_rule_kind(written, SemanticRule::Type2, |kind| {
+        matches!(kind, SemanticIssueKind::ReadonlyWriteTarget { .. })
     });
+}
+
+/// x1 [TYPE-10]: the measure and window-part spellings reserve nothing, so a
+/// source struct of another type declares fields named `len` and `next` and
+/// bindings carry the part spellings.
+#[test]
+fn member_spellings_reserve_nothing() {
+    assert_accepts(include_bytes!(
+        "../../../../tests/conformance/cases/type10-pos-member-spellings-reserve-nothing.wf"
+    ));
+}
+
+/// [TYPE-2] a `set` whose target ends at or passes through a readonly field
+/// is refused in a source struct exactly as in a prelude one, and an argument
+/// naming such a path at a written reference parameter is refused with it.
+#[test]
+fn a_readonly_field_is_never_a_write_target() {
+    for source in [
+        include_bytes!("../../../../tests/conformance/cases/type2-neg-readonly-field-set-target.wf")
+            .as_slice(),
+        include_bytes!(
+            "../../../../tests/conformance/cases/type2-neg-readonly-path-passes-through.wf"
+        )
+        .as_slice(),
+        include_bytes!(
+            "../../../../tests/conformance/cases/type2-neg-readonly-field-written-argument.wf"
+        )
+        .as_slice(),
+    ] {
+        assert_rule_kind(source, SemanticRule::Type2, |kind| {
+            matches!(kind, SemanticIssueKind::ReadonlyWriteTarget { .. })
+        });
+    }
+    assert_accepts(include_bytes!(
+        "../../../../tests/conformance/cases/type2-pos-readonly-field-read-and-whole-replace.wf"
+    ));
 }
 
 /// [OP-15] a measure read is a place form whose exact type is `own u64`, so
@@ -198,7 +236,7 @@ fn grow_remakes_a_boxed_window() {
     ));
 }
 
-/// [OP-10] `place_back`'s `requires deref(window).room > 0_u64` is an ordinary
+/// [OP-10] `place_back`'s `requires deref(window).len < deref(window).cap` is an ordinary
 /// [FN-8] requirement, so a full window is refused at the call.
 #[test]
 fn place_back_on_a_full_window_is_an_undischarged_requirement() {
@@ -282,14 +320,15 @@ fn a_runtime_capacity_shape_outside_a_box_is_refused() {
     });
 }
 
-/// [TYPE-9] each shape's constructor entry exists to be refused: a shape is
-/// built by a construction function [OP-13], never by a constructor `call`.
+/// [TYPE-2] each shape is one of the prelude's opaque structs now, and an
+/// opaque struct's constructor entry exists to be refused: a shape is built by
+/// a construction function [OP-13], never by a constructor `call`.
 #[test]
 fn a_compiler_owned_constructor_call_is_refused() {
     let source = include_bytes!(
-        "../../../../tests/conformance/cases/type9-neg-compiler-owned-constructor-call.wf"
+        "../../../../tests/conformance/cases/type2-neg-storage-shape-constructor-call.wf"
     );
-    assert_rule_kind(source, SemanticRule::Type9, |kind| {
+    assert_rule_kind(source, SemanticRule::Type2, |kind| {
         matches!(kind, SemanticIssueKind::ContainerConstruction { .. })
     });
 }

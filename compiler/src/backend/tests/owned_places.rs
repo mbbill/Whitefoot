@@ -1248,15 +1248,15 @@ fn boxed_window_bounded_append_preserves_storage_and_elements() {
 }
 
 fn add_one(storage: own Box<Slots<Box<u64>, 2>>, value: own Box<u64>) -> result: own Box<Slots<Box<u64>, 2>> pure contract {
-  requires storage.inner.room > 0_u64;
+  requires storage.inner.len < storage.inner.cap;
 } {
   place_back(window: &storage.inner, value: move value);
   return move storage;
 }
 
 fn try_append(storage: own Box<Slots<Box<u64>, 2>>, value: own Box<u64>) -> (result: own Box<Slots<Box<u64>, 2>>, returned: own Option<Box<u64>>) pure {
-  let spare = storage.inner.room;
-  if spare > 0_u64 {
+  let filled = storage.inner.len;
+  if filled < 2_u64 {
     let updated = add_one(storage: move storage, value: move value);
     return move updated, None<Box<u64>>();
   }

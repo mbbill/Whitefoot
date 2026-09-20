@@ -221,6 +221,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } if cell => vec![super::super::super::model::CheckedField {
                 name: "value".to_owned(),
                 ty: *referent,
+                readonly: false,
             }],
             _ => return self.destructuring_shape_rejection(node, &written),
         };

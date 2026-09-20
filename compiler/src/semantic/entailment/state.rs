@@ -3148,17 +3148,13 @@ fn for_each_implicit_bound(
                     emit(id, other, 0, ImplicitBoundKind::StandingMeasure);
                     emit(other, id, 0, ImplicitBoundKind::StandingMeasure);
                 }
-                // [MSR-1] `room` is `cap - len`, which is no difference bound
-                // and enters [ENT-6]'s affine images instead. What it gives
-                // this closure is the ordering it implies, `room <= cap`,
-                // because a length is never negative.
-                Some(MeasureBound::Complement { capacity, .. }) => {
-                    emit(id, capacity, 0, ImplicitBoundKind::StandingMeasure);
-                }
                 None => {}
             }
-            // `len_of(P) <= cap_of(P)` and `head_of(P) <= cap_of(P)`, emitted from the
-            // capacity term so each ordering is emitted exactly once.
+            // `P.len <= P.cap` and `P.head <= P.cap`, emitted from the
+            // capacity term so each ordering is emitted exactly once. x1's
+            // [MSR-1] table gives the two `Array` rows no `cap` cell, so an
+            // `Array` place registers no capacity term and neither ordering
+            // is emitted for it.
             if *measure == CheckedMeasure::Capacity {
                 for bounded in [CheckedMeasure::Length, CheckedMeasure::Head] {
                     if let Some(other) = terms.sibling_measure(id, bounded) {

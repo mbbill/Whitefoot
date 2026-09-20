@@ -260,20 +260,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
 
-        // [TYPE-10] a measure is never a write target and a window part is
-        // never a written name at all, so one of the eight reserved
-        // spellings in a target path is that rule's refusal rather than a
-        // struct field the base does not declare.
-        for &suffix in &suffixes {
-            if self.subscript_offset(suffix)?.is_some() {
-                continue;
-            }
-            let name = self
-                .deferred_use_at(suffix, DeferredUseRole::ProjectedField)?
-                .spelling()
-                .to_owned();
-            self.reject_reserved_pseudo_field(suffix, &name)?;
-        }
+        // [TYPE-2] a path that ends at or passes through a readonly field is
+        // never a write target, and [TYPE-10] a window part is never a
+        // written name at all. Both are decided against the type of the place
+        // each suffix follows: x1 reserves neither vocabulary from a
+        // declaration, so a source struct's own field spelled `len` or `next`
+        // is an ordinary target.
+        self.reject_reserved_write_members(node, &suffixes, local.ty)?;
         // [TYPE-9] a target below a `Box`'s member `inner` writes the box
         // content, which is a dereference step the field walk cannot take;
         // the explicit-place target resolver takes it for a bare IDENT base
@@ -516,7 +509,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             let name = self
                 .deferred_use_at(suffix, DeferredUseRole::ProjectedField)?
-                .spelling();
+                .spelling()
+                .to_owned();
+            // [TYPE-10] a window part is effect-row vocabulary and never a
+            // place, so a part spelling following a measured place is that
+            // rule's refusal rather than a struct missing a declared field.
+            // x1 decides it by the type of the place the suffix follows: on
+            // any other type the same spelling is an ordinary field.
+            self.reject_window_part(suffix, &name, ty, false)?;
+            let name = name.as_str();
             let CheckedType::Nominal(nominal_id) = ty else {
                 return self.issue_node(
                     SemanticRule::Type5,
@@ -1445,7 +1446,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         SemanticRule::Own1,
                         use_node,
                         SemanticIssueKind::BareAffineUse {
-                            mechanical_fix: "read a const FixedVector<T, n> through a subscript, one of `len_of`, `cap_of`, `room_of` and `head_of`, or a shared `slice_of` view",
+                            mechanical_fix: "read a const Array<T, n> through a subscript, or read one of its measures as `p.len`",
                         },
                     );
                 }
@@ -1767,23 +1768,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<TypedExpression, CheckStop> {
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
         let constructor_name = usage.spelling().to_owned();
-        // [TYPE-9] each of the three storage shapes contributes one nominal
-        // entry and one constructor entry of the same spelling, and the
-        // constructor entry exists to be refused: a shape is built by a
-        // construction function [OP-13], never by a `construct`. A `Box`
-        // constructor is refused by [TYPE-2] in the same words, its content
-        // being supplied by `box_new` and its friends.
+        // x1 [TYPE-2]: the three storage shapes and the cell are all the
+        // prelude's opaque structs, and an opaque struct's constructor entry
+        // exists to be refused. "A constructor `call` and a destructuring
+        // `let_stmt` naming any of the four is refused by [TYPE-2] like every
+        // opaque struct's", so the four cite one rule where the shapes used
+        // to cite [TYPE-9] and the cell [TYPE-2].
         if let ResolvedTarget::Container(id) = usage.target() {
-            let nominal =
+            let _ =
                 crate::container_nominal(id).ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let rule = match nominal.shape {
-                crate::ContainerShape::Array
-                | crate::ContainerShape::Slots
-                | crate::ContainerShape::Ring => SemanticRule::Type9,
-                crate::ContainerShape::Box => SemanticRule::Type2,
-            };
             return self.issue_node(
-                rule,
+                SemanticRule::Type2,
                 node,
                 SemanticIssueKind::ContainerConstruction {
                     nominal: constructor_name,

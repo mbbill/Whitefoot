@@ -207,13 +207,6 @@ pub(crate) const OPERATION_FAMILIES: [&str; 86] = [
 
 pub(crate) const MODE_WORDS: [&str; 5] = ["wrap", "defined", "checked", "sat", "strict"];
 
-/// The four measure pseudo-fields [MSR-1, OP-15] followed by the four window
-/// parts [WIN-2], in the FORM-3 alternative order DIAG-1 fixes as the
-/// `measure-or-part` reserved ordinal.
-pub(crate) const MEASURE_AND_PART_NAMES: [&str; 8] = [
-    "len", "cap", "room", "head", "next", "last", "filled", "free",
-];
-
 pub(crate) fn operation_id(spelling: &str) -> Option<OperationFamilyId> {
     OPERATION_FAMILIES
         .iter()
@@ -243,21 +236,20 @@ pub(crate) fn reserved_name(spelling: &str) -> Option<(ReservedNameClass, u16)> 
             .ok()
             .map(|ordinal| (ReservedNameClass::ModeWord, ordinal));
     }
-    // [FORM-3] the eight measure and window-part names are reserved from every
-    // declaration role OP-1 already lists, because `r.len` would otherwise
-    // carry two meanings [TYPE-10].
-    MEASURE_AND_PART_NAMES
-        .iter()
-        .position(|candidate| *candidate == spelling)
-        .and_then(|index| u16::try_from(index).ok())
-        .map(|ordinal| (ReservedNameClass::MeasureOrPart, ordinal))
+    // x1 [FORM-3, TYPE-10]: the eight measure and window-part names are no
+    // longer reserved. `len`, `cap` and `head` are the readonly fields
+    // [PRE-1] declares on the storage shapes, and `next`, `last`, `filled`
+    // and `free` are effect-row vocabulary selected by the window type of
+    // the place they follow, so neither set takes a declaration spelling
+    // away from a writer.
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        DeclarationClass, MEASURE_AND_PART_NAMES, MODE_WORDS, OPERATION_FAMILIES,
-        PRELUDE_DECLARATIONS, ReservedNameClass, reserved_name,
+        DeclarationClass, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS,
+        ReservedNameClass, reserved_name,
     };
     use std::collections::HashSet;
 
@@ -277,12 +269,6 @@ mod tests {
             MODE_WORDS
                 .iter()
                 .all(|word| !OPERATION_FAMILIES.contains(word))
-        );
-        // [DIAG-1] "Those three reserved sets are disjoint in this version."
-        assert!(
-            MEASURE_AND_PART_NAMES
-                .iter()
-                .all(|name| !OPERATION_FAMILIES.contains(name) && !MODE_WORDS.contains(name))
         );
         // OP-1's derived-set consequence of the v0.41 comparison symbols:
         // the six integer comparisons are operator spellings, so they occupy
@@ -341,15 +327,12 @@ mod tests {
             reserved_name("wrap"),
             Some((ReservedNameClass::ModeWord, 0))
         );
-        for (ordinal, spelling) in MEASURE_AND_PART_NAMES.iter().enumerate() {
-            assert_eq!(
-                reserved_name(spelling),
-                Some((
-                    ReservedNameClass::MeasureOrPart,
-                    u16::try_from(ordinal).expect("eight reserved names")
-                )),
-                "{spelling} is FORM-3 reserved at ordinal {ordinal}"
-            );
+        // x1 [FORM-3, TYPE-10]: the eight measure and window-part names
+        // reserve nothing. Retires the ordinal assertion of
+        // `measure-or-part`, whose successor is this free-identifier
+        // assertion over the same eight spellings.
+        for free in ["len", "cap", "head", "next", "last", "filled", "free", "room"] {
+            assert_eq!(reserved_name(free), None, "{free} is a free identifier");
         }
     }
 
@@ -366,28 +349,6 @@ mod tests {
             OPERATION_FAMILIES.as_slice(),
             extract_operation_families(crate::ACTIVE_KERNEL_SPEC_TEXT)
         );
-
-        assert_eq!(
-            MEASURE_AND_PART_NAMES.as_slice(),
-            extract_measure_and_part_names(crate::ACTIVE_KERNEL_SPEC_TEXT)
-        );
-    }
-
-    /// FORM-3's own reservation sentence, read as the authority for both the
-    /// membership and the `measure-or-part` ordinal order [DIAG-1].
-    fn extract_measure_and_part_names(spec: &str) -> Vec<&str> {
-        let sentence = spec
-            .split_once("\nThe eight names ")
-            .expect("FORM-3 reservation sentence")
-            .1
-            .split_once(" are reserved from every declaration role")
-            .expect("FORM-3 reservation sentence ending")
-            .0;
-        sentence
-            .split('`')
-            .enumerate()
-            .filter_map(|(index, part)| (index % 2 == 1).then_some(part))
-            .collect()
     }
 
     /// The built-in half of [PRE-1], read out of the rule's own fences.
@@ -429,11 +390,16 @@ mod tests {
                     .and_then(|(_, rest)| rest.split_once('>'))
                     .map(|(generics, _)| generics)
                 {
-                    records.extend(
-                        generics
-                            .split(',')
-                            .map(|generic| (generic.trim().to_owned(), None)),
-                    );
+                    // x1 [FN-2, PRE-1]: `enum Option<T: linear>` writes the
+                    // linearity bound the grammar has always required. The
+                    // bound is a property of the declaration and not part of
+                    // the parameter's name [TYPE-3], so the record carries the
+                    // TYPEID alone.
+                    records.extend(generics.split(',').map(|generic| {
+                        let generic = generic.trim();
+                        let name = generic.split_once(':').map_or(generic, |(name, _)| name);
+                        (name.trim().to_owned(), None)
+                    }));
                 }
             } else if in_enum && trimmed == "}" {
                 in_enum = false;

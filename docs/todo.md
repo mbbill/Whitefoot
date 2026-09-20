@@ -3,6 +3,15 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
+- **SOUNDNESS: a requirement over a range reference's length is judged
+  against the owner.** `let view = &a[2_u64..4_u64]; touch(part: view, at:
+  3_u64)` with `requires at < deref(part).len` is accepted and the run reads
+  outside the four-element array (found 2026-09-20 by probing; conformance
+  case `ref4-neg-a-requirement-over-a-range-reference-is-the-ranges-length`
+  fails until fixed, and the pinned sentence `wide <= deref(view).len` in
+  `compiler/src/driver/pinned_sentences.rs` likewise). The call-site goal
+  instantiation drops the range step of the actual's path, so the measure
+  becomes the owner's `len` instead of `hi - lo`.
 - **A contract fact stated over `room` does not survive the window write it
   precedes.** [MSR-1]'s table fixes a window's `room` cell as `cap - len`, so
   the affine image of `r.room` is the difference of the other two images and a

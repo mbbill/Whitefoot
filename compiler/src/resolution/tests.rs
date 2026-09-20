@@ -184,14 +184,22 @@ fn probe() -> result: own unit pure {
   return unit;
 }
 "#;
-    with_one_resolution(source, |outcome| {
+    // x1 [TYPE-2, PRE-1]: `Array` is a prelude declaration now, so a unit
+    // resolved without the prelude has no such nominal to name. The subject
+    // here is the const expression's own lexical roles, so the prelude is
+    // included and the fixture is otherwise unchanged.
+    with_resolution_sources(&[SourceInput::new("test.wf", source)], true, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("a decimal const expression must resolve without a name role: {outcome:?}");
         };
+        // The prelude's own declarations name their capacity parameters,
+        // so the claim is read over this unit's source file alone, which is
+        // the file the subject is written in.
         assert!(
             resolved
                 .lexical_uses()
                 .iter()
+                .filter(|usage| usage.origin().coordinate().source().ordinal() == 0)
                 .all(|usage| usage.role() != LexicalUseRole::Const)
         );
     });
@@ -830,49 +838,26 @@ fn a_dotless_operation_name_is_reserved_from_body_invariant_declarations() {
 // `sibling_member_signatures_do_not_share_parameter_names` below. No
 // successor rule inherits region uniqueness, so nothing replaces this case.
 
-/// [FORM-3] reserves the four measure pseudo-fields and the four window parts
-/// "from every declaration role [OP-1] already lists", carrying the
-/// `measure-or-part` reserved class and its own [DIAG-1] ordinal.
+/// x1 deletes the eight-name reservation. [FORM-3] no longer takes `len`,
+/// `cap`, `head`, `next`, `last`, `filled` or `free` away from a declaration:
+/// the first three are the readonly fields [PRE-1] declares on the storage
+/// shapes and the last four are effect-row vocabulary selected by the window
+/// type of the place they follow [TYPE-10], so a writer may spell a
+/// parameter, a field or a binding any of them.
+///
+/// Retires `measure_and_window_part_names_are_reserved_from_source_declarations`,
+/// whose successor is this acceptance over the same three declaration roles.
 #[test]
-fn measure_and_window_part_names_are_reserved_from_source_declarations() {
-    for (source, declaration_role, spelling, ordinal) in [
-        (
-            &b"fn probe(len: own u64) -> result: own unit pure {\n  return unit;\n}\n"[..],
-            ReservedDeclarationRole::Parameter,
-            "len",
-            0_u16,
-        ),
-        (
-            &b"struct Holder {\n  room: u64;\n}\n"[..],
-            ReservedDeclarationRole::Field,
-            "room",
-            2,
-        ),
-        (
-            &b"fn probe() -> result: own unit pure {\n  let filled = 0_u64;\n  return unit;\n}\n"[..],
-            ReservedDeclarationRole::Let,
-            "filled",
-            6,
-        ),
+fn measure_and_window_part_names_are_ordinary_source_declarations() {
+    for source in [
+        &b"fn probe(len: own u64) -> result: own unit pure {\n  return unit;\n}\n"[..],
+        &b"struct Holder {\n  cap: u64;\n  next: u64;\n}\n"[..],
+        &b"fn probe() -> result: own unit pure {\n  let filled = 0_u64;\n  return unit;\n}\n"[..],
     ] {
         with_one_resolution(source, |outcome| {
-            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-                panic!("a reserved measure or part name must reject: {outcome:?}");
-            };
-            assert_eq!(issue.rule(), ResolutionRule::Form3);
             assert!(
-                matches!(
-                    issue.kind(),
-                    ResolutionIssueKind::ReservedName {
-                        spelling: observed,
-                        declaration_role: role,
-                        class: crate::ReservedNameClass::MeasureOrPart,
-                        inventory_ordinal,
-                    } if observed == spelling
-                        && *role == declaration_role
-                        && *inventory_ordinal == ordinal
-                ),
-                "{spelling}: {issue:?}"
+                matches!(outcome, ResolutionOutcome::Complete(_)),
+                "a measure or part spelling is an ordinary declaration: {outcome:?}"
             );
         });
     }
@@ -1796,7 +1781,11 @@ fn probe() -> result: own unit pure {
   }
 }
 "#;
-    with_one_resolution(source, |outcome| {
+    // x1 [TYPE-2, PRE-1]: the fixture names `Array`, which is a prelude
+    // declaration now rather than a compiler-owned table row, so the unit is
+    // resolved with the prelude. Every role the fixture exercises is a source
+    // role and none of them is the prelude's.
+    with_resolution_sources(&[SourceInput::new("test.wf", source)], true, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("complete role fixture must resolve: {outcome:?}");
         };
@@ -2545,10 +2534,10 @@ fn ordinary_prelude_diagnostic_origins_follow_the_complete_record_preorder() {
     // nominal alone, because an enum contributes its variants' spellings to
     // the constructor domain and not its own.
     for (name, origins) in [
-        ("HostString", vec![6, 7]),
-        ("Bool", vec![32]),
-        ("Overflow", vec![47, 48]),
-        ("TcpConnection", vec![54, 55]),
+        ("HostString", vec![24, 25]),
+        ("Bool", vec![50]),
+        ("Overflow", vec![65, 66]),
+        ("TcpConnection", vec![72, 73]),
     ] {
         let source = format!("struct {name} {{\n}}\n");
         with_resolution_sources(
@@ -2607,41 +2596,57 @@ fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_cou
     let second = read_inventory(b"struct Extra {\n  field: u64;\n}\n\nfn helper() -> result: own unit pure {\n  let local = 0_u64;\n  return unit;\n}\n");
     assert_eq!(first, second);
     // [PRE-1]'s preorder: "each opaque struct above in written order with its
-    // refused constructor and its fields in declaration order", so the cell
-    // comes first with four records of its own — its nominal, the constructor
-    // [TYPE-2] exists to refuse, its type parameter and its field `inner` —
-    // and each of the fourteen host handles follows with a nominal and a
+    // refused constructor and its fields in declaration order". x1 puts the
+    // three storage shapes first, each with its nominal, the constructor
+    // [TYPE-2] exists to refuse, its element and capacity parameters and its
+    // readonly measure fields; the cell follows with four records of its own,
+    // and each of the fourteen host handles then contributes a nominal and a
     // refused constructor and no field at all.
-    assert_eq!(first[0].1, "Box");
+    assert_eq!(first[0].1, "Array");
     assert_eq!(first[0].2, Some(DeclarationClass::NominalType));
-    assert_eq!(first[1].1, "Box");
+    assert_eq!(first[1].1, "Array");
     assert_eq!(first[1].2, Some(DeclarationClass::StructConstructor));
     assert_eq!(first[2].1, "T");
-    assert_eq!(first[3].1, "inner");
-    assert_eq!(first[4].1, "Args");
-    assert_eq!(first[5].2, Some(DeclarationClass::StructConstructor));
-    assert_eq!(first[30].1, "TcpSend");
+    assert_eq!(first[3].1, "n");
+    assert_eq!(first[4].1, "len");
+    assert_eq!(first[5].1, "Slots");
+    assert_eq!(first[9].1, "len");
+    assert_eq!(first[10].1, "cap");
+    assert_eq!(first[11].1, "Ring");
+    assert_eq!(first[15].1, "len");
+    assert_eq!(first[16].1, "cap");
+    assert_eq!(first[17].1, "head");
+    assert_eq!(first[18].1, "Box");
+    assert_eq!(first[18].2, Some(DeclarationClass::NominalType));
+    assert_eq!(first[19].1, "Box");
+    assert_eq!(first[19].2, Some(DeclarationClass::StructConstructor));
+    assert_eq!(first[20].1, "T");
+    assert_eq!(first[21].1, "inner");
+    assert_eq!(first[22].1, "Args");
+    assert_eq!(first[23].2, Some(DeclarationClass::StructConstructor));
+    assert_eq!(first[48].1, "TcpSend");
     // Then each ordinary struct or enum with its constructor or variants and
     // their fields, then `Int` and `Float`, then the host functions, then the
     // construction functions [OP-13], then the window operations [OP-10],
     // then `swap` [OP-11] and `free_empty` [OP-14], each with its type, const
     // and value parameters in declared order.
-    assert_eq!(first[32].1, "Bool");
-    assert_eq!(first[54].1, "TcpConnection");
-    assert_eq!(first[58].1, "AcceptedConnection");
-    assert_eq!(first[176].1, "Int");
-    assert_eq!(first[177].1, "Float");
-    assert_eq!(first[178].1, "args_count");
-    assert_eq!(first[294].1, "close_send");
-    assert_eq!(first[297].1, "box_new");
-    assert_eq!(first[328].1, "place_back");
-    assert_eq!(first[372].1, "swap");
-    assert_eq!(first[376].1, "free_empty");
-    // The opaque phase went from 14 records to 32 when the cell joined it and
-    // every opaque struct gained its refused constructor: `Box` contributes
-    // four and each handle two, so the whole inventory grew by 18 and every
-    // ordinal from `Bool` on moved by that much.
-    assert_eq!(first.len(), 379);
+    assert_eq!(first[50].1, "Bool");
+    assert_eq!(first[72].1, "TcpConnection");
+    assert_eq!(first[76].1, "AcceptedConnection");
+    assert_eq!(first[194].1, "Int");
+    assert_eq!(first[195].1, "Float");
+    assert_eq!(first[196].1, "args_count");
+    assert_eq!(first[312].1, "close_send");
+    assert_eq!(first[315].1, "box_new");
+    assert_eq!(first[346].1, "place_back");
+    assert_eq!(first[390].1, "swap");
+    assert_eq!(first[394].1, "free_empty");
+    // x1 adds the three storage shapes to the opaque phase, which grows from
+    // 32 records to 50: `Array` contributes five, `Slots` six and `Ring`
+    // seven — a nominal, a refused constructor, two generic parameters and
+    // one readonly field per measure — so the whole inventory grew by 18
+    // again and every ordinal from `Box` on moved by that much.
+    assert_eq!(first.len(), 397);
     // `free_empty`'s own value parameter is the last record of the preorder.
     assert_eq!(first.last().map(|record| record.1.as_str()), Some("window"));
     assert!(
@@ -2672,7 +2677,7 @@ fn a_late_prelude_function_collision_preserves_an_ordinal_above_u8() {
             };
             assert_eq!(conflicts.len(), 1);
             assert!(
-                matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 294)
+                matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 312)
             );
         },
     );

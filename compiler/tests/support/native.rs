@@ -43,7 +43,7 @@ pub(crate) fn wide_frame_source(depth: u64, slots: u64) -> Vec<u8> {
   for @fill (
     at in 0_u64..{slots}_u64,
     invariant grown: pad.len >= at,
-    invariant spare: pad.room + at >= {slots}_u64
+    invariant spare: pad.cap + at >= pad.len + {slots}_u64
   ) {{
     let seed = v +wrap at;
     let square = seed *wrap seed;

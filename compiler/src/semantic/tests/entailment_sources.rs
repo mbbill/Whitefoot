@@ -83,13 +83,22 @@ const FACT_EVENT_KINDS: [FlowEventKind; 9] = [
 /// so it deliberately has no `FlowEventKind::S12` statement event.
 const POSTCONDITION_SOURCE: u8 = 12;
 
+/// S15 is a `match` arm's refinement fact, which the checker carries as the
+/// availability of a payload step rather than as a difference bound over a
+/// term: [REF-1] makes a payload step available exactly while that fact holds
+/// and [REF-2] invalidates the step when the enum is written, so the fact has
+/// no statement event of its own either. `compiler/src/semantic/places.rs`'s
+/// payload step and `check/references.rs`'s refinement-invalidation walk are
+/// where it lives.
+const REFINEMENT_SOURCE: u8 = 15;
+
 #[test]
 fn ent3_labels_and_fact_event_constructors_name_the_same_sources() {
     let defined = defined_sources();
     assert_eq!(
         defined,
-        BTreeSet::from([1, 4, 5, 6, 7, 9, 11, 12, 13, 14]),
-        "ENT-3 defines the ten originating fact sources"
+        BTreeSet::from([1, 4, 5, 6, 7, 9, 11, 12, 13, 14, 15]),
+        "ENT-3 defines the eleven originating fact sources"
     );
 
     let modelled = FACT_EVENT_KINDS
@@ -106,6 +115,10 @@ fn ent3_labels_and_fact_event_constructors_name_the_same_sources() {
     assert!(
         expected.remove(&POSTCONDITION_SOURCE),
         "S12 must be the separately published FN-9 source"
+    );
+    assert!(
+        expected.remove(&REFINEMENT_SOURCE),
+        "S15 must be the payload-step refinement source"
     );
     assert_eq!(
         modelled, expected,

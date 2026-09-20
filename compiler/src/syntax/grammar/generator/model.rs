@@ -168,6 +168,9 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("times", "Times"),
         ("formal", "Formal"),
         ("actual", "Actual"),
+        // x1 [GRAM-2, TYPE-2]: the field modifier that makes a field never a
+        // write target.
+        ("readonly", "Readonly"),
     ];
     if spelling == "[0-9]+" {
         return Pred::Digits;

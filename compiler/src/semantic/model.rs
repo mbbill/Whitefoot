@@ -636,7 +636,7 @@ impl CheckedType {
     }
 }
 
-/// One of [MSR-1]'s four measures of a measured value.
+/// One of [MSR-1]'s three measures of a measured value.
 ///
 /// The spelling and the [ENT-2] term are the same quantity read two ways, so
 /// one enum keys both the [OP-1] reader row and the measure term.
@@ -644,7 +644,6 @@ impl CheckedType {
 pub(crate) enum CheckedMeasure {
     Length,
     Capacity,
-    Room,
     Head,
 }
 
@@ -672,12 +671,6 @@ pub(crate) enum MeasureCell {
     /// value's own descriptor: a run's `len` and a runtime-capacity window's
     /// `cap` [BLK-1].
     ExactRuntime,
-    /// The measure is exactly `cap - len` of the same place: the `room` cell
-    /// every window row of [MSR-1]'s table writes that way. The cell is
-    /// table data like any other, so the value is the difference of the two
-    /// images and never a quantity of its own, and [MSR-2]'s standing
-    /// identity is then true of the images themselves.
-    ExactComplement,
     /// The measure is exact but only two-sidedly published by some writing
     /// operation. A run's `head` is the one cell of this class [BLK-3].
     Bounded,
@@ -694,8 +687,7 @@ impl MeasureCell {
             Self::ExactExtent
             | Self::ExactConstant(_)
             | Self::ExactTypeConstant
-            | Self::ExactRuntime
-            | Self::ExactComplement => "exact",
+            | Self::ExactRuntime => "exact",
             Self::Bounded => "bounded",
             Self::Absent => "absent",
         }
@@ -710,46 +702,29 @@ impl CheckedMeasure {
         match self {
             Self::Length => "len",
             Self::Capacity => "cap",
-            Self::Room => "room",
             Self::Head => "head",
         }
     }
 
-    /// [MSR-1]'s measure table, for the three measured types this version
-    /// has. Each is completely initialized over its whole capacity at its
-    /// formation, so it has no spare room and no window origin but zero.
+    /// [MSR-1]'s measure table, read row by row out of the rule's own fence.
     ///
     /// The table is data, not a rule: a later version adds a row per measured
     /// type it adds, and only such a row can introduce a bounded or absent
     /// cell.
     pub(crate) const fn cell(self, measured: MeasuredKind) -> MeasureCell {
         match (measured, self) {
-            // `Array<T, N>`: `len` and `cap` are both the type constant and
-            // every slot always holds a value, so there is no spare room and
-            // no window origin [WIN-1].
-            (MeasuredKind::ConstantArray, Self::Length | Self::Capacity) => {
-                MeasureCell::ExactTypeConstant
-            }
+            // `Array<T, N>`: `len` is the type constant and every slot always
+            // holds a value [WIN-1]. x1 gives the two `Array` rows no `cap`
+            // cell at all: an array is its own extent and states no second
+            // capacity quantity, so the row that used to answer `cap` with
+            // the same number is absent rather than duplicated.
+            (MeasuredKind::ConstantArray, Self::Length) => MeasureCell::ExactTypeConstant,
             // `Array<T>`: the one runtime number the block stores is its
-            // allocated slot count, and `cap` equals it.
-            (MeasuredKind::RuntimeArray, Self::Length | Self::Capacity) => {
-                MeasureCell::ExactRuntime
-            }
-            (
-                MeasuredKind::ConstantArray | MeasuredKind::RuntimeArray,
-                Self::Room,
-            ) => MeasureCell::ExactConstant(0),
-            // The four window rows: `len` is a stored runtime number and
-            // `room` is the complement [MSR-2] relates it to, while `cap` is
-            // the type constant in the constant-capacity placement and the
-            // slot count taken at construction in the runtime one.
-            (
-                MeasuredKind::ConstantSlots
-                | MeasuredKind::RuntimeSlots
-                | MeasuredKind::ConstantRing
-                | MeasuredKind::RuntimeRing,
-                Self::Room,
-            ) => MeasureCell::ExactComplement,
+            // allocated slot count.
+            (MeasuredKind::RuntimeArray, Self::Length) => MeasureCell::ExactRuntime,
+            // The four window rows: `len` is a stored runtime number, while
+            // `cap` is the type constant in the constant-capacity placement
+            // and the slot count taken at construction in the runtime one.
             (
                 MeasuredKind::ConstantSlots
                 | MeasuredKind::RuntimeSlots
@@ -774,8 +749,8 @@ impl CheckedMeasure {
                 MeasuredKind::ConstantRing | MeasuredKind::RuntimeRing,
                 Self::Head,
             ) => MeasureCell::Bounded,
-            // `head` is absent on every row but the two `Ring` rows, and a
-            // range has neither `cap`, `room` nor `head`.
+            // `head` is absent on every row but the two `Ring` rows, and
+            // neither an `Array` row nor a range has `cap` or `head`.
             (
                 MeasuredKind::ConstantArray
                 | MeasuredKind::RuntimeArray
@@ -783,9 +758,11 @@ impl CheckedMeasure {
                 | MeasuredKind::RuntimeSlots,
                 Self::Head,
             )
-            | (MeasuredKind::Range, Self::Capacity | Self::Room | Self::Head) => {
-                MeasureCell::Absent
-            }
+            | (
+                MeasuredKind::ConstantArray | MeasuredKind::RuntimeArray | MeasuredKind::Range,
+                Self::Capacity,
+            )
+            | (MeasuredKind::Range, Self::Head) => MeasureCell::Absent,
         }
     }
 }
@@ -883,6 +860,16 @@ pub(crate) struct CheckedConstant {
 pub(crate) struct CheckedField {
     pub(crate) name: String,
     pub(crate) ty: CheckedType,
+    /// [TYPE-2] whether the declaration wrote `readonly` before the name.
+    ///
+    /// A path that ends at or passes through such a field is never a write
+    /// target: construction gives it its value like any other field and a
+    /// whole-value assignment replaces it together with its owner, but a
+    /// `set` on it and an argument naming it at a written reference parameter
+    /// are refused. It states that the field is not assignable, not that its
+    /// value is constant: a compiler-owned [PRE-1] operation whose row
+    /// declares `writes` of it still changes it.
+    pub(crate) readonly: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2508,7 +2495,7 @@ pub(crate) enum CheckedEffectStep {
     },
     /// `.next`, `.last`, `.filled`, or `.free` [WIN-2, TYPE-10].
     Part(super::places::WindowPart),
-    /// `.len`, `.cap`, `.room`, or `.head` [MSR-1, OP-15, TYPE-10].
+    /// `.len`, `.cap`, or `.head` [MSR-1, OP-15, TYPE-2].
     Measure(CheckedMeasure),
 }
 

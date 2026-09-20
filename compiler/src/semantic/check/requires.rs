@@ -1485,8 +1485,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        for suffix in self.tree.children_with(place, Production::Psuffix)? {
-            if self.subscript_offset(suffix)?.is_some() {
+        // x1 [ENT-2] clause (b), [MSR-1]: an admitted measure place is
+        // "formed with any number of field-selection and enum-payload
+        // `psuffix`es, `deref` wrappings, and subscripts", which is what
+        // makes `deref(rows)[i].len` a term of the clause language. A
+        // subscript below the measure is therefore admitted here; every
+        // other subscript in a clause is still this rule's refusal, because
+        // a clause names no element value.
+        let suffixes = self.tree.children_with(place, Production::Psuffix)?;
+        let measure_place = self.trailing_measure_member(&suffixes)?.is_some();
+        for (position, &suffix) in suffixes.iter().enumerate() {
+            if self.subscript_offset(suffix)?.is_some()
+                && !(measure_place && position + 1 < suffixes.len())
+            {
                 return self.invalid_clause(clause, entry);
             }
         }

@@ -1,0 +1,14 @@
+fn touch(part: &[u8], at: own u64) -> result: own u8 reads(part) contract {
+  requires at < deref(part).len;
+} {
+  let v = deref(part)[at];
+  return v;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "REF-4, FN-8: a requirement over deref(part).len is judged against the length of the range the actual names, hi - lo, never against the length of the storage the range was formed over. The range a[2..4] has two elements, so the index 3 is refused; judged against a.len it would be admitted and would read outside the array.";
+  let a = array_filled::<u8, 4>(value: 1_u8);
+  let view = &a[2_u64..4_u64];
+  let x = touch(part: view, at: 3_u64);
+  return exit_status(code: x);
+}

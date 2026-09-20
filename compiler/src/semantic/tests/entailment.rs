@@ -493,9 +493,6 @@ fn assert_run_length_bound(summary: &FunctionEntailment, left: TermId, right: Te
             ((left == length && right == parameter) || (left == parameter && right == length))
                 && bound == 0
         }
-        // [MSR-1] the complement cell relates three terms, so it is no
-        // difference bound between this pair.
-        MeasureBound::Complement { .. } => false,
     };
     let matched = [left, right].into_iter().any(|candidate| {
         matches!(retained_term(summary, candidate), TermKind::Measure(..))
@@ -5494,20 +5491,19 @@ fn main() -> status: own ExitStatus pure {
                     .all(|term| !matches!(term, TermKind::ConstParameter(_))),
                 "concrete instances retain no symbolic const term"
             );
-            // [MSR-1] the window place carries four measures, and [MSR-2]'s
+            // [MSR-1] the window place carries three measures, and [MSR-2]'s
             // table fixes a constant for exactly one of them on a
             // constant-capacity `Slots<T, n>`: `cap` is the type constant
-            // `n`, which is the instance's own N and identifies it. An
-            // `Array<T, N>` place would also fix `room` at zero; a window
-            // carries `len`, `room` and `head` as descriptor words, so they
-            // are not constants of the type [WIN-1, MSR-2].
+            // `n`, which is the instance's own N and identifies it. A window
+            // carries `len` and `head` as descriptor words, so they are not
+            // constants of the type [WIN-1, MSR-2].
             let mut constants: Vec<_> = summary
                 .inventory
                 .measure_bounds
                 .iter()
                 .filter_map(|bound| match bound {
                     Some(MeasureBound::Constant(value)) => Some(*value),
-                    Some(MeasureBound::Equal(_) | MeasureBound::Complement { .. }) | None => None,
+                    Some(MeasureBound::Equal(_)) | None => None,
                 })
                 .collect();
             constants.sort_unstable();
@@ -10352,18 +10348,18 @@ fn main() -> status: own ExitStatus pure {
                 |node| matches!(node, DerivationNode::SourceBound { .. }),
                 "the concrete const instance's own declared length bound",
             );
-            // [MSR-1] the window place carries all four measures, and exactly
+            // [MSR-1] the window place carries all three measures, and exactly
             // one cell of [MSR-2]'s table fixes a constant: `cap` is the type
-            // constant `n`, so it is the instance's own N, while `len`, `room`
-            // and `head` are descriptor words of the value rather than facts
-            // of the type [WIN-1].
+            // constant `n`, so it is the instance's own N, while `len` and
+            // `head` are descriptor words of the value rather than facts of
+            // the type [WIN-1].
             let mut constants: Vec<_> = summary
                 .inventory
                 .measure_bounds
                 .iter()
                 .filter_map(|bound| match bound {
                     Some(MeasureBound::Constant(value)) => Some(*value),
-                    Some(MeasureBound::Equal(_) | MeasureBound::Complement { .. }) | None => None,
+                    Some(MeasureBound::Equal(_)) | None => None,
                 })
                 .collect();
             constants.sort_unstable();

@@ -24,7 +24,6 @@ const fn lower_measure(measure: CheckedMeasure) -> IrMeasure {
     match measure {
         CheckedMeasure::Length => IrMeasure::Length,
         CheckedMeasure::Capacity => IrMeasure::Capacity,
-        CheckedMeasure::Room => IrMeasure::Room,
         CheckedMeasure::Head => IrMeasure::Head,
     }
 }
@@ -33,8 +32,7 @@ impl IrBuilder<'_> {
     /// One [MSR-1] measure of a run or a bump extent.
     ///
     /// A cell the table fixes as a compile-time constant is that constant and
-    /// loads nothing; every other cell is a descriptor word or, for `room`,
-    /// the complement [MSR-2] relates it to.
+    /// loads nothing; every other cell is one descriptor word [MSR-2].
     pub(super) fn lower_container_measure(
         &mut self,
         measure: CheckedMeasure,
@@ -64,29 +62,8 @@ impl IrBuilder<'_> {
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
                 self.lower_fixed_measure(length)
             }
-            MeasureCell::ExactExtent
-            | MeasureCell::ExactRuntime
-            | MeasureCell::ExactComplement
-            | MeasureCell::Bounded => {
+            MeasureCell::ExactExtent | MeasureCell::ExactRuntime | MeasureCell::Bounded => {
                 let container = self.container_root_value(root)?;
-                // [MSR-2] `room` is the complement of `len` in `cap`; where
-                // the capacity is the type constant it is formed here rather
-                // than loaded, because the block stores no capacity word.
-                if measure == CheckedMeasure::Room
-                    && let Some(capacity) = root.type_constant().and_then(|constant| constant.value())
-                {
-                    let length = self.define(
-                        IrType::Integer {
-                            width: 64,
-                            signed: false,
-                        },
-                        IrOperation::ContainerMeasure {
-                            measure: IrMeasure::Length,
-                            container,
-                        },
-                    )?;
-                    return self.lower_measure_complement(capacity, length);
-                }
                 self.define(
                     IrType::Integer {
                         width: 64,

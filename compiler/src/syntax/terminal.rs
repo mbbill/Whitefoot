@@ -36,6 +36,8 @@ pub enum FixedTerminal {
     LeftBrace,
     /// `}`.
     RightBrace,
+    /// `readonly`.
+    Readonly,
     /// `:`.
     Colon,
     /// `enum`.
@@ -213,7 +215,7 @@ pub enum FixedTerminal {
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 95] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 96] = [
     FixedTerminal::Program,
     FixedTerminal::NoHeap,
     FixedTerminal::Semicolon,
@@ -222,6 +224,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 95] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
+    FixedTerminal::Readonly,
     FixedTerminal::Colon,
     FixedTerminal::Enum,
     FixedTerminal::LeftParen,
@@ -329,6 +332,7 @@ impl FixedTerminal {
             Self::Struct => "struct",
             Self::LeftBrace => "{",
             Self::RightBrace => "}",
+            Self::Readonly => "readonly",
             Self::Colon => ":",
             Self::Enum => "enum",
             Self::LeftParen => "(",
@@ -809,24 +813,30 @@ mod tests {
         // every later ordinal moves down by one.
         assert_eq!(FixedTerminal::Opaque as u8, 3);
         assert_eq!(FixedTerminal::Linear as u8, 4);
-        assert_eq!(FixedTerminal::Ensures as u8, 19);
-        assert_eq!(FixedTerminal::Is as u8, 21);
-        assert_eq!(FixedTerminal::Copy as u8, 29);
-        assert_eq!(FixedTerminal::Affine as u8, 30);
+        // x1 [GRAM-2]: `field := "readonly"? IDENT ":" type ";"` reaches the
+        // field modifier before the colon of the same production, so
+        // `readonly` takes slot eight and every later ordinal moves down by
+        // one.
+        assert_eq!(FixedTerminal::Readonly as u8, 8);
+        assert_eq!(FixedTerminal::Colon as u8, 9);
+        assert_eq!(FixedTerminal::Ensures as u8, 20);
+        assert_eq!(FixedTerminal::Is as u8, 22);
+        assert_eq!(FixedTerminal::Copy as u8, 30);
+        assert_eq!(FixedTerminal::Affine as u8, 31);
         // `&` is reached through `param`'s `"&" "[" type "]"` arm before the
         // bracket atoms of the same arm, so the reference sigil now precedes
         // them; in v0.59 it entered through `mode`'s `&uniq`.
-        assert_eq!(FixedTerminal::Ampersand as u8, 31);
-        assert_eq!(FixedTerminal::DotDot as u8, 47);
-        assert_eq!(FixedTerminal::For as u8, 55);
-        assert_eq!(FixedTerminal::In as u8, 56);
-        assert_eq!(FixedTerminal::Invariant as u8, 57);
-        assert_eq!(FixedTerminal::Use as u8, 58);
-        assert_eq!(FixedTerminal::Times as u8, 59);
-        assert_eq!(FixedTerminal::PercentChecked as u8, 84);
-        assert_eq!(FixedTerminal::Writes as u8, 94);
-        assert_eq!(TerminalPredicate::Identifier.index(), 95);
-        assert_eq!(TerminalPredicate::Digits.index(), 101);
+        assert_eq!(FixedTerminal::Ampersand as u8, 32);
+        assert_eq!(FixedTerminal::DotDot as u8, 48);
+        assert_eq!(FixedTerminal::For as u8, 56);
+        assert_eq!(FixedTerminal::In as u8, 57);
+        assert_eq!(FixedTerminal::Invariant as u8, 58);
+        assert_eq!(FixedTerminal::Use as u8, 59);
+        assert_eq!(FixedTerminal::Times as u8, 60);
+        assert_eq!(FixedTerminal::PercentChecked as u8, 85);
+        assert_eq!(FixedTerminal::Writes as u8, 95);
+        assert_eq!(TerminalPredicate::Identifier.index(), 96);
+        assert_eq!(TerminalPredicate::Digits.index(), 102);
     }
 
     /// The inventory holds every predicate, once.

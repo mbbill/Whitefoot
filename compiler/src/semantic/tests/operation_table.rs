@@ -259,7 +259,7 @@ const BOOLEAN_SPELLINGS: [(&str, usize); 4] = [("band", 2), ("bor", 2), ("bxor",
 /// belongs on.
 ///
 /// v0.60 removed twelve of the sixteen rows this list used to carry. The
-/// measure readers `len_of`, `cap_of`, `room_of` and `head_of` are retired:
+/// measure readers `len_of`, `cap_of` and `head_of` are retired:
 /// a measure is a `psuffix` field selection on a measured place and is not a
 /// call [OP-15, TYPE-10]. The views `slice_of` and `mut_slice_of` are retired
 /// with views, a range reference being formed by `&x[lo..hi]` [REF-4]. The
@@ -544,7 +544,7 @@ fn measure_rows() -> Vec<MeasureRow> {
             .split('|')
             .map(str::trim)
             .collect::<Vec<_>>(),
-        vec!["measured type", "len", "cap", "room", "head"],
+        vec!["measured type", "len", "cap", "head"],
         "the first row of a wf-measures fence is its column schema"
     );
     lines
@@ -555,7 +555,7 @@ fn measure_rows() -> Vec<MeasureRow> {
                 .split('|')
                 .map(|cell| cell.trim().to_owned())
                 .collect::<Vec<_>>();
-            assert_eq!(cells.len(), 5, "a wf-measures row has exactly five cells");
+            assert_eq!(cells.len(), 4, "a wf-measures row has exactly four cells");
             let measured = cells.remove(0);
             MeasureRow { measured, cells }
         })
@@ -595,7 +595,6 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
     let measures = [
         CheckedMeasure::Length,
         CheckedMeasure::Capacity,
-        CheckedMeasure::Room,
         CheckedMeasure::Head,
     ];
     // [MSR-1]: exactly one cell class is *bounded* anywhere, and it is the one
@@ -640,14 +639,6 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
                             | "range elements"
                     ),
                     "{name}'s {} cell is a runtime quantity of the block, written {written}",
-                    measure.spelling()
-                ),
-                // The one cell the table fixes as the complement of the other
-                // two, which is every window row's `room` and no other cell.
-                MeasureCell::ExactComplement => assert_eq!(
-                    written,
-                    "cap - len",
-                    "{name}'s {} cell is the complement the table writes",
                     measure.spelling()
                 ),
                 MeasureCell::Bounded => {

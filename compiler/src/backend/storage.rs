@@ -1807,7 +1807,7 @@ fn main() -> status: own ExitStatus pure {
   for @fill (
     at in 0_u64..8_u64,
     invariant grown: built.len >= at,
-    invariant spare: built.room + at >= 8_u64
+    invariant spare: built.cap + at >= built.len + 8_u64
   ) {
     place_back(window: &built, value: 1_u64);
   }

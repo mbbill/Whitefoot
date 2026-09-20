@@ -83,7 +83,7 @@ pub enum SemanticRule {
     /// refusal of a compiler-owned nominal's constructor `call`.
     Type9,
     /// Measures and window parts are names, not declarations: a source write
-    /// to `len`, `cap`, `room`, `head`, `next`, `last`, `filled`, or `free`.
+    /// to `len`, `cap`, `head`, `next`, `last`, `filled`, or `free`.
     Type10,
     /// Reaching `Box` content is explicit; a reference is read bare.
     Type7,
@@ -795,13 +795,29 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by OWN-1.
         mechanical_fix: &'static str,
     },
-    /// [TYPE-10] one of the four measure or four window-part spellings was
-    /// written in a position that is not a measure read [OP-15]: a write of a
-    /// measure, or a read, `borrow_expr` or write of a window part.
+    /// [TYPE-10] one of the four window-part spellings was written in a
+    /// position the rule refuses: a read, a `borrow_expr` or a write of a
+    /// window part of the place it follows.
+    ///
+    /// x1 narrows this to the parts. The measure spellings are the readonly
+    /// fields [PRE-1] declares on the storage shapes, so a write of one is
+    /// [`SemanticIssueKind::ReadonlyWriteTarget`], and neither set of
+    /// spellings is reserved from a declaration any more: a suffix carries
+    /// one of these meanings only where the type of the place it follows
+    /// gives it one.
     ReservedPseudoField {
         /// The reserved spelling as it was written.
         spelling: String,
         /// Exact restructuring required by TYPE-10.
+        mechanical_fix: &'static str,
+    },
+    /// [TYPE-2] a path that ends at or passes through a readonly field was
+    /// written as a write target: a `set` target, or an argument at a
+    /// reference parameter whose callee row writes that parameter.
+    ReadonlyWriteTarget {
+        /// The readonly field's spelling as the declaration writes it.
+        spelling: String,
+        /// Exact restructuring required by TYPE-2.
         mechanical_fix: &'static str,
     },
     /// `move` was written for a copy value.

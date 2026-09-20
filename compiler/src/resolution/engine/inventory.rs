@@ -31,7 +31,6 @@ pub(super) fn check_declaration_inventory(
     index: &DeclarationIndex,
     declaration_by_role: &[Option<usize>],
     prelude_origins: &[super::super::PreludeDeclarationId],
-    is_prelude_source: &dyn Fn(crate::SourceId) -> bool,
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
     check_inventory(
         topology,
@@ -42,7 +41,6 @@ pub(super) fn check_declaration_inventory(
         index,
         declaration_by_role,
         prelude_origins,
-        is_prelude_source,
         |_| true,
     )
 }
@@ -57,7 +55,6 @@ fn check_inventory(
     index: &DeclarationIndex,
     declaration_by_role: &[Option<usize>],
     prelude_origins: &[super::super::PreludeDeclarationId],
-    is_prelude_source: &dyn Fn(crate::SourceId) -> bool,
     include: impl Fn(&ClassifiedRole) -> bool,
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
     if declarations.len() != metas.len()
@@ -79,17 +76,20 @@ fn check_inventory(
         if !include(role) {
             continue;
         }
-        // [FORM-3] reserves the eight measure and window-part names from
-        // "No source declaration or FN-9 result-datum candidate in this
-        // closed list". A [PRE-1] record is not a source declaration, and
-        // the rule's own fence writes `next` as the payload binder of
-        // `host_copy_bytes`, `host_copy_utf8`, `read_at`, `write_once` and
-        // `receive_next`, and as a result binding of `directory_next`. Read
-        // against every declaration role the prelude would reject itself
-        // before any source file is read, so the refusal skips a
-        // prelude-origin role exactly as [STOR-8]'s two refusals do.
+        // [FORM-3] reserves the dotless operation families and the five
+        // operation-mode words from "No source declaration or FN-9
+        // result-datum candidate in this closed list".
+        //
+        // x1 deletes the prelude-origin exemption that stood here. It existed
+        // only for the eight measure and window-part names, which the rule no
+        // longer reserves: the prelude's own fence writes `next` as a payload
+        // binder of `host_copy_bytes` and as a result binding of
+        // `directory_next`, so reading the old eight-name set against every
+        // declaration role made the prelude reject itself before any source
+        // file was read. No PRE-1 record is spelled like a dotless operation
+        // family or a mode word, so the two surviving classes need no skip and
+        // the prelude is now read exactly as source is.
         if let Some((reserved_role, checked_spelling)) = reserved_role(topology, role)
-            && !is_prelude_source(role.origin.coordinate.source())
             && let Some((class, inventory_ordinal)) = reserved_name(checked_spelling)
         {
             return Ok(Some(ResolutionIssue {
@@ -302,42 +302,13 @@ fn collision_issue(
         )));
     }
 
-    // [DIAG-1] rank 5, read over the four compiler-owned storage nominals:
-    // [TYPE-9] admits `Array`, `Slots`, `Ring` and `Box` into the nominal-type
-    // and constructor domains of every unit, so a source declaration in the
-    // same domain is the same collision and neither declaration resolves.
-    let mut container_conflicts = Vec::new();
-    for class in &meta.entries {
-        let domain =
-            declaration_domain(*class).ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
-        for (ordinal, nominal) in crate::CONTAINER_NOMINALS.iter().enumerate() {
-            if nominal.spelling != declaration.spelling {
-                continue;
-            }
-            for entry in crate::CONTAINER_NOMINAL_CLASSES {
-                if declaration_domain(entry) != Some(domain) {
-                    continue;
-                }
-                container_conflicts.push(DeclarationConflict {
-                    domain,
-                    class: entry,
-                    origin: DeclarationOrigin::Container(crate::ContainerNominalId::new(
-                        u8::try_from(ordinal)
-                            .map_err(|_| ResolutionCompilerFailure::InvalidRoleShape)?,
-                    )),
-                });
-            }
-        }
-    }
-    sort_conflicts(&mut container_conflicts, tables.declarations);
-    if !container_conflicts.is_empty() {
-        return Ok(Some(collision(
-            declaration,
-            container_conflicts,
-            declaration_collision_rule(declaration),
-            COLLIDES_WITH_CONTAINER,
-        )));
-    }
+    // x1 [TYPE-2, PRE-1]: the four storage nominals no longer stand beside the
+    // declaration tables as their own rank. `Array`, `Slots`, `Ring` and `Box`
+    // are the prelude's opaque structs, so a source declaration of one of
+    // those spellings meets it through the ordinary prelude rank above, in the
+    // same words every other PRE-1 collision uses. Nothing is narrowed: the
+    // spelling still collides in both domains and neither declaration
+    // resolves.
 
     let mut same_scope = Vec::new();
     for candidate in tables
@@ -467,7 +438,6 @@ fn collect_domain_conflicts(
 /// blind-writer trial of 2026-08-28 met that one twice and repaired it by
 /// guessing.
 const COLLIDES_WITH_PRELUDE: &str = "a source declaration never displaces, overrides, or shadows a PRE-1 prelude declaration of the same spelling and domain, and neither declaration resolves after the collision; rename this declaration";
-const COLLIDES_WITH_CONTAINER: &str = "a source declaration never displaces, overrides, or shadows a compiler-owned storage nominal of the same spelling and domain [TYPE-9], and neither declaration resolves after the collision; rename this declaration";
 const COLLIDES_IN_ONE_SCOPE: &str = "one scope declares each spelling once in a domain, so this is a redeclaration and not a shadow; rename this declaration, or delete the earlier one when nothing reads it";
 const COLLIDES_WITH_LIVE_OUTER: &str = "a declaration's scope ends with the block that declares it, and not where its value is consumed: a binding whose value was moved is dead as a value while its declaration stays live, so an inner declaration of the same spelling still collides with it. Rename the inner declaration, or close the block that declares the outer one before this point";
 
@@ -503,27 +473,10 @@ pub(super) fn conflict_key(
     declarations: &[DeclarationRecord],
 ) -> (u8, EventKey) {
     // [DIAG-1] orders conflicts within one domain by PRE-1 declaration
-    // ordinal first, then container declaration ordinal, then source
-    // declaration-event key.
+    // ordinal first, then source declaration-event key.
     match origin {
         DeclarationOrigin::Prelude(id) => (
             0,
-            EventKey {
-                source: 0,
-                start: u64::from(id.ordinal()),
-                end: 0,
-                path: Vec::new(),
-                role: 0,
-                subtoken: 0,
-            },
-        ),
-        // The compiler-owned storage nominals [TYPE-9] sort after the prelude
-        // and before any source event, by their own table ordinal. [DIAG-1]
-        // fixes the PRE-1-first and source-last halves of that order and does
-        // not say where this third origin goes, because it enumerates no such
-        // origin; the position here keeps the two rows [DIAG-1] does fix.
-        DeclarationOrigin::Container(id) => (
-            2,
             EventKey {
                 source: 0,
                 start: u64::from(id.ordinal()),

@@ -942,7 +942,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 owner,
                 call,
                 "an affine factor calls something other than a measure former",
-                "write len_of(P), cap_of(P), room_of(P) or head_of(P) over a measured place",
+                "write P.len, P.cap or P.head over a measured place",
             );
         };
         let ResolvedTarget::Operation(operation) = usage.target() else {
@@ -950,7 +950,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 owner,
                 call,
                 "an affine factor calls something other than a measure former",
-                "write len_of(P), cap_of(P), room_of(P) or head_of(P) over a measured place",
+                "write P.len, P.cap or P.head over a measured place",
             );
         };
         let spelling = crate::operation_family_spelling(operation)
@@ -960,7 +960,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 owner,
                 call,
                 "an affine factor calls something other than a measure former",
-                "write len_of(P), cap_of(P), room_of(P) or head_of(P) over a measured place",
+                "write P.len, P.cap or P.head over a measured place",
             );
         };
         self.reject_named_operation_arguments(call, spelling)?;

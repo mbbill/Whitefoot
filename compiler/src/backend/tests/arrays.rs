@@ -14,7 +14,7 @@
 //!   `slots_new::<T, n>()`, and `array_from_fixed` / `fixed_from_array` are
 //!   `slots_into_array` / `slots_from_array` [OP-13].
 //! - The `len_of` / `cap_of` / `room_of` / `head_of` former family retires.
-//!   The successor is [OP-15]: `a.len`, `a.cap` and `a.room` are place forms,
+//!   The successor is [OP-15]: `a.len` is a place form,
 //!   not calls. An `Array` has no `head` cell at all [MSR-1], so the two
 //!   standing `head_of` checks below went with the measure rather than being
 //!   weakened into something the table still answers.
@@ -859,7 +859,7 @@ fn a_long_loop_over_a_dynamically_indexed_run_keeps_the_frame_bounded() {
   for @fill (
     at in 0_u64..8_u64,
     invariant grown: built.len >= at,
-    invariant spare: built.room + at >= 8_u64
+    invariant spare: built.cap + at >= built.len + 8_u64
   ) {
     place_back(window: &built, value: 1_u64);
   }
@@ -992,11 +992,11 @@ fn main() -> status: own ExitStatus pure {
     assert!(output.stderr.is_empty());
 }
 
-/// The v0.59 case also read `head_of(rows[0_u64])` and required it to be zero.
-/// [MSR-1]'s table gives `Array<T, N>` no `head` cell at all, since only a `Ring`
-/// has a window origin, so that reader and its check retired with the
-/// measure rather than being restated against a cell the table answers
-/// `absent`. The three cells an `Array` does have are all still observed.
+/// The v0.59 case also read `head_of(rows[0_u64])` and required it to be zero,
+/// and x1 retires the `cap` and `room` reads beside it: [MSR-1]'s table now
+/// gives `Array<T, N>` only a `len` cell, an array being its own extent with
+/// no second capacity quantity and no window origin. Their successor is the
+/// `len` observation this case keeps, over the same element writes and reads.
 #[test]
 fn general_run_elements_preserve_array_places_and_standing_extents() {
     let source = br#"fn main() -> status: own ExitStatus pure {
@@ -1004,8 +1004,6 @@ fn general_run_elements_preserve_array_places_and_standing_extents() {
   let rows = slots_new::<Array<u64, 2>, 2>();
   place_back(window: &rows, value: move row);
   let width = rows[0_u64].len;
-  let capacity = rows[0_u64].cap;
-  let spare = rows[0_u64].room;
   set rows[0_u64][1_u64] = 9_u64;
   if rows[0_u64][0_u64] != 7_u64 {
     return exit_status(code: 1_u8);
@@ -1015,12 +1013,6 @@ fn general_run_elements_preserve_array_places_and_standing_extents() {
   }
   if width != 2_u64 {
     return exit_status(code: 3_u8);
-  }
-  if capacity != 2_u64 {
-    return exit_status(code: 4_u8);
-  }
-  if spare != 0_u64 {
-    return exit_status(code: 6_u8);
   }
   return exit_status(code: 0_u8);
 }

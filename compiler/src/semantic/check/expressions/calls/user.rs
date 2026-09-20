@@ -148,6 +148,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(field, Production::Atom)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            // [TYPE-2] an argument naming a path that ends at or passes
+            // through a readonly field, at a reference parameter whose callee
+            // row writes that parameter, is a hard error at the complete
+            // argument `atom`.
+            if parameter.mode.is_reference()
+                && signature
+                    .declared_effects
+                    .writes
+                    .iter()
+                    .any(|entry| entry.root == parameter.declaration)
+            {
+                self.reject_readonly_written_argument(atom, bindings)?;
+            }
             let argument =
                 self.check_call_argument_atom(function, atom, bindings, loop_depth)?;
             if argument.expression.ty() != parameter.ty {

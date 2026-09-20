@@ -158,7 +158,7 @@ fn main() -> status: own ExitStatus pure {
   for @fill (
     at in 0_u64..4_u64,
     invariant grown: weights.len >= at,
-    invariant spare: weights.room + at >= 4_u64
+    invariant spare: weights.cap + at >= weights.len + 4_u64
   ) {
     place_back(window: &weights, value: 7_u8);
   }
@@ -811,7 +811,7 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
   for @fill (
     at in 0_u64..4_u64,
     invariant grown: slots.inner.len >= at,
-    invariant spare: slots.inner.room + at >= 4_u64
+    invariant spare: slots.inner.cap + at >= slots.inner.len + 4_u64
   ) {
     let empty = None<u32>();
     place_back(window: &slots.inner, value: move empty);

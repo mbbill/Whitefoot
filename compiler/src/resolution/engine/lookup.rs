@@ -53,16 +53,17 @@ pub(super) fn resolve_uses_deferred(
                 }
                 if admissible.contains(class) {
                     if visible {
-                        // [TYPE-2, PRE-1] the cell `Box` is declared by the
-                        // prelude like any other opaque struct, but a written
-                        // `Box` names one compiler-owned shape [TYPE-9] and
-                        // not a source struct, so a use that selects that one
-                        // declaration resolves to the cell identity in both of
-                        // its domains: the nominal-type entry a `Box<T>` type
-                        // names, and the constructor entry [TYPE-2] exists to
-                        // refuse.
-                        candidates.push(if meta.cell {
-                            ResolvedTarget::Container(crate::CELL_NOMINAL_ID)
+                        // [TYPE-2, PRE-1] the three storage shapes and the
+                        // cell `Box` are declared by the prelude like any
+                        // other opaque struct, but each names one
+                        // compiler-owned shape [TYPE-9] and not a source
+                        // struct, so a use that selects one of those four
+                        // declarations resolves to its container identity in
+                        // both of its domains: the nominal-type entry an
+                        // `Array<T, n>` or `Box<T>` type names, and the
+                        // constructor entry [TYPE-2] exists to refuse.
+                        candidates.push(if let Some(container) = meta.container {
+                            ResolvedTarget::Container(container)
                         } else {
                             ResolvedTarget::Source {
                                 declaration: declaration.id,
@@ -86,25 +87,12 @@ pub(super) fn resolve_uses_deferred(
                 }
             }
         }
-        for (ordinal, nominal) in crate::CONTAINER_NOMINALS.iter().enumerate() {
-            if nominal.spelling != use_record.spelling {
-                continue;
-            }
-            for class in crate::CONTAINER_NOMINAL_CLASSES {
-                if !universe.contains(&class) {
-                    continue;
-                }
-                available.insert(class);
-                if admissible.contains(&class)
-                    && storage_nominal_admissible(use_record.role)
-                    && let Ok(ordinal) = u8::try_from(ordinal)
-                {
-                    candidates.push(ResolvedTarget::Container(crate::ContainerNominalId::new(
-                        ordinal,
-                    )));
-                }
-            }
-        }
+        // x1 [TYPE-2, PRE-1]: the three storage shapes no longer stand beside
+        // the declaration tables. They are prelude opaque structs, so their
+        // nominal-type and constructor entries arrive through the declaration
+        // loop above like `Box`'s, and the container identity is attached
+        // there. A second candidate source here would make every written
+        // `Array` ambiguous against its own declaration.
         if universe.contains(&DeclarationClass::OperationFamily)
             && let Some(operation) = operation_id(&use_record.spelling)
         {
@@ -197,21 +185,6 @@ pub(super) fn resolve_uses_deferred(
         }
     }
     Ok((resolved, None))
-}
-
-/// A [TYPE-9] storage nominal is a type and a constructor and nothing else.
-///
-/// Its constructor entry exists only to be refused at a constructor `call`
-/// [TYPE-9], and neither entry is a callee or a function-kind actual argument.
-fn storage_nominal_admissible(role: LexicalUseRole) -> bool {
-    matches!(
-        role,
-        LexicalUseRole::Type
-            | LexicalUseRole::TypeArgument
-            | LexicalUseRole::Construct
-            | LexicalUseRole::ArmVariant
-            | LexicalUseRole::EnsuresVariant
-    )
 }
 
 fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationClass> {

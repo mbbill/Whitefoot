@@ -99,7 +99,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 const PUSH: &str = r#"fn push(values: &Slots<u64, 4>, value: own u64) -> result: own unit writes(values) contract {
-  requires deref(values).room > 0_u64;
+  requires deref(values).len < deref(values).cap;
   ensures deref(values).len == deref(entry(values)).len + 1_u64;
   ensures deref(values).cap == deref(entry(values)).cap;
 } {
@@ -259,7 +259,7 @@ fn nested_field_effects_preserve_disjoint_support() {
 }
 
 fn push(pair: &Pair, value: own u64) -> result: own unit writes(pair.changed) contract {
-  requires deref(pair).changed.room > 0_u64;
+  requires deref(pair).changed.len < deref(pair).changed.cap;
   ensures deref(pair).changed.len == deref(entry(pair)).changed.len + 1_u64;
 } {
   place_back(window: &deref(pair).changed, value: value);
@@ -321,7 +321,7 @@ fn assigning_the_actual_after_a_call_kills_its_exit_only_relation() {
     let source = format!(
         "{helper}{}",
         r#"fn overwrite(values: &Slots<u64, 4>) -> result: own unit writes(values) contract {
-  requires deref(values).room > 0_u64;
+  requires deref(values).len < deref(values).cap;
 } {
   let replacement = push(values: values, value: 7_u64);
   set deref(values) = move replacement;
@@ -341,14 +341,14 @@ fn main() -> status: own ExitStatus pure {
 fn written_state_equality_requires_both_affine_bounds() {
     let source = r#"fn fill(slots: &Slots<u8, 8>, count: own u64) -> result: own unit writes(slots) contract {
   requires deref(slots).len == 0_u64;
-  requires deref(slots).room >= count;
+  requires count <= deref(slots).cap - deref(slots).len;
   ensures deref(slots).len == count;
 } {
   for (
     index in 0_u64..count,
     invariant filled: deref(slots).len >= index,
     invariant bounded: deref(slots).len <= index,
-    invariant spare: deref(slots).room + index >= count
+    invariant spare: deref(slots).cap + index >= deref(slots).len + count
   ) {
     place_back(window: slots, value: 0_u8);
   }
@@ -385,8 +385,8 @@ fn a_boxed_window_publishes_to_the_typed_referent() {
         r#"fn main() -> status: own ExitStatus pure {
   let empty = slots_new::<u64, 4>();
   let owner = box_new::<Slots<u64, 4>>(value: move empty);
-  let room = owner.inner.room;
-  if room > 0_u64 {
+  let filled = owner.inner.len;
+  if filled < 4_u64 {
     push(values: &owner.inner, value: 7_u64);
     invariant changed: owner.inner.len >= 1_u64;
     let held = &owner.inner[0_u64];
@@ -416,7 +416,7 @@ fn two_overlapping_written_arguments_are_refused_pairwise() {
     // between two `&uniq` actuals.
     let source = r#"fn copy_first(source: &Slots<u64, 4>, destination: &Slots<u64, 4>) -> result: own unit reads(source), writes(destination) contract {
   requires deref(source).len > 0_u64;
-  requires deref(destination).room > 0_u64;
+  requires deref(destination).len < deref(destination).cap;
 } {
   let value = deref(source)[0_u64];
   place_back(window: destination, value: value);

@@ -1935,7 +1935,7 @@ impl Analyzer<'_, '_> {
             // compiler-owned atom, exactly as it is for a term the flow
             // already carries. Without this a goal over a measure reaches
             // only the L0 route, and every filling loop's row requirement —
-            // `room_of(built) > 0_u64` under `room_of(built) + at >= n` — is
+            // `built.len < built.cap` under `built.len + at >= n` — is
             // unproved for want of the domain the rule names.
             GoalExpression::Operation {
                 row:
@@ -2214,9 +2214,9 @@ impl Analyzer<'_, '_> {
     /// Every measure of one place is formed together, because [MSR-2]'s
     /// standing facts relate them to each other: the value the table fixes
     /// for a cell, the equality of a table cell to another measure, and the
-    /// orderings `len_of(P) <= cap_of(P)` and `head_of(P) <= cap_of(P)`. A site that
+    /// orderings `P.len <= P.cap` and `P.head <= P.cap`. A site that
     /// names only one measure still needs the others to exist for those
-    /// facts to have terms to relate, and all four have empty support beyond
+    /// facts to have terms to relate, and all three have empty support beyond
     /// P's own, so forming them together costs nothing a program can observe.
     fn measure_term(
         &mut self,
@@ -2230,7 +2230,6 @@ impl Analyzer<'_, '_> {
         for cell_measure in [
             CheckedMeasure::Length,
             CheckedMeasure::Capacity,
-            CheckedMeasure::Room,
             CheckedMeasure::Head,
         ] {
             let term = self.intern_measure(cell_measure, &path);
@@ -2265,14 +2264,6 @@ impl Analyzer<'_, '_> {
                     )),
                     Some(CheckedConst::Derived(_)) | None => None,
                 },
-                // [MSR-1] the `room` cell of every window row is `cap - len`
-                // of the same place, so the cell fixes the value exactly as a
-                // constant cell does and the measure is never an independent
-                // quantity.
-                MeasureCell::ExactComplement => Some(MeasureBound::Complement {
-                    capacity: self.intern_measure(CheckedMeasure::Capacity, &path),
-                    length: extent,
-                }),
                 // An independent runtime quantity of the value's own
                 // descriptor: the standing facts [MSR-2] already publishes
                 // relate it to the others, and it carries no bound of its own.
@@ -4259,28 +4250,22 @@ impl Analyzer<'_, '_> {
         (named.path.len() == support.path.len() && named.contains(support)).then_some(*measure)
     }
 
-    /// [MSR-1] whether a write of one measure word of P changes the value of
+    /// [MSR-2] whether a write of one measure word of P changes the value of
     /// another measure of P.
     ///
-    /// The table decides it: `room` is the complement `cap - len`, so a write
-    /// of either of those two changes it, and every other cell is a word of
-    /// its own that no other word's write reaches. A row that wrote `room`
-    /// would reach both of the words it is the complement of, and no [PRE-1]
-    /// record writes one, so that direction stays conservative.
+    /// x1 answers this with the identity relation and nothing else: "`len`,
+    /// `cap` and `head` are three disjoint words of P's descriptor storage",
+    /// so "a row entry that names one measure word, `writes(window.len)`,
+    /// overlaps that word alone, so it kills the `len` facts of the actual
+    /// and no `cap` or `head` fact". The complement cell this used to carry,
+    /// whose write reached two other words, left with the `room` measure.
     const fn measure_word_carries(written: CheckedMeasure, measured: CheckedMeasure) -> bool {
-        match (written, measured) {
-            (CheckedMeasure::Room, _) => true,
-            (_, CheckedMeasure::Room) => matches!(
-                written,
-                CheckedMeasure::Length | CheckedMeasure::Capacity
-            ),
-            (left, right) => matches!(
-                (left, right),
-                (CheckedMeasure::Length, CheckedMeasure::Length)
-                    | (CheckedMeasure::Capacity, CheckedMeasure::Capacity)
-                    | (CheckedMeasure::Head, CheckedMeasure::Head)
-            ),
-        }
+        matches!(
+            (written, measured),
+            (CheckedMeasure::Length, CheckedMeasure::Length)
+                | (CheckedMeasure::Capacity, CheckedMeasure::Capacity)
+                | (CheckedMeasure::Head, CheckedMeasure::Head)
+        )
     }
 
     /// [ENT-5] whether one event writes or consumes a binding an offset
@@ -12386,28 +12371,13 @@ impl Analyzer<'_, '_> {
     /// A measure the table fixes reads as its standing [MSR-2] fact.
     fn measure_atom(&mut self, term: TermId, state: &AffineFlowState) -> AffineForm {
         let mut anchor = term;
-        // The table relates a cell to a constant, to one other term, or to
-        // the complement of two, and this version's rows chain at most once
-        // (`cap` to the run's own extent). The bound keeps a future row from
-        // looping.
+        // The table relates a cell to a constant or to one other term, and
+        // this version's rows chain at most once. The bound keeps a future
+        // row from looping.
         for _ in 0..4 {
             match self.terms.measure_bound(anchor) {
                 Some(MeasureBound::Constant(value)) => return AffineForm::constant(value),
                 Some(MeasureBound::Equal(other)) => anchor = other,
-                // [MSR-1] `room` is `cap - len` of the same place, so its
-                // image is the difference of those two images. Neither of
-                // them is itself a complement, so this recursion is one deep.
-                // A difference that leaves the i128 form is no image this
-                // version can carry, and the ordinary atom below stands in.
-                Some(MeasureBound::Complement { capacity, length }) => {
-                    let capacity = self.measure_atom(capacity, state);
-                    let length = self.measure_atom(length, state);
-                    let mut arithmetic = AffineCheckState::new();
-                    if let Ok(form) = capacity.subtract(&length, &mut arithmetic) {
-                        return form;
-                    }
-                    break;
-                }
                 None => break,
             }
         }
@@ -12591,68 +12561,20 @@ impl Analyzer<'_, '_> {
     /// Collects only explicit source-affine facts and automatic value images.
     /// Ordinary difference bounds remain in L0 and are queried through
     /// [`Self::affine_l0_index`] for the concrete target or residual.
-    /// [MSR-2]'s capacity identity, appended to [ENT-6]'s automatic
-    /// affine-premise sequence as two inequalities with the empty support
-    /// every standing fact has.
-    ///
-    /// It is appended when a place's measure terms become live, never by an
-    /// operation's post-state, and it is a convenience for the writer rather
-    /// than a route by which an operation's own post-state is derived.
-    fn capacity_identity_premises(
-        &mut self,
-        values: &AffineFlowState,
-        check: &mut AffineCheckState,
-    ) -> Result<Vec<AutomaticAffinePremise>, AffineCheckError> {
-        let mut premises = Vec::new();
-        for capacity in self.measure_terms() {
-            if !matches!(
-                self.terms.kind(capacity),
-                TermKind::Measure(CheckedMeasure::Capacity, _)
-            ) {
-                continue;
-            }
-            let (Some(length), Some(room)) = (
-                self.terms.sibling_measure(capacity, CheckedMeasure::Length),
-                self.terms.sibling_measure(capacity, CheckedMeasure::Room),
-            ) else {
-                continue;
-            };
-            let capacity_atom = self.measure_atom(capacity, values);
-            let length_atom = self.measure_atom(length, values);
-            let room_atom = self.measure_atom(room, values);
-            let Ok(filled) = length_atom.add(&room_atom, check) else {
-                continue;
-            };
-            for (left, right) in [(&filled, &capacity_atom), (&capacity_atom, &filled)] {
-                let Ok(inequality) = AffineInequality::from_bounded_forms(left, right, 0, check)
-                else {
-                    continue;
-                };
-                // Where the table's own cells already make the identity
-                // trivial — this version's `room` is the constant zero and
-                // its `cap` shares the extent's image — the two inequalities
-                // carry no term and grant nothing; publishing them would only
-                // make every AUTO traversal visit two empty candidates.
-                if inequality.terms().is_empty() {
-                    continue;
-                }
-                premises.push(AutomaticAffinePremise {
-                    inequality,
-                    source: None,
-                    parent: None,
-                });
-            }
-        }
-        Ok(premises)
-    }
-
+    /// x1 retires the capacity identity. [MSR-2] used to make
+    /// `P.len + P.room = P.cap` a standing fact of every window and [ENT-6]
+    /// appended it here as two inequalities over the place's three measure
+    /// atoms. The `room` measure is gone, so the identity has no third term
+    /// to relate and the fact system carries only the orderings
+    /// `Z <= P.len`, `Z <= P.head`, `P.len <= P.cap` and `P.head <= P.cap`
+    /// that [`Self::measure_term`] and the implicit bounds publish. Nothing
+    /// else was appended by that route, so the sequence now starts empty.
     fn automatic_affine_premises(
         &mut self,
         facts: &[ActiveAffineFact],
-        values: &AffineFlowState,
         check: &mut AffineCheckState,
     ) -> Result<Vec<AutomaticAffinePremise>, AffineCheckError> {
-        let mut premises = self.capacity_identity_premises(values, check)?;
+        let mut premises = Vec::new();
         for fact in Self::canonical_affine_facts(facts) {
             check.charge(1)?;
             let (source, parent) = match fact.evidence {
@@ -12920,7 +12842,7 @@ impl Analyzer<'_, '_> {
             });
         }
         let automatic = self
-            .automatic_affine_premises(assumptions, values, &mut check)
+            .automatic_affine_premises(assumptions, &mut check)
             .ok()?;
 
         // Preserve the complete coefficient-one single-premise route. Every

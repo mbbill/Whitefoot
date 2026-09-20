@@ -8,7 +8,7 @@ use crate::syntax::terminal::{ALL_FIXED_TERMINALS, FixedTerminal, TerminalPredic
 
 use super::generated::{DECISIONS, SELECT_ROWS};
 
-/// v0.60's grammar has 86 productions, 119 decisions and 5,237 select rows.
+/// The grammar has 86 productions, 119 decisions and 5,229 select rows.
 ///
 /// The production count is unchanged because the amendment retires exactly as
 /// many productions as it adds: `region_params`, `region_param`,
@@ -20,15 +20,19 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 /// `opaque` modifier on `struct_decl` [GRAM-2, TYPE-2] then added one optional
 /// decision and its rows, taking the counts from 118 and 5,218 to 119 and
 /// 5,237, and the fixed-atom inventory from 94 to 95 with `diagnostic order`
-/// from 101 to 102. These assertions pin the complete generated inventory: the
+/// from 101 to 102. x1 then trades one decision for another: `field`'s
+/// `"readonly"?` [GRAM-2, TYPE-2] adds an optional and `epbase := IDENT`
+/// [EFF-1] drops its choice, so the decision count stands at 119 while the
+/// rows fall to 5,229; the atom inventory goes to 96 and `diagnostic order`
+/// to 103. These assertions pin the complete generated inventory: the
 /// structural checks below prove the table's properties, and an exact pin is
 /// what makes the next amendment notice the move.
 #[test]
 fn complete_inventory_is_pinned() {
     assert_eq!(productions().len(), 86);
     assert_eq!(DECISIONS.len(), 119);
-    assert_eq!(SELECT_ROWS.len(), 5_237);
-    assert_eq!(diagnostic_terminal_order().len(), 102);
+    assert_eq!(SELECT_ROWS.len(), 5_229);
+    assert_eq!(diagnostic_terminal_order().len(), 103);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[2], Production::HeapDecl);
     assert_eq!(productions()[12], Production::ContractDefine);
@@ -79,56 +83,69 @@ fn complete_inventory_is_pinned() {
     // Index 2 is `struct_decl`'s `"opaque"?` optional [GRAM-2, TYPE-2], so
     // every decision after `item` sits one place later than it did before
     // that modifier entered the grammar.
-    assert_eq!(DECISIONS[20].production(), Production::ContractBlock);
-    assert_eq!(DECISIONS[20].kind(), DecisionKind::Repeat0);
+    // x1 [GRAM-2, TYPE-2]: `field := "readonly"? IDENT ":" type ";"` owns
+    // one optional of its own, which is what shifts every decision between
+    // it and `epbase` one place later.
+    assert_eq!(DECISIONS[7].production(), Production::Field);
+    assert_eq!(DECISIONS[7].kind(), DecisionKind::Optional);
+    // x1 [EFF-1]: `epbase := IDENT` has one alternative and owns no decision.
+    assert!(
+        !DECISIONS
+            .iter()
+            .any(|decision| decision.production() == Production::Epbase)
+    );
     assert_eq!(DECISIONS[21].production(), Production::ContractBlock);
     assert_eq!(DECISIONS[21].kind(), DecisionKind::Repeat0);
     assert_eq!(DECISIONS[22].production(), Production::ContractBlock);
     assert_eq!(DECISIONS[22].kind(), DecisionKind::Repeat0);
-    assert_eq!(DECISIONS[23].production(), Production::EnsuresClause);
-    assert_eq!(DECISIONS[23].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[24].production(), Production::ResultRoute);
+    assert_eq!(DECISIONS[23].production(), Production::ContractBlock);
+    assert_eq!(DECISIONS[23].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[24].production(), Production::EnsuresClause);
     assert_eq!(DECISIONS[24].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[25].production(), Production::ResultRoute);
+    assert_eq!(DECISIONS[25].kind(), DecisionKind::Optional);
     // `param := IDENT ":" (mode type | "&" "[" type "]")`: the range-reference
     // parameter kind is a written choice of its own [GRAM-2, REF-4].
-    assert_eq!(DECISIONS[42].production(), Production::Param);
-    assert_eq!(DECISIONS[42].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[43].production(), Production::Param);
+    assert_eq!(DECISIONS[43].kind(), DecisionKind::Choice);
     // `type` keeps its primitive-or-nominal choice and the `targs?` optional;
     // v0.59's three shape optionals retired with `array`, `box` and `arena`.
-    assert_eq!(DECISIONS[43].production(), Production::Type);
-    assert_eq!(DECISIONS[43].kind(), DecisionKind::Choice);
     assert_eq!(DECISIONS[44].production(), Production::Type);
-    assert_eq!(DECISIONS[44].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[44].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[45].production(), Production::Type);
+    assert_eq!(DECISIONS[45].kind(), DecisionKind::Optional);
     // `mode := "own" | "&"` is one choice where v0.59 had two optionals
     // around the region and permission markers.
-    assert_eq!(DECISIONS[45].production(), Production::Mode);
-    assert_eq!(DECISIONS[45].kind(), DecisionKind::Choice);
-    assert_eq!(DECISIONS[63].production(), Production::LoopStmt);
-    assert_eq!(DECISIONS[63].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[46].production(), Production::Mode);
+    assert_eq!(DECISIONS[46].kind(), DecisionKind::Choice);
     assert_eq!(DECISIONS[64].production(), Production::LoopStmt);
     assert_eq!(DECISIONS[64].kind(), DecisionKind::Optional);
     assert_eq!(DECISIONS[65].production(), Production::LoopStmt);
-    assert_eq!(DECISIONS[65].kind(), DecisionKind::Repeat0);
-    assert_eq!(DECISIONS[67].production(), Production::ForStmt);
-    assert_eq!(DECISIONS[67].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[65].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[66].production(), Production::LoopStmt);
+    assert_eq!(DECISIONS[66].kind(), DecisionKind::Repeat0);
     assert_eq!(DECISIONS[68].production(), Production::ForStmt);
-    assert_eq!(DECISIONS[68].kind(), DecisionKind::Repeat0);
-    assert_eq!(DECISIONS[70].production(), Production::InvariantStmt);
-    assert_eq!(DECISIONS[70].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[68].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[69].production(), Production::ForStmt);
+    assert_eq!(DECISIONS[69].kind(), DecisionKind::Repeat0);
     assert_eq!(DECISIONS[71].production(), Production::InvariantStmt);
-    assert_eq!(DECISIONS[71].kind(), DecisionKind::Repeat1);
-    assert_eq!(DECISIONS[74].production(), Production::UsePremise);
-    assert_eq!(DECISIONS[74].kind(), DecisionKind::Choice);
-    assert_eq!(DECISIONS[79].production(), Production::BreakStmt);
-    assert_eq!(DECISIONS[79].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[71].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[72].production(), Production::InvariantStmt);
+    assert_eq!(DECISIONS[72].kind(), DecisionKind::Repeat1);
+    assert_eq!(DECISIONS[75].production(), Production::UsePremise);
+    assert_eq!(DECISIONS[75].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[80].production(), Production::BreakStmt);
+    assert_eq!(DECISIONS[80].kind(), DecisionKind::Optional);
     // `psuffix` carries the field, payload and index-or-range choice, and the
     // factored `range_tail?` that keeps the index and range steps
     // strong-LL(2) [GRAM-1, GRAM-5].
-    assert_eq!(DECISIONS[102].production(), Production::Psuffix);
-    assert_eq!(DECISIONS[102].kind(), DecisionKind::Choice);
     assert_eq!(DECISIONS[103].production(), Production::Psuffix);
-    assert_eq!(DECISIONS[103].kind(), DecisionKind::Optional);
-    // `epsuffix` mirrors it inside an effect row [EFF-1].
+    assert_eq!(DECISIONS[103].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[104].production(), Production::Psuffix);
+    assert_eq!(DECISIONS[104].kind(), DecisionKind::Optional);
+    // `epsuffix` mirrors it inside an effect row [EFF-1]. Its two decisions
+    // keep their indices under x1: the `field` optional added ahead of them
+    // and the `epbase` choice removed between them cancel exactly.
     assert_eq!(DECISIONS[117].production(), Production::Epsuffix);
     assert_eq!(DECISIONS[117].kind(), DecisionKind::Choice);
     assert_eq!(DECISIONS[118].production(), Production::Epsuffix);
@@ -191,7 +208,8 @@ fn the_retired_atoms_leave_the_inventory_and_the_new_ones_enter() {
         FixedTerminal::from_spelling(b"no_heap"),
         Some(FixedTerminal::NoHeap)
     );
-    assert_eq!(ALL_FIXED_TERMINALS.len(), 95);
+    assert_eq!(FixedTerminal::from_spelling(b"readonly"), Some(FixedTerminal::Readonly));
+    assert_eq!(ALL_FIXED_TERMINALS.len(), 96);
     // No fixed atom is capitalized any more, so nothing competes with TYPEID.
     assert!(ALL_FIXED_TERMINALS.iter().all(|terminal| {
         !terminal
@@ -343,9 +361,10 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
-    // The 5,237 rows `complete_inventory_is_pinned` pins, counted here by
-    // summing each decision's own rows: `struct_decl`'s `"opaque"?` optional
-    // [GRAM-2, TYPE-2] brought nineteen of them in with it.
-    assert_eq!(total_rows, 5_237);
+    // The 5,229 rows `complete_inventory_is_pinned` pins, counted here by
+    // summing each decision's own rows: x1's `field` optional [GRAM-2,
+    // TYPE-2] brings rows in and `epbase := IDENT` [EFF-1] takes more out
+    // with the choice it no longer owns.
+    assert_eq!(total_rows, 5_229);
     assert!(saw_atom_only);
 }

@@ -301,6 +301,11 @@ fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "FN-8",
+        // KNOWN DEFECT: the compiler currently instantiates this goal over the
+        // owner (`header.len`) instead of the range the reference names, which
+        // accepts out-of-range accesses (conformance case
+        // ref4-neg-a-requirement-over-a-range-reference-is-the-ranges-length).
+        // The pinned sentence is the correct one and stays failing until fixed.
         sentences: &[r#"instantiated_goal: "wide <= deref(view).len""#],
     },
     Probe {
@@ -927,6 +932,9 @@ fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "FN-8",
+        // [OP-15] spells a measure read through a reference `deref(names).len`;
+        // the renderer currently drops the `deref`. The pinned sentence is the
+        // specification spelling and stays failing until the renderer is fixed.
         sentences: &[r#"instantiated_goal: "9_u64 <= deref(names).len""#],
     },
     // [FORM-8] one canonical region spelling: each position a region can
@@ -1009,7 +1017,7 @@ fn main() -> status: own ExitStatus pure {
         rule: "INV-1",
         sentences: &[
             "an affine factor calls something other than a measure former",
-            "write len_of(P), cap_of(P), room_of(P) or head_of(P) over a measured place",
+            "write P.len, P.cap or P.head over a measured place",
         ],
     },
     // Retired with the rules whose sentences they pinned. Each probe below

@@ -1680,7 +1680,6 @@ pub(super) fn measure_named(spelling: &str) -> Option<CheckedMeasure> {
     match spelling {
         "len" => Some(CheckedMeasure::Length),
         "cap" => Some(CheckedMeasure::Capacity),
-        "room" => Some(CheckedMeasure::Room),
         "head" => Some(CheckedMeasure::Head),
         _ => None,
     }

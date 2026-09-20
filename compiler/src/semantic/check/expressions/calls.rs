@@ -595,7 +595,6 @@ pub(in crate::semantic::check) const fn measure_former(spelling: &str) -> Option
     match spelling.as_bytes() {
         b"len_of" => Some(CheckedMeasure::Length),
         b"cap_of" => Some(CheckedMeasure::Capacity),
-        b"room_of" => Some(CheckedMeasure::Room),
         b"head_of" => Some(CheckedMeasure::Head),
         _ => None,
     }

@@ -1,27 +1,20 @@
 //! The three compiler-owned storage nominals [TYPE-9], the cell identity they
 //! share a reader with, and their [TYPE-6] lookup classes.
 //!
-//! [TYPE-9] states that `Array`, `Slots` and `Ring` each contribute one
-//! nominal-type entry and one constructor entry of the same spelling. They are
-//! specification data rather than source records: no source construct
-//! declares, redeclares, extends, or overrides one, and a source declaration
-//! whose spelling equals an entry's in the same domain is the ordinary
-//! [DIAG-1] collision.
+//! x1 makes all four of them prelude records. [TYPE-2] and [PRE-1] declare
+//! `Array`, `Slots`, `Ring` and `Box` as opaque structs, parsed like every
+//! other prelude record, so each contributes its nominal-type entry, its
+//! refused constructor entry and its fields through the ordinary declaration
+//! path, and a source declaration of the same spelling is the ordinary PRE-1
+//! collision.
 //!
-//! The constructor entry exists to be refused. [TYPE-9] makes a constructor
-//! `call` naming one of the three a hard error with the restructuring `build it
-//! with a construction function [OP-13]`, and the entry is what makes that
-//! refusal a judgment over a resolved declaration rather than a name
-//! comparison in the checker.
-//!
-//! The cell `Box` is not one of them any more. [TYPE-2] and [PRE-1] make it
-//! the prelude's own `opaque struct Box<T> { inner: T; }`, declared and parsed
-//! like every other prelude record, so it contributes its nominal, its refused
-//! constructor and its field through the ordinary declaration path. What
-//! survives here is its *identity*: a written `Box` type still names one
-//! compiler-owned shape rather than a source struct, so resolution maps that
-//! one prelude declaration onto [`CELL_NOMINAL_ID`] and every later stage
-//! reads the cell exactly where it read it before.
+//! What survives in this module is their *identity*. A written `Array<T, n>`
+//! or `Box<T>` names one compiler-owned shape rather than a source struct,
+//! because only the identity carries what a struct body cannot state: the
+//! element storage, the omitted-capacity form and the [MSR-1] measure row.
+//! Resolution maps each of those four declarations onto its
+//! [`ContainerNominalId`] through [`container_nominal_id`], and every later
+//! stage reads the shapes and the cell exactly where it read them before.
 //!
 //! [BLK-0]'s kernel declaration domain is gone in v0.60: the construction
 //! functions [OP-13] and the window operations [OP-10] are ordinary [PRE-1]
@@ -106,6 +99,26 @@ pub const CELL_NOMINAL: ContainerNominal = ContainerNominal {
 /// The identity resolution gives a use that names [PRE-1]'s cell declaration.
 pub const CELL_NOMINAL_ID: ContainerNominalId =
     ContainerNominalId::new(CONTAINER_NOMINALS.len() as u8);
+
+/// The compiler-owned identity a use of [PRE-1]'s opaque storage declarations
+/// resolves to [TYPE-2, TYPE-9].
+///
+/// The four are ordinary prelude declarations now, so resolution reaches them
+/// through the ordinary declaration path; what this mapping supplies is the
+/// identity every later stage reads a written `Array`, `Slots`, `Ring` or
+/// `Box` through, because only the identity carries the element storage, the
+/// omitted-capacity form and the [MSR-1] measure row no struct body states.
+#[must_use]
+pub fn container_nominal_id(spelling: &str) -> Option<ContainerNominalId> {
+    if spelling == CELL_NOMINAL.spelling {
+        return Some(CELL_NOMINAL_ID);
+    }
+    CONTAINER_NOMINALS
+        .iter()
+        .position(|nominal| nominal.spelling == spelling)
+        .and_then(|ordinal| u8::try_from(ordinal).ok())
+        .map(ContainerNominalId::new)
+}
 
 /// The nominal record one resolved container target names: a [TYPE-9] storage
 /// shape, or the [TYPE-2] cell at the ordinal one past them.
@@ -195,7 +208,28 @@ mod tests {
         );
         assert_eq!(container_nominal(CELL_NOMINAL_ID), Some(&CELL_NOMINAL));
         assert!(crate::ACTIVE_KERNEL_SPEC_TEXT.contains(
-            "`Box<T>` is the prelude's opaque struct `opaque struct Box<T> { inner: T; }`"
+            "`Box<T>` is the prelude's opaque struct `opaque struct Box<T: linear> { inner: T; }`"
         ));
+    }
+
+    /// x1 [TYPE-2, PRE-1]: the three storage shapes are prelude declarations
+    /// too, so every one of the four spellings resolves to its compiler-owned
+    /// identity through the one mapping resolution reads.
+    #[test]
+    fn every_storage_spelling_maps_to_its_container_identity() {
+        for (ordinal, nominal) in CONTAINER_NOMINALS.iter().enumerate() {
+            assert_eq!(
+                crate::container_nominal_id(nominal.spelling)
+                    .map(|id| usize::from(id.ordinal())),
+                Some(ordinal),
+                "{} resolves to its own storage identity",
+                nominal.spelling
+            );
+        }
+        assert_eq!(
+            crate::container_nominal_id(CELL_NOMINAL.spelling),
+            Some(CELL_NOMINAL_ID)
+        );
+        assert_eq!(crate::container_nominal_id("Inputs"), None);
     }
 }

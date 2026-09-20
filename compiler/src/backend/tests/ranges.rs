@@ -834,7 +834,7 @@ fn main() -> status: own ExitStatus pure {
   for @fill_local (
     at in 0_u64..4_u64,
     invariant grown: local.len >= at,
-    invariant spare: local.room + at >= 4_u64
+    invariant spare: local.cap + at >= local.len + 4_u64
   ) {
     place_back(window: &local, value: 3_u8);
   }
@@ -847,7 +847,7 @@ fn main() -> status: own ExitStatus pure {
   for @fill_runtime (
     at in 0_u64..4_u64,
     invariant grown: cell.inner.len >= at,
-    invariant spare: cell.inner.room + at >= 4_u64
+    invariant spare: cell.inner.cap + at >= cell.inner.len + 4_u64
   ) {
     place_back(window: &cell.inner, value: 2_u8);
   }
@@ -916,7 +916,7 @@ fn a_range_reference_over_a_frame_resident_window_reaches_its_own_slots() {
   for @fill (
     at in 0_u64..4_u64,
     invariant grown: page.len >= at,
-    invariant spare: page.room + at >= 4_u64
+    invariant spare: page.cap + at >= page.len + 4_u64
   ) {
     place_back(window: &page, value: 65_u8);
   }

@@ -1662,7 +1662,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let parameter_bindings = bindings.clone();
         // [OP-10] a compiler-owned window type parameter is supplied by the
         // operand and never written, so a row carrying one has no symbolic
-        // instance any call can name: `deref(window).room` names a measure of
+        // instance any call can name: `deref(window).cap` names a measure of
         // the shape the operand supplies, and the unsubstituted parameter is
         // not one of [MSR-1]'s measured types. Such a row's clauses are the
         // substituted clauses of each concrete instance, which the ordinary

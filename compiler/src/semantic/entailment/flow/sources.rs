@@ -1550,11 +1550,10 @@ pub(super) fn comparison_relation(
     })
 }
 
-/// The four [MSR-1] measures, in the order every former reads them.
-const MEASURES: [CheckedMeasure; 4] = [
+/// The three [MSR-1] measures, in the order every former reads them.
+const MEASURES: [CheckedMeasure; 3] = [
     CheckedMeasure::Length,
     CheckedMeasure::Capacity,
-    CheckedMeasure::Room,
     CheckedMeasure::Head,
 ];
 

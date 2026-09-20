@@ -198,12 +198,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         let container_type = self.run_value_type(container)?;
         // A runtime-capacity `Array<T>` is a pointer and a length and has no
-        // window at all: every slot holds a value, so `len` and `cap` are the
-        // one stored count, `room` is zero, and the window begins at slot
-        // zero [WIN-1].
+        // window at all: every slot holds a value, so the one stored count is
+        // its `len`, and x1's [MSR-1] table gives the two `Array` rows neither
+        // a `cap` cell nor a `head` cell [WIN-1].
         if matches!(container_type, IrType::Buffer { .. }) {
             return match measure {
-                IrMeasure::Length | IrMeasure::Capacity => {
+                IrMeasure::Length => {
                     let descriptor = llvm_type(self.program, container_type)?;
                     // The descriptor may be the value itself or the content of
                     // a place the owner holds, exactly as a window's header
@@ -226,9 +226,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         .map_err(|_| BackendFailure::TextEmission)
                     }
                 }
-                IrMeasure::Room | IrMeasure::Head => {
-                    self.emit_constant(result, ty, IrConstant::Integer { ty, bits: 0 })
-                }
+                IrMeasure::Capacity | IrMeasure::Head => Err(BackendFailure::InvalidIr),
             };
         }
         let Some(shape) = RunShape::of(container_type) else {
@@ -248,17 +246,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let field = shape.capacity_field().ok_or(BackendFailure::InvalidIr)?;
                 self.run_word(container_type, container, field)?
             }
-            // `room` is the complement [MSR-2] relates to the other two.
-            IrMeasure::Room => {
-                let length = self.run_word(container_type, container, shape.length_field())?;
-                let capacity = self.run_capacity(shape, container_type, container)?;
-                return writeln!(
-                    self.output,
-                    "  {} = sub i64 {capacity}, {length}",
-                    self.value_name(result),
-                )
-                .map_err(|_| BackendFailure::TextEmission);
-            }
         };
         writeln!(
             self.output,
@@ -271,7 +258,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     /// [VIEW-2] one view formed over typed owner storage.
     ///
     /// The window is `len` slots beginning at `head`, and the row's own
-    /// requirement `head_of(vector) <= room_of(vector)` is discharged before
+    /// requirement `vector.head <= vector.cap` is discharged before
     /// this operation exists [BLK-0], so `head + len <= cap` and the window
     /// is one contiguous range: the descriptor is the address of slot `head`
     /// together with `len`, and no modulus is emitted.

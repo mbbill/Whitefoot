@@ -814,7 +814,7 @@ fn numeric_and_const_parameters_flow_through_window_operations() {
   for @fill (
     at in 0_u64..n,
     invariant grown: built.len >= at,
-    invariant spare: built.room + at >= n
+    invariant spare: built.cap + at >= built.len + n
   ) {
     place_back(window: &built, value: value);
   }
@@ -828,7 +828,7 @@ fn filled_float_run<T: Float, const n: u64>(value: own T) -> result: own Slots<T
   for @fill (
     at in 0_u64..n,
     invariant grown: built.len >= at,
-    invariant spare: built.room + at >= n
+    invariant spare: built.cap + at >= built.len + n
   ) {
     place_back(window: &built, value: value);
   }

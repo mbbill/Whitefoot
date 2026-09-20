@@ -5,18 +5,56 @@
 use crate::source::PreludeSource;
 
 pub(crate) const DECLARATIONS: &[(&str, PreludeSource, &str)] = &[
-    // [PRE-1] writes the cell first, ahead of the fourteen host handles, and
+    // [PRE-1] writes the three storage shapes first, then the cell, then the
+    // fourteen host handles. [TYPE-2] makes each of the four an opaque struct
+    // with a constructor entry that exists to be refused, and [TYPE-9] keeps
+    // their element storage compiler-owned: a declaration can state neither
+    // the elements nor the omitted-capacity form, so what the body carries is
+    // exactly the readonly measure fields [MSR-1].
+    //
+    // The fence writes the capacity parameter `const N: u64`. That spelling
+    // does not parse: [GRAM-2]'s `gparam := "const" IDENT ":" type` takes a
+    // lexical IDENT, and [TYPE-2] says so outright -- "in this
+    // specification's prose `N` stands for a written const argument; source
+    // writes a `const` IDENT, lowercase under [FORM-3], as the [PRE-1] rows
+    // do". The rows below therefore write `const n: u64`, exactly as
+    // `slots_new<T: linear, const n: u64>` of the same fence does.
+    (
+        "prelude/Array.wf",
+        PreludeSource::Opaque,
+        r#"opaque struct Array<T: linear, const n: u64> {
+  readonly len: u64;
+}
+"#,
+    ),
+    (
+        "prelude/Slots.wf",
+        PreludeSource::Opaque,
+        r#"opaque struct Slots<T: linear, const n: u64> {
+  readonly len: u64;
+  readonly cap: u64;
+}
+"#,
+    ),
+    (
+        "prelude/Ring.wf",
+        PreludeSource::Opaque,
+        r#"opaque struct Ring<T: linear, const n: u64> {
+  readonly len: u64;
+  readonly cap: u64;
+  readonly head: u64;
+}
+"#,
+    ),
+    // [PRE-1] writes the cell after the three shapes and ahead of the fourteen
     // [TYPE-2] makes it an opaque struct with one field and a constructor
     // entry that exists to be refused.
     //
-    // The fence writes the header `opaque struct Box<T>`, with no bound on
-    // `T`. That spelling does not parse: [GRAM-2]'s `gparam := TYPEID ":"
-    // (TYPEID | linearity_bound)` makes a bound mandatory, and [FN-2] states
-    // that every type parameter of a nominal "carries exactly one bound,
-    // written and never inferred, with no default". The bound written here is
-    // the widest linearity class, which is the one `box_new<T: linear>` of the
-    // same fence gives the same parameter, so the declared cell admits exactly
-    // the referents its construction row builds.
+    // The fence now writes the bound the grammar requires: [GRAM-2]'s
+    // `gparam := TYPEID ":" (TYPEID | linearity_bound)` makes a bound
+    // mandatory and [FN-2] gives no default, so `T: linear` -- the widest
+    // linearity class, and the one `box_new<T: linear>` of the same fence
+    // gives the same parameter -- is written rather than supplied here.
     (
         "prelude/Box.wf",
         PreludeSource::Opaque,
@@ -514,9 +552,8 @@ enum ListStop {
         "prelude/place_back.wf",
         PreludeSource::Function,
         r#"fn place_back<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window.next), writes(window.len) contract {
-  requires deref(window).room > 0_u64;
+  requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
-  ensures deref(window).cap == deref(entry(window)).cap;
 };
 "#,
     ),
@@ -526,7 +563,6 @@ enum ListStop {
         r#"fn take_back<W: linear, T: linear>(window: &W) -> value: own T writes(window.last), writes(window.len) contract {
   requires deref(window).len > 0_u64;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
-  ensures deref(window).cap == deref(entry(window)).cap;
 };
 "#,
     ),
@@ -535,9 +571,8 @@ enum ListStop {
         PreludeSource::Function,
         r#"fn insert_at<W: linear, T: linear>(window: &W, index: own u64, value: own T) -> result: own unit writes(window.filled), writes(window.next), writes(window.len) contract {
   requires index <= deref(window).len;
-  requires deref(window).room > 0_u64;
+  requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
-  ensures deref(window).cap == deref(entry(window)).cap;
 };
 "#,
     ),
@@ -547,7 +582,6 @@ enum ListStop {
         r#"fn remove_at<W: linear, T: linear>(window: &W, index: own u64) -> value: own T writes(window.filled), writes(window.len) contract {
   requires index < deref(window).len;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
-  ensures deref(window).cap == deref(entry(window)).cap;
 };
 "#,
     ),
@@ -555,8 +589,8 @@ enum ListStop {
         "prelude/append.wf",
         PreludeSource::Function,
         r#"fn append<W: linear, X: linear>(destination: &W, source: &X) -> result: own unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
-  requires deref(destination).room >= deref(source).len;
-  ensures deref(destination).len == deref(entry(destination)).len + deref(entry(source)).len;
+  requires deref(source).len <= deref(destination).cap - deref(destination).len;
+  ensures deref(destination).len >= deref(entry(destination)).len;
   ensures deref(source).len == 0_u64;
 };
 "#,
@@ -566,16 +600,16 @@ enum ListStop {
         PreludeSource::Function,
         r#"fn split_off<W: linear, X: linear>(source: &W, index: own u64, destination: &X) -> result: own unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
   requires index <= deref(source).len;
-  requires deref(destination).room >= deref(source).len - index;
+  requires deref(source).len - index <= deref(destination).cap - deref(destination).len;
   ensures deref(source).len == index;
-  ensures deref(destination).len == deref(entry(destination)).len + deref(entry(source)).len - index;
+  ensures deref(destination).len >= deref(entry(destination)).len;
 };
 "#,
     ),
     (
         "prelude/grow.wf",
         PreludeSource::Function,
-        r#"fn grow<T: linear>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(deref(cell)) contract {
+        r#"fn grow<T: linear>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(cell) contract {
   requires capacity >= deref(cell).inner.cap;
   ensures deref(cell).inner.cap == capacity;
   ensures deref(cell).inner.len == deref(entry(cell)).inner.len;
@@ -586,7 +620,7 @@ enum ListStop {
         "prelude/place_front.wf",
         PreludeSource::Function,
         r#"fn place_front<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window) contract {
-  requires deref(window).room > 0_u64;
+  requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
   ensures deref(window).cap == deref(entry(window)).cap;
   ensures deref(window).head >= 0_u64;

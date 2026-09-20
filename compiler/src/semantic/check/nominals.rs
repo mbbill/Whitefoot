@@ -319,6 +319,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             fields.push(CheckedField {
                 name: name.clone(),
                 ty: *ty,
+                readonly: false,
             });
         }
         self.nominals.push(CheckedNominal {
@@ -449,6 +450,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         fields: vec![CheckedField {
                             name: "value".to_owned(),
                             ty: value,
+                            readonly: false,
                         }],
                     },
                 ],
@@ -467,6 +469,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         fields: vec![CheckedField {
                             name: "value".to_owned(),
                             ty: ok,
+                            readonly: false,
                         }],
                     },
                     CheckedVariant {
@@ -476,6 +479,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         fields: vec![CheckedField {
                             name: "error".to_owned(),
                             ty: error,
+                            readonly: false,
                         }],
                     },
                 ],

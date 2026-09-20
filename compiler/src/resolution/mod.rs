@@ -19,7 +19,7 @@ pub use engine::resolve;
 
 pub use kernel::{
     CELL_NOMINAL, CELL_NOMINAL_ID, CONTAINER_NOMINAL_CLASS, CONTAINER_NOMINAL_CLASSES,
-    CONTAINER_NOMINALS, ContainerNominal, ContainerNominalId, ContainerShape, container_nominal,
+    CONTAINER_NOMINALS, ContainerNominal, ContainerNominalId, ContainerShape, container_nominal, container_nominal_id,
 };
 
 /// Returns the exact OP-1 spelling of a resolved operation family.
@@ -410,14 +410,12 @@ pub enum DeclarationOrigin {
     /// One source declaration.
     Source(SourceOrigin),
     /// One normative PRE-1 record.
-    Prelude(PreludeDeclarationId),
-    /// One [TYPE-9] compiler-owned storage nominal.
     ///
-    /// [DIAG-1] enumerates a source origin and a PRE-1 origin and no third
-    /// form, but [TYPE-6] admits the four storage nominals into the same two
-    /// domains a source declaration can collide with, so the conflict has to
-    /// name something. This form is that name.
-    Container(ContainerNominalId),
+    /// x1 retires the third `Container` form this enum used to carry. The
+    /// four storage nominals are PRE-1 records now [TYPE-2], so a collision
+    /// with one names the prelude declaration it is, and [DIAG-1]'s two
+    /// enumerated origins are again the complete set.
+    Prelude(PreludeDeclarationId),
 }
 
 /// One source declaration event and its lookup entries.
@@ -757,9 +755,6 @@ pub enum ReservedNameClass {
     DotlessOperation,
     /// One FORM-3 operation-mode suffix word.
     ModeWord,
-    /// One of FORM-3's eight measure pseudo-field or window-part names
-    /// [TYPE-10, MSR-1, WIN-2].
-    MeasureOrPart,
 }
 
 /// Declaration roles covered by OP-1's reserved-lower-name inventory.

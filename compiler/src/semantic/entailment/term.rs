@@ -40,7 +40,7 @@ pub(crate) enum TermKind {
     /// fragment type, carried as the one resolved path the checker has
     /// [REF-1].
     Place(ResolvedPlace, IntegerType),
-    /// One measure term `P.len`, `P.cap`, `P.room` or `P.head` [MSR-1, OP-15],
+    /// One measure term `P.len`, `P.cap` or `P.head` [MSR-1, OP-15],
     /// of fragment type u64. Its support is P's descriptor storage [MSR-2].
     Measure(CheckedMeasure, ResolvedPlace),
     /// One immutable compiler-owned endpoint capture [ENT-2, S11]. The
@@ -145,19 +145,14 @@ pub(crate) enum MeasurePlacement {
 pub(crate) struct TermId(pub(crate) u32);
 
 /// One implicit [ENT-2] equality a measure term carries at every program
-/// point: the `array<T, N>` `len` and `cap` equality to N, with concrete N a
-/// constant and const-generic N a symbolic constant term, and [MSR-2]'s
-/// standing constant for a table cell whose value is fixed. Implicit facts
-/// hold at every program point and never die.
+/// point: the `Array<T, N>` `len` equality to N, with concrete N a constant
+/// and const-generic N a symbolic constant term, and [MSR-2]'s standing
+/// constant for a table cell whose value is fixed. Implicit facts hold at
+/// every program point and never die.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MeasureBound {
     Constant(i128),
     Equal(TermId),
-    /// [MSR-1] the `room` cell of every window row: `cap - len` of the same
-    /// place. It is not a difference bound, so [ENT-4]'s closure carries only
-    /// the ordering it implies; the affine image of the measure is the
-    /// difference of the two images this names.
-    Complement { capacity: TermId, length: TermId },
 }
 
 /// The zero term is always interned first.

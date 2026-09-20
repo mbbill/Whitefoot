@@ -4,8 +4,10 @@
 //! rule coverage, and the schema of one manifest line. This module owns the
 //! other half its docstring names — driving each case through a real
 //! toolchain and reducing the outcome to one corpus verdict. It re-derives
-//! none of the corpus: it reads the same `manifest.jsonl` bytes, applies the
-//! same match rule, and honours the same `runnable`/`pending`/`xfail` axis.
+//! none of the corpus: it reads the same `manifest.jsonl` bytes and applies
+//! the same match rule. There is no readiness axis: `runnable` is the only
+//! status a manifest line may carry, so every case must reach its declared
+//! verdict and a case that does not is a defect rather than a status.
 //!
 //! The split is deliberate. Python states what the corpus *is*, which must
 //! outlive this compiler; Rust states what *this* toolchain does with it,
@@ -23,12 +25,11 @@
 //! Nothing about a case's identity, name, or family selects a path here.
 //!
 //! The corpus-wide run is an ordinary test in the shared source-corpus
-//! executable. It obtains every non-pending verdict and executes each run
-//! case. `make conformance-run` selects it for focused use; the full gate
-//! reaches it once through the normal corpus tests, with no ignored opt-in.
-//! The adapter excludes no case, weakens no expectation, and skips nothing the
-//! manifest does not itself mark `pending`; running it prints the complete
-//! tally.
+//! executable. It obtains every case's verdict and executes each run case.
+//! `make conformance-run` selects it for focused use; the full gate reaches
+//! it once through the normal corpus tests, with no ignored opt-in. The
+//! adapter excludes no case, weakens no expectation, and skips nothing;
+//! running it prints the complete tally.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -45,7 +46,7 @@ use whitefoot::{
 
 use crate::support::append_runtime_objects;
 
-use super::corpus::{self, Arrangement, Case, Expectation, Status, Verdict};
+use super::corpus::{self, Arrangement, Case, Expectation, Verdict};
 
 static NEXT_INVOCATION: AtomicU64 = AtomicU64::new(0);
 
@@ -230,33 +231,29 @@ fn link(module: &str, directory: &Path) -> PathBuf {
     executable
 }
 
-/// One case's outcome on the readiness axis, named as `runner.py` names it.
+/// One case's outcome, named as `runner.py` names it.
+///
+/// x1 retires the readiness axis with the manifest statuses that carried it:
+/// `Xfail`, `Xpass` and `Skip` are gone because `pending` and `xfail` are no
+/// longer manifest values, so a case either reaches its declared verdict or
+/// fails.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum Outcome {
     Pass,
     Fail,
-    Xfail,
-    Xpass,
-    Skip,
 }
 
 fn outcome(case: &Case, reached: &Verdict) -> Outcome {
-    let matched = case.expect.matched_by(reached);
-    match case.status {
-        Status::Pending => Outcome::Skip,
-        Status::Xfail if matched => Outcome::Xpass,
-        Status::Xfail => Outcome::Xfail,
-        // A runnable case that stops as unsupported is a toolchain gap
-        // reported in the wrong place: runnable means supported, and a gap
-        // belongs in `status`, never in a verdict comparison.
-        Status::Runnable
-            if matches!(reached, Verdict::Unsupported(_))
-                && case.expect != Expectation::Unsupported =>
-        {
-            Outcome::Fail
-        }
-        Status::Runnable if matched => Outcome::Pass,
-        Status::Runnable => Outcome::Fail,
+    // A case that stops as unsupported without declaring it is a toolchain gap
+    // reported in the wrong place: the corpus has no status for a gap, so it
+    // is an ordinary failure.
+    if matches!(reached, Verdict::Unsupported(_)) && case.expect != Expectation::Unsupported {
+        return Outcome::Fail;
+    }
+    if case.expect.matched_by(reached) {
+        Outcome::Pass
+    } else {
+        Outcome::Fail
     }
 }
 
@@ -270,19 +267,10 @@ fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() 
     let mut tally: BTreeMap<Outcome, usize> = BTreeMap::new();
     let mut reports = Vec::new();
     for case in &cases {
-        if case.status == Status::Pending {
-            *tally.entry(Outcome::Skip).or_default() += 1;
-            continue;
-        }
         let reached = reach(case);
         let outcome = outcome(case, &reached.verdict);
         *tally.entry(outcome).or_default() += 1;
-        let interesting = match outcome {
-            Outcome::Fail | Outcome::Xpass => true,
-            Outcome::Xfail => true,
-            Outcome::Pass | Outcome::Skip => false,
-        };
-        if interesting {
+        if outcome == Outcome::Fail {
             let note = reached
                 .note
                 .or_else(|| case.reason.clone())
@@ -302,7 +290,6 @@ fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() 
         println!("{report}");
     }
     println!("conformance adapter: {summary}");
-    let failed = tally.get(&Outcome::Fail).copied().unwrap_or_default()
-        + tally.get(&Outcome::Xpass).copied().unwrap_or_default();
+    let failed = tally.get(&Outcome::Fail).copied().unwrap_or_default();
     assert_eq!(failed, 0, "conformance adapter: {summary}");
 }

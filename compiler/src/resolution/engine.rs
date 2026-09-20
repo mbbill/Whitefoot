@@ -113,11 +113,14 @@ struct DeclarationMeta {
     owner: Option<NodeId>,
     visibility: Visibility,
     entries: Vec<DeclarationClass>,
-    /// Whether this declaration is [PRE-1]'s cell `Box` [TYPE-2]. A use that
-    /// selects it resolves to [`crate::CELL_NOMINAL_ID`] rather than to the
-    /// declaration, because a written `Box` names one compiler-owned shape
-    /// and not a source struct [TYPE-9].
-    cell: bool,
+    /// Which compiler-owned container this declaration is, when it is one of
+    /// [PRE-1]'s four opaque storage records [TYPE-2, TYPE-9]. A use that
+    /// selects it resolves to that identity rather than to the declaration,
+    /// because a written `Array`, `Slots`, `Ring` or `Box` names one
+    /// compiler-owned shape and not a source struct: only the identity
+    /// carries the element storage, the omitted-capacity form and the measure
+    /// rows no struct body can state.
+    container: Option<crate::ContainerNominalId>,
 }
 
 struct DeclarationIndex {
@@ -256,12 +259,12 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                     } else {
                         declaration_classes(declaration_role)
                     };
-                    // [TYPE-2, PRE-1] the prelude's cell keeps the one
-                    // compiler-owned identity every later stage reads a
-                    // written `Box` through, even though its declaration is
-                    // now an ordinary prelude record [TYPE-9].
-                    let cell = declaration_role == DeclarationRole::Struct
-                        && role.spelling == crate::CELL_NOMINAL.spelling
+                    // [TYPE-2, PRE-1] the prelude's four storage records keep
+                    // the compiler-owned identities every later stage reads a
+                    // written `Array`, `Slots`, `Ring` or `Box` through, even
+                    // though each declaration is now an ordinary prelude
+                    // record [TYPE-9].
+                    let container = if declaration_role == DeclarationRole::Struct
                         && syntax
                             .finalized
                             .parsed
@@ -270,7 +273,11 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                             .file(role.origin.coordinate.source())
                             .is_some_and(|file| {
                                 file.prelude() == Some(crate::source::PreludeSource::Opaque)
-                            });
+                            }) {
+                        crate::container_nominal_id(&role.spelling)
+                    } else {
+                        None
+                    };
                     let record_index = declarations.len();
                     declarations.push(DeclarationRecord {
                         id,
@@ -318,7 +325,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                             declaration_visibility(topology, role, declaration_role)?
                         },
                         entries,
-                        cell,
+                        container,
                     });
                 }
                 RawRoleKind::DependentDeclaration(dependent_role) => {
@@ -367,15 +374,6 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
             &declaration_index,
             &declaration_by_role,
             &prelude.builtins,
-            &|source| {
-                syntax
-                    .finalized
-                    .parsed
-                    .classified
-                    .source_bundle()
-                    .file(source)
-                    .is_some_and(|file| file.prelude().is_some())
-            },
         )? {
             return Err(BuildStop::Issue(Box::new(issue)));
         }

@@ -875,13 +875,8 @@ fn general_elements_allow_an_array_value_inside_a_run_slot() {
   set rows[0_u64][1_u64] = 9_u64;
   let value = rows[0_u64][1_u64];
   let width = rows[0_u64].len;
-  let capacity = rows[0_u64].cap;
-  let room = rows[0_u64].room;
   invariant width_lower: width >= 2_u64;
   invariant width_upper: width <= 2_u64;
-  invariant capacity_lower: capacity >= 2_u64;
-  invariant capacity_upper: capacity <= 2_u64;
-  invariant room_zero: room <= 0_u64;
   return exit_status(code: 0_u8);
 }
 "#;

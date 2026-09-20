@@ -1994,16 +1994,16 @@ This rule uses [CAP-1]'s ordinary ownership boundary directly; it introduces no 
 The prelude's opaque structs [TYPE-2] are the three storage shapes and the cell `Box` [TYPE-9], and the host handles. A host handle has no fields and a host-supplied representation [OP-9], its release is empty [STOR-3], and only a host function row below returns one; the shapes and `Box` are built by the construction rows [OP-13]. An opaque struct is neither copy nor const-eligible [OWN-1, CONST-2]; its `linear` modifier and the ordinary ownership closure are exactly [PROV-6]. Their declarations are:
 
 ```
-opaque struct Array<T: linear, const N: u64> {
+opaque struct Array<T: linear, const n: u64> {
   readonly len: u64;
 }
 
-opaque struct Slots<T: linear, const N: u64> {
+opaque struct Slots<T: linear, const n: u64> {
   readonly len: u64;
   readonly cap: u64;
 }
 
-opaque struct Ring<T: linear, const N: u64> {
+opaque struct Ring<T: linear, const n: u64> {
   readonly len: u64;
   readonly cap: u64;
   readonly head: u64;

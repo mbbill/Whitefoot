@@ -141,7 +141,7 @@ return unit;
 /// The five productions the amendment adds are `heap_decl` [GRAM-2],
 /// `range_tail` [GRAM-5], and `epbase`, `epsuffix` and `erange` [EFF-1]; the
 /// new arms are the range-reference parameter kind `&[T]` [REF-4], the enum
-/// payload step `.TYPEID.IDENT` [GRAM-5], `deref` inside an effect path, an
+/// payload step `.TYPEID.IDENT` [GRAM-5], a readonly field [TYPE-2], an
 /// index or range position supplied as an argument [EFF-1], an unqualified
 /// `&place` with no permission or region marker [REF-1], and a destructuring
 /// consume's trailing rest marker [PROV-6]. The complete fixture below
@@ -152,8 +152,9 @@ return unit;
 fn every_form_the_amendment_adds_parses() {
     let source = br#"
 program no_heap;
+struct Header { readonly len: u64; head: u64; }
 fn window(run: &Slots<i32, 4>, part: &[i32], node: &Tree, lo: own u64, hi: own u64)
--> result: own unit reads(deref(node).Some.value), writes(part[lo..hi]), writes(run[lo])
+-> result: own unit reads(node.Some.value), writes(part[lo..hi]), writes(run[lo])
 {
 let whole = &run[lo..hi];
 let element = &run[lo];
@@ -187,6 +188,7 @@ return unit;
         Production::Epbase,
         Production::Epsuffix,
         Production::Erange,
+        Production::Field,
         Production::BorrowExpr,
         Production::Psuffix,
         Production::Param,
@@ -625,7 +627,7 @@ struct Types<T: Bound, const n: u64> {
 doc "types";
 a: i8; b: i16; c: i32; d: i64; e: u8; f: u16; g: u32; h: u64;
 i: f32; j: f64; k: unit; l: Name<T, n>; m: Array<u8, n>;
-o: Box<u8>; p: Slots<u8, 4>; q: Ring<u8, 2 * n>;
+o: Box<u8>; p: Slots<u8, 4>; readonly q: Ring<u8, 2 * n>;
 }
 enum Choice<T: copy> { doc "choice"; None(); Some(value: T); }
 linear struct Lease { doc "lease"; slot: u8; }
@@ -648,7 +650,7 @@ fn stored_entry(arguments: own i32, directory: own i32)
 return unit;
 }
 fn everything<T: affine, S: linear>(x: own i32, shared: &i32, run: &Slots<i32, 4>, part: &[i32])
--> result: own unit reads(shared), reads(deref(handle).Some.value), writes(run[index]), writes(part[lo..hi])
+-> result: own unit reads(shared), reads(handle.Some.value), writes(run[index]), writes(part[lo..hi])
 contract {
 define pre = 0_i32 +wrap 1_i32;
 define post = 0_i32 +wrap 1_i32;
