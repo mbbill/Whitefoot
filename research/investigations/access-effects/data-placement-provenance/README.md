@@ -329,3 +329,28 @@ planned; an inconclusive result is inspected, not resampled until green.
 Even a supporting result selects no Box ABI: a production change must have a
 general lowering rule, preserve ownership and stable-address premises, and
 pass the full maintained correctness and performance gates.
+
+### Element-base result
+
+Run [35543004912](https://github.com/mbbill/Whitefoot/actions/runs/35543004912)
+at `8579a9b9` completed on EPYC 7763 with Clang 18.1.3. The original records
+failure reproduced (W2/W4 ratios 0.931138/0.869396, five adverse pairs each).
+Baseline/element-base measured 1.067342, 0.990442 and 1.064312 at W1/W2/W4;
+candidate/element-base measured 0.998313, 1.060983 and 1.181825, with all five
+parallel pairs faster. All oracle executions passed, the candidate null was
+clean, and the slow control detected all five kernels.
+
+The strict qualification nevertheless failed: unchanged stencil was a W2
+suspect in reproduction (0.959705, four adverse pairs), and a W4 suspect in
+candidate/element-base (0.961375, four adverse pairs). The result is therefore
+**inconclusive**, even though records met the recovery part of the criterion.
+It is not being rerun or relabeled as a conclusive causal comparison.
+The exact constructed IR/object/image hashes and all five complete tables are
+in the run's retained artifact. Primary inspection confirms the intended
+zero-displacement output store in the constructed 440-byte worker.
+
+The useful lead motivates a separate compiler-candidate experiment: a general
+reversible payload-base encoding for stable runtime Array captures, preserving
+the source Box ABI and physical layout. Its implementation and full-gate
+adoption criterion belong to PR 70's `parallel-array-captures.md`; it is not a
+retry of this diagnostic or a change to the conclusions above.
