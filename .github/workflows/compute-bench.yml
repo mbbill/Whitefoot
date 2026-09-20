@@ -43,7 +43,6 @@ jobs:
       - name: Qualify the current runner before construction
         run: |
           model=$(lscpu | sed -n 's/^Model name:[[:space:]]*//p')
-          test "$model" = 'AMD EPYC 7763 64-Core Processor'
           {
             printf 'model=%s\n' "$model"
             uname -a
@@ -52,6 +51,7 @@ jobs:
             clang --version
             ld --version
           } > "$RUNNER_TEMP/current-host.txt"
+          test "$model" = 'AMD EPYC 7763 64-Core Processor'
       - name: Construct and statically audit one controlled image
         env:
           WHITEFOOT_CHECK_TIMEOUT: 300

@@ -215,3 +215,11 @@ corrected extraction uses the ELF symbol's exact start and size as disassembly
 bounds and still requires all 440 bytes to match. Applying it to both retained
 images produces identical 440-byte sequences. This is an instrumentation
 failure, not a performance result; the preregistered criteria are unchanged.
+
+Run [35539134459](https://github.com/mbbill/Whitefoot/actions/runs/35539134459)
+at `754eb772` stopped at the required EPYC 7763 host qualification, before
+construction or execution. That workflow checked the model before saving host
+identity, so the observed mismatch has no recorded model string. The workflow
+now records identity before testing the same requirement. No timing result or
+experimental criterion changed; retries of these pre-measurement infrastructure
+stops do not select from timing outcomes.
