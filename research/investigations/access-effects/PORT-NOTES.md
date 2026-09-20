@@ -13,12 +13,32 @@ gate and hosted correctness/IO checks pass; the affected independent review
 has no new finding. Earlier hold descriptions below are historical for these
 items, not current permission requests.
 
-The outstanding bounded-stack cleanup commitment is still not implemented.
-The [continuation models](cleanup-continuations/README.md) preserve exact
-postorder on selected recursive layouts without a stack or auxiliary
-allocation, but do not establish a general encoding for all current WF types.
-The hosted `records` parallel regression also remains unresolved; the latest
-formal observation and exact validation are maintained on PR 70.
+## Owner-directed deferrals from PR 70
+
+The owner retained the current implementations and moved these unresolved
+questions to [the compiler TODO list](../../../docs/todo.md), without making
+their research a condition of completing PR 70. The numbers identify the
+69-amendment review discussed with the owner, not GitHub issue numbers.
+
+| Review item | Deferred question | Retained implementation |
+|---|---|---|
+| #47 `compiler/cleanup-traversal` | General bounded-stack cleanup without a worklist allocation or extra object fields | Recursive release actions and an honest recursion row in the stack ledger |
+| #62 `compiler/storage-representation` | Relative costs of owner width, allocation count, header placement and growth strategy | Thin, single-allocation, header-first Box/windows; allocate/copy/free growth |
+| #12/#45 `compiler/checker-facts` | Practical precision and cost of loop captures and validity dependencies | Finite loop-header abstraction, complete target sets and owner-tagged validity closure |
+| #29 `compiler/checker-facts` | Scaling and additional coverage of pair-scoped parallel proofs | Exact statement-pair evidence, all-pairs composition and sequential fallback without proof |
+
+The pending #47 amendment remains a proposal for later investigation, not a
+description of the delivered compiler or an outstanding PR 70 implementation
+promise. Its [continuation models](cleanup-continuations/README.md) preserve
+exact release order for selected recursive layouts without a value-depth
+machine stack or auxiliary allocation, but supply no general encoding. The
+other named amendments describe retained implementation choices; their open
+performance and precision questions are now explicit TODOs. This scope ruling
+does not apply any pending amendment to the live design tree.
+
+The hosted `records` parallel regression also remains unresolved. Deferral
+does not dismiss it or change CI's failure verdict; the observed result is
+recorded in the TODO list, with exact validation maintained on PR 70.
 
 ## Automatic approval review holds during integration
 

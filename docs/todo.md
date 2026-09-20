@@ -43,8 +43,60 @@ of them is a decision. Remove an item when its fix and test land.
   regression verdict, and a later pass does not explain an earlier failure.
   Attribute host/sample variability separately from emitted code, linked layout
   and runtime changes before changing a policy or declaring the suspect noise.
+  The [PR 70 comparison at `7044db24`](https://github.com/mbbill/Whitefoot/actions/runs/35539977014)
+  still fails for `records`: baseline/candidate wall-time ratios are 0.938915
+  at two workers and 0.882544 at four, adverse in all five pairs at both
+  widths; the other four kernels pass. Identical-image and intentional-slowdown
+  qualification steps pass. This remains a measured regression with unresolved
+  cause; deferring representation research does not turn that result into a pass.
   Close this item when the source of both observations and the resulting
   measurement/detection tradeoff are established.
+
+- **Recursive cleanup has no general bounded-stack lowering.** The current
+  emitter recursively calls release actions, so machine-stack use can grow
+  with owned value depth; its stack ledger reports the release cycle. The
+  [continuation models](../research/investigations/access-effects/cleanup-continuations/README.md)
+  demonstrate fixed-stack, nonallocating walks only for their selected layouts.
+  They establish neither an encoding for all WF types without extra object
+  fields nor its impossibility. Retain the existing lowering while researching
+  how every suspended aggregate, enum, array and window traversal records its
+  continuation. Preserve reverse binding order, declaration order within
+  aggregates, logical window order, and content-before-Box-free order. Close
+  this item when a general implementation and native regressions establish
+  those properties, or a different resource tradeoff is selected explicitly.
+- **Box/window representation costs remain unqualified.** The current runtime-
+  capacity Box is one pointer to one header-first allocation; `grow` uses
+  allocation, memmove and free. A one-word owner, one allocation and header
+  placement are distinct choices: a fat descriptor can also own one element
+  allocation and make measure reads direct, while widening transport and
+  capture storage. Neither alternative is established as generally faster.
+  Keep the current implementation while separating owner width, measure loads,
+  allocation count, copying and linked layout in representative single-thread
+  and parallel comparisons. The unresolved `records` result above is evidence
+  to explain, not proof that any one layout choice caused it. Close this item
+  when the relevant costs and the chosen tradeoffs have discriminating evidence.
+- **Loop reference abstraction needs practical precision and cost evidence.**
+  Current loop headers keep possible roots and static path shapes, give
+  potentially rebound endpoints finite opaque capture identities, and solve
+  owner-tagged validity dependencies over entry and executable backedges.
+  This prevents a current iteration's facts from authorizing a previous
+  iteration's reference. Its precision and checking cost on larger real loops,
+  nested loops and joined targets remain unqualified. Investigate useful facts
+  lost at headers and the evidence needed to recover them without merging
+  distinct evaluations, dropping possible targets or imposing an acceptance
+  budget. Close this item with representative positive and hostile cases,
+  cost measurements, and any required precision repair or explicit limitation.
+- **Pair-scoped parallel proofs need scaling and coverage work.** The current
+  PAR-1 planner constructs questions for every ordered source pair in a segment
+  and retains range separation only for that pair's first-statement state;
+  repeated visits meet with logical AND. A segment of n members has n(n-1)/2
+  pairs, but that logical requirement does not mandate quadratic repeated
+  proof work. General index mapping through the first member's `ensures` is
+  still unavailable; missing evidence keeps sequential lowering. Investigate
+  indexing and reuse without losing statement identity, captured endpoints,
+  flow context or all-pairs composition. Close this item when larger segments
+  have measured costs and the intended proof coverage, retaining guarded,
+  nonadjacent and stale-capture negative controls.
 
 - **Large entering proof contexts still have substantial checking cost.**
   In the [pinned row-summary comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#row-summary-selection-2026-09-15),
@@ -210,14 +262,13 @@ condition under which it is taken up.
   convention and is a later step. Without the marker the stack bound rests
   on an implementation obligation the writer cannot check, and a pending
   release silently breaks tail position. Implement after PR 70 merges.
-- **Totality and recursion-depth proofs.** Stack depth is an implementation
-  obligation, not a language promise: the compiler-derived release of an
-  owned chain must run in bounded stack (using the freed cells as its
-  worklist) and self tail calls must be eliminated. Domains that need
-  determinism about resource use will need proved totality (termination) and
-  proved recursion depth as obligation families; the atomic in-place update
-  deliberately requires only a function that returns the place's type with no
-  failure exit.
+- **Totality and recursion-depth proofs.** Domains that need determinism about
+  resource use will need proved totality (termination) and proved recursion
+  depth as obligation families; the atomic in-place update deliberately
+  requires only a function that returns the place's type with no failure exit.
+  The current recursive-cleanup stack cost is a separate compiler limitation
+  recorded above, and the call-site `musttail` mechanism remains a separate
+  follow-up. Neither is an implemented source-level recursion-depth proof.
 - **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
   Three additive widenings, taken up together, each measured:
   (1) Affine `ensures`. A `requires` may already be an affine relation and

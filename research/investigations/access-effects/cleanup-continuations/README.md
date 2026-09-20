@@ -6,6 +6,10 @@ using the host call stack. They are investigation artifacts, not compiler
 code, specification text, conformance evidence, or a selected general
 lowering.
 
+The compiler still emits recursive release actions. Generalizing these
+models is the [open bounded-stack cleanup item](../../../../docs/todo.md),
+not behavior supplied by these research programs.
+
 The programs use a preallocated `Vec<u64>` as an aligned word-addressed heap.
 All graph construction and observer allocation finish before traversal. The
 traversals use a fixed-size program counter and machine-register state, mutate
