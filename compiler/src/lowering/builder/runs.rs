@@ -20,7 +20,7 @@ use crate::semantic::{
 use super::*;
 
 /// The IR spelling of one [MSR-1] measure.
-const fn lower_measure(measure: CheckedMeasure) -> IrMeasure {
+pub(super) const fn lower_measure(measure: CheckedMeasure) -> IrMeasure {
     match measure {
         CheckedMeasure::Length => IrMeasure::Length,
         CheckedMeasure::Capacity => IrMeasure::Capacity,

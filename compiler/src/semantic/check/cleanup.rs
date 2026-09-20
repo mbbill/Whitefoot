@@ -186,6 +186,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BorrowRangeIndex { offset, .. } => {
                 self.collect_expression_release_effects(function, offset, effects)?;
             }
+            CheckedExpression::RangeElementMeasure { place, .. } => {
+                self.collect_expression_release_effects(function, &place.offset, effects)?;
+                for step in &place.path {
+                    if let crate::semantic::CheckedPlaceStep::Subscript(subscript) = step {
+                        self.collect_expression_release_effects(
+                            function,
+                            &subscript.offset,
+                            effects,
+                        )?;
+                    }
+                }
+            }
             CheckedExpression::RangeOf {
                 source, start, end, ..
             } => {

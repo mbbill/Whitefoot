@@ -58,9 +58,26 @@
 //! and [OP-15]'s measure member read in expression position, including one
 //! over a subscripted place.
 
-use crate::{SemanticIssueKind, SemanticRule};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::{assert_accepts, assert_rule_kind};
+
+fn assert_op9_allocation_fit(source: &[u8], context: &str) {
+    super::with_semantics(source, |outcome| match outcome {
+        SemanticOutcome::SourceIssue { issue } => {
+            assert_eq!(issue.rule(), SemanticRule::Op9, "{context}");
+            assert!(
+                matches!(
+                    issue.kind(),
+                    SemanticIssueKind::UndischargedAllocationFitObligation { .. }
+                ),
+                "{context} must retain OP-9's allocation-fit issue kind"
+            );
+        }
+        SemanticOutcome::Complete(_) => panic!("{context} was accepted"),
+        _ => panic!("{context} did not reach OP-9"),
+    });
+}
 
 /// [WIN-1] a `Slots` is a run of `cap` slots whose initialized storage is the
 /// `len` slots beginning at `head`, and an `Array` has no window at all.
@@ -339,6 +356,220 @@ fn a_runtime_capacity_construction_owes_the_size_obligation() {
             SemanticIssueKind::UndischargedAllocationFitObligation { .. }
         )
     });
+}
+
+/// [ENT-1, OP-9] a source-canonical generic schema checks an allocation whose
+/// stored layout is expressible even when some unrelated part of the function
+/// remains symbolic. Scalars, pointers, and aggregates built entirely from
+/// fixed-layout components therefore cannot hide an unbounded count behind a
+/// const or type parameter.
+#[test]
+fn known_stored_layouts_keep_op9_in_symbolic_schemas() {
+    for (case, source) in [
+        br#"fn unchecked<const unused: u64>(count: own u64) -> result: own unit pure {
+  let cells = box_slots_new::<u16>(capacity: count);
+  free_empty(window: move cells);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"fn unchecked<T>(count: own u64) -> result: own unit pure {
+  let cells = box_slots_new::<Box<T>>(capacity: count);
+  free_empty(window: move cells);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"struct Envelope<T> {
+  payload: Box<T>;
+  tag: u8;
+}
+
+fn unchecked<T>(count: own u64) -> result: own unit pure {
+  let cells = box_slots_new::<Envelope<T>>(capacity: count);
+  free_empty(window: move cells);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"fn unchecked<T>(count: own u64) -> result: own unit pure {
+  let cells = box_slots_new::<Slots<Box<T>, 2>>(capacity: count);
+  free_empty(window: move cells);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_op9_allocation_fit(source, &format!("known-layout symbolic schema case {case}"));
+    }
+}
+
+/// [ENT-1, FN-2] an opaque stored `T` has no expressible stride in the
+/// source-canonical schema, so that schema may defer [OP-9]. Each discovered
+/// concrete instance is nevertheless rechecked with its actual scalar,
+/// aggregate, pointer, or descriptor layout, including through a second
+/// generic caller.
+#[test]
+fn unresolved_stored_layouts_defer_to_every_concrete_replay() {
+    let unresolved_schema = br#"fn allocate<T>(count: own u64) -> result: own unit pure {
+  let cells = box_slots_new::<T>(capacity: count);
+  free_empty(window: move cells);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(unresolved_schema);
+
+    let concrete_replays = br#"struct Packet {
+  word: u64;
+  tag: u16;
+}
+
+fn allocate<T>(count: own u64) -> result: own unit pure contract {
+  requires count <= 1_u64;
+} {
+  let cells = box_slots_new::<T>(capacity: count);
+  free_empty(window: move cells);
+  return unit;
+}
+
+fn forward<T>(count: own u64) -> result: own unit pure contract {
+  requires count <= 1_u64;
+} {
+  allocate::<T>(count: count);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  forward::<u16>(count: 1_u64);
+  forward::<Packet>(count: 1_u64);
+  forward::<Box<u64>>(count: 1_u64);
+  forward::<Slots<u64, 2>>(count: 1_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(concrete_replays);
+}
+
+/// An `Int` or `Float` bound fixes the largest scalar layout at eight bytes,
+/// so its schema has an expressible exact OP-9 limit. The last admitted count
+/// is accepted and the following count remains a schema rejection.
+#[test]
+fn bounded_numeric_layouts_keep_their_exact_symbolic_op9_limit() {
+    const LIMIT: u64 = u64::MAX / 8;
+    for bound in ["Int", "Float"] {
+        let source = format!(
+            "fn allocate<T: {bound}>(count: own u64) -> result: own unit pure contract {{\n  requires count <= {LIMIT}_u64;\n}} {{\n  let cells = box_slots_new::<T>(capacity: count);\n  free_empty(window: move cells);\n  return unit;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_accepts(source.as_bytes());
+
+        let too_large = LIMIT + 1;
+        let source = format!(
+            "fn allocate<T: {bound}>(count: own u64) -> result: own unit pure contract {{\n  requires count <= {too_large}_u64;\n}} {{\n  let cells = box_slots_new::<T>(capacity: count);\n  free_empty(window: move cells);\n  return unit;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_op9_allocation_fit(
+            source.as_bytes(),
+            &format!("{bound}-bounded schema above its eight-byte limit"),
+        );
+    }
+}
+
+/// A by-value array with a symbolic length has no schema layout ceiling, but
+/// every concrete replay recomputes it. A small array admits one stored value;
+/// an array whose concrete stride is AboveU64 rejects that same count.
+#[test]
+fn symbolic_const_array_layout_defers_only_until_concrete_replay() {
+    let schema = br#"fn allocate<const n: u64>(count: own u64) -> result: own unit pure contract {
+  requires count <= 1_u64;
+} {
+  let cells = box_slots_new::<Array<u64, n>>(capacity: count);
+  free_empty(window: move cells);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(schema);
+
+    let small = br#"fn allocate<const n: u64>(count: own u64) -> result: own unit pure contract {
+  requires count <= 1_u64;
+} {
+  let cells = box_slots_new::<Array<u64, n>>(capacity: count);
+  free_empty(window: move cells);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  allocate::<4>(count: 1_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(small);
+
+    let above_u64 =
+        br#"fn allocate<const n: u64>(count: own u64) -> result: own unit pure contract {
+  requires count <= 1_u64;
+} {
+  let cells = box_slots_new::<Array<u64, n>>(capacity: count);
+  free_empty(window: move cells);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  allocate::<2305843009213693952>(count: 1_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_op9_allocation_fit(above_u64, "AboveU64 concrete const-array replay");
+}
+
+/// [OP-9] `AboveU64` is a concrete layout ceiling whose allocation limit is
+/// zero, not an unresolved layout. A generic schema may defer opaque `T`, but
+/// replaying it with this aggregate must still refuse every positive count.
+#[test]
+fn a_concrete_above_u64_stride_does_not_defer_op9() {
+    let source = br#"struct Giant {
+  words: Array<u64, 2305843009213693952>;
+}
+
+fn allocate<T>(count: own u64) -> result: own unit pure contract {
+  requires count <= 1_u64;
+} {
+  let cells = box_slots_new::<T>(capacity: count);
+  free_empty(window: move cells);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  allocate::<Giant>(count: 1_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_op9_allocation_fit(source, "AboveU64 concrete aggregate replay");
 }
 
 /// [OP-14] `free_empty` consumes any window proved empty, an affine element

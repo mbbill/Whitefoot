@@ -15,14 +15,20 @@ constant gives each concrete `grow` call the bound OP-9 requires and leaves
 STOR-6 to qualify the complete selected-target allocation. A zero ceiling is
 a valid empty vector; its append and insert requirements cannot be met.
 
-- `grow_vector_new` creates an empty vector over a zero-capacity backing.
+- `grow_vector_new` creates an empty vector over a zero-capacity backing. That
+  is an observed runtime guarantee of its construction. FN-9 does not admit a
+  postcondition measure reached through the returned aggregate's `storage`
+  field, so callers establish the nested length or capacity with ordinary
+  executed control flow before an operation whose requirement needs it.
 - `grow_vector_reserve` preserves the window and raises capacity to at least a
   requested total no greater than the selected ceiling, using `grow`, which
-  remakes the cell's content whole and may reallocate in place [OP-10].
+  remakes the cell's content whole and may reallocate in place [OP-10]. Its
+  contract also publishes that capacity never decreases.
 - `grow_vector_append` and `grow_vector_insert` require the current length to
   be below the ceiling. They double full nonempty backing while the doubled
   total fits, saturate at the ceiling otherwise, and take one slot when the
-  backing is empty.
+  backing is empty. Their contracts publish the length increase and the same
+  nondecreasing-capacity guarantee.
 - `grow_vector_remove` removes a proved index and preserves order.
 - `grow_vector_drain` moves values from front to back into a monomorphized
   `VectorDrain` behavior supplied by the caller.
@@ -31,7 +37,10 @@ Every mutating public operation takes an ordinary
 `&GrowVector<T, ceiling>` reference and declares `writes(values.storage)`;
 there is no permission marker, and whether a callee may write through a
 reference is its effect row alone [REF-1, EFF-1]. Contracts publish the exit
-state of the measures they change.
+state of measures they change where FN-9 admits the place: reference
+parameters carry the reserve, append, insert, remove and drain relations above.
+The constructor's nested aggregate result is the one explicit boundary
+described above.
 
 The maintained example instantiates ceilings of zero and three. The latter
 walks the growth policy through capacities zero, one, two, and exactly three,

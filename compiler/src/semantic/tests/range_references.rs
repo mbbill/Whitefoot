@@ -67,6 +67,140 @@ fn a_range_reference_over_a_ring_is_refused() {
     });
 }
 
+/// [ENT-2, OP-15] a measure place may carry an ordinary subscript projection,
+/// including one through a range reference. [OP-4] discharges the element
+/// selection before the measure is read. The nested case keeps the real
+/// `Box.inner` projection between the selected range element and the `Slots`
+/// descriptor; borrowing the element into a separate reference must not be
+/// required just to name either measure.
+#[test]
+fn a_range_element_measure_is_an_ordinary_subscripted_measure_place() {
+    let source = br#"fn direct(items: &[Slots<u64, 2>]) -> length: own u64 reads(items) contract {
+  requires 0_u64 < deref(items).len;
+} {
+  return deref(items)[0_u64].len;
+}
+
+fn nested(items: &[Box<Slots<u64, 2>>]) -> length: own u64 reads(items) contract {
+  requires 0_u64 < deref(items).len;
+} {
+  return deref(items)[0_u64].inner.len;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// The subscript inside a measure place owes the same [OP-4] bound as every
+/// other subscript. A one-element range cannot admit element one, even though
+/// the selected element's `len` would itself be a total [OP-15] read.
+#[test]
+fn an_out_of_bounds_range_element_measure_is_an_op4_rejection() {
+    let source = br#"fn invalid(items: &[Slots<u64, 2>]) -> length: own u64 reads(items) contract {
+  requires deref(items).len == 1_u64;
+} {
+  return deref(items)[1_u64].len;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+/// [REF-1, MSR-2] a measure through a joined range holder reads the element
+/// selected at run time. Its own guard is sufficient for a downstream use on
+/// either incoming path. Without that guard, a fact about the first possible
+/// referent must not hide the second referent's contradictory length.
+#[test]
+fn a_joined_range_element_measure_checks_every_possible_target() {
+    let source = |check: &str| {
+        format!(
+            r#"fn needs_one(value: own u64) -> result: own unit pure contract {{
+  requires value == 1_u64;
+}} {{
+  return unit;
+}}
+
+fn examine(flag: own Bool) -> result: own unit pure {{
+  let left_row = slots_new::<u64, 2>();
+  place_back(window: &left_row, value: 11_u64);
+  let right_row = slots_new::<u64, 2>();
+  let left = slots_new::<Slots<u64, 2>, 1>();
+  place_back(window: &left, value: move left_row);
+  let right = slots_new::<Slots<u64, 2>, 1>();
+  place_back(window: &right, value: move right_row);
+  let items = if flag {{
+    give &left[0_u64..1_u64];
+  }} else {{
+    give &right[0_u64..1_u64];
+  }}
+{check}
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#,
+        )
+    };
+    let guarded = source(
+        "  if 0_u64 < deref(items).len {\n    let observed = deref(items)[0_u64].len;\n    if observed == 1_u64 {\n      let answer = needs_one(value: deref(items)[0_u64].len);\n    }\n  }",
+    );
+    assert_accepts(guarded.as_bytes());
+    let conflicting = source(
+        "  if 0_u64 < deref(items).len {\n    if left[0_u64].len == 1_u64 {\n      if right[0_u64].len == 0_u64 {\n        let answer = needs_one(value: deref(items)[0_u64].len);\n      }\n    }\n  }",
+    );
+    assert_rule_kind(conflicting.as_bytes(), SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
+}
+
+/// [MSR-2, ENT-5] replacing a measured range element through a second alias
+/// kills the guarded fact about that element's old descriptor. The range
+/// itself remains a valid view of the outer window, but its newly empty inner
+/// window cannot use the stale length to discharge a downstream requirement
+/// [FN-8].
+#[test]
+fn a_range_element_measure_dies_on_a_write_through_an_alias() {
+    let source = br#"fn needs_one(value: own u64) -> result: own unit pure contract {
+  requires value == 1_u64;
+} {
+  return unit;
+}
+
+fn clear(window: &Slots<u64, 2>) -> result: own unit writes(window) {
+  let empty = slots_new::<u64, 2>();
+  set deref(window) = move empty;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let row = slots_new::<u64, 2>();
+  place_back(window: &row, value: 17_u64);
+  let outer = slots_new::<Slots<u64, 2>, 1>();
+  place_back(window: &outer, value: move row);
+  let items = &outer[0_u64..1_u64];
+  if deref(items)[0_u64].len == 1_u64 {
+    let alias = &deref(items)[0_u64];
+    let cleared = clear(window: alias);
+    let invalid = needs_one(value: deref(items)[0_u64].len);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
+}
+
 /// [REF-4] formation submits `lo <= hi` and `hi <= x.len` to [MSR-4]. An
 /// endpoint above the base's length discharges neither, and the rejection
 /// carries the residual and the rule's own restructuring.

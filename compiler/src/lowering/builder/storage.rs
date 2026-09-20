@@ -151,6 +151,10 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
             collect_expression(offset, bindings);
             collect_steps(path, None, bindings);
         }
+        CheckedExpression::RangeElementMeasure { place, .. } => {
+            collect_expression(&place.offset, bindings);
+            collect_steps(&place.path, None, bindings);
+        }
         CheckedExpression::BorrowRangeIndex { offset, path, .. } => {
             collect_expression(offset, bindings);
             collect_steps(path, None, bindings);

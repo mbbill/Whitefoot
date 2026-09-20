@@ -965,18 +965,21 @@ pub(crate) enum RelationProvenance {
 }
 
 impl RelationProvenance {
-    /// Stable checked-program identities this provenance contributes to a
-    /// derivation node's structural key. These are external record identities,
-    /// never caller- or query-local derivation IDs.
+    /// Stable checked-program identities this provenance contributes to
+    /// deterministic proof-choice ordering. The complete provenance remains
+    /// part of the derivation node's equality and hash identity. These are
+    /// external record identities, never caller- or query-local derivation IDs.
     pub(crate) fn identity(&self) -> Vec<u32> {
         match self {
-            Self::Verified(summary) => vec![summary.function.0, summary.component],
+            Self::Verified(summary) => vec![0, summary.function.0, summary.component],
             Self::FormalBoundary {
                 query,
                 actual,
                 premises,
             } => {
-                let mut identity = vec![query.0, actual.0];
+                let premise_count = u32::try_from(premises.len())
+                    .expect("formal-boundary premise count exceeds the u32 identity space");
+                let mut identity = vec![1, query.0, actual.0, premise_count];
                 for premise in premises {
                     identity.extend([
                         premise.function.0,

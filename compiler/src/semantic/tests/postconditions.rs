@@ -122,16 +122,17 @@ fn main() -> status: own ExitStatus pure {
 
 /// A generic wrapper around `grow` publishes its ordinary integer result
 /// relation together with the two measured relations it derives from the
-/// supplied row. The written count bound is the wrapper's concrete [OP-9]
-/// premise; without it the source is invalid before any summary can publish.
+/// supplied row. A second generic caller retains that relation after replacing
+/// both the stored type and const ceiling; the measured relations cannot hide
+/// the ordinary result relation from [S12]'s concrete summary.
 #[test]
 fn a_generic_grow_wrapper_publishes_its_integer_result_relation() {
-    let source = br#"struct Holder<T> {
+    let source = br#"struct Holder<T, const ceiling: u64> {
   storage: Box<Slots<T>>;
 }
 
-fn reserve<T>(values: &Holder<T>, total: own u64) -> capacity: own u64 writes(values.storage) contract {
-  requires total <= 1_u64;
+fn reserve<T, const ceiling: u64>(values: &Holder<T, ceiling>, total: own u64) -> capacity: own u64 writes(values.storage) contract {
+  requires total <= ceiling;
   ensures capacity == deref(values).storage.inner.cap;
   ensures capacity >= total;
   ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len;
@@ -144,6 +145,14 @@ fn reserve<T>(values: &Holder<T>, total: own u64) -> capacity: own u64 writes(va
   return total;
 }
 
+fn forward<T, const ceiling: u64>(values: &Holder<T, ceiling>) -> capacity: own u64 writes(values.storage) contract {
+  requires 1_u64 <= ceiling;
+  ensures capacity >= 1_u64;
+} {
+  let capacity = reserve::<T, ceiling>(values: values, total: 1_u64);
+  return capacity;
+}
+
 fn needs_one(value: own u64) -> result: own unit pure contract {
   requires value >= 1_u64;
 } {
@@ -152,8 +161,8 @@ fn needs_one(value: own u64) -> result: own unit pure contract {
 
 fn main() -> status: own ExitStatus pure {
   let storage = box_slots_new::<u64>(capacity: 0_u64);
-  let holder = Holder<u64>(storage: move storage);
-  let opened = reserve::<u64>(values: &holder, total: 1_u64);
+  let holder = Holder<u64, 3>(storage: move storage);
+  let opened = forward::<u64, 3>(values: &holder);
   needs_one(value: opened);
   return exit_status(code: 0_u8);
 }

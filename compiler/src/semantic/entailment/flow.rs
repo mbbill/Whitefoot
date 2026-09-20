@@ -2500,6 +2500,9 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::BorrowRangeIndex { root, .. } => {
                 self.append_holder_chain(root.binding, holders);
             }
+            CheckedExpression::RangeElementMeasure { place, .. } => {
+                self.append_holder_chain(place.root.binding, holders);
+            }
             CheckedExpression::ArrayMeasure {
                 root: CheckedArrayRoot::Binding { binding, .. },
                 ..
@@ -3954,11 +3957,15 @@ impl Analyzer<'_, '_> {
             }
             // [REF-4, REF-1] a range reference names one path; writing an
             // element of it writes that path.
-            CheckedSetTarget::RangeIndex(target) => ResolvedPlace::spelled(
-                PlaceRoot::Binding(target.root.binding),
-                self.is_holder(target.root.binding),
-                Vec::new(),
-            ),
+            CheckedSetTarget::RangeIndex(target) => {
+                let mut place = ResolvedPlace::spelled(
+                    PlaceRoot::Binding(target.root.binding),
+                    self.is_holder(target.root.binding),
+                    Vec::new(),
+                );
+                place.path.extend(target.place_path());
+                place
+            }
             CheckedSetTarget::Storage(target) => {
                 return self.resolved_places_overlap(
                     separations,
@@ -5655,6 +5662,26 @@ impl Analyzer<'_, '_> {
                     vec![argument],
                 )
             }
+            CheckedExpression::RangeElementMeasure { measure, place, .. } => {
+                let measured = place.measured()?;
+                let argument = self.goal_binding_place(
+                    place.root.binding,
+                    place.goal_projections(),
+                    place.ty,
+                );
+                build_operation(
+                    GoalOperation::ContainerMeasure {
+                        measure: *measure,
+                        measured,
+                        element: place.element(),
+                        constant: place.type_constant(),
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    CheckedType::Integer(IntegerType::U64),
+                    vec![argument],
+                )
+            }
             CheckedExpression::RangeIndex {
                 root, offset, path, ..
             }
@@ -7264,6 +7291,10 @@ impl Analyzer<'_, '_> {
                     reached: reaches_index && self.obligations_since_discharged(obligation_start),
                 }
             }
+            CheckedExpression::RangeElementMeasure { place, .. } => ExpressionJudgment {
+                prepared_call: None,
+                reached: self.judge_range_element_place(place, states),
+            },
             // [OP-4, REF-4] one element of the run a range names owes
             // `i < deref(p).len`, the range's one measure [MSR-1].
             CheckedExpression::RangeIndex {
@@ -8447,10 +8478,16 @@ impl Analyzer<'_, '_> {
         states: &mut ProofFlowState,
     ) {
         for expression in expression.postorder() {
-            if let CheckedAffineExpressionKind::Measure(measure) = &expression.kind
-                && let CheckedExpression::ContainerMeasure { root, .. } = measure.as_ref()
-            {
-                self.judge_place_subscripts(root, states);
+            if let CheckedAffineExpressionKind::Measure(measure) = &expression.kind {
+                match measure.as_ref() {
+                    CheckedExpression::ContainerMeasure { root, .. } => {
+                        self.judge_place_subscripts(root, states);
+                    }
+                    CheckedExpression::RangeElementMeasure { place, .. } => {
+                        self.judge_range_element_place(place, states);
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -8514,6 +8551,72 @@ impl Analyzer<'_, '_> {
         reached
     }
 
+    /// [OP-4, MSR-4] the outer range subscript and every nested subscript in
+    /// one measured element place, in source order. The proof base remains
+    /// the range holder until ordinary unique-origin resolution substitutes
+    /// it; a joined holder is never reduced to one candidate here [ENT-5].
+    fn judge_range_element_place(
+        &mut self,
+        place: &super::super::model::CheckedRangeElementPlace,
+        states: &mut ProofFlowState,
+    ) -> bool {
+        let mut base = ResolvedPlace::spelled(
+            PlaceRoot::Binding(place.root.binding),
+            self.is_holder(place.root.binding),
+            Vec::new(),
+        );
+        let reaches_offset =
+            self.judge_children_reach_parent(std::iter::once(&place.offset), states);
+        let obligation_start = self.obligations.len();
+        if reaches_offset {
+            self.judge_obligation(
+                base.clone(),
+                MeasuredKind::Range,
+                None,
+                &place.offset,
+                place.obligation.clone(),
+                states,
+            );
+        }
+        let mut reached = reaches_offset && self.obligations_since_discharged(obligation_start);
+        if !reached {
+            return false;
+        }
+        base.path.push(PlaceStep::Index(place.captured));
+        for step in &place.path {
+            match step {
+                CheckedPlaceStep::Field(field) => base.path.push(PlaceStep::Field(*field)),
+                CheckedPlaceStep::BoxReferent(_) => base.path.push(PlaceStep::Deref),
+                CheckedPlaceStep::Subscript(subscript) => {
+                    let Some(measured) = measured_kind(subscript.base_type) else {
+                        return false;
+                    };
+                    let reaches_offset = self
+                        .judge_children_reach_parent(std::iter::once(&subscript.offset), states);
+                    let obligation_start = self.obligations.len();
+                    if reaches_offset {
+                        self.judge_obligation(
+                            base.clone(),
+                            measured,
+                            type_constant(subscript.base_type),
+                            &subscript.offset,
+                            subscript.obligation.clone(),
+                            states,
+                        );
+                    }
+                    reached = reached
+                        && reaches_offset
+                        && self.obligations_since_discharged(obligation_start);
+                    if !reached {
+                        return false;
+                    }
+                    base.path.push(PlaceStep::Index(subscript.captured));
+                }
+            }
+        }
+        reached
+    }
+
     /// The exact place one measured or subscripted root names [MSR-2].
     ///
     /// A run's path may carry subscripts of its own — `len_of(table[i])` is a
@@ -8553,11 +8656,22 @@ impl Analyzer<'_, '_> {
                 }
                 Some(self.container_root_path(target))
             }
+            CheckedSetTarget::RangeIndex(target) => {
+                let path = target.place_path();
+                if path.contains(&PlaceStep::Index(CapturedValue::unknown())) {
+                    return None;
+                }
+                let mut place = ResolvedPlace::spelled(
+                    PlaceRoot::Binding(target.root.binding),
+                    self.is_holder(target.root.binding),
+                    Vec::new(),
+                );
+                place.path.extend(path);
+                Some(place)
+            }
             // No flat element domain names the offset its commit wrote, so
             // none has an element place a measure could be stated over.
-            CheckedSetTarget::ArrayIndex(_)
-            | CheckedSetTarget::BufferIndex(_)
-            | CheckedSetTarget::RangeIndex(_) => None,
+            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => None,
         }
     }
 
@@ -10626,6 +10740,7 @@ impl Analyzer<'_, '_> {
             CheckedExpression::ArrayMeasure { .. }
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::RangeMeasure { .. }
+            | CheckedExpression::RangeElementMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. } => self
                 .checked_measure_term(expression)
                 .map(|term| self.measure_atom(term, state)),
@@ -11918,6 +12033,7 @@ impl Analyzer<'_, '_> {
             CheckedExpression::ArrayMeasure { .. }
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::RangeMeasure { .. }
+            | CheckedExpression::RangeElementMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. } => self
                 .checked_measure_term(expression)
                 .map(|term| self.measure_atom(term, state)),
@@ -12337,6 +12453,19 @@ impl Analyzer<'_, '_> {
             }
             CheckedExpression::RangeMeasure { measure, root } => {
                 (*measure, root.binding, Vec::new())
+            }
+            CheckedExpression::RangeElementMeasure { measure, place, .. } => {
+                let mut resolved = ResolvedPlace::spelled(
+                    PlaceRoot::Binding(place.root.binding),
+                    self.is_holder(place.root.binding),
+                    Vec::new(),
+                );
+                resolved.path.extend(place.place_path());
+                return Some(format!(
+                    "{}.{}",
+                    self.render_place(&resolved),
+                    measure.spelling()
+                ));
             }
             // [MSR-1] a measured place may carry a subscript, so this one is
             // rendered from the same source-order path every other consumer
@@ -13806,16 +13935,14 @@ impl Analyzer<'_, '_> {
                 });
             }
             CheckedSetTarget::RangeIndex(target) => {
-                let spelled = ResolvedPlace::spelled(
+                let mut spelled = ResolvedPlace::spelled(
                     PlaceRoot::Binding(target.root.binding),
                     self.is_holder(target.root.binding),
                     Vec::new(),
                 );
+                spelled.path.extend(target.place_path());
                 target_kills.push(KillEvent::Write {
-                    place: element_write_place(
-                        self.resolve(&spelled),
-                        Self::commit_index(&target.offset),
-                    ),
+                    place: self.resolve(&spelled),
                     element: true,
                     source: node_path.clone(),
                 });
@@ -16148,6 +16275,15 @@ impl Analyzer<'_, '_> {
                 )),
                 measure.spelling(),
             ),
+            CheckedExpression::RangeElementMeasure { measure, place, .. } => {
+                let mut resolved = ResolvedPlace::spelled(
+                    PlaceRoot::Binding(place.root.binding),
+                    self.is_holder(place.root.binding),
+                    Vec::new(),
+                );
+                resolved.path.extend(place.place_path());
+                format!("{}.{}", self.render_place(&resolved), measure.spelling())
+            }
             CheckedExpression::ArrayMeasure { measure, root, .. } => format!(
                 "{}.{}",
                 self.render_place(&self.array_root_place(root)),

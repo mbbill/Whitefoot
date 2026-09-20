@@ -1755,6 +1755,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 )))
             }
+            CheckedExpression::RangeElementMeasure { measure, place, .. } => {
+                let Some(info) = binding_info.get(&place.root.binding) else {
+                    return Ok(None);
+                };
+                if info.ty != place.root.element_type {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                Ok(Some(PostconditionReturnDatum::Measure(
+                    *measure,
+                    PostconditionReturnPlace {
+                        root: PostconditionReturnPlaceRoot::Binding(place.root.binding),
+                        projections: place.goal_projections(),
+                        ty: place.ty,
+                        range_referent: false,
+                        source: statement.clone(),
+                    },
+                )))
+            }
             CheckedExpression::BufferMeasure { measure, root } => {
                 // [TYPE-9] a run reached through its cell has a content step
                 // in its path, which this classification's field walk does

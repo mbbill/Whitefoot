@@ -1585,6 +1585,9 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::ContainerMeasure { measure, root } => {
                 self.lower_container_measure(*measure, root)
             }
+            CheckedExpression::RangeElementMeasure { measure, place, .. } => {
+                self.lower_range_element_measure(*measure, place)
+            }
             CheckedExpression::ReadStorage { root, .. } => {
                 let address = self.lower_place_address(root)?;
                 self.load_storage_value(address)

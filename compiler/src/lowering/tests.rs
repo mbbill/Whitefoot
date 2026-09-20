@@ -11,9 +11,9 @@ use crate::{
 };
 
 use super::{
-    IrBlock, IrDrop, IrDropSubject, IrFunction, IrInstruction, IrIntegerOperation, IrOperation,
-    IrProgram, IrSourceArgument, IrSourceCall, IrSourceMode, IrTerminator, IrType, IrValueId,
-    lower_checked,
+    IrAddressed, IrBlock, IrDrop, IrDropSubject, IrFunction, IrInstruction, IrIntegerOperation,
+    IrNominalKind, IrOperation, IrProgram, IrSourceArgument, IrSourceCall, IrSourceMode,
+    IrTerminator, IrType, IrValueId, lower_checked,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -61,6 +61,86 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
 /// An ordinary function selected by executable fixtures.
 const PLAIN_ENTRY: &str =
     "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+
+#[test]
+fn a_split_snapshots_a_thin_box_owner_but_keeps_inline_affine_storage_addressed() {
+    let source = br#"nocopy struct Inline {
+  values: Array<u8, 16>;
+}
+
+fn make_inline() -> result: own Inline pure {
+  let values = array_filled::<u8, 16>(value: 0_u8);
+  let result = Inline(values: values);
+  return move result;
+}
+
+fn mapped() -> result: own Box<Array<u8>> pure {
+  let output = box_array_filled::<u8>(count: 16_u64, value: 0_u8);
+  let inline = make_inline();
+  for @fill (i in 0_u64..16_u64) {
+    set output.inner[i] = 1_u8;
+    set inline.values[i] = 2_u8;
+  }
+  return move output;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let output = mapped();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir_mode(source, OverlapLowering::On, |program| {
+        let function = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "mapped")
+            .expect("mapped function");
+        let captures = function
+            .blocks()
+            .iter()
+            .flat_map(|block| block.instructions())
+            .find_map(|instruction| match instruction {
+                IrInstruction::Define {
+                    operation: IrOperation::LoopSplit { captures, .. },
+                    ..
+                } => Some(captures),
+                _ => None,
+            })
+            .expect("the independent element writes must remain a split loop");
+
+        let mut thin_box_values = 0;
+        let mut inline_addresses = 0;
+        for capture in captures {
+            match function.value_type(*capture).expect("capture type") {
+                IrType::Nominal(nominal)
+                    if matches!(
+                        program.nominal(nominal).expect("nominal").kind(),
+                        IrNominalKind::Box { .. }
+                    ) =>
+                {
+                    thin_box_values += 1;
+                }
+                IrType::Address(IrAddressed::Nominal(nominal))
+                    if matches!(
+                        program.nominal(nominal).expect("nominal").kind(),
+                        IrNominalKind::Struct { .. }
+                    ) =>
+                {
+                    inline_addresses += 1;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(
+            thin_box_values, 1,
+            "the split must snapshot the Box pointer once"
+        );
+        assert_eq!(
+            inline_addresses, 1,
+            "an inline nocopy aggregate must retain its addressed representation"
+        );
+    });
+}
 
 fn with_ir<ResultValue>(
     source: &[u8],

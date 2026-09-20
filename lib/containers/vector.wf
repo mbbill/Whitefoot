@@ -16,6 +16,7 @@ fn grow_vector_reserve<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, t
   requires total <= ceiling;
   ensures capacity == deref(values).storage.inner.cap;
   ensures capacity >= total;
+  ensures deref(values).storage.inner.cap >= deref(entry(values)).storage.inner.cap;
   ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len;
 } {
   doc "Raises capacity to at least total within this vector's caller-selected ceiling, preserving the window. The concrete ceiling gives every monomorphized grow site its OP-9 bound, while target qualification still checks the complete selected layout under STOR-6. grow remakes the cell's content whole and may reallocate in place [OP-10], so there is no superseded backing to release here.";
@@ -31,6 +32,7 @@ fn grow_vector_append<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, va
   requires deref(values).storage.inner.len < ceiling;
   ensures length == deref(values).storage.inner.len;
   ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len + 1_u64;
+  ensures deref(values).storage.inner.cap >= deref(entry(values)).storage.inner.cap;
 } {
   doc "Appends one value, doubling full nonempty backing while that total stays within the caller-selected ceiling, saturating at the ceiling otherwise, and taking one slot when the backing is empty. The written length bound and the concrete ceiling discharge each allocation-size obligation [OP-9].";
   let spare = deref(values).storage.inner.cap - deref(values).storage.inner.len;
@@ -66,6 +68,7 @@ fn grow_vector_insert<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, in
   requires deref(values).storage.inner.len < ceiling;
   ensures length == deref(values).storage.inner.len;
   ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len + 1_u64;
+  ensures deref(values).storage.inner.cap >= deref(entry(values)).storage.inner.cap;
 } {
   doc "Inserts before a proved index and preserves order. The manual exchange-and-shift loop v0.59 wrote for this retired with [OP-10]'s insert_at, which is the one operation that writes the append slot and the filled run together.";
   let spare = deref(values).storage.inner.cap - deref(values).storage.inner.len;

@@ -2384,6 +2384,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BorrowRangeIndex { offset, .. } => {
                 self.install_expression_call_requirements(offset, requirements)?;
             }
+            CheckedExpression::RangeElementMeasure { place, .. } => {
+                self.install_expression_call_requirements(&mut place.offset, requirements)?;
+                for step in &mut place.path {
+                    if let super::model::CheckedPlaceStep::Subscript(subscript) = step {
+                        self.install_expression_call_requirements(
+                            &mut subscript.offset,
+                            requirements,
+                        )?;
+                    }
+                }
+            }
             // [REF-4] both endpoints are ordinary operands evaluated at the
             // formation, and a storage source carries its own offsets.
             CheckedExpression::RangeOf {
@@ -2554,6 +2565,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::RangeIndex { offset, .. }
             | CheckedExpression::BorrowRangeIndex { offset, .. } => {
                 Self::install_expression_allocation_bounds(offset, bounds)?;
+            }
+            CheckedExpression::RangeElementMeasure { place, .. } => {
+                Self::install_expression_allocation_bounds(&mut place.offset, bounds)?;
+                for step in &mut place.path {
+                    if let super::model::CheckedPlaceStep::Subscript(subscript) = step {
+                        Self::install_expression_allocation_bounds(&mut subscript.offset, bounds)?;
+                    }
+                }
             }
             CheckedExpression::RangeOf {
                 source, start, end, ..

@@ -859,6 +859,32 @@ fn main() -> status: own ExitStatus pure {
     assert!(output.stderr.is_empty(), "{output:?}");
 }
 
+/// [ENT-2, OP-4, OP-15] lowers the measure of a window selected directly
+/// through a range reference. The inner window contains one value, so the
+/// process observes the descriptor read rather than merely compiling an
+/// unused measure expression.
+#[test]
+fn a_measured_range_element_has_its_observable_inner_length() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let inner = slots_new::<u64, 2>();
+  place_back(window: &inner, value: 41_u64);
+  let outer = slots_new::<Slots<u64, 2>, 1>();
+  place_back(window: &outer, value: move inner);
+  let items = &outer[0_u64..1_u64];
+  let observed = deref(items)[0_u64].len;
+  if observed != 1_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    let output = compile_and_run(&llvm);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
 /// One `&[u8]` consumer reads the three storage origins [STOR-1]: a `const`
 /// item's read-only static storage, a frame-resident constant-capacity window,
 /// and a runtime-capacity window inside its own cell. The range reference is

@@ -1368,6 +1368,213 @@ fn exclusive(handed: &[u8]) -> result: own u64 writes(handed) contract {
     assert_eq!(kind.halves(), ("write", "write"));
 }
 
+// Range fixtures for the proof-carrying half of [OWN-7]. Each call writes
+// the range it receives, while the source remains sequentially valid whether
+// or not [PAR-1] can retain an overlap permission.
+const RANGE_PERMISSION_HELPERS: &str = r#"fn stamp_range(part: &[u8]) -> result: own u64 writes(part) contract {
+  requires 0_u64 < deref(part).len;
+} {
+  set deref(part)[0_u64] = 9_u8;
+  return 1_u64;
+}
+
+fn stamp_two_ranges(first: &[u8], second: &[u8]) -> result: own u64 writes(first), writes(second) contract {
+  requires 0_u64 < deref(first).len;
+  requires 0_u64 < deref(second).len;
+} {
+  set deref(first)[0_u64] = 7_u8;
+  set deref(second)[0_u64] = 8_u8;
+  return 2_u64;
+}
+"#;
+
+/// [PAR-1, OWN-7] both captured ranges exist before the first statement, and
+/// its entering state proves the first range ends where the second starts.
+/// The permission judgment must consume that exact proof instead of treating
+/// every pair of range steps as overlapping.
+#[test]
+fn dynamic_ranges_separated_at_the_first_statement_are_permitted() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn separated(values: &Array<u8, 4>, split: own u64) -> result: own u64 writes(values) contract {{
+  requires 1_u64 <= split;
+  requires split < 4_u64;
+}} {{
+  let left = &deref(values)[0_u64..split];
+  let right = &deref(values)[split..4_u64];
+  let a = stamp_range(part: left);
+  let b = stamp_range(part: right);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    assert_eq!(
+        pair_of(&table, "separated", "stamp_range", "stamp_range").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+}
+
+/// [PAR-1] a run means every source-ordered pair, including nonadjacent
+/// members. The benign scalar statement reaches neither range, so the two
+/// calls and that statement form one run only when the first/third captured
+/// ranges are proved apart in the first call's entering state.
+#[test]
+fn a_nonadjacent_dynamic_range_pair_keeps_the_complete_run() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn separated(values: &Array<u8, 4>, split: own u64) -> result: own u64 writes(values) contract {{
+  requires 1_u64 <= split;
+  requires split < 4_u64;
+}} {{
+  let left = &deref(values)[0_u64..split];
+  let right = &deref(values)[split..4_u64];
+  let a = stamp_range(part: left);
+  let gap = 7_u64 +wrap 1_u64;
+  let b = stamp_range(part: right);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    let run = run_of(
+        &table,
+        "separated",
+        &["stamp_range", "a let statement", "stamp_range"],
+    );
+    assert_eq!(run.sites.len(), 3);
+}
+
+/// [REF-4, PAR-1] endpoint values belong to their range-formation captures.
+/// Rebinding the source scalar later must not retarget an earlier capture and
+/// manufacture separation for two ranges that were identical when formed.
+#[test]
+fn rebinding_an_endpoint_does_not_separate_earlier_captured_ranges() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn stale(values: &Array<u8, 4>) -> result: own u64 writes(values) {{
+  let start = 0_u64;
+  let stop = 2_u64;
+  let left = &deref(values)[0_u64..2_u64];
+  let right = &deref(values)[start..stop];
+  set start = 2_u64;
+  let a = stamp_range(part: left);
+  let b = stamp_range(part: right);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    let pair = pair_of(&table, "stale", "stamp_range", "stamp_range");
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!(
+            "expected the captured ranges to overlap: {:?}",
+            pair.verdict
+        );
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
+}
+
+/// [ENT-5, PAR-1] the guarded pair may use its arm-entry ordering, but that
+/// proof is unavailable after the join. The exact same captured ranges at two
+/// different statement pairs therefore receive different permission verdicts
+/// rather than sharing one function-wide range oracle.
+#[test]
+fn a_guarded_range_permission_does_not_escape_to_another_statement_pair() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn guarded(values: &Array<u8, 4>, cut: own u64, start: own u64) -> result: own u64 writes(values) contract {{
+  requires 1_u64 <= cut;
+  requires cut <= 4_u64;
+  requires start < 4_u64;
+}} {{
+  let left = &deref(values)[0_u64..cut];
+  let right = &deref(values)[start..4_u64];
+  if cut <= start {{
+    let guarded_left = stamp_range(part: left);
+    let guarded_right = stamp_range(part: right);
+  }}
+  let outer_left = stamp_range(part: left);
+  let outer_right = stamp_range(part: right);
+  return outer_left +wrap outer_right;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    let pairs = pairs_of(&table, "guarded", "stamp_range", "stamp_range");
+    let [inside, after_join] = pairs.as_slice() else {
+        panic!("guarded must contain the arm pair and the post-join pair: {pairs:?}");
+    };
+    assert_eq!(inside.verdict, PermissionVerdict::PermittedEligible);
+    let Denial::Footprint { kind, .. } = denial(after_join, 1) else {
+        panic!(
+            "the post-join pair must not reuse the arm proof: {:?}",
+            after_join.verdict
+        );
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
+}
+
+/// [PAR-1] a statement pair with several range conflicts is permitted only
+/// when every conflicting pair is apart. Three literal pairs here separate,
+/// but `[4..6]` and `[5..7]` overlap, so one successful proof must not hide
+/// the remaining write/write conflict.
+#[test]
+fn every_range_conflict_of_a_multi_target_pair_must_be_separated() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn conjunction(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
+  let a0 = &deref(values)[0_u64..2_u64];
+  let a1 = &deref(values)[4_u64..6_u64];
+  let b0 = &deref(values)[2_u64..4_u64];
+  let b1 = &deref(values)[5_u64..7_u64];
+  let a = stamp_two_ranges(first: a0, second: a1);
+  let b = stamp_two_ranges(first: b0, second: b1);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    let pair = pair_of(
+        &table,
+        "conjunction",
+        "stamp_two_ranges",
+        "stamp_two_ranges",
+    );
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!("one overlapping range pair must deny: {:?}", pair.verdict);
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
+}
+
+/// [PAR-1] this is the conservative first-point control, not an assertion
+/// about reference-holder dataflow: `right` is formed between the calls, so
+/// its capture has no affine image in the state before the first call. The
+/// bounded range handoff therefore cannot use it to justify a wider run.
+#[test]
+fn a_later_formed_range_does_not_justify_a_wider_run() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn later(values: &Array<u8, 4>) -> result: own u64 writes(values) {{
+  let left = &deref(values)[0_u64..2_u64];
+  let a = stamp_range(part: left);
+  let right = &deref(values)[2_u64..4_u64];
+  let b = stamp_range(part: right);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    let has_wider_run = function_table(&table, "later").runs.iter().any(|run| {
+        run.sites.iter().map(|site| site.callee_name.as_str()).eq([
+            "stamp_range",
+            "a let statement",
+            "stamp_range",
+        ])
+    });
+    assert!(!has_wider_run);
+}
+
 /// Prelude calls use the ordinary call permission judgment. This pure call
 /// forms the two adjacent eligible pairs rather than becoming an opaque
 /// statement the judgment passes over.

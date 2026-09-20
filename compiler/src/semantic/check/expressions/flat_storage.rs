@@ -11,7 +11,7 @@ use super::super::super::model::{
     CheckedArrayRoot, CheckedArraySetTarget, CheckedBufferRoot, CheckedBufferSetTarget,
     CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedLayoutCeiling,
     CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedPlaceStep,
-    CheckedPlaceSubscript, CheckedRangeRoot, CheckedRangeSetTarget, CheckedSetTarget,
+    CheckedPlaceSubscript, CheckedRangeElementPlace, CheckedRangeRoot, CheckedSetTarget,
     CheckedTargetDomainObligation, CheckedType, IntegerType, MeasureCell, MeasuredKind, NominalId,
 };
 use super::super::super::places::{
@@ -361,6 +361,116 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 options.loop_depth,
             )?
             .into_element_storage()?;
+        let indexed = match indexed {
+            CheckedIndexedPlace::Range(range) => {
+                let offset_node = self
+                    .subscript_offset(anchor)?
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                let mut probe = bindings.clone();
+                let offset =
+                    self.check_atom(function, offset_node, &mut probe, options.loop_depth)?;
+                if offset.expression.ty() != CheckedType::Integer(IntegerType::U64)
+                    || offset.mode != CheckedMode::Own
+                {
+                    return self.issue_node(
+                        SemanticRule::Type5,
+                        offset_node,
+                        SemanticIssueKind::type_mismatch(
+                            "own u64",
+                            self.checked_value_name(offset.mode, offset.expression.ty())?,
+                        ),
+                    );
+                }
+                let Some(captured) = Self::captured_of(offset_node, &offset.expression) else {
+                    return self
+                        .unsupported(UnsupportedSemanticFeature::CompositeValues, offset_node);
+                };
+                let (path, selected_type, carried) = self.resolve_storage_path(
+                    &base[subscript + 1..],
+                    range.element_type,
+                    bindings,
+                    function,
+                    options.loop_depth,
+                    true,
+                )?;
+                let Some(measured) = measured_kind_of(selected_type) else {
+                    return self.issue_node(
+                        SemanticRule::Type5,
+                        use_node,
+                        SemanticIssueKind::type_mismatch(
+                            "a measured place [MSR-1]",
+                            self.checked_type_name(selected_type)?,
+                        ),
+                    );
+                };
+                if matches!(measure.cell(measured), MeasureCell::Absent) {
+                    return self.issue_node(
+                        SemanticRule::Type5,
+                        use_node,
+                        SemanticIssueKind::type_mismatch(
+                            "a measured place whose measure table has this row",
+                            self.checked_type_name(selected_type)?,
+                        ),
+                    );
+                }
+                if options.explicit_move && self.judges_class_spelling() {
+                    return self.issue_node(
+                        SemanticRule::Own1,
+                        use_node,
+                        SemanticIssueKind::MoveOfCopy {
+                            mechanical_fix: "read the measure without `move`",
+                        },
+                    );
+                }
+                let mut resolved = range.resolved;
+                resolved.append_step(PlaceStep::Index(captured));
+                for step in path.iter().map(CheckedPlaceStep::place_step) {
+                    resolved.append_step(step);
+                }
+                for member in &resolved.members {
+                    self.check_commit_place_live(member, use_node, false)?;
+                }
+                let mut effects = offset.effects.union(carried.effects);
+                for member in &resolved.members {
+                    for path in
+                        self.effect_paths_for_descriptor(use_node, member, bindings, measure)?
+                    {
+                        effects.add_read(path);
+                    }
+                }
+                let mut accesses = offset
+                    .accesses
+                    .into_iter()
+                    .chain(carried.accesses)
+                    .map(PlaceAccess::operand)
+                    .collect::<Vec<_>>();
+                accesses.extend(resolved.members.into_iter().map(|place| PlaceAccess {
+                    place,
+                    selected: true,
+                }));
+                return Ok(TypedExpression {
+                    expression: CheckedExpression::RangeElementMeasure {
+                        carrier: self.tree.path(use_node)?.clone(),
+                        measure,
+                        place: Box::new(CheckedRangeElementPlace {
+                            root: range.root,
+                            offset: offset.expression,
+                            captured,
+                            path,
+                            ty: selected_type,
+                            obligation: self.tree.path(anchor)?.clone(),
+                            target_domain: CheckedTargetDomainObligation::ElementAddress,
+                        }),
+                    },
+                    mode: CheckedMode::Own,
+                    reference: None,
+                    reference_value: false,
+                    effects,
+                    accesses,
+                });
+            }
+            indexed => indexed,
+        };
         let CheckedIndexedPlace::Container(container) = indexed else {
             // A flat buffer or a range reference has no measured element, so
             // the element this subscript selects carries no measure row.
@@ -1329,9 +1439,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 (
                     range.declaration,
                     range.resolved.clone(),
-                    CheckedSetTarget::RangeIndex(Box::new(CheckedRangeSetTarget {
+                    CheckedSetTarget::RangeIndex(Box::new(CheckedRangeElementPlace {
                         root: range.root,
                         offset: offset.expression,
+                        captured: offset_place,
                         path: range_path.clone(),
                         ty: selected_type,
                         obligation,

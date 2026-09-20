@@ -1576,18 +1576,62 @@ pub(crate) enum CheckedRangeSource {
     Range(CheckedRangeRoot),
 }
 
-/// One `set` target selecting an element of the run a range reference names
-/// [REF-4, OP-4, SET-1].
+/// One typed element place in the run a range reference names [REF-4, OP-4].
+///
+/// Measures and `set` targets share the evaluated outer offset and the typed
+/// suffix below that element; the other range access forms retain the same
+/// components in their expression nodes. Keeping that capture here gives
+/// these storage judgments one place identity without choosing one of a
+/// joined reference's possible origins [REF-1, ENT-5].
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedRangeSetTarget {
+pub(crate) struct CheckedRangeElementPlace {
     pub(crate) root: CheckedRangeRoot,
     pub(crate) offset: CheckedExpression,
+    /// The immutable image of `offset` at this occurrence [REF-1, OWN-7].
+    pub(crate) captured: super::places::CapturedValue,
     /// The typed storage path below the selected element.
     pub(crate) path: Vec<CheckedPlaceStep>,
     /// The type selected by `path`, or the element type when it is empty.
     pub(crate) ty: CheckedType,
     pub(crate) obligation: NodePath,
     pub(crate) target_domain: CheckedTargetDomainObligation,
+}
+
+impl CheckedRangeElementPlace {
+    pub(crate) fn place_path(&self) -> Vec<super::places::PlaceStep> {
+        std::iter::once(super::places::PlaceStep::Index(self.captured))
+            .chain(self.path.iter().map(CheckedPlaceStep::place_step))
+            .collect()
+    }
+
+    pub(crate) fn goal_projections(&self) -> Vec<super::goal::GoalProjection> {
+        std::iter::once(super::goal::GoalProjection::Subscript(
+            self.captured.goal_identity(),
+        ))
+        .chain(self.path.iter().map(CheckedPlaceStep::goal_projection))
+        .collect()
+    }
+
+    pub(crate) const fn measured(&self) -> Option<MeasuredKind> {
+        self.ty.measured()
+    }
+
+    pub(crate) const fn element(&self) -> Option<CheckedElement> {
+        match self.ty {
+            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+                Some(element)
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn type_constant(&self) -> Option<CheckedConst> {
+        match self.ty {
+            CheckedType::Array { length, .. } => Some(length),
+            CheckedType::Window { capacity, .. } => capacity,
+            _ => None,
+        }
+    }
 }
 
 /// A typed storage place used by a borrow or a compiler-owned measure.
@@ -1919,6 +1963,15 @@ pub(crate) enum CheckedExpression {
         measure: CheckedMeasure,
         root: CheckedRangeRoot,
     },
+    /// [MSR-1] one measure of a typed element place selected through a range
+    /// reference. Lowering addresses the element and reads the ordinary
+    /// descriptor cell; the range holder remains the proof-term root so a
+    /// joined reference never selects an arbitrary possible origin [ENT-5].
+    RangeElementMeasure {
+        carrier: NodePath,
+        measure: CheckedMeasure,
+        place: Box<CheckedRangeElementPlace>,
+    },
     /// [OP-4] one discharged subscript read of the run a range names.
     RangeIndex {
         carrier: NodePath,
@@ -2039,6 +2092,7 @@ impl CheckedExpression {
             | Self::ArrayIndex { carrier, .. }
             | Self::BufferIndex { carrier, .. }
             | Self::RangeOf { carrier, .. }
+            | Self::RangeElementMeasure { carrier, .. }
             | Self::RangeIndex { carrier, .. }
             | Self::BorrowRangeIndex { carrier, .. }
             | Self::ReadStorage { carrier, .. }
@@ -2072,7 +2126,8 @@ impl CheckedExpression {
             Self::ArrayIndex { element_type, .. } => *element_type,
             Self::BufferMeasure { .. }
             | Self::ContainerMeasure { .. }
-            | Self::RangeMeasure { .. } => CheckedType::Integer(IntegerType::U64),
+            | Self::RangeMeasure { .. }
+            | Self::RangeElementMeasure { .. } => CheckedType::Integer(IntegerType::U64),
             Self::BufferIndex { root, .. } => root.element.ty(),
             // [TYPE-8] `&[T]` is a reference kind, not a type: the value's
             // own type is the element type and its kind is its mode, exactly
@@ -2197,7 +2252,7 @@ pub(crate) enum CheckedSetTarget {
     ArrayIndex(Box<CheckedArraySetTarget>),
     BufferIndex(Box<CheckedBufferSetTarget>),
     /// One element position of the run a range reference names [REF-4].
-    RangeIndex(Box<CheckedRangeSetTarget>),
+    RangeIndex(Box<CheckedRangeElementPlace>),
     /// A typed storage path including all subscripts and terminal fields.
     Storage(CheckedContainerRoot),
 }
@@ -2634,6 +2689,14 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::ProjectValue { value, .. } => vec![value.as_ref()],
         CheckedExpression::ArrayIndex { offset, .. } => vec![offset.as_ref()],
         CheckedExpression::BufferIndex { offset, .. } => vec![offset.as_ref()],
+        CheckedExpression::RangeElementMeasure { place, .. } => {
+            let mut children = vec![&place.offset];
+            children.extend(place.path.iter().filter_map(|step| match step {
+                CheckedPlaceStep::Subscript(index) => Some(&index.offset),
+                CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+            }));
+            children
+        }
         CheckedExpression::RangeIndex { offset, path, .. }
         | CheckedExpression::BorrowRangeIndex { offset, path, .. } => {
             let mut children = vec![offset.as_ref()];

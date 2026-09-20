@@ -10,8 +10,8 @@ use super::super::super::super::goal::{
     EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalOperation, GoalProjection,
 };
 use super::super::super::super::model::{
-    CheckedCallSeparation, CheckedEffectStep, CheckedExpression, CheckedMode, CheckedNominalKind,
-    CheckedStatePath, CheckedType,
+    CheckedCallContract, CheckedCallSeparation, CheckedEffectStep, CheckedEffects,
+    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedStatePath, CheckedType,
 };
 use super::super::super::super::places::{
     CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations, places_overlap,
@@ -51,6 +51,13 @@ struct SubstitutedEntry {
     spelling: String,
 }
 
+/// A bound call's row and contract come from the same instantiated formal.
+/// Direct calls carry neither override.
+struct FormalCallBoundary {
+    effects: CheckedEffects,
+    contract: CheckedCallContract,
+}
+
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn check_user_call(
         &self,
@@ -72,7 +79,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .signatures
             .get(target.0 as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        self.check_selected_user_call(node, signature, None, None, function, bindings, loop_depth)
+        self.check_selected_user_call(node, signature, None, function, bindings, loop_depth)
     }
 
     pub(in crate::semantic::check) fn check_behavior_call(
@@ -99,8 +106,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_selected_user_call(
             node,
             &effective,
-            Some(formal_effects),
-            Some(formal_contract),
+            Some(FormalCallBoundary {
+                effects: formal_effects,
+                contract: formal_contract,
+            }),
             function,
             bindings,
             loop_depth,
@@ -111,8 +120,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
         signature: &FunctionSignature,
-        formal_effects: Option<super::super::super::super::model::CheckedEffects>,
-        formal_contract: Option<super::super::super::super::model::CheckedCallContract>,
+        formal: Option<FormalCallBoundary>,
         function: &FunctionSignature,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
@@ -323,11 +331,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.project_call_effects(node, function, &substituted, bindings, &mut effects)?;
         let result = signature.result;
         let result_mode = signature.result_mode;
+        let (formal_effects, formal_contract) = match formal {
+            Some(boundary) => (
+                Some(Box::new(boundary.effects)),
+                Some(Box::new(boundary.contract)),
+            ),
+            None => (None, None),
+        };
         Ok(TypedExpression {
             expression: CheckedExpression::UserCall {
                 function: target,
-                formal_effects: formal_effects.map(Box::new),
-                formal_contract: formal_contract.map(Box::new),
+                formal_effects,
+                formal_contract,
                 call,
                 argument_nodes,
                 arguments,
@@ -1044,6 +1059,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     root: root.binding,
                     projections: Vec::new(),
                     ty: root.element_type,
+                }),
+            )),
+            CheckedExpression::RangeElementMeasure { measure, place, .. } => Some((
+                GoalOperation::ContainerMeasure {
+                    measure: *measure,
+                    measured: place
+                        .measured()
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                    element: place.element(),
+                    constant: place.type_constant(),
+                },
+                GoalExpression::Datum(GoalDatum::Place {
+                    root: place.root.binding,
+                    projections: place.goal_projections(),
+                    ty: place.ty,
                 }),
             )),
             _ => None,

@@ -88,6 +88,11 @@ fn comma_item(rest: &str, wanted: usize) -> Option<&str> {
     (ordinal == wanted).then(|| rest[start..].trim())
 }
 
+fn getelementptr_base(definition: &str) -> Option<&str> {
+    let operands = definition.strip_prefix("getelementptr ")?;
+    comma_item(operands, 1)?.split_whitespace().next_back()
+}
+
 fn is_aggregate_destination<'module>(function: &'module str, mut pointer: &'module str) -> bool {
     let mut seen = Vec::new();
     loop {
@@ -114,13 +119,10 @@ fn is_aggregate_destination<'module>(function: &'module str, mut pointer: &'modu
         if !definition.starts_with("getelementptr ") {
             return false;
         }
-        let Some((_, base)) = definition.split_once(", ptr ") else {
+        let Some(base) = getelementptr_base(definition) else {
             return false;
         };
-        let Some((base, _)) = base.split_once(',') else {
-            return false;
-        };
-        pointer = base.trim();
+        pointer = base;
     }
 }
 
@@ -156,17 +158,35 @@ fn aggregate_destination_trace<'module>(
         if !definition.starts_with("getelementptr ") {
             break;
         }
-        let Some((_, base)) = definition.split_once(", ptr ") else {
-            trace.push("getelementptr: no `, ptr ` base operand".to_owned());
+        let Some(base) = getelementptr_base(definition) else {
+            trace.push("getelementptr: no top-level base operand".to_owned());
             break;
         };
-        let Some((base, _)) = base.split_once(',') else {
-            trace.push("getelementptr: base operand has no following index".to_owned());
-            break;
-        };
-        pointer = base.trim();
+        pointer = base;
     }
     trace.join("\n")
+}
+
+#[test]
+fn aggregate_destination_provenance_ignores_commas_inside_gep_types() {
+    let stack = r#"define void @stack() {
+  %wf.frame = alloca { i64, ptr, ptr }, align 8
+  %wf.slot = getelementptr inbounds { i64, ptr, ptr }, ptr %wf.frame, i64 0, i32 1
+  %wf.inner = getelementptr inbounds { i64, ptr, ptr }, ptr %wf.slot, i64 0, i32 2
+  ret void
+}"#;
+    assert!(is_aggregate_destination(stack, "%wf.slot"));
+    assert!(is_aggregate_destination(stack, "%wf.inner"));
+
+    let heap = r#"define void @heap() {
+  %wf.cell = call ptr @malloc(i64 24)
+  %wf.slot = getelementptr inbounds { i64, ptr, ptr }, ptr %wf.cell, i64 0, i32 1
+  %wf.inner = getelementptr inbounds { i64, ptr, ptr }, ptr %wf.slot, i64 0, i32 2
+  ret void
+}"#;
+    assert!(!is_aggregate_destination(heap, "%wf.slot"));
+    assert!(!is_aggregate_destination(heap, "%wf.inner"));
+    assert!(aggregate_destination_trace(stack, "%wf.inner").contains("%wf.frame = alloca "));
 }
 
 fn source_function<'module>(module: &'module str, symbol: &str) -> &'module str {

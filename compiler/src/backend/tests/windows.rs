@@ -950,3 +950,38 @@ fn a_runtime_capacity_window_op9_overflow_is_rejected_before_lowering() {
             .contains("UndischargedAllocationFitObligation")
     );
 }
+
+/// [FN-2, OP-9, STOR-3] a concrete instance discovered through a second
+/// generic caller retains the source-proved allocation bound, stores and
+/// retrieves the element, and releases the now-empty allocation.
+#[test]
+fn a_transitive_generic_allocation_executes_and_releases_its_concrete_value() {
+    let source = br#"fn store<T>(value: own T) -> result: own T pure {
+  let cells = box_slots_new::<T>(capacity: 1_u64);
+  place_back(window: &cells.inner, value: move value);
+  let output = take_back(window: &cells.inner);
+  free_empty(window: move cells);
+  return move output;
+}
+
+fn forward<T>(value: own T) -> result: own T pure {
+  return store::<T>(value: move value);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let output = forward::<u64>(value: 37_u64);
+  if output != 37_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    assert_eq!(llvm.matches("call ptr @malloc").count(), 1);
+    assert_eq!(llvm.matches("call void @free").count(), 1);
+
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}

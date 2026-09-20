@@ -43,10 +43,11 @@ pub(crate) use model::{
     CheckedEnumType, CheckedExpression, CheckedFlatElement, CheckedFloatOperation, CheckedFunction,
     CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
     CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType,
-    CheckedParameter, CheckedPlaceStep, CheckedProgramData, CheckedProjectedDrop, CheckedRangeRoot,
-    CheckedRangeSource, CheckedReleaseClass, CheckedSetTarget, CheckedStatement,
-    CheckedTargetDomainObligation, CheckedType, CheckedValue, CheckedWritablePlace, FunctionId,
-    MeasureCell, MeasuredKind, NominalId, PropagationContext, WindowShape, expression_children,
+    CheckedParameter, CheckedPlaceStep, CheckedProgramData, CheckedProjectedDrop,
+    CheckedRangeElementPlace, CheckedRangeRoot, CheckedRangeSource, CheckedReleaseClass,
+    CheckedSetTarget, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
+    CheckedWritablePlace, FunctionId, MeasureCell, MeasuredKind, NominalId, PropagationContext,
+    WindowShape, expression_children,
 };
 
 /// Numbered rule owning one post-resolution semantic rejection.

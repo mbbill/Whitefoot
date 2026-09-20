@@ -71,9 +71,9 @@ use crate::semantic::{
     LoopPermission,
 };
 use crate::{
-    IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrEnumType, IrFunction, IrInstruction,
-    IrIntegerOperation, IrMatchTarget, IrOperation, IrOverlap, IrSynthesis, IrTerminator, IrType,
-    IrValueId, LANE_FRAME_BYTES, LoweringFailure, NodePath,
+    IrAddressed, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrEnumType, IrFunction,
+    IrInstruction, IrIntegerOperation, IrMatchTarget, IrNominalKind, IrOperation, IrOverlap,
+    IrSynthesis, IrTerminator, IrType, IrValueId, LANE_FRAME_BYTES, LoweringFailure, NodePath,
 };
 
 use super::IrBuilder;
@@ -235,25 +235,44 @@ impl IrBuilder<'_> {
             return Ok(false);
         }
 
-        let capture_types = captures
-            .iter()
-            .map(|binding| {
-                self.bindings
-                    .get(binding)
-                    .copied()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)
-                    .and_then(|value| self.value_type(value))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let capture_values = captures
-            .iter()
-            .map(|binding| {
-                self.bindings
-                    .get(binding)
-                    .copied()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut capture_types = Vec::with_capacity(captures.len());
+        let mut capture_values = Vec::with_capacity(captures.len());
+        let mut capture_slots = Vec::with_capacity(captures.len());
+        for binding in &captures {
+            let stored = self
+                .bindings
+                .get(binding)
+                .copied()
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            let stored_type = self.value_type(stored)?;
+            // A promoted Box owner is one thin pointer held in a stable local
+            // slot. PAR-2 has already proved that independent iterations do
+            // not replace or consume that whole owner, and the structured
+            // join keeps its source scope alive. Capture the pointer value
+            // once instead of making every worker repeatedly follow the
+            // active caller's stack slot. The chunk rebuilds only a local
+            // address for the existing projection lowering; it acquires no
+            // owner and therefore no release action. Inline affine aggregates
+            // retain their address representation.
+            let local_slot = if self.addressed_bindings.contains(binding)
+                && let IrType::Address(referent @ IrAddressed::Nominal(nominal)) = stored_type
+                && matches!(
+                    &self.nominals[nominal.index()].kind,
+                    IrNominalKind::Box { .. }
+                ) {
+                Some(referent)
+            } else {
+                None
+            };
+            let captured = if local_slot.is_some() {
+                self.load_storage_value(stored)?
+            } else {
+                stored
+            };
+            capture_types.push(self.value_type(captured)?);
+            capture_values.push(captured);
+            capture_slots.push(local_slot);
+        }
 
         // A false result promises to leave the ordinary lowering untouched, so
         // the independent map's synthetic token is created only after every
@@ -276,6 +295,7 @@ impl IrBuilder<'_> {
             result_type,
             &captures,
             &capture_types,
+            &capture_slots,
         )?;
         let splitter_function =
             self.build_splitter(splitter, chunk, actualization, result_type, &capture_types)?;
@@ -410,6 +430,7 @@ impl IrBuilder<'_> {
         result_type: IrType,
         captures: &[BindingId],
         capture_types: &[IrType],
+        capture_slots: &[Option<IrAddressed>],
     ) -> Result<IrFunction, LoweringFailure> {
         let mut builder = IrBuilder::new(
             self.context(),
@@ -427,8 +448,25 @@ impl IrBuilder<'_> {
         {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        for (binding, ty) in captures.iter().zip(capture_types) {
+        if captures.len() != capture_types.len() || captures.len() != capture_slots.len() {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        for ((binding, ty), local_slot) in captures.iter().zip(capture_types).zip(capture_slots) {
             let value = builder.new_parameter(*ty)?;
+            let value = if let Some(referent) = local_slot {
+                if referent.ty() != *ty {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                builder.define(
+                    IrType::Address(*referent),
+                    IrOperation::AddressOf {
+                        value,
+                        referent: *referent,
+                    },
+                )?
+            } else {
+                value
+            };
             if builder.bindings.insert(*binding, value).is_some() {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }

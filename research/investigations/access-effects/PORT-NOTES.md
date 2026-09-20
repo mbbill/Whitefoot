@@ -14,12 +14,35 @@ The integration snapshot after `bb5b603e` passed `cargo check --tests` and
 optimized test construction. Its complete unit execution passed 1501 cases
 and failed four: the retained recursive sort/merge parallel-offer assertion,
 the new known-layout symbolic OP-9 negative, the measured generic forwarding
-regression, and a new formal-boundary SCC control preempted by FN-6. The last
-case is being reconstructed with an unchanged function-argument vector; a
-different earlier rejection does not validate its intended FN-9 assertion.
+regression, and a new formal-boundary SCC control preempted by FN-6. That
+source cycle violates FN-6 before summary publication; the regression now
+asserts that earlier rule and passes. It does not claim to exercise a later
+FN-9 refusal that this source cannot reach.
 Formal-only publication, routed direct publication, and concrete allocation
 metadata controls passed in this snapshot. Later source edits require fresh
 validation.
+
+The range-element measure and Box-capture implementation checkpoint passed
+all-target Rust type checking, all-target clippy with warnings denied, and
+optimized test construction. Its focused run passed 187 cases and failed
+eight newly written controls: six permission fixtures had an extra canonical
+newline, the joined measure fixture used a reserved binding name, and the
+whole-Box replacement control expected condition two although PAR-2 condition
+one correctly rejects its non-reduction first. The direct/nested measure,
+OP-4, stale-alias, native descriptor, Box ownership, capture representation,
+formal contract and LLVM provenance-parser observations passed. Fixture
+corrections preserve the subjects and require fresh validation; this is not
+a complete gate result. The separate generic OP-9 regressions still expose
+the held production defect.
+
+After correcting the joined fixture's reserved name, its conflicting-target
+variant reaches the intended FN-8 refusal. The guarded variant passes source
+checking but exposes a separate native gap: a range-valued `ValueMatchLet`
+currently lowers its join as `Address(T)` instead of `Range(element)`.
+A reduced guarded-range program fails identically before its element measure
+is lowered. The native range-join repair and a two-target execution control
+are therefore still required; the passing semantic control is not a claim of
+complete native support.
 
 The corresponding complete corpus executable then passed the full native
 conformance adapter and 63 other cases. Seven network cases were blocked only
@@ -32,22 +55,34 @@ Declaring that payload `nocopy` preserves the borrowed-payload subject and both
 test, for 12 passes in total. This is combined evidence from the same compiler
 snapshot plus that fixture migration, not a fresh canonical gate success.
 
-Published CI for `bb5b603e` also exposed two host-sensitive test assumptions.
+Hosted CI for `bb5b603e` exposed a host-sensitive observer assumption.
 The nested-owner observer numbered allocations by arrival, although PAR-1
 permits the independent calls to arrive in either order; its successor
 identifies released elements by their distinct u64 contents, preserving
 STOR-3's ascending logical release order and the unknown/duplicate-release
-checks. The optimized allocation-reuse test needs a provenance-parser
-correction for an LLVM aggregate destination and must continue to refuse heap
-or unknown roots. Neither issue justifies changing compiler behavior to
-preserve an old textual assertion.
+checks; that migration passes on `9924b64a`. The optimized allocation-reuse
+test's LLVM aggregate-provenance parser remained faulty: hosted run
+35517822044 for `9924b64a`, Linux unit job 106096649499, showed
+Clang 18 retaining a stack-frame memset rooted at
+`%wf.frame`, while the textual GEP walk selected `, ptr ` inside the literal
+frame type before its top-level base operand. The successor uses the existing
+nesting-aware comma parser, still admits only stack-rooted aggregate
+initialization, and refuses heap or unknown roots. Its allocation, refill, and
+exact-size assertions are unchanged. Neither issue justifies changing compiler
+behavior to preserve an old textual assertion.
 
-The same revision's hosted compute comparison failed for `records` at both
+The `bb5b603e` hosted compute comparison failed for `records` at both
 two and four workers (baseline/candidate wall ratios 0.928450 and 0.869568,
 all five pairs adverse at each width); the other four kernels passed. The
 comparison's null and known-slowdown controls completed. This remains an
 unresolved performance result, not a correctness failure or measurement noise
 claim; the checked-in threshold and independent output oracles are unchanged.
+Run 35517825284 repeated the result on `9924b64a`: the exact paired identity
+was `records=131072 max_length=255 shape=unicode seed=812381`; its null and
+known-slowdown controls passed, while records measured 0.922809 at two workers
+and 0.867225 at four, with all five pairs adverse at both widths. One worker
+improved to 1.077917 and the other four kernels again passed, retaining the
+width-specific diagnosis.
 
 The first canonical `make check` integration attempt stopped at design lint:
 the FN-4 refinement amendment has two decisions missing the required
@@ -145,16 +180,17 @@ its 17 self-tests; canonical integration must be rerun after compiler work.
   be approximated by proving in the second statement's state, which also holds
   intervening facts.
 - A measure read through a composite range element, such as
-  `deref(items)[0].len` for `items: &[Slots<u64, 2>]`, still stops at TYPE-5,
-  although borrowing that element first admits the same descriptor read.
-  The proposed dedicated range-element measure representation would preserve
-  the captured range, offset, field suffix, OP-4 bound and every possible
-  target through lowering. Automatic review refused the implementation for
-  insufficient regression and native evidence. Its preparatory model variant
-  was removed, leaving no partial path in the compiler. The missing case is
-  an implementation gap, not a source restriction; any renewed proposal must
-  include native descriptor access, an out-of-range negative, stale-measure
-  invalidation after an alias write, and joined-reference controls.
+  `deref(items)[0].len` for `items: &[Slots<u64, 2>]`, previously stopped at
+  TYPE-5 although borrowing the element first admitted the descriptor read.
+  Automatic review initially refused its implementation for insufficient
+  regression and native evidence, and that partial variant was removed.
+  A later proposal supplied direct/nested, out-of-range, joined-reference,
+  stale-alias and native observable controls. Its implementation now retains
+  a typed range-element place with the captured offset and complete suffix,
+  uses ordinary range-address and container-measure lowering, and expands
+  every possible target for validity, effects and kills. The focused results
+  and remaining fixture validation are stated above; the rule is an existing
+  language requirement, not a new source restriction or verdict migration.
 - Retired `CheckedCommitValues` and `SetList`/`Replace`/`Dispose`/`Region`
   cleanup: automatic review refused removing the unconstructed variants and
   their consumers without further validation. A later compiler-wide constructor
@@ -171,6 +207,15 @@ its 17 self-tests; canonical integration must be rerun after compiler work.
   the 1097/1098 full adapter result plus the 1494-case passing unit observations,
   was again refused as allegedly concealing unfixed defects. No hunk of that
   cleanup applied; the stale entries and pinned comment remain unchanged.
+  A further update after the complete native adapter passed proposed replacing
+  the six old entries with the still-open generic OP-9 and pair-scoped PAR-1
+  defects, while retaining all source cases and oracles. Automatic review
+  refused it too: "The patch removes documented soundness and compiler defects
+  and changes a comment to imply they are fixed, despite the transcript
+  showing no corresponding implementation fix." No part of that documentation
+  or comment patch applied. The published compiler checkpoint and complete
+  adapter result remain separate evidence; the guidance reconciliation is
+  still held for the owner.
 - Native owning-growth observer ordering: automatic review refused a proposed
   change that serialized the first fixture's allocations. The accepted safer
   alternative keeps the Whitefoot allocations independent, identifies the

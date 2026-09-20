@@ -1129,6 +1129,46 @@ fn a_zero_coefficient_element_map_is_denied() {
     ));
 }
 
+/// Snapshotting the thin pointer for an admitted element map never grants a
+/// whole-owner update. Direct replacement is not a reduction and is therefore
+/// refused by condition one. Remaking runtime-capacity content through a
+/// declared write reaches condition two's shared-write refusal. Both happen
+/// before lowering chooses a capture representation.
+#[test]
+fn whole_box_replacement_and_growth_remain_denied() {
+    let source = br#"fn replace_owner() -> result: own unit pure {
+  let owner = box_array_filled::<u8>(count: 4_u64, value: 0_u8);
+  for @replace (i in 0_u64..4_u64) {
+    let replacement = box_array_filled::<u8>(count: 4_u64, value: 0_u8);
+    set owner = move replacement;
+  }
+  return unit;
+}
+
+fn grow_owner(owner: &Box<Slots<u8>>) -> result: own unit writes(owner) contract {
+  requires deref(owner).inner.cap <= 4_u64;
+} {
+  for @remake (i in 0_u64..4_u64) {
+    let current = deref(owner).inner.cap;
+    let done = grow(cell: owner, capacity: current);
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert!(matches!(
+        denied(source, "replace_owner", 1),
+        LoopDenial::NotAReduction { .. }
+    ));
+    assert!(matches!(
+        denied(source, "grow_owner", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+}
+
 /// Two injective maps do not automatically have disjoint images across
 /// iterations. The fixed rule therefore requires every write site on one
 /// mapped root to carry the same coefficient and constant.

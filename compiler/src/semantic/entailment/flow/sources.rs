@@ -819,6 +819,14 @@ impl Analyzer<'_, '_> {
                     root.type_constant(),
                 ));
             }
+            CheckedExpression::RangeElementMeasure { measure, place, .. } => {
+                return Some(self.place_measure_term(
+                    *measure,
+                    ResolvedPlace::from_path(place.root.binding, place.place_path()),
+                    place.measured()?,
+                    place.type_constant(),
+                ));
+            }
             _ => return None,
         };
         Some(self.place_measure_term(measure, place, measured, array_length))

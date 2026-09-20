@@ -5947,8 +5947,8 @@ pub(crate) mod tests {
         assert!(VERIFIED_CLOSURES.with(Cell::get) > 0);
     }
     use crate::DeclarationId;
-    use crate::semantic::entailment::VerifiedPostconditionSummary;
-    use crate::semantic::model::FunctionId;
+    use crate::semantic::entailment::{RelationProvenance, VerifiedPostconditionSummary};
+    use crate::semantic::model::{ContractQueryId, FunctionId};
 
     #[test]
     fn row_summary_skips_only_scalar_rejections() {
@@ -6192,6 +6192,48 @@ pub(crate) mod tests {
                 .all(|node| node_event(node) == Some(FlowEventId(0)))
         );
         assert!(remap[first.0 as usize].is_some());
+    }
+
+    #[test]
+    fn provenance_variants_with_equal_raw_ids_have_distinct_ordering_and_ledger_identity() {
+        let call = NodePath {
+            components: vec![3],
+        };
+        let relation = Relation::Bound {
+            left: ZERO,
+            right: ZERO,
+            bound: 0,
+        };
+        let make_node = |summary| DerivationNode::PostconditionCall {
+            detail: Box::new(PostconditionCallDetail {
+                call: call.clone(),
+                relation: relation.clone(),
+                summary: VerifiedPostconditionSummaryRef { summary },
+                substitutions: Vec::new(),
+                transfer_events: Vec::new(),
+                parents: Vec::new(),
+            }),
+        };
+        let verified = make_node(RelationProvenance::Verified(VerifiedPostconditionSummary {
+            function: FunctionId(7),
+            block: NodePath {
+                components: vec![4],
+            },
+            relation_ordinal: 0,
+            component: 11,
+        }));
+        let formal = make_node(RelationProvenance::FormalBoundary {
+            query: ContractQueryId(7),
+            actual: FunctionId(11),
+            premises: Vec::new(),
+        });
+
+        assert_ne!(
+            compare_node_ties(&verified, &formal),
+            std::cmp::Ordering::Equal
+        );
+        let mut ledger = DerivationLedger::default();
+        assert_ne!(ledger.intern(verified), ledger.intern(formal));
     }
 
     #[test]

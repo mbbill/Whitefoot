@@ -6,5 +6,7 @@ Decision: A range reference is never addressed storage: no reference is formed t
 
 Decision: The measured-row identity of `deref(p).len` where `p` is a range reference is selected from the written base's kind and not from the type the dereference selects, because [TYPE-7] makes `deref` of a `&[T]` denote the run of elements the range names while the type it selects is the element type, so the row [MSR-1] gives `&[T]` cannot be recovered from that type at all, instead of reading the row off the selected type, which answers with the element's row or with none.
 
+Decision: A measured element reached through a range reference retains one typed range-element place carrying the evaluated outer offset and every suffix below it, and lowering feeds the address produced by the ordinary range-address path to the ordinary container-measure operation, because the pointer-and-count range descriptor locates its elements but is not owned descriptor storage that can be represented as a container root, instead of coercing the range into owned storage or adding a second range-element measure representation in the IR.
+
 Rejected:
 - Keeping the v0.59 view type and its loan strength as the range reference's representation: rejected because the strength is the component that distinguished the two views and [REF-1] gives a reference no permission marker at all, so retaining it would keep a field every judgment must then ignore.

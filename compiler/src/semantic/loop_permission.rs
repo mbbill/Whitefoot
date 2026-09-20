@@ -886,6 +886,13 @@ impl<'check> Survey<'check, '_> {
                 root.binding,
                 self.places.resolve(PlaceRoot::Binding(root.binding), &[]),
             )),
+            CheckedExpression::RangeElementMeasure { place, .. } => Some((
+                place.root.binding,
+                self.places.resolve(
+                    PlaceRoot::Binding(place.root.binding),
+                    &place.place_path(),
+                ),
+            )),
             CheckedExpression::Project {
                 binding, fields, ..
             } => Some((

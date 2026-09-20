@@ -1132,6 +1132,7 @@ pub(super) fn visit_read_bindings(
         CheckedExpression::RangeMeasure { root, .. }
         | CheckedExpression::RangeIndex { root, .. }
         | CheckedExpression::BorrowRangeIndex { root, .. } => note(root.binding),
+        CheckedExpression::RangeElementMeasure { place, .. } => note(place.root.binding),
         CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => {
             if let CheckedArrayRoot::Binding { binding, .. } = root {
@@ -1219,6 +1220,12 @@ fn collect_operand_reads(
             read(
                 footprint,
                 places.resolve(PlaceRoot::Binding(root.binding), &[]),
+            );
+        }
+        CheckedExpression::RangeElementMeasure { place, .. } => {
+            read(
+                footprint,
+                places.resolve(PlaceRoot::Binding(place.root.binding), &place.place_path()),
             );
         }
         // Forming a range names a path and reads no content [REF-1, REF-4].

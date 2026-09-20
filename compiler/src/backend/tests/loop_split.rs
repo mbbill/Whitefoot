@@ -673,14 +673,24 @@ fn assert_map_capture_signature(chunk: &str, seed_type: &str) {
     let signature = chunk.lines().next().expect("chunk definition");
     let (_, arguments) = signature.split_once('(').expect("chunk parameters");
     let (arguments, _) = arguments.split_once(')').expect("closed parameters");
+    let arguments = arguments.split(',').collect::<Vec<_>>();
     let types = arguments
-        .split(',')
+        .iter()
         .map(|argument| argument.split_whitespace().next().expect("parameter type"))
         .collect::<Vec<_>>();
     assert_eq!(
         types,
         [seed_type, "i64", "i64", "ptr"],
-        "the chunk must capture exactly the outer owner's address after its seed and bounds:\n{chunk}"
+        "the chunk must capture exactly the stable thin Box pointer after its seed and bounds:\n{chunk}"
+    );
+    let captured_box = arguments
+        .last()
+        .and_then(|argument| argument.split_whitespace().next_back())
+        .expect("Box capture parameter");
+    let parent_slot_load = format!("load ptr, ptr {captured_box}");
+    assert!(
+        !chunk.contains(&parent_slot_load),
+        "the chunk must not reload a Box pointer through the captured parent owner slot:\n{chunk}"
     );
 }
 
@@ -710,8 +720,9 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
         "an independent map splitter must return the Unit token:\n{splitter}"
     );
     // STOR-1 puts the descriptor inside the allocation. The complete chunk
-    // signature is Unit seed, two bounds, and exactly one address of the
-    // outer owner slot. Native bytes and per-exit releases are checked below.
+    // signature is Unit seed, two bounds, and the stable thin Box pointer
+    // snapshotted before the split. Native bytes and the source owner's
+    // per-exit releases are checked below.
     assert_map_capture_signature(chunk, "i8");
     for step in [
         "call ptr @wf__par_acquire_lane(",
@@ -852,8 +863,8 @@ fn a_map_and_reduction_preserves_both_results() {
         splitter.starts_with("define i64 "),
         "the combined loop must retain its real reduction result:\n{splitter}"
     );
-    // The reduction seed replaces Unit; bounds and the one owner-slot
-    // address retain exactly the independent map's capture ABI.
+    // The reduction seed replaces Unit; bounds and the one stable thin Box
+    // pointer retain exactly the independent map's capture ABI.
     assert_map_capture_signature(chunk, "i64");
 
     let directory = test_directory();

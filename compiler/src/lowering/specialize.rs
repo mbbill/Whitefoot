@@ -473,6 +473,11 @@ impl FunctionDependencies {
                 self.types.push(root.element_type);
                 self.steps(path);
             }
+            CheckedExpression::RangeElementMeasure { place, .. } => {
+                self.types.push(place.root.element_type);
+                self.types.push(place.ty);
+                self.steps(&place.path);
+            }
             _ => {}
         }
         for child in expression_children(expression) {
