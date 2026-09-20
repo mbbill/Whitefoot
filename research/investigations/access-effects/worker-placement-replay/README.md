@@ -8,16 +8,20 @@ compiler-independent records oracle. It does not measure performance and does
 not select a production alignment or placement policy.
 
 `prepare.sh` compiles the downloaded candidate records IR once. All original
-call sites continue to target one fixed five-byte tail-jump, while the exact
-440-byte emitted parallel worker is retained out of line at address residues
-0, 16, 32, and 48 modulo 64. The body is explicitly `noinline`. The enclosing
+call sites continue to target one fixed trampoline, while the exact 440-byte
+emitted parallel worker is retained out of line at address residues 0, 16, 32,
+and 48 modulo 64. The body is explicitly `noinline`. The trampoline contains
+the invariant SysV stack-slot moves required by its aggregate arguments and
+ends with its only control transfer, one five-byte tail-jump. The enclosing
 experiment section always occupies 512 bytes, so ordinary section and symbol
 layout remains fixed across variants.
 
 The direct tail-jump has one unavoidable pairwise relocation: its four-byte
 `rel32` destination changes when the body moves. The construction verifies the
-entry address, size, opcode, and exact body target, zeroes only those four
-bytes, and then requires the entire ordinary `.text` section to compare equal.
+entry address and size, the absence of calls, returns, or other branches, and
+the final tail-jump's opcode and exact body target. It zeroes only those four
+relocation bytes and then requires the entire ordinary `.text` section to
+compare equal.
 It also requires:
 
 - the relocated body before and after linking to equal all 440 bytes of the

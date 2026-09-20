@@ -187,16 +187,19 @@ for pad in 16 32 48; do
     done
 done
 
-# The direct caller sees one fixed five-byte tail-jump in every arm. Its rel32
-# displacement is the only unavoidable ordinary-.text byte difference: the
-# target moves while the instruction stays put. Verify that exact shape and
-# compare the whole section after zeroing only those four displacement bytes.
+# The direct caller sees one fixed trampoline in every arm. SysV aggregate
+# arguments require invariant stack-slot moves before its sole control
+# transfer, a five-byte tail-jump. That jump's rel32 displacement is the only
+# unavoidable ordinary-.text byte difference: the target moves while every
+# instruction stays put. Verify that exact shape and compare the whole section
+# after zeroing only those four displacement bytes.
 entry0=$(nm -S --defined-only "$reference" | awk -v symbol="$worker" '$4 == symbol { print $1, $2 }')
 seq0=$(nm -S --defined-only "$reference" | awk '$4 == "wf__par_seq__par_chunk_38" { print $1, $2 }')
-[[ ${entry0##* } == 0000000000000005 ]] || {
-    echo "entry trampoline is not exactly five bytes: $entry0" >&2
-    exit 2
-}
+entry_size_raw=$(nm -S --radix=d --defined-only "$reference" |
+    awk -v symbol="$worker" '$4 == symbol { print $2 }')
+[[ -n $entry_size_raw ]] || exit 2
+entry_size=$((10#$entry_size_raw))
+((entry_size >= 5)) || { echo "entry trampoline is shorter than one tail-jump" >&2; exit 2; }
 text_address_hex=$(objdump -h "$reference" | awk '$2 == ".text" { print $4 }')
 entry_address_hex=${entry0%% *}
 [[ -n $text_address_hex && -n $entry_address_hex ]] || exit 2
@@ -212,9 +215,17 @@ for pad in 0 16 32 48; do
     objdump -d --disassemble="$worker" "$image" > "$disassembly"
     [[ $(grep -Ec '^[[:space:]]*[[:xdigit:]]+:[[:space:]]+e9 ' "$disassembly") == 1 ]]
     [[ $(grep -Ec "jmp.*<$body>" "$disassembly") == 1 ]]
+    [[ $(grep -Ec '[[:space:]]j[a-z]+[[:space:]]' "$disassembly") == 1 ]]
+    [[ $(grep -Ec '[[:space:]](call|callq|ret|retq)[[:space:]]' "$disassembly") == 0 ]]
+    jump_address_hex=$(awk '$2 == "e9" && /jmp/ { value=$1; sub(/:$/, "", value); print value }' "$disassembly")
+    [[ -n $jump_address_hex ]] || exit 2
+    ((16#$jump_address_hex == 16#$entry_address_hex + entry_size - 5)) || {
+        echo "tail-jump is not the trampoline's final instruction" >&2
+        exit 2
+    }
     objcopy --dump-section .text="$output/build/text-$pad.bin" "$image"
     printf '\0\0\0\0' | dd of="$output/build/text-$pad.bin" bs=1 \
-        seek=$((entry_text_offset + 1)) count=4 conv=notrunc status=none
+        seek=$((entry_text_offset + entry_size - 4)) count=4 conv=notrunc status=none
 done
 for pad in 16 32 48; do
     cmp "$output/build/text-0.bin" "$output/build/text-$pad.bin"
