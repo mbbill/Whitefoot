@@ -421,6 +421,19 @@ EPYC 7763 host of the original failure, and selects no production alignment
 policy. The run's `worker-placement-replay-ubuntu-24.04` artifact retains
 provenance, static checks, images, oracle logs and both raw comparisons.
 
+A later source-by-source check of the old allocation boundary program found
+an incomplete test migration. Its v0.59 runtime query observed both the exact
+boundary and its adjacent overflow for scalar, inline-window and stored-cell
+layouts. The migrated implicit-proof case retained only the three accepted
+boundaries, although its manifest described a rejected half. Three independent
+`op9-neg-*-boundary-plus-one` conformance cases restore those observations as
+static OP-9 rejections, using the current stride ceilings eight, twenty-four
+and eight. The positive case remains unchanged. This adds missing evidence;
+it changes neither compiler behavior nor normative expectations to preserve
+the retired runtime query. Independent review checked the three exact limits
+and their owning rejection rule, and the ordinary native conformance adapter
+passes all 1101 cases in 111.47 seconds with none failed or ignored.
+
 The first canonical `make check` integration attempt stopped at design lint:
 the FN-4 refinement amendment has two decisions missing the required
 `because`/`instead of` wording, and the revision-paired-workload amendment
