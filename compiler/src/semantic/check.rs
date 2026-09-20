@@ -1210,6 +1210,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // each discovered instance. Lowering reads this completed inventory;
         // no hidden entry-store instance is required to seed a representation.
 
+        // The cursor loop above closes over every signature appended while a
+        // body is checked, so the dense function and signature inventories
+        // have equal length at this completion boundary.
+        self.close_allocation_metadata(&mut function_inventory)?;
+
         self.check_behavior_bindings()?;
 
         // Phase B reads only the completed inventory. Kill-relevant [EFF-2]
@@ -2275,6 +2280,70 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
+    /// Completes [EFF-3]'s finite allocation fact over the checked call graph.
+    ///
+    /// Phase A has already checked every reachable body, so each function's
+    /// current bit is the directly exhibited base fact. Propagating from an
+    /// allocating callee to its callers closes forward and recursive edges
+    /// without replaying a body or depending on source order. Each bit changes
+    /// at most once. The matching signature copy is refreshed for the retained
+    /// formal-boundary metadata installed by [`Self::install_call_requirements`].
+    fn close_allocation_metadata(
+        &mut self,
+        functions: &mut [CheckedFunctionInventory],
+    ) -> Result<(), CheckStop> {
+        if functions.len() != self.signatures.len() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        let mut callers = vec![Vec::new(); functions.len()];
+        let mut allocates = Vec::with_capacity(functions.len());
+        let mut calls = Vec::new();
+        for (index, checked) in functions.iter().enumerate() {
+            if checked.function.id.0 as usize != index {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            allocates.push(checked.function.allocates);
+            calls.clear();
+            collect_statement_calls(
+                checked.function.id,
+                checked.function.body.as_deref().unwrap_or_default(),
+                &mut calls,
+            );
+            for call in &calls {
+                let callee = call.callee.0 as usize;
+                let Some(callee_callers) = callers.get_mut(callee) else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                callee_callers.push(index);
+            }
+        }
+
+        let mut pending = allocates
+            .iter()
+            .enumerate()
+            .filter_map(|(index, allocates)| allocates.then_some(index))
+            .collect::<Vec<_>>();
+        while let Some(callee) = pending.pop() {
+            for caller in &callers[callee] {
+                if !allocates[*caller] {
+                    allocates[*caller] = true;
+                    pending.push(*caller);
+                }
+            }
+        }
+
+        for (index, allocates) in allocates.into_iter().enumerate() {
+            functions[index].function.allocates = allocates;
+            let signature = self
+                .signatures
+                .get_mut(index)
+                .filter(|signature| signature.id == functions[index].function.id)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            signature.declared_effects.allocates = allocates;
+        }
+        Ok(())
+    }
+
     fn install_statement_call_requirements(
         &self,
         statements: &mut [CheckedStatement],
@@ -2355,6 +2424,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         match expression {
             CheckedExpression::UserCall {
                 function,
+                formal_effects,
                 arguments,
                 goal_arguments,
                 goal_regions,
@@ -2369,6 +2439,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .signatures
                     .get(function.0 as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                if let Some(effects) = formal_effects {
+                    effects.allocates = signature.declared_effects.allocates;
+                }
                 let boundary = match formal_contract {
                     Some(boundary) => boundary.requirements.as_slice(),
                     None => requirements

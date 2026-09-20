@@ -17,6 +17,7 @@ use super::super::super::super::model::{
 use super::super::super::super::places::{
     CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations, places_overlap,
 };
+use super::super::super::generics::HEAP_ALLOCATING_PRELUDE_FUNCTIONS;
 use super::super::super::references::InvalidationEvent;
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
@@ -797,14 +798,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         signature: &FunctionSignature,
     ) -> Result<(), CheckStop> {
-        const HEAP_ROWS: [&str; 5] = [
-            "box_new",
-            "box_array_filled",
-            "box_slots_new",
-            "box_ring_new",
-            "grow",
-        ];
-        if !self.no_heap || !HEAP_ROWS.contains(&signature.name.as_str()) {
+        if !self.no_heap || !HEAP_ALLOCATING_PRELUDE_FUNCTIONS.contains(&signature.name.as_str()) {
             return Ok(());
         }
         self.issue_node(

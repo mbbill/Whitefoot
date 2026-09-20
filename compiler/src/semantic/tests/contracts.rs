@@ -387,12 +387,68 @@ binding Allocate : Factory {
   make = box_new::<u64>;
 }
 
+binding WrappedAllocate : Factory {
+  make = heap_leaf;
+}
+
 fn produce<interface Factory>(value: own u64) -> result: own Box<u64> pure {
   return Factory::make(value: value);
 }
 
+fn frame_constructions() -> result: own Array<u64, 2> pure {
+  let filled = array_filled::<u64, 2>(value: 3_u64);
+  let occupied = slots_from_array::<u64, 2>(values: filled);
+  let restored = slots_into_array::<u64, 2>(values: move occupied);
+  let vacant = slots_new::<u64, 2>();
+  let ring = ring_new::<u64, 2>();
+  return restored;
+}
+
+fn heap_leaf(value: own u64) -> result: own Box<u64> pure {
+  return box_new::<u64>(value: value);
+}
+
+fn heap_transitive(value: own u64) -> result: own Box<u64> pure {
+  return heap_leaf(value: value);
+}
+
+fn heap_forward(value: own u64) -> result: own Box<u64> pure {
+  return heap_forward_target(value: value);
+}
+
+fn heap_forward_target(value: own u64) -> result: own Box<u64> pure {
+  return box_new::<u64>(value: value);
+}
+
+fn heap_cycle_left(stop: own Bool, value: own u64) -> result: own Box<u64> pure {
+  if stop {
+    return heap_cycle_right(stop: stop, value: value);
+  } else {
+    return box_new::<u64>(value: value);
+  }
+}
+
+fn heap_cycle_right(stop: own Bool, value: own u64) -> result: own Box<u64> pure {
+  return heap_cycle_left(stop: stop, value: value);
+}
+
+fn frame_cycle_left(stop: own Bool) -> result: own unit pure {
+  if stop {
+    return frame_cycle_right(stop: stop);
+  } else {
+    return unit;
+  }
+}
+
+fn frame_cycle_right(stop: own Bool) -> result: own unit pure {
+  return frame_cycle_left(stop: stop);
+}
+
 fn main() -> status: own ExitStatus pure {
   let made = produce::<Allocate>(value: 7_u64);
+  let wrapped = produce::<WrappedAllocate>(value: 8_u64);
+  let frame = frame_constructions();
+  let transitive = heap_transitive(value: 11_u64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -400,47 +456,82 @@ fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("allocation is not an FN-4 row mismatch: {outcome:?}");
         };
-        let main = checked
-            .data
-            .functions
-            .iter()
-            .find(|function| function.name == "main")
-            .expect("entry function");
-        let Some(CheckedExpression::UserCall {
-            function: produce_id,
-            ..
-        }) = main.body.as_deref().and_then(|body| {
-            body.iter().find_map(|statement| match statement {
-                CheckedStatement::Let { value, .. } => Some(value),
-                _ => None,
-            })
-        })
-        else {
-            panic!("main must call the concrete generic wrapper");
-        };
         let produce = checked
             .data
             .functions
-            .get(produce_id.0 as usize)
-            .filter(|function| function.id == *produce_id && function.name == "produce")
-            .expect("main's concrete produce instance");
-        assert!(produce.allocates, "EFF-3 must retain the actual allocation");
-        let [
-            CheckedStatement::Return {
-                value:
-                    CheckedExpression::UserCall {
-                        formal_effects: Some(effects),
-                        ..
-                    },
-                ..
-            },
-        ] = produce.body.as_deref().expect("wrapper body")
-        else {
-            panic!("wrapper return must retain its bound call");
+            .iter()
+            .filter(|function| function.name == "produce")
+            .collect::<Vec<_>>();
+        assert_eq!(produce.len(), 2, "both concrete wrappers must be checked");
+        let mut selected_actuals = Vec::new();
+        for produce in produce {
+            assert!(
+                produce.allocates,
+                "EFF-3 must retain each selected actual's allocation"
+            );
+            let [
+                CheckedStatement::Return {
+                    value:
+                        CheckedExpression::UserCall {
+                            function,
+                            formal_effects: Some(effects),
+                            ..
+                        },
+                    ..
+                },
+            ] = produce.body.as_deref().expect("wrapper body")
+            else {
+                panic!("wrapper return must retain its bound call");
+            };
+            assert!(
+                effects.allocates,
+                "the executable actual's allocation metadata must survive the formal boundary"
+            );
+            selected_actuals.push(
+                checked
+                    .data
+                    .functions
+                    .get(function.0 as usize)
+                    .filter(|selected| selected.id == *function)
+                    .expect("selected actual")
+                    .name
+                    .as_str(),
+            );
+        }
+        selected_actuals.sort_unstable();
+        assert_eq!(selected_actuals, ["box_new", "heap_leaf"]);
+        let allocation_fact = |name| {
+            checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .unwrap_or_else(|| panic!("missing {name} function"))
+                .allocates
         };
         assert!(
-            effects.allocates,
-            "the executable actual's allocation metadata must survive the formal boundary"
+            !allocation_fact("frame_constructions"),
+            "frame constructors and conversions must not become heap allocation metadata"
+        );
+        assert!(
+            allocation_fact("heap_leaf"),
+            "a heap-taking PRE-1 row must carry allocation metadata"
+        );
+        assert!(
+            allocation_fact("heap_transitive"),
+            "ordinary callers must inherit allocation metadata transitively"
+        );
+        assert!(
+            allocation_fact("heap_forward"),
+            "forward callers must inherit allocation metadata"
+        );
+        assert!(
+            allocation_fact("heap_cycle_left") && allocation_fact("heap_cycle_right"),
+            "every member of an allocating recursive component must inherit allocation metadata"
+        );
+        assert!(
+            !allocation_fact("frame_cycle_left") && !allocation_fact("frame_cycle_right"),
+            "a nonallocating recursive component must remain nonallocating"
         );
     });
 
