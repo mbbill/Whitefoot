@@ -23,7 +23,7 @@ use super::super::super::model::{
     CheckedContainerRoot, CheckedExpression, CheckedMeasure, CheckedMode, CheckedNominalKind,
     CheckedType,
 };
-use super::super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
+use super::super::super::places::{CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace};
 use super::super::references::{AccessKind, OWN1_ROOTED_CONSUME, WIN3_NO_TAKE};
 
 /// [TYPE-9] the restructuring a `move` of a runtime-capacity content names.
@@ -581,13 +581,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_reference_valid(local, pbase)?;
         let binding = local.binding;
         let named = self.resolve_reference_root(inner.declaration, bindings)?;
-        let [path] = named.as_slice() else {
-            // [REF-1] a reference whose incoming edges name different paths
-            // carries the union of their sets, and every check on it must
-            // hold for every member. One written place selects one storage,
-            // so lowering a `deref` of such a union needs a representation
-            // this compiler does not have. That is a capability limit and
-            // never a source rejection.
+        // [REF-1] a reference whose incoming edges name different paths
+        // carries the union of their sets, and every check on it must hold
+        // for every member. A checked place names one path, so the union
+        // travels as the one place that contains every member: their common
+        // prefix, closed at a disagreeing subscript by the offset this
+        // version cannot name. That is exactly what [EFF-2] does with a
+        // dynamic element -- "a dynamic element or range maps to its nearest
+        // statically nameable enclosing path" -- and the unknown offset is
+        // [MSR-3]'s own, which compares as one storage with every other, so a
+        // prefix test over it invalidates rather than spares and [OWN-7]
+        // separates it from nothing. Reading through the reference at run
+        // time needs no such merge: the join already produced one address.
+        let Some(path) = Self::joined_reference_place(&named) else {
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, pbase);
         };
         // The referent is read through the reference; the reference itself
@@ -600,8 +606,41 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         inner.range_referent = inner.mode == CheckedMode::Range;
         inner.mode = CheckedMode::Own;
-        inner.resolved = path.clone();
+        inner.resolved = path;
         Ok(inner)
+    }
+
+    /// The one place that contains every member of a joined reference's path
+    /// set [REF-1], or `None` where the members are not rooted together.
+    ///
+    /// Two members agree step for step until they disagree; the result keeps
+    /// that common prefix. Where the disagreement is two subscripts of one
+    /// run, the result keeps one subscript at the unknown offset, which is
+    /// the element position of that run and contains both written ones. Where
+    /// it is anything else -- two fields, two payload steps, a step against
+    /// the end of the other path -- the result stops at the prefix, which is
+    /// the enclosing storage both members lie in.
+    fn joined_reference_place(named: &[ResolvedPlace]) -> Option<ResolvedPlace> {
+        let (first, rest) = named.split_first()?;
+        let mut merged = first.clone();
+        for other in rest {
+            if other.root != merged.root {
+                return None;
+            }
+            let mut path = Vec::with_capacity(merged.path.len().min(other.path.len()));
+            for (left, right) in merged.path.iter().zip(&other.path) {
+                if left == right {
+                    path.push(*left);
+                    continue;
+                }
+                if let (PlaceStep::Index(_), PlaceStep::Index(_)) = (left, right) {
+                    path.push(PlaceStep::Index(CapturedValue::unknown()));
+                }
+                break;
+            }
+            merged.path = path;
+        }
+        Some(merged)
     }
 
     /// The measure a written `psuffix` run ends with [OP-15, MSR-1], if any.

@@ -81,7 +81,7 @@ impl IrBuilder<'_> {
 
     /// Reads one measured place's value out of the value at its root:
     /// a field step projects, and a subscript step reads the slot the offset
-    /// selects [BLK-1, OP-4].
+    /// selects [WIN-1, OP-4].
     fn project_place_path(
         &mut self,
         base: IrValueId,

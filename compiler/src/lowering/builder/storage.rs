@@ -43,6 +43,7 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                             collect_expression(&target.offset, bindings);
                         }
                         CheckedSetTarget::BufferIndex(target) => {
+                            bindings.insert(target.root.binding);
                             collect_expression(&target.offset, bindings);
                         }
                         CheckedSetTarget::RangeIndex(target) => {
@@ -67,6 +68,7 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                         collect_expression(&target.offset, bindings);
                     }
                     CheckedSetTarget::BufferIndex(target) => {
+                        bindings.insert(target.root.binding);
                         collect_expression(&target.offset, bindings);
                     }
                     CheckedSetTarget::RangeIndex(target) => {
@@ -179,8 +181,17 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => collect_expression(value, bindings),
         CheckedExpression::ArrayIndex { offset, .. }
-        | CheckedExpression::BufferIndex { offset, .. }
         | CheckedExpression::RangeIndex { offset, .. } => collect_expression(offset, bindings),
+        // [TYPE-9] a runtime-capacity `Array<T>` is only ever `Box` content,
+        // and its block is reached through the pointer the owner's slot
+        // holds, exactly as a boxed window's is
+        // (compiler/storage-representation). The root binding therefore
+        // carries a stable address wherever the block is read, measured,
+        // borrowed, or written at an element.
+        CheckedExpression::BufferIndex { root, offset, .. } => {
+            bindings.insert(root.binding);
+            collect_expression(offset, bindings);
+        }
         // [REF-4] the formation reads the source place's own offsets and
         // evaluates both endpoints.
         CheckedExpression::RangeOf {
@@ -202,14 +213,16 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         }
         CheckedExpression::BufferVacant { length, .. }
         | CheckedExpression::BufferFits { length, .. } => collect_expression(length, bindings),
+        CheckedExpression::BufferMeasure { root, .. }
+        | CheckedExpression::BorrowBuffer { root, .. } => {
+            bindings.insert(root.binding);
+        }
         CheckedExpression::Constant(_)
         | CheckedExpression::NamedConstant { .. }
         | CheckedExpression::Binding { .. }
         | CheckedExpression::ArrayMeasure { .. }
-        | CheckedExpression::BufferMeasure { .. }
         | CheckedExpression::RangeMeasure { .. }
         | CheckedExpression::PostconditionResultMeasure { .. }
-        | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::ReborrowAddressed { .. }
         | CheckedExpression::DerefAddressed { .. }
         | CheckedExpression::Project { .. } => {}

@@ -74,7 +74,7 @@ pub(in crate::semantic::check) enum CheckedIndexedPlace {
     Buffer(CheckedBufferPlace),
     /// The run of elements a `&[T]` range reference names [REF-4, OP-4].
     Range(CheckedRangePlace),
-    /// One run or bump extent [BLK-1, PROV-1]: the two runs are indexable
+    /// One run or bump extent [TYPE-9, PROV-1]: the two runs are indexable
     /// bases [OP-4] and all three have a measure-table row [MSR-1].
     Container(CheckedContainerPlace),
 }
@@ -180,7 +180,7 @@ impl CheckedIndexedPlace {
         }
     }
 
-    /// The resolved place of the indexed base, for [LIV-2]'s element read-out
+    /// The resolved place of the indexed base, for [SET-1]'s element read-out
     /// matching. A slice indexes storage its own descriptor names and is not
     /// a commit target, so it has none here.
     fn indexed_base_place(&self) -> Option<ResolvedPlace> {
@@ -814,7 +814,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// [LIV-2] whether this subscript read is the read-out of an element
+    /// [SET-1] whether this subscript read is the read-out of an element
     /// target of the `set` whose right-hand side is being checked.
     ///
     /// The offset is read here before the ordinary judgment below reaches it,
@@ -890,7 +890,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.resolve_struct_path(&suffixes[subscript + 1..], indexed.element_type(self)?)?;
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place);
         }
-        // [LIV-2, BLK-1] the one affine element read a subscript admits: a
+        // [SET-1, WIN-1] the one affine element read a subscript admits: a
         // `move P[i]` in the right-hand side of the `set` whose own target is
         // `P[i]`. The element leaves through the read-out and the same
         // statement's commit reinitialises the slot at one commit, so no
@@ -1211,7 +1211,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         };
-        // [MSR-2, LIV-2] a subscript target writes one element of `place`,
+        // [MSR-2, SET-1] a subscript target writes one element of `place`,
         // never the run's own storage, so disjointness and the measure kill
         // both read the element flag rather than the place alone.
         let mut place = place;
@@ -1275,7 +1275,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ///
     /// `len_of(table[i])` is a term, so a measured place is not a field path.
     /// A subscript inside one is an [OP-4] occurrence like every other: it
-    /// selects the base's [BLK-1] element and owes `i < len_of(base)`, which
+    /// selects the base's [WIN-1] element and owes `i < len_of(base)`, which
     /// is submitted where the place is formed [MSR-4]. Its offset must be a
     /// term the place relations can name — [OWN-7] decides two subscripts by
     /// their offsets and [ENT-5] takes each offset's own support into every
@@ -1779,10 +1779,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     resolved,
                 }))
             }
-            // [TYPE-7] owns the implicit-read case exclusively: a `box` holder
-            // written where its indexable referent would be required is
-            // rejected citing TYPE-7 with the `deref(.)` fix, and the
-            // operand's wrong-type judgment forms no rejection.
+            // [TYPE-7] a `Box` is not a reference, so no implicit read and no
+            // `deref(.)` fix is at issue here: the cell is simply not one of
+            // [OP-4]'s indexable bases, and its content is the ordinary field
+            // step `b.inner` [TYPE-9]. The refusal is therefore [OP-4]'s
+            // non-indexable base.
             _ if self.reads_implicitly_through_holder(
                 false,
                 ty,
@@ -1790,11 +1791,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )? =>
             {
                 self.issue_node(
-                    SemanticRule::Type7,
-                    node,
-                    SemanticIssueKind::MissingDereference {
-                        mechanical_fix: "write `deref(holder)`",
-                    },
+                    SemanticRule::Op4,
+                    anchor,
+                    SemanticIssueKind::type_mismatch(
+                        "an indexable base",
+                        self.checked_type_name(ty)?,
+                    ),
                 )
             }
             // [MSR-1] gives the two runs and the bump extent a measure-table

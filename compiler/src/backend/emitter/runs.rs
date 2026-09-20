@@ -197,34 +197,25 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         let container_type = self.run_value_type(container)?;
-        // A runtime-capacity `Array<T>` is a pointer and a length and has no
-        // window at all: every slot holds a value, so the one stored count is
-        // its `len`, and x1's [MSR-1] table gives the two `Array` rows neither
-        // a `cap` cell nor a `head` cell [WIN-1].
+        // A runtime-capacity `Array<T>` has no window at all: every slot
+        // holds a value, so the one stored count is its `len`, and x1's
+        // [MSR-1] table gives the two `Array` rows neither a `cap` cell nor a
+        // `head` cell [WIN-1]. That word heads its block, exactly as a boxed
+        // window's does (compiler/storage-representation), and the block is
+        // reached only by pointer [TYPE-9].
         if matches!(container_type, IrType::Buffer { .. }) {
             return match measure {
                 IrMeasure::Length => {
-                    let descriptor = llvm_type(self.program, container_type)?;
-                    // The descriptor may be the value itself or the content of
-                    // a place the owner holds, exactly as a window's header
-                    // may be.
-                    if let Some(address) = self.run_storage(container)? {
-                        let pointer = self.aggregate_field_pointer(container_type, &address, 1)?;
-                        writeln!(
-                            self.output,
-                            "  {} = load i64, ptr {pointer}",
-                            self.value_name(result)
-                        )
-                        .map_err(|_| BackendFailure::TextEmission)
-                    } else {
-                        writeln!(
-                            self.output,
-                            "  {} = extractvalue {descriptor} {}, 1",
-                            self.value_name(result),
-                            self.value_name(container),
-                        )
-                        .map_err(|_| BackendFailure::TextEmission)
-                    }
+                    let address = self
+                        .run_storage(container)?
+                        .ok_or(BackendFailure::InvalidIr)?;
+                    let pointer = self.aggregate_field_pointer(container_type, &address, 0)?;
+                    writeln!(
+                        self.output,
+                        "  {} = load i64, ptr {pointer}",
+                        self.value_name(result)
+                    )
+                    .map_err(|_| BackendFailure::TextEmission)
                 }
                 IrMeasure::Capacity | IrMeasure::Head => Err(BackendFailure::InvalidIr),
             };
@@ -255,7 +246,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// [VIEW-2] one view formed over typed owner storage.
+    /// [REF-4] one range reference formed over typed owner storage.
     ///
     /// The window is `len` slots beginning at `head`, and the row's own
     /// requirement `vector.head <= vector.cap` is discharged before
@@ -309,7 +300,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// [OP-4, BLK-1] one discharged subscript read at logical offset `i`.
+    /// [OP-4, WIN-1] one discharged subscript read at logical offset `i`.
     pub(super) fn emit_run_index(
         &mut self,
         result: IrValueId,
@@ -449,7 +440,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         self.emit_constant(result, ty, IrConstant::Unit)
     }
 
-    /// The physical slot one boundary operation touches [BLK-1].
+    /// The physical slot one boundary operation touches [WIN-1].
     ///
     /// A back operation touches the slot one past the window's last, which is
     /// `(head + len) mod cap` for a placement and `(head + len - 1) mod cap`
@@ -497,7 +488,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
     }
 
-    /// `(base + offset) mod cap`, as the one conditional subtract [BLK-1]
+    /// `(base + offset) mod cap`, as the one conditional subtract [WIN-1]
     /// fixes.
     fn wrap_offset(
         &mut self,

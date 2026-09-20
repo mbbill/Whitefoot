@@ -586,12 +586,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )
     }
 
-    /// [TYPE-7]'s implicit read at return position: a live borrow-mode or
-    /// box binding used where the written `rtype` requires its referent
+    /// [TYPE-7]'s implicit read at return position: a live borrow-mode
+    /// binding used where the written `rtype` requires its referent
     /// value is rejected citing TYPE-7, and [FN-1] forms no candidate for
     /// that use. TYPE-7's definition precedes OWN-1's spelling judgments,
     /// so this same-node rejection event is cited first
     /// [DIAG-1, `SemanticRule::definition_rank`].
+    ///
+    /// A `Box` is not a reference [TYPE-7], so a cell returned where its
+    /// content type is declared is not an implicit read at all: it is the
+    /// ordinary [FN-1] return type mismatch, whose fix names the content's
+    /// own field step `move holder.inner` [TYPE-9].
     pub(super) fn check_return_implicit_read(
         &self,
         function: &FunctionSignature,
@@ -637,14 +642,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if !local.live {
             return Ok(());
         }
-        let referent = if local.mode != CheckedMode::Own {
-            Some(local.ty)
-        } else if let CheckedType::Nominal(nominal) = local.ty
-            && let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind
-        {
-            Some(referent)
-        } else {
+        let referent = if local.mode == CheckedMode::Own {
             None
+        } else {
+            Some(local.ty)
         };
         if referent == Some(function.result) {
             return self.issue_node(

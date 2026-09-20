@@ -39,7 +39,7 @@ use crate::{
     IrOverlap, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator,
     IrType, IrValueId, IrWindowShape,
 };
-use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
+use buffer::{buffer_fill_done_label, buffer_probe_join_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
 use floor::FLOOR_RUNTIME_FALLBACK;
 pub use floor::FLOOR_STACK_BYTES;
@@ -1717,6 +1717,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 target_domain,
             } => self.emit_array_index(result, ty, *root, *offset, *target_domain),
             IrOperation::BufferFill {
+                nominal,
                 length,
                 value,
                 layout_ceiling,
@@ -1724,16 +1725,25 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } => self.emit_buffer_fill(
                 result,
                 ty,
+                *nominal,
                 *length,
                 *value,
                 *layout_ceiling,
                 *target_domains,
             ),
             IrOperation::BufferVacant {
+                nominal,
                 length,
                 layout_ceiling,
                 target_domains,
-            } => self.emit_buffer_vacant(result, ty, *length, *layout_ceiling, *target_domains),
+            } => self.emit_buffer_vacant(
+                result,
+                ty,
+                *nominal,
+                *length,
+                *layout_ceiling,
+                *target_domains,
+            ),
             IrOperation::BufferFits {
                 length,
                 maximum_length,
@@ -2226,9 +2236,19 @@ pub(crate) fn llvm_type(
                 program.element(element).ok_or(BackendFailure::InvalidIr)?
             )?
         )),
-        // A runtime-capacity `Array<T>` block and a `&[T]` range reference
-        // are both a pointer and one count [TYPE-9, REF-4].
-        IrType::Buffer { .. } | IrType::Range { .. } => Ok("{ ptr, i64 }".to_owned()),
+        // A `&[T]` range reference is a pointer and one count [REF-4]; it is
+        // a reference kind, so no storage ever holds one.
+        IrType::Range { .. } => Ok("{ ptr, i64 }".to_owned()),
+        // compiler/storage-representation: a runtime-capacity `Array<T>` is
+        // one block `[len | elements]`, header first, exactly as a boxed
+        // window block is. An `Array`'s `len` equals its `cap` [WIN-1], so
+        // the one runtime number is stored once. The block is reached only
+        // through the `Box` that owns it [TYPE-9], so its own type never
+        // names its element count.
+        IrType::Buffer { element } => Ok(format!(
+            "{{ i64, [0 x {}] }}",
+            llvm_type(program, element.ty())?
+        )),
         // compiler/storage-representation: header first, so the inline and
         // the boxed placement of one shape share one address computation. A
         // `Slots` carries `len` alone and a `Ring` carries `len` and `head`;
@@ -2427,14 +2447,9 @@ fn definition_exit_label(
         } => *label = arena_new_ready_label(*result),
         IrInstruction::Define {
             result,
-            operation: IrOperation::BufferFill { .. },
+            operation: IrOperation::BufferFill { .. } | IrOperation::BufferVacant { .. },
             ..
         } => *label = buffer_fill_done_label(*result),
-        IrInstruction::Define {
-            result,
-            operation: IrOperation::BufferVacant { .. },
-            ..
-        } => *label = buffer_vacant_done_label(*result),
         IrInstruction::Define {
             result,
             operation: IrOperation::BufferProbeSkip { .. },

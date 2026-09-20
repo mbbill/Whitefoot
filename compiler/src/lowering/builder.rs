@@ -102,7 +102,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     // Each function's declared IR result carries its result *mode*: a borrow
     // of addressed content is an address. A call site must produce exactly
     // the callee's declared result type, so the declared results are computed
-    // once and consulted at every `UserCall` [OWN-2, TYPE-7].
+    // once and consulted at every `UserCall` [REF-1, TYPE-7].
     let function_results = physical
         .variants
         .iter()
@@ -508,7 +508,7 @@ fn range_element(
 ///
 /// A borrow addresses the owner's storage, including a Box's pointer slot.
 /// Ordinary opaque values use the same address path. The buffer/view ABI
-/// retains its descriptor representation for every callable body [OWN-2].
+/// retains its descriptor representation for every callable body [REF-1].
 fn lower_borrow_mode_type(
     mode: CheckedMode,
     ty: IrType,
@@ -563,7 +563,7 @@ struct IrBuilder<'program> {
     addressed_bindings: std::collections::HashSet<BindingId>,
     /// Every physical function's result, indexed by its IR ordinal, so a
     /// call defines exactly the callee's declared result type — an address
-    /// for a borrow of addressed content [OWN-2, TYPE-7].
+    /// for a borrow of addressed content [REF-1, TYPE-7].
     function_results: &'program [IrType],
     /// For each statement holding exactly one named-function call in call
     /// position — a `let` right-hand side or a `match` scrutinee — the block
@@ -1130,18 +1130,29 @@ impl<'program> IrBuilder<'program> {
                 CheckedStatement::ValueMatchLet {
                     binding,
                     result_type,
+                    result_mode,
                     scrutinee,
                     enum_type,
                     arms,
                     continues,
                     ..
                 } => {
+                    // [REF-1] a binder every arm of which delivers a
+                    // reference is a reference variable: what the join
+                    // carries is the one address the delivering arms
+                    // produced, so the binder's representation is that
+                    // address and not a value of the referent type.
+                    let result = lower_borrow_mode_type(
+                        *result_mode,
+                        lower_type(self.erasure, *result_type)?,
+                        self.nominals,
+                    )?;
                     self.lower_match(
                         scrutinee,
                         *enum_type,
                         arms,
                         *continues,
-                        Some((*binding, lower_type(self.erasure, *result_type)?)),
+                        Some((*binding, result)),
                         give_target.clone(),
                     )?;
                     if self.current.is_some() {
@@ -1400,7 +1411,7 @@ impl<'program> IrBuilder<'program> {
                     .collect::<Result<Vec<_>, _>>()?;
                 // The definition takes the callee's declared IR result, which
                 // carries the result mode: a borrow-returning callee delivers
-                // an address, not a referent value [OWN-2, TYPE-7].
+                // an address, not a referent value [REF-1, TYPE-7].
                 let result = *self
                     .function_results
                     .get(function as usize)
@@ -1621,21 +1632,16 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            CheckedExpression::BufferFill {
-                element,
-                length,
-                value,
-                layout_ceiling,
-                target_domains,
-                ..
-            } => self.lower_buffer_fill(*element, length, value, *layout_ceiling, *target_domains),
-            CheckedExpression::BufferVacant {
-                element,
-                length,
-                layout_ceiling,
-                target_domains,
-                ..
-            } => self.lower_buffer_vacant(*element, length, *layout_ceiling, *target_domains),
+            // v0.59's `buffer_new` and `buffer_vacant` heads have no v0.60
+            // spelling: [OP-1]'s table carries neither row and both
+            // identifiers are free again, so the checker mints neither of
+            // these heads and no accepted program reaches here. A
+            // runtime-capacity `Array<T>` is built by the [OP-13] record
+            // `box_array_filled`, whose compiler-owned body allocates the one
+            // block [TYPE-9] admits.
+            CheckedExpression::BufferFill { .. } | CheckedExpression::BufferVacant { .. } => {
+                Err(LoweringFailure::InvalidCheckedProgram)
+            }
             CheckedExpression::BufferFits {
                 length,
                 layout_ceiling,
@@ -1941,7 +1947,7 @@ impl<'program> IrBuilder<'program> {
     /// One evaluation of the call, then one projection per result ordinal in
     /// written order, each committed to its checked target exactly as a
     /// single-target `set` commits.
-    /// [LIV-2] one commit of a target list.
+    /// [SET-1] one commit of a target list.
     ///
     /// The whole right-hand side is evaluated first — the one call, or every
     /// written value in order — and only then is any target written, so a
@@ -2011,7 +2017,7 @@ impl<'program> IrBuilder<'program> {
         Ok(())
     }
 
-    /// [SET-1, LIV-2] the one-target commit: the right-hand side is
+    /// [SET-1] the one-target commit: the right-hand side is
     /// evaluated once and completely, then the one target is written by the
     /// same commit a target list uses.
     ///

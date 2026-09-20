@@ -464,7 +464,7 @@ pub(crate) enum CheckedFlatElement {
     /// formation only; slices keep the flat copy domain, so
     /// their element constructors never produce this variant.
     Nominal(NominalId),
-    /// One unbounded type parameter in a run's element position [BLK-1].
+    /// One unbounded type parameter in a run's element position [TYPE-9].
     ///
     /// [FN-2] makes generics monomorphization-only, so this variant belongs
     /// to the symbolic pass alone: every concrete instance re-parses the
@@ -509,7 +509,7 @@ pub(crate) enum CheckedReleaseClass {
     Extent,
 }
 
-/// [TYPE-2, BLK-1] the complete type of one array or run element, interned in
+/// [TYPE-2, TYPE-9] the complete type of one array or run element, interned in
 /// the checked program.
 /// Structural children precede parents; recursive ownership graphs pass through
 /// nominal identities. The handle keeps every checked type compact and Copy.
@@ -669,7 +669,7 @@ pub(crate) enum MeasureCell {
     ExactTypeConstant,
     /// The measure is exact and is an independent runtime quantity of the
     /// value's own descriptor: a run's `len` and a runtime-capacity window's
-    /// `cap` [BLK-1].
+    /// `cap` [WIN-1].
     ExactRuntime,
     /// The measure is exact but only two-sidedly published by some writing
     /// operation. A run's `head` is the one cell of this class [BLK-3].
@@ -1515,7 +1515,7 @@ pub(crate) struct CheckedRangeRoot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedRangeSource {
     /// One indexable owner place [OP-4]: a complete `Array` [TYPE-9] or a
-    /// run's initialized window [BLK-1], addressed where it is stored.
+    /// run's initialized window [WIN-1], addressed where it is stored.
     Storage(CheckedContainerRoot),
     /// Re-slicing another range reference, `&deref(part)[a..b]` [REF-4].
     Range(CheckedRangeRoot),
@@ -1876,6 +1876,14 @@ pub(crate) enum CheckedExpression {
         start: Box<CheckedExpression>,
         end: Box<CheckedExpression>,
         obligation: NodePath,
+        /// [REF-1, OWN-7] the two immutable endpoint values this formation
+        /// captured.
+        ///
+        /// The range step a formed reference's path carries holds exactly
+        /// this pair, so the separation a call submits over two such steps
+        /// finds each formation's endpoints by the occurrence that evaluated
+        /// them and never by the spelling written at the argument.
+        captured: super::places::CapturedRange,
     },
     /// [MSR-1] the one measure a range reference has, its element count.
     RangeMeasure {
@@ -1901,14 +1909,14 @@ pub(crate) enum CheckedExpression {
         ordinal: u32,
         ty: CheckedType,
     },
-    /// One [MSR-1] measure of a run [BLK-1] or a bump extent [PROV-1], read
+    /// One [MSR-1] measure of a run [TYPE-9] or a bump extent [PROV-1], read
     /// as its [OP-1] reader row. One quantity, one name, term and reader
     /// alike.
     ContainerMeasure {
         measure: CheckedMeasure,
         root: CheckedContainerRoot,
     },
-    /// One discharged source subscript read of a run [OP-4, BLK-1].
+    /// One discharged source subscript read of a run [OP-4, WIN-1].
     ///
     /// The offset is a logical one and its obligation is against `len`; the
     /// storage it selects is slot `(head + i) mod cap`, which the lowering
@@ -2173,7 +2181,7 @@ pub(crate) struct CheckedWritablePlace {
     pub(crate) binding: BindingId,
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
-    /// [LIV-2] this commit declares the binding it writes, exactly as a `let`
+    /// [SET-1] this commit declares the binding it writes, exactly as a `let`
     /// does: the target identifier resolved to none, so the statement is the
     /// binding's own initialization and nothing before it holds its storage.
     pub(crate) declares: bool,
@@ -2393,6 +2401,12 @@ pub(crate) enum CheckedStatement {
         kind: ValueInitializerKind,
         binding: BindingId,
         result_type: CheckedType,
+        /// [REF-1, GIVE-1] the binder's derived mode. A binder every arm of
+        /// which delivers a reference *is* a reference variable, so what the
+        /// join carries is the address its arms delivered and not a value of
+        /// the referent type; that distinction is not recoverable from
+        /// `result_type`, which is the referent's [TYPE-8].
+        result_mode: CheckedMode,
         scrutinee: CheckedExpression,
         enum_type: CheckedEnumType,
         arms: Vec<CheckedMatchArm>,

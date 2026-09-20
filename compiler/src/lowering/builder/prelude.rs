@@ -159,8 +159,16 @@ impl IrBuilder<'_> {
         self.return_value(converted)
     }
 
-    /// `box_array_filled<T>(count, value) -> own Box<Array<T>>`: the
-    /// runtime-capacity array block, filled, inside its cell.
+    /// `box_array_filled<T>(count, value) -> own Box<Array<T>>`: one heap
+    /// block `[len | elements]`, filled, which is the cell itself
+    /// (compiler/storage-representation).
+    ///
+    /// [TYPE-9] stores the content "in exactly one heap object the `Box`
+    /// value owns" and [STOR-3] reclaims it with "one compiler-derived heap
+    /// free", so the header and the elements are one allocation and the cell
+    /// pointer is the block pointer. A descriptor cell beside a separate
+    /// element block would spend a second `malloc`, a second `free`, and a
+    /// second word kept live through loops that read none of it.
     fn row_box_array_filled(&mut self) -> Result<(), LoweringFailure> {
         let [count, value] = self.row_parameters()?;
         let IrType::Nominal(nominal) = self.result else {
@@ -178,20 +186,14 @@ impl IrBuilder<'_> {
             return Err(LoweringFailure::InvalidCheckedProgram);
         };
         let obligations = self.runtime_obligations(element.ty())?;
-        let block = self.define(
-            referent,
+        let cell = self.define(
+            self.result,
             IrOperation::BufferFill {
+                nominal,
                 length: count,
                 value,
                 layout_ceiling: obligations.layout_ceiling,
                 target_domains: obligations.target_domains,
-            },
-        )?;
-        let cell = self.define(
-            self.result,
-            IrOperation::BoxNew {
-                nominal,
-                value: block,
             },
         )?;
         self.return_value(cell)

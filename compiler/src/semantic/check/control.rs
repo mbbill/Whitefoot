@@ -17,7 +17,7 @@ use super::super::model::{
     BindingId, CheckedDrop, CheckedLoopId, CheckedMode, CheckedStatement, CheckedType,
     ValueInitializerKind,
 };
-use super::references::ReferenceInfo;
+use super::references::{REF3_RETURN_AN_INDEX, ReferenceInfo};
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
 pub(super) use commit::CommitReadOut;
 use loops::{BreakState, LoopContext};
@@ -189,7 +189,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let value = self.check_call(function, call, bindings, scope.loops.len())?;
                 // A discarded borrow-mode result is a reference, never the
                 // owner of its referent: no drop or release may run for it
-                // [OWN-2, STOR-3]. Only an own-mode affine result is dropped.
+                // [REF-1, STOR-3]. Only an own-mode affine result is dropped.
                 let statement = if value.mode != CheckedMode::Own
                     || self.is_copy_type(value.expression.ty())?
                 {
@@ -222,6 +222,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .tree
                     .first_child_with(node, Production::Expr)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                // [REF-3] "a `return_stmt` whose selected expression is a
+                // reference is that violation": a `borrow_expr` [GRAM-5] is
+                // that expression whatever place it names, so the escape is
+                // settled from the written form before the place is
+                // resolved. Resolving it first would report whatever the
+                // named place happens to owe — an unproved subscript bound,
+                // a base [OP-4] does not admit — as though repairing that
+                // could make the return legal, when the restructuring
+                // [REF-3] names is to return an index instead.
+                if self.complete_borrow_expression(expression_node)?.is_some() {
+                    return self.issue_node(
+                        SemanticRule::Ref3,
+                        expression_node,
+                        SemanticIssueKind::EscapingReference {
+                            mechanical_fix: REF3_RETURN_AN_INDEX,
+                        },
+                    );
+                }
                 self.check_return_implicit_read(function, expression_node, bindings)?;
                 let value =
                     self.check_expression(function, expression_node, bindings, scope.loops.len())?;
@@ -343,7 +361,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     break_states: Vec::new(),
                 })
             }
-            // [GRAM-4, SET-1, LIV-2] every written `set` is one commit: the
+            // [GRAM-4, SET-1] every written `set` is one commit: the
             // targets are resolved and judged first, then the whole
             // right-hand side, then the three admission conditions.
             Production::SetStmt => self.check_commit(function, node, bindings, counters, scope),
@@ -477,6 +495,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                     binding,
                     result_type: expected,
+                    result_mode: mode,
                     scrutinee: matched.scrutinee,
                     enum_type: matched.enum_type,
                     arms: matched.arms,

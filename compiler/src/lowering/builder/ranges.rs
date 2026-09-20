@@ -27,15 +27,15 @@ impl IrBuilder<'_> {
         let slice = match source {
             CheckedRangeSource::Storage(root) => {
                 let address = self.lower_place_address(root)?;
-                // A runtime-capacity `Array<T>` [TYPE-9] is its own
-                // pointer-and-count descriptor, so the range is formed from
-                // that value rather than from the storage address.
+                // A runtime-capacity `Array<T>` [TYPE-9] is one block
+                // `[len | elements]` reached by pointer, so the descriptor is
+                // read out of that block's header and its first element
+                // address; a window is the ordinary run formation.
                 if matches!(
                     lower_type(self.erasure, root.ty)?,
                     IrType::Buffer { .. }
                 ) {
-                    let buffer = self.load_storage_value(address)?;
-                    self.define(ty, IrOperation::SliceFromBuffer { buffer })?
+                    self.define(ty, IrOperation::SliceFromBuffer { buffer: address })?
                 } else {
                     self.define(ty, IrOperation::SliceFromRun { run: address })?
                 }

@@ -995,6 +995,17 @@ pub enum SemanticIssueKind {
         second: String,
         mechanical_fix: &'static str,
     },
+    /// The row of the callee of an [OP-12] atomic in-place update reaches a
+    /// prefix of the updated place: it writes it, moves out of it, or frees
+    /// it, any of which would make the old value's transfer and the result's
+    /// commit two observable steps rather than one.
+    AtomicUpdateReachesTargetPrefix {
+        /// The place being updated, as the caller spells it.
+        target: String,
+        /// The substituted row path that reaches a prefix of it.
+        effect: String,
+        mechanical_fix: &'static str,
+    },
     /// The complete instantiated requirement at an ordinary call is refuted
     /// or unproved in the caller's pre-transfer state [FN-8].
     UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),

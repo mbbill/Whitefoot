@@ -163,6 +163,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             let argument =
                 self.check_call_argument_atom(function, atom, bindings, loop_depth)?;
+            // [TYPE-8] `&[T]` is a kind, so a checked range value carries the
+            // element type T beside its `Range` mode. Comparing that element
+            // against a parameter's type before the kind would report `u8`
+            // where the source wrote `&[u8]`, and it would let a `&[T]` at an
+            // `own T` parameter fall into the [TYPE-7] implicit read below,
+            // whose `deref(.)` fix is wrong here: `deref` of a range names
+            // the whole run [TYPE-7, REF-4], never one element. Disagreement
+            // about the range kind itself is therefore judged first, and it
+            // is [TYPE-5]'s ordinary argument mismatch.
+            {
+                use super::super::super::super::model::CheckedMode;
+                if (argument.mode == CheckedMode::Range)
+                    != (parameter.mode == CheckedMode::Range)
+                {
+                    return self.issue_node(
+                        SemanticRule::Type5,
+                        atom,
+                        SemanticIssueKind::type_mismatch(
+                            self.checked_value_name(parameter.mode, parameter.ty)?,
+                            self.checked_value_name(argument.mode, argument.expression.ty())?,
+                        ),
+                    );
+                }
+            }
             if argument.expression.ty() != parameter.ty {
                 return self.issue_node(
                     SemanticRule::Type5,
@@ -260,6 +284,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             effects.add_allocation();
         }
         let substituted = self.substitute_call_row(node, signature, &actual_paths, &actual_modes)?;
+        // [OP-12] precedes [EFF-5] here: an atomic update's own refusal is
+        // about the callee's row reaching the updated place, and the target
+        // argument's own by-value contribution is exactly the overlap
+        // [EFF-5] would otherwise report against that row.
+        self.check_atomic_update_row(node, signature, &actual_paths, &substituted)?;
         self.check_call_pairwise_disjointness(node, signature, &substituted)?;
         self.invalidate_call_bystanders(&substituted, &call, bindings);
         Self::invalidate_window_operation_references(signature, &substituted, bindings);
@@ -509,6 +538,58 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn is_copy_place_type(&self, signature: &FunctionSignature, index: usize) -> Option<bool> {
         let parameter = signature.parameters.get(index)?;
         self.is_copy_type(parameter.ty).ok()
+    }
+
+    /// [OP-12] "`f`'s declared row must not write, move out of, or free any
+    /// prefix of `p`, while reading anything and writing disjoint storage is
+    /// admitted [EFF-5]; a row that does is a hard error citing OP-12 at the
+    /// complete `call`, carrying that substituted path."
+    ///
+    /// The update is recognized from the two halves the two rules hold: the
+    /// enclosing `set` knows its target place and has already checked the
+    /// callee's result condition [`atomic_update_target`], and this call
+    /// knows whether its first argument is that very place. The row's reach
+    /// is the substituted row itself, so no formal path is read twice and
+    /// nothing here inspects the callee's body.
+    fn check_atomic_update_row(
+        &self,
+        node: NodeId,
+        signature: &FunctionSignature,
+        actual_paths: &[Vec<ResolvedPlace>],
+        entries: &[SubstitutedEntry],
+    ) -> Result<(), CheckStop> {
+        let Some(target) = self.atomic_update_target(signature.result, signature.result_mode)
+        else {
+            return Ok(());
+        };
+        // "where the first argument of the call is the target place itself":
+        // the target enters `f` by value, so its actual names exactly one
+        // place and that place is the target.
+        let Some([first]) = actual_paths.first().map(Vec::as_slice) else {
+            return Ok(());
+        };
+        if *first != target {
+            return Ok(());
+        }
+        for entry in entries {
+            // The target argument's own by-value contribution is the update's
+            // own transfer, not a reach of the row; every other argument's
+            // write, consume, or free is the row reaching the caller's
+            // storage, and a prefix of the target is what [OP-12] refuses.
+            if !entry.write || entry.argument == 0 || !entry.place.contains(&target) {
+                continue;
+            }
+            return self.issue_node(
+                SemanticRule::Op12,
+                node,
+                SemanticIssueKind::AtomicUpdateReachesTargetPrefix {
+                    target: self.render_resolved_place(&target)?,
+                    effect: entry.spelling.clone(),
+                    mechanical_fix: "declare a row that reaches no prefix of the updated place: reading anything and writing storage disjoint from it is admitted, and an update whose callee must reach the place is written as ordinary statements instead",
+                },
+            );
+        }
+        Ok(())
     }
 
     /// [EFF-5] clause 1: two effects on overlapping paths where at least one

@@ -862,7 +862,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .filter(|(selector, _)| selector.variant.is_none() || selector.variant == route)
                 .map(|(_, relation)| relation)
                 .collect::<Vec<_>>();
-            if published.len() < 2 || !publication::relations_are_contradictory(&published) {
+            // One clause is already a set: [CALL-6] asks whether the closure
+            // of the published set "derives a negative self-bound", and a
+            // single clause equating one term with a displacement of itself
+            // derives exactly that. Demanding two clauses would let the
+            // shortest inconsistent contract there is publish every fact at
+            // every caller.
+            if published.is_empty() || !publication::relations_are_contradictory(&published) {
                 continue;
             }
             let rendered = selectors

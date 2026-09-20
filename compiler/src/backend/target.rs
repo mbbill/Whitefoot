@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    IrArrayRoot, IrElement, IrFlatElement, IrFunction, IrInstruction, IrNominalId, IrNominalKind,
-    IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId, IrWindowShape,
+    IrAddressed, IrArrayRoot, IrElement, IrFlatElement, IrFunction, IrInstruction, IrNominalId,
+    IrNominalKind, IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId,
+    IrWindowShape,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -583,7 +584,9 @@ fn target_integer_result_bounds(
             };
             let upper_bound = match operation {
                 IrOperation::BufferMeasure { buffer } => {
-                    let Some(IrType::Buffer { element }) = function.value_type(*buffer) else {
+                    let Some(IrType::Address(IrAddressed::Buffer { element })) =
+                        function.value_type(*buffer)
+                    else {
                         return Err(TargetLayoutFailure::InvalidIr);
                     };
                     let stride = flat_element_stride(layouts, element)?;
@@ -713,18 +716,31 @@ fn validate_target_obligation(
         IrOperation::ArrayFill { target_domain, .. }
             if *target_domain == IrTargetDomainObligation::ElementAddress => {}
         IrOperation::BufferFill {
+            nominal,
             length,
             target_domains,
             layout_ceiling,
             ..
         }
         | IrOperation::BufferVacant {
+            nominal,
             length,
             target_domains,
             layout_ceiling,
             ..
         } if target_domains.is_complete() => {
-            let IrType::Buffer { element } = result_type else {
+            if result_type != IrType::Nominal(*nominal) {
+                return Err(TargetLayoutFailure::InvalidIr);
+            }
+            let IrNominalKind::Box { referent, .. } = layouts
+                .program
+                .nominal(*nominal)
+                .ok_or(TargetLayoutFailure::InvalidIr)?
+                .kind()
+            else {
+                return Err(TargetLayoutFailure::InvalidIr);
+            };
+            let IrType::Buffer { element } = *referent else {
                 return Err(TargetLayoutFailure::InvalidIr);
             };
             let actual = layouts.layout(element.ty())?;
@@ -742,7 +758,12 @@ fn validate_target_obligation(
                     TargetObject::Representation,
                 ));
             }
-            if actual.align > layouts.target.runtime_allocation_alignment() {
+            // The block carries its `len` word in the same allocation, so the
+            // heap has to promise the stronger of the two alignments
+            // (compiler/storage-representation), exactly as a boxed window
+            // block does.
+            let block = layouts.layout(*referent)?;
+            if actual.align.max(block.align) > layouts.target.runtime_allocation_alignment() {
                 return Err(TargetLayoutFailure::Unrepresentable(
                     TargetObject::RuntimeSizedAllocation,
                 ));
@@ -1006,9 +1027,16 @@ impl LayoutComputer<'_, '_, '_, '_> {
                     align: element.align,
                 })
             }
+            // [TYPE-9] a runtime-capacity `Array<T>` block is reached only
+            // through the `Box` that owns it, so it never occupies inline
+            // storage; its own layout is the `len` word that heads it
+            // (compiler/storage-representation).
             IrType::Buffer { element } => {
-                self.flat_element(element)?;
-                Ok(Layout { size: 16, align: 8 })
+                let element = self.flat_element(element)?;
+                Ok(Layout {
+                    size: 8,
+                    align: element.align.max(8),
+                })
             }
             IrType::Range { element } => {
                 self.flat_element(element)?;
@@ -1066,7 +1094,7 @@ impl LayoutComputer<'_, '_, '_, '_> {
         self.layout(element.ty())
     }
 
-    /// One run slot's layout [BLK-1, OP-9]. A slot holding a run holds that
+    /// One run slot's layout [WIN-1, OP-9]. A slot holding a run holds that
     /// run's complete representation -- a `FixedVector`'s slots and two
     /// descriptor words inline, a `Vector`'s four-word descriptor -- so the
     /// slot layout is that type's own.

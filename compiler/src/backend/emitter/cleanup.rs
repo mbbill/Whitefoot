@@ -46,14 +46,23 @@ pub(super) fn emit_resource_drop_helpers(
     }
     for element in cleanup_buffer_element_nominals(program)? {
         // The [STOR-3] affine-element buffer drop: each element's
-        // compiler-derived drop in ascending index order, then the one
-        // heap free the copy-element buffer already has.
+        // compiler-derived drop in ascending index order. The block's own
+        // free stays with its caller, because the header and the elements
+        // are one allocation the cell owns
+        // (compiler/storage-representation), exactly as a boxed window's
+        // walk leaves the cell's free to the [PROV-6] traversal.
         let element_ty = IrType::Nominal(element);
         let symbol = buffer_drop_helper_symbol(element);
         let aggregate_ty = llvm_type(program, element_ty)?;
+        let block_ty = llvm_type(
+            program,
+            IrType::Buffer {
+                element: IrFlatElement::Nominal(element),
+            },
+        )?;
         writeln!(
             output,
-            "define private void @{symbol}({{ ptr, i64 }} %value) {{\nentry:\n  %pointer = extractvalue {{ ptr, i64 }} %value, 0\n  %length = extractvalue {{ ptr, i64 }} %value, 1\n  br label %head\nhead:\n  %index = phi i64 [ 0, %entry ], [ %next, %body ]\n  %continue = icmp ult i64 %index, %length\n  br i1 %continue, label %body, label %done\nbody:\n  %element.pointer = getelementptr inbounds {aggregate_ty}, ptr %pointer, i64 %index\n  %element = load {aggregate_ty}, ptr %element.pointer"
+            "define private void @{symbol}(ptr %value) {{\nentry:\n  %length.pointer = getelementptr inbounds {block_ty}, ptr %value, i32 0, i32 0\n  %length = load i64, ptr %length.pointer\n  br label %head\nhead:\n  %index = phi i64 [ 0, %entry ], [ %next, %body ]\n  %continue = icmp ult i64 %index, %length\n  br i1 %continue, label %body, label %done\nbody:\n  %element.pointer = getelementptr inbounds {block_ty}, ptr %value, i64 0, i32 1, i64 %index\n  %element = load {aggregate_ty}, ptr %element.pointer"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         let mut temporary = 0_u32;
@@ -65,7 +74,7 @@ pub(super) fn emit_resource_drop_helpers(
             "%element".to_owned(),
         )?;
         output.push_str(
-            "  %next = add i64 %index, 1\n  br label %head\ndone:\n  call void @free(ptr %pointer)\n  ret void\n}\n\n",
+            "  %next = add i64 %index, 1\n  br label %head\ndone:\n  ret void\n}\n\n",
         );
     }
     for (index, ty) in cleanup_run_types(program)?.into_iter().enumerate() {
@@ -74,11 +83,11 @@ pub(super) fn emit_resource_drop_helpers(
     Ok(output)
 }
 
-/// [PROV-6, BLK-1] one run's release: its window is visited, in ascending
+/// [PROV-6, WIN-1] one run's release: its window is visited, in ascending
 /// logical order, and only then is its own backing released.
 ///
 /// The walk is over the window and not over the capacity, because a slot
-/// outside the window is raw [BLK-1] and reading it would be an uninitialized
+/// outside the window is raw [WIN-1] and reading it would be an uninitialized
 /// read. The physical slot of logical offset `i` is `(head + i) mod cap`,
 /// which is the one conditional subtract a subscript already emits.
 ///
@@ -388,31 +397,12 @@ fn emit_cleanup_jobs(
                 });
             }
             CleanupJob::Value { ty, operand } => match ty {
-                IrType::Buffer { element } => {
-                    // An element type whose own drop derives an action makes
-                    // the buffer drop the per-element loop plus the free
-                    // [STOR-3]; every other element leaves exactly the free.
-                    if type_requires_cleanup(program, element.ty())? {
-                        let IrFlatElement::Nominal(id) = element else {
-                            return Err(BackendFailure::InvalidIr);
-                        };
-                        writeln!(
-                            output,
-                            "  call void @{}({} {operand})",
-                            buffer_drop_helper_symbol(id),
-                            llvm_type(program, ty)?
-                        )
-                        .map_err(|_| BackendFailure::TextEmission)?;
-                    } else {
-                        let pointer = next_temporary(temporary)?;
-                        writeln!(
-                            output,
-                            "  %{pointer} = extractvalue {} {operand}, 0\n  call void @free(ptr %{pointer})",
-                            llvm_type(program, ty)?
-                        )
-                        .map_err(|_| BackendFailure::TextEmission)?;
-                    }
-                }
+                // A runtime-capacity `Array<T>` exists only as `Box` content
+                // [TYPE-9] and is never an owned value of its own, so the
+                // cell arm below is the one route to its release, exactly as
+                // it is for a runtime-capacity window. Reaching here would
+                // mean a value of a type no storage can hold.
+                IrType::Buffer { .. } => return Err(BackendFailure::InvalidIr),
                 IrType::Nominal(id) => {
                     let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
                     match nominal.kind() {
@@ -451,28 +441,52 @@ fn emit_cleanup_jobs(
                         // cell frees, and a bump extent's is reclaimed by its
                         // region's own reset and has no action of its own.
                         IrNominalKind::Box { referent, release } => {
-                            // A boxed runtime-capacity window is thin: the
+                            // A boxed runtime-capacity shape is thin: the
                             // cell pointer is the block, whose header and
-                            // slots are the same allocation
-                            // (compiler/storage-representation). Loading the
-                            // block would read past its declared zero-length
-                            // slot array, so its walk takes the pointer and
-                            // the cell's own free is the block's.
-                            if matches!(referent, IrType::Window { capacity: None, .. }) {
+                            // elements are the same allocation
+                            // (compiler/storage-representation), which is
+                            // what [TYPE-9]'s "exactly one heap object" and
+                            // [STOR-3]'s "one compiler-derived heap free"
+                            // say. Loading the block would read past its
+                            // declared zero-length element array, so its
+                            // walk takes the pointer and the cell's own free
+                            // is the block's.
+                            if matches!(
+                                referent,
+                                IrType::Window { capacity: None, .. } | IrType::Buffer { .. }
+                            ) {
                                 if *release == IrReleaseClass::General {
                                     jobs.push(CleanupJob::FreePointer(operand.clone()));
                                 }
-                                let element = match referent {
-                                    IrType::Window { element, .. } => program
-                                        .element(*element)
-                                        .ok_or(BackendFailure::InvalidIr)?,
+                                match referent {
+                                    IrType::Window { element, .. } => {
+                                        let element = program
+                                            .element(*element)
+                                            .ok_or(BackendFailure::InvalidIr)?;
+                                        if type_requires_cleanup(program, element)? {
+                                            let symbol = run_drop_helper(program, *referent)?
+                                                .ok_or(BackendFailure::InvalidIr)?;
+                                            writeln!(
+                                                output,
+                                                "  call void @{symbol}(ptr {operand})"
+                                            )
+                                            .map_err(|_| BackendFailure::TextEmission)?;
+                                        }
+                                    }
+                                    IrType::Buffer { element } => {
+                                        if type_requires_cleanup(program, element.ty())? {
+                                            let IrFlatElement::Nominal(id) = element else {
+                                                return Err(BackendFailure::InvalidIr);
+                                            };
+                                            writeln!(
+                                                output,
+                                                "  call void @{}(ptr {operand})",
+                                                buffer_drop_helper_symbol(*id)
+                                            )
+                                            .map_err(|_| BackendFailure::TextEmission)?;
+                                        }
+                                    }
                                     _ => return Err(BackendFailure::InvalidIr),
-                                };
-                                if type_requires_cleanup(program, element)? {
-                                    let symbol = run_drop_helper(program, *referent)?
-                                        .ok_or(BackendFailure::InvalidIr)?;
-                                    writeln!(output, "  call void @{symbol}(ptr {operand})")
-                                        .map_err(|_| BackendFailure::TextEmission)?;
                                 }
                                 continue;
                             }
@@ -493,7 +507,7 @@ fn emit_cleanup_jobs(
                         }
                         // An arena value's storage is released with its
                         // region, never by an owner-scope cleanup
-                        // [STOR-3, STOR-4].
+                        // [STOR-3].
                         IrNominalKind::Arena { .. } => {}
                         // The region's allocation-list drop: walk the list
                         // and free every registered allocation, then leave

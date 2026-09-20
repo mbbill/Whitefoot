@@ -256,6 +256,15 @@ pub enum IrType {
         element: IrElement,
         length: u64,
     },
+    /// One runtime-capacity `Array<T>` block [TYPE-9].
+    ///
+    /// The block is `[len | elements]` in one allocation, exactly as a
+    /// runtime-capacity `Slots` block is `[len | cap | slots]`
+    /// (compiler/storage-representation): an `Array`'s `len` equals its `cap`
+    /// [WIN-1], so the one runtime number is stored once. [TYPE-9] admits the
+    /// shape only as `Box` content, so the block is reached only by pointer —
+    /// the `Box` value is that pointer — and no value of this type is ever
+    /// copied, passed, or stored.
     Buffer {
         element: IrFlatElement,
     },
@@ -443,7 +452,7 @@ pub(crate) fn type_derives_release(
                     return Some(true);
                 }
                 // An arena value's storage is released with its region,
-                // never by an owner-scope cleanup [STOR-3, STOR-4].
+                // never by an owner-scope cleanup [STOR-3].
                 IrNominalKind::Arena { .. } => {}
                 // Ordinary opaque values have empty release [PRE-1].
                 IrNominalKind::Opaque => {}
@@ -553,14 +562,14 @@ pub enum IrNominalKind {
     Box {
         referent: IrType,
         /// [PROV-6, S39] which release action this cell's own reclamation is.
-        /// The ambient-heap `box<T>` [STOR-2] and a `Box<'s, T>` at a general
+        /// The ambient-heap `box<T>` [STOR-1] and a `Box<'s, T>` at a general
         /// store both free their cell; a `Box<'s, T>` at a bump extent is
         /// reclaimed by its region's own reset and has no action of its own.
         release: IrReleaseClass,
     },
     /// One `arena<'r, T>` instance: a pointer-shaped handle to region-owned
     /// heap content, released with its region rather than with an owner
-    /// scope [STOR-3, STOR-4].
+    /// scope [STOR-3].
     Arena {
         content: IrType,
     },
@@ -1121,16 +1130,32 @@ pub enum IrOperation {
         offset: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
+    /// [OP-13] `box_array_filled<T>(count, value)`: one runtime-capacity
+    /// `Array<T>` block and the cell that owns it.
+    ///
+    /// The block is `[len | elements]` in one allocation, so the defined
+    /// value is the cell's own `Box` pointer and the block pointer at once
+    /// (compiler/storage-representation). One `malloc` builds it, one `free`
+    /// reclaims it, and every element address is one `inbounds`
+    /// `getelementptr` into it.
     BufferFill {
+        nominal: IrNominalId,
         length: IrValueId,
         value: IrValueId,
         layout_ceiling: IrLayoutCeiling,
         target_domains: IrRuntimeTargetObligations,
     },
-    /// One `buffer_vacant::<T>(n)` allocation [OP-1, OP-9]: the defined value's
-    /// buffer type names the `Option<T>` element instance, and every element
-    /// is initialized to the compiler-minted `None()` of that instance.
+    /// The same block with every element initialized to the element nominal's
+    /// tag-zero value [OP-9].
+    ///
+    /// v0.59's `buffer_vacant::<T>(n)` head, which built an all-`None` run,
+    /// has no v0.60 spelling: [OP-1]'s table no longer carries the row and
+    /// the identifier is free again, so no accepted source reaches this
+    /// operation. It is retained beside `BufferFill` because the two share
+    /// one block layout and one allocation obligation, and a later
+    /// vacant-element construction row lowers to exactly this.
     BufferVacant {
+        nominal: IrNominalId,
         length: IrValueId,
         layout_ceiling: IrLayoutCeiling,
         target_domains: IrRuntimeTargetObligations,
@@ -1139,6 +1164,9 @@ pub enum IrOperation {
         length: IrValueId,
         maximum_length: u64,
     },
+    /// [MSR-1] the one measure a runtime-capacity `Array<T>` has, read from
+    /// the `len` word at the head of its block. `buffer` is the block's
+    /// address.
     BufferMeasure {
         buffer: IrValueId,
     },
@@ -1157,7 +1185,7 @@ pub enum IrOperation {
         measure: IrMeasure,
         container: IrValueId,
     },
-    /// One discharged source subscript read of a run [OP-4, BLK-1]: the
+    /// One discharged source subscript read of a run [OP-4, WIN-1]: the
     /// offset is a logical one and the storage read is slot
     /// `(head + i) mod cap`. See [`Self::ArrayIndex`] for the discharge.
     RunIndex {
@@ -1237,6 +1265,8 @@ pub enum IrOperation {
         value: IrValueId,
     },
     /// One discharged source subscript read [OP-4]; see [`Self::ArrayIndex`].
+    /// `buffer` is the block's address, and the element address is one
+    /// `inbounds` step into it.
     BufferIndex {
         buffer: IrValueId,
         offset: IrValueId,
@@ -1263,8 +1293,9 @@ pub enum IrOperation {
     SliceFromBuffer {
         buffer: IrValueId,
     },
-    /// [VIEW-2] one view over typed owner storage: a run's initialized window
-    /// [BLK-1] or a complete array with its type's length and zero head.
+    /// [REF-4] one range reference over typed owner storage: a run's
+    /// initialized window [WIN-1] or a complete array with its type's length
+    /// and zero head.
     ///
     /// The window is `len` slots beginning at `head`, and the row's own
     /// requirement `vector.head <= vector.cap` was discharged before
@@ -1305,17 +1336,17 @@ pub enum IrOperation {
     },
     /// One region block's arena allocation-list cell, materialized at region
     /// entry: a stack cell reset to empty, whose address is the operation's
-    /// value [STOR-2, STOR-3].
+    /// value [STOR-1, STOR-3].
     ArenaListNew,
     /// One `arena_new` allocation: heap storage for the content, registered
     /// on the owning region's allocation list so the region's exit release
-    /// frees it [STOR-2, STOR-3, STOR-4]. The value is the content address.
+    /// frees it [STOR-1, STOR-3]. The value is the content address.
     ArenaNew {
         nominal: IrNominalId,
         list: IrValueId,
         value: IrValueId,
     },
-    /// Arena content read through explicit `deref` [STOR-2].
+    /// Arena content read through explicit `deref` [STOR-1].
     ArenaDeref {
         nominal: IrNominalId,
         value: IrValueId,
@@ -1885,7 +1916,7 @@ impl IrProgram<'_, '_, '_> {
     /// with or without `--par`. These state what *this* lowering did with a
     /// permission, which is a different fact and exists only where actualization
     /// was asked for. Both are developer output on the caller's channel; neither
-    /// participates in acceptance or in any mandatory [DIAG-3] record.
+    /// participates in acceptance or in any mandatory [DIAG-2] record.
     pub fn actualization_ledger(&self) -> &[String] {
         &self.actualization
     }

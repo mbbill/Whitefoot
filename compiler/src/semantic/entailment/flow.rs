@@ -5700,7 +5700,7 @@ impl Analyzer<'_, '_> {
                 fields.get(field as usize).map(|field| field.ty)
             }
             // [OP-4] a subscript selects the base's element type, which
-            // [MSR-1] admits in a measure place and [BLK-1] gives the one
+            // [MSR-1] admits in a measure place and [WIN-1] gives the one
             // slot a run holds.
             GoalProjection::Subscript(_) => element_type(input, self.context.elements),
             // [REF-4, TYPE-8] a range step selects the run of T elements the
@@ -7004,16 +7004,34 @@ impl Analyzer<'_, '_> {
             // [REF-4] the formation's two conjuncts, `lo <= hi` and
             // `hi <= x.len`, over the source's own one measure.
             CheckedExpression::RangeOf {
+                carrier,
                 source,
                 start,
                 end,
                 obligation,
+                captured,
                 ..
             } => {
                 let reaches_endpoints = self.judge_children_reach_parent(
                     [start.as_ref(), end.as_ref()].into_iter(),
                     states,
                 );
+                // [OWN-7] the formation's two endpoint images, attached to
+                // the occurrence that evaluated them. A range step names its
+                // formation by that occurrence [REF-1], so a separation
+                // submitted at a later call reads exactly these two forms and
+                // never re-reads a spelling whose bindings may have moved on.
+                if let Some(image) = self
+                    .affine_expression_form(start, &mut states.affine)
+                    .zip(self.affine_expression_form(end, &mut states.affine))
+                    .map(|(start, end)| AffineRangeImage {
+                        source: carrier.clone(),
+                        start,
+                        end,
+                    })
+                {
+                    states.affine.ranges.insert(captured.start.capture, image);
+                }
                 let obligation_start = self.obligations.len();
                 let source_subscripts = match source {
                     CheckedRangeSource::Storage(root) => self.judge_place_subscripts(root, states),
@@ -7049,7 +7067,7 @@ impl Analyzer<'_, '_> {
                     reached: reached && self.obligations_since_discharged(obligation_start),
                 }
             }
-            // [OP-4, BLK-1] a run's subscript owes `i < len_of(v)` wherever it
+            // [OP-4, WIN-1] a run's subscript owes `i < len_of(v)` wherever it
             // is written: the offset is a logical one and the window's length
             // bounds it, so the measured kind is the run's own and the written
             // capacity is not the bound. A read owes exactly what the
@@ -8176,7 +8194,7 @@ impl Analyzer<'_, '_> {
         place
     }
 
-    /// The place one [LIV-2] commit writes, as every measure term over it is
+    /// The place one [SET-1] commit writes, as every measure term over it is
     /// stated [MSR-1]: a plain place, or one element position of a run.
     ///
     /// An element position is a place only where its offset is one a place
@@ -8205,7 +8223,7 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// [MSR-3] the datums one [LIV-2] commit carries, minted before the
+    /// [MSR-3] the datums one [SET-1] commit carries, minted before the
     /// statement's own kills.
     ///
     /// The right-hand side is a bare use of a measured place, which is the
@@ -8564,8 +8582,8 @@ impl Analyzer<'_, '_> {
             .collect()
     }
 
-    /// Retains PAR-2's adjacent-range family after both VIEW-2 domain goals
-    /// succeeded. Each active counted loop is considered once, and both sign
+    /// Retains PAR-2's adjacent-range family after both [REF-4] formation
+    /// domain goals succeeded. Each active counted loop is considered once, and both sign
     /// goals run to completion for every matching exact image.
     fn proved_range_partitions(
         &mut self,
@@ -10445,7 +10463,7 @@ impl Analyzer<'_, '_> {
                 }
                 reaches_target && self.obligations_since_discharged(obligation_start)
             }
-            // [OP-4, BLK-1] the run's own obligation is `i < len_of(v)`: the
+            // [OP-4, WIN-1] the run's own obligation is `i < len_of(v)`: the
             // offset is a logical one and the window's length bounds it, so
             // the measured kind is the run's and the written capacity is not
             // the bound.
@@ -12569,7 +12587,7 @@ impl Analyzer<'_, '_> {
     /// too. Because nothing kills a datum, its atom outlives the write that
     /// retargets the term's: a header conclusion published over the old atom
     /// stays anchored to a live term, which is what lets one published
-    /// relation preserve an invariant across a [LIV-2] commit.
+    /// relation preserve an invariant across a [SET-1] commit.
     fn adopt_measure_atom(&mut self, datum: TermId, live: TermId, state: &AffineFlowState) {
         if state.measure_atoms.borrow().contains_key(&datum) {
             return;
@@ -15887,7 +15905,7 @@ fn invalidate_goal_origin_for_set(state: &mut FactState, target: &CheckedSetTarg
     state.ambiguous_goal_origins.remove(&target.binding());
 }
 
-/// The type one slot of an indexable base holds [OP-4, BLK-1].
+/// The type one slot of an indexable base holds [OP-4, WIN-1].
 fn element_type(input: CheckedType, elements: &[CheckedType]) -> Option<CheckedType> {
     match input {
         CheckedType::Buffer { element } => Some(element.ty()),

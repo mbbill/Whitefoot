@@ -941,10 +941,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [OWN-7] the formed reference names the base path extended by its
         // own range step; every later separation question reads that step.
         let mut place = base_place;
-        place.path.push(PlaceStep::Range(CapturedRange {
+        let captured = CapturedRange {
             start: captured_start,
             end: captured_end,
-        }));
+        };
+        place.path.push(PlaceStep::Range(captured));
         let expression = CheckedExpression::RangeOf {
             carrier: self.tree.path(carrier)?.clone(),
             source,
@@ -952,6 +953,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             start: Box::new(start.expression),
             end: Box::new(end.expression),
             obligation: self.tree.path(suffix)?.clone(),
+            captured,
         };
         let mut accesses = carried.accesses;
         accesses.push(PlaceAccess {

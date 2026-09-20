@@ -118,7 +118,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ///
     /// A `deref` base is rooted in a holder rather than in the storage the
     /// place selects, so it answers `None`: the storage that place selects is
-    /// the referent's, not the holder's. [LIV-2] reads this to decide the one
+    /// the referent's, not the holder's. [SET-1] reads this to decide the one
     /// target shape it reinitializes from dead, the complete binding.
     pub(in crate::semantic::check) fn complete_binding_target(
         &self,
@@ -343,18 +343,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// One value's exact written mode and type, as `own u64`, `&'r
-    /// buffer<u8>`, or `&uniq 'r OutputStream`.
+    /// One value's exact written mode and type, as `own u64`, `&Counter`, or
+    /// `&[u8]`.
     pub(in crate::semantic::check) fn checked_value_name(
         &self,
         mode: CheckedMode,
         ty: CheckedType,
     ) -> Result<String, CheckStop> {
+        // [TYPE-8, REF-4] `&[T]` is one reference kind written around its
+        // element type, not a reference to one element: what the checked
+        // value carries is the element type, so rendering the mode and the
+        // type apart would name `&T` where the source wrote the range.
+        if mode == CheckedMode::Range {
+            return Ok(format!("&[{}]", self.checked_type_name(ty)?));
+        }
         let mode = self.checked_mode_name(mode)?;
         let ty = self.checked_type_name(ty)?;
-        // [FORM-2] attaches `&` to what follows it, and a mode whose region
-        // [FORM-8] leaves unwritten ends in that `&`, so the rendering must
-        // not insert the separator the written form needs.
+        // [FORM-2] attaches `&` to what follows it, so the rendering must not
+        // insert a separator the written form does not have.
         Ok(if mode.ends_with('&') {
             format!("{mode}{ty}")
         } else {
@@ -382,7 +388,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// declaration is not reachable.
     ///
     /// A rendering is presentation: a region a diagnostic cannot name must not
-    /// turn a source rejection into a compiler failure. A region [FORM-8]
+    /// turn a source rejection into a compiler failure. A region the grammar
     /// leaves unwritten has no source spelling at all: resolution mints it
     /// under a name no source token can form, and rendering that name would
     /// name a region the writer cannot write. It renders as the empty string,
@@ -1254,7 +1260,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                // [LIV-2] a `move` of a target place of this statement's
+                // [SET-1] a `move` of a target place of this statement's
                 // commit, or of a place reached through one, is that target's
                 // read-out: the previous value leaves, the root stays live,
                 // and the same statement reinitializes the target. It is not
@@ -1304,7 +1310,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         })
                         .collect()
                 };
-                // [LIV-2] after its read-out the target is dead for the
+                // [SET-1] after its read-out the target is dead for the
                 // remainder of the right-hand side, and the commit reinitializes
                 // it. At a complete binding that is exactly this binding's own
                 // liveness, so the ordinary kill stands and the commit revives
@@ -1333,7 +1339,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 let access = ResolvedPlace::fields(local.binding, access_fields);
                 let mut effects = EffectSet::NONE;
-                // [LIV-2, EFF-2] a read-out reads the target's own storage,
+                // [SET-1, EFF-2] a read-out reads the target's own storage,
                 // exactly as [SET-2]'s exchange does, and the commit writes it.
                 //
                 // [EFF-1] a loan-bearing value's effect path names the viewed

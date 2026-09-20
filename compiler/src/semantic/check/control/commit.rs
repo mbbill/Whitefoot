@@ -19,10 +19,10 @@ use std::collections::HashMap;
 use crate::syntax::NodeId;
 use crate::{DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKind, SemanticRule};
 
-use super::super::super::model::{CheckedSetTarget, CheckedStatement};
+use super::super::super::model::{CheckedMode, CheckedSetTarget, CheckedStatement};
 use super::super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
 use super::super::expressions::{MutationTarget, WIN3_LINEAR_TARGET};
-use super::super::references::InvalidationEvent;
+use super::super::references::{InvalidationEvent, RequiredReferent};
 use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
 use super::{ControlScope, StatementResult};
 
@@ -35,6 +35,9 @@ pub(in crate::semantic::check) struct CommitReadOut {
     /// and `grid[1][1]` differ despite agreeing in their last offset; the
     /// flag never substitutes for that complete path.
     element: bool,
+    /// The target's selected type, which [OP-12]'s result condition compares
+    /// against the called row's declared result.
+    ty: crate::semantic::model::CheckedType,
     read_out: bool,
 }
 
@@ -104,6 +107,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         false
     }
 
+    /// [OP-12] the target place of the `set` whose right-hand side is being
+    /// checked, when a call whose declared result is `own T` for that
+    /// target's own type T stands in that right-hand side.
+    ///
+    /// "`set p = f(move p, args...);` for an affine place and
+    /// `set p = f(p, args...);` for a copy one, where the first argument of
+    /// the call is the target place itself, is the atomic in-place update."
+    /// The first-argument condition is the caller's, because only the caller
+    /// holds the actual's resolved path; what this answers is the other half
+    /// — which target this call stands over, and whether the call's result
+    /// condition holds. "A call that fails the result condition is not an
+    /// atomic update and is judged as an ordinary `set`", so a row returning
+    /// anything else yields `None` here and reaches [SET-1]'s ordinary
+    /// judgment untouched.
+    pub(in crate::semantic::check) fn atomic_update_target(
+        &self,
+        result: crate::semantic::model::CheckedType,
+        result_mode: CheckedMode,
+    ) -> Option<ResolvedPlace> {
+        let targets = self.commit_read_outs.borrow();
+        let [target] = &targets[..] else {
+            return None;
+        };
+        if result_mode != CheckedMode::Own || target.ty != result {
+            return None;
+        }
+        Some(target.place.clone())
+    }
+
     /// Extraction below a `Box` target needs an explicit account of the old
     /// target's unselected owning content. Retain that capability boundary.
     pub(in crate::semantic::check) fn is_box_descendant_read_out(
@@ -162,13 +194,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.check_commit_value(function, &mutation, value_node, bindings, scope.loops.len())?;
         effects = effects.union(value.effects.clone());
 
-        if mutation.target.ty() != value.expression.ty() {
+        // [TYPE-5] "the right-hand side of `set p = e;` must produce exactly
+        // `own T` ... After the TYPE-7 implicit-read exclusivity below, a
+        // different right-hand-side mode or type is a hard error citing
+        // TYPE-5 at the complete `expr` child of the `set_stmt`, carrying
+        // expected `own T` and the actual mode and type." The mode is part of
+        // the judgment and part of the rendering: a holder written where the
+        // target's value is required is refused here, not silently accepted
+        // because its carried type agrees.
+        let target_type = mutation.target.ty();
+        if value.mode != CheckedMode::Own || target_type != value.expression.ty() {
+            if self.reads_implicitly_through_holder(
+                value.reference_value,
+                value.expression.ty(),
+                RequiredReferent::Exact(target_type),
+            )? {
+                return self.issue_node(
+                    SemanticRule::Type7,
+                    value_node,
+                    SemanticIssueKind::MissingDereference {
+                        mechanical_fix: "write `deref(.)`",
+                    },
+                );
+            }
             return self.issue_node(
                 SemanticRule::Type5,
                 value_node,
                 SemanticIssueKind::type_mismatch(
-                    self.checked_type_name(mutation.target.ty())?,
-                    self.checked_type_name(value.expression.ty())?,
+                    self.checked_value_name(CheckedMode::Own, target_type)?,
+                    self.checked_value_name(value.mode, value.expression.ty())?,
                 ),
             );
         }
@@ -226,6 +280,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.commit_read_outs.replace(vec![CommitReadOut {
             place: mutation.place.clone(),
             element: mutation.element,
+            ty: mutation.target.ty(),
             read_out: false,
         }]);
         let outcome = self.check_expression(function, value_node, bindings, loop_depth);

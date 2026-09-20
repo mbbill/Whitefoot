@@ -39,6 +39,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         self.emit_slice_descriptor(result, ty, &pointer, length)
     }
 
+    /// [REF-4] the descriptor of the whole run a runtime-capacity `Array<T>`
+    /// block holds: its first element's address and the `len` word at the
+    /// head of the block (compiler/storage-representation).
     pub(super) fn emit_slice_from_buffer(
         &mut self,
         result: IrValueId,
@@ -48,19 +51,19 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let IrType::Range { element } = ty else {
             return Err(BackendFailure::InvalidIr);
         };
-        let buffer_type = IrType::Buffer { element };
-        if self.value_type(buffer) != Some(buffer_type) {
+        if self.value_type(buffer) != Some(IrType::Address(IrAddressed::Buffer { element })) {
             return Err(BackendFailure::InvalidIr);
         }
+        let block_type = llvm_type(self.program, IrType::Buffer { element })?;
         let descriptor_type = llvm_type(self.program, ty)?;
+        let address = self.value_name(buffer);
         let pointer = self.next_temporary()?;
+        let length_address = self.next_temporary()?;
         let length = self.next_temporary()?;
         let partial = self.next_temporary()?;
         writeln!(
             self.output,
-            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{length} = extractvalue {descriptor_type} {}, 1\n  %{partial} = insertvalue {descriptor_type} zeroinitializer, ptr %{pointer}, 0\n  {} = insertvalue {descriptor_type} %{partial}, i64 %{length}, 1",
-            self.value_name(buffer),
-            self.value_name(buffer),
+            "  %{pointer} = getelementptr inbounds {block_type}, ptr {address}, i64 0, i32 1, i64 0\n  %{length_address} = getelementptr inbounds {block_type}, ptr {address}, i32 0, i32 0\n  %{length} = load i64, ptr %{length_address}\n  %{partial} = insertvalue {descriptor_type} zeroinitializer, ptr %{pointer}, 0\n  {} = insertvalue {descriptor_type} %{partial}, i64 %{length}, 1",
             self.value_name(result),
         )
         .map_err(|_| BackendFailure::TextEmission)
