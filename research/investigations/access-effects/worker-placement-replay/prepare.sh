@@ -57,9 +57,10 @@ printf '\nattributes #1 = { noinline nounwind }\nattributes #2 = { noinline "pro
     -fno-unwind-tables -x ir -c "$output/build/records-placement.ll" \
     -o "$output/build/records-placement.o"
 
-body_size=$(nm -S --radix=d --defined-only "$output/build/records-placement.o" |
+body_size_raw=$(nm -S --radix=d --defined-only "$output/build/records-placement.o" |
     awk -v symbol="$body" '$4 == symbol { print $2 }')
-[[ -n $body_size ]] || { echo 'worker body symbol is missing' >&2; exit 2; }
+[[ -n $body_size_raw ]] || { echo 'worker body symbol is missing' >&2; exit 2; }
+body_size=$((10#$body_size_raw))
 [[ $body_size == 440 ]] || {
     echo "worker body changed size: expected 440, got $body_size" >&2
     exit 2
@@ -71,12 +72,13 @@ objcopy --dump-section .wf_par_worker_body="$output/build/body.bin" \
     "$output/build/records-placement.o"
 original_value_hex=$(nm -S --defined-only "$candidate/records.o" |
     awk -v symbol="$worker" '$4 == symbol { print $1 }')
-original_size=$(nm -S --radix=d --defined-only "$candidate/records.o" |
+original_size_raw=$(nm -S --radix=d --defined-only "$candidate/records.o" |
     awk -v symbol="$worker" '$4 == symbol { print $2 }')
-[[ -n $original_value_hex && -n $original_size ]] || {
+[[ -n $original_value_hex && -n $original_size_raw ]] || {
     echo 'downloaded worker symbol is missing' >&2
     exit 2
 }
+original_size=$((10#$original_size_raw))
 [[ $original_size == "$body_size" ]] || {
     echo "downloaded and relocated worker sizes differ: original=$original_size relocated=$body_size" >&2
     exit 2
