@@ -545,7 +545,7 @@ The target is writable exactly when it is rooted in a live own-mode value bindin
 Fields and indices inherit the writability of their selected base.
 A named const is never writable [CONST-2], and a target path that ends at or passes through a readonly field is refused by [TYPE-2].
 A `for_stmt` binder is compiler-updated state and is never source-writable; a target rooted there is a SET-1 rejection at the complete target `place`.
-A dead root is never writable and is not revived [OWN-1].
+A place projected, dereferenced, or subscripted from a dead root is never writable; a dead binding is writable only as the complete binding, and that commit reinitializes it [OWN-1, OWN-11].
 These specific rules own their stated violations; every other failure of this closed writability relation cites SET-1 at the complete target `place` child of the `set_stmt`, carrying the resolved root class and the required writable classes.
 
 T is copy or affine under [OWN-1].

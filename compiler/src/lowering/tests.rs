@@ -538,41 +538,26 @@ fn source_signature_modes_are_not_invented_for_synthesized_functions() {
     });
 }
 
-/// UNGROUNDED PREMISE, ORIGINAL ASSERTION RESTORED. The port flipped the
-/// first assertion from `assert_eq` to `assert_ne` on the ground that "a
-/// reference parameter is an address of the owner's storage and an own
-/// parameter is the value itself [REF-1, OWN-2]". There is no rule OWN-2 in
-/// `spec/kernel-spec.md` at all, and nothing else decides this: [REF-1] fixes
-/// what a reference *names* and [STOR-7] says only that a value may be
-/// relocated by copying its bytes, neither of which says whether a borrow and
-/// a consume of one binding reach the emitted call as one IR operand or two;
-/// `design/compiler` has no node for it either. Whether the two share an
-/// operand is therefore the lowering's own choice, unrecorded, and this test
-/// keeps the assertion it was written with rather than a new one invented to
-/// match the port. Its subject is the half that *is* determined: whichever
-/// operand each call gets, the retained use records distinguish a borrow from
-/// a consume, which is what the first three assertions read; the restored
-/// fourth is the undetermined one and stands last so it cannot hide them.
+/// The subject is the use record each source call retains: a borrow and a
+/// consume of one binding are distinguished by their argument kinds.
+/// Whether the two calls receive the same IR operand is the lowering's own
+/// representation choice (a reference argument is the address of the owner's
+/// slot, a consumed Box is the pointer loaded from it) and is pinned by no
+/// rule and no design decision, so this test does not assert it (owner,
+/// 2026-09-20: the specification does not govern the IR).
 #[test]
-fn source_call_uses_distinguish_borrow_and_consume_of_the_same_ir_value() {
+fn source_call_uses_distinguish_borrow_and_consume_of_one_binding() {
     let source = format!(
         "fn inspect(value: &Box<Array<u8>>) -> result: own u64 reads(value) {{\n  return deref(value).inner.len;\n}}\n\nfn consume(value: own Box<Array<u8>>) -> result: own u64 pure {{\n  return value.inner.len;\n}}\n\nfn run() -> result: own u64 pure {{\n  let data = box_array_filled::<u8>(count: 2_u64, value: 7_u8);\n  let before = inspect(value: &data);\n  let after = consume(value: move data);\n  return after;\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
-        let (borrow, borrowed_values) = source_call(program, "run", "inspect");
-        let (consume, consumed_values) = source_call(program, "run", "consume");
-        // The determined half runs first, so that the undetermined one below
-        // cannot hide it.
+        let (borrow, _borrowed_values) = source_call(program, "run", "inspect");
+        let (consume, _consumed_values) = source_call(program, "run", "consume");
         assert_ne!(borrow.result, consume.result);
         assert_eq!(borrow.arguments, [IrSourceArgument::Borrow]);
         assert_eq!(
             consume.arguments,
             [IrSourceArgument::Binding { consume_root: true }]
-        );
-        assert_eq!(
-            borrowed_values, consumed_values,
-            "this is the original assertion, restored; no rule and no design \
-             node decides whether the two calls share one operand"
         );
     });
 }
