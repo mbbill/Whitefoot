@@ -1,5 +1,6 @@
-# Disposable construction/correctness replay for the ac34 records artifact.
-# It never measures performance and is removed with its research branch.
+# Disposable single timing replay for the ac34 records artifact. It constructs
+# and verifies first, qualifies an identical-image null, and then runs only the
+# prewritten pad48-versus-pad16 comparison. It is removed with this branch.
 name: worker-placement-replay
 on:
   workflow_dispatch:
@@ -21,6 +22,19 @@ jobs:
       - uses: actions/checkout@v4
       - name: Identify native toolchain
         run: |
+          mkdir -p "$RUNNER_TEMP/worker-placement"
+          {
+            printf 'workflow_run=%s\nworkflow_sha=%s\nworkflow_ref=%s\n' \
+              "$GITHUB_RUN_ID" "$GITHUB_SHA" "$GITHUB_REF"
+            date -u '+date=%Y-%m-%dT%H:%M:%SZ'
+            uname -a
+            nproc
+            lscpu
+            taskset -pc $$
+            /usr/bin/clang --version
+            readelf --version
+            objcopy --version
+          } > "$RUNNER_TEMP/worker-placement/PROVENANCE.txt"
           test "$(uname -s)" = Linux
           test "$(uname -m)" = x86_64
           test -x /usr/bin/clang
@@ -53,8 +67,18 @@ jobs:
         run: |
           perl .github/run-check.pl worker-placement-verify \
             bash research/investigations/access-effects/worker-placement-replay/verify-and-stage.sh \
-            "$RUNNER_TEMP/worker-placement" \
-            "$RUNNER_TEMP/worker-placement/verify-logs"
+            "$RUNNER_TEMP/ac34" "$RUNNER_TEMP/worker-placement" \
+            "$RUNNER_TEMP/worker-placement/staged"
+      - name: Run the registered null and single placement comparison
+        env:
+          WHITEFOOT_CHECK_TIMEOUT: 300
+          WF_RUN_APPROVED: 1
+        run: |
+          perl .github/run-check.pl worker-placement-timing \
+            bash research/investigations/access-effects/worker-placement-replay/run-approved-comparison.sh \
+            "$GITHUB_WORKSPACE" "$RUNNER_TEMP/worker-placement/staged" \
+            "$RUNNER_TEMP/worker-placement/primary-results" \
+            "$RUNNER_TEMP/worker-placement/null-results"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -63,10 +87,14 @@ jobs:
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/ac34/performance-results/identity.txt
+            ${{ runner.temp }}/worker-placement/PROVENANCE.txt
             ${{ runner.temp }}/worker-placement/STATIC-CHECKS.txt
             ${{ runner.temp }}/worker-placement/images/
             ${{ runner.temp }}/worker-placement/build/trampoline-*.txt
             ${{ runner.temp }}/worker-placement/build/symbols-*.txt
             ${{ runner.temp }}/worker-placement/build/program-headers-*.txt
             ${{ runner.temp }}/worker-placement/build/section-headers-*.txt
-            ${{ runner.temp }}/worker-placement/verify-logs/verify-*.log
+            ${{ runner.temp }}/worker-placement/staged/STAGING.txt
+            ${{ runner.temp }}/worker-placement/staged/verify-logs/
+            ${{ runner.temp }}/worker-placement/null-results/
+            ${{ runner.temp }}/worker-placement/primary-results/
