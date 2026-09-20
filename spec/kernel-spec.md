@@ -920,7 +920,7 @@ The bare infix spellings `+ - * / %` and dotless spellings `ineg iabs ishl ishr`
 Every occurrence carries one canonical [ENT-6] integer-domain obligation equal to the corresponding total domain-query expression over the same selected type and exact operand-expression identities.
 The checker accepts the occurrence only when the complete state discharges that goal; a refuted or unproved goal is a compile-time OP-2 rejection at the `infix` or `call` node.
 A contradictory state discharges it under [ENT-4].
-No runtime test, fallback check, trap site, checked-result conversion, or optimizer assumption is synthesized.
+No runtime test, fallback check, trap site, or checked-result conversion is synthesized; the discharged obligation may be stated to the backend as a proved fact under [DIAG-2].
 After discharge, the exact operation executes without a guard and returns the result fixed below.
 
 For a common selected type T, the domain queries have these exact total Bool values:
@@ -1855,10 +1855,11 @@ A concrete terminal-root identity uses the owning function instance plus the ope
 A `requires_clause` is represented only by its GoalTemplate, call-site derivations, and proved body-entry fact; an `ensures_clause` only by its verified RelationTemplate, selected-exit judgments, and derivations.
 Neither contract clause has executable checked-program form.
 Facts-off compilation preserves every source-acceptance and call-goal judgment and erases the same proof-only syntax before lowering.
-Neither a discharged call goal nor a proved body-entry fact authorizes `llvm.assume`, an optimizer fact, or a second lowering path.
+Neither a discharged call goal nor a proved body-entry fact authorizes a second lowering path or an alternate acceptance; what a proved fact may tell the backend is stated below.
 STOR-6 target-domain obligations instead follow the target-stage discharge judgment above identically in facts-on and facts-off compilation; an optional optimizer fact supplies no target-layout discharge.
-The checker's proved disjointness facts may be supplied to the backend as target attributes and metadata — the places one call's substituted row proves disjoint [EFF-5], and the places a permitted adjacency proves independent [PAR-1] — that add no runtime branch, no lock, no dependency, and no scheduling edge to the emitted program, and whose absence changes no source verdict and no emitted behavior.
-That supply authorizes no `llvm.assume`, no second lowering path, and no alternate acceptance.
+Correctness comes first and performance is pursued on top of it, so every fact the checker has proved may be supplied to the backend, as target attributes, instruction flags, metadata, or assumptions: the places one call's substituted row proves disjoint [EFF-5], the places a permitted adjacency or loop proves independent [PAR-1, PAR-2], a reference's validity and extent [REF-2, REF-4], a discharged subscript bound [OP-4], and a discharged integer-domain obligation [OP-2], the last being what licenses a no-wrap flag on an exact operation.
+A supplied fact adds no runtime branch, no lock, no dependency, and no scheduling edge to the emitted program, and its absence changes no source verdict and no emitted behavior; only a fact the checker has actually discharged may be supplied, never one a writer states.
+That supply authorizes no second lowering path and no alternate acceptance.
 
 The one current ProofContext is failure-atomic.
 No fact, postcondition summary, invariant target, partial-operation discharge, checked function, or lowering input leaves semantic scratch until every premise of its originating judgment has succeeded.
