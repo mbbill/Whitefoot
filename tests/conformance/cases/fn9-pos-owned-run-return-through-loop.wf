@@ -14,7 +14,7 @@ fn main() -> status: own ExitStatus pure {
   for (
     at in 0_u64..5_u64,
     invariant grown: buf.len >= at,
-    invariant spare: buf.room + at >= 5_u64
+    invariant spare: buf.cap - buf.len + at >= 5_u64
   ) {
     place_back(window: &buf, value: 3_u8);
   }

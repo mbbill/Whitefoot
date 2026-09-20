@@ -1,13 +1,13 @@
 fn filled<const n: u64>(value: own u8) -> result: own Slots<u8, n> pure contract {
   ensures result.len >= n;
-  ensures result.room <= 0_u64;
+  ensures result.cap <= result.len;
 } {
   doc "Fills a window of n slots, stating its own capacity bound as the const generic itself rather than as a bound local.";
   let built = slots_new::<u8, n>();
   for @fill (
     at in 0_u64..n,
     invariant grown: built.len >= at,
-    invariant spare: built.room + at >= n
+    invariant spare: built.cap - built.len + at >= n
   ) {
     place_back(window: &built, value: value);
   }

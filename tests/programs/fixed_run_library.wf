@@ -1,6 +1,6 @@
 fn vacant<T: affine, const n: u64>() -> result: own Ring<Option<T>, n> pure contract {
   ensures result.len >= n;
-  ensures result.room <= 0_u64;
+  ensures result.cap <= result.len;
 } {
   doc "Builds a window of n slots, every one holding None.";
   let built = ring_new::<Option<T>, n>();
@@ -8,7 +8,7 @@ fn vacant<T: affine, const n: u64>() -> result: own Ring<Option<T>, n> pure cont
     at in 0_u64..n,
     invariant grown: built.len >= at,
     invariant bounded: built.len <= at,
-    invariant spare: built.room + at >= n
+    invariant spare: built.cap - built.len + at >= n
   ) {
     let empty = None<T>();
     place_back(window: &built, value: move empty);
@@ -18,7 +18,7 @@ fn vacant<T: affine, const n: u64>() -> result: own Ring<Option<T>, n> pure cont
 
 fn filled<T: copy, const n: u64>(value: own T) -> result: own Ring<T, n> pure contract {
   ensures result.len >= n;
-  ensures result.room <= 0_u64;
+  ensures result.cap <= result.len;
 } {
   doc "Builds a window of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
   let built = ring_new::<T, n>();
@@ -26,7 +26,7 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own Ring<T, n> pure co
     at in 0_u64..n,
     invariant grown: built.len >= at,
     invariant bounded: built.len <= at,
-    invariant spare: built.room + at >= n
+    invariant spare: built.cap - built.len + at >= n
   ) {
     place_back(window: &built, value: value);
   }
@@ -36,7 +36,6 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own Ring<T, n> pure co
 fn take_at<T: affine, const n: u64>(window: &Ring<T, n>, at: own u64) -> taken: own T writes(window) contract {
   requires at + 2_u64 <= deref(window).len;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
-  ensures deref(window).room == deref(entry(window)).room + 1_u64;
 } {
   doc "Removes the element at at, moving the last element into its place. The exchange is the built-in swap, which no source body could write without a hole [OP-11, WIN-3].";
   let endv = take_back(window: window);
@@ -47,10 +46,8 @@ fn take_at<T: affine, const n: u64>(window: &Ring<T, n>, at: own u64) -> taken: 
 fn try_place<T: affine, const n: u64>(window: &Ring<T, n>, value: own T) -> unplaced: own Option<T> writes(window.next), writes(window.len) contract {
   ensures deref(window).len <= deref(entry(window)).len + 1_u64;
   ensures deref(window).len >= deref(entry(window)).len;
-  ensures deref(window).room <= deref(entry(window)).room;
-  ensures deref(window).room + 1_u64 >= deref(entry(window)).room;
 } {
-  doc "Appends one value, handing it back when the window is full; the fullness test is the length against the written capacity, and the standing identity len + room = cap turns it into place_back's requirement [MSR-2].";
+  doc "Appends one value, handing it back when the window is full; the fullness test is the length against the written capacity, and the standing identity len + (cap - len) = cap turns it into place_back's requirement [MSR-2].";
   let held = deref(window).len;
   let fits = held < n;
   if fits {
@@ -63,8 +60,6 @@ fn try_place<T: affine, const n: u64>(window: &Ring<T, n>, value: own T) -> unpl
 fn try_take<T: affine, const n: u64>(window: &Ring<T, n>) -> taken: own Option<T> writes(window.last), writes(window.len) contract {
   ensures deref(window).len <= deref(entry(window)).len;
   ensures deref(window).len + 1_u64 >= deref(entry(window)).len;
-  ensures deref(window).room >= deref(entry(window)).room;
-  ensures deref(window).room <= deref(entry(window)).room + 1_u64;
 } {
   doc "Removes one value from the end, or reports that the window is empty.";
   let held = deref(window).len;
@@ -90,8 +85,8 @@ fn rebase<T: affine, const n: u64>(window: own Ring<T, n>, spare: own Ring<T, n>
     invariant gone: window.len + at <= count,
     invariant made_lo: built.len >= at,
     invariant made_hi: built.len <= at,
-    invariant spare_lo: built.room + at >= n,
-    invariant spare_hi: built.room + at <= n
+    invariant spare_lo: built.cap - built.len + at >= n,
+    invariant spare_hi: built.cap - built.len + at <= n
   ) {
     let one = take_front(window: &window);
     place_back(window: &built, value: move one);

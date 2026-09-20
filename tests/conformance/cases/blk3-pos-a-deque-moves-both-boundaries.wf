@@ -2,13 +2,13 @@ fn main() -> status: own ExitStatus pure {
   doc "The other two boundary operations. place_front moves the front boundary backwards, so the window wraps to the high slots of the ring, and take_back moves the back boundary, so the ring is a deque; with the queue case this exercises all four boundary operations and the wrap in both directions. A front operation replaces the whole window state, so each following requirement is discharged from a reread measure.";
   let run = ring_new::<u8, 4>();
   place_front(window: &run, value: 1_u8);
-  let spare1 = run.room;
+  let spare1 = run.cap - run.len;
   if spare1 == 3_u64 {
   } else {
     return exit_status(code: 6_u8);
   }
   place_front(window: &run, value: 2_u8);
-  let spare2 = run.room;
+  let spare2 = run.cap - run.len;
   if spare2 == 2_u64 {
   } else {
     return exit_status(code: 7_u8);

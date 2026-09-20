@@ -6,7 +6,7 @@ fn blank_page() -> page: own Slots<u8, 32> pure contract {
     index in 0_u64..32_u64,
     invariant grown: page.len >= index,
     invariant bound: page.len <= index,
-    invariant spare: page.room + index >= 32_u64
+    invariant spare: page.cap - page.len + index >= 32_u64
   ) {
     place_back(window: &page, value: 0_u8);
   }

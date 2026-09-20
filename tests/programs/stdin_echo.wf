@@ -29,8 +29,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let chunk = slots_new::<u8, 4096>();
   for @fill (
     at in 0_u64..4096_u64,
-    invariant grown: chunk.len >= at,
-    invariant spare: chunk.room + at >= 4096_u64
+    invariant grown: chunk.len == at
   ) {
     place_back(window: &chunk, value: 0_u8);
   }

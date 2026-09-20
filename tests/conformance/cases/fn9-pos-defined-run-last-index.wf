@@ -14,7 +14,7 @@ fn main() -> status: own ExitStatus pure {
   for (
     at_values in 0_u64..12_u64,
     invariant grown_values: values.len >= at_values,
-    invariant spare_values: values.room + at_values >= 12_u64
+    invariant spare_values: values.cap - values.len + at_values >= 12_u64
   ) {
     place_back(window: &values, value: 0_u8);
   }

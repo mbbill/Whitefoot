@@ -1,19 +1,19 @@
 fn fetch_at(run: own Slots<u8, 8>, index: own u64) -> value: own u8 pure contract {
   requires index < run.cap;
-  requires run.room <= 0_u64;
+  requires run.cap - run.len <= 0_u64;
 } {
   doc "The subscript bound is discharged from the capacity identity.";
   return run[index];
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "MSR-4, MSR-2: every consumer submits its normalized goal to one ordered disposition. The callee's requirement is stated over run.cap and the subscript's OP-4 obligation is stated over run.len in logical coordinates, and nothing between them relates the two except MSR-2's standing facts: len + room = cap, appended to the automatic affine-premise sequence with the empty support every standing fact has. A window's room is an ordinary killable term rather than a fixed cell, so the callee states it and the disposition discharges the subscript from the identity and that clause together; the caller discharges both requirements from the counted fill's own invariants.";
+  doc "MSR-4, MSR-2: every consumer submits its normalized goal to one ordered disposition. The callee's requirement is stated over run.cap and the subscript's OP-4 obligation is stated over run.len in logical coordinates, and nothing between them relates the two except MSR-2's standing facts: len + (cap - len) = cap, appended to the automatic affine-premise sequence with the empty support every standing fact has. A window's cap - len is an ordinary killable term rather than a fixed cell, so the callee states it and the disposition discharges the subscript from the identity and that clause together; the caller discharges both requirements from the counted fill's own invariants.";
   let run = slots_new::<u8, 8>();
   for @fill (
     at in 0_u64..8_u64,
     invariant grown: run.len >= at,
-    invariant spare: run.room + at >= 8_u64,
-    invariant tight: run.room + at <= 8_u64
+    invariant spare: run.cap - run.len + at >= 8_u64,
+    invariant tight: run.cap - run.len + at <= 8_u64
   ) {
     place_back(window: &run, value: 0_u8);
   }

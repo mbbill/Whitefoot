@@ -7,7 +7,7 @@ fn main() -> status: own ExitStatus pure {
   grow(cell: &b, capacity: 8_u64);
   invariant carried: b.inner.len == 1_u64;
   let n = b.inner.len;
-  let room = b.inner.room;
+  let room = b.inner.cap - b.inner.len;
   if popped == 6_u64 {
   } else {
     return exit_status(code: 1_u8);

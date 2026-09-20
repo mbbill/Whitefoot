@@ -227,8 +227,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let digits = slots_new::<u8, 16>();
   for @fill_digits (
     at in 0_u64..16_u64,
-    invariant grown_digits: digits.len >= at,
-    invariant spare_digits: digits.room + at >= 16_u64
+    invariant grown_digits: digits.len == at
   ) {
     place_back(window: &digits, value: 0_u8);
   }

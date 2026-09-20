@@ -3,7 +3,7 @@ fn overstated<const n: u64>() -> result: own Slots<u8, n> pure {
   let built = slots_new::<u8, n>();
   for @fill (
     at in 0_u64..n,
-    invariant spare: built.room >= n + 1_u64
+    invariant spare: built.cap - built.len >= n + 1_u64
   ) {
     place_back(window: &built, value: 7_u8);
   }

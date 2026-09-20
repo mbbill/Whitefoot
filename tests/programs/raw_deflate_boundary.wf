@@ -255,16 +255,14 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
   let scratch = slots_new::<u8, 4097>();
   for @reserve_scratch (
     at in 0_u64..4097_u64,
-    invariant grown: scratch.len >= at,
-    invariant spare: scratch.room + at >= 4097_u64
+    invariant grown: scratch.len == at
   ) {
     place_back(window: &scratch, value: 0_u8);
   }
   let report = slots_new::<u8, 128>();
   for @reserve_report (
     at in 0_u64..128_u64,
-    invariant grown: report.len >= at,
-    invariant spare: report.room + at >= 128_u64
+    invariant grown: report.len == at
   ) {
     place_back(window: &report, value: 0_u8);
   }
@@ -381,8 +379,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
   let stream = slots_new::<u8, 4096>();
   for @reserve_stream (
     at in 0_u64..4096_u64,
-    invariant grown: stream.len >= at,
-    invariant spare: stream.room + at >= 4096_u64
+    invariant grown: stream.len == at
   ) {
     place_back(window: &stream, value: 0_u8);
   }
@@ -391,8 +388,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
   let decoded = slots_new::<u8, 65536>();
   for @reserve_decoded (
     at in 0_u64..65536_u64,
-    invariant grown: decoded.len >= at,
-    invariant spare: decoded.room + at >= 65536_u64
+    invariant grown: decoded.len == at
   ) {
     place_back(window: &decoded, value: 0_u8);
   }

@@ -1,5 +1,5 @@
 fn consume_room(run: &Slots<u8, 64>) -> result: own unit writes(run) contract {
-  requires deref(run).room > 1_u64;
+  requires 1_u64 < deref(run).cap - deref(run).len;
 } {
   doc "Moves the back boundary twice and hands nothing back, so the amount its body moved the boundary by is not a fact of the signature.";
   place_back(window: run, value: 0_u8);

@@ -208,8 +208,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let width = 6.5_f64;
   for @fill (
     at in 0_u64..8192_u64,
-    invariant grown: words_cell.inner.len >= at,
-    invariant spare_left: words_cell.inner.room + at >= 8192_u64
+    invariant grown: words_cell.inner.len == at
   ) {
     place_back(window: &words_cell.inner, value: width);
     set width = fmul.strict(width, 1.0625_f64);
@@ -266,8 +265,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let report = slots_new::<u8, 34>();
   for @fill_report (
     at in 0_u64..34_u64,
-    invariant grown_report: report.len >= at,
-    invariant spare_report: report.room + at >= 34_u64
+    invariant grown_report: report.len == at
   ) {
     place_back(window: &report, value: 10_u8);
   }

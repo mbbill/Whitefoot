@@ -139,7 +139,7 @@ fn radix_scatter(input: &[u64], bit: own u32) -> result: own Box<Array<u64>> rea
     index in 0_u64..blocks,
     invariant filled: chunks.inner.len >= index,
     invariant bounded: chunks.inner.len <= index,
-    invariant spare: chunks.inner.room + index >= blocks
+    invariant spare: chunks.inner.cap - chunks.inner.len + index >= blocks
   ) {
     let vacant = None<Chunk>();
     place_back(window: &chunks.inner, value: move vacant);

@@ -89,14 +89,14 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
 
 fn component() -> made: own Slots<u8, 16> pure contract {
   ensures made.len >= 16_u64;
-  ensures made.room <= 0_u64;
+  ensures made.cap <= made.len;
 } {
   doc "One name run, built by the ordinary counted fill.";
   let built = slots_new::<u8, 16>();
   for @fill (
     at in 0_u64..16_u64,
     invariant grown: built.len >= at,
-    invariant spare: built.room + at >= 16_u64
+    invariant spare: built.cap - built.len + at >= 16_u64
   ) {
     place_back(window: &built, value: 97_u8);
   }
@@ -136,7 +136,7 @@ fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatu
   for @prime (
     at in 0_u64..1_u64,
     invariant grown: scratch.len >= at,
-    invariant spare: scratch.room + at >= 1_u64
+    invariant spare: scratch.cap - scratch.len + at >= 1_u64
   ) {
     place_back(window: &scratch, value: 0_u8);
   }

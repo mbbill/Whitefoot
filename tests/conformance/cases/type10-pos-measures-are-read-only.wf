@@ -1,11 +1,11 @@
 fn main() -> status: own ExitStatus pure {
-  doc "TYPE-10: len, cap, room and head are read-only pseudo-fields of a measured place; a program reads them like fields and only the window and construction operations change them.";
+  doc "TYPE-10: len, cap, free slots and head are read-only pseudo-fields of a measured place; a program reads them like fields and only the window and construction operations change them.";
   let r = ring_new::<u64, 4>();
   let before = r.len;
   place_back(window: &r, value: 1_u64);
   let after = r.len;
   let capacity = r.cap;
-  let spare = r.room;
+  let spare = r.cap - r.len;
   let origin = r.head;
   if before == 0_u64 {
   } else {

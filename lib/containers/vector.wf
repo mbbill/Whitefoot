@@ -31,7 +31,7 @@ fn grow_vector_append<T: linear>(values: &GrowVector<T>, value: own T) -> length
   ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len + 1_u64;
 } {
   doc "Appends one value, doubling full nonempty backing and taking one slot when the backing is empty. The doubling ceiling is what discharges the allocation-size obligation [OP-9].";
-  let spare = deref(values).storage.inner.room;
+  let spare = deref(values).storage.inner.cap - deref(values).storage.inner.len;
   if spare > 0_u64 {
     place_back(window: &deref(values).storage.inner, value: move value);
     let reached = deref(values).storage.inner.len;
@@ -63,7 +63,7 @@ fn grow_vector_insert<T: linear>(values: &GrowVector<T>, index: own u64, value: 
   ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len + 1_u64;
 } {
   doc "Inserts before a proved index and preserves order. The manual exchange-and-shift loop v0.59 wrote for this retired with [OP-10]'s insert_at, which is the one operation that writes the append slot and the filled run together.";
-  let spare = deref(values).storage.inner.room;
+  let spare = deref(values).storage.inner.cap - deref(values).storage.inner.len;
   if spare > 0_u64 {
     insert_at(window: &deref(values).storage.inner, index: index, value: move value);
     let reached = deref(values).storage.inner.len;

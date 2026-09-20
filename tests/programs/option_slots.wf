@@ -5,14 +5,13 @@ struct OptVec {
 
 fn vacant<T: affine, const n: u64>() -> result: own Slots<Option<T>, n> pure contract {
   ensures result.len >= n;
-  ensures result.room <= 0_u64;
+  ensures result.cap <= result.len;
 } {
   doc "Builds a window of n slots, every one holding None.";
   let built = slots_new::<Option<T>, n>();
   for @fill (
     at in 0_u64..n,
-    invariant grown: built.len >= at,
-    invariant spare: built.room + at >= n
+    invariant grown: built.len == at
   ) {
     let empty = None<T>();
     place_back(window: &built, value: move empty);
@@ -216,8 +215,7 @@ fn run_boxes(first: own Box<u64>, second: own Box<u64>, replacement: own Box<u64
   let target = slots_new::<Option<Entry>, 8>();
   for @fill_target (
     at in 0_u64..8_u64,
-    invariant grown_target: target.len >= at,
-    invariant spare_target: target.room + at >= 8_u64
+    invariant grown_target: target.len == at
   ) {
     let target_empty = None<Entry>();
     place_back(window: &target, value: move target_empty);
@@ -225,8 +223,7 @@ fn run_boxes(first: own Box<u64>, second: own Box<u64>, replacement: own Box<u64
   let target_states = slots_new::<u64, 8>();
   for @fill_target_states (
     at in 0_u64..8_u64,
-    invariant grown_target_states: target_states.len >= at,
-    invariant spare_target_states: target_states.room + at >= 8_u64
+    invariant grown_target_states: target_states.len == at
   ) {
     place_back(window: &target_states, value: 0_u64);
   }

@@ -93,7 +93,7 @@ fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatu
   for @scratch (
     at in 0_u64..4096_u64,
     invariant grown: entries.len >= at,
-    invariant vacancy: entries.room + at >= 4096_u64
+    invariant vacancy: entries.cap - entries.len + at >= 4096_u64
   ) {
     place_back(window: &entries, value: 0_u8);
   }

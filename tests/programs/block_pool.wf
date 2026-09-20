@@ -24,7 +24,7 @@ fn pool_new() -> made: own BlockPool pure {
     at in 0_u64..8_u64,
     invariant grown: free.len >= at,
     invariant bounded: free.len <= at,
-    invariant spare: free.room + at >= 8_u64
+    invariant spare: free.cap - free.len + at >= 8_u64
   ) {
     let run = block_new();
     place_back(window: &free, value: move run);
@@ -36,7 +36,6 @@ fn pool_new() -> made: own BlockPool pure {
 fn take_free(free: &Slots<Block, 8>) -> block: own Block writes(free.last), writes(free.len) contract {
   requires deref(free).len > 0_u64;
   ensures deref(free).len + 1_u64 == deref(entry(free)).len;
-  ensures deref(free).room == deref(entry(free)).room + 1_u64;
 } {
   doc "One block off the back boundary; the row names exactly the last filled slot and the length take_back moves [OP-10].";
   let block = take_back(window: free);
@@ -44,7 +43,7 @@ fn take_free(free: &Slots<Block, 8>) -> block: own Block writes(free.last), writ
 }
 
 fn return_free(free: &Slots<Block, 8>, block: own Block) -> result: own unit writes(free.next), writes(free.len) contract {
-  requires deref(free).room > 0_u64;
+  requires deref(free).len < deref(free).cap;
   ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
   doc "One block back onto the append slot, under the caller's proof that the free list has room.";
@@ -67,7 +66,7 @@ fn pool_take(pool: own BlockPool) -> (rest: own BlockPool, leased: own Option<Le
 }
 
 fn pool_release(pool: own BlockPool, lease: own Lease) -> rest: own BlockPool pure contract {
-  requires pool.free.room > 0_u64;
+  requires pool.free.len < pool.free.cap;
 } {
   doc "Returns one lease to the free list; the caller has proved there is room. The linear lease leaves this scope only by being taken apart, which is what makes the return unavoidable [PROV-6].";
   let Lease(run: back) = move lease;
@@ -82,7 +81,6 @@ struct StaticBlock {
 fn take_static(free: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(free.last), writes(free.len) contract {
   requires deref(free).len > 0_u64;
   ensures deref(free).len + 1_u64 == deref(entry(free)).len;
-  ensures deref(free).room == deref(entry(free)).room + 1_u64;
 } {
   doc "The same boundary take over a frame-resident element type.";
   let block = take_back(window: free);
@@ -90,7 +88,7 @@ fn take_static(free: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(fr
 }
 
 fn return_static(free: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(free.next), writes(free.len) contract {
-  requires deref(free).room > 0_u64;
+  requires deref(free).len < deref(free).cap;
   ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
   doc "The same boundary place over a frame-resident element type.";

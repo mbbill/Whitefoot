@@ -194,7 +194,7 @@ fn key_put<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: own K, payload: own Box<
 
 fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: own unit writes(slots) contract {
   requires deref(slots).inner.len == 0_u64;
-  requires deref(slots).inner.room >= count;
+  requires count <= deref(slots).inner.cap - deref(slots).inner.len;
   ensures deref(slots).inner.len == count;
 } {
   doc "One vacant slot per position, under a counted header that carries the length and the remaining room.";
@@ -202,7 +202,7 @@ fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: o
     index in 0_u64..count,
     invariant filled: deref(slots).inner.len >= index,
     invariant bounded: deref(slots).inner.len <= index,
-    invariant spare: deref(slots).inner.room + index >= count
+    invariant spare: deref(slots).inner.cap - deref(slots).inner.len + index >= count
   ) {
     let vacant = Vacant<K>();
     place_back(window: &deref(slots).inner, value: move vacant);

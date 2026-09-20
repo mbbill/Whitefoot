@@ -67,8 +67,7 @@ fn main() -> status: own ExitStatus pure {
   let table = slots_new::<u8, 3>();
   for @fill_table (
     at in 0_u64..3_u64,
-    invariant grown: table.len >= at,
-    invariant spare: table.room + at >= 3_u64
+    invariant grown: table.len == at
   ) {
     place_back(window: &table, value: 7_u8);
   }

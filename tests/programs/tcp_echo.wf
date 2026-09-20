@@ -251,16 +251,14 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let digits = slots_new::<u8, 16>();
   for @fill_digits (
     at in 0_u64..16_u64,
-    invariant grown_digits: digits.len >= at,
-    invariant spare_digits: digits.room + at >= 16_u64
+    invariant grown_digits: digits.len == at
   ) {
     place_back(window: &digits, value: 0_u8);
   }
   let chunk = slots_new::<u8, 4096>();
   for @fill_chunk (
     at in 0_u64..4096_u64,
-    invariant grown_chunk: chunk.len >= at,
-    invariant spare_chunk: chunk.room + at >= 4096_u64
+    invariant grown_chunk: chunk.len == at
   ) {
     place_back(window: &chunk, value: 0_u8);
   }

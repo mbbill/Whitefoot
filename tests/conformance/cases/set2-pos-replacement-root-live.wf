@@ -13,7 +13,7 @@ fn main() -> status: own ExitStatus pure {
   for @fill_first (
     at in 0_u64..2_u64,
     invariant grown: first.len >= at,
-    invariant vacancy: first.room + at >= 2_u64
+    invariant vacancy: first.cap - first.len + at >= 2_u64
   ) {
     place_back(window: &first, value: 1_u8);
   }
@@ -22,7 +22,7 @@ fn main() -> status: own ExitStatus pure {
   for @fill_second (
     at in 0_u64..3_u64,
     invariant grown: second.len >= at,
-    invariant vacancy: second.room + at >= 3_u64
+    invariant vacancy: second.cap - second.len + at >= 3_u64
   ) {
     place_back(window: &second, value: 2_u8);
   }

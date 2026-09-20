@@ -21,7 +21,7 @@ fn filled_array<T: Int, const n: u64>(value: own T) -> result: own Slots<T, n> p
     at in 0_u64..n,
     invariant grown: built.len >= at,
     invariant bounded: built.len <= at,
-    invariant spare: built.room + at >= n
+    invariant spare: built.cap - built.len + at >= n
   ) {
     place_back(window: &built, value: value);
   }
@@ -38,7 +38,7 @@ fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own Box<Slots
     at in 0_u64..length,
     invariant grown: built.inner.len >= at,
     invariant bounded: built.inner.len <= at,
-    invariant spare: built.inner.room + at >= length
+    invariant spare: built.inner.cap - built.inner.len + at >= length
   ) {
     place_back(window: &built.inner, value: value);
   }

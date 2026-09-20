@@ -15,7 +15,7 @@ fn build_scalar16(seed: own u64) -> result: own Slots<u64, 16> pure contract {
     at in 0_u64..16_u64,
     invariant filled_lo: values.len >= at,
     invariant filled_hi: values.len <= at,
-    invariant spare: values.room + at >= 16_u64
+    invariant spare: values.cap - values.len + at >= 16_u64
   ) {
     let product_a = state *wrap 6364136223846793005_u64;
     set state = product_a +wrap 1442695040888963407_u64;
@@ -56,7 +56,7 @@ fn build_scalar256(seed: own u64) -> result: own Slots<u64, 256> pure contract {
     at in 0_u64..256_u64,
     invariant filled_lo: values.len >= at,
     invariant filled_hi: values.len <= at,
-    invariant spare: values.room + at >= 256_u64
+    invariant spare: values.cap - values.len + at >= 256_u64
   ) {
     let product_a = state *wrap 6364136223846793005_u64;
     set state = product_a +wrap 1442695040888963407_u64;
@@ -97,7 +97,7 @@ fn build_wide16(seed: own u64) -> result: own Slots<Wide, 16> pure contract {
     at in 0_u64..16_u64,
     invariant filled_lo: values.len >= at,
     invariant filled_hi: values.len <= at,
-    invariant spare: values.room + at >= 16_u64
+    invariant spare: values.cap - values.len + at >= 16_u64
   ) {
     let product_a = state *wrap 6364136223846793005_u64;
     set state = product_a +wrap 1442695040888963407_u64;

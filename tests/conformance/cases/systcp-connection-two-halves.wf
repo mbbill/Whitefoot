@@ -124,7 +124,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   for @fill (
     at in 0_u64..64_u64,
     invariant grown: scratch.len >= at,
-    invariant vacancy: scratch.room + at >= 64_u64
+    invariant vacancy: scratch.cap - scratch.len + at >= 64_u64
   ) {
     place_back(window: &scratch, value: 0_u8);
   }

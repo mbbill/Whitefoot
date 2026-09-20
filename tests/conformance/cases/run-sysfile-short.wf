@@ -93,7 +93,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: 
   for @scratch (
     at in 0_u64..8_u64,
     invariant grown: page.len >= at,
-    invariant vacancy: page.room + at >= 8_u64
+    invariant vacancy: page.cap - page.len + at >= 8_u64
   ) {
     place_back(window: &page, value: 90_u8);
   }

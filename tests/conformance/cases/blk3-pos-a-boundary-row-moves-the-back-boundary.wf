@@ -1,5 +1,5 @@
 fn push(window: &Slots<u8, 4>, value: own u8) -> result: own unit writes(window.next), writes(window.len) contract {
-  requires deref(window).room > 0_u64;
+  requires deref(window).len < deref(window).cap;
 } {
   doc "Places one value at the back boundary of a run, declaring exactly the two window parts place_back writes.";
   place_back(window: window, value: value);

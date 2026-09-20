@@ -1,5 +1,5 @@
 fn push(values: &Slots<u64, 4>, value: own u64) -> result: own unit writes(values.next), writes(values.len) contract {
-  requires deref(values).room > 0_u64;
+  requires deref(values).len < deref(values).cap;
   ensures deref(values).len == deref(values).len + 1_u64;
 } {
   doc "Two occurrences of the same measure of a written reference parameter, deref(values).len, neither written as an entry term, denote the same exit term [MSR-3], so the declared equation states that one term is one greater than itself.";

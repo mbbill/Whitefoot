@@ -116,8 +116,8 @@ fn build_huffman_table(lengths: &[u8], symbol_count: own u64, max_bits: own u32,
     at in 0_u64..count_slots,
     invariant made_lo: counts.len >= at,
     invariant made_hi: counts.len <= at,
-    invariant spare_lo: counts.room + at >= 16_u64,
-    invariant spare_hi: counts.room + at <= 16_u64
+    invariant spare_lo: counts.cap - counts.len + at >= 16_u64,
+    invariant spare_hi: counts.cap - counts.len + at <= 16_u64
   ) {
     place_back(window: &counts, value: 0_u64);
   }
@@ -126,8 +126,8 @@ fn build_huffman_table(lengths: &[u8], symbol_count: own u64, max_bits: own u32,
     at in 0_u64..symbol_count,
     invariant made_lo: symbols.len >= at,
     invariant made_hi: symbols.len <= at,
-    invariant spare_lo: symbols.room + at >= 286_u64,
-    invariant spare_hi: symbols.room + at <= 286_u64
+    invariant spare_lo: symbols.cap - symbols.len + at >= 286_u64,
+    invariant spare_hi: symbols.cap - symbols.len + at <= 286_u64
   ) {
     place_back(window: &symbols, value: 0_u64);
   }
@@ -189,8 +189,8 @@ fn build_huffman_table(lengths: &[u8], symbol_count: own u64, max_bits: own u32,
     at in 0_u64..count_slots,
     invariant made_lo: offsets.len >= at,
     invariant made_hi: offsets.len <= at,
-    invariant spare_lo: offsets.room + at >= 16_u64,
-    invariant spare_hi: offsets.room + at <= 16_u64
+    invariant spare_lo: offsets.cap - offsets.len + at >= 16_u64,
+    invariant spare_hi: offsets.cap - offsets.len + at <= 16_u64
   ) {
     place_back(window: &offsets, value: 0_u64);
   }

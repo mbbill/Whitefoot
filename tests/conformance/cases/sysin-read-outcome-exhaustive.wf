@@ -6,7 +6,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   for @scratch (
     at in 0_u64..4_u64,
     invariant grown: chunk.len >= at,
-    invariant vacancy: chunk.room + at >= 4_u64
+    invariant vacancy: chunk.cap - chunk.len + at >= 4_u64
   ) {
     place_back(window: &chunk, value: 0_u8);
   }

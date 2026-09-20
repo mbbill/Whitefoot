@@ -55,7 +55,7 @@ fn main() -> status: own ExitStatus pure {
     at in 0_u64..20_u64,
     invariant grown: runtime_header.len >= at,
     invariant bounded: runtime_header.len <= at,
-    invariant spare: runtime_header.room + at >= 20_u64
+    invariant spare: runtime_header.cap - runtime_header.len + at >= 20_u64
   ) {
     let byte = ipv4_header[at];
     place_back(window: &runtime_header, value: byte);

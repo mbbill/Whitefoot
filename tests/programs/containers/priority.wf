@@ -1,7 +1,6 @@
 fn push(heap: &Slots<u64, 16>, value: own u64) -> result: own unit writes(heap) contract {
-  requires deref(heap).room >= 1_u64;
+  requires 1_u64 <= deref(heap).cap - deref(heap).len;
   ensures deref(heap).len == deref(entry(heap)).len + 1_u64;
-  ensures deref(heap).room == deref(entry(heap)).room - 1_u64;
 } {
   let at = deref(heap).len;
   place_back(window: heap, value: value);
@@ -80,7 +79,7 @@ fn priority_round(seed: own u64, entering: own u64) -> (checksum: own u64, next_
   for (
     index in 0_u64..16_u64,
     invariant grown: heap.len >= index,
-    invariant spare: heap.room + index >= 16_u64
+    invariant spare: heap.cap - heap.len + index >= 16_u64
   ) {
     let product = state *wrap 6364136223846793005_u64;
     set state = product +wrap 1442695040888963407_u64;

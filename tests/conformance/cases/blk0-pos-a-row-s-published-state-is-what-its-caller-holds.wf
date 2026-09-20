@@ -3,7 +3,7 @@ fn main() -> status: own ExitStatus pure {
   let run = slots_new::<u8, 8>();
   place_back(window: &run, value: 1_u8);
   place_back(window: &run, value: 2_u8);
-  let left = run.room;
+  let left = run.cap - run.len;
   if left == 6_u64 {
     return exit_status(code: 0_u8);
   }

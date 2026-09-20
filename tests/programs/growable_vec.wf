@@ -50,7 +50,7 @@ fn growth_trace(seed: own u8, initial: own u64, count: own u64, limit: own u64) 
     index in 0_u64..initial,
     invariant filled: original.inner.len >= index,
     invariant bound: original.inner.len <= index,
-    invariant spare: original.inner.room + index >= initial
+    invariant spare: original.inner.cap - original.inner.len + index >= initial
   ) {
     let product = state *wrap 73_u8;
     set state = product +wrap 41_u8;
@@ -67,7 +67,7 @@ fn growth_trace(seed: own u8, initial: own u64, count: own u64, limit: own u64) 
     index in 0_u64..initial,
     invariant filled: grown.inner.len >= index,
     invariant bound: grown.inner.len <= index,
-    invariant spare: grown.inner.room + index >= count
+    invariant spare: grown.inner.cap - grown.inner.len + index >= count
   ) {
     let byte = original.inner[index];
     place_back(window: &grown.inner, value: byte);
@@ -77,7 +77,7 @@ fn growth_trace(seed: own u8, initial: own u64, count: own u64, limit: own u64) 
     index in initial..count,
     invariant filled: grown.inner.len >= index,
     invariant bound: grown.inner.len <= index,
-    invariant spare: grown.inner.room + index >= count
+    invariant spare: grown.inner.cap - grown.inner.len + index >= count
   ) {
     let product = state *wrap 73_u8;
     set state = product +wrap 41_u8;
@@ -129,7 +129,7 @@ fn main() -> status: own ExitStatus pure {
   }
   bs_reserve(s: &s, total: 24_u64);
   let opening = s.inner.len;
-  let spare = s.inner.room;
+  let spare = s.inner.cap - s.inner.len;
   if opening == 0_u64 {
   } else {
     return exit_status(code: 1_u8);
@@ -143,7 +143,7 @@ fn main() -> status: own ExitStatus pure {
     at in 0_u64..20_u64,
     invariant grown_lo: s.inner.len >= at,
     invariant grown_hi: s.inner.len <= at,
-    invariant spare_left: s.inner.room + at >= 24_u64
+    invariant spare_left: s.inner.cap - s.inner.len + at >= 24_u64
   ) {
     place_back(window: &s.inner, value: b);
     set b = b +wrap 7_u8;
@@ -175,7 +175,7 @@ fn main() -> status: own ExitStatus pure {
   }
   bs_reserve(s: &held, total: 8_u64);
   let second_opening = held.inner.len;
-  let second_spare = held.inner.room;
+  let second_spare = held.inner.cap - held.inner.len;
   if second_opening == 0_u64 {
   } else {
     return exit_status(code: 1_u8);
@@ -190,7 +190,7 @@ fn main() -> status: own ExitStatus pure {
     at in 0_u64..5_u64,
     invariant held_lo: held.inner.len >= at + 1_u64,
     invariant held_hi: held.inner.len <= at + 1_u64,
-    invariant spare_left: held.inner.room + at + 1_u64 >= 8_u64
+    invariant spare_left: held.inner.cap - held.inner.len + at + 1_u64 >= 8_u64
   ) {
     let byte = deref(source)[at];
     place_back(window: &held.inner, value: byte);

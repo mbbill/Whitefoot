@@ -145,8 +145,7 @@ fn decode_dynamic(state: &InflateState, input: &[u8], out: &[u8]) -> result: own
   let code_lengths = slots_new::<u8, 19>();
   for @reserve_code_lengths (
     at in 0_u64..19_u64,
-    invariant grown: code_lengths.len >= at,
-    invariant spare: code_lengths.room + at >= 19_u64
+    invariant grown: code_lengths.len == at
   ) {
     place_back(window: &code_lengths, value: 0_u8);
   }
@@ -158,16 +157,14 @@ fn decode_dynamic(state: &InflateState, input: &[u8], out: &[u8]) -> result: own
   let literal_lengths = slots_new::<u8, 286>();
   for @reserve_literal_lengths (
     at in 0_u64..286_u64,
-    invariant grown: literal_lengths.len >= at,
-    invariant spare: literal_lengths.room + at >= 286_u64
+    invariant grown: literal_lengths.len == at
   ) {
     place_back(window: &literal_lengths, value: 0_u8);
   }
   let distance_lengths = slots_new::<u8, 32>();
   for @reserve_distance_lengths (
     at in 0_u64..32_u64,
-    invariant grown: distance_lengths.len >= at,
-    invariant spare: distance_lengths.room + at >= 32_u64
+    invariant grown: distance_lengths.len == at
   ) {
     place_back(window: &distance_lengths, value: 0_u8);
   }

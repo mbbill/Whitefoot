@@ -1,19 +1,19 @@
-fn record(destination: &Slots<u8, 4>, value: own u8) -> available: own u64 writes(destination) contract {
-  requires deref(destination).room > 0_u64;
-  ensures available == deref(destination).room;
-  ensures deref(destination).room + 1_u64 == deref(entry(destination)).room;
+fn record(destination: &Slots<u8, 4>, value: own u8) -> count: own u64 writes(destination) contract {
+  requires deref(destination).len < deref(destination).cap;
+  ensures count == deref(destination).len;
+  ensures deref(destination).len == deref(entry(destination)).len + 1_u64;
 } {
-  doc "Fills one slot of the window it is handed and reports the room that remains.";
+  doc "Fills one slot of the window it is handed and reports the length that results.";
   place_back(window: destination, value: value);
-  let spare = deref(destination).room;
-  return spare;
+  let after = deref(destination).len;
+  return after;
 }
 
 fn main() -> status: own ExitStatus pure {
   doc "MSR-3 admits a source ensures over the measure of a reference parameter the row writes: the bare measure denotes the exit-state term over the caller's resolved place, while entry(parameter) denotes the immutable entry datum, and the two are distinct terms even though both project from one formal and one actual.";
   let workspace = slots_new::<u8, 4>();
-  let available = record(destination: &workspace, value: 1_u8);
-  if available != 3_u64 {
+  let count = record(destination: &workspace, value: 1_u8);
+  if count != 1_u64 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);

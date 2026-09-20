@@ -114,9 +114,8 @@ fn sift_sink<Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, env: &E) -
 }
 
 fn push<Order<T, E>>(queue: &Queue<Order<T, E>>, value: own T, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
-  requires deref(queue).heap.room >= 1_u64;
+  requires 1_u64 <= deref(queue).heap.cap - deref(queue).heap.len;
   ensures deref(queue).heap.len == deref(entry(queue)).heap.len + 1_u64;
-  ensures deref(queue).heap.room == deref(entry(queue)).heap.room - 1_u64;
 } {
   doc "An owned scalar or owner enters the window and then rises into place.";
   let entering = deref(queue).heap.len;
@@ -206,7 +205,7 @@ fn priority_round(seed: own u64, entering: own u64) -> (checksum: own u64, next_
   for (
     index in 0_u64..16_u64,
     invariant grown: queue.heap.len >= index,
-    invariant spare: queue.heap.room + index >= 16_u64
+    invariant spare: queue.heap.cap - queue.heap.len + index >= 16_u64
   ) {
     let product = state *wrap 6364136223846793005_u64;
     set state = product +wrap 1442695040888963407_u64;

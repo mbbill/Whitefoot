@@ -1,5 +1,5 @@
 fn nibble(run: &Slots<u8, 64>) -> result: own unit writes(run) contract {
-  requires deref(run).room > 0_u64;
+  requires deref(run).len < deref(run).cap;
 } {
   doc "Places one byte and no more, so the amount its body moves the boundary by is not a fact of the signature.";
   place_back(window: run, value: 0_u8);

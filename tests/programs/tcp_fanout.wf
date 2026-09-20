@@ -155,7 +155,7 @@ fn send_all(send: &TcpSend, source: &[u8], length: own u64) -> result: own Resul
 }
 
 fn zero_fill(vector: &Slots<u8, 256>) -> result: own unit writes(vector) contract {
-  define spare = deref(vector).room;
+  define spare = deref(vector).cap - deref(vector).len;
   requires 256_u64 <= spare;
   ensures deref(vector).len >= 256_u64;
 } {
@@ -163,7 +163,7 @@ fn zero_fill(vector: &Slots<u8, 256>) -> result: own unit writes(vector) contrac
   for @fill_run (
     at in 0_u64..256_u64,
     invariant grown_run: deref(vector).len >= at,
-    invariant spare_run: deref(vector).room + at >= 256_u64
+    invariant spare_run: deref(vector).cap - deref(vector).len + at >= 256_u64
   ) {
     place_back(window: vector, value: 0_u8);
   }
@@ -228,8 +228,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let digits = slots_new::<u8, 16>();
   for @fill_digits (
     at in 0_u64..16_u64,
-    invariant grown_digits: digits.len >= at,
-    invariant spare_digits: digits.room + at >= 16_u64
+    invariant grown_digits: digits.len == at
   ) {
     place_back(window: &digits, value: 0_u8);
   }

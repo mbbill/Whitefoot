@@ -83,8 +83,7 @@ fn main() -> status: own ExitStatus pure {
   let packet = slots_new::<u8, 12>();
   for @fill_packet (
     at in 0_u64..12_u64,
-    invariant grown: packet.len >= at,
-    invariant spare: packet.room + at >= 12_u64
+    invariant grown: packet.len == at
   ) {
     place_back(window: &packet, value: 0_u8);
   }

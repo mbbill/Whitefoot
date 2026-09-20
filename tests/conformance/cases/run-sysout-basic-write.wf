@@ -6,7 +6,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   for @fill (
     at in 0_u64..5_u64,
     invariant grown: bytes.len >= at,
-    invariant vacancy: bytes.room + at >= 5_u64
+    invariant vacancy: bytes.cap - bytes.len + at >= 5_u64
   ) {
     place_back(window: &bytes, value: 65_u8);
   }

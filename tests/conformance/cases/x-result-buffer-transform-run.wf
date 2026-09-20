@@ -10,7 +10,7 @@ fn transform<const n: u64>(input: own Slots<u8, n>) -> function_result: own Resu
   for @build (
     at in 0_u64..n,
     invariant grown: output.len >= at,
-    invariant spare: output.room + at >= n
+    invariant spare: output.cap - output.len + at >= n
   ) {
     place_back(window: &output, value: 0_u8);
   }

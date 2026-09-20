@@ -1,7 +1,6 @@
 fn take_block(free: &Slots<Box<Slots<u8>>, 2>) -> block: own Box<Slots<u8>> writes(free) contract {
   requires deref(free).len > 0_u64;
   ensures deref(free).len + 1_u64 == deref(entry(free)).len;
-  ensures deref(free).room == deref(entry(free)).room + 1_u64;
 } {
   doc "Takes the last stocked cell out of the pool and publishes what that did to the pool alone.";
   let block = take_back(window: free);
@@ -9,7 +8,7 @@ fn take_block(free: &Slots<Box<Slots<u8>>, 2>) -> block: own Box<Slots<u8>> writ
 }
 
 fn return_block(free: &Slots<Box<Slots<u8>>, 2>, block: own Box<Slots<u8>>) -> result: own unit writes(free) contract {
-  requires deref(free).room > 0_u64;
+  requires deref(free).len < deref(free).cap;
   ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
   doc "Puts one cell back into the pool.";

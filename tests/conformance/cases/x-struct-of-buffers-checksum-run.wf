@@ -9,7 +9,7 @@ fn main() -> status: own ExitStatus pure {
   for @build_left (
     at in 0_u64..6_u64,
     invariant grown: left.inner.len >= at,
-    invariant spare: left.inner.room + at >= 6_u64
+    invariant spare: left.inner.cap - left.inner.len + at >= 6_u64
   ) {
     place_back(window: &left.inner, value: 0_u64);
   }
@@ -17,7 +17,7 @@ fn main() -> status: own ExitStatus pure {
   for @build_right (
     at in 0_u64..6_u64,
     invariant grown: right.inner.len >= at,
-    invariant spare: right.inner.room + at >= 6_u64
+    invariant spare: right.inner.cap - right.inner.len + at >= 6_u64
   ) {
     place_back(window: &right.inner, value: 0_u64);
   }

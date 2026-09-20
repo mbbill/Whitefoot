@@ -12,7 +12,7 @@ fn take_static(free: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(fr
 }
 
 fn return_static(free: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(free.next), writes(free.len) contract {
-  requires deref(free).room > 0_u64;
+  requires deref(free).len < deref(free).cap;
   ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
   doc "Puts one block back into the pool's append slot and publishes the boundary move.";

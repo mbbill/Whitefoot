@@ -1,5 +1,5 @@
 fn append_one<T: affine, const n: u64>(values: &Slots<T, n>, value: own T) -> result: own unit writes(values) contract {
-  requires deref(values).room > 0_u64;
+  requires deref(values).len < deref(values).cap;
   ensures deref(values).len == deref(entry(values)).len + 1_u64;
   ensures deref(values).cap == deref(entry(values)).cap;
 } {

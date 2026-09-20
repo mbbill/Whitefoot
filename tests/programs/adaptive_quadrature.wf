@@ -77,8 +77,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let report = slots_new::<u8, 64>();
   for @digits (
     at in 0_u64..64_u64,
-    invariant grown: report.len >= at,
-    invariant spare: report.room + at >= 64_u64
+    invariant grown: report.len == at
   ) {
     let top = iand(bits, 9223372036854775808_u64);
     let digit = if top == 0_u64 {

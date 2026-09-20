@@ -1,13 +1,13 @@
 fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
   ensures result.len >= n;
-  ensures result.room <= 0_u64;
+  ensures result.cap <= result.len;
 } {
   doc "Builds a window of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
   let built = slots_new::<T, n>();
   for @fill (
     at in 0_u64..n,
     invariant grown: built.len >= at,
-    invariant spare: built.room + at >= n
+    invariant spare: built.cap - built.len + at >= n
   ) {
     place_back(window: &built, value: value);
   }

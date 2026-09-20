@@ -9,7 +9,7 @@ fn main() -> status: own ExitStatus pure {
   }
   let n = table.len;
   let c = table.cap;
-  let r = table.room;
+  let r = table.cap - table.len;
   if n == 4_u64 {
   } else {
     return exit_status(code: 202_u8);

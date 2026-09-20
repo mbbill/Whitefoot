@@ -1,7 +1,6 @@
 fn pair() -> result: own Ring<u8, 4> pure contract {
   ensures result.len >= 2_u64;
   ensures result.len <= 2_u64;
-  ensures result.room >= 2_u64;
   ensures result.head <= 0_u64;
 } {
   doc "Builds a run of two values and publishes what its window then holds.";
@@ -14,7 +13,7 @@ fn pair() -> result: own Ring<u8, 4> pure contract {
 }
 
 fn enqueue(vector: &Ring<u8, 4>, value: own u8) -> result: own unit writes(vector) contract {
-  requires deref(vector).room > 0_u64;
+  requires deref(vector).len < deref(vector).cap;
   ensures deref(vector).len >= deref(entry(vector)).len + 1_u64;
 } {
   doc "Places one value at the back boundary of a run.";
