@@ -280,6 +280,12 @@ condition under which it is taken up.
   omitted-capacity form, element storage and placement still live in the
   type rules, and a constant-capacity `cap` is a field whose value is a
   type constant.
+- **Retire the class names copy, affine and linear from the specification's
+  prose.** The keywords are the two capabilities `copy` and `drop` and the
+  modifiers `nocopy` and `nodrop`; the three class names survive only as
+  prose terms defined once in OWN-1 (copy: copyable; affine: droppable but
+  not copyable; linear: neither). Rewrite the several hundred prose uses in
+  capability words when a specification pass can afford the review.
 - **Generic linearity bound spelling.** `T: linear` accepts every class and
   `T: copy` only copy types; the bound names how the body treats `T`, which
   reads backwards. The current spelling never had an explicit owner ruling;
