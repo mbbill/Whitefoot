@@ -295,8 +295,16 @@ condition under which it is taken up.
   expressible without it and batched fork-join is the available form. Research
   when the future concurrency primitives are designed.
 - **Header-plus-tail heap block.** One allocation holding a fixed header and a
-  runtime-length tail (LLVM `User` with its operand list, `sk_buff`). Costs
-  one extra dependent memory access per hop today.
+  runtime-length tail (LLVM `User` with its operand list, `sk_buff`). Today a
+  struct with a `Box<Slots<T>>` field costs a second allocation and one extra
+  dependent memory access per hop. Additive, after PR 70 merges. Two shapes
+  under discussion: (a) a struct whose last field is a runtime-capacity shape
+  becomes itself Box-only content, laid out `[header fields | len | cap |
+  elements]`, which needs a construction route that knows the capacity, a
+  `grow` that moves the whole block, and the no-move-out rule extended to
+  it; (b) one more prelude storage shape carrying a header value beside its
+  window, built by a construction function taking the header and the
+  capacity, which needs no new struct rule.
 - **Bitmask fact.** `x & (c - 1) < c` for a power-of-two `c`, which would
   remove the per-probe bounds compare in hash tables.
 - **Handing checker facts to the backend.** Emitted since the v0.60 port:
