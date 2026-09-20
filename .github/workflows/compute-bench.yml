@@ -40,8 +40,10 @@ jobs:
             performance-baseline/records; do
             test -f "$RUNNER_TEMP/compute/$file"
           done
-      - name: Qualify the current runner before construction
+      - name: Record the current runner before construction
         run: |
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
           model=$(lscpu | sed -n 's/^Model name:[[:space:]]*//p')
           {
             printf 'model=%s\n' "$model"
@@ -51,10 +53,6 @@ jobs:
             clang --version
             ld --version
           } > "$RUNNER_TEMP/current-host.txt"
-          case "$model" in
-            'AMD EPYC 7763 64-Core Processor'|'AMD EPYC 9V45 96-Core Processor') ;;
-            *) echo 'runner model is outside the preregistered set' >&2; exit 1 ;;
-          esac
       - name: Construct and statically audit one controlled image
         env:
           WHITEFOOT_CHECK_TIMEOUT: 300

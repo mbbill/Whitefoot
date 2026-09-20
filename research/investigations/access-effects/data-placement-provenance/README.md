@@ -146,10 +146,11 @@ about residues within the one controlled image.
 
 Before either controlled contrast, the exact unmodified baseline/candidate pair
 from the same artifact must reproduce the records failure on the experiment
-host under the unchanged formal `tests/performance/compare.sh`. The live runner,
-checked before any construction, must identify exactly as an AMD EPYC 7763
-64-Core Processor or AMD EPYC 9V45 96-Core Processor;
-the workflow archives its `lscpu`, kernel, Clang, and linker identity. Records must be
+host under the unchanged formal `tests/performance/compare.sh`. The live runner
+must be Linux x86-64, the target of the archived images; the workflow records
+its CPU model, `lscpu`, kernel, Clang, and linker identity before construction.
+Qualification depends on the same-host observations below, not a CPU-model
+whitelist. Records must be
 below 0.97 with at least four of five adverse pairs at both W2 and W4, while the
 identical-image null has no `FAIL` or `suspect`, and every unchanged kernel has
 neither result in reproduction or controlled comparisons. Failure to
@@ -229,8 +230,8 @@ Run [35539370298](https://github.com/mbbill/Whitefoot/actions/runs/35539370298)
 at `383577a1` recorded an EPYC 9V74 and stopped at the original 7763-only
 qualification. No controlled diagnostic has collected timing data.
 
-Before any diagnostic timing, eligibility was revised to the two model strings
-above. Independent formal run
+Before any diagnostic timing, eligibility was first revised to permit the
+EPYC 7763 and EPYC 9V45 model strings. Independent formal run
 [35538118987](https://github.com/mbbill/Whitefoot/actions/runs/35538118987)
 had already observed the same pinned baseline/candidate records images failing
 at W2/W4 on an EPYC 9V45 (ratios 0.959639/0.942219, five adverse pairs each).
@@ -248,3 +249,24 @@ at `1a8b207f` received an Intel Xeon Platinum 8573C and stopped before
 construction at the revised hardware gate. The identity was retained. These
 attempts have produced no forced-residue timing or new performance conclusion;
 the formal PR regression remains unresolved.
+
+## Same-host qualification revision
+
+Before any forced-residue timing has been collected, remove the CPU-model
+whitelist. The literal model label is not the variable isolated by either
+registered contrast: all residue arms execute one byte-identical controlled
+image on the same host. More decisively, the existing qualification already
+requires the exact original images to reproduce the two-width records failure
+on that host with a clean null and unchanged-kernel controls. A model match
+cannot substitute for those observations, and a model mismatch alone does not
+invalidate them. The previous hardware-gate stops remain non-results.
+
+The next run therefore admits any Linux x86-64 runner satisfying every
+existing reproduction, oracle, null, slowdown and unchanged-kernel condition.
+Image hashes, exact worker bytes, allocator-count checks, the two residue
+pairs, sample schedule and numerical criteria are unchanged. No diagnostic
+result is pooled across hosts or extrapolated to a different allocator route.
+Run once under this revision; failure of reproduction or a control is an
+inconclusive result to inspect, not a reason to resample until it passes.
+The measured contrasts can establish only the custom-path sensitivity stated
+above; they still do not by themselves choose a production representation.
