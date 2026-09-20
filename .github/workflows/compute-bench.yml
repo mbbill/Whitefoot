@@ -1,7 +1,6 @@
-# Disposable, untimed pointer-provenance replay for the ac34 records artifact.
-# It runs the exact downloaded images under gdb and discards every timing row.
-# This manual-only workflow is removed with the research branch.
-name: records-data-placement-provenance
+# Disposable manual-only controlled records residue experiment. Remove with the
+# research branch. It changes no maintained correctness or performance gate.
+name: records-controlled-data-residue
 on:
   workflow_dispatch:
 permissions:
@@ -11,45 +10,72 @@ defaults:
   run:
     shell: bash
 concurrency:
-  group: records-data-placement-provenance-${{ github.ref }}
+  group: records-controlled-data-residue-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  provenance:
-    name: observe records result pointers (ubuntu-24.04)
+  controlled-residue:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Download and identify the exact ac34 images
+      - name: Download exact current compute artifact
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p "$RUNNER_TEMP/ac34"
-          gh run download 35527433610 --repo "$GITHUB_REPOSITORY" \
-            --name compute-regression-ubuntu-24.04 \
-            --dir "$RUNNER_TEMP/ac34"
-          identity="$RUNNER_TEMP/ac34/performance-results/identity.txt"
-          test -f "$identity"
-          grep -Fx 'candidate=8609625800d60cab59e302b744917ed1073536ed' "$identity"
+          mkdir -p "$RUNNER_TEMP/compute"
+          gh run download 35534896287 --repo "$GITHUB_REPOSITORY" \
+            --name compute-regression-ubuntu-24.04 --dir "$RUNNER_TEMP/compute"
+          identity="$RUNNER_TEMP/compute/performance-results/identity.txt"
+          grep -Fx 'candidate=0f39a5bbc9d84f5912baa74095f1d6e79bfcbc07' "$identity"
           grep -Fx 'baseline=c12d6dd10d7a536507b30523dd9837a52c915028' "$identity"
           grep -Fx 'native=-O2; ordinary host runtime; no alignment overrides' "$identity"
-      - name: Install the debugger without changing the mapped allocator
+          grep -F 'e55b2a7255b20a32643663dc8045f43cc3c00c4e3f2158e40c8913c3cc005bca  tests/programs/compute/records.wf' "$identity"
+          grep -F '6b0557de44a6bf1f531a0d5afc54f18f288cd06f164c72f1fb529f11a739647f  ' "$identity" | grep -F '/tests/programs/compute/records.wf'
+          for file in \
+            performance-candidate/records \
+            performance-candidate/records.ll \
+            performance-candidate/records.o \
+            performance-candidate/records_oracle.o \
+            performance-candidate/runner.o \
+            performance-baseline/records; do
+            test -f "$RUNNER_TEMP/compute/$file"
+          done
+      - name: Qualify the current runner before construction
         run: |
-          bash research/investigations/access-effects/data-placement-provenance/prepare-debugger.sh \
-            "$RUNNER_TEMP/ac34" "$RUNNER_TEMP/data-placement"
-      - name: Observe release pointers outside the measured interval
+          model=$(lscpu | sed -n 's/^Model name:[[:space:]]*//p')
+          test "$model" = 'AMD EPYC 7763 64-Core Processor'
+          {
+            printf 'model=%s\n' "$model"
+            uname -a
+            nproc
+            lscpu
+            clang --version
+            ld --version
+          } > "$RUNNER_TEMP/current-host.txt"
+      - name: Construct and statically audit one controlled image
         env:
           WHITEFOOT_CHECK_TIMEOUT: 300
         run: |
-          perl .github/run-check.pl records-data-placement-provenance \
-            bash research/investigations/access-effects/data-placement-provenance/observe.sh \
-            "$RUNNER_TEMP/ac34" "$RUNNER_TEMP/data-placement"
+          perl .github/run-check.pl records-controlled-build \
+            bash research/investigations/access-effects/data-placement-provenance/prepare-controlled.sh \
+            "$RUNNER_TEMP/compute" "$RUNNER_TEMP/controlled"
+      - name: Reproduce and run preregistered comparisons
+        env:
+          WHITEFOOT_CHECK_TIMEOUT: 1800
+          WF_RUN_APPROVED: 1
+        run: |
+          perl .github/run-check.pl records-controlled-timing \
+            bash research/investigations/access-effects/data-placement-provenance/run-controlled.sh \
+            "$GITHUB_WORKSPACE" "$RUNNER_TEMP/compute" "$RUNNER_TEMP/controlled" \
+            "$RUNNER_TEMP/results"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: records-data-placement-provenance-ubuntu-24.04
+          name: records-controlled-data-residue-ubuntu-24.04
           retention-days: 7
           if-no-files-found: error
           path: |
-            ${{ runner.temp }}/ac34/performance-results/identity.txt
-            ${{ runner.temp }}/data-placement/
+            ${{ runner.temp }}/compute/performance-results/identity.txt
+            ${{ runner.temp }}/current-host.txt
+            ${{ runner.temp }}/controlled/
+            ${{ runner.temp }}/results/

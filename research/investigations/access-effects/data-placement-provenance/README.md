@@ -97,3 +97,111 @@ evidence, does not recover the addresses used by original compute run
 within-line eight-byte shifts. Because the preregistered unique-residue gate
 failed, it authorizes no controlled pair, Stage 2 run, or production alignment
 policy.
+
+## New preregistered controlled-residue follow-up (not yet executed)
+
+The earlier Stage 1 unique-residue gate failed, so it authorized no Stage 2.
+This is a new preregistered follow-up with a different controlled construction,
+not a prior-criterion success or an outcome selected from those observations.
+The old observations did motivate the fixed `16/24` and `48/56` pairs, but
+every width/process observation, including those W2/W4 pairs, was confounded by
+its fresh process. Their timing direction remains unknown until this new test.
+The next bounded experiment tests the remaining data-address premise before any
+new worker-placement or production-layout change. It uses the current exact
+candidate records LLVM module, oracle objects, and ordinary runtime from one
+compute artifact. A research-only LLVM rewrite replaces exactly two calls: the
+`malloc` in the unique `wf_box_array_filled$instance$34` called by
+`wf_summarize_records`, and its matching `free` in
+`wf_record_result_release`. C-oracle buffers and all other allocations retain
+the artifact allocator. The replacement overallocates once, returns the same
+cell layout at a selected address, and remembers the real allocation immediately
+before that cell for release. Static construction auditing requires the two
+shared-row callers to be exactly `wf_summarize_records` and
+`wf__par_seq_summarize_records`, and the sole release caller to be
+`wf_bench_records_release`.
+
+One controlled ELF image accepts only four predeclared payload residues modulo
+64: **16, 24, 48, and 56**. Wrapper names select the residue through an
+environment value; all four wrappers execute the byte-identical ELF. Thus every
+controlled timing arm has identical `.text`, including the parallel worker and
+all relative placements and PC-relative encodings. Fresh PIE processes may
+receive different ASLR bases, so absolute instruction addresses are neither
+fixed nor compared and ASLR remains enabled. Each process reports one helper
+module data address only after timing so the raw evidence retains that nuisance
+variable. This experiment does not relink the worker at alternate addresses
+and calls no placement “good” or “bad”. The two registered contrasts
+are 16 versus 24 and 48 versus 56, the two observed baseline/candidate `+8`
+pairs that do not use the process-confounded W1 residues 0/8.
+With a 64-byte-aligned raw allocation, the selected payload residues map to
+cell offsets `16→72`, `24→80`, `48→104`, and `56→112` bytes. Each offset is
+eight-byte aligned, leaves room for the saved raw pointer immediately before
+the cell, and leaves the requested result bytes inside the 128-byte overage.
+
+The controlled link may place code at a different address from the downloaded
+candidate, so no absolute-address comparison crosses those two images. The
+construction instead extracts the complete 440-byte parallel worker from both
+ELFs and requires the bytes to be identical. This connects the controlled
+image to the original candidate's hot computation while keeping causal claims
+about residues within the one controlled image.
+
+Before either controlled contrast, the exact unmodified baseline/candidate pair
+from the same artifact must reproduce the records failure on the experiment
+host under the unchanged formal `tests/performance/compare.sh`. The live runner,
+checked before any construction, must identify exactly as an AMD EPYC 7763;
+the workflow archives its `lscpu`, kernel, Clang, and linker identity. Records must be
+below 0.97 with at least four of five adverse pairs at both W2 and W4, while the
+identical-image null has no `FAIL` or `suspect`, and every unchanged kernel has
+neither result in reproduction or controlled comparisons. Failure to
+reproduce stops the experiment as inconclusive. Each controlled image must then
+pass the existing complete-result `verify` mode at W1/W2/W4, report its assigned
+payload residue with balanced allocation/release counts at process shutdown,
+and pass an identical-residue null before its contrast is read. Every allocation
+checks the selected residue immediately without printing; one destructor summary
+is emitted after the runner returns, so even the sensitivity control's deliberate
+intermediate check adds no output inside its measured interval.
+
+The exact runner source and downloaded runner object are SHA-gated. In that
+runner, only `wf_oracle_call` lies between the wall and CPU clock reads;
+`wf_oracle_check` invokes the result release after both clocks stop. Residue
+reporting occurs once at process shutdown. Every ordinary process must report
+exactly six allocations and six releases; a sensitivity-control candidate must
+report exactly twelve of each. The same line records the helper's ASLR-selected
+module data address outside the measured interval.
+
+The timing protocol, fixture (`records=131072 max_length=255 shape=unicode
+seed=812381`), oracle, runner, warmup, five paired passes, calls per sample,
+worker widths, slowdown control, and verdict thresholds remain unchanged. No
+sample, residue, or direction is selected after timing begins.
+
+Prewritten interpretation:
+
+- Support for the eight-byte payload-residue mechanism requires **both** fixed
+  contrasts, 16→24 and 48→56, to put the `+8` arm below 0.97 with at least four
+  of five adverse pairs at both W2 and W4. W1 must remain within `[0.97, 1.03]`,
+  and all null, slowdown, oracle, and unchanged-kernel controls must pass.
+- If both contrasts are within `[0.97, 1.03]` at W2 and W4, this experiment
+  finds no sensitivity to these forced residues under the custom overallocated
+  path on that host. It does not rule out natural `malloc` placement/alignment
+  effects in the original images and does not establish instruction placement
+  as the cause.
+- A direction that changes between the two residue pairs, an effect at only one
+  width, W1 outside its band, a missed assigned residue, failure to reproduce,
+  or any control failure is inconclusive. There is no retry with different
+  residues or threshold.
+
+A supporting result establishes only forced-residue sensitivity on this custom
+overallocated path on the measured EPYC 7763 host. A neutral result establishes
+only its absence on that path. Same-host reproduction and the earlier pointer
+observations motivate the test but do not isolate causality in the original
+images. Neither outcome selects an alignment policy, Box ABI, header order, or
+a fat descriptor, nor establishes or rules out the original glibc allocation
+or header change as the CI cause. A serious fat-descriptor alternative needs a
+later direct representation comparison after causal measurement; it is not a
+presumed winner here. Positive sensitivity would justify a subsequent
+comparison that preserves the original allocator route.
+
+`prepare-controlled.sh` constructs the single controlled image and four thin
+wrappers. `run-controlled.sh` is the sole timing caller, and the disposable
+manual-only workflow invokes both through the repository's guarded check
+wrapper. Neither script is part of correctness CI or a maintained performance
+gate. The follow-up has not been built or timed.
