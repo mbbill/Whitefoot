@@ -111,10 +111,10 @@ project's maintained backlog; revisit them when later changes touch or enlarge
 them. Keep this proportional to the change, within the continuous workflow.
 
 When discussing implementation choices or handing back work, include a short,
-separate **Design suitability** paragraph in the owner's language (Chinese:
-**设计合理性**). State concerns and their fix or deferral; if none were found,
-say so within the assessed scope and give the reason. This does not replace
-amendment or DCR explanations.
+separate **Design suitability** paragraph in the owner's language. State
+concerns and their fix or deferral; if none were found, say so within the
+assessed scope and give the reason. This does not replace amendment or DCR
+explanations.
 
 Present a complete design for the agreed scope with its proposed tree
 revision: mechanism, requirements, alternatives, evidence, uncertainty, and
