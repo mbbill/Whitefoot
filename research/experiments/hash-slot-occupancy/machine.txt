@@ -1,0 +1,24 @@
+machdep.cpu.brand_string: Apple M1 Pro
+hw.memsize: 34359738368
+hw.ncpu: 8
+hw.cachelinesize: 128
+hw.l1dcachesize: 65536
+hw.l2cachesize: 4194304
+hw.perflevel0.l1dcachesize: 131072
+hw.perflevel0.l2cachesize: 12582912
+hw.perflevel1.l1dcachesize: 65536
+hw.perflevel1.l2cachesize: 4194304
+ProductName:		macOS
+ProductVersion:		26.6.2
+BuildVersion:		25G83
+Apple clang version 21.0.0 (clang-2100.3.34.2)
+Target: arm64-apple-darwin25.6.0
+Thread model: posix
+InstalledDir: /Library/Developer/CommandLineTools/usr/bin
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=38273123)	67%; charging; 2:38 remaining present: true
+2026-09-20T04:19:56Z
+benchmark start: 2026-09-20T04:27:15Z
+benchmark end: 2026-09-20T04:28:33Z
+fine-clock benchmark start: 2026-09-20T04:29:30Z
+fine-clock benchmark end: 2026-09-20T04:55:28Z

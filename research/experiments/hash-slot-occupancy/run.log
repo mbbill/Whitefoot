@@ -1,0 +1,167 @@
+self-test: 15360 exact hit/miss checks; 30 layouts; collision, duplicate, full payload, build and independent batch oracles passed
+empty clock pair ns: min=0 median=0 p75=41 max=84
+configuration: L1 P=8 capacity=512 load=0.500
+completed: L1 P=8 load=0.500 hit
+completed: L1 P=8 load=0.500 miss
+completed: L1 P=8 load=0.500 mix
+completed: L1 P=8 load=0.500 dependent
+completed: L1 P=8 load=0.500 insert
+configuration: L1 P=8 capacity=512 load=0.875
+completed: L1 P=8 load=0.875 hit
+completed: L1 P=8 load=0.875 miss
+completed: L1 P=8 load=0.875 mix
+completed: L1 P=8 load=0.875 dependent
+completed: L1 P=8 load=0.875 insert
+configuration: L1 P=32 capacity=512 load=0.500
+completed: L1 P=32 load=0.500 hit
+completed: L1 P=32 load=0.500 miss
+completed: L1 P=32 load=0.500 mix
+completed: L1 P=32 load=0.500 dependent
+completed: L1 P=32 load=0.500 insert
+configuration: L1 P=32 capacity=512 load=0.875
+completed: L1 P=32 load=0.875 hit
+completed: L1 P=32 load=0.875 miss
+completed: L1 P=32 load=0.875 mix
+completed: L1 P=32 load=0.875 dependent
+completed: L1 P=32 load=0.875 insert
+configuration: L1 P=128 capacity=128 load=0.500
+completed: L1 P=128 load=0.500 hit
+completed: L1 P=128 load=0.500 miss
+completed: L1 P=128 load=0.500 mix
+completed: L1 P=128 load=0.500 dependent
+completed: L1 P=128 load=0.500 insert
+configuration: L1 P=128 capacity=128 load=0.875
+completed: L1 P=128 load=0.875 hit
+completed: L1 P=128 load=0.875 miss
+completed: L1 P=128 load=0.875 mix
+completed: L1 P=128 load=0.875 dependent
+completed: L1 P=128 load=0.875 insert
+configuration: L2 P=8 capacity=16384 load=0.500
+completed: L2 P=8 load=0.500 hit
+completed: L2 P=8 load=0.500 miss
+completed: L2 P=8 load=0.500 mix
+completed: L2 P=8 load=0.500 dependent
+completed: L2 P=8 load=0.500 insert
+configuration: L2 P=8 capacity=16384 load=0.875
+completed: L2 P=8 load=0.875 hit
+completed: L2 P=8 load=0.875 miss
+completed: L2 P=8 load=0.875 mix
+completed: L2 P=8 load=0.875 dependent
+completed: L2 P=8 load=0.875 insert
+configuration: L2 P=32 capacity=16384 load=0.500
+completed: L2 P=32 load=0.500 hit
+completed: L2 P=32 load=0.500 miss
+completed: L2 P=32 load=0.500 mix
+completed: L2 P=32 load=0.500 dependent
+completed: L2 P=32 load=0.500 insert
+configuration: L2 P=32 capacity=16384 load=0.875
+completed: L2 P=32 load=0.875 hit
+completed: L2 P=32 load=0.875 miss
+completed: L2 P=32 load=0.875 mix
+completed: L2 P=32 load=0.875 dependent
+completed: L2 P=32 load=0.875 insert
+configuration: L2 P=128 capacity=4096 load=0.500
+completed: L2 P=128 load=0.500 hit
+completed: L2 P=128 load=0.500 miss
+completed: L2 P=128 load=0.500 mix
+completed: L2 P=128 load=0.500 dependent
+completed: L2 P=128 load=0.500 insert
+configuration: L2 P=128 capacity=4096 load=0.875
+completed: L2 P=128 load=0.875 hit
+completed: L2 P=128 load=0.875 miss
+completed: L2 P=128 load=0.875 mix
+completed: L2 P=128 load=0.875 dependent
+completed: L2 P=128 load=0.875 insert
+configuration: large P=8 capacity=8388608 load=0.500
+completed: large P=8 load=0.500 hit
+completed: large P=8 load=0.500 miss
+completed: large P=8 load=0.500 mix
+completed: large P=8 load=0.500 dependent
+completed: large P=8 load=0.500 insert
+configuration: large P=8 capacity=8388608 load=0.875
+completed: large P=8 load=0.875 hit
+completed: large P=8 load=0.875 miss
+completed: large P=8 load=0.875 mix
+completed: large P=8 load=0.875 dependent
+completed: large P=8 load=0.875 insert
+configuration: large P=32 capacity=4194304 load=0.500
+completed: large P=32 load=0.500 hit
+completed: large P=32 load=0.500 miss
+completed: large P=32 load=0.500 mix
+completed: large P=32 load=0.500 dependent
+completed: large P=32 load=0.500 insert
+configuration: large P=32 capacity=4194304 load=0.875
+completed: large P=32 load=0.875 hit
+completed: large P=32 load=0.875 miss
+completed: large P=32 load=0.875 mix
+completed: large P=32 load=0.875 dependent
+completed: large P=32 load=0.875 insert
+configuration: large P=128 capacity=1048576 load=0.500
+completed: large P=128 load=0.500 hit
+completed: large P=128 load=0.500 miss
+completed: large P=128 load=0.500 mix
+completed: large P=128 load=0.500 dependent
+completed: large P=128 load=0.500 insert
+configuration: large P=128 capacity=1048576 load=0.875
+completed: large P=128 load=0.875 hit
+completed: large P=128 load=0.875 miss
+completed: large P=128 load=0.875 mix
+completed: large P=128 load=0.875 dependent
+completed: large P=128 load=0.875 insert
+complete; sink=16835546678761438610
+== START hash-slot-measure (limit 1800s): sh -c ./bench > raw.csv 2> run.log ==
+== RUNNING hash-slot-measure: 30 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 60 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 90 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 120 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 150 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 180 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 210 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 240 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 270 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 300 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 330 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 360 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 391 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 421 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 451 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 481 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 511 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 541 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 571 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 601 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 631 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 661 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 691 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 721 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 751 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 781 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 811 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 841 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 871 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 901 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 931 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 962 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 992 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1022 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1052 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1082 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1112 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1142 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1172 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1202 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1232 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1262 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1292 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1322 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1352 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1382 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1412 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1442 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1472 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1502 s, child 97676, group 97676 ==
+== RUNNING hash-slot-measure: 1533 s, child 97676, group 97676 ==
+real 1557.16
+user 1553.32
+sys 1.89
+== END hash-slot-measure: 1557.23 s, exit 0 ==

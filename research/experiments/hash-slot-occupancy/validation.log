@@ -1,0 +1,22 @@
+== START hash-slot-build (limit 1800s): clang -O3 -std=c11 -Wall -Wextra -Werror bench.c -o bench ==
+real 0.34
+user 0.32
+sys 0.03
+== END hash-slot-build: 0.43 s, exit 0 ==
+== START hash-slot-self-test (limit 1800s): ./bench --self-test ==
+self-test: 15360 exact hit/miss checks; 30 layouts; collision, duplicate, full payload, build and independent batch oracles passed
+real 0.29
+user 0.03
+sys 0.00
+== END hash-slot-self-test: 0.32 s, exit 0 ==
+== START hash-slot-sanitizer-build (limit 1800s): clang -O1 -g -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined bench.c -o bench-sanitize ==
+real 0.57
+user 0.54
+sys 0.05
+== END hash-slot-sanitizer-build: 0.65 s, exit 0 ==
+== START hash-slot-sanitizer (limit 1800s): ./bench-sanitize --self-test ==
+self-test: 15360 exact hit/miss checks; 30 layouts; collision, duplicate, full payload, build and independent batch oracles passed
+real 0.41
+user 0.04
+sys 0.01
+== END hash-slot-sanitizer: 0.44 s, exit 0 ==

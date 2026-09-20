@@ -1,0 +1,28 @@
+2026-09-20T04:29:36Z observed host PID 97843: focused Cargo library tests in another worktree.
+2026-09-20T04:31:07Z observed host PID 1850: Cargo program-corpus tests in another worktree.
+The following monitor starts partway through the run; absence of a lock does not establish an idle machine.
+2026-09-20T04:31:52Z
+host lock owner: none
+2026-09-20T04:31:56Z
+host lock owner: 3691
+Sun Sep 20 04:31:55 2026 UTC: <other-worktree>: build-bin cargo build --offline --bin whitefootc
+2026-09-20T04:32:00Z
+host lock owner: none
+2026-09-20T04:32:02Z
+host lock owner: 3964
+Sun Sep 20 04:32:01 2026 UTC: <other-worktree>: ranges cargo test --manifest-path compiler/Cargo.toml --offline --lib -- backend::tests::ranges
+2026-09-20T04:33:16Z
+host lock owner: none
+2026-09-20T04:33:20Z
+host lock owner: 7563
+Sun Sep 20 04:33:19 2026 UTC: <other-worktree>: conformance-run make conformance-run
+2026-09-20T04:35:49Z
+host lock owner: none
+2026-09-20T04:36:03Z
+host lock owner: 14731
+Sun Sep 20 04:36:02 2026 UTC: <other-worktree>: full-lib cargo test --manifest-path compiler/Cargo.toml --offline --lib
+2026-09-20T04:50:14Z
+host lock owner: none
+2026-09-20T04:50:16Z
+host lock owner: 49348
+Sun Sep 20 04:50:15 2026 UTC: <other-worktree>: lib-unit cargo test --offline --lib
