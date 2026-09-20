@@ -57,6 +57,51 @@ relation between input contents and tight scatter offsets. Padded streams,
 linear packing depth, and final-copy span remain separate questions. This
 continuation does not select a general grain/PGO policy or an I/O mechanism.
 
+#### Initial compatibility checkpoint
+
+At `efd6ebc9`, the guarded gate-profile library-test executable construction
+took 72.28 s; constructing the compiler executable separately took 40.03 s.
+These are construction costs, not native program execution. Directly running
+the four existing `backend::tests::ranges` test functions below took 10.66 s
+overall with one test thread. Each function includes its WF analysis/lowering
+and, when reached, native construction and execution; the table does not
+attribute that combined duration to any one of those stages.
+
+| Existing observation | Test-function wall time | Result on the initial checkpoint |
+|---|---:|---|
+| `blocked_compute_matches_independent_oracles_at_runtime_dimensions` | 5.21 s | Prefix and histogram native oracle checks passed. |
+| `stencil_matches_an_independent_dimension_and_step_matrix` | 4.52 s | Native dimension/step oracle checks passed. |
+| `stable_scatter_matches_an_independent_oracle_and_hands_out_output_work` | 0.02 s | Semantic analysis stopped at unsupported `CompositeValues`; no native scatter ran. |
+| `irregular_compute_matches_independent_sort_and_graph_oracles` | 0.33 s | `merge_sort.wf:112` failed FN-8 at the `merge_values(first: a1, second: b1, output: out1)` call: `deref(a1).len <= deref(out1).len` was unproved. The test did not reach BFS. |
+
+The merge-sort observation is a reproducer for PR #70's owner, not a changed
+language expectation or a diagnosis of the underlying proof defect. It is
+outside the immediate scatter repair. The scatter stop is also reproduced by
+an otherwise empty program whose only helper takes `&[Option<Chunk>]` and
+returns `deref(chunks).len`, with `Chunk` owning the same two inline runs. This
+isolates an existing represented nominal element from chunk transfer,
+parallel permission, or native execution.
+
+The first repair uses the storage element domain already represented by
+`buffer_element` for range formation, re-slicing, length reads and indexed
+access. The same minimal helper then emits LLVM successfully; this is not
+yet evidence of native scatter correctness. The next stop is OP-4 at
+`&deref(chunks)[0_u64]`: reference formation treats a range parameter's
+element type as the indexable base. PR #70's owner should complete that
+general reference path. The consumer comparison first uses an equivalent
+storage reference plus an explicit chunk position on both arms, retaining
+the block decomposition, packing continuation, capacities and element work.
+Only after that shared form passes the independent oracle can its owned
+take/restore and reference-read versions select a cost conclusion.
+
+The retained scatter benchmark also needs the formal adapter's current
+output-handle ABI. Its entry returns an element pointer and length for
+checking plus a separate owning Box handle for release. Both WF forms retain
+that handle until the check, while native forms use their allocated pointer
+as the handle. Release remains outside the timed call. This is an interface
+repair, with no change to the native algorithms or timing boundaries; C
+syntax/type checking passed, and full harness execution remains unverified.
+
 ## Consumers and discriminating criteria
 
 These criteria are recorded before the new experiments. All source programs
