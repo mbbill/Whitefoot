@@ -1,4 +1,4 @@
-fn pass<T: affine>(value: own T) -> back: own T pure {
+fn pass<T: drop>(value: own T) -> back: own T pure {
   doc "One body written for the affine class, serving a copy instance and an affine one.";
   return move value;
 }

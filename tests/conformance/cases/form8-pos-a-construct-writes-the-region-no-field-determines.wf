@@ -1,4 +1,4 @@
-struct Ticket<T: linear> {
+struct Ticket<T> {
   count: u64;
 }
 

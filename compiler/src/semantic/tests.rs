@@ -685,7 +685,7 @@ fn operation_call_shapes_keep_their_exact_rule_owners() {
 fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     // Missing the arguments the callee's class mandates.
     assert_rule_kind(
-        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: affine>(value: own T) -> result: own T pure {\n  return move value;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: drop>(value: own T) -> result: own T pure {\n  return move value;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -697,7 +697,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
 
     // A wrong-count argument list, the same failure on both classes.
     assert_rule_kind(
-        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: affine>(value: own T) -> result: own T pure {\n  return move value;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick::<Held, Held>(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: drop>(value: own T) -> result: own T pure {\n  return move value;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick::<Held, Held>(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -712,7 +712,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     // user-generic call, so it is the control that the rule is not simply
     // keyed on that reader.
     assert_rule_kind(
-        b"struct Pair<T: affine> {\n  v: T;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let p = Pair(v: 1_i32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Pair<T: drop> {\n  v: T;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let p = Pair(v: 1_i32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -1118,7 +1118,7 @@ fn set_rejections_keep_their_exact_rule_owners() {
     // owned place releases the old value when it is affine, and is a hard
     // error only when it is linear. The linear half is the live successor.
     assert_rule(
-        b"linear struct Token {\n  value: i32;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let left = Token(value: 1_i32);\n  let right = Token(value: 2_i32);\n  set left = move right;\n  let Token(value: v) = move left;\n  return exit_status(code: 0_u8);\n}\n",
+        b"nodrop struct Token {\n  value: i32;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let left = Token(value: 1_i32);\n  let right = Token(value: 2_i32);\n  set left = move right;\n  let Token(value: v) = move left;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Win3,
         SemanticIssueKind::LinearAssignmentTarget {
             target_type: "Token".to_owned(),

@@ -1,4 +1,4 @@
-fn width_of<T: linear>(blocks: &Slots<T, 4>) -> taken: own Option<T> writes(blocks.last), writes(blocks.len) contract {
+fn width_of<T>(blocks: &Slots<T, 4>) -> taken: own Option<T> writes(blocks.last), writes(blocks.len) contract {
   requires deref(blocks).len > 0_u64;
 } {
   doc "Takes one block off the back of a run of runs, generic over the element type [OP-10].";

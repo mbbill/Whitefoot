@@ -124,7 +124,7 @@ fn assigning_over_a_linear_owned_place_is_refused() {
 /// rule for a field and for `Box` content alike.
 #[test]
 fn a_partial_consume_that_abandons_a_linear_part_is_refused() {
-    let source = br#"linear struct Token {
+    let source = br#"nodrop struct Token {
   value: u64;
 }
 

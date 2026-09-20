@@ -1,4 +1,4 @@
-linear struct Tag {
+nodrop struct Tag {
   slot: u8;
 }
 

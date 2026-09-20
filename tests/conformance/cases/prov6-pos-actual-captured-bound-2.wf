@@ -2,7 +2,7 @@ struct Note {
   id: u64;
 }
 
-formal Inspect<T: affine> {
+formal Inspect<T: drop> {
   fn inspect(value: &T) -> result: own unit pure;
 }
 

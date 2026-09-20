@@ -1,4 +1,4 @@
-formal GenericMarker<T: affine> {
+formal GenericMarker<T: drop> {
 }
 
 fn main() -> status: own ExitStatus pure {

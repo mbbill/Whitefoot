@@ -1,8 +1,8 @@
-struct Holder<T: linear> {
+struct Holder<T> {
   cell: Box<T>;
 }
 
-fn reverse<L: linear, R: linear>(left: own Holder<L>, right: own Holder<R>) -> (first: own Holder<R>, second: own Holder<L>) pure {
+fn reverse<L, R>(left: own Holder<L>, right: own Holder<R>) -> (first: own Holder<R>, second: own Holder<L>) pure {
   doc "Type substitution visits every declared result ordinal; the two arguments land in the opposite order, so each ordinal carries the other's written argument [FN-1, FN-2].";
   return move right, move left;
 }

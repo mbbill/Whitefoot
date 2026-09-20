@@ -1,8 +1,8 @@
-struct Holder<T: affine> {
+struct Holder<T: drop> {
   value: T;
 }
 
-fn swapin<T: affine>(handle: &Holder<T>, made: own T) -> code: own u8 pure {
+fn swapin<T: drop>(handle: &Holder<T>, made: own T) -> code: own u8 pure {
   doc "A reference parameter whose referent type is a generic type parameter. This helper declares no write and leaves the referent unchanged; there is no permission marker on the reference to suggest otherwise, and the exact projected row is what governs a caller's fact kills.";
   return 0_u8;
 }

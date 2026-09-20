@@ -1,4 +1,4 @@
-linear enum Ticket {
+nodrop enum Ticket {
   Open();
   Closed();
 }

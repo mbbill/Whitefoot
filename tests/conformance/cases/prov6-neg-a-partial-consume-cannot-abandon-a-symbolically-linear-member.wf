@@ -1,9 +1,9 @@
-struct Carrier<T: linear> {
+struct Carrier<T> {
   must_consume: T;
   returned: Box<Slots<u8>>;
 }
 
-fn take_returned<T: linear>(carrier: own Carrier<T>) -> result: own Box<Slots<u8>> pure {
+fn take_returned<T>(carrier: own Carrier<T>) -> result: own Box<Slots<u8>> pure {
   doc "PROV-6: the linearity predicate a partial consume reads includes a symbolic type parameter's written linear bound. Moving a different field consumes the whole owner, and the residual linear member has no route out of it.";
   return move carrier.returned;
 }

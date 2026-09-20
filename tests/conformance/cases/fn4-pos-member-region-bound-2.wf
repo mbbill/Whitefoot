@@ -1,4 +1,4 @@
-formal Inspect<T: linear> {
+formal Inspect<T> {
   fn length(values: &T) -> result: own u64 reads(values);
 }
 

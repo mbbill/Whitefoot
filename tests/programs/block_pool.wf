@@ -2,7 +2,7 @@ struct Block {
   bytes: Slots<u8, 256>;
 }
 
-linear struct Lease {
+nodrop struct Lease {
   run: Block;
 }
 

@@ -293,7 +293,7 @@ fn call_definition(function: &IrFunction, result: IrValueId) -> (u32, &[IrValueI
 /// the calls of each variant closed inside the inventory.
 #[test]
 fn physical_call_inventory_gives_one_variant_per_function_under_one_heap() {
-    let source = br#"fn pass<T: linear>(value: own T) -> result: own T pure {
+    let source = br#"fn pass<T>(value: own T) -> result: own T pure {
   return move value;
 }
 

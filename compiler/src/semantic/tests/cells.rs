@@ -179,7 +179,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn cell_content_set_targets_keep_their_source_rejections() {
     assert_rule(
-        br#"linear struct Token {
+        br#"nodrop struct Token {
   value: u64;
 }
 

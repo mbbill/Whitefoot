@@ -1,4 +1,4 @@
-fn preserve<T: affine>(value: own T) -> result: own T pure {
+fn preserve<T: drop>(value: own T) -> result: own T pure {
   return move value;
 }
 

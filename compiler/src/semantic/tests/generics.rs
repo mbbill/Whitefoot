@@ -33,11 +33,11 @@ fn explicit_type_arguments_keep_their_written_order_and_kind() {
   value: u64;
 }
 
-struct Wrap<T: affine> {
+struct Wrap<T: drop> {
   payload: T;
 }
 
-fn pack<T: affine>(value: own T) -> result: own Wrap<T> pure {
+fn pack<T: drop>(value: own T) -> result: own Wrap<T> pure {
   return Wrap<T>(payload: move value);
 }
 
@@ -70,11 +70,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_generic_cycle_judgment_reads_the_complete_argument_vector() {
-    let source = br#"struct Mark<T: affine> {
+    let source = br#"struct Mark<T: drop> {
   value: T;
 }
 
-fn recur<T: affine, const n: u64>(value: own T) -> result: own Mark<T> pure {
+fn recur<T: drop, const n: u64>(value: own T) -> result: own Mark<T> pure {
   return recur::<T, n>(value: move value);
 }
 
@@ -185,7 +185,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn numeric_identity_requires_an_int_or_float_bound() {
-    let source = br#"fn invalid<T: affine>() -> result: own T pure {
+    let source = br#"fn invalid<T: drop>() -> result: own T pure {
   return 0_T;
 }
 
@@ -323,7 +323,7 @@ fn polymorphic_recursion_is_rejected_at_the_call_that_leaves_the_caller_paramete
     // A growing argument is the shape that would actually diverge: each
     // instance would demand a strictly larger one.
     assert_rule(
-        br#"fn poly<T: affine>(x: own T) -> result: own T pure {
+        br#"fn poly<T: drop>(x: own T) -> result: own T pure {
   let y = poly::<Slots<T, 2>>(x: x);
   return x;
 }
@@ -338,12 +338,12 @@ fn main() -> status: own ExitStatus pure {
     // A permutation cycle terminates, and FN-6 is deliberately stronger than
     // finiteness requires, so it is rejected all the same.
     assert_rule(
-        br#"fn left<A: affine, B: affine>(first: own A, second: own B) -> result: own A pure {
+        br#"fn left<A: drop, B: drop>(first: own A, second: own B) -> result: own A pure {
   let swapped = right::<B, A>(first: second, second: first);
   return first;
 }
 
-fn right<A: affine, B: affine>(first: own A, second: own B) -> result: own A pure {
+fn right<A: drop, B: drop>(first: own A, second: own B) -> result: own A pure {
   let back = left::<A, B>(first: first, second: second);
   return first;
 }
@@ -364,7 +364,7 @@ fn main() -> status: own ExitStatus pure {
 /// D7 deliberately refuses it under FN-6's stronger unchanged-vector rule.
 #[test]
 fn a_cycle_cannot_drop_the_generic_vector_at_a_nongeneric_trampoline() {
-    let source = br#"fn poly<T: affine>(x: own T) -> result: own T pure {
+    let source = br#"fn poly<T: drop>(x: own T) -> result: own T pure {
   let back = trampoline();
   return x;
 }
@@ -418,7 +418,7 @@ fn main() -> status: own ExitStatus pure {
 /// at the instantiation whose value leaves the const domain.
 #[test]
 fn a_move_in_an_affine_bounded_body_denotes_a_copy_at_a_copy_instance() {
-    let source = br#"fn transfer<T: affine>(value: own T) -> result: own T pure {
+    let source = br#"fn transfer<T: drop>(value: own T) -> result: own T pure {
   return move value;
 }
 
@@ -500,7 +500,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unbounded_type_parameters_build_only_explicit_reachable_instances() {
-    let source = br#"fn marker<T: affine>() -> result: own unit pure {
+    let source = br#"fn marker<T: drop>() -> result: own unit pure {
   return unit;
 }
 
@@ -528,7 +528,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn generic_argument_kinds_and_const_parameter_types_are_checked() {
     assert_rule_kind(
-        br#"fn marker<T: affine>() -> result: own unit pure {
+        br#"fn marker<T: drop>() -> result: own unit pure {
   return unit;
 }
 
@@ -653,7 +653,7 @@ fn const_and_nested_source_nominal_instances_are_fully_substituted() {
   bytes: Slots<u8, n>;
 }
 
-struct Holder<T: affine> {
+struct Holder<T: drop> {
   value: T;
 }
 
@@ -721,7 +721,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn source_nominal_argument_arity_and_kinds_are_exact() {
     assert_rule_kind(
-        br#"struct Pair<T: affine> {
+        br#"struct Pair<T: drop> {
   value: T;
 }
 
@@ -752,7 +752,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn constructor_only_generic_instances_still_reach_normal_type_diagnostics() {
     assert_rule(
-        br#"struct Holder<T: affine> {
+        br#"struct Holder<T: drop> {
   value: T;
 }
 
@@ -768,7 +768,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn recursive_generic_nominal_layouts_stop_before_concrete_enumeration() {
     assert_unsupported(
-        br#"struct Recursive<T: affine> {
+        br#"struct Recursive<T: drop> {
   next: Recursive<T>;
 }
 
@@ -869,11 +869,11 @@ fn schema_written_concrete_nominal_arguments_are_rebuilt_after_the_symbolic_chec
   value: T;
 }
 
-fn consume<T: affine>(value: own T) -> result: own unit pure {
+fn consume<T: drop>(value: own T) -> result: own unit pure {
   return unit;
 }
 
-fn wrapper<U: affine>() -> result: own unit pure {
+fn wrapper<U: drop>() -> result: own unit pure {
   let pair = Pair<u8>(value: 1_u8);
   consume::<Pair<u8>>(value: move pair);
   return unit;
@@ -913,16 +913,16 @@ fn partial_schema_rebuild_keeps_only_the_truly_concrete_nominal_instance() {
   right: T;
 }
 
-fn sink<T: affine>() -> result: own unit pure {
+fn sink<T: drop>() -> result: own unit pure {
   return unit;
 }
 
-fn middle<A: Int, B: affine>() -> result: own unit pure {
+fn middle<A: Int, B: drop>() -> result: own unit pure {
   sink::<Pair<A>>();
   return unit;
 }
 
-fn wrapper<U: affine>() -> result: own unit pure {
+fn wrapper<U: drop>() -> result: own unit pure {
   middle::<u8, U>();
   return unit;
 }
@@ -977,11 +977,11 @@ fn partial_schema_rebuild_still_discovers_an_independent_concrete_descendant() {
   right: T;
 }
 
-fn sink<T: affine>() -> result: own unit pure {
+fn sink<T: drop>() -> result: own unit pure {
   return unit;
 }
 
-fn next<X: affine, Y: affine>() -> result: own unit pure {
+fn next<X: drop, Y: drop>() -> result: own unit pure {
   sink::<Y>();
   return unit;
 }
@@ -1033,7 +1033,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn ordinary_admission_diagnostics_prefer_source_order_over_instance_identity() {
     let source =
-        br#"fn earlier<T: affine>(values: own Slots<u8, 4>, index: own u64) -> result: own u8 pure {
+        br#"fn earlier<T: drop>(values: own Slots<u8, 4>, index: own u64) -> result: own u8 pure {
   return values[index];
 }
 
@@ -1064,7 +1064,7 @@ fn main() -> status: own ExitStatus pure {
 /// result binder spelling stay in two physical families.
 #[test]
 fn nominal_physical_families_keep_result_list_ordinal_names() {
-    let source = br#"struct Wrapped<T: linear> {
+    let source = br#"struct Wrapped<T> {
   value: T;
 }
 
@@ -1109,10 +1109,10 @@ fn main() -> status: own ExitStatus pure {
 /// arguments. Each of these empty structs has the same storage layout.
 #[test]
 fn nominal_physical_families_preserve_declarations_and_phantom_arguments() {
-    let source = br#"struct Marker<T: affine, const n: u64> {
+    let source = br#"struct Marker<T: drop, const n: u64> {
 }
 
-struct AlternateMarker<T: affine, const n: u64> {
+struct AlternateMarker<T: drop, const n: u64> {
 }
 
 fn base(value: own Marker<u8, 1>) -> back: own Marker<u8, 1> pure {
@@ -1261,7 +1261,7 @@ fn main() -> status: own ExitStatus pure {
 /// including when the call is inside an uncalled ordinary helper.
 #[test]
 fn generic_replay_preserves_a_box_type_argument() {
-    let source = br#"fn pass<T: linear>(value: own T) -> result: own T pure {
+    let source = br#"fn pass<T>(value: own T) -> result: own T pure {
   return move value;
 }
 
@@ -1310,7 +1310,7 @@ fn general_elements_retain_deep_windows_through_generic_replay_and_nominal_field
   values: Slots<Slots<Slots<u64, 2>, 2>, 2>;
 }
 
-fn pass<T: affine>(value: own T) -> result: own T pure {
+fn pass<T: drop>(value: own T) -> result: own T pure {
   return move value;
 }
 
@@ -1368,11 +1368,11 @@ fn general_elements_reify_nominal_children_after_the_schema_checkpoint() {
   value: T;
 }
 
-fn consume<T: affine>(value: own T) -> result: own unit pure {
+fn consume<T: drop>(value: own T) -> result: own unit pure {
   return unit;
 }
 
-fn wrapper<U: affine>() -> result: own unit pure {
+fn wrapper<U: drop>() -> result: own unit pure {
   let pair = Pair<u8>(value: 7_u8);
   let empty_inner = slots_new::<Pair<u8>, 1>();
   place_back(window: &empty_inner, value: move pair);

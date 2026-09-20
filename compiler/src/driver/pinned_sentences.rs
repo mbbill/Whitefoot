@@ -367,7 +367,7 @@ fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "construct-without-its-type-arguments.wf",
-        source: br#"struct Pair<T: affine> {
+        source: br#"struct Pair<T: drop> {
   left: T;
   right: T;
 }
@@ -384,7 +384,7 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "construct-with-too-many-type-arguments.wf",
-        source: br#"struct Pair<T: affine> {
+        source: br#"struct Pair<T: drop> {
   left: T;
   right: T;
 }
@@ -401,7 +401,7 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "const-written-in-a-type-parameter-position.wf",
-        source: br#"struct Pair<T: affine> {
+        source: br#"struct Pair<T: drop> {
   left: T;
   right: T;
 }
@@ -846,7 +846,7 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "generic-numeric-identity-of-a-non-numeric-type.wf",
-        source: br#"fn zeroed<T: affine>(sample: own T) -> out: own T pure {
+        source: br#"fn zeroed<T: drop>(sample: own T) -> out: own T pure {
   return 0_T;
 }
 

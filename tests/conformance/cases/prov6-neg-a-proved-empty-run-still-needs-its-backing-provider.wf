@@ -1,4 +1,4 @@
-fn release_without_free<T: linear, const n: u64>(run: own Slots<T, n>) -> result: own unit pure contract {
+fn release_without_free<T, const n: u64>(run: own Slots<T, n>) -> result: own unit pure contract {
   requires run.len == 0_u64;
 } {
   doc "PROV-6: a zero-length fact says the window holds no element, and that is all it says. The window's own type is still linear, so the compiler-derived release never carries it and free_empty remains the one route that consumes the storage.";

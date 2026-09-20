@@ -630,9 +630,9 @@ i: f32; j: f64; k: unit; l: Name<T, n>; m: Array<u8, n>;
 o: Box<u8>; p: Slots<u8, 4>; readonly q: Ring<u8, 2 * n>;
 }
 enum Choice<T: copy> { doc "choice"; None(); Some(value: T); }
-linear struct Lease { doc "lease"; slot: u8; }
-linear enum Ticket { doc "ticket"; Open(value: u8); }
-formal Behavior<T: affine> {
+nodrop struct Lease { doc "lease"; slot: u8; }
+nodrop enum Ticket { doc "ticket"; Open(value: u8); }
+formal Behavior<T: drop> {
 doc "formal";
 fn member(x: own T, part: &[u8]) -> result: own T reads(part), writes(part);
 }
@@ -649,7 +649,7 @@ fn stored_entry(arguments: own i32, directory: own i32)
 {
 return unit;
 }
-fn everything<T: affine, S: linear>(x: own i32, shared: &i32, run: &Slots<i32, 4>, part: &[i32])
+fn everything<T: drop, S>(x: own i32, shared: &i32, run: &Slots<i32, 4>, part: &[i32])
 -> result: own unit reads(shared), reads(handle.Some.value), writes(run[index]), writes(part[lo..hi])
 contract {
 define pre = 0_i32 +wrap 1_i32;

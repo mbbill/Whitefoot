@@ -1,4 +1,4 @@
-linear enum Flag {
+nodrop enum Flag {
   On();
   Off();
 }

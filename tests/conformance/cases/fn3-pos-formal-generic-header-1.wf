@@ -1,4 +1,4 @@
-formal Generic<T: affine> {
+formal Generic<T: drop> {
 }
 
 fn main() -> status: own ExitStatus pure {

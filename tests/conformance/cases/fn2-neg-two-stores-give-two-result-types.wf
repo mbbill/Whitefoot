@@ -1,8 +1,8 @@
-struct Holder<T: affine> {
+struct Holder<T: drop> {
   run: T;
 }
 
-fn hold<T: affine>(value: own T) -> made: own Holder<T> pure {
+fn hold<T: drop>(value: own T) -> made: own Holder<T> pure {
   doc "Wraps one owned run in a nominal generic over its element type.";
   let held = Holder<T>(run: move value);
   return move held;

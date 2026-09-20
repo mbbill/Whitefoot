@@ -1,4 +1,4 @@
-formal Factory<T: affine> {
+formal Factory<T: drop> {
   fn make(value: own T) -> result: own T pure;
 }
 

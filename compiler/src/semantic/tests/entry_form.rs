@@ -80,7 +80,7 @@ fn main_has_ordinary_parameters_results_and_generics() {
     for source in [
         &b"fn main() -> result: own unit pure {\n  return unit;\n}\n"[..],
         &b"fn main(value: own i32) -> result: own i32 pure {\n  return value;\n}\n"[..],
-        &b"fn main<T: affine>(value: own T) -> result: own T pure {\n  return move value;\n}\n"[..],
+        &b"fn main<T: drop>(value: own T) -> result: own T pure {\n  return move value;\n}\n"[..],
         // v0.59 also wrote a region-parameterized `main['s](heap: own Heap<'s>)`
         // here. Region parameters retired with [FORM-8] and the store retired
         // with [PROV-1]; the ordinary-parameter subject survives through the

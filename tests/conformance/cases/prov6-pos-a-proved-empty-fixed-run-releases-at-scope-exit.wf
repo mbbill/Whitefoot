@@ -1,4 +1,4 @@
-fn release_empty_fixed<T: linear, const n: u64>(run: own Slots<T, n>) -> result: own unit pure contract {
+fn release_empty_fixed<T, const n: u64>(run: own Slots<T, n>) -> result: own unit pure contract {
   requires run.len == 0_u64;
 } {
   doc "OP-14: a window whose element type is linear is itself linear, and the one route that consumes its storage is free_empty. This function's own requirement discharges free_empty's; the type stays linear and the proof is about the runtime length.";

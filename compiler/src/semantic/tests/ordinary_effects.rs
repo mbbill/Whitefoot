@@ -44,7 +44,7 @@ fn memory_reclamation_contributes_no_release_row() {
 #[test]
 fn a_linear_window_reaches_no_scope_exit_however_short_it_is_proved() {
     assert_rule_kind(
-        br#"linear struct Token {
+        br#"nodrop struct Token {
   value: u64;
 }
 
@@ -74,7 +74,7 @@ fn main() -> status: own ExitStatus pure {
 "#,
     );
     assert_rule_kind(
-        br#"linear struct Token {
+        br#"nodrop struct Token {
   value: u64;
 }
 
@@ -98,7 +98,7 @@ fn a_scope_exit_cannot_discard_a_symbolically_linear_member() {
     // [PROV-6]'s own: a value linear in this scope that is live on an edge
     // leaving it has no compiler-derived release to carry it.
     assert_rule_kind(
-        br#"linear struct Token {
+        br#"nodrop struct Token {
   value: u64;
 }
 
@@ -123,12 +123,12 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_partial_consume_cannot_abandon_a_symbolically_linear_member() {
     assert_rule_kind(
-        br#"struct Carrier<T: linear> {
+        br#"struct Carrier<T> {
   must_consume: T;
   returned: Box<u64>;
 }
 
-fn take_returned<T: linear>(carrier: own Carrier<T>) -> result: own Box<u64> pure {
+fn take_returned<T>(carrier: own Carrier<T>) -> result: own Box<u64> pure {
   return move carrier.returned;
 }
 
@@ -220,7 +220,7 @@ fn an_affine_bounded_own_exchange_supports_a_copy_instantiation() {
     // `own` parameter with a `reads(target), writes(target)` row. An `own`
     // parameter has no effect entry [EFF-1] and there is no `replace`
     // statement, so the exchange is two ordinary moves and the row is `pure`.
-    let source = br#"fn exchange_owned<T: affine>(target: own T, incoming: own T) -> (current: own T, previous: own T) pure {
+    let source = br#"fn exchange_owned<T: drop>(target: own T, incoming: own T) -> (current: own T, previous: own T) pure {
   let previous = move target;
   let current = move incoming;
   return move current, move previous;
@@ -689,7 +689,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_generic_swap_needs_no_result_routing_summary() {
-    let source = r#"fn exchange<T: linear>(target: &T, incoming: &T) -> result: own unit writes(target), writes(incoming) {
+    let source = r#"fn exchange<T>(target: &T, incoming: &T) -> result: own unit writes(target), writes(incoming) {
   swap(first: target, second: incoming);
   return unit;
 }

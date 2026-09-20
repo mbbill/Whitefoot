@@ -216,7 +216,7 @@ fn full_array_conversion_requires_fullness_and_preserves_linear_obligations() {
         |kind| matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_)),
     );
     assert_rule_kind(
-        br#"linear struct Token {
+        br#"nodrop struct Token {
   value: u64;
 }
 
@@ -232,7 +232,7 @@ fn main() -> status: own ExitStatus pure {
         |kind| matches!(kind, SemanticIssueKind::LinearValueNotConsumed { .. }),
     );
     with_semantics(
-        br#"linear struct Token {
+        br#"nodrop struct Token {
   value: u64;
 }
 
@@ -325,7 +325,7 @@ fn full_array_elements_preserve_cells_through_generic_replay_and_reference_reads
   owner: Box<u64>;
 }
 
-fn pass<T: linear>(value: own T) -> result: own T pure {
+fn pass<T>(value: own T) -> result: own T pure {
   return move value;
 }
 

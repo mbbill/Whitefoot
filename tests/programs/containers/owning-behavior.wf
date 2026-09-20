@@ -20,7 +20,7 @@ struct Resource {
   data3: u64;
 }
 
-enum Slot<K: linear> {
+enum Slot<K> {
   Vacant();
   Deleted();
   Occupied(fingerprint: u8, key: K, payload: Box<Resource>);
@@ -33,7 +33,7 @@ enum Probe {
   Match();
 }
 
-enum KeyPut<K: linear> {
+enum KeyPut<K> {
   Installed(previous: Slot<K>);
   Rejected(key: K, payload: Box<Resource>);
 }
@@ -44,20 +44,20 @@ enum PutOutcome {
   Full(offered: Box<Resource>);
 }
 
-struct Progress<K: linear> {
+struct Progress<K> {
   held: Slot<K>;
   source_next: u64;
   next_probe: u64;
   phase: u8;
 }
 
-struct Rehash<K: linear> {
+struct Rehash<K> {
   source: Box<Slots<Slot<K>>>;
   target: Box<Slots<Slot<K>>>;
   progress: Progress<K>;
 }
 
-formal Key<K: affine, E: linear> {
+formal Key<K: drop, E> {
   fn hash(env: &E, key: &K) -> hash: own u64 reads(env), reads(key);
   fn equal(env: &E, left: &K, right: &K) -> equal: own Bool reads(env), reads(left), reads(right);
 }
@@ -224,7 +224,7 @@ fn key_find_index<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> f
   return Err<u64, unit>(error: unit);
 }
 
-fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: own unit writes(slots) contract {
+fn key_fill<K>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: own unit writes(slots) contract {
   requires deref(slots).inner.len == 0_u64;
   requires count <= deref(slots).inner.cap - deref(slots).inner.len;
   ensures deref(slots).inner.len == count;
@@ -244,7 +244,7 @@ fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: o
   return unit;
 }
 
-fn key_occupied<K: linear>(slot: &Slot<K>) -> full: own Bool reads(slot) {
+fn key_occupied<K>(slot: &Slot<K>) -> full: own Bool reads(slot) {
   match deref(slot) {
     Occupied(fingerprint: tag, key: present, payload: owner) => {
       return True();
@@ -272,7 +272,7 @@ fn key_slot_hash<Key<K, E>>(slot: &Slot<K>, env: &E) -> hash: own u64 reads(slot
   }
 }
 
-fn key_create<K: linear>(count: own u64) -> result: own Box<Slots<Slot<K>>> pure contract {
+fn key_create<K>(count: own u64) -> result: own Box<Slots<Slot<K>>> pure contract {
   requires count <= 2097152_u64;
   ensures result.inner.len == count;
 } {
@@ -282,7 +282,7 @@ fn key_create<K: linear>(count: own u64) -> result: own Box<Slots<Slot<K>>> pure
   return move spare;
 }
 
-fn key_begin<K: linear>(source: own Box<Slots<Slot<K>>>, count: own u64) -> result: own Rehash<K> pure contract {
+fn key_begin<K>(source: own Box<Slots<Slot<K>>>, count: own u64) -> result: own Rehash<K> pure contract {
   requires count <= 2097152_u64;
 } {
   let spare = key_create::<K>(count: count);

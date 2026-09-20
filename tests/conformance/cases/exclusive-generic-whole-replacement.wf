@@ -3,7 +3,7 @@ struct Pair {
   right: u64;
 }
 
-fn exchange<T: affine>(target: &T, incoming: &T) -> result: own unit writes(target), writes(incoming) {
+fn exchange<T: drop>(target: &T, incoming: &T) -> result: own unit writes(target), writes(incoming) {
   doc "Whole exchange through two bare reference parameters: swap leaves both roots live and each root the sole owner of the value the other held [OP-11].";
   swap(first: target, second: incoming);
   return unit;

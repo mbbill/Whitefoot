@@ -1,9 +1,9 @@
-fn nothing<T: linear>() -> made: own Option<T> pure {
+fn nothing<T>() -> made: own Option<T> pure {
   doc "Reports no value at all, over an element type no parameter position mentions.";
   return None<T>();
 }
 
-fn absorb<T: linear>(spare: own Option<T>) -> width: own u64 pure {
+fn absorb<T>(spare: own Option<T>) -> width: own u64 pure {
   doc "Reports the capacity of the run it was handed, or zero when there is none.";
   match spare {
     None() => {

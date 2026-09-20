@@ -32,7 +32,7 @@ fn assert_complete(source: &str) {
 
 #[test]
 fn generic_unit_helper_publishes_only_proved_written_state_relations() {
-    let source = r#"fn touch<T: linear>(values: &Slots<T, 4>) -> result: own unit writes(values) contract {
+    let source = r#"fn touch<T>(values: &Slots<T, 4>) -> result: own unit writes(values) contract {
   requires deref(values).len >= 1_u64;
   ensures deref(values).len == deref(entry(values)).len;
 } {
@@ -41,7 +41,7 @@ fn generic_unit_helper_publishes_only_proved_written_state_relations() {
   return unit;
 }
 
-fn exercise<T: linear>(values: &Slots<T, 4>) -> result: own unit writes(values) contract {
+fn exercise<T>(values: &Slots<T, 4>) -> result: own unit writes(values) contract {
   requires deref(values).len >= 1_u64;
 } {
   touch::<T>(values: values);

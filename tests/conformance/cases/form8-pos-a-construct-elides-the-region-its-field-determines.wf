@@ -1,4 +1,4 @@
-struct Chunk<T: linear> {
+struct Chunk<T> {
   page: T;
 }
 

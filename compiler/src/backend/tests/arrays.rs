@@ -326,7 +326,7 @@ fn reopen(values: own Array<Record, 3>) -> result: own Slots<Record, 3> pure con
   return move full;
 }
 
-fn relay<T: affine>(values: own T) -> result: own T pure {
+fn relay<T: drop>(values: own T) -> result: own T pure {
   return move values;
 }
 
@@ -424,7 +424,7 @@ fn abandoned_full_array_construction_releases_each_initialized_prefix_once() {
   owner: Box<u64>;
 }
 
-fn relay<T: affine>(value: own T) -> result: own T pure {
+fn relay<T: drop>(value: own T) -> result: own T pure {
   return move value;
 }
 
@@ -571,7 +571,7 @@ fn full_arrays_preserve_boxed_element_ownership_through_generic_helpers() {
   owner: Box<u64>;
 }
 
-fn pass<T: linear>(value: own T) -> result: own T pure {
+fn pass<T>(value: own T) -> result: own T pure {
   return move value;
 }
 
@@ -629,7 +629,7 @@ struct Recursive {
   children: Array<Recursive, 0>;
 }
 
-fn relay<T: affine>(value: own T) -> result: own T pure {
+fn relay<T: drop>(value: own T) -> result: own T pure {
   return move value;
 }
 
@@ -1031,7 +1031,7 @@ fn general_run_elements_preserve_array_places_and_standing_extents() {
 /// rather than only whether a deeply nested type can be named.
 #[test]
 fn general_run_elements_preserve_nested_owners_across_generic_calls() {
-    let source = br#"fn pass<T: linear>(value: own T) -> result: own T pure {
+    let source = br#"fn pass<T>(value: own T) -> result: own T pure {
   return move value;
 }
 
@@ -1144,7 +1144,7 @@ fn make_record(tag: own u64) -> result: own Record pure {
   return Record(payload: move payload, owner: move owner);
 }
 
-fn relay<T: affine>(value: own T) -> result: own T pure {
+fn relay<T: drop>(value: own T) -> result: own T pure {
   return move value;
 }
 

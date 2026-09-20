@@ -2,7 +2,7 @@ opaque struct Token {
   value: u64;
 }
 
-opaque linear struct Ticket {
+opaque nodrop struct Ticket {
   serial: u64;
 }
 

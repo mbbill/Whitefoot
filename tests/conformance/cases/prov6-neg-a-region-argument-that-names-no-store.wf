@@ -1,4 +1,4 @@
-linear struct Token {
+nodrop struct Token {
   id: u64;
 }
 

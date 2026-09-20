@@ -1,4 +1,4 @@
-linear struct Ticket {
+nodrop struct Ticket {
   code: u8;
 }
 

@@ -1,4 +1,4 @@
-fn empty<T: linear>() -> result: own Slots<T, 0> pure {
+fn empty<T>() -> result: own Slots<T, 0> pure {
   let result = slots_new::<T, 0>();
   return move result;
 }

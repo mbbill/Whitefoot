@@ -1,13 +1,13 @@
-struct Marker<T: linear> {
+struct Marker<T> {
   value: u64;
 }
 
-struct Pair<A: linear, B: linear> {
+struct Pair<A, B> {
   first: Marker<A>;
   second: Marker<B>;
 }
 
-struct Wrapped<A: linear, B: linear> {
+struct Wrapped<A, B> {
   pair: Pair<A, B>;
 }
 

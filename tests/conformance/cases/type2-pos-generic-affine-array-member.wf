@@ -1,4 +1,4 @@
-struct Holder<T: affine> {
+struct Holder<T: drop> {
   values: Array<T, 2>;
 }
 

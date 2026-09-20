@@ -88,7 +88,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
 }
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  doc "The selected TcpConnection is an ordinary public linear struct. Moving one direction as a proper partial consume fails ordinary ownership; a later use cannot recover the original binding. No special system-struct constructor or close_connection rule exists.";
+  doc "The selected TcpConnection is an ordinary public nodrop struct. Moving one direction as a proper partial consume fails ordinary ownership; a later use cannot recover the original binding. No special system-struct constructor or close_connection rule exists.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
   close_directory(factory: &handles, directory: move unused_cwd);
   let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9102_u16);

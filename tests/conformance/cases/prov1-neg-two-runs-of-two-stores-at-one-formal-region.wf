@@ -1,4 +1,4 @@
-fn wider<T: affine, const n: u64>(one: &Slots<T, n>, two: &Slots<T, n>) -> width: own u64 reads(one), reads(two) {
+fn wider<T: drop, const n: u64>(one: &Slots<T, n>, two: &Slots<T, n>) -> width: own u64 reads(one), reads(two) {
   doc "Reports the free slots two windows of one shape share.";
   let left = deref(one).cap - deref(one).len;
   let right = deref(two).cap - deref(two).len;

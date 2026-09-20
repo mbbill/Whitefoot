@@ -139,7 +139,7 @@ fn the_general_store_hands_out_a_run_and_takes_it_back() {
 /// [WIN-1, PROV-6, TYPE-5] the one-level lift at execution, under the two
 /// nominals the design writes it with.
 ///
-/// `BlockPool` holds the free list and `linear struct Lease` holds the leased
+/// `BlockPool` holds the free list and `nodrop struct Lease` holds the leased
 /// run, so this is the design's pool entire: eight frame-resident windows
 /// carved into one window of windows, a lease taken off the back boundary and
 /// returned to a free list `pool_release` *proved* had room. The `linear`

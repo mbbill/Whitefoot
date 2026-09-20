@@ -1,8 +1,8 @@
-struct Chunk<T: linear> {
+struct Chunk<T> {
   page: Box<Slots<T>>;
 }
 
-fn chunk_room<T: linear>(held: own Chunk<T>) -> (rest: own Chunk<T>, width: own u64) pure {
+fn chunk_room<T>(held: own Chunk<T>) -> (rest: own Chunk<T>, width: own u64) pure {
   doc "Reads one chunk's own capacity and hands the chunk back.";
   let spare = held.page.inner.cap - held.page.inner.len;
   return move held, spare;

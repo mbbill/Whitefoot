@@ -1,4 +1,4 @@
-formal Inspect<T: linear> {
+formal Inspect<T> {
   fn inspect(value: &T) -> result: own unit pure;
 }
 

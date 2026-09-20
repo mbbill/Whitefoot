@@ -1,8 +1,8 @@
-struct Lease<T: linear> {
+struct Lease<T> {
   run: Box<Slots<T>>;
 }
 
-struct BlockPool<T: linear> {
+struct BlockPool<T> {
   free: Slots<Box<Slots<T>>, 8>;
 }
 

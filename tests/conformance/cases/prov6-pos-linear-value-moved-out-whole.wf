@@ -1,4 +1,4 @@
-linear struct Lease {
+nodrop struct Lease {
   slot: u8;
 }
 

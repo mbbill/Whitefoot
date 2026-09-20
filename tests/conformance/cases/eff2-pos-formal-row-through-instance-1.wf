@@ -3,7 +3,7 @@ struct Pair {
   right: u64;
 }
 
-formal Inspect<T: affine> {
+formal Inspect<T: drop> {
   fn read(value: &T) -> result: own u64 reads(value);
 }
 

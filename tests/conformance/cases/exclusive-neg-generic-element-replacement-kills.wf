@@ -1,4 +1,4 @@
-fn replace_at<T: affine>(values: &Slots<T, 2>, at: own u64, incoming: &T) -> result: own unit writes(values[at]), writes(incoming) contract {
+fn replace_at<T: drop>(values: &Slots<T, 2>, at: own u64, incoming: &T) -> result: own unit writes(values[at]), writes(incoming) contract {
   requires at < deref(values).len;
 } {
   doc "A generic helper preserving the outer window's boundary while exchanging one of its elements [OP-11].";

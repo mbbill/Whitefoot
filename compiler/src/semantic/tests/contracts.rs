@@ -322,7 +322,7 @@ actual Alias : Work {
   run = First::run;
 }
 
-fn poly<T: affine>() -> result: own u64 pure {
+fn poly<T: drop>() -> result: own u64 pure {
   return invoke::<Alias>();
 }
 
@@ -390,7 +390,7 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
     assert_behavior_rule(wrapped, SemanticRule::Fn6);
-    let growing = r#"struct Grow<T: affine> {
+    let growing = r#"struct Grow<T: drop> {
   next: Box<Grow<Box<T>>>;
 }
 
@@ -437,9 +437,9 @@ fn assert_issue_slice(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind
 
 #[test]
 fn missing_entry_diagnostic_salvage_checks_instantiation_before_discovery() {
-    let source = "struct Grow<T: affine> {\n  next: Box<Grow<Box<T>>>;\n}\n";
+    let source = "struct Grow<T: drop> {\n  next: Box<Grow<Box<T>>>;\n}\n";
     assert_behavior_rule(source, SemanticRule::Fn6);
-    let source = "fn repeat<T: affine>(value: own T) -> result: own unit pure {\n  let boxed = box_new::<T>(value: move value);\n  repeat::<Box<T>>(value: move boxed);\n  return unit;\n}\n";
+    let source = "fn repeat<T: drop>(value: own T) -> result: own unit pure {\n  let boxed = box_new::<T>(value: move value);\n  repeat::<Box<T>>(value: move boxed);\n  return unit;\n}\n";
     assert_behavior_rule(source, SemanticRule::Fn6);
 }
 
@@ -539,11 +539,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn actual_header_materializes_its_only_generic_nominal_instance() {
-    let source = br#"struct Wrapper<T: affine> {
+    let source = br#"struct Wrapper<T: drop> {
   value: T;
 }
 
-formal Marker<T: affine> {
+formal Marker<T: drop> {
 }
 
 actual Wrapped : Marker<Wrapper<i32>> {
@@ -575,7 +575,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn formal_member_materializes_its_only_generic_nominal_instance() {
-    let source = br#"struct Wrapper<T: affine> {
+    let source = br#"struct Wrapper<T: drop> {
   value: T;
 }
 

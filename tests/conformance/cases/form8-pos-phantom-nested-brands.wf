@@ -1,8 +1,8 @@
-struct Phantom<A: linear, B: linear> {
+struct Phantom<A, B> {
   tag: u64;
 }
 
-struct Wrapped<A: linear, B: linear> {
+struct Wrapped<A, B> {
   value: Phantom<A, B>;
 }
 

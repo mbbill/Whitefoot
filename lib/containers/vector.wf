@@ -1,18 +1,18 @@
-struct GrowVector<T: linear> {
+struct GrowVector<T> {
   storage: Box<Slots<T>>;
 }
 
-formal VectorDrain<T: linear, E: linear> {
+formal VectorDrain<T, E> {
   fn accept(env: &E, value: own T) -> result: own unit writes(env);
 }
 
-fn grow_vector_new<T: linear>() -> made: own GrowVector<T> pure {
+fn grow_vector_new<T>() -> made: own GrowVector<T> pure {
   doc "One empty vector over a zero-capacity backing window. A runtime-capacity window exists only as the content of a cell [TYPE-9], and allocation is total in the source [STOR-8], so the construction has no refusal arm and hands back no Result.";
   let storage = box_slots_new::<T>(capacity: 0_u64);
   return GrowVector<T>(storage: move storage);
 }
 
-fn grow_vector_reserve<T: linear>(values: &GrowVector<T>, total: own u64) -> capacity: own u64 writes(values.storage) contract {
+fn grow_vector_reserve<T>(values: &GrowVector<T>, total: own u64) -> capacity: own u64 writes(values.storage) contract {
   ensures capacity == deref(values).storage.inner.cap;
   ensures capacity >= total;
   ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len;
@@ -26,7 +26,7 @@ fn grow_vector_reserve<T: linear>(values: &GrowVector<T>, total: own u64) -> cap
   return total;
 }
 
-fn grow_vector_append<T: linear>(values: &GrowVector<T>, value: own T) -> length: own u64 writes(values.storage) contract {
+fn grow_vector_append<T>(values: &GrowVector<T>, value: own T) -> length: own u64 writes(values.storage) contract {
   ensures length == deref(values).storage.inner.len;
   ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len + 1_u64;
 } {
@@ -57,7 +57,7 @@ fn grow_vector_append<T: linear>(values: &GrowVector<T>, value: own T) -> length
   return reached;
 }
 
-fn grow_vector_insert<T: linear>(values: &GrowVector<T>, index: own u64, value: own T) -> length: own u64 writes(values.storage) contract {
+fn grow_vector_insert<T>(values: &GrowVector<T>, index: own u64, value: own T) -> length: own u64 writes(values.storage) contract {
   requires index <= deref(values).storage.inner.len;
   ensures length == deref(values).storage.inner.len;
   ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len + 1_u64;
@@ -89,7 +89,7 @@ fn grow_vector_insert<T: linear>(values: &GrowVector<T>, index: own u64, value: 
   return reached;
 }
 
-fn grow_vector_remove<T: linear>(values: &GrowVector<T>, index: own u64) -> removed: own T writes(values.storage) contract {
+fn grow_vector_remove<T>(values: &GrowVector<T>, index: own u64) -> removed: own T writes(values.storage) contract {
   requires index < deref(values).storage.inner.len;
   ensures deref(values).storage.inner.len + 1_u64 == deref(entry(values)).storage.inner.len;
   ensures deref(values).storage.inner.cap == deref(entry(values)).storage.inner.cap;

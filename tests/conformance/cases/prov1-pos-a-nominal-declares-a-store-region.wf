@@ -1,4 +1,4 @@
-struct Chunk<T: affine, const n: u64> {
+struct Chunk<T: drop, const n: u64> {
   page: Slots<T, n>;
 }
 

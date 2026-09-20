@@ -22,7 +22,7 @@ struct Resource {
   data3: u64;
 }
 
-enum Slot<K: linear> {
+enum Slot<K> {
   Vacant();
   Deleted();
   Occupied(fingerprint: u8, key: K, payload: Box<Resource>);
@@ -35,12 +35,12 @@ enum Probe {
   Match();
 }
 
-enum KeyPut<K: linear> {
+enum KeyPut<K> {
   Installed(previous: Slot<K>);
   Rejected(key: K, payload: Box<Resource>);
 }
 
-formal Key<K: linear, E: linear> {
+formal Key<K, E> {
   fn hash(env: &E, key: &K) -> hash: own u64 reads(env), reads(key);
   fn equal(env: &E, left: &K, right: &K) -> equal: own Bool reads(env), reads(left), reads(right);
 }
@@ -192,7 +192,7 @@ fn key_put<Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: own K, payload: own Box<
   return Installed<K>(previous: move offered);
 }
 
-fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: own unit writes(slots) contract {
+fn key_fill<K>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: own unit writes(slots) contract {
   requires deref(slots).inner.len == 0_u64;
   requires count <= deref(slots).inner.cap - deref(slots).inner.len;
   ensures deref(slots).inner.len == count;
@@ -212,7 +212,7 @@ fn key_fill<K: linear>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: o
   return unit;
 }
 
-fn key_create<K: linear>(count: own u64) -> result: own Box<Slots<Slot<K>>> pure contract {
+fn key_create<K>(count: own u64) -> result: own Box<Slots<Slot<K>>> pure contract {
   ensures result.inner.len == count;
 } {
   doc "Allocation is total, so the creation has no failure arm and the static allocation-size obligation is discharged at the constructor.";

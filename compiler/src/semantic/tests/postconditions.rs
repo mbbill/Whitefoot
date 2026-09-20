@@ -1690,7 +1690,7 @@ fn main() -> status: own ExitStatus pure {
 
 fn measured_call_return_source(generic: bool, bind_result: bool, expected: u64) -> String {
     let (parameters, element, arguments) = if generic {
-        ("<T: linear>", "T", "::<Box<u64>>")
+        ("<T>", "T", "::<Box<u64>>")
     } else {
         ("", "Box<u64>", "")
     };
@@ -2060,7 +2060,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unused_generic_entry_issue_precedes_its_body_semantics() {
-    let source = br#"fn generic<T: affine>(value: own T) -> result: own T pure contract {
+    let source = br#"fn generic<T: drop>(value: own T) -> result: own T pure contract {
   ensures result == missing;
 } {
   return slots_new::<u8, 1>();
@@ -2112,7 +2112,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn concrete_generic_instances_do_not_reuse_symbolic_selector_class() {
-    let source = br#"fn identity<T: affine>(value: own T) -> result: own T pure contract {
+    let source = br#"fn identity<T: drop>(value: own T) -> result: own T pure contract {
   ensures result == result;
 } {
   return value;
@@ -2196,7 +2196,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unavailable_generic_type_argument_does_not_invent_a_selector_instance() {
-    let source = br#"fn generic<T: affine>(value: own T) -> result: own T pure contract {
+    let source = br#"fn generic<T: drop>(value: own T) -> result: own T pure contract {
   define cvt = value == value;
   ensures result == value;
 } {
@@ -2221,7 +2221,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn unavailable_const_argument_does_not_invent_a_selector_instance() {
     let source =
-        br#"fn generic<T: affine, const n: u64>(value: own T) -> result: own T pure contract {
+        br#"fn generic<T: drop, const n: u64>(value: own T) -> result: own T pure contract {
   define cvt = value == value;
   ensures result == value;
 } {
@@ -2296,7 +2296,7 @@ fn unavailable_symbolic_header_does_not_forward_its_entry_issue() {
   value: T;
 }
 
-fn unavailable<T: affine>(value: own CopyOnly<T>) -> result: own T pure contract {
+fn unavailable<T: drop>(value: own CopyOnly<T>) -> result: own T pure contract {
   ensures result == missing;
 } {
   return value;
@@ -2328,7 +2328,7 @@ fn unavailable_record_does_not_suppress_a_later_independent_selector() {
   value: T;
 }
 
-fn unavailable<T: affine>(value: own CopyOnly<T>) -> result: own T pure contract {
+fn unavailable<T: drop>(value: own CopyOnly<T>) -> result: own T pure contract {
   ensures result == missing;
 } {
   return value;
@@ -2383,7 +2383,7 @@ fn referenced_generic_nominal_must_pass_its_symbolic_template_judgment() {
   value: T;
 }
 
-struct Invalid<T: affine> {
+struct Invalid<T: drop> {
   values: CopyOnly<T>;
 }
 
@@ -2419,7 +2419,7 @@ fn unrelated_invalid_generic_nominal_does_not_suppress_selector_admission() {
   value: T;
 }
 
-struct Invalid<T: affine> {
+struct Invalid<T: drop> {
   values: CopyOnly<T>;
 }
 
@@ -2825,7 +2825,7 @@ fn a_concrete_instance_named_only_by_an_uninstantiated_generic_still_checks_fn9(
   return value;
 }
 
-fn wrapper<U: affine>() -> result: own unit pure {
+fn wrapper<U: drop>() -> result: own unit pure {
   let ignored = bad::<u8>(value: 0_u8);
   return unit;
 }

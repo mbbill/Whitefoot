@@ -1,4 +1,4 @@
-struct Marker<T: linear> {
+struct Marker<T> {
   value: u64;
 }
 

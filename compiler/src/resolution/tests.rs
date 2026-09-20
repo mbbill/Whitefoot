@@ -1710,7 +1710,7 @@ formal Numeric<T: Int> {
   fn zero() -> result: own T pure;
 }
 
-struct Package<T: affine, const n: i32> {
+struct Package<T: drop, const n: i32> {
   items: Array<T, n>;
 }
 
@@ -1719,7 +1719,7 @@ struct Holder {
   table: Array<i32, 4>;
 }
 
-enum Choice<T: affine> {
+enum Choice<T: drop> {
   Absent();
   Present(value: T);
 }
@@ -1736,7 +1736,7 @@ actual Implementation : Bound {
   member = implementation;
 }
 
-fn user<T: affine, const n: i32>(arg: &T) -> result: own T reads(arg) {
+fn user<T: drop, const n: i32>(arg: &T) -> result: own T reads(arg) {
   return arg;
 }
 
