@@ -209,6 +209,49 @@ impl CheckedIndexedPlace {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// Chooses the subscript that establishes the indexable base of a place.
+    ///
+    /// Ordinary nested storage is addressed inside-out, so its final
+    /// subscript selects the value read or written. A `deref` of a range
+    /// reference is different: its first subscript selects the range element,
+    /// and every later subscript is a typed suffix below that element. Keep
+    /// that distinction here so reads, writes and measures all form the same
+    /// complete range-element place and retain every [OP-4] obligation in
+    /// source order. Borrow formation routes through the same first subscript
+    /// in the reference checker.
+    pub(super) fn indexing_subscript(
+        &self,
+        place: NodeId,
+        suffixes: &[NodeId],
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<Option<usize>, CheckStop> {
+        let Some(last) = self.last_subscript(suffixes)? else {
+            return Ok(None);
+        };
+        let pbase = self
+            .tree
+            .first_child_with(place, Production::Pbase)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        if !self.has_fixed(pbase, FixedTerminal::Deref)? {
+            return Ok(Some(last));
+        }
+        let inner = self
+            .tree
+            .first_child_with(pbase, Production::Place)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let inner = self.resolve_explicit_place(place, inner, bindings)?;
+        let dereferenced = self.resolve_explicit_dereference(place, pbase, inner, bindings)?;
+        if !dereferenced.range_referent {
+            return Ok(Some(last));
+        }
+        for (position, suffix) in suffixes.iter().enumerate() {
+            if self.subscript_offset(*suffix)?.is_some() {
+                return Ok(Some(position));
+            }
+        }
+        Ok(None)
+    }
+
     fn constant_storage_place(
         &self,
         constant: super::super::super::model::CheckedConstantId,
@@ -1026,22 +1069,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let element_type = indexed.element_type(self)?;
         let (range_path, selected_type, carried) =
             if matches!(indexed, CheckedIndexedPlace::Range(_)) {
-                let resolved = self.resolve_storage_path(
+                self.resolve_storage_path(
                     &suffixes[subscript + 1..],
                     element_type,
                     bindings,
                     function,
                     options.loop_depth,
                     true,
-                )?;
-                if resolved
-                    .0
-                    .iter()
-                    .any(|step| matches!(step, CheckedPlaceStep::Subscript(_)))
-                {
-                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place);
-                }
-                resolved
+                )?
             } else if subscript + 1 == suffixes.len() {
                 (Vec::new(), element_type, CarriedOperands::default())
             } else {
@@ -1211,12 +1246,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 CheckedExpression::RangeIndex {
                     carrier: self.tree.path(use_node)?.clone(),
-                    root: range.root,
-                    offset: Box::new(offset.expression),
-                    path: range_path,
-                    ty: selected_type,
-                    obligation,
-                    target_domain: CheckedTargetDomainObligation::ElementAddress,
+                    place: Box::new(CheckedRangeElementPlace {
+                        root: range.root,
+                        offset: offset.expression,
+                        captured,
+                        path: range_path,
+                        ty: selected_type,
+                        obligation,
+                        target_domain: CheckedTargetDomainObligation::ElementAddress,
+                    }),
                 }
             }
             CheckedIndexedPlace::Container(_) => {
@@ -1317,22 +1355,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let element_type = indexed.element_type(self)?;
         let (range_path, selected_type, carried) =
             if matches!(indexed, CheckedIndexedPlace::Range(_)) {
-                let resolved = self.resolve_storage_path(
+                self.resolve_storage_path(
                     &suffixes[subscript + 1..],
                     element_type,
                     bindings,
                     function,
                     loop_depth,
                     true,
-                )?;
-                if resolved
-                    .0
-                    .iter()
-                    .any(|step| matches!(step, CheckedPlaceStep::Subscript(_)))
-                {
-                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
-                }
-                resolved
+                )?
             } else if subscript + 1 == suffixes.len() {
                 (Vec::new(), element_type, CarriedOperands::default())
             } else {

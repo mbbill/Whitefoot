@@ -1627,20 +1627,15 @@ impl<'program> IrBuilder<'program> {
                     None => self.lower_range_measure(root),
                 }
             }
-            CheckedExpression::RangeIndex {
-                root,
-                offset,
-                path,
-                target_domain,
-                ..
-            } => self.lower_range_index(root, offset, path, *target_domain),
-            CheckedExpression::BorrowRangeIndex {
-                root,
-                offset,
-                path,
-                target_domain,
-                ..
-            } => self.lower_range_address(root, offset, path, *target_domain),
+            CheckedExpression::RangeIndex { place, .. } => {
+                self.lower_range_index(&place.root, &place.offset, &place.path, place.target_domain)
+            }
+            CheckedExpression::BorrowRangeIndex { place, .. } => self.lower_range_address(
+                &place.root,
+                &place.offset,
+                &place.path,
+                place.target_domain,
+            ),
             CheckedExpression::BoxDeref { nominal, value, .. } => {
                 let value = self.expression(value)?;
                 let nominal = self.erased(*nominal);

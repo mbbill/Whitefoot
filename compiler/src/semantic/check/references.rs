@@ -772,12 +772,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 loop_depth,
                 true,
             )?;
-            if path
-                .iter()
-                .any(|step| matches!(step, CheckedPlaceStep::Subscript(_)))
-            {
-                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place_node);
-            }
             for place in &mut places {
                 place
                     .path
@@ -786,17 +780,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let element = self.intern_element(local.ty)?;
             let expression = CheckedExpression::BorrowRangeIndex {
                 carrier: self.tree.path(carrier)?.clone(),
-                root: CheckedRangeRoot {
-                    binding: local.binding,
-                    element,
-                    element_type: local.ty,
-                },
-                offset: Box::new(offset.expression),
-                path,
-                ty,
-                obligation: self.tree.path(*first)?.clone(),
-                target_domain: CheckedTargetDomainObligation::ElementAddress,
-                captured,
+                place: Box::new(crate::semantic::CheckedRangeElementPlace {
+                    root: CheckedRangeRoot {
+                        binding: local.binding,
+                        element,
+                        element_type: local.ty,
+                    },
+                    offset: offset.expression,
+                    path,
+                    ty,
+                    obligation: self.tree.path(*first)?.clone(),
+                    target_domain: CheckedTargetDomainObligation::ElementAddress,
+                    captured,
+                }),
             };
             let effects = offset.effects.union(carried.effects);
             let mut accesses = offset

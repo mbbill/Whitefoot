@@ -479,10 +479,10 @@ impl FunctionDependencies {
             CheckedExpression::ContainerMeasure { root, .. }
             | CheckedExpression::ReadStorage { root, .. }
             | CheckedExpression::BorrowAddressed { root, .. } => self.root_types(root),
-            CheckedExpression::BorrowRangeIndex { root, path, .. }
-            | CheckedExpression::RangeIndex { root, path, .. } => {
-                self.types.push(root.element_type);
-                self.steps(path);
+            CheckedExpression::BorrowRangeIndex { place, .. }
+            | CheckedExpression::RangeIndex { place, .. } => {
+                self.types.push(place.root.element_type);
+                self.steps(&place.path);
             }
             CheckedExpression::RangeElementMeasure { place, .. } => {
                 self.types.push(place.root.element_type);
@@ -507,7 +507,9 @@ impl FunctionDependencies {
             CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::RangeIndex(target) => {
                 self.types.push(target.root.element_type);
-                self.expression(&target.offset);
+                for offset in target.offsets() {
+                    self.expression(offset);
+                }
                 self.steps(&target.path);
             }
             CheckedSetTarget::Storage(root) => {

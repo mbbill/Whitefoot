@@ -1578,10 +1578,9 @@ pub(crate) enum CheckedRangeSource {
 
 /// One typed element place in the run a range reference names [REF-4, OP-4].
 ///
-/// Measures and `set` targets share the evaluated outer offset and the typed
-/// suffix below that element; the other range access forms retain the same
-/// components in their expression nodes. Keeping that capture here gives
-/// these storage judgments one place identity without choosing one of a
+/// Reads, borrows, measures and `set` targets share the evaluated outer offset
+/// and the typed suffix below that element. Keeping that complete path here
+/// gives every storage judgment one place identity without choosing one of a
 /// joined reference's possible origins [REF-1, ENT-5].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedRangeElementPlace {
@@ -1598,6 +1597,24 @@ pub(crate) struct CheckedRangeElementPlace {
 }
 
 impl CheckedRangeElementPlace {
+    /// The outer range offset followed by every nested subscript offset, in
+    /// source evaluation order [SET-1, OP-4].
+    pub(crate) fn offsets(&self) -> impl Iterator<Item = &CheckedExpression> {
+        std::iter::once(&self.offset).chain(self.path.iter().filter_map(|step| match step {
+            CheckedPlaceStep::Subscript(index) => Some(&index.offset),
+            CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+        }))
+    }
+
+    pub(crate) fn offsets_mut(&mut self) -> impl Iterator<Item = &mut CheckedExpression> {
+        std::iter::once(&mut self.offset).chain(self.path.iter_mut().filter_map(
+            |step| match step {
+                CheckedPlaceStep::Subscript(index) => Some(&mut index.offset),
+                CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+            },
+        ))
+    }
+
     pub(crate) fn place_path(&self) -> Vec<super::places::PlaceStep> {
         std::iter::once(super::places::PlaceStep::Index(self.captured))
             .chain(self.path.iter().map(CheckedPlaceStep::place_step))
@@ -1975,30 +1992,14 @@ pub(crate) enum CheckedExpression {
     /// [OP-4] one discharged subscript read of the run a range names.
     RangeIndex {
         carrier: NodePath,
-        root: CheckedRangeRoot,
-        offset: Box<CheckedExpression>,
-        /// The typed storage path below the selected element.
-        path: Vec<CheckedPlaceStep>,
-        /// The type selected by `path`, or the element type when it is empty.
-        ty: CheckedType,
-        obligation: NodePath,
-        target_domain: CheckedTargetDomainObligation,
+        place: Box<CheckedRangeElementPlace>,
     },
     /// [REF-1, REF-4] a reference to one discharged element place in the run
     /// a range reference names. Unlike `RangeIndex`, this preserves the
     /// selected address instead of reading the stored value.
     BorrowRangeIndex {
         carrier: NodePath,
-        root: CheckedRangeRoot,
-        offset: Box<CheckedExpression>,
-        /// The typed storage path below the selected element.
-        path: Vec<CheckedPlaceStep>,
-        /// The type selected by `path`, or the element type when it is empty.
-        ty: CheckedType,
-        obligation: NodePath,
-        target_domain: CheckedTargetDomainObligation,
-        /// [OWN-7] the immutable index image this element place carries.
-        captured: super::places::CapturedValue,
+        place: Box<CheckedRangeElementPlace>,
     },
     /// One [MSR-1] measure of a run [TYPE-9] or a bump extent [PROV-1], read
     /// as its [OP-1] reader row. One quantity, one name, term and reader
@@ -2133,7 +2134,7 @@ impl CheckedExpression {
             // own type is the element type and its kind is its mode, exactly
             // as a `&[T]` parameter carries them [GRAM-2, REF-4].
             Self::RangeOf { element_type, .. } => *element_type,
-            Self::RangeIndex { ty, .. } | Self::BorrowRangeIndex { ty, .. } => *ty,
+            Self::RangeIndex { place, .. } | Self::BorrowRangeIndex { place, .. } => place.ty,
             Self::ReadStorage { root, .. } => root.ty,
             Self::BoxDeref { referent, .. } | Self::BoxTake { referent, .. } => *referent,
             Self::BorrowAddressed { root, .. } => root.ty,
@@ -2705,15 +2706,8 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
             }));
             children
         }
-        CheckedExpression::RangeIndex { offset, path, .. }
-        | CheckedExpression::BorrowRangeIndex { offset, path, .. } => {
-            let mut children = vec![offset.as_ref()];
-            children.extend(path.iter().filter_map(|step| match step {
-                CheckedPlaceStep::Subscript(index) => Some(&index.offset),
-                CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
-            }));
-            children
-        }
+        CheckedExpression::RangeIndex { place, .. }
+        | CheckedExpression::BorrowRangeIndex { place, .. } => place.offsets().collect(),
         // [REF-4] both endpoints are evaluated once where the range is
         // formed, in written order, and the source place's own offsets are
         // read with them.

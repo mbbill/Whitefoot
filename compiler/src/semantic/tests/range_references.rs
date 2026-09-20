@@ -94,6 +94,143 @@ fn main() -> status: own ExitStatus pure {
     assert_accepts(source);
 }
 
+/// [REF-4, OP-4, SET-1] a range may contain composite elements. Every
+/// subscript below the selected outer element is an ordinary typed place step:
+/// its offset is evaluated in source order, its own bound is discharged, and
+/// read, write and borrow all name the same final scalar storage.
+#[test]
+fn nested_range_element_subscripts_are_complete_places() {
+    let source = br#"fn exercise(rows: &[Array<u64, 2>], outer: own u64, inner: own u64) -> result: own u64 writes(rows) contract {
+  requires outer < deref(rows).len;
+  requires inner < 2_u64;
+} {
+  let before = deref(rows)[outer][inner];
+  let changed = before +wrap 1_u64;
+  set deref(rows)[outer][inner] = changed;
+  let selected = &deref(rows)[outer][inner];
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// Both positions of a nested range element path owe their own [OP-4]
+/// judgment. The outer failure is reported before the inner position is
+/// considered, following the source's base-outward evaluation order.
+#[test]
+fn an_out_of_bounds_outer_nested_range_index_is_an_op4_rejection() {
+    let source = br#"fn invalid(rows: &[Array<u64, 2>]) -> result: own u64 reads(rows) contract {
+  requires deref(rows).len == 1_u64;
+} {
+  return deref(rows)[1_u64][0_u64];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+/// Discharging the outer range position does not authorize a nested Array
+/// position. The inner suffix keeps its own base type and obligation.
+#[test]
+fn an_out_of_bounds_inner_nested_range_index_is_an_op4_rejection() {
+    let source = br#"fn invalid(rows: &[Array<u64, 2>]) -> result: own u64 reads(rows) contract {
+  requires 0_u64 < deref(rows).len;
+} {
+  return deref(rows)[0_u64][2_u64];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+/// [REF-1, ENT-2, ENT-3.S1] a nested path may extend a joined range after
+/// the selected holder's own length has been proved sufficient. The branch
+/// supplies that fact without equating either input's measure to the joined
+/// holder or reducing the holder to one possible origin.
+#[test]
+fn a_nested_range_element_path_preserves_joined_origins() {
+    let source = br#"fn inspect(left: &[Array<u64, 2>], right: &[Array<u64, 2>], flag: own Bool) -> result: own u64 reads(left), reads(right) {
+  let rows = if flag {
+    give left;
+  } else {
+    give right;
+  }
+  if deref(rows).len > 0_u64 {
+    return deref(rows)[0_u64][1_u64];
+  }
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// [ENT-2, ENT-3, ENT-6] the two incoming range measures and the joined
+/// holder's measure are distinct terms. The fixed fact sources have no
+/// reference-valued delivery rule that transports the former bounds to the
+/// latter. Preserve this source as an unproved OP-4 control: mathematical
+/// safety alone must not authorize an extra alias-based proof route.
+#[test]
+fn incoming_range_bounds_do_not_invent_a_joined_holder_length_fact() {
+    let source = br#"fn inspect(left: &[Array<u64, 2>], right: &[Array<u64, 2>], flag: own Bool) -> result: own u64 reads(left), reads(right) contract {
+  requires 0_u64 < deref(left).len;
+  requires 0_u64 < deref(right).len;
+} {
+  let rows = if flag {
+    give left;
+  } else {
+    give right;
+  }
+  return deref(rows)[0_u64][1_u64];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+/// [REF-2] replacing the outer composite element writes a proper prefix of a
+/// reference to one of its nested scalars. Keeping only the outer range index
+/// or dropping the suffix would incorrectly leave this reference valid.
+#[test]
+fn replacing_a_range_element_invalidates_a_nested_element_reference() {
+    let source = br#"fn invalid(rows: &[Array<u64, 2>]) -> result: own u64 writes(rows) contract {
+  requires 0_u64 < deref(rows).len;
+} {
+  let selected = &deref(rows)[0_u64][0_u64];
+  let replacement = array_filled::<u64, 2>(value: 9_u64);
+  set deref(rows)[0_u64] = replacement;
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref2, |_| true);
+}
+
 /// The subscript inside a measure place owes the same [OP-4] bound as every
 /// other subscript. A one-element range cannot admit element one, even though
 /// the selected element's `len` would itself be a total [OP-15] read.

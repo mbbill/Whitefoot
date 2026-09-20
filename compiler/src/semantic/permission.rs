@@ -1213,9 +1213,10 @@ pub(super) fn set_target_place(
                     collect_operand_reads(places, &index.offset, node, footprint);
                 }
             }
-            let mut steps = vec![PlaceStep::Index(CapturedValue::unknown())];
-            steps.extend(target.path.iter().map(CheckedPlaceStep::place_step));
-            places.resolve(PlaceRoot::Binding(target.root.binding), &steps)
+            places.resolve(
+                PlaceRoot::Binding(target.root.binding),
+                &target.place_path(),
+            )
         }
         CheckedSetTarget::Storage(target) => {
             for offset in target.offsets() {
@@ -1327,10 +1328,10 @@ pub(super) fn visit_read_bindings(
         }
         CheckedExpression::BufferMeasure { root, .. }
         | CheckedExpression::BufferIndex { root, .. } => note(root.binding),
-        CheckedExpression::RangeMeasure { root, .. }
-        | CheckedExpression::RangeIndex { root, .. }
-        | CheckedExpression::BorrowRangeIndex { root, .. } => note(root.binding),
-        CheckedExpression::RangeElementMeasure { place, .. } => note(place.root.binding),
+        CheckedExpression::RangeMeasure { root, .. } => note(root.binding),
+        CheckedExpression::RangeElementMeasure { place, .. }
+        | CheckedExpression::RangeIndex { place, .. }
+        | CheckedExpression::BorrowRangeIndex { place, .. } => note(place.root.binding),
         CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => {
             if let CheckedArrayRoot::Binding { binding, .. } = root {
@@ -1413,14 +1414,14 @@ fn collect_operand_reads(
         // [REF-4, MSR-2] a measure or element read through a range reference
         // reads the path the reference names; the subscript's own offset is
         // this expression's child and is walked below.
-        CheckedExpression::RangeMeasure { root, .. }
-        | CheckedExpression::RangeIndex { root, .. } => {
+        CheckedExpression::RangeMeasure { root, .. } => {
             read(
                 footprint,
                 places.resolve(PlaceRoot::Binding(root.binding), &[]),
             );
         }
-        CheckedExpression::RangeElementMeasure { place, .. } => {
+        CheckedExpression::RangeElementMeasure { place, .. }
+        | CheckedExpression::RangeIndex { place, .. } => {
             read(
                 footprint,
                 places.resolve(PlaceRoot::Binding(place.root.binding), &place.place_path()),
@@ -1476,20 +1477,15 @@ fn argument_places(places: &PlaceMap, argument: &CheckedExpression) -> Option<Ve
         CheckedExpression::BorrowAddressed { root, .. } => {
             places.resolve(root.root, &container_steps(root))
         }
-        CheckedExpression::BorrowRangeIndex {
-            root,
-            captured,
-            path,
-            ..
-        } => places
-            .resolve(PlaceRoot::Binding(root.binding), &[])
+        CheckedExpression::BorrowRangeIndex { place, .. } => places
+            .resolve(PlaceRoot::Binding(place.root.binding), &[])
             .into_iter()
-            .map(|mut place| {
-                place.path.push(PlaceStep::Index(*captured));
-                place
+            .map(|mut resolved| {
+                resolved.path.push(PlaceStep::Index(place.captured));
+                resolved
                     .path
-                    .extend(path.iter().map(CheckedPlaceStep::place_step));
-                place
+                    .extend(place.path.iter().map(CheckedPlaceStep::place_step));
+                resolved
             })
             .collect(),
         _ => return None,

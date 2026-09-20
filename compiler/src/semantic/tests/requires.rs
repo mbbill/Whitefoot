@@ -1071,6 +1071,101 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [MSR-6, FN-2, FN-8] a const generic used as an ordinary value actual is
+/// the same symbolic constant that selects the callee instance. The source
+/// schema must preserve that identity through an alpha-renamed generic call,
+/// while the concrete replay folds both occurrences to the selected integer.
+#[test]
+fn const_generic_values_discharge_requirements_through_transitive_forwarding() {
+    let source =
+        br#"fn accept<const expected: u64>(value: own u64) -> result: own unit pure contract {
+  requires value == expected;
+} {
+  return unit;
+}
+
+fn relay<const forwarded: u64>() -> result: own unit pure {
+  let accepted = accept::<forwarded>(value: forwarded);
+  return unit;
+}
+
+fn outer<const ceiling: u64>() -> result: own unit pure {
+  let relayed = relay::<ceiling>();
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let completed = outer::<7>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("symbolic and concrete const forwarding must both check: {outcome:?}");
+        };
+        let relay = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "relay")
+            .expect("concrete relay instance");
+        let CheckedStatement::Let {
+            value: call @ CheckedExpression::UserCall { arguments, .. },
+            ..
+        } = &relay.body.as_deref().expect("relay body")[0]
+        else {
+            panic!("relay must retain the checked accept call");
+        };
+        assert!(matches!(
+            &arguments[0],
+            CheckedExpression::Constant(CheckedValue::Integer {
+                ty: IntegerType::U64,
+                bits: 7,
+            })
+        ));
+        let goal_arguments = instantiated_call_goal_arguments(call);
+        assert_eq!(goal_arguments[0], goal_arguments[1]);
+        assert!(matches!(
+            &goal_arguments[0],
+            GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Integer {
+                ty: IntegerType::U64,
+                bits: 7,
+            }))
+        ));
+    });
+}
+
+/// Two const parameters are separate [ENT-2] terms. Treating any checked
+/// const-generic value actual as the callee's selected const would make this
+/// requirement spuriously true; with no written relation it remains FN-8
+/// unproved in the symbolic schema.
+#[test]
+fn independent_const_generic_values_do_not_become_equal_call_datums() {
+    let source =
+        br#"fn accept<const expected: u64>(value: own u64) -> result: own unit pure contract {
+  requires value == expected;
+} {
+  return unit;
+}
+
+fn invalid<const actual: u64, const expected: u64>() -> result: own unit pure {
+  let denied = accept::<expected>(value: actual);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    super::assert_rule_kind(source, SemanticRule::Fn8, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedCallRequirement(detail)
+                if detail.disposition == crate::CallRequirementDisposition::Unproved
+        )
+    });
+}
+
 #[test]
 fn forward_calls_retain_paths_and_exact_literal_place_and_named_const_images() {
     let source = br#"const requirement_limit: u64 = 8_u64;

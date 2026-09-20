@@ -238,7 +238,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         let suffixes = self.tree.children_with(node, Production::Psuffix)?;
-        if let Some(subscript) = self.last_subscript(&suffixes)? {
+        if let Some(subscript) = self.indexing_subscript(node, &suffixes, bindings)? {
             return self.check_indexed_set_target(
                 function, node, &suffixes, subscript, bindings, loop_depth,
             );
@@ -1184,13 +1184,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // the subscript selects and never a field of it. The subscript inside
         // the place keeps its ordinary [OP-4] obligation.
         if let Some(measure) = self.trailing_measure_member(&suffixes)?
-            && let Some(subscript) = self.last_subscript(&suffixes[..suffixes.len() - 1])?
+            && let Some(subscript) =
+                self.indexing_subscript(node, &suffixes[..suffixes.len() - 1], bindings)?
         {
             return self.check_indexed_measure_use(
                 function, use_node, node, &suffixes, subscript, measure, bindings, options,
             );
         }
-        if let Some(subscript) = self.last_subscript(&suffixes)? {
+        if let Some(subscript) = self.indexing_subscript(node, &suffixes, bindings)? {
             return self.check_index_use(
                 function, use_node, node, &suffixes, subscript, bindings, options,
             );

@@ -1287,6 +1287,42 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
+/// A range-selected composite element keeps the affine map of its innermost
+/// subscript. Reading and writing the same nested element is an independent
+/// per-iteration update; shifting only the read by one cell creates a real
+/// cross-iteration dependence and must lose that permission.
+#[test]
+fn a_nested_range_element_map_requires_matching_read_and_write_indices() {
+    let source = r#"fn update(rows: &[Array<u64, 3>]) -> result: own unit writes(rows) contract {
+  requires 0_u64 < deref(rows).len;
+} {
+  for @update (i in 0_u64..3_u64) {
+    let old = deref(rows)[0_u64][i];
+    set deref(rows)[0_u64][i] = old +wrap 1_u64;
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let judged = permitted(source.as_bytes(), "update");
+    assert_eq!(
+        judged.actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+
+    let shifted = source.replace(
+        "for @update (i in 0_u64..3_u64) {\n    let old = deref(rows)[0_u64][i];",
+        "for @update (i in 1_u64..3_u64) {\n    let prior = i -wrap 1_u64;\n    let old = deref(rows)[0_u64][prior];",
+    );
+    let table = permission_of(shifted.as_bytes());
+    let judged = only_loop(&table, "update");
+    assert!(matches!(denial(judged, 2), LoopDenial::SharedWrite { .. }));
+    assert_eq!(judged.actualization, None);
+}
+
 /// The common-map requirement is per resolved collection. Ownership keeps two
 /// distinct roots disjoint, so each may use its own injective affine image.
 #[test]

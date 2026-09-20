@@ -859,6 +859,91 @@ fn main() -> status: own ExitStatus pure {
     assert!(output.stderr.is_empty(), "{output:?}");
 }
 
+/// [REF-4, TYPE-5, OP-4] keeps the complete element type after selecting an
+/// element of a range. A second subscript therefore addresses the selected
+/// inner Array for reads, writes and references; it does not flatten the two
+/// logical indices or address the corresponding column of another row.
+#[test]
+fn nested_range_elements_read_write_and_borrow_the_selected_inner_array() {
+    let source = br#"fn touch(rows: &[Array<u64, 2>], outer: own u64, inner: own u64, value: own u64) -> result: own u64 writes(rows) contract {
+  requires outer < deref(rows).len;
+  requires inner < 2_u64;
+} {
+  let before = deref(rows)[outer][inner];
+  set deref(rows)[outer][inner] = value;
+  let cell = &deref(rows)[outer][inner];
+  let after = deref(cell);
+  let scaled = before *wrap 100_u64;
+  return scaled +wrap after;
+}
+
+fn nested_range_checksum() -> result: own u64 pure {
+  let seed = array_filled::<u64, 2>(value: 0_u64);
+  let rows = array_filled::<Array<u64, 2>, 2>(value: seed);
+  set rows[0_u64][0_u64] = 11_u64;
+  set rows[0_u64][1_u64] = 13_u64;
+  set rows[1_u64][0_u64] = 17_u64;
+  set rows[1_u64][1_u64] = 19_u64;
+  let part = &rows[0_u64..2_u64];
+  let first = touch(rows: part, outer: 1_u64, inner: 0_u64, value: 71_u64);
+  let second = touch(rows: part, outer: 0_u64, inner: 1_u64, value: 83_u64);
+  let first_row_first = deref(part)[0_u64][0_u64] *wrap 100000000_u64;
+  let first_row_second = deref(part)[0_u64][1_u64] *wrap 10000000000_u64;
+  let second_row_first = deref(part)[1_u64][0_u64] *wrap 1000000000000_u64;
+  let second_row_second = deref(part)[1_u64][1_u64] *wrap 100000000000000_u64;
+  let second_observation = second *wrap 10000_u64;
+  let checksum0 = first +wrap second_observation;
+  let checksum1 = checksum0 +wrap first_row_first;
+  let checksum2 = checksum1 +wrap first_row_second;
+  let checksum3 = checksum2 +wrap second_row_first;
+  let checksum4 = checksum3 +wrap second_row_second;
+  return checksum4;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source)
+        .replace("@main(", "@wf_nested_range_main(")
+        .replace("@wf__main_body(", "@wf_nested_range_body(");
+    let oracle = r#"#include <stdint.h>
+#include <stdio.h>
+extern int wf__floor_run(int, char **);
+extern uint64_t wf_nested_range_checksum(void);
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    uint64_t rows[2][2] = {{11, 13}, {17, 19}};
+    uint64_t first = rows[1][0] * 100 + 71;
+    rows[1][0] = 71;
+    uint64_t second = rows[0][1] * 100 + 83;
+    rows[0][1] = 83;
+    uint64_t expected = first + second * UINT64_C(10000)
+        + rows[0][0] * UINT64_C(100000000)
+        + rows[0][1] * UINT64_C(10000000000)
+        + rows[1][0] * UINT64_C(1000000000000)
+        + rows[1][1] * UINT64_C(100000000000000);
+    uint64_t actual = wf_nested_range_checksum();
+    if (actual != expected) {
+        (void)fprintf(stderr, "nested range: expected=%llu actual=%llu\n",
+                      (unsigned long long)expected, (unsigned long long)actual);
+        return 1;
+    }
+    return 0;
+}
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(oracle), &[], &directory);
+    let output = Command::new(executable)
+        .output()
+        .expect("run nested range element oracle");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove nested range element oracle files");
+}
+
 /// [ENT-2, OP-4, OP-15] lowers the measure of a window selected directly
 /// through a range reference. The inner window contains one value, so the
 /// process observes the descriptor read rather than merely compiling an

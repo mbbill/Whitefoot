@@ -47,11 +47,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             )?;
                         }
                         CheckedSetTarget::RangeIndex(target) => {
-                            self.collect_expression_release_effects(
-                                function,
-                                &target.offset,
-                                effects,
-                            )?;
+                            for offset in target.offsets() {
+                                self.collect_expression_release_effects(function, offset, effects)?;
+                            }
                         }
                         CheckedSetTarget::Storage(target) => {
                             for offset in target.offsets() {
@@ -181,21 +179,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
-            | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::RangeIndex { offset, .. }
-            | CheckedExpression::BorrowRangeIndex { offset, .. } => {
+            | CheckedExpression::BufferIndex { offset, .. } => {
                 self.collect_expression_release_effects(function, offset, effects)?;
             }
-            CheckedExpression::RangeElementMeasure { place, .. } => {
-                self.collect_expression_release_effects(function, &place.offset, effects)?;
-                for step in &place.path {
-                    if let crate::semantic::CheckedPlaceStep::Subscript(subscript) = step {
-                        self.collect_expression_release_effects(
-                            function,
-                            &subscript.offset,
-                            effects,
-                        )?;
-                    }
+            CheckedExpression::RangeElementMeasure { place, .. }
+            | CheckedExpression::RangeIndex { place, .. }
+            | CheckedExpression::BorrowRangeIndex { place, .. } => {
+                for offset in place.offsets() {
+                    self.collect_expression_release_effects(function, offset, effects)?;
                 }
             }
             CheckedExpression::RangeOf {

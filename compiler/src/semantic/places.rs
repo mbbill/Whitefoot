@@ -1233,17 +1233,12 @@ impl PlaceMap {
             CheckedExpression::BorrowAddressed { root, .. } => {
                 self.resolve(root.root, &root.place_path())
             }
-            CheckedExpression::BorrowRangeIndex {
-                root,
-                captured,
-                path: suffix,
-                ..
-            } => {
-                let mut paths = self.resolve(PlaceRoot::Binding(root.binding), &[]);
+            CheckedExpression::BorrowRangeIndex { place, .. } => {
+                let mut paths = self.resolve(PlaceRoot::Binding(place.root.binding), &[]);
                 for path in &mut paths {
-                    path.path.push(PlaceStep::Index(*captured));
+                    path.path.push(PlaceStep::Index(place.captured));
                     path.path
-                        .extend(suffix.iter().map(CheckedPlaceStep::place_step));
+                        .extend(place.path.iter().map(CheckedPlaceStep::place_step));
                 }
                 paths
             }

@@ -2532,12 +2532,12 @@ impl Analyzer<'_, '_> {
             CheckedExpression::BufferMeasure { root, .. } => {
                 self.append_holder_chain(root.binding, holders);
             }
-            CheckedExpression::RangeMeasure { root, .. }
-            | CheckedExpression::RangeIndex { root, .. }
-            | CheckedExpression::BorrowRangeIndex { root, .. } => {
+            CheckedExpression::RangeMeasure { root, .. } => {
                 self.append_holder_chain(root.binding, holders);
             }
-            CheckedExpression::RangeElementMeasure { place, .. } => {
+            CheckedExpression::RangeElementMeasure { place, .. }
+            | CheckedExpression::RangeIndex { place, .. }
+            | CheckedExpression::BorrowRangeIndex { place, .. } => {
                 self.append_holder_chain(place.root.binding, holders);
             }
             CheckedExpression::ArrayMeasure {
@@ -5719,25 +5719,28 @@ impl Analyzer<'_, '_> {
                     vec![argument],
                 )
             }
-            CheckedExpression::RangeIndex {
-                root, offset, path, ..
-            }
-            | CheckedExpression::BorrowRangeIndex {
-                root, offset, path, ..
-            } if admitted_partial && path.is_empty() =>
+            CheckedExpression::RangeIndex { place, .. }
+            | CheckedExpression::BorrowRangeIndex { place, .. }
+                if admitted_partial && place.path.is_empty() =>
             {
-                let collection =
-                    self.goal_binding_place(root.binding, Vec::new(), root.element_type);
+                let collection = self.goal_binding_place(
+                    place.root.binding,
+                    Vec::new(),
+                    place.root.element_type,
+                );
                 build_operation(
                     GoalOperation::RunIndex {
                         measured: MeasuredKind::Range,
-                        element: root.element,
+                        element: place.root.element,
                         constant: None,
                     },
                     Vec::new(),
                     Vec::new(),
-                    root.element_type,
-                    vec![collection, self.goal_expression(offset, admitted_partial)?],
+                    place.root.element_type,
+                    vec![
+                        collection,
+                        self.goal_expression(&place.offset, admitted_partial)?,
+                    ],
                 )
             }
             CheckedExpression::BufferIndex { root, offset, .. } if admitted_partial => {
@@ -6805,20 +6808,15 @@ impl Analyzer<'_, '_> {
             CheckedExpression::BorrowAddressed { root, .. } => {
                 (resolve(root.root, &root.place_path()), false)
             }
-            CheckedExpression::BorrowRangeIndex {
-                root,
-                captured,
-                path,
-                ..
-            } => (
-                resolve(PlaceRoot::Binding(root.binding), &[])
+            CheckedExpression::BorrowRangeIndex { place, .. } => (
+                resolve(PlaceRoot::Binding(place.root.binding), &[])
                     .into_iter()
-                    .map(|mut place| {
-                        place.path.push(PlaceStep::Index(*captured));
-                        place
+                    .map(|mut resolved| {
+                        resolved.path.push(PlaceStep::Index(place.captured));
+                        resolved
                             .path
-                            .extend(path.iter().map(CheckedPlaceStep::place_step));
-                        place
+                            .extend(place.path.iter().map(CheckedPlaceStep::place_step));
+                        resolved
                     })
                     .collect(),
                 false,
@@ -7334,41 +7332,11 @@ impl Analyzer<'_, '_> {
             },
             // [OP-4, REF-4] one element of the run a range names owes
             // `i < deref(p).len`, the range's one measure [MSR-1].
-            CheckedExpression::RangeIndex {
-                root,
-                offset,
-                obligation,
-                ..
-            }
-            | CheckedExpression::BorrowRangeIndex {
-                root,
-                offset,
-                obligation,
-                ..
-            } => {
-                let reaches_index =
-                    self.judge_children_reach_parent(std::iter::once(offset.as_ref()), states);
-                let obligation_start = self.obligations.len();
-                if reaches_index {
-                    let base = ResolvedPlace::spelled(
-                        PlaceRoot::Binding(root.binding),
-                        self.is_holder(root.binding),
-                        Vec::new(),
-                    );
-                    self.judge_obligation(
-                        base,
-                        MeasuredKind::Range,
-                        None,
-                        offset,
-                        obligation.clone(),
-                        states,
-                    );
-                }
-                ExpressionJudgment {
-                    prepared_call: None,
-                    reached: reaches_index && self.obligations_since_discharged(obligation_start),
-                }
-            }
+            CheckedExpression::RangeIndex { place, .. }
+            | CheckedExpression::BorrowRangeIndex { place, .. } => ExpressionJudgment {
+                prepared_call: None,
+                reached: self.judge_range_element_place(place, states),
+            },
             // [REF-4] the formation's two conjuncts, `lo <= hi` and
             // `hi <= x.len`, over the source's own one measure.
             CheckedExpression::RangeOf {
@@ -11055,29 +11023,9 @@ impl Analyzer<'_, '_> {
                 }
                 reaches_target && self.obligations_since_discharged(obligation_start)
             }
-            // [OP-4, REF-4] the range's own obligation is `i < deref(p).len`:
-            // its one measure is the element count of the run it names.
-            CheckedSetTarget::RangeIndex(target) => {
-                let reaches_target =
-                    self.judge_children_reach_parent(std::iter::once(&target.offset), states);
-                let obligation_start = self.obligations.len();
-                if reaches_target {
-                    let base = ResolvedPlace::spelled(
-                        PlaceRoot::Binding(target.root.binding),
-                        self.is_holder(target.root.binding),
-                        Vec::new(),
-                    );
-                    self.judge_obligation(
-                        base,
-                        MeasuredKind::Range,
-                        None,
-                        &target.offset,
-                        target.obligation.clone(),
-                        states,
-                    );
-                }
-                reaches_target && self.obligations_since_discharged(obligation_start)
-            }
+            // [OP-4, REF-4] judge the outer range position and every nested
+            // subscript in source order before the commit may execute.
+            CheckedSetTarget::RangeIndex(target) => self.judge_range_element_place(target, states),
             // [OP-4, WIN-1] the run's own obligation is `i < len_of(v)`: the
             // offset is a logical one and the window's length bounds it, so
             // the measured kind is the run's and the written capacity is not
@@ -15822,16 +15770,14 @@ impl Analyzer<'_, '_> {
                 });
             }
             CheckedSetTarget::RangeIndex(target) => {
-                let spelled = ResolvedPlace::spelled(
+                let mut spelled = ResolvedPlace::spelled(
                     PlaceRoot::Binding(target.root.binding),
                     self.is_holder(target.root.binding),
                     Vec::new(),
                 );
+                spelled.path.extend(target.place_path());
                 events.push(KillEvent::Write {
-                    place: element_write_place(
-                        self.resolve(&spelled),
-                        Self::commit_index(&target.offset),
-                    ),
+                    place: self.resolve(&spelled),
                     element: true,
                     source: node_path.clone(),
                 });
@@ -16486,18 +16432,15 @@ impl Analyzer<'_, '_> {
                     self.render_expression(offset)
                 )
             }
-            CheckedExpression::RangeIndex { root, offset, .. }
-            | CheckedExpression::BorrowRangeIndex { root, offset, .. } => {
-                let base = ResolvedPlace::spelled(
-                    PlaceRoot::Binding(root.binding),
-                    self.is_holder(root.binding),
+            CheckedExpression::RangeIndex { place, .. }
+            | CheckedExpression::BorrowRangeIndex { place, .. } => {
+                let mut base = ResolvedPlace::spelled(
+                    PlaceRoot::Binding(place.root.binding),
+                    self.is_holder(place.root.binding),
                     Vec::new(),
                 );
-                format!(
-                    "{}[{}]",
-                    self.render_place(&base),
-                    self.render_expression(offset)
-                )
+                base.path.extend(place.place_path());
+                self.render_place(&base)
             }
             _ => "?".to_owned(),
         }

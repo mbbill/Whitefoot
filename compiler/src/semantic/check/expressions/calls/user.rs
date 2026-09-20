@@ -11,7 +11,8 @@ use super::super::super::super::goal::{
 };
 use super::super::super::super::model::{
     CheckedCallContract, CheckedCallSeparation, CheckedEffectStep, CheckedEffects,
-    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedStatePath, CheckedType,
+    CheckedExpression, CheckedLayoutMagnitude, CheckedMode, CheckedNominalKind, CheckedStatePath,
+    CheckedType,
 };
 use super::super::super::super::places::{
     CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations, places_overlap,
@@ -381,15 +382,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         caller: &FunctionSignature,
         signature: &FunctionSignature,
     ) -> Result<Option<super::super::super::super::model::CheckedAllocationFit>, CheckStop> {
-        // [OP-9] the ceiling is `stride_ceiling(T)` of the operation's own
-        // stored type, and a symbolic type parameter fixes no stride. [FN-2]
-        // checks every concrete instance again with that instance's exact
-        // ceiling, so the obligation is carried there; the symbolic schema
-        // instance, which is never lowered and allocates nothing, carries
-        // none rather than one against an unknown ceiling.
-        if caller.substitution.is_symbolic() {
-            return Ok(None);
-        }
         let (count, cell) = match signature.name.as_str() {
             "box_array_filled" | "box_slots_new" | "box_ring_new" => (0, signature.result),
             "grow" => {
@@ -403,11 +395,42 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(element) = self.runtime_capacity_content_element(cell)? else {
             return Ok(None);
         };
+        if matches!(element, CheckedType::Generic(_))
+            && !caller.substitution.is_concrete(&self.elements.borrow())
+        {
+            // [ENT-1, FN-2] forwarding an opaque type parameter changes its
+            // declaration key, not its unknown layout. This exact direct-T
+            // schema case has no expressible OP-9 ceiling, just as in the
+            // canonical schema. Its scratch judgment publishes no allocation
+            // proof or lowering authority; every concrete instance follows
+            // the ordinary layout and allocation checks below. Numeric
+            // parameters, fixed-layout shells and aggregates do not match.
+            return Ok(None);
+        }
+        let layout_ceiling = if caller.substitution.is_symbolic() {
+            // [ENT-1, OP-9] a source schema must judge every expressible
+            // allocation bound. A symbolic caller can still store a scalar,
+            // Box<T>, or aggregate with a finite layout supplied by the
+            // existing type authority. Adding that obligation grants no
+            // callable summary or lowering authority to the schema.
+            let Some(ceiling) = self.instantiated_layout_ceiling(element) else {
+                return Ok(None);
+            };
+            if !matches!(ceiling.stride, CheckedLayoutMagnitude::Finite(_)) {
+                // The existing schema deferral remains for non-finite
+                // ceilings. Distinguishing an actual AboveU64 layout from
+                // an opaque parameter's placeholder is still outstanding.
+                return Ok(None);
+            }
+            ceiling
+        } else {
+            self.layout_ceiling(element, node)?
+        };
         Ok(Some(
             super::super::super::super::model::CheckedAllocationFit {
                 cell,
                 element,
-                layout_ceiling: self.layout_ceiling(element, node)?,
+                layout_ceiling,
                 count,
                 source_length_upper_bound: None,
             },
@@ -999,14 +1022,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(image);
         }
 
-        if self
-            .tree
-            .direct_token_with(atom, crate::TerminalPredicate::Literal)?
-            .is_some()
-        {
-            let CheckedExpression::Constant(value) = &argument.expression else {
-                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-            };
+        // [MSR-6, ENT-2] a const generic read is already the canonical
+        // symbolic constant, or its supplied concrete integer. Preserve that
+        // checked value just as for a written literal; re-reading the source
+        // place would lose both its value class and its substitution.
+        // Named constants retain their separate declaration image below.
+        if let CheckedExpression::Constant(value) = &argument.expression {
             return Ok(GoalExpression::Datum(GoalDatum::Literal(value.clone())));
         }
 

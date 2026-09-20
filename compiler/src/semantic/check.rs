@@ -2284,11 +2284,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 &mut target.offset,
                                 requirements,
                             )?,
-                        CheckedSetTarget::RangeIndex(target) => self
-                            .install_expression_call_requirements(
-                                &mut target.offset,
-                                requirements,
-                            )?,
+                        CheckedSetTarget::RangeIndex(target) => {
+                            for offset in target.offsets_mut() {
+                                self.install_expression_call_requirements(offset, requirements)?;
+                            }
+                        }
                         CheckedSetTarget::Storage(target) => {
                             for offset in target.offsets_mut() {
                                 self.install_expression_call_requirements(offset, requirements)?;
@@ -2395,20 +2395,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
-            | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::RangeIndex { offset, .. }
-            | CheckedExpression::BorrowRangeIndex { offset, .. } => {
+            | CheckedExpression::BufferIndex { offset, .. } => {
                 self.install_expression_call_requirements(offset, requirements)?;
             }
-            CheckedExpression::RangeElementMeasure { place, .. } => {
-                self.install_expression_call_requirements(&mut place.offset, requirements)?;
-                for step in &mut place.path {
-                    if let super::model::CheckedPlaceStep::Subscript(subscript) = step {
-                        self.install_expression_call_requirements(
-                            &mut subscript.offset,
-                            requirements,
-                        )?;
-                    }
+            CheckedExpression::RangeElementMeasure { place, .. }
+            | CheckedExpression::RangeIndex { place, .. }
+            | CheckedExpression::BorrowRangeIndex { place, .. } => {
+                for offset in place.offsets_mut() {
+                    self.install_expression_call_requirements(offset, requirements)?;
                 }
             }
             // [REF-4] both endpoints are ordinary operands evaluated at the
@@ -2492,7 +2486,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
                         }
                         CheckedSetTarget::RangeIndex(target) => {
-                            Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
+                            for offset in target.offsets_mut() {
+                                Self::install_expression_allocation_bounds(offset, bounds)?;
+                            }
                         }
                         CheckedSetTarget::Storage(target) => {
                             for offset in target.offsets_mut() {
@@ -2577,17 +2573,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
-            | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::RangeIndex { offset, .. }
-            | CheckedExpression::BorrowRangeIndex { offset, .. } => {
+            | CheckedExpression::BufferIndex { offset, .. } => {
                 Self::install_expression_allocation_bounds(offset, bounds)?;
             }
-            CheckedExpression::RangeElementMeasure { place, .. } => {
-                Self::install_expression_allocation_bounds(&mut place.offset, bounds)?;
-                for step in &mut place.path {
-                    if let super::model::CheckedPlaceStep::Subscript(subscript) = step {
-                        Self::install_expression_allocation_bounds(&mut subscript.offset, bounds)?;
-                    }
+            CheckedExpression::RangeElementMeasure { place, .. }
+            | CheckedExpression::RangeIndex { place, .. }
+            | CheckedExpression::BorrowRangeIndex { place, .. } => {
+                for offset in place.offsets_mut() {
+                    Self::install_expression_allocation_bounds(offset, bounds)?;
                 }
             }
             CheckedExpression::RangeOf {

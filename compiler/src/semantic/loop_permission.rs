@@ -608,7 +608,7 @@ impl<'check> Survey<'check, '_> {
                 if self
                     .element_writes
                     .iter()
-                    .any(|written| written.root == root && written.map != map)
+                    .any(|written| same_element_root(&written.root, &root) && written.map != map)
                 {
                     self.shared.get_or_insert(node.clone());
                 }
@@ -628,7 +628,11 @@ impl<'check> Survey<'check, '_> {
             CheckedSetTarget::Place(_) => {}
             CheckedSetTarget::ArrayIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
-            CheckedSetTarget::RangeIndex(target) => self.expression(&target.offset),
+            CheckedSetTarget::RangeIndex(target) => {
+                for offset in target.offsets() {
+                    self.expression(offset);
+                }
+            }
             CheckedSetTarget::Storage(target) => {
                 for offset in target.offsets() {
                     self.expression(offset);
@@ -653,9 +657,23 @@ impl<'check> Survey<'check, '_> {
             // subscript carries its own base type.
             CheckedSetTarget::ArrayIndex(target) => &target.obligation,
             CheckedSetTarget::BufferIndex(target) => &target.obligation,
-            // [REF-4] a range reference names a run of elements directly;
-            // the base is never a `Ring`, which [REF-4] refuses a range over.
-            CheckedSetTarget::RangeIndex(target) => &target.obligation,
+            // [REF-4] the outer position selects from a range. A suffix may
+            // select a nested Array or Slots element; PAR-2 consumes the
+            // innermost written element's retained affine map, as it does for
+            // an ordinary typed storage path.
+            CheckedSetTarget::RangeIndex(target) => {
+                if let Some(index) = target.path.iter().rev().find_map(|step| match step {
+                    CheckedPlaceStep::Subscript(index) => Some(index),
+                    CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+                }) {
+                    if checked_type_is_ring(index.base_type) {
+                        return None;
+                    }
+                    &index.obligation
+                } else {
+                    &target.obligation
+                }
+            }
             CheckedSetTarget::Storage(target) => {
                 let index = target.path.iter().rev().find_map(|step| match step {
                     CheckedPlaceStep::Subscript(index) => Some(index),
@@ -845,9 +863,9 @@ impl<'check> Survey<'check, '_> {
                 }
                 None
             }
-            CheckedExpression::BorrowRangeIndex { root, .. } => {
+            CheckedExpression::BorrowRangeIndex { place, .. } => {
                 self.reads.push(ReadOccurrence {
-                    binding: root.binding,
+                    binding: place.root.binding,
                     places: Vec::new(),
                 });
                 None
@@ -881,8 +899,7 @@ impl<'check> Survey<'check, '_> {
             )),
             // [REF-4, MSR-2] a read through a range reference reads the path
             // the reference names; its own offset is this node's child.
-            CheckedExpression::RangeMeasure { root, .. }
-            | CheckedExpression::RangeIndex { root, .. } => Some((
+            CheckedExpression::RangeMeasure { root, .. } => Some((
                 root.binding,
                 self.places.resolve(PlaceRoot::Binding(root.binding), &[]),
             )),
@@ -893,6 +910,33 @@ impl<'check> Survey<'check, '_> {
                     &place.place_path(),
                 ),
             )),
+            // A read through a range first selects its outer element and may
+            // then select a nested Array or Slots element. As for a storage
+            // read and range write, PAR-2 consumes the innermost selected
+            // element's retained map; with no nested subscript, the range's
+            // own admitted offset is that element map.
+            CheckedExpression::RangeIndex { place, .. } => {
+                let places = self.places.resolve(
+                    PlaceRoot::Binding(place.root.binding),
+                    &place.place_path(),
+                );
+                let obligation = match place.path.iter().rev().find_map(|step| match step {
+                    CheckedPlaceStep::Subscript(index) => Some(index),
+                    CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+                }) {
+                    Some(index) if checked_type_is_ring(index.base_type) => None,
+                    Some(index) => Some(&index.obligation),
+                    None => Some(&place.obligation),
+                };
+                if let Some(map) = obligation.and_then(|path| self.proven_affine_map_at(path)) {
+                    for resolved in &places {
+                        if let Some(root) = element_root(resolved) {
+                            self.element_reads.push(ProvenElementRead { root, map });
+                        }
+                    }
+                }
+                Some((place.root.binding, places))
+            }
             CheckedExpression::Project {
                 binding, fields, ..
             } => Some((
@@ -1200,7 +1244,9 @@ impl<'check> Survey<'check, '_> {
                 let matching = self
                     .element_reads
                     .iter()
-                    .filter(|read| read.root == written.root && read.map == written.map)
+                    .filter(|read| {
+                        same_element_root(&read.root, &written.root) && read.map == written.map
+                    })
                     .count();
                 reads != matching
             })
@@ -1278,6 +1324,18 @@ fn element_root(place: &ResolvedPlace) -> Option<ResolvedPlace> {
         root: place.root,
         path: place.path[..place.path.len() - 1].to_vec(),
     })
+}
+
+/// Whether two mapped roots positively name the same storage.
+///
+/// Raw captured-value equality includes the source occurrence even for
+/// literals and named constants. [OWN-7]'s positive identity deliberately
+/// ignores that occurrence for value-determined indices while retaining it
+/// for binding and opaque captures, which is the distinction `contains`
+/// already implements. Equal depth keeps this from treating a prefix as the
+/// same mapped collection.
+fn same_element_root(left: &ResolvedPlace, right: &ResolvedPlace) -> bool {
+    left.path.len() == right.path.len() && left.contains(right)
 }
 
 /// Whether a checked type is a `Ring` [TYPE-9].

@@ -17,11 +17,6 @@ binding SumDrain : VectorDrain<u64, Sum> {
   accept = sum_accept;
 }
 
-fn owned_item_id(item: &Box<OwnedItem>) -> result: own u64 reads(item) {
-  doc "Reads one field of an owned cell through a reference; a Box's content is its field inner [TYPE-9].";
-  return deref(item).inner.id;
-}
-
 fn release_item(item: own Box<OwnedItem>) -> result: own unit pure {
   doc "There is no release operation: an affine value is released early by moving it into a function that consumes it and ends, which frees this cell here rather than at the caller's scope exit [PROV-6, STOR-3].";
   return unit;
@@ -116,19 +111,19 @@ fn main() -> status: own ExitStatus pure {
     return exit_status(code: 9_u8);
   }
   let taken = grow_vector_remove::<Box<OwnedItem>, 3>(values: &owners, index: 1_u64);
-  let taken_id = owned_item_id(item: &taken);
+  let taken_id = taken.inner.id;
   if taken_id == 202_u64 {
   } else {
     release_item(item: move taken);
     return exit_status(code: 10_u8);
   }
   release_item(item: move taken);
-  let first_id = owned_item_id(item: &owners.storage.inner[0_u64]);
+  let first_id = owners.storage.inner[0_u64].inner.id;
   if first_id == 101_u64 {
   } else {
     return exit_status(code: 11_u8);
   }
-  let last_id = owned_item_id(item: &owners.storage.inner[1_u64]);
+  let last_id = owners.storage.inner[1_u64].inner.id;
   if last_id == 303_u64 {
   } else {
     return exit_status(code: 12_u8);

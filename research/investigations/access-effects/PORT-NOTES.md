@@ -155,9 +155,11 @@ longer retain the retired mandatory generic bound, prelude reserved-name
 exception, room-derived measure kills, spelling-only member rejection, missing
 named-owner displaced release, or temporary unsupported storage variants.
 The allocation-fit proposal now distinguishes known and unresolved layouts,
-but its production implementation remains held as documented below; updating
-the proposal is neither implementation evidence nor an owner ruling. No live
-tree or approval log changed.
+but its general unresolved/non-finite production distinction remains held as
+documented below. Two later, strictly narrower production changes were allowed
+and are recorded with their focused evidence below; updating the proposal is
+neither implementation evidence nor an owner ruling. No live tree or approval
+log changed.
 
 The remaining records performance investigation compared the exact `c12d6dd1`
 baseline and `b5e7a99f` candidate without starting another timing campaign.
@@ -197,6 +199,113 @@ report 1520 passes and the same three OP-9 failures; both library groups stop
 at `InvalidResolution` in `vector-default.ll`. IO host run 35521783826 passes.
 These hosted results precede the direct-measure FN-9 repair above and are not
 presented as validation of that later change.
+
+Hosted revision `d5377f39` validates that FN-9 repair, including the added
+reference-root and Box-plus-index controls: run 35523614522 passes static,
+corpus/conformance and runtime on both hosts, while both unit jobs report
+1521 passes and the same three OP-9 failures. Both library jobs retain the
+same `InvalidResolution`; IO run 35523614803 passes. Compute run 35523616425
+passes identity, null and sensitivity controls but still fails records at
+two/four workers (0.958088 with five adverse pairs, 0.928470 with four).
+One worker passes at 1.063158 and the other four kernels pass. The recorded
+host is Xeon 6973P-C, family 6/model 173/stepping 1, with four logical CPUs.
+
+The final executable images make the code-placement observation concrete.
+Parallel chunk entries are baseline `0x2ef0` and candidate `0x2f10`; sequential
+clone entries are `0x32d0` and `0x32e0`. All four chunks are 0x1b8 bytes.
+The baseline parallel chunk has one six-byte conditional jump crossing a
+64-byte boundary (`0x303e`); the candidate has two (`0x2ffc`, `0x303d`).
+The sequential direction reverses: baseline has two (`0x33bc`, `0x33fd`),
+candidate none. Exact instruction inspection still rules out a repeated
+Box-slot load or additional split work. This is a correlation with the
+observed worker-width direction, not evidence that an older Intel JCC
+erratum applies to this CPU or that boundary crossing caused the cost.
+Runtime allocation alignment remains unobserved as a separate hypothesis.
+
+A future discriminating layout experiment must hold the input algorithm,
+payload layout, split counts and sequential clone fixed while changing only
+the parallel worker's placement. Parallel cost following the changed layout
+while one-worker cost stays stable would support a code-placement cause;
+otherwise that hypothesis would lose support. No such timing experiment or
+alignment policy change has been performed or selected in this work.
+
+A strictly strengthening OP-9 subset was separated from the held unresolved-
+layout repair. Automatic review allowed adding ordinary allocation-fit records
+to source-canonical symbolic callers only when the existing layout authority
+already returns a finite stride. No layout classifier, recursive type walk,
+unknown-layout deferral or non-symbolic path changed. This adds the expressible
+schema obligations required by ENT-1 for scalars, pointer-sized `Box<T>`, known
+aggregates and bounded numeric parameters; it publishes no schema summary or
+lowering authority. Its independent technical audit established that the
+change only adds required rejections. The known-layout and bounded-numeric
+schema regressions pass, together with the unresolved replay,
+symbolic-const-array replay and concrete `AboveU64` controls; the complete
+37-case window semantic module passes. The general distinction between an
+unresolved symbolic layout and a real non-finite layout remains held, so this
+result is not a complete OP-9 repair.
+
+Automatic review subsequently allowed a second, narrower subset for the
+transitive generic-grow failure: defer only when the stored element itself is
+exactly `CheckedType::Generic(_)` and the caller substitution is nonconcrete.
+Forwarding an opaque type parameter changes its declaration key, so the
+existing canonical-only `is_symbolic()` test missed it and fabricated a zero
+allocation limit from the unknown-layout `AboveU64` placeholder. The new guard
+recognizes only that direct opaque parameter; numeric parameters, aggregates,
+fixed-layout shells, actual overflowing layouts and every concrete instance
+remain on their previous checking paths. Two independent technical audits
+checked this boundary and the scratch inventory's disposal before concrete
+replay. No recursive layout classifier or general unresolved-layout repair
+was applied. The focused generic-grow wrapper now passes and publishes its
+integer result relation. Maintained-library execution remains pending, so this
+does not claim that every downstream library failure is resolved.
+
+The nested range-reference suite now passes all 32 cases; its independent
+native read/write/borrow checksum also passes. The first new joined-reference
+fixture incorrectly expected incoming length facts to prove the joined
+holder's distinct length term. Automatic review refused adding a guard alone
+because that could conceal the unmet obligation. Re-reading ENT-2, ENT-3 and
+ENT-6 established that no reference-valued fact transport is admitted, and the
+test now preserves the original source as an OP-4 negative alongside an
+explicit S1-guarded positive. No proof rule was added to satisfy the mistaken
+test expectation. The final focused suite took 6.66 seconds to execute and
+15.47 seconds including its build; complete canonical validation is pending.
+
+The later nested PAR-2 positive exposed a separate footprint mismatch. A
+checked `RangeIndex` write already retained its target-before-RHS captured
+outer offset and complete typed suffix, while `set_target_place` replaced that
+outer step with `CapturedValue::unknown()`. The matching read kept the captured
+path, so removing the innermost affine index compared roots ending in literal
+zero and unknown and conservatively reported a shared write. The repair now
+uses the checked target's complete `place_path()` for every resolved origin;
+the OP-4 affine map remains the only source of cross-iteration independence,
+and unresolved or multi-origin targets still fail closed. The paired shifted-
+read negative keeps a different affine map and remains denied. All 71 loop
+permission tests pass, including the nested positive and shifted negative.
+
+The subsequent canonical gate passes static checks, all 1533 library and 14
+CLI unit tests, all 72 corpus tests including the complete native conformance
+adapter, and runtime tests. It stops at the maintained vector library with
+`InvalidResolution`; this is not a green complete gate. A temporary diagnostic
+trace located a separate MSR-6 defect in call-goal formation: a const generic
+read was already a checked `Constant`, but the call boundary admitted that
+image only for a written literal and tried to resolve a const-parameter name
+as an ordinary variable. The fix consumes the checked constant directly;
+named constants keep their declaration identity and measures keep their
+separate typed storage path. The trace was removed. All 33 requirement tests
+pass, including new symbolic/transitive/concrete forwarding and independent
+const-parameter negative controls. The rebuilt library now reaches an FN-8
+failure at the append after a doubled-capacity reserve, rather than an internal
+compiler failure. That remaining proof failure is still under investigation;
+the source API, direct indexed access, complete-result checks and release
+oracles remain intact.
+
+A fresh scope audit also confirms that same-shape loop-carried reference
+rebinding is an unfinished part of REF-1, not an intentionally retired source
+form. Its minimum completion needs a finite loop-header path abstraction,
+cross-iteration validity checks and a generation boundary for dynamic
+captures. The time-shift witness below must become accepted sequential source
+with parallel permission denied, rather than a test expecting a compiler
+capability stop. No loop implementation is included in this checkpoint.
 
 The first canonical `make check` integration attempt stopped at design lint:
 the FN-4 refinement amendment has two decisions missing the required
@@ -306,18 +415,29 @@ its 17 self-tests; canonical integration must be rerun after compiler work.
   selected ordering, and parent, shared by EFF-5 and PAR-1. The validator keeps
   rejecting a bare targetless root and checks PAR-1's exact query pair.
   This repair changes retained evidence, not the solver or source acceptance.
-- A measure read through a composite range element, such as
+- A typed path through a composite range element, such as
+  `deref(rows)[outer][inner]` for `rows: &[Array<u64, 2>]` or
   `deref(items)[0].len` for `items: &[Slots<u64, 2>]`, previously stopped at
-  TYPE-5 although borrowing the element first admitted the descriptor read.
+  Unsupported or TYPE-5 although borrowing the outer element first admitted
+  the same nested storage path.
   Automatic review initially refused its implementation for insufficient
   regression and native evidence, and that partial variant was removed.
   A later proposal supplied direct/nested, out-of-range, joined-reference,
   stale-alias and native observable controls. Its implementation now retains
-  a typed range-element place with the captured offset and complete suffix,
-  uses ordinary range-address and container-measure lowering, and expands
-  every possible target for validity, effects and kills. The focused results
-  and remaining fixture validation are stated above; the rule is an existing
-  language requirement, not a new source restriction or verdict migration.
+  one typed range-element place with the captured outer offset and complete
+  field, `Box.inner`, and subscript suffix for direct reads, borrows, writes,
+  and measures. Every nested offset keeps its own OP-4 judgment in base-outward
+  source order; cleanup, proof flow, permission, specialization and lowering
+  walk the same full path, and every possible provenance target remains in
+  validity, effect and kill decisions. The ordinary range-address lowering is
+  shared by value loads, borrowed addresses, stores and container measures.
+  A range holder's own `len` remains its distinct ENT-2 term: facts about the
+  possible origin holders do not become facts about that joined spelling, so
+  a direct subscript still needs a premise over the joined holder itself. The
+  all-target check, direct semantic read/write/borrow and inner/outer OP-4
+  controls, stale-reference control, and the independent native checksum pass;
+  the rule is an existing language requirement, not a new source restriction
+  or verdict migration.
 - Retired `CheckedCommitValues` and `SetList`/`Replace`/`Dispose`/`Region`
   cleanup: automatic review refused removing the unconstructed variants and
   their consumers without further validation. A later compiler-wide constructor
@@ -429,19 +549,20 @@ release under both sequential and parallel lowering. The allocation observer
 continues to require every cell and element allocation to be released exactly
 once.
 
-The generic OP-9 schema distinction remains held. [ENT-1] requires a symbolic
+The general OP-9 schema distinction remains held. [ENT-1] requires a symbolic
 schema to check every expressible OP-9 predicate and [FN-2] separately rechecks
-every inhabited concrete instance. Current code instead skips every allocation
-fit whenever the caller substitution is symbolic. Focused sources now expose
-the overbroad skip: unbounded symbolic functions storing `u16`, `Box<T>`, an
+every inhabited concrete instance. The first allowed narrow repair no longer
+skips every symbolic caller: when the existing layout authority supplies a
+finite stride, the schema now carries the ordinary allocation-fit record.
+Focused sources cover unbounded symbolic functions storing `u16`, `Box<T>`, an
 `Envelope<T>` made only from `Box<T>` plus `u8`, and
-`Slots<Box<T>, 2>` all wrongly accept even though each layout is fixed. The
-opposite controls distinguish the safe deferral precisely: an uninstantiated
-opaque stored `T` accepts; transitive concrete replays for a scalar, source
-aggregate, pointer, and fixed window descriptor accept; and replay with a
-concrete aggregate whose stride is `AboveU64` rejects OP-9 with allocation
-limit zero. The concrete call-discovery walk independently instantiates and
-checks each reachable body.
+`Slots<Box<T>, 2>`. The opposite controls retain the deferral for an opaque
+stored `T`, replay concrete scalar, aggregate, pointer and fixed-window
+instances, and reject a concrete aggregate whose stride is `AboveU64` with
+allocation limit zero. What remains unresolved is the general symbolic case
+where the existing layout result is unavailable or non-finite; no new
+classifier decides that distinction. The concrete call-discovery walk still
+independently instantiates and checks each reachable body.
 
 Automatic review first refused a broad non-concrete-substitution deferral and
 then a structural stored-layout classifier for insufficient concrete replay
@@ -450,13 +571,13 @@ evidence, a third proposal made the distinction explicit in one recursive
 layout result: `Known(ceiling)` versus `Unresolved`, with concrete
 `AboveU64` remaining known, and permitted deferral only for `Unresolved` in a
 symbolic caller while treating it as an internal failure in a concrete caller.
-Automatic review still refused the patch because a mistake in the recursive
-classifier could accept an unsafe allocation, and said this high-impact
-implementation needs explicit user approval. No part of any proposed compiler
-patch was applied. The checked-in test evidence remains, but production stays
-unchanged under that hold.
+Automatic review still refused that broad patch because a mistake in the
+recursive classifier could accept an unsafe allocation, and said this
+high-impact implementation needs explicit user approval. That refusal remains
+the historical boundary on the general repair; neither of the later allowed
+narrow changes adds that classifier or relaxes a non-finite allocation.
 
-A fourth proposal removed the duplicate layout classifier entirely. The
+A fourth broad proposal removed the duplicate layout classifier entirely. The
 existing `layout_ceiling_inner` already returns `Option`: finite ceilings and
 real arithmetic overflow (`AboveU64`) are `Some`, while symbolic type or const
 layout is the unavailable `None`. The proposal made an opaque `Generic` return
@@ -474,23 +595,21 @@ proposal is present; the exact attempted diff remains only in the review
 transcript. Added numeric-bound and symbolic-const-array controls make the
 remaining distinction observable without changing admission.
 
-The maintained vector's remaining generic forwarding failure is a downstream
-manifestation of this same OP-9 hold, not an independent S12 publication
-defect. Scratch-inventory tracing distinguishes the two source-equivalent
-reserve instances. The source-canonical `reserve<T, ceiling>` has a
-self-symbolic substitution, so `allocation_fit_of_call` skips its `grow` OP-9
-record and its three postconditions verify. The alpha-renamed transitive
-`reserve<forward.T, forward.ceiling>` is still nonconcrete but is not
-`GenericSubstitution::is_symbolic()`, so current code attaches a `grow` OP-9
-record using the fabricated `AboveU64` ceiling for the unresolved stored type.
-Its positive count cannot prove the resulting zero limit. That failed actual
-operation prevents the grow call from becoming a prepared call, so neither
-available grow summary is established; the reserve's two measured clauses
-then fail after the grow, and atomic publication withholds its independently
-proved scalar `capacity >= total` clause from the forwarder. The call graph and
-summary order are correct, and both grow summaries are available: no flow or
-summary-index repair is warranted. The minimal mixed-result regression remains
-useful because it exposes the transitive form of the held OP-9 distinction.
+The vector's transitive generic forwarding failure was a narrower case, not an
+independent S12 publication defect. Scratch-inventory tracing distinguished
+two source-equivalent reserve instances. The source-canonical
+`reserve<T, ceiling>` has a self-symbolic substitution, while the alpha-renamed
+`reserve<forward.T, forward.ceiling>` is still nonconcrete but does not satisfy
+`GenericSubstitution::is_symbolic()`. The latter therefore attached a `grow`
+OP-9 record using the fabricated `AboveU64` ceiling for an unresolved direct
+stored type parameter; its positive count could not prove the resulting zero
+limit, and the failed actual operation withheld otherwise valid summaries.
+The second allowed narrow repair defers exactly a direct opaque
+`CheckedType::Generic(_)` under a nonconcrete substitution. Numeric parameters,
+aggregates, fixed-layout shells, real overflowing layouts and concrete
+instances retain their prior checks. The generic-grow regression now passes;
+the call graph, summary order and S12 publication needed no change. This does
+not settle the held general unresolved/non-finite classification.
 
 An independent API audit found no additional reserve/append/drain proof
 defect. Reserve, append and insert did omit one behavior their prose promised:
@@ -504,6 +623,12 @@ scalar and owning vector's nested length equal to zero in executed control flow
 before its first append. Distinct failure exits retain the runtime constructor
 oracle. This neither changes the API type nor hides the held OP-9 judgment in
 the library bodies.
+
+The vector program fixture now reads the removed owning element and both
+remaining indexed owning elements through their direct `Box.inner.id` paths.
+The `owned_item_id` workaround is gone; inputs, failure exits, value oracles,
+release observations and required bounds are unchanged. Full maintained-
+library validation of that source migration is pending.
 
 # Spec problems reported by the semantic port (P5-P9), 2026-09-19
 

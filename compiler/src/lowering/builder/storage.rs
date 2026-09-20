@@ -43,7 +43,9 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                         collect_expression(&target.offset, bindings);
                     }
                     CheckedSetTarget::RangeIndex(target) => {
-                        collect_expression(&target.offset, bindings);
+                        for offset in target.offsets() {
+                            collect_expression(offset, bindings);
+                        }
                     }
                     CheckedSetTarget::Storage(root) => {
                         bindings.extend(root.binding());
@@ -106,9 +108,9 @@ fn collect_borrowed_place_expression(
             bindings.extend(root.binding());
             collect_place(root, bindings);
         }
-        CheckedExpression::BorrowRangeIndex { offset, path, .. } => {
-            collect_expression(offset, bindings);
-            collect_steps(path, None, bindings);
+        CheckedExpression::BorrowRangeIndex { place, .. } => {
+            collect_expression(&place.offset, bindings);
+            collect_steps(&place.path, None, bindings);
         }
         CheckedExpression::BoxDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => {
@@ -147,17 +149,17 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::BoxTake { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => collect_expression(value, bindings),
         CheckedExpression::ArrayIndex { offset, .. } => collect_expression(offset, bindings),
-        CheckedExpression::RangeIndex { offset, path, .. } => {
-            collect_expression(offset, bindings);
-            collect_steps(path, None, bindings);
+        CheckedExpression::RangeIndex { place, .. } => {
+            collect_expression(&place.offset, bindings);
+            collect_steps(&place.path, None, bindings);
         }
         CheckedExpression::RangeElementMeasure { place, .. } => {
             collect_expression(&place.offset, bindings);
             collect_steps(&place.path, None, bindings);
         }
-        CheckedExpression::BorrowRangeIndex { offset, path, .. } => {
-            collect_expression(offset, bindings);
-            collect_steps(path, None, bindings);
+        CheckedExpression::BorrowRangeIndex { place, .. } => {
+            collect_expression(&place.offset, bindings);
+            collect_steps(&place.path, None, bindings);
         }
         // [TYPE-9] a runtime-capacity `Array<T>` is only ever `Box` content,
         // and its block is reached through the pointer the owner's slot
@@ -294,13 +296,12 @@ impl IrBuilder<'_> {
                 self.lower_addressed_borrow(*binding, ty)?
             }
             CheckedExpression::BorrowAddressed { root, .. } => self.lower_place_address(root)?,
-            CheckedExpression::BorrowRangeIndex {
-                root,
-                offset,
-                path,
-                target_domain,
-                ..
-            } => self.lower_range_address(root, offset, path, *target_domain)?,
+            CheckedExpression::BorrowRangeIndex { place, .. } => self.lower_range_address(
+                &place.root,
+                &place.offset,
+                &place.path,
+                place.target_domain,
+            )?,
             CheckedExpression::ReadStorage { root, .. } => self.lower_place_address(root)?,
             CheckedExpression::BoxDeref {
                 nominal,

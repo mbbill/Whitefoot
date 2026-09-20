@@ -473,6 +473,76 @@ fn main() -> status: own ExitStatus pure {
     assert_accepts(concrete_replays);
 }
 
+/// [ENT-1, FN-2, OP-9] only a directly opaque stored type may take the
+/// source-schema deferral. When a generic relay instantiates that same
+/// allocation template with a numeric type or a fixed-layout wrapper, the
+/// alpha-renamed instance has a known ceiling and must prove its allocation
+/// bound. The scratch instance's OP-9 issue is not published as a canonical
+/// source issue; instead, a failed proof withholds its verified FN-9 summary,
+/// so the canonical relay cannot prove the relation it forwards. Returning
+/// the constructed window's capacity makes that relation depend on the
+/// constructor's verified `cap == count` publication.
+#[test]
+fn transitive_known_layouts_do_not_take_the_direct_opaque_deferral() {
+    const U64_MAX: u64 = u64::MAX;
+    for (declaration, parameter, stored, limit) in [
+        ("", "U: Int", "U", U64_MAX / 8),
+        ("", "U: Float", "U", U64_MAX / 8),
+        ("", "U", "Box<U>", U64_MAX / 8),
+        (
+            "struct Envelope<T> {\n  payload: Box<T>;\n  tag: u8;\n}",
+            "U",
+            "Envelope<U>",
+            U64_MAX / 16,
+        ),
+    ] {
+        let declaration_prefix = if declaration.is_empty() {
+            String::new()
+        } else {
+            format!("{declaration}\n\n")
+        };
+        let source = |upper| {
+            format!(
+                r#"{declaration_prefix}fn allocate<T>(count: own u64) -> result: own u64 pure contract {{
+  requires count <= {upper}_u64;
+  ensures result == count;
+}} {{
+  let cells = box_slots_new::<T>(capacity: count);
+  let capacity = cells.inner.cap;
+  free_empty(window: move cells);
+  return capacity;
+}}
+
+fn relay<{parameter}>(count: own u64) -> result: own u64 pure contract {{
+  requires count <= {upper}_u64;
+  ensures result == count;
+}} {{
+  let produced = allocate::<{stored}>(count: count);
+  return produced;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+            )
+        };
+
+        let fitting = source(limit);
+        assert_accepts(fitting.as_bytes());
+
+        let excessive = source(limit + 1);
+        assert_rule_kind(excessive.as_bytes(), SemanticRule::Fn9, |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::UndischargedPostcondition(detail)
+                    if detail.disposition
+                        == crate::PostconditionProofDisposition::Unproved
+            )
+        });
+    }
+}
+
 /// An `Int` or `Float` bound fixes the largest scalar layout at eight bytes,
 /// so its schema has an expressible exact OP-9 limit. The last admitted count
 /// is accepted and the following count remains a schema rejection.
