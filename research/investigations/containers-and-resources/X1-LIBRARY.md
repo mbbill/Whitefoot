@@ -164,6 +164,24 @@ return, check whether its declared contracts preserve that fact. An explicit
 length reread is a possible validation cost; silently dropping the old owner
 is not. This complete generic growth chain has not been checked here.
 
+The [linear-ring-publish probe](../../experiments/container-representation/x1/linear-ring-publish.wf)
+tests another route: append first, then atomically call an ordinary helper
+that requires the old backing empty, consumes it, and returns the new Box.
+The compiler rejects its `set deref(values) = publish(...)` under WIN-3.
+That agrees with the active text: OP-12 admits its atomic form only for affine
+and copy targets, and WIN-3 refuses assignment to a linear target. Neither an
+unbounded T nor a nodrop instance qualifies. Thus this route is unavailable
+under the current rules even though no old element would be implicitly dropped.
+This does not prove that every ordinary growth algorithm is impossible.
+
+The candidate and tree describe atomic updates without that class restriction;
+X1-P3 below asks the implementation line to reconcile their intended scope.
+No broadened atomic rule is assumed here. A by-value rebase consuming and
+returning a genuinely new backing, or a different deque representation, is a
+separate interface candidate if the restriction is intentional. The first
+library trial must settle a complete nodrop growth route before claiming an
+unbounded growable Deque.
+
 REF-4 deliberately refuses *all* Ring range references. Therefore a function
 that accepts two `&[T]` extents in queue order cannot obtain them directly
 from Ring, even after testing that a subrange does not wrap.
@@ -369,6 +387,7 @@ unpublished fixes. No repair is made on this branch.
 | --- | --- | --- | --- |
 | X1-P1 | `grow_vector_drain` in `lib/containers/vector.wf`, loop containing `remove_at(..., index: 0_u64)`; OP-10, `lowering/builder/prelude.rs` RunShift and `backend/emitter/runs.rs` shift loop | Source algorithm has quadratic element movement. | Preserve the drain's order/callback contract and replace its algorithm on the implementation line. The checked reverse-drain probe is an O(n) candidate, not a minimum-transfer claim. |
 | X1-P2 | [unbounded-reserve.wf](../../experiments/container-representation/x1/unbounded-reserve.wf); compare `grow_vector_reserve` with no upper count requirement and the append/insert fallback requesting max(u64) | OP-9 correctly rejects the helper: for u64 it needs `count <= 2305843009213693951`. A safe literal at one caller cannot strengthen the generic helper body. | Add an honest capacity/size contract or application limit and migrate callers. Preserve total heap allocation; do not invent a heap-refusal branch. |
+| X1-P3 | [linear-ring-publish.wf](../../experiments/container-representation/x1/linear-ring-publish.wf):18; OP-12 and WIN-3 versus the atomic-update paragraphs in [CANDIDATE-X1.md](../access-effects/CANDIDATE-X1.md) and [affine-replacement.md](../../../design/language/ownership/affine-replacement.md) | Rule/design scope question, not a compiler misclassification: the spec explicitly restricts atomic update to affine/copy, while the candidate and tree's admission conditions do not state that restriction. A nodrop Ring cannot use this route to publish its grown backing. | Confirm the intended class domain with the owner and reconcile the relevant records on #70. No fix or language widening here; do not claim that this one refusal rules out every deque design. |
 
 The following are specified limits, not bugs to silently fix in #70:
 
@@ -386,7 +405,8 @@ The following are specified limits, not bugs to silently fix in #70:
    Preserve the operation chains above; test zero/one/full capacity, geometric
    growth, wrapped windows, nodrop cleanup, generation exhaustion and invalid
    handles. Pick explicitly whether Deque offers only slot visitation or also
-   the copy-element physical-span variant. Add actual native cost attribution
+   the copy-element physical-span variant, and close the complete nodrop growth
+   route described above. Add actual native cost attribution
    rather than importing pre-x1 timing tables.
 2. **Keyed slice:** generic HashMap and PriorityQueue, initially scalar keys
    plus owning/must-consume payloads and then owning keys. Compare sparse

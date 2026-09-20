@@ -1,7 +1,7 @@
 ROOT := $(abspath ../../../..)
 WHITEFOOTC ?= $(ROOT)/compiler/target/gate/whitefootc
 OUT ?= /tmp/whitefoot-x1-container-probes
-SOURCES := ownership-swap reverse-drain copy-ring-spans bounded-reserve ring-range append-contract unbounded-reserve
+SOURCES := ownership-swap reverse-drain copy-ring-spans bounded-reserve ring-range append-contract unbounded-reserve linear-ring-publish
 NATIVE_SOURCES ?= ownership-swap reverse-drain copy-ring-spans bounded-reserve
 
 .PHONY: observe native

@@ -28,19 +28,23 @@ flags, a modified compiler or substituted native implementations.
 | [ring-range.wf](ring-range.wf) | Reject: REF-4 | REF-4, RangeOverRing, at the range in the count call | The refusal also applies to an empty, nonwrapping range. |
 | [append-contract.wf](append-contract.wf) | Reject: FN-9 | FN-9, InvalidPostconditionRelation, at the ensures | A sum of two entry measures is outside the published difference-bound fragment. |
 | [unbounded-reserve.wf](unbounded-reserve.wf) | Reject: OP-9 | OP-9 at grow; residual `count <= 2305843009213693951_u64` | A safe concrete caller does not discharge missing requirements of the helper body. |
+| [linear-ring-publish.wf](linear-ring-publish.wf) | Reject: WIN-3; OP-12 excludes linear targets | WIN-3, LinearAssignmentTarget, at line 18 | Appending into a new Ring does not make the reference target eligible for the affine/copy atomic-update form. |
 
 The initial versions of the first two positive probes incorrectly nested
 constructors in argument-atom positions. GRAM-9 rejected them before the
 intended question. They were corrected to explicit local bindings; those
 authoring errors are not compiler findings or evidence about containers.
 
-Seven-source observation took 0.31 seconds wall after compiler construction.
+Seven-source observation took 0.31 seconds wall after compiler construction;
+the final eight-source observation, including linear-ring-publish, took
+0.32 seconds wall (0.19 user, 0.05 system). All four rejections were checked
+at the intended sites against the retained diagnostics.
 A four-program native compile/link/run invocation took 3.53 seconds wall
 (1.89 user, 0.60 system) before the scalar/Box extension of ownership-swap;
 that extension, including installed-value checks, passed its final focused
 rerun in 0.94 seconds wall. These are command durations,
-not steady-state operation timings. The shared guard once refused to start
-while PR #70 owned a build; no concurrent build or bypass was started.
+not steady-state operation timings. The shared guard declined starts while
+PR #70 owned verification; no concurrent build or bypass was started.
 
 ## Interpretation and limits
 
@@ -61,8 +65,14 @@ all lowering modes, an allocator release ledger, generation wrap, complete
 map/deque/slab growth, a complete B-tree or hostile behavior. In particular,
 the Box instantiation's successful execution does not prove exact allocator
 counts. Those observations belong to the next library implementation trials.
-The three rejections agree with the selected rules and are not PR #70 defects.
+The four rejections agree with the selected rules and are not compiler defects.
 The reserve migration finding concerns library code missing the rule's bound.
+The Ring publication probe instead exposes a scope question: OP-12 explicitly
+limits atomic updates to affine/copy targets, while the candidate and design
+tree state their admission without that qualifier. This is recorded as X1-P3
+for the owner/#70 agent, without changing either rule or implementation.
+No native success or complete nodrop Ring-growth route is claimed from that
+negative probe.
 
 ## Reproduce
 
