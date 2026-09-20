@@ -100,17 +100,39 @@ use super::model::{
     expression_children,
 };
 use super::places::{
-    CapturedRange, CapturedValue, PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace,
-    UnprovedSeparations,
+    CapturedRange, CapturedValue, PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace, SeparationOracle,
+    UnprovedSeparations, places_overlap,
 };
-use crate::NodePath;
+use crate::{DeclarationId, NodePath};
 
 /// The declared effect row of one concrete function, as P reads it. This is
 /// the callable boundary only: no body fact enters.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PermissionSignature {
+    pub(crate) name: String,
+    pub(crate) parameters: Vec<(DeclarationId, CheckedMode)>,
     pub(crate) reads: Vec<CheckedStatePath>,
     pub(crate) writes: Vec<CheckedStatePath>,
+}
+
+/// An optional range query for two access occurrences. Its facts are read
+/// before `site`, the earlier statement, never after either call's effects.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct RangePermissionRequest {
+    pub(crate) site: NodePath,
+    pub(crate) first_argument: NodePath,
+    pub(crate) second_argument: NodePath,
+    pub(crate) left: CapturedRange,
+    pub(crate) right: CapturedRange,
+}
+
+/// A source-positioned answer from the ordinary proof engine. Keeping the
+/// argument occurrences prevents a conditional proof from authorizing the
+/// same captured ranges in a different branch or after a join.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProvedRangePermission {
+    pub(crate) request: RangePermissionRequest,
+    pub(crate) derivation: super::entailment::DerivationId,
 }
 
 /// Which statement of an analyzed adjacency a denial cites.
@@ -316,10 +338,7 @@ pub(crate) fn analyze_permission(
     functions: &[CheckedFunction],
     signatures: &[PermissionSignature],
 ) -> PermissionMetadata {
-    let program = Program {
-        functions,
-        signatures,
-    };
+    let program = Program { signatures };
     PermissionMetadata {
         functions: functions
             .iter()
@@ -329,8 +348,103 @@ pub(crate) fn analyze_permission(
 }
 
 pub(super) struct Program<'check> {
-    functions: &'check [CheckedFunction],
     signatures: &'check [PermissionSignature],
+}
+
+/// Collect only the optional range questions that consecutive call statements
+/// could use. Classification and effect substitution are the same operations
+/// used by the final permission walk. A non-call bounds the current lowering's
+/// hand-out subrun; no proof work is requested across that boundary.
+pub(crate) fn collect_range_permission_requests(
+    function: &CheckedFunction,
+    signatures: &[PermissionSignature],
+) -> Vec<RangePermissionRequest> {
+    let program = Program { signatures };
+    let places = PlaceMap::for_function(function);
+    let mut blocks = vec![function.body.as_deref().unwrap_or_default()];
+    let mut requests = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    while let Some(block) = blocks.pop() {
+        // A reference carried through a rebinding can retain a previous
+        // iteration's evaluation of the same range-formation occurrence.
+        // The current PlaceMap unions those origins by static capture ID;
+        // it does not identify which evaluation this use denotes. Keep the
+        // existing structural permission until that flow identity is carried
+        // into the query. Scalar endpoint assignments are unaffected.
+        if block.iter().any(|statement| {
+            matches!(
+                statement,
+                CheckedStatement::Set {
+                    target: CheckedSetTarget::Place(place),
+                    ..
+                } if place.fields.is_empty() && places.is_reference(place.binding)
+            )
+        }) {
+            return Vec::new();
+        }
+        let classified = block
+            .iter()
+            .map(|statement| program.classify(&places, statement))
+            .collect::<Vec<_>>();
+        for (index, first) in classified.iter().enumerate() {
+            let (Some(site), Ok(left)) = (&first.site, &first.footprint) else {
+                continue;
+            };
+            if site.call.is_none() || left.unresolved.is_some() {
+                continue;
+            }
+            for second in classified.iter().skip(index + 1) {
+                let (Some(second_site), Ok(right)) = (&second.site, &second.footprint) else {
+                    break;
+                };
+                if second_site.call.is_none() || right.unresolved.is_some() {
+                    break;
+                }
+                // The visitor returns no conflict so that every access pair,
+                // including non-adjacent members of a call run, is inspected.
+                let _ = footprint_conflict(left, right, |left, right| {
+                    let collector = RequestedRanges::default();
+                    let _ = places_overlap(&collector, &left.place, &right.place);
+                    for (left_range, right_range) in collector.0.into_inner() {
+                        let request = RangePermissionRequest {
+                            site: site.statement.clone(),
+                            first_argument: left.argument.clone(),
+                            second_argument: right.argument.clone(),
+                            left: left_range,
+                            right: right_range,
+                        };
+                        if seen.insert(request.clone()) {
+                            requests.push(request);
+                        }
+                    }
+                    false
+                });
+            }
+        }
+        for statement in block {
+            push_nested_blocks(statement, &mut blocks);
+        }
+    }
+    requests.sort_by(|left, right| left.site.components().cmp(right.site.components()));
+    requests
+}
+
+#[derive(Default)]
+struct RequestedRanges(std::cell::RefCell<Vec<(CapturedRange, CapturedRange)>>);
+
+impl SeparationOracle for RequestedRanges {
+    fn indices_distinct(&self, _left: CapturedValue, _right: CapturedValue) -> bool {
+        false
+    }
+
+    fn ranges_disjoint(&self, left: CapturedRange, right: CapturedRange) -> bool {
+        self.0.borrow_mut().push((left, right));
+        false
+    }
+
+    fn index_is_not_last(&self, _window: &ResolvedPlace, _index: CapturedValue) -> bool {
+        false
+    }
 }
 
 /// One call occurrence, reduced to what the [EFF-5] substitution reads.
@@ -393,7 +507,12 @@ impl<'check> Program<'check> {
         };
         let mut blocks = vec![function.body.as_deref().unwrap_or_default()];
         while let Some(block) = blocks.pop() {
-            self.analyze_block(&places, block, &mut permissions);
+            self.analyze_block(
+                &places,
+                block,
+                &function.entailment.range_permissions,
+                &mut permissions,
+            );
             for statement in block {
                 push_nested_blocks(statement, &mut blocks);
             }
@@ -433,6 +552,7 @@ impl<'check> Program<'check> {
         &self,
         places: &PlaceMap,
         block: &'check [CheckedStatement],
+        range_permissions: &[ProvedRangePermission],
         permissions: &mut FunctionPermissions,
     ) {
         if block.len() < 2 {
@@ -459,10 +579,10 @@ impl<'check> Program<'check> {
             permissions.pairs.push(PermissionPair {
                 first: first_site.clone(),
                 second: second_site.clone(),
-                verdict: self.judge(places, first, second),
+                verdict: self.judge(places, first, second, range_permissions),
             });
         }
-        self.collect_runs(places, &classified, permissions);
+        self.collect_runs(places, &classified, range_permissions, permissions);
     }
 
     /// The verdict of one ordered adjacency.
@@ -471,6 +591,7 @@ impl<'check> Program<'check> {
         places: &PlaceMap,
         first: &Classified,
         second: &Classified,
+        range_permissions: &[ProvedRangePermission],
     ) -> PermissionVerdict {
         for (side, classified) in [(PairSide::First, first), (PairSide::Second, second)] {
             match &classified.footprint {
@@ -502,7 +623,9 @@ impl<'check> Program<'check> {
                 });
             }
         };
-        match footprint_conflict(places, left, right) {
+        match footprint_conflict(left, right, |left, right| {
+            permission_accesses_overlap(places, range_permissions, left, right)
+        }) {
             Some(denial) => PermissionVerdict::Denied(denial),
             None => PermissionVerdict::PermittedEligible,
         }
@@ -519,6 +642,7 @@ impl<'check> Program<'check> {
         &self,
         places: &PlaceMap,
         classified: &[Classified],
+        range_permissions: &[ProvedRangePermission],
         permissions: &mut FunctionPermissions,
     ) {
         let mut run: Vec<usize> = Vec::new();
@@ -555,7 +679,11 @@ impl<'check> Program<'check> {
                 union.absorb(footprint);
                 continue;
             }
-            if footprint_conflict(places, &union, footprint).is_some() {
+            if footprint_conflict(&union, footprint, |left, right| {
+                permission_accesses_overlap(places, range_permissions, left, right)
+            })
+            .is_some()
+            {
                 flush(&mut run, &mut union);
                 run.push(index);
                 union.absorb(footprint);
@@ -759,9 +887,9 @@ impl<'check> Program<'check> {
         let callee_name = statement_value(statement)
             .and_then(call_projection)
             .and_then(|projection| {
-                self.functions
+                self.signatures
                     .get(projection.target.0 as usize)
-                    .map(|function| function.name.clone())
+                    .map(|signature| signature.name.clone())
             })
             .unwrap_or_else(|| label.to_owned());
         Classified {
@@ -808,10 +936,7 @@ impl<'check> Program<'check> {
         call: &CallProjection<'_>,
         footprint: &mut Footprint,
     ) {
-        let (Some(signature), Some(callee)) = (
-            self.signatures.get(call.target.0 as usize),
-            self.functions.get(call.target.0 as usize),
-        ) else {
+        let Some(signature) = self.signatures.get(call.target.0 as usize) else {
             footprint.unresolved = Some(call.call.clone());
             return;
         };
@@ -819,8 +944,8 @@ impl<'check> Program<'check> {
         // "A by-value consumption counts as a write of the argument's place"
         // [PAR-1]. The affine discipline already forbids two consumers of one
         // place; the footprint states it rather than assuming it.
-        for (index, parameter) in callee.parameters.iter().enumerate() {
-            if !matches!(parameter.mode, CheckedMode::Own) {
+        for (index, (_, mode)) in signature.parameters.iter().enumerate() {
+            if !matches!(mode, CheckedMode::Own) {
                 continue;
             }
             let Some(argument) = call.arguments.get(index) else {
@@ -847,10 +972,10 @@ impl<'check> Program<'check> {
         let writes = effects.map_or(&signature.writes, |effects| &effects.writes);
         for (written, declared) in [(false, reads), (true, writes)] {
             for path in declared {
-                let Some(index) = callee
+                let Some(index) = signature
                     .parameters
                     .iter()
-                    .position(|parameter| parameter.declaration == path.root)
+                    .position(|(declaration, _)| *declaration == path.root)
                 else {
                     footprint.unresolved = Some(call.call.clone());
                     continue;
@@ -973,8 +1098,11 @@ impl Footprint {
 /// one, and the later one's writes against every half of the earlier one.
 /// Read/read overlap is admitted. The relation is [OWN-7]'s, asked of the
 /// resolved paths through the function's overlap memo.
-fn footprint_conflict(places: &PlaceMap, earlier: &Footprint, later: &Footprint) -> Option<Denial> {
-    let oracle = UnprovedSeparations;
+fn footprint_conflict(
+    earlier: &Footprint,
+    later: &Footprint,
+    mut overlaps: impl FnMut(&Access, &Access) -> bool,
+) -> Option<Denial> {
     for write in &earlier.writes {
         for (half, access) in later
             .writes
@@ -982,7 +1110,7 @@ fn footprint_conflict(places: &PlaceMap, earlier: &Footprint, later: &Footprint)
             .map(|access| (FootprintHalf::Write, access))
             .chain(later.read_halves())
         {
-            if places.overlaps(&oracle, &write.place, &access.place) {
+            if overlaps(write, access) {
                 return Some(Denial::Footprint {
                     kind: ConflictKind::new(FootprintHalf::Write, half),
                     left: write.clone(),
@@ -994,7 +1122,7 @@ fn footprint_conflict(places: &PlaceMap, earlier: &Footprint, later: &Footprint)
     }
     for write in &later.writes {
         for (half, access) in earlier.read_halves() {
-            if places.overlaps(&oracle, &write.place, &access.place) {
+            if overlaps(access, write) {
                 return Some(Denial::Footprint {
                     kind: ConflictKind::new(half, FootprintHalf::Write),
                     left: access.clone(),
@@ -1005,6 +1133,58 @@ fn footprint_conflict(places: &PlaceMap, earlier: &Footprint, later: &Footprint)
         }
     }
     None
+}
+
+struct RangePermissionOracle<'proof> {
+    proofs: &'proof [ProvedRangePermission],
+    first_argument: &'proof NodePath,
+    second_argument: &'proof NodePath,
+}
+
+impl SeparationOracle for RangePermissionOracle<'_> {
+    fn indices_distinct(&self, _left: CapturedValue, _right: CapturedValue) -> bool {
+        false
+    }
+
+    fn ranges_disjoint(&self, left: CapturedRange, right: CapturedRange) -> bool {
+        self.proofs.iter().any(|proof| {
+            let request = &proof.request;
+            (request.first_argument == *self.first_argument
+                && request.second_argument == *self.second_argument
+                && request.left == left
+                && request.right == right)
+                || (request.first_argument == *self.second_argument
+                    && request.second_argument == *self.first_argument
+                    && request.left == right
+                    && request.right == left)
+        })
+    }
+
+    fn index_is_not_last(&self, _window: &ResolvedPlace, _index: CapturedValue) -> bool {
+        false
+    }
+}
+
+fn permission_accesses_overlap(
+    places: &PlaceMap,
+    proofs: &[ProvedRangePermission],
+    left: &Access,
+    right: &Access,
+) -> bool {
+    if !places.overlaps(&UnprovedSeparations, &left.place, &right.place) {
+        return false;
+    }
+    // The structural cache above never stores a conditional answer. The
+    // argument-pair-scoped proof must bypass that function-wide memo.
+    places_overlap(
+        &RangePermissionOracle {
+            proofs,
+            first_argument: &left.argument,
+            second_argument: &right.argument,
+        },
+        &left.place,
+        &right.place,
+    )
 }
 
 /// Records the storage a `set` names, and the operands its subscripts read.

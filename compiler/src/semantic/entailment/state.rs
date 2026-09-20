@@ -844,6 +844,8 @@ pub(crate) enum DerivationRootKind {
         partition: u32,
         base: bool,
     },
+    /// An optional, source-positioned PAR-1 range separation.
+    RangePermission(u32),
     IntegerDomainObligation(u32),
     CallGoal(u32),
     BitAndBound(u32),

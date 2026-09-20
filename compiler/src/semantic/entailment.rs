@@ -195,6 +195,9 @@ pub(crate) struct EntailmentContext<'check> {
     /// Binding names in dense [`super::model::BindingId`] order, for the
     /// [ENT-6] canonical residual rendering.
     pub(crate) binding_names: &'check [String],
+    /// Optional PAR-1 questions collected with the permission walk's own
+    /// footprint substitution before this function's ordinary proof flow.
+    pub(crate) range_permission_requests: &'check [super::permission::RangePermissionRequest],
 }
 
 impl EntailmentContext<'_> {
@@ -1053,6 +1056,9 @@ pub(crate) struct FunctionEntailment {
     pub(crate) obligations: Vec<ObligationOutcome>,
     /// Ordinary call-goal judgments in deterministic checked-tree walk order.
     pub(crate) call_goals: Vec<CallGoalOutcome>,
+    /// Optional range separations, each scoped to its argument occurrences.
+    /// They authorize permission only and are never acceptance obligations.
+    pub(crate) range_permissions: Vec<super::permission::ProvedRangePermission>,
     /// One complete five-relation/eight-atomic S11 group per counted
     /// statement, in deterministic statement-walk order.
     pub(crate) counted_derivations: Vec<CountedDerivationSet>,

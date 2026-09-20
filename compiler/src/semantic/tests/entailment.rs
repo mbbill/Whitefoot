@@ -1742,6 +1742,18 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
     for root in &summary.derivations.roots {
         let conclusion = retained_conclusion(&conclusions, root.node);
         match root.kind {
+            DerivationRootKind::RangePermission(ordinal) => {
+                let permission = summary
+                    .range_permissions
+                    .get(ordinal as usize)
+                    .expect("permission-root ordinal must resolve");
+                assert_eq!(permission.derivation, root.node);
+                assert!(!permission.request.site.components().is_empty());
+                assert!(matches!(
+                    conclusion,
+                    DerivationConclusion::Relation(_) | DerivationConclusion::Contradiction
+                ));
+            }
             DerivationRootKind::BodyEntryContradiction => {
                 let CheckedBodyDisposition::Uninhabited { contradiction } =
                     summary.body_disposition

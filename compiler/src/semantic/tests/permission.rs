@@ -1368,6 +1368,131 @@ fn exclusive(handed: &[u8]) -> result: own u64 writes(handed) contract {
     assert_eq!(kind.halves(), ("write", "write"));
 }
 
+/// Optional overlap uses the pre-call facts for these exact access sites.
+/// This checks permission metadata and retained proofs, so it belongs here;
+/// the maintained scatter oracle supplies the native execution observation.
+#[test]
+fn range_permission_keeps_captured_values_and_branch_local_proofs_scoped() {
+    let source = br#"fn fill(part: &[u64]) -> result: own unit writes(part) {
+  let count = deref(part).len;
+  for (i in 0_u64..count) {
+    set deref(part)[i] = 1_u64;
+  }
+  return unit;
+}
+
+fn split(part: &[u64], cut: own u64) -> result: own unit writes(part) contract {
+  requires cut <= deref(part).len;
+} {
+  let count = deref(part).len;
+  let first = &deref(part)[0_u64..cut];
+  let second = &deref(part)[cut..count];
+  set cut = count;
+  let a = fill(part: first);
+  let b = fill(part: second);
+  return unit;
+}
+
+fn overlapping(part: &[u64], cut: own u64) -> result: own unit writes(part) contract {
+  requires 1_u64 <= cut;
+  requires cut <= deref(part).len;
+} {
+  let count = deref(part).len;
+  let first = &deref(part)[0_u64..cut];
+  set cut = 0_u64;
+  let second = &deref(part)[cut..count];
+  let a = fill(part: first);
+  let b = fill(part: second);
+  return unit;
+}
+
+fn conditional(part: &[u64], left_end: own u64, right_start: own u64) -> result: own unit writes(part) contract {
+  requires left_end <= deref(part).len;
+  requires right_start <= deref(part).len;
+} {
+  let count = deref(part).len;
+  let first = &deref(part)[0_u64..left_end];
+  let second = &deref(part)[right_start..count];
+  if left_end <= right_start {
+    let a = fill(part: first);
+    let b = fill(part: second);
+  }
+  let c = fill(part: first);
+  let d = fill(part: second);
+  return unit;
+}
+
+fn carried(part: &[u64]) -> result: own unit writes(part) contract {
+  requires 2_u64 <= deref(part).len;
+} {
+  let previous = &deref(part)[0_u64..1_u64];
+  let current = &deref(part)[0_u64..1_u64];
+  for (i in 0_u64..2_u64) {
+    set previous = current;
+    let end = i + 1_u64;
+    set current = &deref(part)[i..end];
+    let a = fill(part: previous);
+    let b = fill(part: current);
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("range permission controls must all accept: {outcome:?}");
+        };
+        let table = &program.data.permission;
+        assert!(
+            pair_of(table, "split", "fill", "fill")
+                .verdict
+                .is_eligible()
+        );
+        assert!(
+            !pair_of(table, "overlapping", "fill", "fill")
+                .verdict
+                .is_eligible()
+        );
+        assert!(
+            !pair_of(table, "carried", "fill", "fill")
+                .verdict
+                .is_eligible()
+        );
+        let conditional = function_table(table, "conditional")
+            .pairs
+            .iter()
+            .filter(|pair| pair.first.callee_name == "fill" && pair.second.callee_name == "fill")
+            .map(|pair| pair.verdict.is_eligible())
+            .collect::<Vec<_>>();
+        assert_eq!(conditional, [true, false]);
+        for name in ["split", "conditional"] {
+            let function = program
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("control function");
+            super::entailment::validate_derivations(&function.entailment);
+            assert!(!function.entailment.range_permissions.is_empty());
+            for proof in &function.entailment.range_permissions {
+                assert!(
+                    function.entailment.derivations.roots.iter().any(|root| {
+                        root.node == proof.derivation
+                            && matches!(
+                                root.kind,
+                                super::super::entailment::DerivationRootKind::RangePermission(_)
+                            )
+                    }),
+                    "permission must retain its final, remapped proof root"
+                );
+            }
+        }
+    });
+}
+
 /// Prelude calls use the ordinary call permission judgment. This pure call
 /// forms the two adjacent eligible pairs rather than becoming an opaque
 /// statement the judgment passes over.

@@ -41,7 +41,9 @@ use super::model::{
     CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId,
     ValueInitializerKind, evaluate_const_operation,
 };
-use super::permission::{PermissionSignature, analyze_permission};
+use super::permission::{
+    PermissionSignature, analyze_permission, collect_range_permission_requests,
+};
 use super::permission_ledger::{LedgerSource, render_ledger};
 use super::places::ResolvedPlace;
 use super::postcondition::CheckedPostconditionSelector;
@@ -1145,9 +1147,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
         });
 
+        let permission_signatures = self
+            .signatures
+            .iter()
+            .map(|signature| PermissionSignature {
+                name: signature.name.clone(),
+                parameters: signature
+                    .parameters
+                    .iter()
+                    .map(|parameter| (parameter.declaration, parameter.mode))
+                    .collect(),
+                reads: signature.declared_effects.reads.clone(),
+                writes: signature.declared_effects.writes.clone(),
+            })
+            .collect::<Vec<_>>();
         let postcondition_schedule = self.analyze_function_inventory(
             &mut function_inventory,
             &callees,
+            &permission_signatures,
             optimistic_batch,
             None,
         )?;
@@ -1216,14 +1233,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // program. The affine-map rule consumes a successful OP-4 disposition
         // and exact value image retained on that program; no permission rule
         // repeats a local invariant or changes source acceptance.
-        let permission_signatures = self
-            .signatures
-            .iter()
-            .map(|signature| PermissionSignature {
-                reads: signature.declared_effects.reads.clone(),
-                writes: signature.declared_effects.writes.clone(),
-            })
-            .collect::<Vec<_>>();
         let permission = analyze_permission(&functions, &permission_signatures);
         // The ledger is rendered here because only the checker still holds the
         // syntax tree the citations name. It is pure presentation over the
@@ -1927,7 +1936,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // again by the concrete phase, so analyzing them here would repeat
         // that whole cost for a result nothing reads.
         let analyzed = Self::generic_validation_scope(functions, canonical)?;
-        self.analyze_function_inventory(functions, callees, optimistic_batch, Some(&analyzed))?;
+        // Symbolic body acceptance produces no executable permission table.
+        // Concrete instances collect optional range queries after their
+        // callable inventory is complete.
+        self.analyze_function_inventory(
+            functions,
+            callees,
+            &[],
+            optimistic_batch,
+            Some(&analyzed),
+        )?;
         if optimistic_batch {
             for (checked, analyzed) in functions.iter_mut().zip(&analyzed) {
                 if *analyzed {
@@ -1989,6 +2007,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         functions: &mut [CheckedFunctionInventory],
         callees: &[EntailmentCallee],
+        permission_signatures: &[PermissionSignature],
         optimistic_batch: bool,
         analyzed: Option<&[bool]>,
     ) -> Result<PostconditionSchedule, CheckStop> {
@@ -1998,6 +2017,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut schedule =
             postcondition_schedule(functions.iter().map(|checked| &checked.function))
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let range_permission_requests = functions
+            .iter()
+            .enumerate()
+            .map(|(index, checked)| {
+                if selected(index) && !permission_signatures.is_empty() {
+                    collect_range_permission_requests(&checked.function, permission_signatures)
+                } else {
+                    Vec::new()
+                }
+            })
+            .collect::<Vec<_>>();
         if schedule.components.is_empty() {
             for (index, checked) in functions.iter_mut().enumerate() {
                 if !selected(index) {
@@ -2012,6 +2042,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     verified_postconditions: &[],
                     verified_postcondition_proofs: &[],
                     binding_names: &checked.binding_names,
+                    range_permission_requests: &range_permission_requests
+                        [checked.function.id.0 as usize],
                 };
                 checked.function.entailment = if optimistic_batch {
                     analyze_function_candidate(&checked.function, &context)
@@ -2083,6 +2115,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         verified_postconditions: &verified_postconditions,
                         verified_postcondition_proofs: &verified_postcondition_proofs,
                         binding_names: &checked.binding_names,
+                        range_permission_requests: &range_permission_requests[function_index],
                     };
                     let entailment = analyze_function_candidate(&checked.function, &context);
                     drop(verified_postconditions);

@@ -920,6 +920,7 @@ fn analyze_candidate_inner(
         body_disposition: run.body_disposition,
         obligations: run.obligations,
         call_goals: run.call_goals,
+        range_permissions: run.range_permissions,
         counted_derivations: run.counted_derivations,
         loop_invariants: run.loop_invariants,
         source_proofs: run.source_proofs,
@@ -936,6 +937,7 @@ struct AnalysisRun {
     body_disposition: super::super::model::CheckedBodyDisposition,
     obligations: Vec<ObligationOutcome>,
     call_goals: Vec<CallGoalOutcome>,
+    range_permissions: Vec<super::super::permission::ProvedRangePermission>,
     counted_derivations: Vec<CountedDerivationSet>,
     loop_invariants: Vec<LoopInvariantOutcome>,
     source_proofs: Vec<SourceProofOutcome>,
@@ -954,6 +956,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         places: PlaceMap::default(),
         separations: SeparationLedger::default(),
         judged_separations: HashSet::new(),
+        range_permissions: Vec::new(),
         terms: TermTable::new(),
         goals: GoalTable::default(),
         derivations: DerivationLedger::default(),
@@ -1050,6 +1053,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         body_disposition,
         obligations: analyzer.obligations,
         call_goals: analyzer.call_goals,
+        range_permissions: analyzer.range_permissions,
         counted_derivations: analyzer.counted_derivations,
         loop_invariants: analyzer.loop_invariants,
         source_proofs: analyzer.source_proofs,
@@ -1108,6 +1112,14 @@ pub(super) fn finish(entailment: &mut FunctionEntailment) {
         outcome.derivation = outcome
             .derivation
             .and_then(|id| remap.nodes.get(id.0 as usize).copied().flatten());
+    }
+    for permission in &mut entailment.range_permissions {
+        permission.derivation = remap
+            .nodes
+            .get(permission.derivation.0 as usize)
+            .copied()
+            .flatten()
+            .expect("optional range permission root retained by finish");
     }
     for counted in &mut entailment.counted_derivations {
         remap_counted_derivations(counted, &remap.nodes);
@@ -1282,6 +1294,9 @@ struct Analyzer<'check, 'unit> {
     separations: SeparationLedger,
     /// The [EFF-5] pairs already judged, by the call they were recorded at.
     judged_separations: HashSet<crate::NodePath>,
+    /// Unlike the acceptance ledger, these answers are scoped to the two
+    /// source access occurrences and do not enter any flow fact state.
+    range_permissions: Vec<super::super::permission::ProvedRangePermission>,
     terms: TermTable,
     goals: GoalTable,
     derivations: DerivationLedger,
@@ -9051,38 +9066,11 @@ impl Analyzer<'_, '_> {
         separation: &super::super::model::CheckedCallSeparation,
         state: &ProofFlowState,
     ) -> bool {
-        let images = Self::range_step(&separation.left)
-            .zip(Self::range_step(&separation.right))
-            .and_then(|(left, right)| {
-                let left_image = state.affine.ranges.get(&left.start.capture)?;
-                let right_image = state.affine.ranges.get(&right.start.capture)?;
-                Some((left, right, left_image.clone(), right_image.clone()))
-            });
-        let mut proofs = Vec::new();
-        if let Some((_, _, left, right)) = &images {
-            for (end, start) in [
-                (&left.end, &right.start),
-                (&right.end, &left.start),
-                (&left.end, &left.start),
-                (&right.end, &right.start),
-            ] {
-                if let Ok(inequality) =
-                    AffineInequality::from_forms(end, start, &mut AffineCheckState::new())
-                {
-                    proofs.push(self.prove(
-                        ProofContext::new(&state.facts, &state.affine),
-                        ProofGoal::Affine {
-                            inequality: &inequality,
-                        },
-                    ));
-                }
-            }
-        }
-        let proof = proofs
-            .into_iter()
-            .find(|proof| proof.disposition == ProofDisposition::Proved);
+        let ranges = Self::range_step(&separation.left).zip(Self::range_step(&separation.right));
+        let proof =
+            ranges.and_then(|(left, right)| self.prove_range_separation(left, right, state));
         let discharged = proof.is_some();
-        if discharged && let Some((left, right, _, _)) = images {
+        if discharged && let Some((left, right)) = ranges {
             self.separations.record_ranges_disjoint(left, right);
         }
         let derivation = proof.as_ref().and_then(|proof| proof.derivation);
@@ -9118,6 +9106,70 @@ impl Analyzer<'_, '_> {
             range_partitions: Vec::new(),
         });
         discharged
+    }
+
+    /// The same four OWN-7 questions serve acceptance-bearing EFF-5 and
+    /// optional PAR-1. Each question uses the ordinary current ProofContext;
+    /// no answer is installed as a premise for another question.
+    fn prove_range_separation(
+        &mut self,
+        left: CapturedRange,
+        right: CapturedRange,
+        state: &ProofFlowState,
+    ) -> Option<ProofResult> {
+        let left = state.affine.ranges.get(&left.start.capture)?.clone();
+        let right = state.affine.ranges.get(&right.start.capture)?.clone();
+        let mut proofs = Vec::new();
+        for (end, start) in [
+            (&left.end, &right.start),
+            (&right.end, &left.start),
+            (&left.end, &left.start),
+            (&right.end, &right.start),
+        ] {
+            if let Ok(inequality) =
+                AffineInequality::from_forms(end, start, &mut AffineCheckState::new())
+            {
+                proofs.push(self.prove(
+                    ProofContext::new(&state.facts, &state.affine),
+                    ProofGoal::Affine {
+                        inequality: &inequality,
+                    },
+                ));
+            }
+        }
+        proofs
+            .into_iter()
+            .find(|proof| proof.disposition == ProofDisposition::Proved)
+    }
+
+    /// Retain optional separation roots at the earlier statement, before
+    /// evaluating either statement. Anonymous ranges formed later have no
+    /// captured image here and conservatively receive no permission.
+    fn judge_range_permissions(&mut self, site: &crate::NodePath, state: &ProofFlowState) {
+        let requests = self
+            .context
+            .range_permission_requests
+            .iter()
+            .filter(|request| request.site == *site)
+            .cloned()
+            .collect::<Vec<_>>();
+        for request in requests {
+            let Some(derivation) = self
+                .prove_range_separation(request.left, request.right, state)
+                .and_then(|proof| proof.derivation)
+            else {
+                continue;
+            };
+            let ordinal = u32::try_from(self.range_permissions.len())
+                .expect("range permission ordinal exceeds u32");
+            self.derivations
+                .add_root(DerivationRootKind::RangePermission(ordinal), derivation);
+            self.range_permissions
+                .push(super::super::permission::ProvedRangePermission {
+                    request,
+                    derivation,
+                });
+        }
     }
 
     /// The last range step of a resolved path, which is the step [OWN-7]'s
@@ -13805,6 +13857,7 @@ impl Analyzer<'_, '_> {
                 binding,
                 value,
             } => {
+                self.judge_range_permissions(node_path, state);
                 let affine_value = self.affine_expression_form(value, &mut state.affine);
                 // [MSR-3] the rebind placement is minted before the
                 // initializer's own kills, because the datum it forms is the
