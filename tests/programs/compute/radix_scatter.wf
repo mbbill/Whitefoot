@@ -49,22 +49,22 @@ fn write_chunk(input: &[u64], bit: own u32, output: &Option<Chunk>) -> result: o
   return deref(input).len;
 }
 
-fn tally(chunk: own Option<Chunk>, previous_low: own u64, previous_high: own u64) -> (kept: own Option<Chunk>, low: own u64, high: own u64) pure contract {
+fn tally(chunk: &Option<Chunk>, previous_low: own u64, previous_high: own u64) -> (low: own u64, high: own u64) reads(chunk) contract {
   requires previous_low <= 16777472_u64;
   requires previous_high <= 16777472_u64;
   ensures low <= previous_low + 256_u64;
   ensures high <= previous_high + 256_u64;
 } {
-  match chunk {
+  match deref(chunk) {
     None() => {
-      return None<Chunk>(), previous_low, previous_high;
+      return previous_low, previous_high;
     }
     Some(value: payload) => {
-      let low_count = payload.low.len;
-      let high_count = payload.high.len;
+      let low_count = deref(payload).low.len;
+      let high_count = deref(payload).high.len;
       let low_sum = previous_low + low_count;
       let high_sum = previous_high + high_count;
-      return Some<Chunk>(value: move payload), low_sum, high_sum;
+      return low_sum, high_sum;
     }
   }
 }
@@ -89,7 +89,7 @@ fn copy_values(input: &[u64], output: &[u64]) -> result: own u64 reads(input), w
   return count;
 }
 
-fn pack_payload(payload: own Chunk, chunks: &Box<Slots<Option<Chunk>>>, first: own u64, lows: &[u64], highs: &[u64]) -> result: own u64 writes(chunks), writes(lows), writes(highs) contract {
+fn pack_payload(payload: &Chunk, chunks: &Box<Slots<Option<Chunk>>>, first: own u64, lows: &[u64], highs: &[u64]) -> result: own u64 reads(payload), reads(chunks), writes(lows), writes(highs) contract {
   requires deref(chunks).inner.len <= 16777217_u64;
   requires first < deref(chunks).inner.len;
   requires 256_u64 * deref(chunks).inner.len <= deref(lows).len + 256_u64 * first;
@@ -107,19 +107,19 @@ fn pack_payload(payload: own Chunk, chunks: &Box<Slots<Option<Chunk>>>, first: o
     use (256_u64 * blocks <= high_capacity + 256_u64 * first);
   }
   let after = first + 1_u64;
-  let low_count = payload.low.len;
-  let high_count = payload.high.len;
+  let low_count = deref(payload).low.len;
+  let high_count = deref(payload).high.len;
   let first_low = &deref(lows)[0_u64..low_count];
   let rest_low = &deref(lows)[low_count..low_capacity];
   let first_high = &deref(highs)[0_u64..high_count];
   let rest_high = &deref(highs)[high_count..high_capacity];
-  let copied_low = copy_run(values: &payload.low, output: first_low);
-  let copied_high = copy_run(values: &payload.high, output: first_high);
+  let copied_low = copy_run(values: &deref(payload).low, output: first_low);
+  let copied_high = copy_run(values: &deref(payload).high, output: first_high);
   let remaining = pack_chunks(chunks: chunks, first: after, lows: rest_low, highs: rest_high);
   return 0_u64;
 }
 
-fn pack_chunks(chunks: &Box<Slots<Option<Chunk>>>, first: own u64, lows: &[u64], highs: &[u64]) -> result: own u64 writes(chunks), writes(lows), writes(highs) contract {
+fn pack_chunks(chunks: &Box<Slots<Option<Chunk>>>, first: own u64, lows: &[u64], highs: &[u64]) -> result: own u64 reads(chunks), writes(lows), writes(highs) contract {
   requires deref(chunks).inner.len <= 16777217_u64;
   requires first <= deref(chunks).inner.len;
   requires 256_u64 * deref(chunks).inner.len <= deref(lows).len + 256_u64 * first;
@@ -129,15 +129,14 @@ fn pack_chunks(chunks: &Box<Slots<Option<Chunk>>>, first: own u64, lows: &[u64],
   if first == blocks {
     return 0_u64;
   }
-  let taken = None<Chunk>();
-  swap(first: &deref(chunks).inner[first], second: &taken);
+  let chunk = &deref(chunks).inner[first];
   let after = first + 1_u64;
-  match move taken {
+  match deref(chunk) {
     None() => {
       return pack_chunks(chunks: chunks, first: after, lows: lows, highs: highs);
     }
     Some(value: payload) => {
-      return pack_payload(payload: move payload, chunks: chunks, first: first, lows: lows, highs: highs);
+      return pack_payload(payload: payload, chunks: chunks, first: first, lows: lows, highs: highs);
     }
   }
 }
@@ -146,7 +145,7 @@ fn radix_scatter(input: &[u64], bit: own u32) -> result: own Box<Array<u64>> rea
   requires deref(input).len <= 16777216_u64;
   requires bit < 64_u32;
 } {
-  doc "Stable distribution by one runtime-selected bit. Fixed-capacity local runs carry bounded lengths; a recursive chain packs each digit through exclusive output ranges. Extra cells, transfers, and chain depth are measured costs.";
+  doc "Stable distribution by one runtime-selected bit. Fixed-capacity local runs carry bounded lengths; a recursive chain packs each digit through disjoint output ranges. Chunk storage, chain depth, and final copies are measured costs.";
   let count = deref(input).len;
   let full_blocks = count / 256_u64;
   let covered = full_blocks * 256_u64;
@@ -196,14 +195,11 @@ fn radix_scatter(input: &[u64], bit: own u32) -> result: own Box<Array<u64>> rea
       use high_bound;
       use 256 times (block <= blocks);
     }
-    let taken = None<Chunk>();
-    swap(first: &chunks.inner[block], second: &taken);
-    let (kept, next_low, next_high) = tally(chunk: move taken, previous_low: low_total, previous_high: high_total);
+    let (next_low, next_high) = tally(chunk: &chunks.inner[block], previous_low: low_total, previous_high: high_total);
     invariant next_low_bound: next_low <= 256_u64 * block + 256_u64;
     invariant next_high_bound: next_high <= 256_u64 * block + 256_u64;
     set low_total = next_low;
     set high_total = next_high;
-    set chunks.inner[block] = move kept;
   }
   invariant full_low_bound: low_total <= capacity;
   invariant full_high_bound: high_total <= capacity;

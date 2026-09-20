@@ -117,15 +117,14 @@ and reported 125/125 rules covered.
 
 #### Reference-source and tally probes
 
-The [reference-source candidate](reference-scatter.wf) belongs to this
-investigation while full consumer validation is blocked; remove it when its
-chosen form replaces the formal consumer or when this candidate is retired.
-It keeps the current block decomposition and padded streams. Tally reads a
+The reference-source probe, initially retained beside this investigation,
+keeps the current block decomposition and padded streams. Tally reads a
 chunk in place; packing reads the containing Box through a reference and
 advances an explicit chunk position. The whole-Box form follows the current
 TYPE-9 placement rule. Explicit finite steps carry the same padded-capacity
-argument through that position. The formal scatter fixture is unchanged at
-this checkpoint.
+argument through that position. The formal scatter fixture was unchanged at
+this initial checkpoint; the integrated comparison below now uses its
+maintained source and removes the temporary research copy.
 
 With compiler sources at `0f9edadd`, the candidate reaches FN-8 at
 `copy_run(values: &deref(payload).low, output: first_low)`: the substituted
@@ -246,6 +245,22 @@ The reference and owned native observer constructions took 0.65 s and 2.47 s;
 their three-process verification invocations took 0.53 s and 0.64 s. Runtime
 objects were reused after checking that their sources match the integrated
 base. Kernel-only elapsed-time comparisons remain separate.
+
+Before the timing comparison, the attribution arms are owned tally/owned
+packing (the formal source at `2d8ce0d7`), reference tally only, reference
+packing only, and both reference reads. Swap the complete `tally` definition
+and its count-loop call/restore section between the two endpoint sources to
+construct the intermediate arms. Their helper boundaries and recursive
+component remain identical. All arms use the same compiler, native support
+objects, harness and link order, and must pass the independent oracle before
+timing. An identical-reference-image paired control runs first. If its median
+within-pass warm wall-time ratio differs from one by more than three percent
+at a selected worker count, that session is inconclusive for selecting a
+performance claim there. Record five alternating passes of five verified warm
+calls after a verified warm-up, wall and process CPU separately, at 1, 2, 4
+and 8 workers. Use the same comparison on mixed, all-low and skewed inputs;
+the small-input case is a latency control. No result changes the scheduler
+or the language's acceptance rules.
 
 ## Consumers and discriminating criteria
 

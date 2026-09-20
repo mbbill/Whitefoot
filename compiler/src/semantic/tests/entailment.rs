@@ -1723,6 +1723,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
     }
 
     let mut seen_obligations = vec![false; summary.obligations.len()];
+    let mut seen_range_permissions = vec![false; summary.range_permissions.len()];
     let mut seen_calls = vec![false; summary.call_goals.len()];
     let mut seen_counted = vec![[false; 8]; summary.counted_derivations.len()];
     let mut seen_s7 = vec![false; summary.s7_derivations.len()];
@@ -1743,15 +1744,21 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
         let conclusion = retained_conclusion(&conclusions, root.node);
         match root.kind {
             DerivationRootKind::RangePermission(ordinal) => {
+                let ordinal = ordinal as usize;
                 let permission = summary
                     .range_permissions
-                    .get(ordinal as usize)
+                    .get(ordinal)
                     .expect("permission-root ordinal must resolve");
+                assert!(
+                    !seen_range_permissions[ordinal],
+                    "one root per permission proof"
+                );
+                seen_range_permissions[ordinal] = true;
                 assert_eq!(permission.derivation, root.node);
                 assert!(!permission.request.site.components().is_empty());
                 assert!(matches!(
                     conclusion,
-                    DerivationConclusion::Relation(_) | DerivationConclusion::Contradiction
+                    DerivationConclusion::AffineConsequence | DerivationConclusion::Contradiction
                 ));
             }
             DerivationRootKind::BodyEntryContradiction => {
@@ -2325,6 +2332,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
             .all(|occurrence| occurrence.iter().all(|seen| *seen)),
         "every counted statement must retain all eight atomic roots"
     );
+    assert!(seen_range_permissions.into_iter().all(|seen| seen));
     assert!(seen_s7.into_iter().all(|seen| seen));
     for ((proof, seen), seen_aggregates) in summary
         .postconditions
