@@ -23,6 +23,16 @@ printf '%s  %s\n%s  %s\n' \
 sha256sum --check "$report_root/expected-sha256.txt"
 sha256sum "$baseline" "$candidate" > "$report_root/sha256-before.txt"
 
+record_final_hashes() {
+  sha256sum "$baseline" "$candidate" > "$report_root/sha256-after.txt"
+  if cmp "$report_root/sha256-before.txt" "$report_root/sha256-after.txt"; then
+    printf 'image_hashes=unchanged\n' > "$report_root/HASH-RESULT.txt"
+  else
+    printf 'image_hashes=changed\n' > "$report_root/HASH-RESULT.txt"
+  fi
+}
+trap record_final_hashes EXIT
+
 observe_one() {
   local arm=$1
   local width=$2
@@ -38,7 +48,7 @@ set verbose off
 set disable-randomization off
 set \$ordinal = 0
 set \$payload_offset = $payload_offset
-break wf_record_result_release
+break wf_bench_records_release
 commands
   silent
   set \$cell = (unsigned long long)\$rdi
@@ -111,7 +121,7 @@ if [[ $baseline_count -eq 1 && $candidate_count -eq 1 ]]; then
   fi
 fi
 
-sha256sum "$baseline" "$candidate" > "$report_root/sha256-after.txt"
+record_final_hashes
 cmp "$report_root/sha256-before.txt" "$report_root/sha256-after.txt"
 {
   printf 'verdict=%s\nreason=%s\n' "$verdict" "$reason"

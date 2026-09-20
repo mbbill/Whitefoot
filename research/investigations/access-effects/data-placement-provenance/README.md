@@ -6,10 +6,11 @@ exact baseline and candidate `records` images archived by compute run
 performance experiment. Runner timing rows are an unavoidable by-product of
 reaching the six performance-shaped allocations and are discarded.
 
-The debugger stops at `wf_record_result_release`, which is called by
-`wf_oracle_check` after both clocks have stopped. On x86-64 the incoming
-`rdi` is the allocation released. It is also the baseline payload; the
-candidate payload begins eight bytes later.
+The debugger stops at `wf_bench_records_release`, which is called by
+`wf_oracle_check` after both clocks have stopped and tail-jumps directly to
+`free` in both optimized images. On x86-64 the incoming `rdi` is the baseline
+payload or the candidate retained cell; the candidate payload begins eight
+bytes after that cell.
 The first word is also read without mutation; every candidate observation must
 hold the 131,072-element length there.
 
@@ -36,3 +37,10 @@ only GNU gdb from the image's official Ubuntu source with
 libc/allocator change stops before observation. This is a documented departure
 from the first run's no-install infrastructure gate; it does not relax any
 address or interpretation criterion.
+
+Run 35533030765 established that installation left allocator identity
+byte-equal, then stopped after baseline W1 because its breakpoint named the
+source-level `wf_record_result_release`; optimization retained that symbol but
+made the called host release wrapper jump straight to `free`. It produced no
+address observations and is an instrumentation failure, not data or timing
+evidence. Disassembly fixes the wrapper above as the actual post-clock seam.
