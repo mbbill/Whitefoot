@@ -262,6 +262,44 @@ and 8 workers. Use the same comparison on mixed, all-low and skewed inputs;
 the small-input case is a latency control. No result changes the scheduler
 or the language's acceptance rules.
 
+The first source-only comparison at `36acce03` holds the direct chunk-slot
+reference workaround fixed on all four arms. On mixed inputs, one-worker
+median wall time is 11.63 ms owned, 8.09 ms with reference tally, 7.02 ms with
+reference packing, and 3.55 ms with both. All large-input identical-image
+controls pass the stated three-percent condition; the four-worker small-input
+control does not. These results isolate aggregate-transfer costs in that
+intermediate source, not the final parallel program: its partition loop is
+denied PAR-2 because the whole nominal-element reference does not retain an
+admitted element-map witness. The 8-worker reference image therefore has only
+about 1.26 occupied CPUs, despite its useful output offers.
+
+The committed upstream now accepts the original one-element output-range
+form, which restores the partition map without a compiler change. It is
+restored before the final comparison, identically on all four arms. The
+existing native scatter observation now also checks completed nonempty input
+partitions on another thread, resetting the scheduling observer only after
+those maps join and before output packing begins. At two/four workers it
+observes 1,540,096/2,326,528 helper input words and 26,795/37,856 helper output
+words, with all 109 configurations still correct. A diagnostic emitted-code
+control that returns zero from every independent-range split-budget call
+fails specifically with `oracle observed no nonempty helper input partition`.
+No extra native image or configuration is added to the maintained test's
+schedule; the mutation is a one-shot validation of the stronger observer.
+
+The integrated focused suite passes 74 tests in 12.16 s (12.69 s including
+guarded launch): all loop-permission controls, the new source-scoped range
+proof/metadata control, the non-call-prefix native group regression, and the
+existing prefix/histogram, stencil, sort/BFS and scatter native oracles. The
+initial merge-sort failure is fixed by the integrated upstream checkpoint;
+both sort and graph now execute. Rebuilding the gate-profile Rust library-test
+executable for the final input/output observation took 71.83 s. This is a
+construction cost and is separate from the 12.16 s test execution. The broader
+permission-only selection still exposes two unchanged upstream tests,
+`a_scrutinee_call_forms_no_pair` and
+`a_scrutinee_call_written_first_forms_no_pair`, whose expectations predate
+#70's call-rooted match support. They are recorded for its owner, not rewritten
+as part of scatter.
+
 ## Consumers and discriminating criteria
 
 These criteria are recorded before the new experiments. All source programs
@@ -330,7 +368,7 @@ distribution or a proof that no other source formulation works.
 
 The executable alternative in
 [`radix_scatter.wf`](../../../tests/programs/compute/radix_scatter.wf)
-first partitions each input block into two `FixedVector<u64, 256>` runs.
+first partitions each input block into two `Slots<u64, 256>` runs.
 Their ordinary measures bound each stored count without an array-content
 theorem. A scalar prefix phase computes total lengths; a recursive continuation
 forms each run's actual destination range and passes the remaining range to
@@ -345,10 +383,10 @@ established by this instance.
 This representation has linear element work, but it is not a cost-free
 replacement for direct scatter: local runs hold up to two padded inputs,
 two intermediate streams hold another two, and the result holds one actual
-input. Count extraction currently takes and restores an owned chunk because
-the legacy buffer-element borrow path is unsupported. Those transfers,
-initialization, and the continuation's linear depth must be included in the
-cost rather than dismissed as proof work. The native controls compare both
+input. The reference-model continuation above reads counts and payloads in
+place; earlier measurements below include the legacy source's owned
+take/restore transfers. Initialization and the continuation's linear depth
+remain runtime costs rather than proof work. The native controls compare both
 the same block/chain decomposition and direct count/prefix/scatter; the latter
 does not materialize local element streams and is a different algorithmic
 representation, not an isolating compiler A/B.

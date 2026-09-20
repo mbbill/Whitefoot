@@ -39,13 +39,14 @@ fn partition_block(input: &[u64], bit: own u32) -> (low: own Slots<u64, 256>, hi
   return move lows, move highs;
 }
 
-fn write_chunk(input: &[u64], bit: own u32, output: &Option<Chunk>) -> result: own u64 reads(input), writes(output) contract {
+fn write_chunk(input: &[u64], bit: own u32, output: &[Option<Chunk>]) -> result: own u64 reads(input), writes(output) contract {
   requires deref(input).len <= 256_u64;
   requires bit < 64_u32;
+  requires 1_u64 <= deref(output).len;
 } {
   let (low, high) = partition_block(input: input, bit: bit);
   let chunk = Chunk(low: move low, high: move high);
-  set deref(output) = Some<Chunk>(value: move chunk);
+  set deref(output)[0_u64] = Some<Chunk>(value: move chunk);
   return deref(input).len;
 }
 
@@ -172,11 +173,13 @@ fn radix_scatter(input: &[u64], bit: own u32) -> result: own Box<Array<u64>> rea
     }
     if end <= count {
       let source = &deref(input)[first..end];
-      let destination = &chunks.inner[block];
+      let after = block + 1_u64;
+      let destination = &chunks.inner[block..after];
       let wrote = write_chunk(input: source, bit: bit, output: destination);
     } else {
       let source = &deref(input)[first..count];
-      let destination = &chunks.inner[block];
+      let after = block + 1_u64;
+      let destination = &chunks.inner[block..after];
       let wrote = write_chunk(input: source, bit: bit, output: destination);
     }
   }

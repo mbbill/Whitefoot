@@ -54,12 +54,18 @@ static size_t compare(const uint64_t *actual, const uint64_t *expected, size_t c
     return count;
 }
 static size_t configurations;
+#ifdef WFB_ORACLE_PARALLEL
+static void scatter_input_begin(void);
+#endif
 static size_t verify_case(scatter_entry entry, scatter_release release, size_t count,
                           unsigned shape, uint32_t bit) {
     uint64_t *input = allocate(count, sizeof(*input));
     fill(input, count, shape, bit);
     uint64_t *expected = oracle(input, count, bit), *actual = NULL, length = UINT64_MAX;
     void *held = NULL;
+#ifdef WFB_ORACLE_PARALLEL
+    scatter_input_begin();
+#endif
     entry(input, count, bit, &actual, &length, &held);
     if (length != count) fail("output length");
     size_t checked = compare(actual, expected, count);
@@ -100,14 +106,27 @@ extern unsigned long wf__par_grants(void);
 extern void wf_test_worker_schedule_begin(void);
 extern void wf_test_worker_schedule_end(void);
 static unsigned long pack_before, pack_grants;
+static unsigned long input_before, input_grants;
 static size_t pack_calls;
 static _Thread_local unsigned char thread_marker;
-static const unsigned char *pack_caller;
-static _Atomic uint64_t helper_output_words;
+static const unsigned char *input_caller, *pack_caller;
+static _Atomic uint64_t helper_input_words, helper_output_words;
+static void scatter_input_begin(void) {
+    wf_test_worker_schedule_begin();
+    input_before = wf__par_grants();
+    input_caller = &thread_marker;
+}
+void wf_scatter_partition_done(uint64_t words) {
+    if (input_caller && words && input_caller != &thread_marker)
+        atomic_fetch_add_explicit(&helper_input_words, words, memory_order_relaxed);
+}
 /* Only the correctness module wraps the outer pack entry. All earlier maps
- * have joined there, so this delta attributes steals to output packing. No
- * instrumentation is added to the recorded timing image. */
+ * have joined there, so resetting the schedule separates input partitioning
+ * from output packing. Completed nonempty work is observed in both phases;
+ * no instrumentation is added to the recorded timing image. */
 void wf_scatter_pack_begin(void) {
+    input_grants += wf__par_grants() - input_before;
+    input_caller = NULL;
     wf_test_worker_schedule_begin();
     pack_before = wf__par_grants();
     pack_caller = &thread_marker;
@@ -132,6 +151,8 @@ int wf__main_body(int argc, char **argv) {
     if (workers && atoi(workers) > 1) {
         if (!wf__par_pool_active()) fail("oracle did not exercise a worker pool");
         if (pack_calls != configurations) fail("packing attribution entry was not exercised");
+        if (input_grants == 0 || atomic_load(&helper_input_words) == 0)
+            fail("oracle observed no nonempty helper input partition");
         if (pack_grants == 0 || atomic_load(&helper_output_words) == 0) {
             /* A qualifying observation needs nonempty helper output work,
              * not merely an earlier count/partition task. */
@@ -143,6 +164,8 @@ int wf__main_body(int argc, char **argv) {
         fail("pool-off oracle handed out work");
     (void)printf("radix_scatter packing: %zu calls, %lu steals, %llu helper output words\n",
                  pack_calls, pack_grants, (unsigned long long)atomic_load(&helper_output_words));
+    (void)printf("radix_scatter partition: %lu steals, %llu helper input words\n",
+                 input_grants, (unsigned long long)atomic_load(&helper_input_words));
 #endif
     (void)printf("radix_scatter oracle PASS: %zu configurations, %zu values\n", configurations, checked);
     return 0;

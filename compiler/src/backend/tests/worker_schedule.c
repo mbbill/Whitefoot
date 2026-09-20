@@ -37,8 +37,8 @@ static void (*schedule_run)(void *);
 static wf_test_thread schedule_offerer;
 
 /* These controls may only bracket a fully joined caller, never an in-flight
- * task. Scatter uses them to observe output packing rather than an earlier
- * count/partition stage. Other fixtures observe their first publication. */
+ * task. Scatter resets them between input partitioning and output packing
+ * to observe both phases. Other fixtures observe their first publication. */
 void wf_test_worker_schedule_begin(void) {
     atomic_store(&schedule_frame, NULL);
     atomic_store(&schedule_claimed, 0);
