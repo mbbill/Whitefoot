@@ -248,10 +248,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.collect_expression_release_effects(function, offset, effects)?;
             }
             CheckedExpression::RangeOf {
-                source,
-                start,
-                end,
-                ..
+                source, start, end, ..
             } => {
                 if let crate::semantic::CheckedRangeSource::Storage(root) = source {
                     for offset in root.offsets() {
@@ -308,11 +305,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Array { .. }
                 | CheckedType::Buffer { .. }
                 | CheckedType::Window { .. } => {
-                    drops.push((path, current));
+                    // [OWN-1, STOR-3] an `Array` of copy elements is copy and
+                    // a copy value has an empty release.
+                    if !self.is_copy_type(current)? {
+                        drops.push((path, current));
+                    }
                 }
                 CheckedType::Nominal(id) => {
                     let nominal = self.nominal(id)?;
-                    if nominal.is_copy() {
+                    // [OWN-1, STOR-3] a nominal whose every owned part is
+                    // copy, and whose declaration removes nothing, is copy
+                    // and has an empty release. A tag-only enum declared
+                    // `nocopy` is affine and owns nothing, so its release is
+                    // empty as well.
+                    if self.is_copy_type(current)? || nominal.is_tag_only_enum() {
                         continue;
                     }
                     match &nominal.kind {
@@ -392,11 +398,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Array { .. }
                 | CheckedType::Buffer { .. }
                 | CheckedType::Window { .. } => {
-                    drops.push((path, current));
+                    if !self.is_copy_type(current)? {
+                        drops.push((path, current));
+                    }
                 }
                 CheckedType::Nominal(id) => {
                     let nominal = self.nominal(id)?;
-                    if nominal.is_copy() {
+                    if self.is_copy_type(current)? || nominal.is_tag_only_enum() {
                         if selected {
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }

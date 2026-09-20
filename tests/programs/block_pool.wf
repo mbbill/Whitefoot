@@ -103,7 +103,7 @@ fn static_block_round_trip() -> code: own u8 pure {
   place_back(window: &payload, value: 2_u8);
   place_back(window: &payload, value: 3_u8);
   place_back(window: &payload, value: 4_u8);
-  let record = StaticBlock(bytes: move payload);
+  let record = StaticBlock(bytes: payload);
   let full = slots_new::<StaticBlock, 2>();
   place_back(window: &full, value: move record);
   let block = take_static(free: &full);

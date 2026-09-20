@@ -1,4 +1,4 @@
-struct Frame {
+nocopy struct Frame {
   count: u64;
 }
 

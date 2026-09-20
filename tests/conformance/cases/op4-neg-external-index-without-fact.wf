@@ -4,7 +4,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   close_directory(factory: &entry_factory, directory: move root);
   let index = args_count(args: &arg_list);
   let values = array_filled::<u8, 4>(value: 0_u8);
-  let bytes = slots_from_array::<u8, 4>(values: move values);
+  let bytes = slots_from_array::<u8, 4>(values: values);
   let value = bytes[index];
   return exit_status(code: value);
 }

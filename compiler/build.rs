@@ -89,7 +89,12 @@ fn no_capture_attribute() -> &'static str {
         return OLD;
     };
     let probe = Path::new(&directory).join("captures_probe.ll");
-    if fs::write(&probe, format!("define void @p(ptr {NEW} %v) {{\n  ret void\n}}\n")).is_err() {
+    if fs::write(
+        &probe,
+        format!("define void @p(ptr {NEW} %v) {{\n  ret void\n}}\n"),
+    )
+    .is_err()
+    {
         return OLD;
     }
     let accepted = Command::new(env::var("CC").as_deref().unwrap_or("clang"))

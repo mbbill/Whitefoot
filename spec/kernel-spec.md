@@ -46,8 +46,8 @@ The right-attachment set contains `)`, `]`, `>`, `,`, `;`, `.`, `:`, `(`, `<`, `
 Between two consecutive terminals on the same line, emit zero bytes when the left terminal is in the left-attachment set or the right terminal is in the right-attachment set; otherwise emit exactly one ASCII space.
 A `<` or `>` terminal selected by `compare_op` [GRAM-5] is rendered as a member of neither set, so a comparison is `a < b` while a type-argument list is `f::<T>(x)`; this stated spacing overrides the generic attachment of those two bytes exactly as the `for` header's stated space does below.
 Thus function headers are `fn f()` and `fn f<T>()`; subscripts are `p[i]`; a counted range is `lower..upper`; generic and square-bracket interiors are compact; `](`, `>(`, and `::<` are attached; and commas and colons attach to their left operand and have one space before the grammar-required following element.
-The colon separating an `actual_decl` name from its formal application is rendered as a member of neither attachment set: `actual SeedKey : Key<u64, Seed>`. This declaration separator is distinct from parameter, field, and bound colons, which retain the rule above.
-Examples include `Result<i32, Overflow>`, `f(x: a, y: b)`, `cvt::<u8, u32>(w)`, `a <= b`, `actual SeedKey : Key<u64, Seed>`, and `[10_u8, 20_u8]`.
+The colon separating a `binding_decl` name from its interface application is rendered as a member of neither attachment set: `binding SeedKey : Key<u64, Seed>`. This declaration separator is distinct from parameter, field, and bound colons, which retain the rule above.
+Examples include `Result<i32, Overflow>`, `f(x: a, y: b)`, `cvt::<u8, u32>(w)`, `a <= b`, `binding SeedKey : Key<u64, Seed>`, and `[10_u8, 20_u8]`.
 The range step renders compactly: `&r[lo..hi]`, `part[k]`, because `[`, `..`, and `]` are all attachment members.
 A payload step renders compactly: `n.left.Some.value`.
 A measure or window part renders as an ordinary field suffix: `r.len`, `r.next`, and `deref(p).len`.
@@ -61,9 +61,9 @@ A match-arm header is therefore one level inside its match, and statements in th
 
 The line-bearing simple productions are `field`, `variant`, `fn_bind`, `const_decl`, `heap_decl`, `doc`, `contract_define`, `requires_clause`, `ensures_clause`, `set_stmt`, `expr_stmt`, `return_stmt`, `proof_use`, `break_stmt`, and `give_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs` or `propagate_let_rhs` and a `let_stmt` whose selected binder is a parenthesized binder list or a destructuring consume [GRAM-4].
 Each renders completely on one line, including its final semicolon.
-A `fn_sig` renders its signature inline, with a result-list space after `->` just as a `fn_decl` does. Its optional `contract_block` uses the ordinary block layout. In a formal body each member starts a new line and the following semicolon attaches to the signature or its contract's closing brace. In a `gparam` the signature stays in the surrounding generic header; no member semicolon is inserted.
+A `fn_sig` renders its signature inline, with a result-list space after `->` just as a `fn_decl` does. Its optional `contract_block` uses the ordinary block layout. In an interface body each member starts a new line and the following semicolon attaches to the signature or its contract's closing brace. In a `gparam` the signature stays in the surrounding generic header; no member semicolon is inserted.
 
-The generically block-bearing productions are `struct_decl`, `enum_decl`, `formal_decl`, `actual_decl`, the body of `fn_decl`, `contract_block`, `match_stmt`, `value_match`, `if_stmt`, `value_if`, and `arm`.
+The generically block-bearing productions are `struct_decl`, `enum_decl`, `interface_decl`, `binding_decl`, the body of `fn_decl`, `contract_block`, `match_stmt`, `value_match`, `if_stmt`, `value_if`, and `arm`.
 Their introducer through `{` is one line; their children render on following lines at depth plus one; and `}` renders on its own line at the original depth.
 Empty blocks still use an opening line followed by a closing-brace line.
 An `invariant_stmt` ending in `;` renders completely on one line.
@@ -166,14 +166,14 @@ Exact-spelling and union predicates may overlap only when they do not compete at
 In particular, a noncompeting overlap such as fixed `unit` with the `literal` union does not create an ambiguous parse, but no decision may use predicate priority to hide an overlap.
 A `psuffix` decision reads at most two tokens: a `.` whose next token is an IDENT begins a field step, a `.` whose next token is a TYPEID begins an enum payload step, and a `[` begins an index or range step [GRAM-5].
 Every production maps 1:1 to one source-tree node kind.
-The only abbreviation expansion is FN-3's hygienic expansion of formal and actual groups before semantic instantiation and IR; every expanded declaration and use retains its written source node and member position.
+The only abbreviation expansion is FN-3's hygienic expansion of interface and binding groups before semantic instantiation and IR; every expanded declaration and use retains its written source node and member position.
 `infix_tail` maps to the `infix` node kind: a selected tail forms one `infix` node spanning the complete `expr` — the atom and the tail — so the 1:1 production-to-node mapping is preserved by the factored recognition; its operator child is one `infix_op` or one `compare_op` node.
 
 [GRAM-2] Items:
 
 ```wf-ebnf GRAM-2
 program      := item*
-item         := fn_decl | struct_decl | enum_decl | formal_decl | actual_decl | const_decl
+item         := fn_decl | struct_decl | enum_decl | interface_decl | binding_decl | const_decl
               | heap_decl
 heap_decl    := "program" "no_heap" ";"
 struct_decl  := "opaque"? ("nocopy" | "nodrop")? "struct" TYPEID generics? "{" doc? field* "}"
@@ -191,8 +191,8 @@ contract_define:= "define" IDENT "=" expr ";"
 requires_clause:= "requires" clause_expr ";"
 ensures_clause:= "ensures" ("when" result_route ":")? clause_expr ";"
 result_route:= (IDENT "is")? TYPEID "(" fieldbind ")"
-formal_decl  := "formal" TYPEID generics? "{" doc? (fn_sig ";")* "}"
-actual_decl  := "actual" TYPEID ":" pack_use "{" doc? fn_bind* "}"
+interface_decl  := "interface" TYPEID generics? "{" doc? (fn_sig ";")* "}"
+binding_decl  := "binding" TYPEID ":" pack_use "{" doc? fn_bind* "}"
 fn_sig       := "fn" IDENT "(" param_list? ")"
                 "->" (result_binding | "(" result_binding ("," result_binding)+ ")")
                 effects contract_block?
@@ -203,7 +203,7 @@ fn_bind      := IDENT "=" callee ("::" targs)? ";"
 doc          := "doc" STRING ";"
 generics     := "<" gparam ("," gparam)* ">"
 gparam       := TYPEID (":" (TYPEID | capability_bound))?
-              | "const" IDENT ":" type | fn_sig | pack_use
+              | "const" IDENT ":" type | fn_sig | "interface" pack_use
 capability_bound:= "copy" | "drop"
 param_list   := param ("," param)*
 param        := IDENT ":" (mode type | "&" "[" type "]")
@@ -383,7 +383,7 @@ The four are ordinary nominals of the nominal-type TYPEID domain [TYPE-6], writt
 In this specification's prose `N` stands for a written const argument; source writes a `const` IDENT, lowercase under [FORM-3], as the [PRE-1] rows do.
 `Slots`, `Ring`, and `Box` are declared `nocopy`, so their values are affine unless an element or content type makes them linear, and an `Array` has exactly the capabilities of its element type [OWN-1, PROV-6].
 A `struct` or `enum` declaration may carry one capability modifier [GRAM-2]: `nodrop`, which states a logical must-consume obligation on values of that nominal in every scope, or `nocopy`, which makes its values non-duplicable although every part could be copied; neither changes a component, layout, or construction route [OWN-1, PROV-6].
-A `struct` declaration may carry the `opaque` modifier [GRAM-2], written before `linear` when both are present: an opaque struct has fields and no usable constructor. Its constructor entry [TYPE-6] exists to be refused: a constructor `call` whose leading TYPEID names an opaque struct is a hard error citing TYPE-2 at the complete `call`, and a destructuring `let_stmt` whose TYPEID names one is a hard error citing TYPE-2 at the complete `let_stmt`, each with the restructuring `build it with a construction function [OP-13, PRE-1]`. Its fields obey the ordinary field, ownership, and release rules [OWN-1, PROV-6, STOR-3], and a `move` out of one of its fields is the ordinary [WIN-3] consume. No source-declared opaque struct has a construction function, so a value of one is never formed; the prelude declares the three storage shapes, `Box<T>`, and every host handle as opaque structs and supplies their construction rows [PRE-1].
+A `struct` declaration may carry the `opaque` modifier [GRAM-2], written before a capability modifier when both are present: an opaque struct has fields and no usable constructor. Its constructor entry [TYPE-6] exists to be refused: a constructor `call` whose leading TYPEID names an opaque struct is a hard error citing TYPE-2 at the complete `call`, and a destructuring `let_stmt` whose TYPEID names one is a hard error citing TYPE-2 at the complete `let_stmt`, each with the restructuring `build it with a construction function [OP-13, PRE-1]`. Its fields obey the ordinary field, ownership, and release rules [OWN-1, PROV-6, STOR-3], and a `move` out of one of its fields is the ordinary [WIN-3] consume. No source-declared opaque struct has a construction function, so a value of one is never formed; the prelude declares the three storage shapes, `Box<T>`, and every host handle as opaque structs and supplies their construction rows [PRE-1].
 A `field` may carry the `readonly` modifier [GRAM-2], in any struct. A path that ends at or passes through a readonly field is never a write target: a `set` whose target is such a path [SET-1], and an argument naming such a path at a reference parameter whose callee row writes that parameter [EFF-5], are each a hard error citing TYPE-2 at the complete target `place` or argument `atom`, with the restructuring `use the operation that changes it, or replace the whole value`. Construction gives a readonly field its value like any other field [GRAM-8], and a whole-value assignment replaces it together with its owner. Its value otherwise changes only through a compiler-owned [PRE-1] operation whose row declares `writes` of it [OP-10]; a declared row may name a readonly field in `writes`, because a row reports every change its callees make [EFF-2]. `readonly` states that the field is not assignable, not that its value is constant.
 
 [TYPE-3] Nameability: every constructible type/mode/effect has a canonical, finite, writable name requiring no compiler execution.
@@ -428,7 +428,7 @@ The grammar role, never an inferred type or expected result, selects the domain 
 | domain | declarations | admitted uses |
 |---|---|---|
 | lexical IDENT | top-level `fn_decl`; raw function-kind `gparam`; top-level `const_decl`; const `gparam`; `param`; `let_stmt`; `for_stmt` binder; arm `fieldbind` binders; `contract_define`; FN-9-owned result and route candidates; PRE-1 functions | a `callee` IDENT admits a top-level function, in-scope function parameter, or PRE-1 function; an unqualified `function_arg` or `fn_bind` right side admits an ordinary function or function parameter; `const` IDENT admits an in-scope const generic or earlier named const; `cvalue` IDENT admits an earlier named const; `pbase` admits an in-scope runtime value binding, contract definition, admitted symbolic result datum, named const, or in-scope const generic [MSR-6] |
-| nominal-type TYPEID | source `struct_decl` and `enum_decl` names; source formal and actual groups; PRE-1 nominal types; lexical type `gparam`s overlay this domain while live | a runtime `type` or generic-numeric suffix admits only its ordinary type class; an explicit `targ` additionally admits a formal or actual abbreviation; a `pack_use` admits a formal or actual group, with FN-3/FN-5 checking its position and member selection |
+| nominal-type TYPEID | source `struct_decl` and `enum_decl` names; source interface and binding groups; PRE-1 nominal types; lexical type `gparam`s overlay this domain while live | a runtime `type` or generic-numeric suffix admits only its ordinary type class; an explicit `targ` additionally admits a interface or binding abbreviation; a `pack_use` admits a interface or binding group, with FN-3/FN-5 checking its position and member selection |
 | constructor TYPEID | each source struct constructor under its struct TYPEID; every source enum `variant`; PRE-1 variants, classified as struct-constructor or enum-variant; PRE-1 struct constructors; an opaque struct's constructor, existing only to be refused [TYPE-2] | the leading TYPEID of constructor `call` admits either class; the leading TYPEID of `arm` or `result_route` admits only enum-variant |
 | numeric-bound TYPEID | the two built-in bounds `Int` and `Float` [PRE-1] | the bound TYPEID of a type `gparam`; a capability bound instead uses its fixed grammar spelling [GRAM-2, PROV-6] |
 | LABEL | an optional LABEL written by `loop_stmt` or `for_stmt` | an optional LABEL written by `break_stmt` |
@@ -437,22 +437,22 @@ The grammar role, never an inferred type or expected result, selects the domain 
 A source struct contributes one declaration event that adds one nominal-type entry and one constructor entry with the same spelling.
 Those entries do not collide because the grammar distinguishes a `type` role from a constructor `call` or `arm` role.
 An enum declaration adds only its nominal type; each variant adds its constructor.
-Entries must be unique within, but not across, the nominal-type, constructor, and numeric-bound domains. Formal and actual group names share the nominal-type collision domain, but neither is a runtime type or a constructor.
+Entries must be unique within, but not across, the nominal-type, constructor, and numeric-bound domains. Interface and binding group names share the nominal-type collision domain, but neither is a runtime type or a constructor.
 Constructor uniqueness is whole-unit and context-free, so construction and matching never consult an expected nominal type.
 
 PRE-1 contributes its declaration records in the preorder stated there.
 The prelude's nominals, constructors, functions and numeric bounds, including the construction functions [OP-13] and the window operations [OP-10], enter the ordinary whole-unit lookup inventory and are visible throughout the closed unit. A declaration's type parameters, value parameters and fields are owner-local and enter only that declaration's ordinary owner tables.
 PRE-1 records have no source event or source node.
 Every top-level function signature is visible throughout the closed compilation unit after unit formation and before any semantic use is resolved [FN-1].
-A source nominal type, formal group, or actual group becomes visible immediately after its declaring TYPEID terminal.
+A source nominal type, interface group, or binding group becomes visible immediately after its declaring TYPEID terminal.
 A source struct constructor becomes visible at that same terminal; an enum-variant constructor becomes visible immediately after its variant TYPEID terminal.
 Each remains visible through the end of the unit.
 Whole-unit inventory checks uniqueness but grants no earlier visibility; a use before one of these declaration points is rejected even though inventory knows the later declaration exists.
 
 A generic TYPEID parameter becomes visible after its declaring terminal through the remainder of its declaration's generic, header, and body scope.
 It may not redeclare another parameter in the same generic list or shadow a live nominal type or enclosing generic type.
-Constructor and numeric-bound spellings are separate grammar-selected domains and do not participate in that comparison. Formal and actual names do participate.
-A const generic becomes visible after its complete `gparam`. A raw function-kind parameter becomes visible after its complete `fn_sig` through the receiving declaration's remaining header and body; its own value parameters and proof candidates remain local to its signature. A formal-group member has a declaration identity but no unqualified lexical entry; FN-5 selects it through the written group application.
+Constructor and numeric-bound spellings are separate grammar-selected domains and do not participate in that comparison. Interface and binding names do participate.
+A const generic becomes visible after its complete `gparam`. A raw function-kind parameter becomes visible after its complete `fn_sig` through the receiving declaration's remaining header and body; its own value parameters and proof candidates remain local to its signature. A interface member has a declaration identity but no unqualified lexical entry; FN-5 selects it through the written group application.
 A `fn_decl` parameter becomes visible after its complete `param` through the function's optional `contract_block` and body.
 A `fn_sig` parameter becomes visible after its complete `param` through that signature's effects and optional contract block; duplicate parameters in that signature are same-scope redeclarations. It is not visible in a sibling member or the receiving function's body.
 A `let_stmt` binder becomes visible only after its complete initializer statement through the end of its lexical block.
@@ -694,12 +694,12 @@ A full `Array` has the same element-type ownership closure as a window [WIN-1]: 
 A written type argument is owned through the field, payload, or element position it lands in and never by the type that writes it.
 
 The `nodrop` modifier is one optional atom on `struct_decl` and `enum_decl`, written in the place `nocopy` may be written instead [GRAM-2], and states a logical obligation, holding in every scope.
-It is admitted only on a nominal [OWN-1] classifies as affine; `linear` on a tag-only enum, which [OWN-1] makes copy, is a hard error citing PROV-6 at that `enum_decl`, with the restructuring `give a variant a payload, or put the obligation on the value the issuer hands out`.
+Both capability modifiers are admitted on every source struct or enum, including a fieldless struct or a tag-only enum: they remove the declared capabilities regardless of the capabilities its parts would otherwise grant [OWN-1].
 
 A linear value leaves a scope by exactly two routes: moved out whole, or destructured whole [WIN-3].
 An affine value has those two, plus the one compiler-derived release [STOR-3] carries on every leaving edge [LIV-1]; an affine value is released early by moving it into a function that consumes it and ends, and there is no release operation.
 A window whose element type is linear is emptied element by element and its storage is then consumed by `free_empty` [OP-14].
-A binding whose value is linear and which is live on an edge leaving its scope is a hard error citing PROV-6 at that edge's statement, naming the binding and the `linear` declaration or the written bound that made its value linear, and offering exactly the routes that remain.
+A binding whose value is linear and which is live on an edge leaving its scope is a hard error citing PROV-6 at that edge's statement, naming the binding and the `nodrop` declaration or the written bound that made its value linear, and offering exactly the routes that remain.
 
 `let N(f1: b1, ..., fk: bk) = move v;` [GRAM-4] is the destructuring consume: it consumes a value of nominal struct type `N` and binds declared fields of `N` in declaration order to fresh IDENTs.
 `N` is a source `struct`.
@@ -907,7 +907,7 @@ A bare `place` operand that a table-operation row reads without consuming — th
 No source declaration or FN-9 result-datum candidate in this closed list may use a member of `ReservedLowerNames`: the IDENT of `fn_decl`; the IDENT of `const_decl`; every `param` and `result_binding` IDENT; every `let_stmt` IDENT, including ordinary, propagate, value-match, and value-if lets; every `contract_define` IDENT; the second IDENT of any `fieldbind`, including a `result_route` payload binder; and every `field` and `vfield` IDENT.
 Such a reserved spelling is rejected citing exactly FORM-3 before freshness ownership is considered.
 Dependent field declarations participate in this pre-resolution reservation inventory even though their owner/member duplicates remain deferred.
-No other declaration role is covered: type-generic TYPEIDs, const-generic IDENTs, LABELs, and formal-member `fn_sig` IDENTs remain outside this prohibition.
+No other declaration role is covered: type-generic TYPEIDs, const-generic IDENTs, LABELs, and interface-member `fn_sig` IDENTs remain outside this prohibition.
 Dotted OPNAMEs cannot be declarations under the grammar.
 This reservation keeps operation-versus-function resolution context-free [META-2] and keeps a field-access place from maximal-munching as OPNAME [FORM-3].
 
@@ -1198,26 +1198,27 @@ Every contract definition and requirement or postcondition template is substitut
 The [FN-8] uninhabited judgment is likewise instance-local and never propagates from one concrete substitution to its generic template or another instance.
 Every explicit type argument supplied to a function, source nominal, or [PRE-1] nominal generic parameter must be a value type, so a reference kind is a hard error citing FN-2 at that complete `targ` [TYPE-8], with the restructuring `make the reference a direct written parameter instead of a generic argument`.
 Arguments this rule admits remain governed by the ordinary bound and substitution rules.
-A generic type parameter's numeric bound is admitted only when it resolves to the built-in `Int` or `Float` bound [PRE-1]. A formal or actual group is not a numeric bound; it occupies its own explicit argument-list position [FN-3].
+A generic type parameter's numeric bound is admitted only when it resolves to the built-in `Int` or `Float` bound [PRE-1]. A interface or binding group is not a numeric bound; it occupies its own explicit argument-list position [FN-3].
 A written `copy` or `drop` bound on a type parameter is [PROV-6]'s capability filter, never inferred, read once at the declaration and checked at every instantiation by that rule. It selects no behavior; function-kind parameters supply behavior separately.
 Every type parameter of a function or of a nominal carries at most one bound, never inferred: one built-in numeric bound, `Int` or `Float` [PRE-1], or one capability bound, `copy` or `drop` [GRAM-2, PROV-6]; an absent bound grants the body no capability; a numeric bound selects the numeric rows [OP-1] and implies copy.
 The template is the spelling authority: a generic body is checked once at the symbolic instance of its own parameters, under each parameter's written bound, and the concrete-instance recheck this rule performs does not re-judge the spellings [FORM-1] keys on a value's copy/affine class — `move p` against a bare `p` [OWN-1].
 At a concrete instance a `move` of a value whose parameter was bounded `drop` or left unbounded denotes a copy where the argument is copy; every other judgment of that rule is made at the instance, because each is a property of the instance and not of the written spelling.
 
 [FN-3] A function-kind generic parameter is one `fn_sig`: an ordered ordinary callable signature with its own effect row, requirements, and ensures. It is a compile-time parameter, never a value, field, receiver, or implicit argument.
-A `formal` declaration names one ordered parameter group. Its header declares type and const parameters with their ordinary bounds; its body declares the function-kind parameters in source order, with distinct member names. A formal header cannot contain another group or a function-kind parameter: groups are flat abbreviations, not functions that construct interfaces.
-A formal member's parameter, result, effect, requirement, and ensures formation follows the same rules as an ordinary callable declaration; it has no body or trusted proof. Its contracts constrain admissible actuals [FN-4] and may be used only after those bindings have been checked.
+An `interface` declaration names one ordered parameter group. Its header declares type and const parameters with their ordinary bounds; its body declares the function-kind parameters in source order, with distinct member names. An interface header cannot contain another group or a function-kind parameter: groups are flat abbreviations, not functions that construct interfaces.
+An interface member's parameter, result, effect, requirement, and ensures formation follows the same rules as an ordinary callable declaration; it has no body or trusted proof. Its contracts constrain admissible actuals [FN-4] and may be used only after those bindings have been checked.
 
-A `pack_use` in a function or nominal generic parameter list names a formal declaration and writes one fresh type or const binder for each header parameter, in order. For example, `fn find<Key<K, E>>` declares the two written binders with Key's respective bounds, followed by one distinct function-kind parameter for each Key member. The same formal may be used more than once with distinct written applications.
+An `"interface" pack_use` in a function or nominal generic parameter list names an interface declaration and writes one fresh type or const binder for each header parameter, in order. For example, `fn find<interface Key<K, E>>` declares the two written binders with Key's respective bounds, followed by one distinct function-kind parameter for each Key member. The same interface may be used more than once with distinct written applications.
+The `interface` marker is mandatory at every group introduction, including an interface with no header parameters: `fn run<interface Source>()` imports Source, while a bare `Source` in that position declares an ordinary type parameter under [TYPE-6] and never falls back to a group by name lookup. The marker is not written on group forwarding, concrete arguments, or qualified member calls.
 A forwarding `pack_use` names those already declared binders and their function-kind parameters; it declares nothing. `Key<K, E>` in a call's or nominal's argument list forwards the complete expanded vector. No expected type or argument omission supplies a behavior.
 Generated member identities are indexed by the receiving declaration, its written pack application, and the member ordinal. They are hygienic: they neither introduce an unqualified lexical name nor capture a local spelling such as `hash`.
-The abbreviation names do not survive in type identity: two nominal applications with the same expanded type, const, and function vectors are the same instance, even when their actual group names differ.
+The abbreviation names do not survive in type identity: two nominal applications with the same expanded type, const, and function vectors are the same instance, even when their binding group names differ.
 
-An `actual` declaration names one ordered argument group for its explicitly written formal application. It declares no type, value, conformance, or implementation attached to a type.
-For each formal member in source order it writes exactly one `fn_bind` in that order, with the matching left name and an explicitly selected right function. Missing, extra, repeated, unknown, or out-of-order members reject under FN-3 at the offending binding or the complete actual declaration for a missing member. No function is selected by name similarity, signature search, expected result, or a type-owned implementation.
-All bindings are checked together at the declaration by FN-4; no partial group is published. A zero-member formal and matching empty actual are legal abbreviations.
-`find::<SeedKey>` and `Map<SeedKey>` expand the named actual's complete argument vector in their written position. A raw function-kind argument is `fn seed_hash`, or `fn helper::<T, n>` with every type, const, and function argument supplied. It must denote a fully instantiated ordinary function or an in-scope function-kind parameter, never a table operation, constructor, runtime expression, or partially applied generic function.
-An actual group's member may be forwarded by its explicitly qualified name. Its dependency graph must be acyclic; a cycle is an FN-3 error naming that cycle, rather than an attempt to evaluate a group.
+A `binding` declaration names one ordered argument group for its explicitly written interface application. It declares no type, value, conformance, or implementation attached to a type.
+For each interface member in source order it writes exactly one `fn_bind` in that order, with the matching left name and an explicitly selected right function. Missing, extra, repeated, unknown, or out-of-order members reject under FN-3 at the offending binding or the complete binding declaration for a missing member. No function is selected by name similarity, signature search, expected result, or a type-owned implementation.
+All bindings are checked together at the declaration by FN-4; no partial group is published. A zero-member interface and matching empty binding are legal abbreviations.
+`find::<SeedKey>` and `Map<SeedKey>` expand the named binding's complete argument vector in their written position. A raw function-kind argument is `fn seed_hash`, or `fn helper::<T, n>` with every type, const, and function argument supplied. It must denote a fully instantiated ordinary function or an in-scope function-kind parameter, never a table operation, constructor, runtime expression, or partially applied generic function.
+A binding group's member may be forwarded by its explicitly qualified name. Its dependency graph must be acyclic; a cycle is an FN-3 error naming that cycle, rather than an attempt to evaluate a group.
 
 [FN-4] Every function-kind binding is checked against the instantiated formal signature before use. Named groups check all members at declaration; raw arguments receive the same check at their written argument.
 A supplied function may refine the formal signature rather than match it.
@@ -1225,14 +1226,14 @@ Parameter and result counts, modes, and exact types must agree in order; paramet
 The actual's declared row must be a subset of the formal's after parameter-ordinal and path normalization; a row states exactly what the body does [EFF-2], so a read-only function cannot declare a write.
 The actual's own declaration must independently satisfy EFF-1 and exhibit exactly its own row under EFF-2.
 The actual's `requires` must be weaker than the formal's and its `ensures` stronger, and each actual's requirements and ensures have the ordinary FN-8/FN-9 formation and verification boundary, including PRE-1 declarations.
-Weaker and stronger are decided by a fixed finite check inside the existing affine entailment fragment [ENT-1, MSR-4] and by no solver: for each formal `requires` goal, the actual's `requires` set must discharge it under [MSR-4]'s disposition with the actual's own set as the only premises; for each formal `ensures` relation, the actual's `ensures` set must discharge it the same way.
+Weaker and stronger are decided by a fixed finite check inside the existing affine entailment fragment [ENT-1, MSR-4] and by no solver: for each actual `requires` goal, the formal's `requires` set must discharge it under [MSR-4]'s disposition with the formal's own set as the only premises; for each formal `ensures` relation, the actual's `ensures` set must discharge it with the actual's own set as the only premises.
 The check is deterministic and terminating because both sets are finite and each query exhausts [ENT-6]'s fixed families.
 
 A mismatch names the member or raw argument, the differing signature, row, clause, or result ordinal, and the restructuring `supply an explicitly matching function or weaken the formal interface`.
 No reflexivity, transitivity, ordering consistency, hash/equality compatibility, or other algebraic law follows from a binding. Ownership, range proofs, initialization and cleanup must hold even for inconsistent supplied behavior.
 
 [FN-5] There are no function values, methods, receivers, implicit Self, dictionaries, or dynamic dispatch. Closed-set runtime dispatch is `match`.
-An unqualified IDENT call may name an in-scope raw function-kind parameter. `Key::hash(...)` names the corresponding member of the unique in-scope application of formal Key; when two applications of Key are present it is rejected at the callee and the source must write the full application, for example `Key<K1, E1>::hash(...)`. Selection uses distinct written applications before substitution, even if their eventual concrete types coincide. Two identically written applications require separately named raw function-kind parameters rather than a pack alias.
+An unqualified IDENT call may name an in-scope raw function-kind parameter. `Key::hash(...)` names the corresponding member of the unique in-scope application of interface Key; when two applications of Key are present it is rejected at the callee and the source must write the full application, for example `Key<K1, E1>::hash(...)`. Selection uses distinct written applications before substitution, even if their eventual concrete types coincide. Two identically written applications require separately named raw function-kind parameters rather than a pack alias.
 At a member call, named value arguments use the formal signature's parameter names in declared order, not the actual implementation's parameter names. The selected function's type, const, and function arguments were supplied explicitly at binding or group instantiation under FN-2; the already bound member accepts no further specialization. Requirements, ensures, and effect attribution use the instantiated formal interface. A bare measure rooted at a reference parameter whose row declares a write of it denotes the exit state, and `entry(parameter)` the entry state [MSR-3]; CALL-6 kills overlapping formal-row support before publishing the verified relations.
 Every concrete function binding resolves to one ordinary function instance before IR. Lowering emits a direct call to that instance with the ordinary ABI, preserving its ordinary signature and ownership; group expansion emits no adapter call, storage, dispatch, dependency, or runtime proof check.
 Bodies retain FN-2's symbolic spelling check and FN-2/FN-9's concrete-instance rechecks. A concrete instance uses formal contracts and the authoritative formal row at each bound call while independently checking the selected actual under the same signature, row, and contracts.
@@ -1281,7 +1282,7 @@ Only total success reaches ordinary transfer, effects, and normal return; no cal
 At concrete body entry, every requirement goal is established independently as an [ENT-3] S4 source, in source order, with its own signed decomposition and exact L0 projection.
 Its established ordering leaves also receive exactly S4's fixed affine images below.
 The clauses are never banded together.
-There is no executable callee prologue, `llvm.assume`, optimizer license, or alternate lowering; later kills apply normally.
+Requirement establishment adds no executable callee prologue or alternate lowering; the proved facts may be supplied to the backend under [DIAG-2], and later kills apply normally.
 Direct and mutual recursion, forward calls, and every concrete generic instance use the same finite rule.
 
 After all S4 sources and implicit parameter/type facts are closed under [ENT-4], a contradictory entry state makes that concrete instance legally uninhabited.
@@ -1363,7 +1364,7 @@ All candidate S12 and delivery facts remain in one failure-atomic scratch batch 
 No candidate is individually committed or retracted and no second flow walk or negative fixed point exists.
 
 Every successful selected-return proof and caller establishment extends [DIAG-2]'s one derivation DAG.
-Postconditions add no runtime operation, hidden check, assume, optimizer license, alternate lowering path, or ABI field.
+Postconditions add no runtime operation, hidden check, alternate lowering path, or ABI field; their proved facts may be supplied to the backend under [DIAG-2].
 
 [MSR-5] A contract clause is the relation an invariant already is, over a wider operand set.
 A `clause_expr` side is an `affine_expr` whose `affine_factor` is an `atom`, a `call`, or a constructor `call` [GRAM-4].
@@ -1695,12 +1696,12 @@ If inventory succeeds, every lexical use admitted by TYPE-6, OP-1, INV-1, or PRF
 The generic-numeric suffix admits a live generic TYPEID parameter; FN-3 and FORM-5, not lexical resolution, later require its numeric bound.
 Lexical resolution fixes only the declaration or operation-family target.
 
-The closed declaration-class order is function, function-parameter, named-const, const-generic, value, generic-type, nominal-type, struct-constructor, enum-variant, numeric-bound, formal, actual, label, invariant, operation-family.
+The closed declaration-class order is function, function-parameter, named-const, const-generic, value, generic-type, nominal-type, struct-constructor, enum-variant, numeric-bound, interface, binding, label, invariant, operation-family.
 TYPE-6, OP-1, INV-1, and PRF-1 fix each lexical role's ordered admissible subset.
 A use's exact-spelling candidate universe contains all compilation-root entries in its grammar-selected domain and, for non-root declarations, only entries belonging to its declaration-owner chain.
 All sibling or expired lexical scopes within the same `fn_decl` owner participate so that an out-of-scope same-function declaration can be distinguished from absence.
 A function-formal signature admits declarations of that signature and its enclosing declaration ancestry but not declarations owned only by a sibling member signature.
-A struct, enum, formal, or function generic belongs only to that declaration and its descendants.
+A struct, enum, interface, or function generic belongs only to that declaration and its descendants.
 No local, generic, parameter, or label owned solely by an unrelated top-level declaration or function participates.
 PRE-1 owner-local type parameters and fields never participate in source lookup.
 LABEL uses instead follow the separate current-function rule below.
@@ -1759,7 +1760,7 @@ FN-9 separately requires the route's successfully resolved variant and owner to 
 The resolver does not otherwise accept or reject a dependent role's owner/member relation.
 
 A missing whole-unit requirement is not fabricated as an inventory or lookup event.
-Missing or duplicate formal members, field labels, and actual bindings remain typed-dependent rejections under FN-3 and the ordinary field-owner rules.
+Missing or duplicate interface members, field labels, and group bindings remain typed-dependent rejections under FN-3 and the ordinary field-owner rules.
 
 Apart from FN-9's explicitly interleaved selector-admission subjudgment above, after complete lexical resolution succeeds, source semantic checking covers the complete closed unit and precedes every target-dependent check or lowering action.
 A source-semantic rejection cites one numbered rule whose rejection premise the checker has established.
@@ -1784,11 +1785,11 @@ Target-layout checking under [STOR-6] occurs only after that publication and pro
 Target-stage failures are outside source-language rejection ordering.
 Backend, linker, runtime-environment, and external-tool failures remain non-language failures [DIAG-1].
 
-After complete lexical resolution succeeds, FN-3 validates the complete source-ordered formal and actual tables before FN-4 publishes any binding.
-A repeated formal member rejects at the later `fn_sig` and its complete extent.
-A malformed formal application, wrong-kind argument, or actual expansion cycle rejects under FN-3 at the application or binding that supplies the failed premise; the cycle diagnostic names its declarations.
+After complete lexical resolution succeeds, FN-3 validates the complete source-ordered interface and binding tables before FN-4 publishes any binding.
+A repeated interface member rejects at the later `fn_sig` and its complete extent.
+A malformed interface application, wrong-kind argument, or binding expansion cycle rejects under FN-3 at the application or binding that supplies the failed premise; the cycle diagnostic names its declarations.
 An unknown, repeated, extra, or out-of-order binding rejects at the offending `fn_bind` and its complete extent.
-A missing binding rejects at the complete `actual_decl`.
+A missing binding rejects at the complete `binding_decl`.
 A signature, effect-coverage, or structural-contract mismatch rejects under FN-4 at the offending `fn_bind`, or at the raw function argument when no named group is involved.
 Unresolved names retain their earlier resolver-owned rejections; no binding check guesses their meaning.
 The post-resolution order among independent candidates remains the implementation-defined deterministic order above.
@@ -2172,7 +2173,7 @@ enum ListStop {
 ```
 
 `TcpConnection`, `AcceptedConnection` and `Inputs` have ordinary public constructors, fields, partial-move and destructuring rules. Their linearity follows their fields. No relation between two fields is implied by constructing a struct.
-The two built-in numeric bounds `Int` and `Float` admit exactly OP-1's integer and floating-point domains and imply `copy` under PROV-6. They are not source declarations, formal groups, implicit behaviors or logical-law bundles; a source actual cannot bind or extend either bound.
+The two built-in numeric bounds `Int` and `Float` admit exactly OP-1's integer and floating-point domains and imply `copy` under PROV-6. They are not source declarations, interface groups, implicit behaviors or logical-law bundles; a source actual cannot bind or extend either bound.
 
 The complete function declarations are the following records, each written as the head of a GRAM-2 `fn_decl` — `"fn" IDENT generics? "(" param_list? ")"` and the rest of `fn_sig` from `->` on — so a record carries `fn_decl`'s `generics?` where a function-kind parameter's `fn_sig` [FN-3] carries none. A record's final semicolon is table punctuation, not a new top-level source production. Each signature uses ordinary parameter paths under EFF-1 and the same requirement and postcondition templates as any FN-8/FN-9 contract. The type parameters `W` and `X` of the window operations are the compiler-owned window type parameter OP-10 fixes, and the `W` of `free_empty` is the wider shape parameter OP-14 fixes. No proposition is available merely from a function's name, implementation, result constructor, or prelude origin.
 

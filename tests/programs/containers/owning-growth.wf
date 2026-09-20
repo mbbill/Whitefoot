@@ -313,7 +313,7 @@ fn allocate_put(slots: &Box<Slots<Slot>>, key: own u64, id: own u64) -> outcome:
   let data2 = data0 +wrap 2_u64;
   let data3 = data0 +wrap 3_u64;
   let resource = Resource(id: id, data0: data0, data1: data1, data2: data2, data3: data3);
-  let owner = box_new::<Resource>(value: move resource);
+  let owner = box_new::<Resource>(value: resource);
   let result = put(slots: slots, key: key, payload: move owner);
   return move result;
 }
@@ -494,7 +494,7 @@ fn check_lookup(slots: &Box<Slots<Slot>>, key: own u64, expected: own u64, work:
   if examined != work {
     return 11_u8;
   }
-  match move found {
+  match found {
     None() => {
       return 12_u8;
     }

@@ -77,8 +77,8 @@ fn whole_cell_assignment_preserves_the_owner_shape() {
 fn assign_owner() -> result: own u64 pure {
   let first_value = Pair(value: 0_u64);
   let second_value = Pair(value: 1_u64);
-  let first = box_new::<Pair>(value: move first_value);
-  let second = box_new::<Pair>(value: move second_value);
+  let first = box_new::<Pair>(value: first_value);
+  let second = box_new::<Pair>(value: second_value);
   set first = move second;
   let seen = first.inner.value;
   return seen;
@@ -125,7 +125,7 @@ fn main() -> status: own ExitStatus pure {
 /// by the conformance case `type9-neg-move-runtime-capacity-content`.
 #[test]
 fn unboxing_consumes_the_cell_and_yields_its_content() {
-    let source = br#"struct Pair {
+    let source = br#"nocopy struct Pair {
   value: u64;
 }
 

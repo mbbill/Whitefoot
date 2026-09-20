@@ -17,13 +17,14 @@ use super::super::model::{
 };
 use super::{CheckStop, Checker, FunctionSignature, FunctionTemplate, PreludeType};
 
-/// [FN-2, PROV-6, S37] the one mandatory bound a type parameter carries.
+/// [FN-2, PROV-6] the at most one bound a type parameter carries.
 ///
-/// A bound is a closed class the argument must fall into, derived from the
-/// language's existing classifications, and never a user trait: `Int` and
-/// `Float` are [OP-1]'s numeric rows and each implies the copy class, and the
-/// three linearity classes are [OWN-1]'s copy class and [PROV-6]'s two
-/// linearity classes. It selects no behavior and admits no contract member.
+/// A bound is a closed filter on the argument, derived from the language's
+/// existing classifications, and never a user trait: `Int` and `Float` are
+/// [OP-1]'s numeric rows and each implies copy, and `Class` is the class the
+/// capability bound grants the body -- copy for `T: copy`, affine for
+/// `T: drop`, and linear for a parameter written with no bound. It selects no
+/// behavior and admits no contract member.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum GenericBound {
     Int,
@@ -35,8 +36,8 @@ pub(super) enum GenericBound {
 pub(super) enum GenericParameter {
     Type {
         declaration: DeclarationId,
-        /// [PROV-6, FN-2, S37] the written bound this parameter's body is
-        /// written for. It is mandatory, always written and never inferred.
+        /// [PROV-6, FN-2] the bound this parameter's body is written for. It
+        /// is never inferred, and an absent one is the linear class.
         bound: GenericBound,
     },
     /// One const `gparam`. The written integer type is retained because
@@ -1182,7 +1183,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // `grow`. It is not a row category [EFF-1, STOR-8], so it is set here
         // from the declaration's own identity and unioned along the call
         // graph by the ordinary effect walk.
-        declared_effects.allocates |= ALLOCATING_PRELUDE_FUNCTIONS.contains(&template.name.as_str());
+        declared_effects.allocates |=
+            ALLOCATING_PRELUDE_FUNCTIONS.contains(&template.name.as_str());
         let symbol = if template.generic_parameters.is_empty() {
             template.name.clone()
         } else {
@@ -2108,10 +2110,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .declaration_at(node, DeclarationRole::GenericType)?
                 .id();
             let path = self.tree.path(node)?;
-            // [GRAM-2, S37] the bound is mandatory, so the grammar admits no
-            // `gparam` without one: either a `linearity_bound` atom or a
-            // marker TYPEID is present, and an unbounded parameter is a
-            // parse rejection before this reader runs.
+            // [GRAM-2, PROV-6] the bound is optional and never inferred: a
+            // `capability_bound` atom, a numeric marker TYPEID, or nothing,
+            // and an absent bound grants the body no capability, which is
+            // the linear class read at the parameter.
             let bound = match self
                 .resolved
                 .lexical_uses()
@@ -2123,7 +2125,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 None => GenericBound::Class(
                     self.written_linearity_bound(node)?
-                        .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?,
+                        .unwrap_or(super::linearity::LinearityClass::Linear),
                 ),
                 Some((ResolvedTarget::Prelude(id), _)) if id == BuiltinPreludeId::INT => {
                     GenericBound::Int
@@ -2349,7 +2351,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 "a type argument occupies this parameter position",
                             );
                         };
-                                        GenericArgument::Type(self.parse_type_with(ty, caller)?)
+                        GenericArgument::Type(self.parse_type_with(ty, caller)?)
                     }
                     GenericParameter::Const { .. } => {
                         let Some(value) = self.tree.first_child_with(source, Production::Const)?

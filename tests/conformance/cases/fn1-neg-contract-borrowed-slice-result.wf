@@ -1,4 +1,4 @@
-formal BorrowedRangeResult {
+interface BorrowedRangeResult {
   doc "The same reference-result refusal applies to a formal member's signature formation before any actual can bind it [FN-3].";
   fn borrowed(value: &[u8]) -> result: &[u8] pure;
 }

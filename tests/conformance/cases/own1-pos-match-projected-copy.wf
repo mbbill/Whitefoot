@@ -3,7 +3,7 @@ enum State {
   Done();
 }
 
-struct Holder {
+nocopy struct Holder {
   state: State;
 }
 

@@ -6,9 +6,9 @@ fn two_bytes(bound: own u64) -> (small: own u8, large: own u8) pure {
 fn main() -> status: own ExitStatus pure {
   doc "SET-1, OP-4: one commit writes one place, and a subscript in a target is an ordinary target - its base and its offset are evaluated during target evaluation and its OP-4 obligation is judged exactly as in read position. The two ordinals of one call land at the binders of a destructuring let, and each binder is then committed at its own window slot; the exit code reports the byte the second window received.";
   let left_values = array_filled::<u8, 4>(value: 0_u8);
-  let left = slots_from_array::<u8, 4>(values: move left_values);
+  let left = slots_from_array::<u8, 4>(values: left_values);
   let right_values = array_filled::<u8, 4>(value: 0_u8);
-  let right = slots_from_array::<u8, 4>(values: move right_values);
+  let right = slots_from_array::<u8, 4>(values: right_values);
   let (small, large) = two_bytes(bound: 4_u64);
   set left[0_u64] = small;
   set right[0_u64] = large;

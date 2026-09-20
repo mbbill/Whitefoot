@@ -797,7 +797,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn checked_affine_cleanup_survives_lowering_and_emission() {
-    let source = br#"struct Cell {
+    let source = br#"nocopy struct Cell {
   value: i32;
 }
 
@@ -892,7 +892,7 @@ struct Outer {
 fn main() -> status: own ExitStatus pure {
   let number = 1_i32;
   let inner = Inner(value: 2_i32);
-  let outer = Outer(inner: move inner, other: 7_i32);
+  let outer = Outer(inner: inner, other: 7_i32);
   let flag = True();
   if flag {
     set number = 42_i32;
@@ -1028,19 +1028,19 @@ fn forward(value: own i32) -> result: own Result<i64, StepError> pure {
 fn forward_field(value: own i32) -> result: own Result<i64, StepError> pure {
   let result = step(value: value);
   let residue = Pair(left: 1_i32, right: 2_i32);
-  let envelope = Envelope(result: move result, residue: move residue);
+  let envelope = Envelope(result: result, residue: residue);
   let accepted = propagate envelope.result;
   return Ok<i64, StepError>(value: 42_i64);
 }
 
 fn make_pair() -> result: own Result<Pair, StepError> pure {
   let pair = Pair(left: 20_i32, right: 22_i32);
-  return Ok<Pair, StepError>(value: move pair);
+  return Ok<Pair, StepError>(value: pair);
 }
 
 fn main() -> status: own ExitStatus pure {
   let arithmetic_result = 2147483647_i32 +checked 1_i32;
-  match move arithmetic_result {
+  match arithmetic_result {
     Ok(value: sum) => {
       return exit_status(code: 1_u8);
     }
@@ -1048,7 +1048,7 @@ fn main() -> status: own ExitStatus pure {
     }
   }
   let subtract_result = 0_u8 -checked 1_u8;
-  match move subtract_result {
+  match subtract_result {
     Ok(value: difference) => {
       return exit_status(code: 2_u8);
     }
@@ -1056,7 +1056,7 @@ fn main() -> status: own ExitStatus pure {
     }
   }
   let multiply_result = 6_i16 *checked 7_i16;
-  match move multiply_result {
+  match multiply_result {
     Ok(value: product) => {
       if product != 42_i16 {
         return exit_status(code: 3_u8);
@@ -1067,7 +1067,7 @@ fn main() -> status: own ExitStatus pure {
     }
   }
   let success = forward(value: 7_i32);
-  match move success {
+  match success {
     Ok(value: answer) => {
       if answer != 42_i64 {
         return exit_status(code: 5_u8);
@@ -1078,7 +1078,7 @@ fn main() -> status: own ExitStatus pure {
     }
   }
   let failure = forward(value: -1_i32);
-  match move failure {
+  match failure {
     Ok(value: unexpected) => {
       return exit_status(code: 7_u8);
     }
@@ -1086,7 +1086,7 @@ fn main() -> status: own ExitStatus pure {
     }
   }
   let field_success = forward_field(value: 7_i32);
-  match move field_success {
+  match field_success {
     Ok(value: field_answer) => {
       if field_answer != 42_i64 {
         return exit_status(code: 8_u8);
@@ -1097,7 +1097,7 @@ fn main() -> status: own ExitStatus pure {
     }
   }
   let field_failure = forward_field(value: -1_i32);
-  match move field_failure {
+  match field_failure {
     Ok(value: field_unexpected) => {
       return exit_status(code: 10_u8);
     }
@@ -1105,7 +1105,7 @@ fn main() -> status: own ExitStatus pure {
     }
   }
   let pair_result = make_pair();
-  match move pair_result {
+  match pair_result {
     Ok(value: pair) => {
       let total = pair.left +wrap pair.right;
       if total != 42_i32 {

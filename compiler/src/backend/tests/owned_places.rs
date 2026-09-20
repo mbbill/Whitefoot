@@ -84,7 +84,7 @@ fn assert_success(module: &str) {
 
 #[test]
 fn consumed_result_fields_preserve_padding_siblings_and_smaller_returns() {
-    let source = br#"struct Row {
+    let source = br#"nocopy struct Row {
   left: u64;
   right: u64;
 }
@@ -187,8 +187,8 @@ fn main() -> status: own ExitStatus pure {
   let first = Point(x: 17_u64, y: 29_u64);
   let second = Point(x: 41_u64, y: 53_u64);
   let loaded = slots_new::<Point, 2>();
-  place_back(window: &loaded, value: move first);
-  place_back(window: &loaded, value: move second);
+  place_back(window: &loaded, value: first);
+  place_back(window: &loaded, value: second);
   let points = slots_into_array::<Point, 2>(values: move loaded);
   update(points: &points, index: 1_u64);
   if points[0_u64].x != 17_u64 {
@@ -291,7 +291,7 @@ fn make_record(seed: own u64) -> result: own Result<Record, u8> pure {
   }
   let words = array_filled::<u64, 512>(value: seed);
   let second = box_new::<u64>(value: 29_u64);
-  let record = Record(words: move words, first: move first, second: move second);
+  let record = Record(words: words, first: move first, second: move second);
   return Ok<Record, u8>(value: move record);
 }
 
@@ -358,19 +358,19 @@ fn competing_wide_returns_preserve_live_and_referenced_contents() {
     let source = br#"fn choose_live(seed: own u64) -> result: own Array<u64, 512> pure {
   let original = array_filled::<u64, 512>(value: seed);
   if seed == 0_u64 {
-    return move original;
+    return original;
   }
   let candidate = array_filled::<u64, 512>(value: 37_u64);
   if original[511_u64] != seed {
-    return move original;
+    return original;
   }
-  return move candidate;
+  return candidate;
 }
 
 fn choose_referenced(seed: own u64) -> result: own Array<u64, 512> pure {
   let original = array_filled::<u64, 512>(value: seed);
   if seed == 0_u64 {
-    return move original;
+    return original;
   }
   let reader = &original[0_u64..512_u64];
   let candidate = array_filled::<u64, 512>(value: 43_u64);
@@ -378,7 +378,7 @@ fn choose_referenced(seed: own u64) -> result: own Array<u64, 512> pure {
   if trailing != seed {
     return array_filled::<u64, 512>(value: 99_u64);
   }
-  return move candidate;
+  return candidate;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -429,7 +429,7 @@ fn an_owned_parameter_uses_same_or_distinct_result_storage_after_entry_transfer(
     // returns the place's type and has no failure exit, and its row writes no
     // prefix of the target. A by-value parameter carries no effect entry
     // [EFF-1], so the row states the watch read alone.
-    let source = br#"struct Row {
+    let source = br#"nocopy struct Row {
   payload: Array<u64, 16>;
   value: u64;
 }
@@ -444,10 +444,10 @@ fn extend(items: own Row, value: own u64, watch: &u64) -> updated: own Row reads
 fn main() -> status: own ExitStatus pure {
   let watch = 5_u64;
   let payload = array_filled::<u64, 16>(value: 41_u64);
-  let same = Row(payload: move payload, value: 0_u64);
+  let same = Row(payload: payload, value: 0_u64);
   set same = extend(items: move same, value: 12_u64, watch: &watch);
   let other_payload = array_filled::<u64, 16>(value: 43_u64);
-  let vacant = Row(payload: move other_payload, value: 0_u64);
+  let vacant = Row(payload: other_payload, value: 0_u64);
   let distinct = extend(items: move vacant, value: 24_u64, watch: &watch);
   if same.value != 17_u64 {
     return exit_status(code: 1_u8);
@@ -495,7 +495,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn returned_parameter_snapshots_precede_result_alias_writes() {
-    let source = br#"struct Row {
+    let source = br#"nocopy struct Row {
   value: u64;
 }
 
@@ -563,15 +563,15 @@ fn zero_sized_aggregate_assignment_preserves_adjacent_fields() {
 }
 
 fn install_empty(target: &Envelope, value: own Array<u64, 0>) -> result: own unit writes(target.empty) {
-  set deref(target).empty = move value;
+  set deref(target).empty = value;
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
   let empty = array_filled::<u64, 0>(value: 0_u64);
-  let envelope = Envelope(before: 17_u64, empty: move empty, after: 29_u64);
+  let envelope = Envelope(before: 17_u64, empty: empty, after: 29_u64);
   let replacement = array_filled::<u64, 0>(value: 43_u64);
-  install_empty(target: &envelope, value: move replacement);
+  install_empty(target: &envelope, value: replacement);
   if envelope.before != 17_u64 {
     return exit_status(code: 1_u8);
   }
@@ -823,9 +823,9 @@ fn replacement(offset: &u64) -> result: own Row writes(offset) {
 fn main() -> status: own ExitStatus pure {
   let rows = slots_new::<Row, 2>();
   let first = Row(left: 3_u64, right: 5_u64);
-  place_back(window: &rows, value: move first);
+  place_back(window: &rows, value: first);
   let second = Row(left: 11_u64, right: 13_u64);
-  place_back(window: &rows, value: move second);
+  place_back(window: &rows, value: second);
   let offset = 0_u64;
   invariant target_bound: offset < rows.len;
   set rows[offset] = replacement(offset: &offset);
@@ -863,7 +863,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn aggregate_loop_carries_and_element_swaps_preserve_both_owners() {
     let module = compile(
-        br#"struct Row {
+        br#"nocopy struct Row {
   left: u64;
   right: u64;
 }
@@ -950,12 +950,12 @@ struct Table {
 fn main() -> status: own ExitStatus pure {
   let loaded = slots_new::<Row, 2>();
   let first = Row(left: 3_u64, right: 5_u64);
-  place_back(window: &loaded, value: move first);
+  place_back(window: &loaded, value: first);
   let second = Row(left: 7_u64, right: 11_u64);
-  place_back(window: &loaded, value: move second);
+  place_back(window: &loaded, value: second);
   let rows = slots_into_array::<Row, 2>(values: move loaded);
   let bytes = array_filled::<u8, 2>(value: 13_u8);
-  let table = Table(rows: move rows, bytes: move bytes, tag: 17_u64);
+  let table = Table(rows: rows, bytes: bytes, tag: 17_u64);
   let saved = &table.rows[0_u64];
   let base = deref(saved).left;
   let changed = &table.rows[1_u64].right;
@@ -1419,7 +1419,7 @@ fn read(value: &u64) -> result: own u64 reads(value) {
 
 fn main() -> status: own ExitStatus pure {
   let pair = Pair(left: 11_u64, right: 29_u64);
-  let owner = box_new::<Pair>(value: move pair);
+  let owner = box_new::<Pair>(value: pair);
   write(value: &owner.inner.left, fresh: 37_u64);
   let observed = read(value: &owner.inner.right);
   if observed != 29_u64 {
@@ -1460,7 +1460,7 @@ fn boxed_window_contracts_keep_the_content_projection_through_a_holder() {
 
 fn main() -> status: own ExitStatus pure {
   let initial = array_filled::<u64, 2>(value: 29_u64);
-  let values = slots_from_array::<u64, 2>(values: move initial);
+  let values = slots_from_array::<u64, 2>(values: initial);
   let owner = box_new::<Slots<u64, 2>>(value: move values);
   let size = owner.inner.len;
   if size > 0_u64 {
@@ -1574,8 +1574,7 @@ fn main() -> status: own ExitStatus pure {{
             let observed = retain_calls(&module)
                 .replace("@malloc(", "@wf_test_allocate(")
                 .replace("@free(", "@wf_test_release(");
-            let output =
-                compile_link_and_run(&observed, Some(&allocation_observer(limit, 0)), &[]);
+            let output = compile_link_and_run(&observed, Some(&allocation_observer(limit, 0)), &[]);
             assert_eq!(output.status.code(), Some(0), "{source}\n{output:?}");
             assert_eq!(output.stdout, trace, "{source}\n{output:?}");
             assert!(output.stderr.is_empty(), "{output:?}");

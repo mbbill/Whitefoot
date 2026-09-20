@@ -2,7 +2,7 @@ fn half_checked(x: own i64) -> result: own Result<i64, Overflow> pure {
   let d = x +checked x;
   let v = propagate d;
   let r = v +checked 1_i64;
-  return move r;
+  return r;
 }
 
 fn main() -> status: own ExitStatus pure {

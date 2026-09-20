@@ -1,4 +1,4 @@
-struct Rec {
+nocopy struct Rec {
   f: u64;
   g: u64;
 }

@@ -221,7 +221,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(definition, Production::Expr)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             if !self.validate_clause_computation(ClauseKind::Requires, definition, expression)? {
-                self.validate_clause_definition_datum(ClauseKind::Requires, definition, expression)?;
+                self.validate_clause_definition_datum(
+                    ClauseKind::Requires,
+                    definition,
+                    expression,
+                )?;
             }
             let checked = self
                 .check_statement(
@@ -335,7 +339,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // atom walk already expands whole. Reaching the operation walk below
         // with such an expression would wrap the measure the atom produced in
         // a second measure row.
-        if self.tree.first_child_with(source, Production::Call)?.is_none()
+        if self
+            .tree
+            .first_child_with(source, Production::Call)?
+            .is_none()
             && self
                 .tree
                 .first_child_with(source, Production::InfixTail)?
@@ -925,13 +932,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(measure) = self.trailing_measure_member(&suffixes)? else {
             return Ok(None);
         };
-        let (projections, measured_type) =
-            self.clause_member_projections(
-                &suffixes[..suffixes.len() - 1],
-                datum_type,
-                bindings,
-                expanded_bindings,
-            )?;
+        let (projections, measured_type) = self.clause_member_projections(
+            &suffixes[..suffixes.len() - 1],
+            datum_type,
+            bindings,
+            expanded_bindings,
+        )?;
         let row = self.clause_measure_row(measure, measured_type, false)?;
         Ok(Some(ExpandedClauseExpression::Operation {
             row,
@@ -1043,46 +1049,41 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .subscript_offset(suffix)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let capture = crate::semantic::places::CapturedValue::unknown().capture;
-        let value = |term| {
-            crate::semantic::places::CapturedValue::new(capture, term).goal_identity()
-        };
+        let value =
+            |term| crate::semantic::places::CapturedValue::new(capture, term).goal_identity();
         if let Some(literal) = self
             .tree
             .direct_token_with(offset, crate::TerminalPredicate::Literal)?
         {
             let bytes = self.tree.token_bytes(literal)?;
             let CheckedValue::Integer { bits, .. } = self.parse_literal(offset, bytes)? else {
-                return self.unsupported(
-                    crate::UnsupportedSemanticFeature::CompositeValues,
-                    suffix,
-                );
+                return self
+                    .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
             };
             return Ok((
-                GoalProjection::Subscript(value(
-                    crate::semantic::places::CapturedTerm::Literal(bits),
-                )),
+                GoalProjection::Subscript(value(crate::semantic::places::CapturedTerm::Literal(
+                    bits,
+                ))),
                 element,
             ));
         }
         if let Some(declaration) = self.clause_const_generic_base(offset)? {
             return Ok((
-                GoalProjection::Subscript(value(
-                    crate::semantic::places::CapturedTerm::Const(declaration),
-                )),
+                GoalProjection::Subscript(value(crate::semantic::places::CapturedTerm::Const(
+                    declaration,
+                ))),
                 element,
             ));
         }
         let Some(place) = self.tree.first_child_with(offset, Production::Place)? else {
-            return self
-                .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+            return self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
         };
         if !self
             .tree
             .children_with(place, Production::Psuffix)?
             .is_empty()
         {
-            return self
-                .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+            return self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
         }
         let pbase = self
             .tree
@@ -1090,8 +1091,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
         let ResolvedTarget::Source { declaration, class } = usage.target() else {
-            return self
-                .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+            return self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
         };
         if class == DeclarationClass::NamedConst {
             let constant = self
@@ -1104,15 +1104,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
             };
             return Ok((
-                GoalProjection::Subscript(value(
-                    crate::semantic::places::CapturedTerm::Literal(bits),
-                )),
+                GoalProjection::Subscript(value(crate::semantic::places::CapturedTerm::Literal(
+                    bits,
+                ))),
                 element,
             ));
         }
         if class != DeclarationClass::Value {
-            return self
-                .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+            return self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
         }
         let local = bindings
             .get(&declaration)
@@ -1231,66 +1230,65 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let (mut expression, holder_pending, mut range_referent) = if self
-            .has_fixed(pbase, FixedTerminal::Deref)?
-        {
-            let nested = self
-                .tree
-                .first_child_with(pbase, Production::Place)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let (nested, nested_holder_pending, nested_range) =
-                self.build_clause_place_inner(nested, bindings, expanded_bindings)?;
-            if !nested_holder_pending {
-                // [TYPE-7] an owned place is named as itself; only a
-                // reference has a referent this step can name.
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-            let ty = nested.ty();
-            (
-                nested
-                    .with_projection(GoalProjection::Deref, ty)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                false,
-                nested_range,
-            )
-        } else {
-            let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
-            let ResolvedTarget::Source { declaration, class } = usage.target() else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
+        let (mut expression, holder_pending, mut range_referent) =
+            if self.has_fixed(pbase, FixedTerminal::Deref)? {
+                let nested = self
+                    .tree
+                    .first_child_with(pbase, Production::Place)?
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                let (nested, nested_holder_pending, nested_range) =
+                    self.build_clause_place_inner(nested, bindings, expanded_bindings)?;
+                if !nested_holder_pending {
+                    // [TYPE-7] an owned place is named as itself; only a
+                    // reference has a referent this step can name.
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                let ty = nested.ty();
+                (
+                    nested
+                        .with_projection(GoalProjection::Deref, ty)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                    false,
+                    nested_range,
+                )
+            } else {
+                let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+                let ResolvedTarget::Source { declaration, class } = usage.target() else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                match class {
+                    DeclarationClass::Value => {
+                        let local = bindings
+                            .get(&declaration)
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        (
+                            expanded_bindings
+                                .get(&local.binding)
+                                .cloned()
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                            local.mode != CheckedMode::Own,
+                            local.mode == CheckedMode::Range,
+                        )
+                    }
+                    DeclarationClass::NamedConst => {
+                        let constant = self
+                            .constants
+                            .get(&declaration)
+                            .copied()
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        (
+                            ExpandedClauseExpression::Datum(ExpandedClauseDatum::NamedConst {
+                                declaration,
+                                projections: Vec::new(),
+                                ty: self.constant(constant)?.ty,
+                            }),
+                            false,
+                            false,
+                        )
+                    }
+                    _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+                }
             };
-            match class {
-                DeclarationClass::Value => {
-                    let local = bindings
-                        .get(&declaration)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    (
-                        expanded_bindings
-                            .get(&local.binding)
-                            .cloned()
-                            .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                        local.mode != CheckedMode::Own,
-                        local.mode == CheckedMode::Range,
-                    )
-                }
-                DeclarationClass::NamedConst => {
-                    let constant = self
-                        .constants
-                        .get(&declaration)
-                        .copied()
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    (
-                        ExpandedClauseExpression::Datum(ExpandedClauseDatum::NamedConst {
-                            declaration,
-                            projections: Vec::new(),
-                            ty: self.constant(constant)?.ty,
-                        }),
-                        false,
-                        false,
-                    )
-                }
-                _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
-            }
-        };
         if self.has_fixed(pbase, FixedTerminal::Entry)? {
             let ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
                 exit_state, ..
@@ -1314,18 +1312,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         if !fields_only.is_empty() {
-            let (projections, final_ty) =
-                self.clause_member_projections(
-                    fields_only,
-                    expression.ty(),
-                    bindings,
-                    expanded_bindings,
-                )?;
+            let (projections, final_ty) = self.clause_member_projections(
+                fields_only,
+                expression.ty(),
+                bindings,
+                expanded_bindings,
+            )?;
             for projection in projections {
                 expression = expression
                     .with_projection(projection, final_ty)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             }
+            range_referent = false;
+        }
+        // [OP-14, TYPE-9] `free_empty` writes one source contract for both
+        // direct windows and Boxes holding runtime-capacity windows. At the
+        // boxed instance its prelude-owned `window.len` measure place denotes
+        // `window.inner.len`, matching the ordinary expression judgment's
+        // prelude-only implicit content step. Retain that step in the
+        // GoalTemplate so CALL-6 substitutes the caller's content measure.
+        if measure.is_some()
+            && let Some(suffix) = suffixes.last()
+            && self.tree.is_prelude_node(*suffix)?
+            && let Some(referent) = self.box_content(expression.ty())?
+            && super::expressions::flat_storage::measured_kind_of(referent).is_some()
+        {
+            expression = expression
+                .with_projection(GoalProjection::Deref, referent)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             range_referent = false;
         }
         if let Some(measure) = measure {

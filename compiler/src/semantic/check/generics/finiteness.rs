@@ -346,7 +346,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             }
                             ResolvedTarget::Source {
                                 declaration,
-                                class: DeclarationClass::Formal,
+                                class: DeclarationClass::Interface,
                             } => {
                                 let selected = self.enclosing_group(ty, declaration)?;
                                 result.extend(
@@ -358,7 +358,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             }
                             ResolvedTarget::Source {
                                 declaration,
-                                class: DeclarationClass::Actual,
+                                class: DeclarationClass::Binding,
                             } => {
                                 if visiting.contains(&declaration) {
                                     let mut names = visiting
@@ -370,7 +370,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                         SemanticRule::Fn3,
                                         ty,
                                         &format!(
-                                            "acyclic actual groups; cycle {}",
+                                            "acyclic binding groups; cycle {}",
                                             names.join(" -> ")
                                         ),
                                     );
@@ -445,7 +445,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .spelling();
                 if let ResolvedTarget::Source {
                     declaration,
-                    class: DeclarationClass::Actual,
+                    class: DeclarationClass::Binding,
                 } = target
                 {
                     let actual = self
@@ -469,7 +469,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             "the group declares the selected member",
                         );
                     };
-                    // FN-3 already refused abbreviation cycles. Follow the finite
+                    // FN-3 already refused binding-abbreviation cycles. Follow the finite
                     // alias chain without losing the original function's explicit
                     // application: it contributes both target-flow and argument
                     // construction edges to this graph.
@@ -478,7 +478,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 let ResolvedTarget::Source {
                     declaration,
-                    class: DeclarationClass::Formal,
+                    class: DeclarationClass::Interface,
                 } = target
                 else {
                     return Ok(Argument::Constructed);

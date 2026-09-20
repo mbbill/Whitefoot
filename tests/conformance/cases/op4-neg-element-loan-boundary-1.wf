@@ -7,9 +7,9 @@ fn main() -> status: own ExitStatus pure {
   doc "OP-4, REF-1: a reference into a window is formed under the ordinary subscript bound, and the index expression is evaluated where the reference is formed. Two rows were placed, so offset two is outside the window and the borrow expression's own obligation is undischarged.";
   let rows = slots_new::<Row, 4>();
   let first = Row(left: 3_u64, right: 4_u64);
-  place_back(window: &rows, value: move first);
+  place_back(window: &rows, value: first);
   let second = Row(left: 5_u64, right: 6_u64);
-  place_back(window: &rows, value: move second);
+  place_back(window: &rows, value: second);
   let raw = &rows[2_u64];
   return exit_status(code: 0_u8);
 }

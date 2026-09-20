@@ -271,7 +271,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
     }
     Err(error: problem) => {
       let exhausted = factory_refusal(error: &problem);
-      let first = socket_class(error: move problem);
+      let first = socket_class(error: problem);
       if exhausted {
         set outcome = 5_u8;
       } else {

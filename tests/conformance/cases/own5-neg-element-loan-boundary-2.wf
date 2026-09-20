@@ -1,4 +1,4 @@
-struct Row {
+nocopy struct Row {
   left: u64;
   right: u64;
 }
@@ -10,10 +10,10 @@ fn main() -> status: own ExitStatus pure {
   let row2 = Row(left: 3_u64, right: 4_u64);
   let row3 = Row(left: 3_u64, right: 4_u64);
   let slots = slots_new::<Row, 4>();
-  place_back(window: &slots, value: move row0);
-  place_back(window: &slots, value: move row1);
-  place_back(window: &slots, value: move row2);
-  place_back(window: &slots, value: move row3);
+  place_back(window: &slots, value: row0);
+  place_back(window: &slots, value: row1);
+  place_back(window: &slots, value: row2);
+  place_back(window: &slots, value: row3);
   let rows = slots_into_array::<Row, 4>(values: move slots);
   let saved = &rows[0_u64];
   let moved = move rows;

@@ -550,7 +550,7 @@ fn a_set_of_iteration_own_storage_is_permitted() {
   for @swap (i in 0_u64..8_u64) {
     let held = array_filled::<u64, 4>(value: 0_u64);
     let fresh = array_filled::<u64, 4>(value: i);
-    set held = move fresh;
+    set held = fresh;
   }
   return exit_status(code: 0_u8);
 }
@@ -634,7 +634,7 @@ fn an_unproved_source_premise_cannot_authorize_a_loop_subscript() {
 
 fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
-  let data = slots_from_array::<u64, 64>(values: move values);
+  let data = slots_from_array::<u64, 64>(values: values);
   let t = tally(src: &data, limit: 64_u64);
   return exit_status(code: 0_u8);
 }
@@ -671,7 +671,7 @@ fn a_dominating_bound_outside_the_loop_leaves_it_eligible() {
 
 fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
-  let data = slots_from_array::<u64, 64>(values: move values);
+  let data = slots_from_array::<u64, 64>(values: values);
   let t = tally(src: &data, limit: 64_u64);
   return exit_status(code: 0_u8);
 }
@@ -797,7 +797,7 @@ fn a_set_of_enclosing_storage_is_denied_by_condition_one() {
   let held = array_filled::<u64, 4>(value: 0_u64);
   for @swap (i in 0_u64..8_u64) {
     let fresh = array_filled::<u64, 4>(value: i);
-    set held = move fresh;
+    set held = fresh;
   }
   return exit_status(code: 0_u8);
 }
@@ -1162,7 +1162,7 @@ fn a_reference_output_accepts_a_proved_element_map() {
 
 fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u8, 64>(value: 0_u8);
-  let out = slots_from_array::<u8, 64>(values: move values);
+  let out = slots_from_array::<u8, 64>(values: values);
   let filled = fill(out: &out, count: 64_u64);
   return exit_status(code: 0_u8);
 }
@@ -1211,7 +1211,7 @@ fn sibling_collection_roots_may_read_and_write_their_own_maps() {
 fn main() -> status: own ExitStatus pure {
   let left = array_filled::<u64, 64>(value: 0_u64);
   let right = array_filled::<u64, 64>(value: 0_u64);
-  let columns = Columns(left: move left, right: move right);
+  let columns = Columns(left: left, right: right);
   for @update (i in 0_u64..63_u64) {
     let next = i + 1_u64;
     let old_left = columns.left[i];
@@ -1880,7 +1880,7 @@ fn the_loop_verdict_is_the_same_under_every_route_to_the_same_fact() {
 
 fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
-  let data = slots_from_array::<u64, 64>(values: move values);
+  let data = slots_from_array::<u64, 64>(values: values);
   let t = tally(src: &data);
   return exit_status(code: 0_u8);
 }
@@ -1903,7 +1903,7 @@ fn main() -> status: own ExitStatus pure {
 
 fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
-  let data = slots_from_array::<u64, 64>(values: move values);
+  let data = slots_from_array::<u64, 64>(values: values);
   let t = tally(src: &data, bounded_limit: 64_u64, limit: 64_u64);
   return exit_status(code: 0_u8);
 }
@@ -1923,7 +1923,7 @@ fn main() -> status: own ExitStatus pure {
 
 fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
-  let data = slots_from_array::<u64, 64>(values: move values);
+  let data = slots_from_array::<u64, 64>(values: values);
   let t = tally(src: &data, limit: 64_u64);
   return exit_status(code: 0_u8);
 }
@@ -1943,7 +1943,7 @@ fn main() -> status: own ExitStatus pure {
 
 fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
-  let data = slots_from_array::<u64, 64>(values: move values);
+  let data = slots_from_array::<u64, 64>(values: values);
   let t = tally(src: &data, limit: 64_u64);
   return exit_status(code: 0_u8);
 }

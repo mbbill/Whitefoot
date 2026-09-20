@@ -10,9 +10,9 @@ fn fill(destination: &[u8], value: own u8) -> result: own unit writes(destinatio
 fn main() -> status: own ExitStatus pure {
   doc "A range-reference argument is a footprint on the storage it was formed over, whether the reference is written at the call or bound by a let and handed on. The two fill calls hand on references bound above them; their substituted write paths resolve to left and right, which have distinct roots and therefore do not overlap, so the adjacent pair is permitted and the program reads both runs back.";
   let left_values = array_filled::<u8, 2>(value: 0_u8);
-  let left = slots_from_array::<u8, 2>(values: move left_values);
+  let left = slots_from_array::<u8, 2>(values: left_values);
   let right_values = array_filled::<u8, 2>(value: 0_u8);
-  let right = slots_from_array::<u8, 2>(values: move right_values);
+  let right = slots_from_array::<u8, 2>(values: right_values);
   let left_window = &left[0_u64..2_u64];
   let right_window = &right[0_u64..2_u64];
   fill(destination: left_window, value: 3_u8);

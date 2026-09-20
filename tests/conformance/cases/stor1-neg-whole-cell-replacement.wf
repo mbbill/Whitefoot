@@ -1,4 +1,4 @@
-struct Pair {
+nocopy struct Pair {
   left: u64;
   right: u64;
 }

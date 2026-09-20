@@ -260,9 +260,7 @@ impl TermTable {
         match kind {
             TermKind::Constant(0) => TermKind::Zero,
             TermKind::Place(place, fragment) => TermKind::Place(place.term_identity(), fragment),
-            TermKind::Measure(measure, place) => {
-                TermKind::Measure(measure, place.term_identity())
-            }
+            TermKind::Measure(measure, place) => TermKind::Measure(measure, place.term_identity()),
             other => other,
         }
     }

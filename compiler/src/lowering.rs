@@ -304,9 +304,7 @@ pub enum IrWindowShape {
     Ring,
 }
 
-pub(crate) const fn lower_window_shape(
-    value: crate::semantic::WindowShape,
-) -> IrWindowShape {
+pub(crate) const fn lower_window_shape(value: crate::semantic::WindowShape) -> IrWindowShape {
     match value {
         crate::semantic::WindowShape::Slots => IrWindowShape::Slots,
         crate::semantic::WindowShape::Ring => IrWindowShape::Ring,

@@ -1,4 +1,4 @@
-formal Generic<fn make() -> result: own u64 pure> {
+interface Generic<fn make() -> result: own u64 pure> {
 }
 
 fn main() -> status: own ExitStatus pure {

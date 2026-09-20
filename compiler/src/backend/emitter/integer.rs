@@ -87,7 +87,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     | IrIntegerOperation::SubtractExact
                     | IrIntegerOperation::MultiplyExact
                     | IrIntegerOperation::NegateExact => {
-                        if signed { " nsw" } else { " nuw" }
+                        if signed {
+                            " nsw"
+                        } else {
+                            " nuw"
+                        }
                     }
                     _ => "",
                 };

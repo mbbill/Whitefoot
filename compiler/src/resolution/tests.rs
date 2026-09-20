@@ -1702,11 +1702,11 @@ fn probe() -> result: own unit pure {
 /// changes nothing the fixture exists to materialize.
 #[test]
 fn complete_role_fixture_materializes_every_declaration_use_and_deferred_family() {
-    let source = br#"formal Bound {
+    let source = br#"interface Bound {
   fn member(value: &i32) -> result: own i32 reads(value);
 }
 
-formal Numeric<T: Int> {
+interface Numeric<T: Int> {
   fn zero() -> result: own T pure;
 }
 
@@ -1732,7 +1732,7 @@ fn implementation(value: own i32) -> result: own i32 pure {
   return value;
 }
 
-actual Implementation : Bound {
+binding Implementation : Bound {
   member = implementation;
 }
 
@@ -1740,7 +1740,7 @@ fn user<T: drop, const n: i32>(arg: &T) -> result: own T reads(arg) {
   return arg;
 }
 
-fn grouped<Bound>() -> result: own i32 pure {
+fn grouped<interface Bound>() -> result: own i32 pure {
   let called = Bound::member(value: 1_i32);
   return called;
 }
@@ -1800,8 +1800,8 @@ fn probe() -> result: own unit pure {
             DeclarationRole::Struct,
             DeclarationRole::Enum,
             DeclarationRole::Variant,
-            DeclarationRole::Formal,
-            DeclarationRole::Actual,
+            DeclarationRole::Interface,
+            DeclarationRole::Binding,
             DeclarationRole::FunctionParameter,
             DeclarationRole::NamedConst,
             DeclarationRole::GenericType,
@@ -2068,7 +2068,7 @@ fn future() -> result: own unit pure {
 /// still declares.
 #[test]
 fn sibling_member_signatures_do_not_share_parameter_names() {
-    let source = br#"formal Separate {
+    let source = br#"interface Separate {
   fn first(value: &i32) -> result: own unit reads(value);
   fn second() -> result: own unit reads(value);
 }
@@ -2081,6 +2081,75 @@ fn sibling_member_signatures_do_not_share_parameter_names() {
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "value"
+        ));
+    });
+}
+
+#[test]
+fn interface_import_and_unbounded_type_parameter_have_distinct_roles() {
+    let source = br#"interface Source {
+}
+
+fn grouped<interface Source, T>(value: own T) -> result: own T pure {
+  return move value;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("explicit interface import must resolve: {outcome:?}");
+        };
+        assert!(resolved.declarations().iter().any(|declaration| {
+            declaration.spelling() == "T" && declaration.role() == DeclarationRole::GenericType
+        }));
+        assert!(!resolved.declarations().iter().any(|declaration| {
+            declaration.spelling() == "Source" && declaration.role() == DeclarationRole::GenericType
+        }));
+        assert!(resolved.lexical_uses().iter().any(|usage| {
+            usage.spelling() == "Source"
+                && usage.role() == LexicalUseRole::FormalGroup
+                && matches!(
+                    usage.target(),
+                    ResolvedTarget::Source {
+                        class: DeclarationClass::Interface,
+                        ..
+                    }
+                )
+        }));
+    });
+}
+
+#[test]
+fn bare_type_parameter_never_becomes_an_interface_import_by_lookup() {
+    let source = br#"interface Source {
+}
+
+fn grouped<Source>() -> result: own unit pure {
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("bare Source must declare a colliding type binder: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::DeclarationCollision { spelling, .. } if spelling == "Source"
+        ));
+    });
+}
+
+#[test]
+fn explicit_interface_import_requires_a_declared_interface() {
+    let source = br#"fn grouped<interface Missing>() -> result: own unit pure {
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an explicit import must not declare a type binder: {outcome:?}");
+        };
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "Missing"
         ));
     });
 }
@@ -2479,7 +2548,8 @@ fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_res
     // The cell keeps the one compiler-owned identity every later stage reads
     // a written `Box` through [TYPE-2, TYPE-9, PRE-1], in the constructor
     // domain as in the nominal one.
-    let source = b"fn hold(cell: own Box<u64>) -> result: own Box<u64> pure {\n  return move cell;\n}\n";
+    let source =
+        b"fn hold(cell: own Box<u64>) -> result: own Box<u64> pure {\n  return move cell;\n}\n";
     with_resolution_sources(&[SourceInput::new("cell.wf", source)], true, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("the cell resolves as a nominal type: {outcome:?}");
@@ -2494,7 +2564,7 @@ fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_res
 
 #[test]
 fn an_ordinary_prelude_signature_is_eligible_for_an_actual_member() {
-    let source = b"formal Counter {\n  fn count(args: &Args) -> result: own u64 reads(args);\n}\n\nactual Selected : Counter {\n  count = args_count;\n}\n";
+    let source = b"interface Counter {\n  fn count(args: &Args) -> result: own u64 reads(args);\n}\n\nbinding Selected : Counter {\n  count = args_count;\n}\n";
     with_resolution_sources(&[SourceInput::new("actual.wf", source)], true, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("FN-4 admits ordinary declarations: {outcome:?}");

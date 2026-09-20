@@ -42,9 +42,11 @@ const OPTION_TARGS_EXPECTED: &str = "Option with its type argument written: as a
 /// repeated-category one — `writes(cwd), writes(out)` — with nothing but the
 /// rule number to work from. The field-of-non-struct condition is cited at two
 /// sites, so five conditions cover six rejections.
-const EFF1_CATEGORY_ORDER: &str = "a row is written in the canonical order, every `reads` entry before every `writes` entry";
+const EFF1_CATEGORY_ORDER: &str =
+    "a row is written in the canonical order, every `reads` entry before every `writes` entry";
 const EFF1_CATEGORY_ORDER_FIX: &str = "move every `reads` entry ahead of the first `writes` entry; a category may appear more than once";
-const EFF1_REPEATED_PATH: &str = "a row lists each path at most once per category, and this entry repeats one";
+const EFF1_REPEATED_PATH: &str =
+    "a row lists each path at most once per category, and this entry repeats one";
 const EFF1_REPEATED_PATH_FIX: &str = "delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path";
 const EFF1_NON_PARAMETER_ROOT: &str = "every effect path is rooted at one formal value parameter of the same callable, and this root is not one";
 const EFF1_NON_PARAMETER_ROOT_FIX: &str = "root the path at a parameter of this function; a local, a result binder, a region, and an unrelated declaration are never effect roots";
@@ -964,11 +966,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    fn invalid_effect_row<T>(
-        &self,
-        node: NodeId,
-        reason: &'static str,
-    ) -> Result<T, CheckStop> {
+    fn invalid_effect_row<T>(&self, node: NodeId, reason: &'static str) -> Result<T, CheckStop> {
         let mechanical_fix = if reason == EFF1_UNKNOWN_FIELD {
             EFF1_UNKNOWN_FIELD_FIX
         } else if reason == EFF1_NON_PARAMETER_ROOT {
@@ -985,7 +983,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
         )
     }
-
 
     pub(super) fn parse_const_expression_with(
         &self,
@@ -1437,7 +1434,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             return Ok(None);
         }
-        let ResolvedTarget::Container(id) = self.use_at(node, LexicalUseRole::Type)?.target() else {
+        let ResolvedTarget::Container(id) = self.use_at(node, LexicalUseRole::Type)?.target()
+        else {
             return Ok(None);
         };
         Ok(crate::container_nominal(id).map(|nominal| nominal.shape))
@@ -1468,7 +1466,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         Ok(self.tree.first_child_with(*second, Production::Const)?)
     }
-
 
     /// Check every type reachable through CONST-2's element and field
     /// relation. Zero-length arrays still require eligible element types;
@@ -1543,9 +1540,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(element)
     }
 
-    /// The [TYPE-2] buffer element domain: every flat copy element, plus a
-    /// region-free affine nominal stored by value. Direct views use the same
-    /// represented element domain; arrays use complete elements.
+    /// The [TYPE-2] buffer element domain: every scalar or tag-only value,
+    /// plus a region-free payload nominal stored by value. Capability class
+    /// does not select representation: direct views use the same represented
+    /// element domain, and arrays use complete elements.
     pub(super) fn buffer_element(
         &self,
         ty: CheckedType,
@@ -1585,7 +1583,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::GenericFloat(declaration) => {
                 Some(CheckedFlatElement::GenericFloat(declaration))
             }
-            CheckedType::Nominal(id) if self.nominal(id)?.is_copy() => {
+            CheckedType::Nominal(id) if self.nominal(id)?.is_tag_only_enum() => {
                 Some(CheckedFlatElement::TagOnlyNominal(id))
             }
             CheckedType::Generic(_)

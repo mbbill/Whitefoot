@@ -3,7 +3,7 @@ struct Pair {
   right: u64;
 }
 
-formal Touch {
+interface Touch {
   fn touch(value: &Pair) -> result: own unit reads(value.left), writes(value.right);
 }
 
@@ -14,7 +14,7 @@ fn apply(input: &Pair) -> result: own unit writes(input.left) {
   return unit;
 }
 
-actual PairTouch : Touch {
+binding PairTouch : Touch {
   touch = apply;
 }
 

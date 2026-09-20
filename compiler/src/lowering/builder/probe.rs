@@ -172,9 +172,10 @@ fn recognize_load(
     let (root, offset) = match value {
         CheckedExpression::BufferIndex { root, offset, .. } => {
             if crate::lowering::lower_type(TypeLowering::EMPTY, root.element.ty()).ok()? != U8
-                || root.path.iter().any(|step| {
-                    matches!(step, crate::semantic::CheckedPlaceStep::Subscript(_))
-                })
+                || root
+                    .path
+                    .iter()
+                    .any(|step| matches!(step, crate::semantic::CheckedPlaceStep::Subscript(_)))
             {
                 return None;
             }

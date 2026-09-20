@@ -190,11 +190,11 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::FormalDecl => add_single(
+        Production::InterfaceDecl => add_single(
             classified,
             owner,
             &names,
-            RawRoleKind::Declaration(DeclarationRole::Formal),
+            RawRoleKind::Declaration(DeclarationRole::Interface),
             roles,
             complete_counts,
         )?,
@@ -528,11 +528,11 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::ActualDecl => add_single(
+        Production::BindingDecl => add_single(
             classified,
             owner,
             &names,
-            RawRoleKind::Declaration(DeclarationRole::Actual),
+            RawRoleKind::Declaration(DeclarationRole::Binding),
             roles,
             complete_counts,
         )?,

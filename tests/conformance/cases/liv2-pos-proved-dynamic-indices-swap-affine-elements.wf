@@ -1,4 +1,4 @@
-struct Row {
+nocopy struct Row {
   left: u64;
   right: u64;
 }

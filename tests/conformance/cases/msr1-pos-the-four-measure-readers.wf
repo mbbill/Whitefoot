@@ -1,7 +1,7 @@
 fn main() -> status: own ExitStatus pure {
   doc "MSR-1, OP-15: a measure read is a place form and not a call, and the table gives each measured type exactly the cells it has. A Slots has len, cap and free slots; a Ring adds head; a range reference has len alone. The program reads every cell the table gives, over a constant-capacity window, over a boxed runtime-capacity window, over a ring and over a range reference, and observes those values.";
   let values = array_filled::<u8, 4>(value: 0_u8);
-  let fixed = slots_from_array::<u8, 4>(values: move values);
+  let fixed = slots_from_array::<u8, 4>(values: values);
   let fixed_length = fixed.len;
   let fixed_capacity = fixed.cap;
   let fixed_room = fixed.cap - fixed.len;

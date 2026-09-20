@@ -7,11 +7,11 @@ fn measure(cell: own Slots<u8, 4>) -> size: own u64 pure {
 fn main() -> status: own ExitStatus pure {
   doc "LIV-1, OWN-11, SET-1: the body consumes an outer binding and commits a value back into it before the backedge, so the backedge carries the same status as the entering edge and every iteration starts from the state the previous one left.";
   let start = array_filled::<u8, 4>(value: 0_u8);
-  let c = slots_from_array::<u8, 4>(values: move start);
+  let c = slots_from_array::<u8, 4>(values: start);
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
     let values = array_filled::<u8, 4>(value: 0_u8);
-    set c = slots_from_array::<u8, 4>(values: move values);
+    set c = slots_from_array::<u8, 4>(values: values);
   }
   return exit_status(code: 0_u8);
 }

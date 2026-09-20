@@ -336,13 +336,7 @@ impl IrBuilder<'_> {
         if self.result != element_type {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        let taken = self.define(
-            element_type,
-            IrOperation::RunTaken {
-                row,
-                run: window,
-            },
-        )?;
+        let taken = self.define(element_type, IrOperation::RunTaken { row, run: window })?;
         self.define(
             IrType::Unit,
             IrOperation::RunBoundary {
@@ -571,7 +565,12 @@ fn ceiling_pair(
         IrType::Buffer { .. } | IrType::Range { .. } => (16, 8),
         IrType::Address(_) => (8, 8),
         IrType::Array { element, length } => {
-            let (size, align) = ceiling_pair(nominals, elements, *elements.get(element.index())?, depth + 1)?;
+            let (size, align) = ceiling_pair(
+                nominals,
+                elements,
+                *elements.get(element.index())?,
+                depth + 1,
+            )?;
             (size.checked_mul(length)?, align)
         }
         IrType::Window {
@@ -580,7 +579,12 @@ fn ceiling_pair(
             capacity,
         } => {
             let words = u64::from(shape == IrWindowShape::Ring) + 1;
-            let (size, align) = ceiling_pair(nominals, elements, *elements.get(element.index())?, depth + 1)?;
+            let (size, align) = ceiling_pair(
+                nominals,
+                elements,
+                *elements.get(element.index())?,
+                depth + 1,
+            )?;
             match capacity {
                 // A runtime-capacity `Slots<T>` is a pointer, a capacity and
                 // a length; a `Ring<T>` adds a window origin.

@@ -2,7 +2,7 @@ struct GrowVector<T> {
   storage: Box<Slots<T>>;
 }
 
-formal VectorDrain<T, E> {
+interface VectorDrain<T, E> {
   fn accept(env: &E, value: own T) -> result: own unit writes(env);
 }
 
@@ -99,7 +99,7 @@ fn grow_vector_remove<T>(values: &GrowVector<T>, index: own u64) -> removed: own
   return move taken;
 }
 
-fn grow_vector_drain<VectorDrain<T, E>>(values: &GrowVector<T>, env: &E) -> result: own unit writes(values.storage), writes(env) contract {
+fn grow_vector_drain<interface VectorDrain<T, E>>(values: &GrowVector<T>, env: &E) -> result: own unit writes(values.storage), writes(env) contract {
   ensures deref(values).storage.inner.len == 0_u64;
   ensures deref(values).storage.inner.cap == deref(entry(values)).storage.inner.cap;
 } {

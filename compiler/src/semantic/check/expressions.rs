@@ -98,8 +98,7 @@ pub(in crate::semantic::check) const WIN3_LINEAR_TARGET: &str =
 
 /// The roots [SET-1] admits for a written target, as the diagnostic names
 /// them.
-const SET1_WRITABLE_ROOTS: &str =
-    "a live own-mode value binding, or a path below deref of a reference whose \
+const SET1_WRITABLE_ROOTS: &str = "a live own-mode value binding, or a path below deref of a reference whose \
      row declares that write";
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -322,11 +321,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// release, so the writer takes it out and consumes it first. v0.59's
     /// copy-only demand and its region-free companion were [SET-2]'s and went
     /// with `replace`.
-    fn check_mutation_target_class(
-        &self,
-        node: NodeId,
-        ty: CheckedType,
-    ) -> Result<(), CheckStop> {
+    fn check_mutation_target_class(&self, node: NodeId, ty: CheckedType) -> Result<(), CheckStop> {
         if matches!(
             self.linearity_class(ty)?,
             super::linearity::LinearityClass::Linear
@@ -838,13 +833,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place_context: PlaceUseContext,
     ) -> Result<TypedExpression, CheckStop> {
         match self.tree.production(node)? {
-            Production::Atom => self.check_atom_in_context(
-                function,
-                node,
-                bindings,
-                loop_depth,
-                place_context,
-            ),
+            Production::Atom => {
+                self.check_atom_in_context(function, node, bindings, loop_depth, place_context)
+            }
             Production::Call if self.tree.is_constructor_call(node)? => {
                 self.check_construct(function, node, bindings, loop_depth)
             }
@@ -986,7 +977,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
-        self.check_atom_in_context(function, node, bindings, loop_depth, PlaceUseContext::Ordinary)
+        self.check_atom_in_context(
+            function,
+            node,
+            bindings,
+            loop_depth,
+            PlaceUseContext::Ordinary,
+        )
     }
 
     fn check_atom_in_context(
@@ -1273,8 +1270,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )?;
                 let read_out = !copy
                     && options.explicit_move
-                    && self
-                        .take_commit_read_out(&ResolvedPlace::fields(local.binding, fields.clone()));
+                    && self.take_commit_read_out(&ResolvedPlace::fields(
+                        local.binding,
+                        fields.clone(),
+                    ));
                 // OWN-1 makes an affine projection consume its whole root.
                 // Its residual cleanup destroys every unselected resource
                 // field, so the loan access is the root rather than only the
@@ -1324,12 +1323,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .live = false;
                 }
                 // [REF-2] a consume is one of the three invalidating actions:
-                // a reference whose path has this place as a proper prefix
-                // names storage the move has carried away, and [REF-2] says a
-                // move never re-roots an existing reference. A reference to
-                // the consumed place itself is not this rule's subject, which
-                // is a *proper* prefix, and the consumed binding's own death
-                // is what a later use of it reaches.
+                // a reference whose path is this place or has this place as a
+                // prefix names storage the move has carried away, and
+                // [REF-2] says a move never re-roots an existing reference.
                 if !copy && !read_out {
                     Self::invalidate_references(
                         bindings,
@@ -1495,6 +1491,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<MutationTarget, CheckStop> {
         let place = self.resolve_explicit_place(node, node, bindings)?;
+        self.reject_readonly_resolved_write(node, &place.resolved, bindings)?;
         let local = bindings
             .get(&place.declaration)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;

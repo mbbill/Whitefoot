@@ -10,7 +10,7 @@ struct Outer {
 fn main() -> status: own ExitStatus pure {
   let number = 1_i32;
   let inner = Inner(value: 2_i32);
-  let outer = Outer(inner: move inner, other: 7_i32);
+  let outer = Outer(inner: inner, other: 7_i32);
   let flag = True();
   if flag {
     set number = 42_i32;

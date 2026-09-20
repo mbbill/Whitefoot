@@ -380,8 +380,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             Some(IrType::Address(IrAddressed::Buffer { element })) if element.ty() == u8_type => {
                 let block = IrType::Buffer { element };
                 let address = self.value_name(buffer);
-                let length_address =
-                    self.aggregate_field_pointer(block, &address, LENGTH_FIELD)?;
+                let length_address = self.aggregate_field_pointer(block, &address, LENGTH_FIELD)?;
                 let length = self.next_temporary()?;
                 writeln!(self.output, "  %{length} = load i64, ptr {length_address}")
                     .map_err(|_| BackendFailure::TextEmission)?;

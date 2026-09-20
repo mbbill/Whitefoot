@@ -15,7 +15,7 @@ fn get(table: own Slots<u8, 4>, symbol: own u64) -> result: own u8 pure contract
 fn main() -> status: own ExitStatus pure {
   doc "A full array converted into a full window supplies the declared length.";
   let seed = array_filled::<u8, 4>(value: 7_u8);
-  let table = slots_from_array::<u8, 4>(values: move seed);
+  let table = slots_from_array::<u8, 4>(values: seed);
   let value = get(table: move table, symbol: 2_u64);
   if value == 7_u8 {
   } else {

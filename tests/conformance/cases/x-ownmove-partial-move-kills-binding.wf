@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-enum Wrap {
+nocopy enum Wrap {
   W(inner: Sign);
   N();
 }

@@ -158,6 +158,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Vec::new()
         };
         let linear = self.declaration_is_linear(node)?;
+        let nocopy = self.declaration_is_nocopy(node)?;
         // [GRAM-2] no nominal declares a region parameter in v0.60.
         let region_parameters = Vec::new();
         let template = NominalTemplate {
@@ -168,6 +169,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             generic_parameters,
             region_parameters,
             linear,
+            nocopy,
             constructors: Vec::new(),
         };
         let template_index = self.nominal_templates.len();
@@ -218,24 +220,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.register_prelude_nominals()?;
         self.complete_pending_source_nominals()?;
         self.reject_recursive_nominal_layouts()?;
-        self.validate_nominal_templates()?;
-        self.validate_linear_modifiers()
-    }
-
-    /// [PROV-6] the `linear` modifier is admitted only on a nominal [OWN-1]
-    /// classifies as affine; a tag-only enum is copy and the modifier would
-    /// mark a value the language duplicates.
-    fn validate_linear_modifiers(&self) -> Result<(), CheckStop> {
-        for index in 0..self.nominals.len() {
-            let id = NominalId(
-                u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
-            );
-            let Some(node) = self.nominal_nodes.get(index).copied().flatten() else {
-                continue;
-            };
-            self.check_linear_modifier_admission(id, node)?;
-        }
-        Ok(())
+        self.validate_nominal_templates()
     }
 
     pub(super) fn ensure_nominals_in_node(
@@ -691,6 +676,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             },
             linear: template.linear,
+            nocopy: template.nocopy,
         });
         self.nominals_by_declaration
             .entry(template.declaration)
@@ -1178,7 +1164,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// contain one arbitrarily far inside its instance — for example the
     /// `'s` in `Option<Entry<'s>>` — while remaining one flat slot element.
     /// Substitution changes that instance identity and preserves whether the
-    /// element was admitted as tag-only or as an affine nominal.
+    /// element has tag-only or payload representation; capability class is
+    /// independent of that shape.
     fn substitute_flat_element_regions(
         &self,
         element: CheckedFlatElement,
@@ -1468,7 +1455,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         }
         let (left_nominal, right_nominal) = (self.nominal(left)?, self.nominal(right)?);
-        if left_nominal.linear != right_nominal.linear {
+        if left_nominal.linear != right_nominal.linear
+            || left_nominal.nocopy != right_nominal.nocopy
+        {
             return Ok(false);
         }
         match (&left_nominal.kind, &right_nominal.kind) {
@@ -1652,7 +1641,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .nominal_templates
             .get(index)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        Ok(template.role == DeclarationRole::Struct && self.is_opaque_declaration(template.node)?)
+        Ok(
+            template.role == DeclarationRole::Struct
+                && self.is_opaque_declaration(template.node)?,
+        )
     }
 
     pub(super) fn source_constructor(

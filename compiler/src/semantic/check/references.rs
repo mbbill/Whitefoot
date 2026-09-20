@@ -10,12 +10,12 @@
 //! The validity fact is threaded through the statement walk rather than
 //! recomputed on demand, because [REF-2]'s closing sentence puts it outside
 //! the entailment fragment [ENT-1] and its invalidation set is exactly
-//! enumerated: a proper prefix of the path is written, moved out of, or
-//! released, by a statement, by a call [EFF-5], or by a compiler-derived
-//! release at scope exit [STOR-3]; the scope of the local variable the path
-//! starts at ends; or a refinement fact a payload step depends on is
-//! invalidated. Writing the storage at the path or below it is a content
-//! write and invalidates nothing.
+//! enumerated: a proper prefix of the path is written, or the path or a
+//! prefix is moved out of or released, by a statement, by a call [EFF-5], or
+//! by a compiler-derived release at scope exit [STOR-3]; the scope of the
+//! local variable the path starts at ends; or a refinement fact a payload
+//! step depends on is invalidated. Writing the storage at the path or below
+//! it is a content write and invalidates nothing.
 //!
 //! Every path question — prefix, overlap, index and range separation — is
 //! [OWN-7]'s, asked through [`super::super::places`] and answered nowhere
@@ -35,7 +35,9 @@ use super::super::model::{
     CheckedMode, CheckedNominalKind, CheckedPlaceStep, CheckedRangeRoot, CheckedRangeSource,
     CheckedStatePath, CheckedType, WindowShape,
 };
-use super::super::places::{CapturedRange, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace};
+use super::super::places::{
+    CapturedRange, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations,
+};
 use super::{
     CheckStop, Checker, EffectPath, FunctionSignature, LocalBinding, PlaceAccess, TypedExpression,
 };
@@ -72,8 +74,7 @@ pub(super) const REF3_RETURN_AN_INDEX: &str =
     "return an index and let the caller form the reference";
 
 /// [REF-4]'s restructuring for a range reference over a `Ring`.
-pub(super) const REF4_RING: &str =
-    "a ring hands out single slots; take the elements one at a time";
+pub(super) const REF4_RING: &str = "a ring hands out single slots; take the elements one at a time";
 
 /// [WIN-3]'s restructuring for a move out of a window slot or array element.
 pub(super) const WIN3_NO_TAKE: &str = "use take_back, remove_at, or swap [OP-10, OP-11]";
@@ -127,9 +128,9 @@ pub(super) enum ReferenceKind {
 pub(super) enum InvalidationEvent {
     /// A proper prefix of the path was written by a statement [SET-1].
     PrefixWritten,
-    /// A proper prefix of the path was moved out of [OWN-1, WIN-3].
+    /// The path or a prefix of it was moved out of [OWN-1, WIN-3].
     PrefixMoved,
-    /// A proper prefix of the path was released [STOR-3].
+    /// The path or a prefix of it was released [STOR-3].
     PrefixReleased,
     /// A call's substituted row writes a proper prefix of the path
     /// [EFF-5 clause 3].
@@ -156,8 +157,8 @@ impl InvalidationEvent {
     pub(super) const fn phrase(&self) -> &'static str {
         match self {
             Self::PrefixWritten => "a proper prefix of the reference's path was written",
-            Self::PrefixMoved => "a proper prefix of the reference's path was moved out of",
-            Self::PrefixReleased => "a proper prefix of the reference's path was released",
+            Self::PrefixMoved => "the reference's path or a prefix of it was moved out of",
+            Self::PrefixReleased => "the reference's path or a prefix of it was released",
             Self::CallWrite => "a call wrote a proper prefix of the reference's path",
             Self::RootScopeEnded => "the scope of the local variable the path starts at ended",
             Self::RefinementLost => {
@@ -195,10 +196,24 @@ pub(super) struct ReferenceInfo {
 impl ReferenceInfo {
     /// One freshly formed reference naming one path.
     pub(super) fn formed(kind: ReferenceKind, path: ResolvedPlace) -> Self {
-        let refinements = refinement_dependencies(&path);
+        Self::formed_paths(kind, vec![path])
+    }
+
+    /// One freshly formed reference naming every path a joined base may
+    /// select at run time [REF-1]. No member is representative: validity,
+    /// overlap and effect judgments must retain the complete union.
+    fn formed_paths(kind: ReferenceKind, paths: Vec<ResolvedPlace>) -> Self {
+        let mut refinements = Vec::new();
+        for path in &paths {
+            for dependency in refinement_dependencies(path) {
+                if !refinements.contains(&dependency) {
+                    refinements.push(dependency);
+                }
+            }
+        }
         Self {
             kind,
-            paths: vec![path],
+            paths,
             validity: ReferenceValidity::Valid,
             refinements,
         }
@@ -302,19 +317,19 @@ const fn step_shapes_agree(left: PlaceStep, right: PlaceStep) -> bool {
         }
         (PlaceStep::Part(left), PlaceStep::Part(right)) => matches!(
             (left, right),
-            (super::super::places::WindowPart::Next, super::super::places::WindowPart::Next)
-                | (
-                    super::super::places::WindowPart::Last,
-                    super::super::places::WindowPart::Last
-                )
-                | (
-                    super::super::places::WindowPart::Filled,
-                    super::super::places::WindowPart::Filled
-                )
-                | (
-                    super::super::places::WindowPart::Free,
-                    super::super::places::WindowPart::Free
-                )
+            (
+                super::super::places::WindowPart::Next,
+                super::super::places::WindowPart::Next
+            ) | (
+                super::super::places::WindowPart::Last,
+                super::super::places::WindowPart::Last
+            ) | (
+                super::super::places::WindowPart::Filled,
+                super::super::places::WindowPart::Filled
+            ) | (
+                super::super::places::WindowPart::Free,
+                super::super::places::WindowPart::Free
+            )
         ),
         (PlaceStep::Measure(left), PlaceStep::Measure(right)) => left as u8 == right as u8,
         _ => false,
@@ -451,16 +466,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// scope.
     ///
     /// The prefix question is [OWN-7]'s, asked conservatively: two indexed
-    /// positions on one storage are taken to overlap unless proved distinct,
-    /// which is exactly what [`ResolvedPlace::is_proper_prefix_of`] answers
-    /// without a proof and what the separation oracle answers with one.
-    /// Writing the storage at a reference's own path, or below it, is a
-    /// content write and invalidates nothing.
+    /// positions on one storage are taken to overlap unless the shared
+    /// relation separates them. Writing the storage at a reference's own
+    /// path, or below it, is a content write and invalidates nothing. Moving
+    /// or releasing the path itself removes the named value and therefore
+    /// invalidates it as well as its descendants.
     pub(super) fn invalidate_references(
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         written: &ResolvedPlace,
         event: &InvalidationEvent,
     ) {
+        let include_equal = matches!(
+            event,
+            InvalidationEvent::PrefixMoved | InvalidationEvent::PrefixReleased
+        );
+        let oracle = UnprovedSeparations;
         for local in bindings.values_mut() {
             let Some(reference) = &mut local.reference else {
                 continue;
@@ -468,7 +488,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if reference
                 .paths
                 .iter()
-                .any(|path| written.is_proper_prefix_of(path))
+                .any(|path| written.may_be_prefix_of(&oracle, path, include_equal))
             {
                 reference.invalidate(event.clone());
             }
@@ -703,7 +723,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
             }
             _ => {
-                return self.unsupported(UnsupportedSemanticFeature::ReferenceFormation, place_node);
+                return self
+                    .unsupported(UnsupportedSemanticFeature::ReferenceFormation, place_node);
             }
         };
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
@@ -733,42 +754,46 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let (path, ty, carried) =
             self.resolve_storage_path(&suffixes, root_type, bindings, function, loop_depth, true)?;
-        let mut place = ResolvedPlace {
+        let place = ResolvedPlace {
             root,
             path: path.iter().map(CheckedPlaceStep::place_step).collect(),
         };
         // [REF-1] the written steps continue the path the root names, so a
-        // reference root is replaced by what it names before anything reads
-        // the place.
-        if let Some(local) = &root_binding
-            && let Some(reference) = &local.reference
-            && let Some(named) = reference.paths.first()
+        // reference root is replaced by every path it may name before any
+        // validity, overlap or effect judgment reads the formation.
+        let places = if let Some(reference) = root_binding
+            .as_ref()
+            .and_then(|local| local.reference.as_ref())
         {
-            let mut resolved = named.clone();
-            resolved.path.extend(place.path.iter().copied());
-            place = resolved;
-        }
+            reference
+                .paths
+                .iter()
+                .cloned()
+                .map(|mut resolved| {
+                    resolved.path.extend(place.path.iter().copied());
+                    resolved
+                })
+                .collect::<Vec<_>>()
+        } else {
+            vec![place]
+        };
         let kind = ReferenceKind::Single;
         let expression = CheckedExpression::BorrowAddressed {
             carrier: self.tree.path(carrier)?.clone(),
-            root: CheckedContainerRoot {
-                root,
-                path,
-                ty,
-            },
+            root: CheckedContainerRoot { root, path, ty },
         };
         let mut accesses = carried.accesses;
-        accesses.push(PlaceAccess {
-            place: place.clone(),
+        accesses.extend(places.iter().cloned().map(|place| PlaceAccess {
+            place,
             kind: AccessKind::Reference,
-        });
+        }));
         Ok(TypedExpression {
             expression,
             mode: match kind {
                 ReferenceKind::Single => CheckedMode::Reference,
                 ReferenceKind::Range => CheckedMode::Range,
             },
-            reference: Some(ReferenceInfo::formed(kind, place)),
+            reference: Some(ReferenceInfo::formed_paths(kind, places)),
             reference_value: true,
             effects: carried.effects,
             accesses,
@@ -820,10 +845,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         // [REF-4] re-slicing: the base is the run another range names, whose
         // element type the `deref` already selected [TYPE-7].
-        let range_base = written_deref
-            && root_binding.is_some_and(|local| local.mode == CheckedMode::Range);
+        let range_base =
+            written_deref && root_binding.is_some_and(|local| local.mode == CheckedMode::Range);
         let mut carried = super::expressions::flat_storage::CarriedOperands::default();
-        let (source, base_place, element_type) = if range_base {
+        let (source, base_places, element_type) = if range_base {
             if !base_suffixes.is_empty() {
                 return self
                     .unsupported(UnsupportedSemanticFeature::ReferenceFormation, place_node);
@@ -836,7 +861,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let named = local
                 .reference
                 .as_ref()
-                .and_then(|reference| reference.paths.first().cloned())
+                .map(|reference| reference.paths.clone())
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             (
                 CheckedRangeSource::Range(CheckedRangeRoot {
@@ -891,21 +916,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     );
                 }
             };
-            let mut base = ResolvedPlace {
+            let base = ResolvedPlace {
                 root,
                 path: path.iter().map(CheckedPlaceStep::place_step).collect(),
             };
-            if let Some(local) = root_binding
-                && let Some(reference) = &local.reference
-                && let Some(named) = reference.paths.first()
-            {
-                let mut resolved = named.clone();
-                resolved.path.extend(base.path.iter().copied());
-                base = resolved;
-            }
+            let bases =
+                if let Some(reference) = root_binding.and_then(|local| local.reference.as_ref()) {
+                    reference
+                        .paths
+                        .iter()
+                        .cloned()
+                        .map(|mut resolved| {
+                            resolved.path.extend(base.path.iter().copied());
+                            resolved
+                        })
+                        .collect()
+                } else {
+                    vec![base]
+                };
             (
                 CheckedRangeSource::Storage(CheckedContainerRoot { root, path, ty }),
-                base,
+                bases,
                 element,
             )
         };
@@ -916,7 +947,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for node in [start_node, end_node] {
             let mut probe = bindings.clone();
             let value = self.check_atom(function, node, &mut probe, loop_depth)?;
-            if value.expression.ty() != CheckedType::Integer(crate::semantic::model::IntegerType::U64)
+            if value.expression.ty()
+                != CheckedType::Integer(crate::semantic::model::IntegerType::U64)
                 || value.mode != CheckedMode::Own
             {
                 return self.issue_node(
@@ -932,20 +964,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             carried.accesses.extend(value.accesses.clone());
             endpoints.push(value);
         }
-        let end = endpoints.pop().ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let start = endpoints.pop().ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let captured_start = Checker::captured_of(start_node, &start.expression)
-            .unwrap_or(CapturedValue::unknown());
+        let end = endpoints
+            .pop()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let start = endpoints
+            .pop()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let captured_start =
+            Checker::captured_of(start_node, &start.expression).unwrap_or(CapturedValue::unknown());
         let captured_end =
             Checker::captured_of(end_node, &end.expression).unwrap_or(CapturedValue::unknown());
         // [OWN-7] the formed reference names the base path extended by its
         // own range step; every later separation question reads that step.
-        let mut place = base_place;
         let captured = CapturedRange {
             start: captured_start,
             end: captured_end,
         };
-        place.path.push(PlaceStep::Range(captured));
+        let places = base_places
+            .into_iter()
+            .map(|mut place| {
+                place.path.push(PlaceStep::Range(captured));
+                place
+            })
+            .collect::<Vec<_>>();
         let expression = CheckedExpression::RangeOf {
             carrier: self.tree.path(carrier)?.clone(),
             source,
@@ -956,14 +997,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             captured,
         };
         let mut accesses = carried.accesses;
-        accesses.push(PlaceAccess {
-            place: place.clone(),
+        accesses.extend(places.iter().cloned().map(|place| PlaceAccess {
+            place,
             kind: AccessKind::Reference,
-        });
+        }));
         Ok(TypedExpression {
             expression,
             mode: CheckedMode::Range,
-            reference: Some(ReferenceInfo::formed(ReferenceKind::Range, place)),
+            reference: Some(ReferenceInfo::formed_paths(ReferenceKind::Range, places)),
             reference_value: true,
             effects: carried.effects,
             accesses,
@@ -1070,7 +1111,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(Vec::new());
         }
         let is_parameter = self.resolved.declarations().iter().any(|declaration| {
-            declaration.id() == local.declaration && declaration.role() == DeclarationRole::Parameter
+            declaration.id() == local.declaration
+                && declaration.role() == DeclarationRole::Parameter
         });
         if !is_parameter {
             return Ok(Vec::new());
@@ -1163,9 +1205,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // [TYPE-7] missing `deref`.
             RequiredReferent::IndexableStorage => matches!(
                 ty,
-                CheckedType::Array { .. }
-                    | CheckedType::Buffer { .. }
-                    | CheckedType::Window { .. }
+                CheckedType::Array { .. } | CheckedType::Buffer { .. } | CheckedType::Window { .. }
             ),
         })
     }

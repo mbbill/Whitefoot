@@ -200,7 +200,7 @@ fn text(source: &[u8]) -> &str {
 fn writes_to_independent_scalar_places_are_permitted() {
     let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 65_u8);
-  let bytes = slots_from_array::<u8, 2>(values: move values);
+  let bytes = slots_from_array::<u8, 2>(values: values);
   let window = &bytes[0_u64..2_u64];
   let first = write_marker(output: &out, source: window, start: 0_u64, end: 1_u64);
   let second = write_marker(output: &err, source: window, start: 1_u64, end: 2_u64);
@@ -220,7 +220,7 @@ fn writes_to_independent_scalar_places_are_permitted() {
 fn two_writes_of_one_scalar_deny_overlap() {
     let source = br#"fn main(out: own u64) -> status: own ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 65_u8);
-  let bytes = slots_from_array::<u8, 2>(values: move values);
+  let bytes = slots_from_array::<u8, 2>(values: values);
   let window = &bytes[0_u64..2_u64];
   let first = write_marker(output: &out, source: window, start: 0_u64, end: 1_u64);
   let second = write_marker(output: &out, source: window, start: 1_u64, end: 2_u64);
@@ -395,7 +395,7 @@ fn reads_only_siblings_over_one_place_form_one_eligible_chain() {
 
 fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u64, 8>(value: 1_u64);
-  let buf = slots_from_array::<u64, 8>(values: move values);
+  let buf = slots_from_array::<u64, 8>(values: values);
   let lo = width(data: &buf);
   let mid = width(data: &buf);
   let hi = width(data: &buf);
@@ -567,7 +567,7 @@ fn take(v: own u64) -> result: own u64 pure {
 
 fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u64, 4>(value: 1_u64);
-  let buf = slots_from_array::<u64, 4>(values: move values);
+  let buf = slots_from_array::<u64, 4>(values: values);
   let b = take(v: buf[0_u64]);
   let a = fill(dst: &buf, mark: 9_u64);
   return exit_status(code: 0_u8);
@@ -710,7 +710,7 @@ fn bubble(node: &Node) -> result: own u64 writes(node) {
     Leaf(w: leaf) => {
       let w = deref(leaf);
       let values = array_filled::<u8, 8>(value: 0_u8);
-      let touched = scaled(values: move values, index: w);
+      let touched = scaled(values: values, index: w);
       return w;
     }
     Branch(left: l, right: r, w: slot) => {
@@ -743,7 +743,7 @@ fn bubble(node: &Node) -> result: own u64 writes(node) {
     Leaf(w: leaf) => {
       let w = deref(leaf);
       let values = array_filled::<u8, 8>(value: 0_u8);
-      let touched = scaled(values: move values, index: w);
+      let touched = scaled(values: values, index: w);
       return w;
     }
     Branch(left: l, right: r, w: slot) => {
@@ -1394,7 +1394,7 @@ fn probe(x: own u64, name: own HostString) -> result: own u64 pure {
 fn a_scrutinee_call_forms_no_pair() {
     let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 65_u8);
-  let bytes = slots_from_array::<u8, 2>(values: move values);
+  let bytes = slots_from_array::<u8, 2>(values: values);
   let window = &bytes[0_u64..2_u64];
   let first = write_marker(output: &out, source: window, start: 0_u64, end: 1_u64);
   match write_marker(output: &err, source: window, start: 1_u64, end: 2_u64) {
@@ -1420,7 +1420,7 @@ fn a_scrutinee_call_forms_no_pair() {
 fn a_scrutinee_call_written_first_forms_no_pair() {
     let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 65_u8);
-  let bytes = slots_from_array::<u8, 2>(values: move values);
+  let bytes = slots_from_array::<u8, 2>(values: values);
   let window = &bytes[0_u64..2_u64];
   match write_marker(output: &out, source: window, start: 0_u64, end: 1_u64) {
     Ok(value: written) => {

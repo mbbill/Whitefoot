@@ -156,7 +156,7 @@ fn find(slots: &Array<Slot, 8>, key: own u64) -> result: own Option<u64> reads(s
     let advanced = home +wrap step;
     let index = advanced % 8_u64;
     let action = search_step(slot: &deref(slots)[index], key: key);
-    match move action {
+    match action {
       SearchStop() => {
         return None<u64>();
       }
@@ -261,7 +261,7 @@ fn check_removed(removed: own Option<Box<u64>>, present: own Bool, expected: own
 }
 
 fn check_found(found: own Option<u64>, present: own Bool, expected: own u64) -> code: own u8 pure {
-  match move found {
+  match found {
     None() => {
       if present {
         return 9_u8;
@@ -317,19 +317,19 @@ fn exercise(seed: own u64) -> code: own u8 pure {
   }
   let query1 = seed +wrap 8_u64;
   let found1 = find(slots: &slots5, key: query1);
-  let checked_query1 = check_found(found: move found1, present: yes, expected: 22_u64);
+  let checked_query1 = check_found(found: found1, present: yes, expected: 22_u64);
   if checked_query1 != 0_u8 {
     return checked_query1;
   }
   let query2 = seed +wrap 16_u64;
   let found2 = find(slots: &slots5, key: query2);
-  let checked_query2 = check_found(found: move found2, present: yes, expected: 44_u64);
+  let checked_query2 = check_found(found: found2, present: yes, expected: 44_u64);
   if checked_query2 != 0_u8 {
     return checked_query2;
   }
   let query3 = seed +wrap 24_u64;
   let found3 = find(slots: &slots5, key: query3);
-  let checked_query3 = check_found(found: move found3, present: no, expected: 0_u64);
+  let checked_query3 = check_found(found: found3, present: no, expected: 0_u64);
   if checked_query3 != 0_u8 {
     return checked_query3;
   }
@@ -389,55 +389,55 @@ fn exercise(seed: own u64) -> code: own u8 pure {
   }
   let query4 = seed +wrap 16_u64;
   let found4 = find(slots: &slots14, key: query4);
-  let checked_query4 = check_found(found: move found4, present: yes, expected: 44_u64);
+  let checked_query4 = check_found(found: found4, present: yes, expected: 44_u64);
   if checked_query4 != 0_u8 {
     return checked_query4;
   }
   let query5 = seed +wrap 24_u64;
   let found5 = find(slots: &slots14, key: query5);
-  let checked_query5 = check_found(found: move found5, present: yes, expected: 55_u64);
+  let checked_query5 = check_found(found: found5, present: yes, expected: 55_u64);
   if checked_query5 != 0_u8 {
     return checked_query5;
   }
   let query6 = seed +wrap 32_u64;
   let found6 = find(slots: &slots14, key: query6);
-  let checked_query6 = check_found(found: move found6, present: yes, expected: 66_u64);
+  let checked_query6 = check_found(found: found6, present: yes, expected: 66_u64);
   if checked_query6 != 0_u8 {
     return checked_query6;
   }
   let query7 = seed +wrap 40_u64;
   let found7 = find(slots: &slots14, key: query7);
-  let checked_query7 = check_found(found: move found7, present: yes, expected: 100_u64);
+  let checked_query7 = check_found(found: found7, present: yes, expected: 100_u64);
   if checked_query7 != 0_u8 {
     return checked_query7;
   }
   let query8 = seed +wrap 48_u64;
   let found8 = find(slots: &slots14, key: query8);
-  let checked_query8 = check_found(found: move found8, present: yes, expected: 101_u64);
+  let checked_query8 = check_found(found: found8, present: yes, expected: 101_u64);
   if checked_query8 != 0_u8 {
     return checked_query8;
   }
   let query9 = seed +wrap 56_u64;
   let found9 = find(slots: &slots14, key: query9);
-  let checked_query9 = check_found(found: move found9, present: yes, expected: 102_u64);
+  let checked_query9 = check_found(found: found9, present: yes, expected: 102_u64);
   if checked_query9 != 0_u8 {
     return checked_query9;
   }
   let query10 = seed +wrap 64_u64;
   let found10 = find(slots: &slots14, key: query10);
-  let checked_query10 = check_found(found: move found10, present: yes, expected: 103_u64);
+  let checked_query10 = check_found(found: found10, present: yes, expected: 103_u64);
   if checked_query10 != 0_u8 {
     return checked_query10;
   }
   let query11 = seed +wrap 72_u64;
   let found11 = find(slots: &slots14, key: query11);
-  let checked_query11 = check_found(found: move found11, present: yes, expected: 104_u64);
+  let checked_query11 = check_found(found: found11, present: yes, expected: 104_u64);
   if checked_query11 != 0_u8 {
     return checked_query11;
   }
   let query12 = seed +wrap 80_u64;
   let found12 = find(slots: &slots14, key: query12);
-  let checked_query12 = check_found(found: move found12, present: no, expected: 0_u64);
+  let checked_query12 = check_found(found: found12, present: no, expected: 0_u64);
   if checked_query12 != 0_u8 {
     return checked_query12;
   }
@@ -464,12 +464,12 @@ fn exercise(seed: own u64) -> code: own u8 pure {
         return checked17;
       }
       let found13 = find(slots: &slots17, key: key17);
-      let checked_query13 = check_found(found: move found13, present: yes, expected: 55_u64);
+      let checked_query13 = check_found(found: found13, present: yes, expected: 55_u64);
       if checked_query13 != 0_u8 {
         return checked_query13;
       }
       let found14 = find(slots: &slots17, key: key16);
-      let checked_query14 = check_found(found: move found14, present: no, expected: 0_u64);
+      let checked_query14 = check_found(found: found14, present: no, expected: 0_u64);
       if checked_query14 != 0_u8 {
         return checked_query14;
       }

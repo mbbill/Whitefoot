@@ -10,9 +10,9 @@ use super::super::super::model::{
     CheckedConstructor, CheckedEnumType, CheckedExpression, CheckedField, CheckedMatchArm,
     CheckedMatchBinder, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType,
 };
+use super::super::super::places::PlaceStep;
 use super::super::super::tree::ConditionalAlternative;
 use super::super::references::{ReferenceInfo, RequiredReferent};
-use super::super::super::places::PlaceStep;
 use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
 use super::{BlockResult, BreakState, ControlCounters, ControlScope, GiveContext};
 
@@ -90,13 +90,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(pbase) = self.tree.first_child_with(place, Production::Pbase)? else {
             return Ok(ScrutineeSpelling::Other);
         };
-        Ok(
-            if self.has_fixed(pbase, crate::FixedTerminal::Deref)? {
-                ScrutineeSpelling::Dereferenced
-            } else {
-                ScrutineeSpelling::Other
-            },
-        )
+        Ok(if self.has_fixed(pbase, crate::FixedTerminal::Deref)? {
+            ScrutineeSpelling::Dereferenced
+        } else {
+            ScrutineeSpelling::Other
+        })
     }
 
     pub(super) fn check_match(
@@ -123,10 +121,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // judgment [TYPE-5] the descriptor below makes.
         if spelling == ScrutineeSpelling::Other
             && scrutinee.reference_value
-            && self.satisfies_referent_requirement(
-                scrutinee.expression.ty(),
-                RequiredReferent::Enum,
-            )?
+            && self
+                .satisfies_referent_requirement(scrutinee.expression.ty(), RequiredReferent::Enum)?
         {
             return self.issue_node(
                 SemanticRule::Type7,

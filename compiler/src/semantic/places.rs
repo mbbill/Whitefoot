@@ -30,7 +30,7 @@ use crate::DeclarationId;
 
 use super::model::{
     BindingId, CheckedConstantId, CheckedExpression, CheckedFunction, CheckedMatchArm,
-    CheckedMeasure, CheckedMode, CheckedStatement, CheckedType, IntegerType,
+    CheckedMeasure, CheckedMode, CheckedRangeSource, CheckedStatement, CheckedType, IntegerType,
 };
 
 /// One source occurrence at which an index expression or a range endpoint was
@@ -49,6 +49,12 @@ pub(crate) struct CaptureId(pub(crate) u32);
 /// every occurrence, so the identity of the place they index is their value
 /// and not where it was written [REF-1, ENT-2].
 const VALUE_DETERMINED_CAPTURE: CaptureId = CaptureId(u32::MAX - 2);
+
+/// The nonidentity marker for a value this relation cannot name.
+///
+/// Unlike a source occurrence, two uses of this marker are no evidence that
+/// they evaluated to the same value.
+const UNKNOWN_CAPTURE: CaptureId = CaptureId(u32::MAX);
 
 /// The occurrence a binding-valued capture carries in a goal datum.
 ///
@@ -97,13 +103,13 @@ impl CapturedValue {
     /// The offset of a write at an element position this version cannot name
     /// [MSR-3].
     ///
-    /// One shared occurrence stands for every such write, which is the
-    /// conservative reading in both directions: two unknown offsets compare
-    /// as one storage, so a prefix test over them invalidates rather than
-    /// spares, and no admitted family proves an unknown offset distinct from
-    /// anything, so [OWN-7] leaves the pair overlapping.
+    /// This is a nonidentity marker rather than a shared occurrence: two
+    /// unknown values never prove equality. No admitted family proves one
+    /// distinct from anything either, so [OWN-7] still leaves indexed places
+    /// overlapping, while two unknown range frames cannot expose later steps
+    /// as though both were relative to one proved-identical frame.
     pub(crate) const fn unknown() -> Self {
-        Self::new(CaptureId(u32::MAX), CapturedTerm::Opaque)
+        Self::new(UNKNOWN_CAPTURE, CapturedTerm::Opaque)
     }
 
     /// The identity this capture carries inside a goal datum [ENT-2].
@@ -137,10 +143,12 @@ impl CapturedValue {
 
     /// Whether the two captures hold one value on every execution.
     ///
-    /// One capture occurrence is one evaluation, so an equal `CaptureId` is
-    /// equality of the value itself. Across two occurrences only the two
-    /// value-determined terms decide it: a binding's two reads may straddle a
-    /// write to that binding, and an opaque value names no term at all.
+    /// One source capture occurrence is one evaluation, but its identity is
+    /// evidence only between equal term classes: a collision between a
+    /// binding and a literal, or between two different bindings, proves
+    /// nothing. Across two occurrences only the value-determined terms decide
+    /// themselves; a binding's two reads may straddle a write to that binding,
+    /// and an opaque value names no term at all.
     /// A value-determined term decides the pair by its own value, before the
     /// occurrence is consulted at all: two literals hold one value exactly
     /// when they are the same literal, whether or not one evaluation produced
@@ -150,7 +158,13 @@ impl CapturedValue {
         match (self.term, other.term) {
             (CapturedTerm::Literal(left), CapturedTerm::Literal(right)) => left == right,
             (CapturedTerm::Const(left), CapturedTerm::Const(right)) => left == right,
-            _ => self.capture == other.capture,
+            (CapturedTerm::Binding(left), CapturedTerm::Binding(right)) => {
+                left == right && self.capture == other.capture
+            }
+            (CapturedTerm::Opaque, CapturedTerm::Opaque) => {
+                self.capture != UNKNOWN_CAPTURE && self.capture == other.capture
+            }
+            _ => false,
         }
     }
 
@@ -184,15 +198,6 @@ pub(crate) struct CapturedRange {
 }
 
 impl CapturedRange {
-    /// The identity this range carries inside a goal datum [ENT-2]: each
-    /// endpoint's own [`CapturedValue::goal_identity`].
-    pub(crate) const fn goal_identity(self) -> Self {
-        Self {
-            start: self.start.goal_identity(),
-            end: self.end.goal_identity(),
-        }
-    }
-
     /// The range's one [MSR-1] measure as a mathematical value, where both
     /// endpoints are value-determined [REF-4]: `hi - lo`.
     ///
@@ -331,17 +336,15 @@ impl ResolvedPlace {
     /// one measure term only when the two paths are equal there. A written
     /// literal and an in-scope const are value-determined, so their
     /// occurrence carries no identity of its own and
-    /// [`CapturedValue::goal_identity`] drops it; a binding read and an
-    /// opaque offset keep theirs, because two reads of one binding may
-    /// straddle a write to it.
+    /// [`CapturedValue::goal_identity`] drops it for an index. A range keeps
+    /// its formation captures: retained affine endpoint images are keyed by
+    /// that occurrence, so canonicalizing its binding endpoints would erase
+    /// the key and could collide across formations.
     pub(crate) fn term_identity(mut self) -> Self {
         for step in &mut self.path {
             match step {
                 PlaceStep::Index(offset) => *offset = offset.goal_identity(),
-                PlaceStep::Range(range) => {
-                    range.start = range.start.goal_identity();
-                    range.end = range.end.goal_identity();
-                }
+                PlaceStep::Range(_) => {}
                 PlaceStep::Field(_)
                 | PlaceStep::Deref
                 | PlaceStep::Payload { .. }
@@ -418,7 +421,6 @@ impl ResolvedPlace {
         Some((deref, fields))
     }
 
-
     /// Whether this place's path positively selects the same storage as, or a
     /// storage containing, `other`'s.
     ///
@@ -442,6 +444,28 @@ impl ResolvedPlace {
     /// invalidates nothing.
     pub(crate) fn is_proper_prefix_of(&self, other: &Self) -> bool {
         self.path.len() < other.path.len() && self.contains(other)
+    }
+
+    /// Whether this place may select the same storage as a prefix of
+    /// `other`, under [OWN-7]'s one overlap relation.
+    ///
+    /// Unlike [`Self::contains`], this is the conservative question used by
+    /// [REF-2]: two indexed positions are one candidate prefix unless the
+    /// supplied oracle proves them distinct. `include_equal` distinguishes a
+    /// write, which preserves a reference to its exact target, from a move or
+    /// release, which removes that target's value as well as its descendants.
+    pub(crate) fn may_be_prefix_of(
+        &self,
+        oracle: &dyn SeparationOracle,
+        other: &Self,
+        include_equal: bool,
+    ) -> bool {
+        let length_admitted = if include_equal {
+            self.path.len() <= other.path.len()
+        } else {
+            self.path.len() < other.path.len()
+        };
+        length_admitted && places_overlap(oracle, self, other)
     }
 
     /// The support every captured value in this path contributes [ENT-5].
@@ -593,21 +617,19 @@ fn separation(
                 }
             }
         },
-        // A measure is descriptor storage: `r.len` is itself a write target
-        // and overlaps no slot [WIN-2, MSR-2]. Two different measures are not
-        // separated by any admitted family, so they overlap.
+        // Each measure is a distinct descriptor word and overlaps no slot
+        // [WIN-2, MSR-2]. A write of len does not write cap or head.
         (PlaceStep::Measure(left), PlaceStep::Measure(right)) => {
             if left == right {
                 StepSeparation::Same
             } else {
-                StepSeparation::Overlapping
+                StepSeparation::Separate
             }
         }
         (PlaceStep::Measure(_), PlaceStep::Index(_) | PlaceStep::Range(_) | PlaceStep::Part(_))
-        | (
-            PlaceStep::Index(_) | PlaceStep::Range(_) | PlaceStep::Part(_),
-            PlaceStep::Measure(_),
-        ) => StepSeparation::Separate,
+        | (PlaceStep::Index(_) | PlaceStep::Range(_) | PlaceStep::Part(_), PlaceStep::Measure(_)) => {
+            StepSeparation::Separate
+        }
         // Everything left is a pair no admitted family discharges, including
         // a range step against an index step or a window part on one base:
         // [OWN-7] separates two ranges and two indices and says nothing about
@@ -700,6 +722,10 @@ pub(crate) struct BindingSummary {
     /// projection, and the spelling a diagnostic prints [OP-15] — has to see
     /// it as one.
     pub(crate) reference: bool,
+    /// A reference binding whose possible origin set this prepass could not
+    /// resolve. Permission consumers must fail closed instead of treating the
+    /// local binding anchor as storage disjoint from its possible origins.
+    pub(crate) reference_unknown: bool,
 }
 
 /// Dense per-binding summaries for one checked function, the place resolution
@@ -732,6 +758,14 @@ impl PlaceMap {
             }
         }
         map.collect_block_bindings(function.body.as_deref().unwrap_or_default());
+        // A reference `set` is flow-sensitive, and one inside a loop may feed
+        // an earlier rebinding on the next iteration. Permission needs every
+        // possible origin, not one traversal's current origin, so close the
+        // finite set of captured source paths to a fixed point. This is an
+        // over-approximation: it can refuse overlap but cannot grant it from
+        // one selected flow state.
+        while map.collect_reference_origins(function.body.as_deref().unwrap_or_default()) {}
+        while map.mark_unknown_reference_origins(function.body.as_deref().unwrap_or_default()) {}
         map
     }
 
@@ -772,8 +806,9 @@ impl PlaceMap {
 
     /// Whether this binding is a reference variable rather than storage.
     pub(crate) fn is_reference(&self, binding: BindingId) -> bool {
-        self.summary(binding)
-            .is_some_and(|summary| summary.reference || !summary.reference_paths.is_empty())
+        self.summary(binding).is_some_and(|summary| {
+            summary.reference || summary.reference_unknown || !summary.reference_paths.is_empty()
+        })
     }
 
     /// Resolves a spelled place to the [OWN-7] resolved places it may name.
@@ -801,19 +836,25 @@ impl PlaceMap {
     /// The recursion closes over the static path shapes [REF-1]: a
     /// loop-carried rebinding may change only the index values inside a path
     /// and may never extend the path through itself, so the shapes are
-    /// finite. The depth guard is the [OWN-8] answer for a summary set this
-    /// prepass left cyclic: the binding anchors at itself, which is the
-    /// conservative place.
+    /// finite. A summary this prepass cannot close yields no resolved place;
+    /// permission consumers turn that into an unresolved footprint and fail
+    /// closed rather than inventing a disjoint local anchor.
     fn resolve_root(&self, binding: BindingId, depth: usize) -> Vec<ResolvedPlace> {
-        let anchored = vec![ResolvedPlace::binding(binding)];
         if depth > 32 {
-            return anchored;
+            return Vec::new();
         }
         let Some(summary) = self.summary(binding) else {
-            return anchored;
+            return vec![ResolvedPlace::binding(binding)];
         };
+        if summary.reference_unknown {
+            return Vec::new();
+        }
         if summary.reference_paths.is_empty() {
-            return anchored;
+            return if summary.reference {
+                Vec::new()
+            } else {
+                vec![ResolvedPlace::binding(binding)]
+            };
         }
         let mut resolved = Vec::new();
         for named in &summary.reference_paths {
@@ -822,12 +863,16 @@ impl PlaceMap {
                 continue;
             };
             if root == binding {
-                // A parameter, a match binder, or a formation this prepass
-                // does not resolve anchors at its own binding.
+                // An incoming reference parameter anchors at its own binding:
+                // its caller path is substituted at each call boundary.
                 resolved.push(named.clone());
                 continue;
             }
-            for mut place in self.resolve_root(root, depth + 1) {
+            let nested = self.resolve_root(root, depth + 1);
+            if nested.is_empty() {
+                return Vec::new();
+            }
+            for mut place in nested {
                 place.path.extend_from_slice(&named.path);
                 resolved.push(place);
             }
@@ -835,20 +880,109 @@ impl PlaceMap {
         resolved
     }
 
+    /// Adds every origin a checked reference rebinding may assign. Repeating
+    /// this walk reaches loop-carried and mutually propagated aliases while
+    /// the union keeps each captured path immutable [REF-1].
+    fn collect_reference_origins(&mut self, statements: &[CheckedStatement]) -> bool {
+        let mut changed = false;
+        for statement in statements {
+            let origins = match statement {
+                CheckedStatement::Let { binding, value, .. }
+                    if self.expression_names_reference(value) =>
+                {
+                    Some((*binding, self.reference_paths_of(value)))
+                }
+                CheckedStatement::Set {
+                    target: super::model::CheckedSetTarget::Place(target),
+                    value,
+                    ..
+                } if target.fields.is_empty() && self.is_reference(target.binding) => {
+                    Some((target.binding, self.reference_paths_of(value)))
+                }
+                CheckedStatement::ValueMatchLet {
+                    binding,
+                    result_mode,
+                    arms,
+                    ..
+                } if result_mode.is_reference() => {
+                    Some((*binding, self.delivered_reference_paths(arms).0))
+                }
+                _ => None,
+            };
+            if let Some((binding, paths)) = origins {
+                let summary = self.summary_mut(binding);
+                for path in paths {
+                    if !summary.reference_paths.contains(&path) {
+                        summary.reference_paths.push(path);
+                        changed = true;
+                    }
+                }
+            }
+            for nested in place_nested_bodies(statement) {
+                changed |= self.collect_reference_origins(nested);
+            }
+        }
+        changed
+    }
+
+    /// Propagates an unresolved origin after the finite known-origin closure
+    /// has completed. One unknown alternative makes the whole reference
+    /// unknown for permission: selecting only its known alternatives would
+    /// under-approximate overlap.
+    fn mark_unknown_reference_origins(&mut self, statements: &[CheckedStatement]) -> bool {
+        let mut changed = false;
+        for statement in statements {
+            let unresolved = match statement {
+                CheckedStatement::Let { binding, value, .. }
+                    if self.expression_names_reference(value) =>
+                {
+                    self.reference_paths_of(value)
+                        .is_empty()
+                        .then_some(*binding)
+                }
+                CheckedStatement::Set {
+                    target: super::model::CheckedSetTarget::Place(target),
+                    value,
+                    ..
+                } if target.fields.is_empty() && self.is_reference(target.binding) => self
+                    .reference_paths_of(value)
+                    .is_empty()
+                    .then_some(target.binding),
+                CheckedStatement::ValueMatchLet {
+                    binding,
+                    result_mode,
+                    arms,
+                    ..
+                } if result_mode.is_reference() => {
+                    let (paths, unresolved) = self.delivered_reference_paths(arms);
+                    (unresolved || paths.is_empty()).then_some(*binding)
+                }
+                _ => None,
+            };
+            if let Some(binding) = unresolved {
+                let summary = self.summary_mut(binding);
+                if !summary.reference_unknown {
+                    summary.reference_unknown = true;
+                    changed = true;
+                }
+            }
+            for nested in place_nested_bodies(statement) {
+                changed |= self.mark_unknown_reference_origins(nested);
+            }
+        }
+        changed
+    }
+
     fn collect_block_bindings(&mut self, statements: &[CheckedStatement]) {
         for statement in statements {
             match statement {
                 CheckedStatement::Let { binding, value, .. } => {
                     let reference_paths = self.reference_paths_of(value);
-                    // [REF-4] a range formation makes its binder a reference
-                    // variable exactly as a `borrow_expr` does; the path it
-                    // names carries the formation's two captured endpoints,
-                    // which this prepass cannot spell, so the binding is
-                    // recorded as a reference that names no path here.
-                    let names_range = matches!(value, CheckedExpression::RangeOf { .. });
+                    let names_reference = self.expression_names_reference(value);
                     let summary = self.summary_mut(*binding);
                     summary.ty = Some(value.ty());
-                    summary.reference = names_range || !reference_paths.is_empty();
+                    summary.reference = names_reference;
+                    summary.reference_unknown = false;
                     summary.reference_paths = reference_paths;
                 }
                 // [CALL-4] every binder of a destructuring `let` is an
@@ -869,22 +1003,26 @@ impl PlaceMap {
                 } => {
                     self.summary_mut(*binding).ty = Some(target.ty());
                 }
-                // [REF-1] a `let` binder every arm of which delivers a
-                // reference is itself a reference variable naming the union
-                // of the delivered path sets.
+                // [REF-1] the checker-recorded result mode says whether the
+                // continuing delivery edges bind a reference. Returning and
+                // breaking arms contribute no delivered path; every `give`
+                // edge that can continue contributes to the union.
                 CheckedStatement::ValueMatchLet {
                     binding,
                     result_type,
+                    result_mode,
                     arms,
                     ..
                 } => {
                     for arm in arms {
                         self.collect_arm_bindings(arm);
                     }
-                    let delivered = self.delivered_reference_paths(arms);
+                    let (delivered, unresolved) = self.delivered_reference_paths(arms);
+                    let names_reference = result_mode.is_reference();
                     let summary = self.summary_mut(*binding);
                     summary.ty = Some(*result_type);
-                    summary.reference = !delivered.is_empty();
+                    summary.reference = names_reference;
+                    summary.reference_unknown = names_reference && unresolved;
                     summary.reference_paths = delivered;
                 }
                 CheckedStatement::Match { arms, .. } => {
@@ -911,38 +1049,76 @@ impl PlaceMap {
             summary.ty = Some(binder.ty);
             // [OWN-13] matching through a reference binds each payload as a
             // reference naming the scrutinee path extended by that payload
-            // step. The scrutinee path is the checker's, not this prepass's,
-            // so the binder anchors at itself and every consumer reads that
-            // as the conservative place.
+            // step. This prepass does not retain the arm's scrutinee origin,
+            // so no local anchor is a sound substitute: permission must see
+            // the payload reference as unresolved and fail closed.
             if !matches!(binder.mode, CheckedMode::Own) {
                 summary.reference = true;
-                summary.reference_paths = vec![ResolvedPlace::binding(binder.binding)];
+                summary.reference_unknown = true;
+                summary.reference_paths.clear();
             }
         }
         self.collect_block_bindings(&arm.body);
     }
 
-    /// The union of the path sets a value initializer's delivering arms name
-    /// [REF-1, GIVE-1].
-    fn delivered_reference_paths(&mut self, arms: &[CheckedMatchArm]) -> Vec<ResolvedPlace> {
+    /// The union of the path sets a value initializer's continuing `give`
+    /// edges name [REF-1, GIVE-1], plus whether any such edge was unresolved.
+    fn delivered_reference_paths(&self, arms: &[CheckedMatchArm]) -> (Vec<ResolvedPlace>, bool) {
         let mut union: Vec<ResolvedPlace> = Vec::new();
+        let mut delivered = false;
+        let mut unresolved = false;
         for arm in arms {
-            let Some(CheckedStatement::Give { value, .. }) = arm.body.last() else {
-                return Vec::new();
-            };
-            let delivered = self.reference_paths_of(value);
-            if delivered.is_empty() {
-                // One arm delivering a value makes the binding storage of its
-                // own; a reference binder needs every arm to deliver one.
-                return Vec::new();
-            }
-            for place in delivered {
-                if !union.contains(&place) {
-                    union.push(place);
+            self.collect_delivery_reference_paths(
+                &arm.body,
+                &mut union,
+                &mut delivered,
+                &mut unresolved,
+            );
+        }
+        (union, unresolved || !delivered)
+    }
+
+    /// Collects the `give` edges targeting the surrounding value initializer.
+    /// A nested `ValueMatchLet` owns its own `give` edges and is therefore a
+    /// boundary; ordinary control nested inside the arm still delivers to the
+    /// surrounding initializer and is walked.
+    fn collect_delivery_reference_paths(
+        &self,
+        statements: &[CheckedStatement],
+        union: &mut Vec<ResolvedPlace>,
+        delivered: &mut bool,
+        unresolved: &mut bool,
+    ) {
+        for statement in statements {
+            match statement {
+                CheckedStatement::Give { value, .. } => {
+                    *delivered = true;
+                    let paths = self.reference_paths_of(value);
+                    if paths.is_empty() {
+                        *unresolved = true;
+                    }
+                    for path in paths {
+                        if !union.contains(&path) {
+                            union.push(path);
+                        }
+                    }
                 }
+                CheckedStatement::Match { arms, .. } => {
+                    for arm in arms {
+                        self.collect_delivery_reference_paths(
+                            &arm.body, union, delivered, unresolved,
+                        );
+                    }
+                }
+                CheckedStatement::Loop { body, .. }
+                | CheckedStatement::Region { body, .. }
+                | CheckedStatement::CountedRange { body, .. } => {
+                    self.collect_delivery_reference_paths(body, union, delivered, unresolved)
+                }
+                CheckedStatement::ValueMatchLet { .. } => {}
+                _ => {}
             }
         }
-        union
     }
 
     /// The path set a `let` right-hand side names, when it names one.
@@ -962,19 +1138,60 @@ impl PlaceMap {
             | CheckedExpression::ReborrowAddressed { binding, .. } => {
                 self.resolve(PlaceRoot::Binding(*binding), &[])
             }
+            CheckedExpression::RangeOf {
+                source, captured, ..
+            } => {
+                let mut paths = match source {
+                    CheckedRangeSource::Storage(root) => {
+                        self.resolve(root.root, &root.place_path())
+                    }
+                    CheckedRangeSource::Range(root) => {
+                        self.resolve(PlaceRoot::Binding(root.binding), &[])
+                    }
+                };
+                for path in &mut paths {
+                    path.path.push(PlaceStep::Range(*captured));
+                }
+                paths
+            }
             CheckedExpression::Binding { binding, .. } if self.is_reference(*binding) => {
                 self.resolve(PlaceRoot::Binding(*binding), &[])
             }
             _ => Vec::new(),
         }
     }
+
+    fn expression_names_reference(&self, value: &CheckedExpression) -> bool {
+        matches!(
+            value,
+            CheckedExpression::BorrowAddressed { .. }
+                | CheckedExpression::BorrowBuffer { .. }
+                | CheckedExpression::BorrowBox { .. }
+                | CheckedExpression::ReborrowAddressed { .. }
+                | CheckedExpression::RangeOf { .. }
+        ) || matches!(value, CheckedExpression::Binding { binding, .. } if self.is_reference(*binding))
+    }
+}
+
+/// Every nested statement block whose reference rebindings contribute to the
+/// finite all-origins closure.
+fn place_nested_bodies(statement: &CheckedStatement) -> Vec<&[CheckedStatement]> {
+    match statement {
+        CheckedStatement::Match { arms, .. } | CheckedStatement::ValueMatchLet { arms, .. } => {
+            arms.iter().map(|arm| arm.body.as_slice()).collect()
+        }
+        CheckedStatement::Loop { body, .. }
+        | CheckedStatement::Region { body, .. }
+        | CheckedStatement::CountedRange { body, .. } => vec![body.as_slice()],
+        _ => Vec::new(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        CaptureId, CapturedRange, CapturedTerm, CapturedValue, PlaceMap,
-        PlaceRoot, PlaceStep, ResolvedPlace, SeparationOracle, WindowPart,
+        CaptureId, CapturedRange, CapturedTerm, CapturedValue, PlaceMap, PlaceRoot, PlaceStep,
+        ResolvedPlace, SeparationOracle, WindowPart,
     };
     use crate::semantic::model::{BindingId, CheckedMeasure};
 
@@ -984,6 +1201,13 @@ mod tests {
 
     fn opaque(capture: u32) -> CapturedValue {
         CapturedValue::new(CaptureId(capture), CapturedTerm::Opaque)
+    }
+
+    fn binding(capture: u32, binding: u32) -> CapturedValue {
+        CapturedValue::new(
+            CaptureId(capture),
+            CapturedTerm::Binding(BindingId(binding)),
+        )
     }
 
     fn place(binding: u32, path: &[PlaceStep]) -> ResolvedPlace {
@@ -1015,7 +1239,6 @@ mod tests {
             self.not_last
         }
     }
-
 
     /// The oracle a consumer with no ProofContext in hand would supply
     /// [OWN-8]: every answer `false`, which denies each separation the fixed
@@ -1132,6 +1355,40 @@ mod tests {
             not_last: false,
         };
         assert!(!PlaceMap::default().overlaps(&proving, &left, &right));
+    }
+
+    /// Two unresolved range frames can start at different offsets even when
+    /// their endpoint representation uses the same unknown capture. Relative
+    /// indices below them therefore cannot establish separation.
+    #[test]
+    fn relative_indices_do_not_separate_unresolved_range_frames() {
+        let frame = PlaceStep::Range(CapturedRange {
+            start: CapturedValue::unknown(),
+            end: CapturedValue::unknown(),
+        });
+        let left = place(0, &[frame, PlaceStep::Index(literal(0, 0))]);
+        let right = place(0, &[frame, PlaceStep::Index(literal(1, 1))]);
+
+        assert!(PlaceMap::default().overlaps(&DENIED, &left, &right));
+    }
+
+    /// Goal canonicalization gives binding-valued endpoints one capture id,
+    /// but different binding terms are still different unresolved frames.
+    /// Their relative indices cannot be used as absolute separation evidence.
+    #[test]
+    fn canonical_capture_ids_do_not_merge_distinct_binding_range_frames() {
+        let left_frame = PlaceStep::Range(CapturedRange {
+            start: binding(0, 1).goal_identity(),
+            end: binding(1, 2).goal_identity(),
+        });
+        let right_frame = PlaceStep::Range(CapturedRange {
+            start: binding(2, 3).goal_identity(),
+            end: binding(3, 4).goal_identity(),
+        });
+        let left = place(0, &[left_frame, PlaceStep::Index(literal(4, 0))]);
+        let right = place(0, &[right_frame, PlaceStep::Index(literal(5, 1))]);
+
+        assert!(PlaceMap::default().overlaps(&DENIED, &left, &right));
     }
 
     /// [WIN-2] a live `r[i]` never overlaps `r.next` or `r.free`, always

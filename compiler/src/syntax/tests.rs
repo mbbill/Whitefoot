@@ -131,6 +131,10 @@ fn retired_statement_spellings_are_ordinary_identifiers() {
         b"box",
         b"arena",
         b"buffer",
+        b"formal",
+        b"actual",
+        b"linear",
+        b"affine",
     ] {
         let inputs = [SourceInput::new("identifier.wf", spelling)];
         let bundle = source_bundle(&inputs).expect("identifier source must be constructible");

@@ -269,7 +269,7 @@ const PUBLISH_ONE_BATCH: &[u8] = br#"fn exercise(cwd: &DirectoryRead, out: &Outp
     Ok(value: list) => {
       let window = &entries[0_u64..4096_u64];
       let (copied, endpoint, reported) = directory_next(source: &list, destination: window, start: 0_u64, end: 4096_u64);
-      match move copied {
+      match copied {
         Ok(value: done) => {
           set available = endpoint;
         }

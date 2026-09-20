@@ -248,8 +248,8 @@ pub(crate) fn reserved_name(spelling: &str) -> Option<(ReservedNameClass, u16)> 
 #[cfg(test)]
 mod tests {
     use super::{
-        DeclarationClass, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS,
-        ReservedNameClass, reserved_name,
+        DeclarationClass, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS, ReservedNameClass,
+        reserved_name,
     };
     use std::collections::HashSet;
 
@@ -331,7 +331,9 @@ mod tests {
         // reserve nothing. Retires the ordinal assertion of
         // `measure-or-part`, whose successor is this free-identifier
         // assertion over the same eight spellings.
-        for free in ["len", "cap", "head", "next", "last", "filled", "free", "room"] {
+        for free in [
+            "len", "cap", "head", "next", "last", "filled", "free", "room",
+        ] {
             assert_eq!(reserved_name(free), None, "{free} is a free identifier");
         }
     }

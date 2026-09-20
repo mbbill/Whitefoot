@@ -27,7 +27,7 @@ fn assert_behavior_site(source: &str, rule: SemanticRule, expected: &str) {
     });
 }
 
-const BOUNDED_GROUP: &str = r#"formal Key<K: copy> {
+const BOUNDED_GROUP: &str = r#"interface Key<K: copy> {
   fn hash(value: own K) -> result: own u64 pure contract {
     ensures result <= 99_u64;
   };
@@ -39,11 +39,11 @@ fn constant_hash(input: own u64) -> output: own u64 pure contract {
   return 17_u64;
 }
 
-actual ScalarKey : Key<u64> {
+binding ScalarKey : Key<u64> {
   hash = constant_hash;
 }
 
-fn apply<Key<K>>(value: own K) -> out: own u64 pure contract {
+fn apply<interface Key<K>>(value: own K) -> out: own u64 pure contract {
   ensures out <= 99_u64;
 } {
   let result = Key::hash(value: value);
@@ -231,15 +231,15 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn actual_expansion_cycles_include_member_function_arguments() {
-    let source = r#"formal Work {
+    let source = r#"interface Work {
   fn run() -> result: own unit pure;
 }
 
-actual Recursive : Work {
+binding Recursive : Work {
   run = drive::<Recursive>;
 }
 
-fn drive<Work>() -> result: own unit pure {
+fn drive<interface Work>() -> result: own unit pure {
   Work::run();
   return unit;
 }
@@ -259,7 +259,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn qualified_actual_forwarding_remains_an_acyclic_abbreviation() {
-    let source = r#"formal Factory {
+    let source = r#"interface Factory {
   fn make() -> result: own u64 pure;
 }
 
@@ -267,11 +267,11 @@ fn zero() -> result: own u64 pure {
   return 0_u64;
 }
 
-actual First : Factory {
+binding First : Factory {
   make = zero;
 }
 
-actual Second : Factory {
+binding Second : Factory {
   make = First::make;
 }
 
@@ -310,15 +310,15 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn actual_member_aliases_preserve_the_complete_instantiation_cycle() {
-    let source = r#"formal Work {
+    let source = r#"interface Work {
   fn run() -> result: own u64 pure;
 }
 
-actual First : Work {
+binding First : Work {
   run = trampoline;
 }
 
-actual Alias : Work {
+binding Alias : Work {
   run = First::run;
 }
 
@@ -330,7 +330,7 @@ fn trampoline() -> result: own u64 pure {
   return poly::<u64>();
 }
 
-fn invoke<Work>() -> result: own u64 pure {
+fn invoke<interface Work>() -> result: own u64 pure {
   return Work::run();
 }
 
@@ -445,7 +445,7 @@ fn missing_entry_diagnostic_salvage_checks_instantiation_before_discovery() {
 
 #[test]
 fn static_group_bindings_have_no_executable_metadata() {
-    let source = br#"formal Zeroed {
+    let source = br#"interface Zeroed {
   fn zero() -> result: own i32 pure;
 }
 
@@ -453,7 +453,7 @@ fn make_zero() -> result: own i32 pure {
   return 0_i32;
 }
 
-actual Zero : Zeroed {
+binding Zero : Zeroed {
   zero = make_zero;
 }
 
@@ -510,10 +510,10 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn empty_formal_and_actual_groups_are_valid() {
-    let source = br#"formal Marker {
+    let source = br#"interface Marker {
 }
 
-actual Empty : Marker {
+binding Empty : Marker {
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -543,10 +543,10 @@ fn actual_header_materializes_its_only_generic_nominal_instance() {
   value: T;
 }
 
-formal Marker<T: drop> {
+interface Marker<T: drop> {
 }
 
-actual Wrapped : Marker<Wrapper<i32>> {
+binding Wrapped : Marker<Wrapper<i32>> {
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -579,7 +579,7 @@ fn formal_member_materializes_its_only_generic_nominal_instance() {
   value: T;
 }
 
-formal Factory {
+interface Factory {
   fn make() -> result: own Wrapper<i32> pure;
 }
 
@@ -628,7 +628,7 @@ fn migrated_group_rejections_keep_their_selected_rules() {
         include_bytes!("../../../../tests/conformance/cases/fn3-neg-missing-binding.wf"),
         SemanticRule::Fn3,
         SemanticIssueKind::type_mismatch(
-            "an actual binds every formal member exactly once in declared order",
+            "a binding group binds every interface member exactly once in declared order",
             "a nonmatching behavior argument",
         ),
     );
@@ -770,7 +770,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn repeated_member_points_at_the_later_signature() {
-    let source = br#"formal Repeated {
+    let source = br#"interface Repeated {
   fn value() -> result: own i32 pure;
   fn value() -> result: own i32 pure;
 }
@@ -783,7 +783,7 @@ fn main() -> status: own ExitStatus pure {
         source,
         SemanticRule::Fn3,
         SemanticIssueKind::type_mismatch(
-            "each formal member name occurs once",
+            "each interface member name occurs once",
             "a nonmatching behavior argument",
         ),
         b"fn value() -> result: own i32 pure",
@@ -806,10 +806,10 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn actual_header_arguments_match_the_formal_header_arity() {
-    let source = br#"formal Plain {
+    let source = br#"interface Plain {
 }
 
-actual Invalid : Plain<i32> {
+binding Invalid : Plain<i32> {
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -829,7 +829,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn incompatible_and_out_of_order_bindings_point_at_the_fn_bind() {
-    let source = br#"formal Pair {
+    let source = br#"interface Pair {
   fn first() -> result: own i32 pure;
   fn second() -> result: own i32 pure;
 }
@@ -842,7 +842,7 @@ fn make_second() -> result: own i32 pure {
   return 2_i32;
 }
 
-actual Reversed : Pair {
+binding Reversed : Pair {
   second = make_second;
   first = make_first;
 }
@@ -855,7 +855,7 @@ fn main() -> status: own ExitStatus pure {
         source,
         SemanticRule::Fn3,
         SemanticIssueKind::type_mismatch(
-            "actual member names follow the formal's declared order",
+            "binding member names follow the interface's declared order",
             "a nonmatching behavior argument",
         ),
         b"second = make_second;",
@@ -864,7 +864,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn missing_binding_points_at_the_complete_actual_declaration() {
-    let source = br#"formal Pair {
+    let source = br#"interface Pair {
   fn first() -> result: own i32 pure;
   fn second() -> result: own i32 pure;
 }
@@ -873,7 +873,7 @@ fn make_first() -> result: own i32 pure {
   return 1_i32;
 }
 
-actual Incomplete : Pair {
+binding Incomplete : Pair {
   first = make_first;
 }
 
@@ -885,10 +885,10 @@ fn main() -> status: own ExitStatus pure {
         source,
         SemanticRule::Fn3,
         SemanticIssueKind::type_mismatch(
-            "an actual binds every formal member exactly once in declared order",
+            "a binding group binds every interface member exactly once in declared order",
             "a nonmatching behavior argument",
         ),
-        b"actual Incomplete : Pair {\n  first = make_first;\n}",
+        b"binding Incomplete : Pair {\n  first = make_first;\n}",
     );
 }
 
@@ -916,7 +916,7 @@ fn formal_row_comparison_uses_parameter_ordinals_not_binder_spellings() {
     // rows by parameter ordinal before comparing them, and [EFF-1] now writes
     // one path per entry, so the formal's `x, y` and the actual's
     // `first, second` are the same row.
-    let source = br#"formal LengthSum {
+    let source = br#"interface LengthSum {
   fn sum(x: &Slots<u8, 4>, y: &Slots<u8, 4>) -> result: own u64 reads(x), reads(y);
 }
 
@@ -926,7 +926,7 @@ fn add_lengths(first: &Slots<u8, 4>, second: &Slots<u8, 4>) -> result: own u64 r
   return first_length +wrap second_length;
 }
 
-actual Sum : LengthSum {
+binding Sum : LengthSum {
   sum = add_lengths;
 }
 
@@ -953,7 +953,7 @@ fn formal_range_reference_parameters_compare_by_ordinal() {
     // v0.59 wrote this operand as `own Slice<u8>`. `&[T]` is a reference kind
     // admitted only in parameter position [TYPE-8, REF-4]; the FN-4 ordinal
     // comparison over it is unchanged.
-    let source = br#"formal ByteReader {
+    let source = br#"interface ByteReader {
   fn first(values: &[u8]) -> result: own u8 reads(values);
 }
 
@@ -967,7 +967,7 @@ fn read_first(bytes: &[u8]) -> result: own u8 reads(bytes) {
   }
 }
 
-actual Bytes : ByteReader {
+binding Bytes : ByteReader {
   first = read_first;
 }
 

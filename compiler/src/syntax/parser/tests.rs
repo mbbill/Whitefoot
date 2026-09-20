@@ -632,12 +632,12 @@ o: Box<u8>; p: Slots<u8, 4>; readonly q: Ring<u8, 2 * n>;
 enum Choice<T: copy> { doc "choice"; None(); Some(value: T); }
 nodrop struct Lease { doc "lease"; slot: u8; }
 nodrop enum Ticket { doc "ticket"; Open(value: u8); }
-formal Behavior<T: drop> {
-doc "formal";
+interface Behavior<T: drop> {
+doc "interface";
 fn member(x: own T, part: &[u8]) -> result: own T reads(part), writes(part);
 }
-actual Selected : Behavior<Name<T>> { doc "binding"; member = implementation::<fn other>; }
-fn forwarded<Behavior<K>, fn operation(value: own K) -> result: own K pure>() -> result: own unit pure {
+binding Selected : Behavior<Name<T>> { doc "binding"; member = implementation::<fn other>; }
+fn forwarded<interface Behavior<K>, fn operation(value: own K) -> result: own K pure>() -> result: own unit pure {
 Behavior<K>::member(x: unit);
 return unit;
 }

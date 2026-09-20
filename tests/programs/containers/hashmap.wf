@@ -22,14 +22,14 @@ struct Slot {
 
 fn vacant_slot(tombstone: own Bool) -> slot: own Slot pure {
   let no_entry = None<Entry>();
-  return Slot(stored_entry: move no_entry, tombstone: tombstone);
+  return Slot(stored_entry: no_entry, tombstone: tombstone);
 }
 
 fn occupied_slot(key: own u64, value: own u64) -> slot: own Slot pure {
   let stored_entry = Entry(key: key, value: value);
-  let present = Some<Entry>(value: move stored_entry);
+  let present = Some<Entry>(value: stored_entry);
   let clear = False();
-  return Slot(stored_entry: move present, tombstone: clear);
+  return Slot(stored_entry: present, tombstone: clear);
 }
 
 fn view_entry(stored_entry: &Option<Entry>, tombstone: own Bool) -> view: own SlotView reads(stored_entry) {
@@ -231,19 +231,19 @@ fn map_trace(seed: own u64, repetitions: own u64) -> checksum: own u64 pure {
     let replace_b_code = put_code(result: replace_b);
     set checksum = mix(checksum: checksum, value: replace_b_code);
     let found_a = find(slots: &slots, key: key_a);
-    let found_a_code = option_code(value: move found_a);
+    let found_a_code = option_code(value: found_a);
     set checksum = mix(checksum: checksum, value: found_a_code);
     let found_b = find(slots: &slots, key: key_b);
-    let found_b_code = option_code(value: move found_b);
+    let found_b_code = option_code(value: found_b);
     set checksum = mix(checksum: checksum, value: found_b_code);
     let found_c = find(slots: &slots, key: key_c);
-    let found_c_code = option_code(value: move found_c);
+    let found_c_code = option_code(value: found_c);
     set checksum = mix(checksum: checksum, value: found_c_code);
     let (size5, removed_a) = remove(slots: &slots, size: size4, key: key_a);
     let removed_a_code = option_code(value: move removed_a);
     set checksum = mix(checksum: checksum, value: removed_a_code);
     let found_past_tombstone = find(slots: &slots, key: key_c);
-    let found_past_tombstone_code = option_code(value: move found_past_tombstone);
+    let found_past_tombstone_code = option_code(value: found_past_tombstone);
     set checksum = mix(checksum: checksum, value: found_past_tombstone_code);
     let (size6, put_d) = insert(slots: &slots, size: size5, key: key_d, value: 55_u64);
     let put_d_code = put_code(result: put_d);
@@ -255,10 +255,10 @@ fn map_trace(seed: own u64, repetitions: own u64) -> checksum: own u64 pure {
     let removed_missing_code = option_code(value: move removed_missing);
     set checksum = mix(checksum: checksum, value: removed_missing_code);
     let found_c_after_reuse = find(slots: &slots, key: key_c);
-    let found_c_after_reuse_code = option_code(value: move found_c_after_reuse);
+    let found_c_after_reuse_code = option_code(value: found_c_after_reuse);
     set checksum = mix(checksum: checksum, value: found_c_after_reuse_code);
     let found_d_after_reuse = find(slots: &slots, key: key_d);
-    let found_d_after_reuse_code = option_code(value: move found_d_after_reuse);
+    let found_d_after_reuse_code = option_code(value: found_d_after_reuse);
     set checksum = mix(checksum: checksum, value: found_d_after_reuse_code);
     let absent_b_after_remove = find(slots: &slots, key: key_b);
     let absent_b_after_remove_code = option_code(value: move absent_b_after_remove);

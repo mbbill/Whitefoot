@@ -5,7 +5,7 @@ struct Extent {
 
 fn locate(offset: own u64, width: own u64) -> result: own Result<Extent, u64> pure {
   let extent = Extent(offset: offset, width: width);
-  return Ok<Extent, u64>(value: move extent);
+  return Ok<Extent, u64>(value: extent);
 }
 
 fn missing(code: own u64) -> result: own Result<Extent, u64> pure {
@@ -14,7 +14,7 @@ fn missing(code: own u64) -> result: own Result<Extent, u64> pure {
 
 fn main() -> status: own ExitStatus pure {
   let found = locate(offset: 3_u64, width: 4_u64);
-  match move found {
+  match found {
     Ok(value: found_extent) => {
       if found_extent.offset != 3_u64 {
         return exit_status(code: 1_u8);
@@ -28,7 +28,7 @@ fn main() -> status: own ExitStatus pure {
     }
   }
   let absent = missing(code: 9_u64);
-  match move absent {
+  match absent {
     Ok(value: absent_extent) => {
       return exit_status(code: 4_u8);
     }

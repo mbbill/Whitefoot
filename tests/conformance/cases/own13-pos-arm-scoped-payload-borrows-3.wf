@@ -9,7 +9,7 @@ enum Outer {
 fn main() -> status: own ExitStatus pure {
   doc "A nested match through a reference extends the payload path one step further, and each arm's refinement fact keeps its own binder valid.";
   let leaf = Leaf(value: 7_i32);
-  let packet = Wrap(inner: move leaf);
+  let packet = Wrap(inner: leaf);
   let holder = &packet;
   match deref(holder) {
     Wrap(inner: nested) => {

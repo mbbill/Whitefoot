@@ -1,4 +1,4 @@
-formal Generic<T: drop> {
+interface Generic<T: drop> {
 }
 
 fn main() -> status: own ExitStatus pure {

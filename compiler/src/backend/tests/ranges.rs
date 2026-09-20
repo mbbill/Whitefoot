@@ -380,8 +380,11 @@ fn compute_oracle_rejects_wrong_values_and_missing_worker_observations() {
     );
     for corrupt in [true, false] {
         let program = if corrupt {
-            let changed =
-                source.replacen("total +wrap deref(input)[i]", "total -wrap deref(input)[i]", 1);
+            let changed = source.replacen(
+                "total +wrap deref(input)[i]",
+                "total -wrap deref(input)[i]",
+                1,
+            );
             assert_ne!(
                 changed, source,
                 "the block-sum mutant must change the algorithm"
@@ -445,7 +448,7 @@ fn fill(values: &STORAGE) -> result: own unit writes(values) contract {
 fn main() -> status: own ExitStatus pure {
   let initial = array_filled::<u64, 8>(value: 7_u64);
   let values = INITIAL;
-  let packet = Packet(before: 53_u64, values: move values, after: 59_u64);
+  let packet = Packet(before: 53_u64, values: TRANSFER, after: 59_u64);
   let done = fill(values: &packet.values);
   if packet.before != 53_u64 {
     return exit_status(code: 1_u8);
@@ -474,16 +477,18 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for (storage, initial) in [
-        ("Array<u64, 8>", "move initial"),
+    for (storage, initial, transfer) in [
+        ("Array<u64, 8>", "initial", "values"),
         (
             "Slots<u64, 8>",
-            "slots_from_array::<u64, 8>(values: move initial)",
+            "slots_from_array::<u64, 8>(values: initial)",
+            "move values",
         ),
     ] {
         let source = source
             .replace("STORAGE", storage)
-            .replace("INITIAL", initial);
+            .replace("INITIAL", initial)
+            .replace("TRANSFER", transfer);
         for overlap in [OverlapLowering::Off, OverlapLowering::On] {
             let module = emit_lowered(source.as_bytes(), overlap);
             for module in [&module, &super::owned_places::retain_calls(&module)] {
@@ -758,7 +763,7 @@ fn main() -> status: own ExitStatus pure {
     return exit_status(code: 6_u8);
   }
   let bytes = array_filled::<u64, 4>(value: 13_u64);
-  let packet = Packet(before: 53_u64, bytes: move bytes, after: 59_u64);
+  let packet = Packet(before: 53_u64, bytes: bytes, after: 59_u64);
   let field = &packet.bytes[0_u64..4_u64];
   let written = overwrite(view: field, index: 1_u64, value: 41_u64);
   if packet.before != 53_u64 {

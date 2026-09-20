@@ -2,7 +2,7 @@ struct Item {
   rank: u64;
 }
 
-formal Inspect<T> {
+interface Inspect<T> {
   fn inspect(value: &T) -> result: own unit pure;
 }
 
@@ -11,7 +11,7 @@ fn ignore(value: &Box<Item>) -> result: own unit pure {
   return unit;
 }
 
-actual ItemInspect : Inspect<Box<Item>> {
+binding ItemInspect : Inspect<Box<Item>> {
   inspect = ignore;
 }
 

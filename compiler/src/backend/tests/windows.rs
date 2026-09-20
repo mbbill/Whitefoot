@@ -868,17 +868,22 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn trivially_droppable_affine_elements_keep_the_single_free() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  let slots = box_slots_new::<Option<u32>>(capacity: 4_u64);
+    let source = br#"nocopy enum Maybe {
+  Missing();
+  Present(value: u32);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let slots = box_slots_new::<Maybe>(capacity: 4_u64);
   for @fill (
     at in 0_u64..4_u64,
     invariant grown: slots.inner.len >= at,
     invariant spare: slots.inner.cap + at >= slots.inner.len + 4_u64
   ) {
-    let empty = None<u32>();
+    let empty = Missing();
     place_back(window: &slots.inner, value: move empty);
   }
-  let occupied = Some<u32>(value: 7_u32);
+  let occupied = Present(value: 7_u32);
   set slots.inner[2_u64] = move occupied;
   return exit_status(code: 0_u8);
 }

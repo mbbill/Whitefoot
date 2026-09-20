@@ -1,8 +1,14 @@
+nocopy struct Owner {
+  values: Array<u64, 4>;
+}
+
 fn main() -> status: own ExitStatus pure {
   doc "REF-2: a reference is invalidated when a proper prefix of its path is written, and using it after that event is a hard error.";
-  let a = array_filled::<u64, 4>(value: 0_u64);
-  let p = &a[1_u64];
-  let b = array_filled::<u64, 4>(value: 5_u64);
+  let initial = array_filled::<u64, 4>(value: 0_u64);
+  let a = Owner(values: initial);
+  let p = &a.values[1_u64];
+  let replacement = array_filled::<u64, 4>(value: 5_u64);
+  let b = Owner(values: replacement);
   set a = move b;
   let seen = deref(p);
   if seen == 5_u64 {

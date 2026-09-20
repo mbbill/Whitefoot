@@ -1,4 +1,4 @@
-formal Invalid {
+interface Invalid {
   fn inspect(value: &u64) -> result: own unit writes(value);
 }
 

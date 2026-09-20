@@ -732,23 +732,20 @@ impl CheckedMeasure {
                 | MeasuredKind::RuntimeRing,
                 Self::Length,
             )
-            | (
-                MeasuredKind::RuntimeSlots | MeasuredKind::RuntimeRing,
-                Self::Capacity,
-            ) => MeasureCell::ExactRuntime,
-            (
-                MeasuredKind::ConstantSlots | MeasuredKind::ConstantRing,
-                Self::Capacity,
-            ) => MeasureCell::ExactTypeConstant,
+            | (MeasuredKind::RuntimeSlots | MeasuredKind::RuntimeRing, Self::Capacity) => {
+                MeasureCell::ExactRuntime
+            }
+            (MeasuredKind::ConstantSlots | MeasuredKind::ConstantRing, Self::Capacity) => {
+                MeasureCell::ExactTypeConstant
+            }
             // `&[T]`: the range's element count, and nothing else [MSR-1].
             (MeasuredKind::Range, Self::Length) => MeasureCell::ExactRuntime,
             // The one *bounded* cell of the whole table: the two front-moving
             // operations publish a `Ring`'s window origin two-sidedly and no
             // operation re-establishes it exactly [MSR-1, OP-10].
-            (
-                MeasuredKind::ConstantRing | MeasuredKind::RuntimeRing,
-                Self::Head,
-            ) => MeasureCell::Bounded,
+            (MeasuredKind::ConstantRing | MeasuredKind::RuntimeRing, Self::Head) => {
+                MeasureCell::Bounded
+            }
             // `head` is absent on every row but the two `Ring` rows, and
             // neither an `Array` row nor a range has `cap` or `head`.
             (
@@ -929,20 +926,99 @@ pub(crate) struct CheckedNominal {
     pub(crate) id: NominalId,
     pub(crate) name: String,
     pub(crate) kind: CheckedNominalKind,
-    /// [PROV-6] whether this nominal's source declaration carries the
-    /// `linear` modifier. Only a source `struct_decl` or `enum_decl` can, so
-    /// every compiler-owned nominal is false.
+    /// [PROV-6] whether this nominal's declaration carries the `nodrop`
+    /// modifier, which removes the drop capability and copy with it [OWN-1].
+    /// The field keeps the name of the class it produces: a marked nominal is
+    /// linear.
     pub(crate) linear: bool,
+    /// [OWN-1, GRAM-2] whether this nominal's declaration removes the copy
+    /// capability alone: the written `nocopy` modifier, and the cell and
+    /// arena nominals this compiler interns for declarations [PRE-1] writes
+    /// `nocopy`.
+    pub(crate) nocopy: bool,
 }
 
 impl CheckedNominal {
-    pub(crate) fn is_copy(&self) -> bool {
+    /// Whether this is an enum whose every variant is nullary. This is a
+    /// fact about the value's shape, which selects its flat-element and tag
+    /// representation; its copy capability is [`type_has_copy_capability`].
+    pub(crate) fn is_tag_only_enum(&self) -> bool {
         matches!(
             &self.kind,
             CheckedNominalKind::Enum { variants }
                 if variants.iter().all(|variant| variant.fields.is_empty())
         )
     }
+}
+
+/// [OWN-1] whether a type has the copy capability.
+///
+/// Primitives have it. Every other type has it exactly when every part it
+/// owns has it and its declaration does not remove it: a struct's fields and
+/// an enum's variant payload fields are its parts, an `Array<T, N>` has the
+/// capabilities of its element, and `Slots`, `Ring`, `Box` and the host
+/// handles are declared `nocopy` or `nodrop` [PRE-1]. `parameter` answers for
+/// a type parameter standing for itself, whose capabilities are the ones its
+/// written bound grants [PROV-6]. `None` reports a nominal or element handle
+/// the tables do not hold.
+///
+/// A runtime-capacity `Array<T>` is never a value outside its `Box` [TYPE-9],
+/// so no bare read of one exists to be a copy and it answers false. An opaque
+/// nominal retains no fields, so its answer is its modifier's alone.
+pub(crate) fn type_has_copy_capability(
+    ty: CheckedType,
+    nominals: &[CheckedNominal],
+    elements: &[CheckedType],
+    parameter: &dyn Fn(DeclarationId) -> Option<bool>,
+) -> Option<bool> {
+    let mut visited = Vec::new();
+    let mut pending = vec![ty];
+    while let Some(current) = pending.pop() {
+        match current {
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_) => {}
+            CheckedType::Generic(declaration) => {
+                if !parameter(declaration)? {
+                    return Some(false);
+                }
+            }
+            CheckedType::Array { element, .. } => {
+                pending.push(*elements.get(element.index())?);
+            }
+            CheckedType::Buffer { .. } | CheckedType::Window { .. } => return Some(false),
+            CheckedType::Nominal(id) => {
+                // A nominal met again is already being judged on this walk,
+                // so it adds no part the walk has not queued.
+                if visited.contains(&id) {
+                    continue;
+                }
+                visited.push(id);
+                let nominal = nominals.get(id.0 as usize)?;
+                if nominal.linear || nominal.nocopy {
+                    return Some(false);
+                }
+                match &nominal.kind {
+                    CheckedNominalKind::Struct { fields } => {
+                        pending.extend(fields.iter().map(|field| field.ty));
+                    }
+                    CheckedNominalKind::Enum { variants } => pending.extend(
+                        variants
+                            .iter()
+                            .flat_map(|variant| variant.fields.iter().map(|field| field.ty)),
+                    ),
+                    CheckedNominalKind::Opaque => {}
+                    CheckedNominalKind::Box { .. }
+                    | CheckedNominalKind::Arena { .. }
+                    | CheckedNominalKind::ArenaStorage => return Some(false),
+                }
+            }
+        }
+    }
+    Some(true)
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -1592,10 +1668,7 @@ impl CheckedContainerRoot {
 
     /// The exact storage projection consumed by [OWN-7] and [ENT-5].
     pub(crate) fn place_path(&self) -> Vec<super::places::PlaceStep> {
-        self.path
-            .iter()
-            .map(CheckedPlaceStep::place_step)
-            .collect()
+        self.path.iter().map(CheckedPlaceStep::place_step).collect()
     }
 
     /// Offset evaluations are children of the place, including when its
@@ -2067,8 +2140,7 @@ impl CheckedExpression {
         match self {
             Self::Constant(value) => value.ty(),
             Self::NamedConstant { value, .. } => value.ty(),
-            Self::Binding { ty, .. }
-            | Self::UserCall { result: ty, .. } => *ty,
+            Self::Binding { ty, .. } | Self::UserCall { result: ty, .. } => *ty,
             Self::IntegerOperation { result, .. } | Self::NumericConversion { result, .. } => {
                 *result
             }
@@ -2727,10 +2799,7 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         // formed, in written order, and the source place's own offsets are
         // read with them.
         CheckedExpression::RangeOf {
-            source,
-            start,
-            end,
-            ..
+            source, start, end, ..
         } => match source {
             CheckedRangeSource::Storage(root) => root
                 .offsets()

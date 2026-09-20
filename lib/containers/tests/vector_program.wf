@@ -13,7 +13,7 @@ fn sum_accept(env: &Sum, value: own u64) -> result: own unit writes(env) {
   return unit;
 }
 
-actual SumDrain : VectorDrain<u64, Sum> {
+binding SumDrain : VectorDrain<u64, Sum> {
   accept = sum_accept;
 }
 
@@ -76,10 +76,10 @@ fn main() -> status: own ExitStatus pure {
   }
   let owners = grow_vector_new::<Box<OwnedItem>>();
   let first_item = OwnedItem(id: 101_u64);
-  let first_cell = box_new::<OwnedItem>(value: move first_item);
+  let first_cell = box_new::<OwnedItem>(value: first_item);
   let owned_first = grow_vector_append::<Box<OwnedItem>>(values: &owners, value: move first_cell);
   let third_item = OwnedItem(id: 303_u64);
-  let third_cell = box_new::<OwnedItem>(value: move third_item);
+  let third_cell = box_new::<OwnedItem>(value: third_item);
   let owned_third = grow_vector_append::<Box<OwnedItem>>(values: &owners, value: move third_cell);
   let before_owned_insert = owners.storage.inner.len;
   if before_owned_insert == 2_u64 {
@@ -87,7 +87,7 @@ fn main() -> status: own ExitStatus pure {
     return exit_status(code: 8_u8);
   }
   let second_item = OwnedItem(id: 202_u64);
-  let second_cell = box_new::<OwnedItem>(value: move second_item);
+  let second_cell = box_new::<OwnedItem>(value: second_item);
   let owned_middle = grow_vector_insert::<Box<OwnedItem>>(values: &owners, index: 1_u64, value: move second_cell);
   let owned_length = owners.storage.inner.len;
   if owned_length == 3_u64 {

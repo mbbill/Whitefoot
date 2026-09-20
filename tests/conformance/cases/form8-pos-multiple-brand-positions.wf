@@ -20,8 +20,8 @@ fn main() -> status: own ExitStatus pure {
   doc "FN-2 and TYPE-5: every instantiation argument is written at every nesting depth; there is no position at which an operand supplies one silently.";
   let first = Marker<Slots<u8, 1>>(value: 7_u64);
   let second = Marker<Slots<u8, 2>>(value: 9_u64);
-  let pair = Pair<Slots<u8, 1>, Slots<u8, 2>>(first: move first, second: move second);
-  let wrapped = Wrapped<Slots<u8, 1>, Slots<u8, 2>>(pair: move pair);
+  let pair = Pair<Slots<u8, 1>, Slots<u8, 2>>(first: first, second: second);
+  let wrapped = Wrapped<Slots<u8, 1>, Slots<u8, 2>>(pair: pair);
   let value = second_value(wrapped: &wrapped);
   if value == 9_u64 {
     return exit_status(code: 0_u8);

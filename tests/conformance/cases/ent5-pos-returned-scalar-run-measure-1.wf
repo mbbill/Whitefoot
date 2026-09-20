@@ -7,9 +7,9 @@ fn main() -> status: own ExitStatus pure {
   doc "No reference leaves a callee, so the caller forms the reference into the window itself [REF-1, REF-3]. Writing through that reference touches only the element's own field and preserves the enclosing initialized length, whose support is the window's descriptor storage [ENT-5, MSR-2], so the later subscript still discharges [OP-4].";
   let rows = slots_new::<Row, 4>();
   let first = Row(left: 3_u64, right: 4_u64);
-  place_back(window: &rows, value: move first);
+  place_back(window: &rows, value: first);
   let second = Row(left: 5_u64, right: 6_u64);
-  place_back(window: &rows, value: move second);
+  place_back(window: &rows, value: second);
   let changed = &rows[1_u64];
   set deref(changed).right = 9_u64;
   let observed = rows[0_u64].left;

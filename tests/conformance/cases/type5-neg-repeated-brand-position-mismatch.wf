@@ -15,7 +15,7 @@ fn main() -> status: own ExitStatus pure {
   doc "Two positions of one parameter type name the same formal type parameter but receive distinct actual types. A nominal's type argument is a component of its name, and no outliving or subtyping relation replaces that invariant identity within one type.";
   let first = Marker<u64>(value: 7_u64);
   let second = Marker<u32>(value: 9_u32);
-  let pair = Pair<u64, u32>(first: move first, second: move second);
+  let pair = Pair<u64, u32>(first: first, second: second);
   let value = same_parameter::<u64>(pair: &pair);
   return exit_status(code: 0_u8);
 }

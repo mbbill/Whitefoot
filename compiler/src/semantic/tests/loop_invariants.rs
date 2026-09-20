@@ -2684,7 +2684,7 @@ fn a_write_that_kills_a_measure_retargets_the_invariant_image() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   doc "The measure the header names is replaced inside the body.";
   let seed = array_filled::<u8, 4>(value: 0_u8);
-  let data = slots_from_array::<u8, 4>(values: move seed);
+  let data = slots_from_array::<u8, 4>(values: seed);
   for (
     i in 0_u64..1_u64,
     invariant wide: 4_u64 <= data.len

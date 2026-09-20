@@ -193,10 +193,10 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
         LexicalUseRole::TypeArgument => vec![
             DeclarationClass::GenericType,
             DeclarationClass::NominalType,
-            DeclarationClass::Formal,
-            DeclarationClass::Actual,
+            DeclarationClass::Interface,
+            DeclarationClass::Binding,
         ],
-        LexicalUseRole::FormalGroup => vec![DeclarationClass::Formal, DeclarationClass::Actual],
+        LexicalUseRole::FormalGroup => vec![DeclarationClass::Interface, DeclarationClass::Binding],
         LexicalUseRole::GenericBound => {
             vec![DeclarationClass::NumericBound]
         }
@@ -270,8 +270,8 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
         LexicalUseRole::TypeArgument | LexicalUseRole::FormalGroup => vec![
             DeclarationClass::GenericType,
             DeclarationClass::NominalType,
-            DeclarationClass::Formal,
-            DeclarationClass::Actual,
+            DeclarationClass::Interface,
+            DeclarationClass::Binding,
         ],
         LexicalUseRole::GenericBound => {
             vec![DeclarationClass::NumericBound]
@@ -334,7 +334,7 @@ fn use_rule(role: LexicalUseRole) -> ResolutionRule {
         LexicalUseRole::Const => ResolutionRule::Const1,
         LexicalUseRole::ConstValue => ResolutionRule::Const2,
         LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee => ResolutionRule::Op1,
-        // FN-3 selects the function named by an actual group's binding;
+        // FN-3 selects the function named by a binding group's member;
         // FN-4 checks its compatibility after resolution.
         LexicalUseRole::FunctionBinding => ResolutionRule::Fn3,
         LexicalUseRole::GenericNumericSuffix => ResolutionRule::Form5,

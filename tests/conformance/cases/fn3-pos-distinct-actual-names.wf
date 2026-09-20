@@ -1,10 +1,10 @@
-formal Marker<T: copy> {
+interface Marker<T: copy> {
 }
 
-actual First : Marker<i32> {
+binding First : Marker<i32> {
 }
 
-actual Second : Marker<i32> {
+binding Second : Marker<i32> {
 }
 
 fn main() -> status: own ExitStatus pure {

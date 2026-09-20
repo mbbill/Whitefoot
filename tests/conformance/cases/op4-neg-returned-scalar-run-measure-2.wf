@@ -7,9 +7,9 @@ fn main() -> status: own ExitStatus pure {
   doc "A write of one element field leaves the window length intact, but a SET-1 commit of the whole run kills every measure fact established over it, so the following subscript has nothing left to discharge it.";
   let rows = slots_new::<Row, 4>();
   let first = Row(left: 3_u64, right: 4_u64);
-  place_back(window: &rows, value: move first);
+  place_back(window: &rows, value: first);
   let second = Row(left: 5_u64, right: 6_u64);
-  place_back(window: &rows, value: move second);
+  place_back(window: &rows, value: second);
   set rows[1_u64].right = 9_u64;
   let replacement = slots_new::<Row, 4>();
   set rows = move replacement;

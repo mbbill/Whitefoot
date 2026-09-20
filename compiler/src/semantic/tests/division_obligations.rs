@@ -802,7 +802,7 @@ fn a_fixed_run_indexed_defined_guard_discharges_the_same_structural_exact_operat
 
 fn main() -> status: own ExitStatus pure {
   let filled = array_filled::<u8, 1>(value: 0_u8);
-  let values = slots_from_array::<u8, 1>(values: move filled);
+  let values = slots_from_array::<u8, 1>(values: filled);
   let result = increment(values: move values);
   return exit_status(code: result);
 }
@@ -852,7 +852,7 @@ fn writing_the_indexed_collection_invalidates_its_old_defined_fact() {
 
 fn main() -> status: own ExitStatus pure {
   let filled = array_filled::<u8, 1>(value: 0_u8);
-  let values = slots_from_array::<u8, 1>(values: move filled);
+  let values = slots_from_array::<u8, 1>(values: filled);
   let result = increment_after_write(values: move values);
   return exit_status(code: result);
 }

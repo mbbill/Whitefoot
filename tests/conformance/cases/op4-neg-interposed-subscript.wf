@@ -15,6 +15,6 @@ fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   let other = 2_u64;
   let table = array_filled::<u8, 8>(value: 0_u8);
-  let total = probe(values: move table, index: 3_u64, cell: &cell, other: &other);
+  let total = probe(values: table, index: 3_u64, cell: &cell, other: &other);
   return exit_status(code: 0_u8);
 }

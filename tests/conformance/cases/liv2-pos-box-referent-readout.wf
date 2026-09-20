@@ -14,25 +14,25 @@ fn refresh(old: own Payload) -> result: own Payload pure {
 
 fn direct(owner: own Box<Payload>) -> result: own Box<Payload> pure {
   doc "The atomic update at Box content reached from a local binding.";
-  set owner.inner = refresh(old: move owner.inner);
+  set owner.inner = refresh(old: owner.inner);
   return move owner;
 }
 
 fn borrowed(owner: &Box<Payload>) -> result: own unit writes(owner) {
   doc "The atomic update at Box content reached through a reference parameter whose row writes that path.";
-  set deref(owner).inner = refresh(old: move deref(owner).inner);
+  set deref(owner).inner = refresh(old: deref(owner).inner);
   return unit;
 }
 
 fn nested(owner: own Box<Box<Payload>>) -> result: own Box<Box<Payload>> pure {
   doc "The atomic update two cells down.";
-  set owner.inner.inner = refresh(old: move owner.inner.inner);
+  set owner.inner.inner = refresh(old: owner.inner.inner);
   return move owner;
 }
 
 fn field(owner: own Box<Pair>) -> result: own Box<Pair> pure {
   doc "The atomic update at one field of the cell's content, which leaves the other field and the root alone.";
-  set owner.inner.left = refresh(old: move owner.inner.left);
+  set owner.inner.left = refresh(old: owner.inner.left);
   return move owner;
 }
 

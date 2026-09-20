@@ -15,8 +15,8 @@ use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedConst, CheckedEnumType, CheckedExpression,
     CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMatchArm, CheckedMeasure,
-    CheckedNominalKind, CheckedPlaceStep, CheckedSetTarget, CheckedType,
-    CheckedValue, IntegerType, MeasuredKind,
+    CheckedNominalKind, CheckedPlaceStep, CheckedSetTarget, CheckedType, CheckedValue, IntegerType,
+    MeasuredKind,
 };
 use super::super::fragment_type;
 use super::super::state::{
@@ -487,7 +487,11 @@ impl Analyzer<'_, '_> {
         let CheckedExpression::Binding { binding, ty, .. } = value else {
             return None;
         };
-        let source = ResolvedPlace::spelled(PlaceRoot::Binding(*binding), self.is_holder(*binding), Vec::new());
+        let source = ResolvedPlace::spelled(
+            PlaceRoot::Binding(*binding),
+            self.is_holder(*binding),
+            Vec::new(),
+        );
         self.mint_measure_datums(
             node_path,
             ordinal,
@@ -636,12 +640,9 @@ impl Analyzer<'_, '_> {
         let event = self.proof_event(FlowEventKind::S5, Some(node_path));
         for carried in &carry.carried {
             let mut place = destination.clone();
-            place.path.extend(
-                carried
-                    .path
-                    .iter()
-                    .map(|field| PlaceStep::Field(*field)),
-            );
+            place
+                .path
+                .extend(carried.path.iter().map(|field| PlaceStep::Field(*field)));
             for (measure, datum) in MEASURES.into_iter().zip(&carried.datums) {
                 let left = self.place_measure_term(
                     measure,
@@ -797,7 +798,11 @@ impl Analyzer<'_, '_> {
             // the reference names [REF-1].
             CheckedExpression::RangeMeasure { measure, root } => (
                 *measure,
-                ResolvedPlace::spelled(PlaceRoot::Binding(root.binding), self.is_holder(root.binding), Vec::new()),
+                ResolvedPlace::spelled(
+                    PlaceRoot::Binding(root.binding),
+                    self.is_holder(root.binding),
+                    Vec::new(),
+                ),
                 MeasuredKind::Range,
                 None,
             ),

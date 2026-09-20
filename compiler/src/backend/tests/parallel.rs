@@ -105,8 +105,8 @@ fn lane_frame_program(length: u64) -> Vec<u8> {
          fn main() -> status: own ExitStatus pure {{\n  \
          let left_values = array_filled::<u8, {length}>(value: 7_u8);\n  \
          let right_values = array_filled::<u8, {length}>(value: 9_u8);\n  \
-         let left = first(values: move left_values);\n  \
-         let right = first(values: move right_values);\n  \
+         let left = first(values: left_values);\n  \
+         let right = first(values: right_values);\n  \
          if left != 7_u8 {{\n    return exit_status(code: 1_u8);\n  }}\n  \
          if right != 9_u8 {{\n    return exit_status(code: 2_u8);\n  }}\n  \
          return exit_status(code: 0_u8);\n}}\n"

@@ -1,0 +1,17 @@
+nodrop enum Ticket {
+  Open();
+  Closed();
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "A nodrop modifier removes both capabilities from a tag-only enum. Moving the value into a whole-value match consumes it exactly once and discharges the obligation.";
+  let ticket = Open();
+  match move ticket {
+    Open() => {
+      return exit_status(code: 0_u8);
+    }
+    Closed() => {
+      return exit_status(code: 1_u8);
+    }
+  }
+}

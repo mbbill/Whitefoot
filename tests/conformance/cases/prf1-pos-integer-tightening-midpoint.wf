@@ -18,7 +18,7 @@ fn probe(table: &Slots<u8, 4>, lo: own u64, hi: own u64) -> found: own u8 reads(
 fn main() -> status: own ExitStatus pure {
   doc "A four-slot window is filled from a full array, so its length is exactly four at the call.";
   let values = array_filled::<u8, 4>(value: 0_u8);
-  let table = slots_from_array::<u8, 4>(values: move values);
+  let table = slots_from_array::<u8, 4>(values: values);
   let found = probe(table: &table, lo: 0_u64, hi: 4_u64);
   return exit_status(code: found);
 }

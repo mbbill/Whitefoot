@@ -1,4 +1,4 @@
-struct Item {
+nocopy struct Item {
   weight: u64;
 }
 

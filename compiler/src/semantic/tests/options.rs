@@ -14,12 +14,12 @@ fn scalar(value: own i32) -> result: own Option<i32> pure {
 }
 
 fn aggregate(value: own Pair) -> result: own Option<Pair> pure {
-  return Some<Pair>(value: move value);
+  return Some<Pair>(value: value);
 }
 
 fn nested() -> result: own Option<Option<u8>> pure {
   let inner = Some<u8>(value: 7_u8);
-  return Some<Option<u8>>(value: move inner);
+  return Some<Option<u8>>(value: inner);
 }
 
 fn absent() -> result: own Option<Pair> pure {

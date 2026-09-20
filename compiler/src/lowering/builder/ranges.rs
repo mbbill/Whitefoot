@@ -31,10 +31,7 @@ impl IrBuilder<'_> {
                 // `[len | elements]` reached by pointer, so the descriptor is
                 // read out of that block's header and its first element
                 // address; a window is the ordinary run formation.
-                if matches!(
-                    lower_type(self.erasure, root.ty)?,
-                    IrType::Buffer { .. }
-                ) {
+                if matches!(lower_type(self.erasure, root.ty)?, IrType::Buffer { .. }) {
                     self.define(ty, IrOperation::SliceFromBuffer { buffer: address })?
                 } else {
                     self.define(ty, IrOperation::SliceFromRun { run: address })?

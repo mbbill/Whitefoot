@@ -1,4 +1,4 @@
-struct Cell {
+nocopy struct Cell {
   value: i32;
 }
 

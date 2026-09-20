@@ -2,7 +2,7 @@ struct Counter {
   count: u64;
 }
 
-formal PureMember {
+interface PureMember {
   fn apply(store: &Counter, x: own i32) -> result: own i32 reads(store.count);
 }
 
@@ -13,7 +13,7 @@ fn writing_apply(store: &Counter, x: own i32) -> result: own i32 writes(store.co
   return x;
 }
 
-actual First : PureMember {
+binding First : PureMember {
   apply = writing_apply;
 }
 

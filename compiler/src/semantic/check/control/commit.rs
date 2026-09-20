@@ -169,9 +169,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [REF-1] a `set` whose target is a reference variable and whose
         // right-hand side is a `borrow_expr` rebinds that name and writes no
         // storage, so [SET-1]'s value-target judgment does not apply to it.
-        if let Some(result) =
-            self.check_reference_rebinding(function, node, target_node, value_node, bindings, scope)?
-        {
+        if let Some(result) = self.check_reference_rebinding(
+            function,
+            node,
+            target_node,
+            value_node,
+            bindings,
+            scope,
+        )? {
             return Ok(result);
         }
 
@@ -412,17 +417,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Some(Self::continuing_statement(
             CheckedStatement::Set {
                 node_path: self.tree.path(node)?.clone(),
-                target: CheckedSetTarget::Place(
-                    super::super::super::model::CheckedWritablePlace {
-                        binding: local.binding,
-                        fields: Vec::new(),
-                        ty: local.ty,
-                        declares: false,
-                        // [REF-1] a reference rebinding writes no storage, so
-                        // it displaces no owner.
-                        displaces_live_value: false,
-                    },
-                ),
+                target: CheckedSetTarget::Place(super::super::super::model::CheckedWritablePlace {
+                    binding: local.binding,
+                    fields: Vec::new(),
+                    ty: local.ty,
+                    declares: false,
+                    // [REF-1] a reference rebinding writes no storage, so
+                    // it displaces no owner.
+                    displaces_live_value: false,
+                }),
                 value: value.expression,
             },
             value.effects,

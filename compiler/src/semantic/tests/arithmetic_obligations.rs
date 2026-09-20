@@ -384,15 +384,13 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// [TYPE-9] a `Box`'s content is its field `inner`, reached by the ordinary
-/// field step. The resolved place carries that step as a dereference, so the
-/// residual still renders the content as `deref(boxed)` although the writer
-/// wrote `boxed.inner`; the indexed operand remains no term either way.
+/// [TYPE-9] a `Box`'s content is its field `inner`, reached and rendered by
+/// that ordinary field step. The indexed operand remains no term.
 #[test]
 fn an_owning_box_index_renders_its_content_step_as_a_dereference() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 7_u8);
-  let boxed = box_new::<Array<u8, 2>>(value: move values);
+  let boxed = box_new::<Array<u8, 2>>(value: values);
   let result = boxed.inner[0_u64] + 1_u8;
   return exit_status(code: 0_u8);
 }
@@ -405,7 +403,7 @@ fn an_owning_box_index_renders_its_content_step_as_a_dereference() {
         assert_eq!(
             issue.kind(),
             &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "deref(boxed)[0_u64] +defined 1_u8".to_owned(),
+                residual: "boxed.inner[0_u64] +defined 1_u8".to_owned(),
                 disposition: StaticObligationDisposition::Unproved,
                 mechanical_fix: OVERFLOW_FIX,
             },

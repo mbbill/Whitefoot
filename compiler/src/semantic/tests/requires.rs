@@ -351,10 +351,9 @@ fn requires_holds_a_clause_local_to_a_copy_type() {
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
     );
-    // The symbolic generic pass must intern the checked-arithmetic Result
-    // before FN-8 applies the same copy-local rejection. Returning a compiler
-    // failure here would make the generic surface traversal-order dependent.
-    assert_rule(
+    // The symbolic generic pass must intern the checked-arithmetic Result.
+    // Its copy payload and copy error make the structural Result copy too.
+    with_semantics(
         br#"fn invalid<T: Int>(x: own T) -> result: own T pure contract {
   define raised = x +checked 1_T;
   requires x > 0_T;
@@ -366,20 +365,27 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Fn8,
-        SemanticIssueKind::InvalidRequires,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            )
+        },
     );
-    // Non-copy by payload: `Result<i32, Overflow>` has a payload variant, and
-    // `CheckedNominal::is_copy` holds only for all-fieldless-variant enums.
-    assert_rule(
+    // A payload variant remains copy when every payload is copy.
+    with_semantics(
         b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
           define raised = x +checked 1_i32;\n  \
           requires x > 0_i32;\n} {\n  \
           return x;\n}\n\n\
           fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Fn8,
-        SemanticIssueKind::InvalidRequires,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            )
+        },
     );
     // The positive control: a copy-typed clause local is still admitted, or
     // the gate above has over-rejected into every clause `let`.
@@ -1578,7 +1584,7 @@ fn affine_requirement_measure_observations_survive_as_values_without_retargeting
             // `pure`. The subject is unchanged: the scalar copied before the
             // write keeps the bound the requirement gave it, and the measure
             // read after the write does not inherit it.
-            "fn room(values: own Slots<u64, 16>, extra: own u64, limit: own u64) -> result: own u64 pure contract {{\n  requires values.len <= 16_u64;\n  requires extra <= 16_u64;\n  requires values.len + extra <= limit;\n}} {{\n  let old = values.len;\n  let seed = array_filled::<u64, 16>(value: 0_u64);\n  let fresh = slots_from_array::<u64, 16>(values: move seed);\n  set values = move fresh;\n  let current = values.len;\n  let total = {observed} + extra;\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "fn room(values: own Slots<u64, 16>, extra: own u64, limit: own u64) -> result: own u64 pure contract {{\n  requires values.len <= 16_u64;\n  requires extra <= 16_u64;\n  requires values.len + extra <= limit;\n}} {{\n  let old = values.len;\n  let seed = array_filled::<u64, 16>(value: 0_u64);\n  let fresh = slots_from_array::<u64, 16>(values: seed);\n  set values = move fresh;\n  let current = values.len;\n  let total = {observed} + extra;\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_semantics(source.as_bytes(), |outcome| {
             if accepted {

@@ -2,7 +2,7 @@ enum State {
   Ready();
 }
 
-enum StepError {
+nocopy enum StepError {
   Failed();
 }
 

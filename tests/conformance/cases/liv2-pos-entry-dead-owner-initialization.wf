@@ -1,4 +1,4 @@
-struct Item {
+nocopy struct Item {
   value: u64;
 }
 

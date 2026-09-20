@@ -3,7 +3,7 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure c
 } {
   doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
   let block = array_filled::<T, n>(value: value);
-  let built = slots_from_array::<T, n>(values: move block);
+  let built = slots_from_array::<T, n>(values: block);
   return move built;
 }
 

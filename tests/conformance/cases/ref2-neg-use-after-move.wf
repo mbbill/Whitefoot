@@ -1,7 +1,12 @@
+nocopy struct Owner {
+  values: Array<u64, 4>;
+}
+
 fn main() -> status: own ExitStatus pure {
   doc "REF-2: a move never re-roots an existing reference, so after let w = move v the references formed from v are invalid and are not reinterpreted as references into w.";
-  let v = array_filled::<u64, 4>(value: 6_u64);
-  let p = &v[1_u64];
+  let values = array_filled::<u64, 4>(value: 6_u64);
+  let v = Owner(values: values);
+  let p = &v.values[1_u64];
   let w = move v;
   let seen = deref(p);
   if seen == 6_u64 {

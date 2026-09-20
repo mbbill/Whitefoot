@@ -6,12 +6,12 @@ fn forward(source: &DirectorySource, destination: &[u8], start: own u64, end: ow
 } {
   doc "An ordinary wrapper republishes the declared directory result bounds on both Result branches.";
   let (outcome, cursor, count) = directory_next(source: source, destination: destination, start: start, end: end);
-  match move outcome {
+  match outcome {
     Ok(value: done) => {
       return Ok<unit, ListStop>(value: unit), cursor, count;
     }
     Err(error: stopped) => {
-      return Err<unit, ListStop>(error: move stopped), start, count;
+      return Err<unit, ListStop>(error: stopped), start, count;
     }
   }
 }
@@ -22,7 +22,7 @@ fn observe(source: &DirectorySource, destination: &[u8], start: own u64, end: ow
 } {
   doc "The declared bounds cross the wrapper and remain available on both branches of the match.";
   let (outcome, cursor, count) = forward(source: source, destination: destination, start: start, end: end);
-  match move outcome {
+  match outcome {
     Ok(value: done) => {
       invariant bounded_low: start <= cursor;
       invariant bounded_high: cursor <= end;

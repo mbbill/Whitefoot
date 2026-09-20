@@ -470,7 +470,10 @@ fn target_qualified_buffers_keep_only_the_heap_refusal_path() {
     );
     let written = module
         .lines()
-        .filter(|line| line.trim_start().starts_with("call void @wf_resource_record_abort("))
+        .filter(|line| {
+            line.trim_start()
+                .starts_with("call void @wf_resource_record_abort(")
+        })
         .collect::<Vec<_>>();
     assert!(
         !written.is_empty(),

@@ -36,6 +36,7 @@ mod const_eval;
 mod contracts;
 mod counted_ranges;
 mod derivation;
+mod descriptor_invalidation;
 mod division_obligations;
 mod entailment;
 mod entailment_sources;
@@ -808,7 +809,7 @@ fn give_completeness_rejects_each_structural_failure() {
 #[test]
 fn enum_equality_exclusions_reach_the_intended_rule() {
     assert_rule(
-        b"enum PayloadEq {\n  PayloadEmpty();\n  PayloadValue(value: u32);\n}\n\nfn main() -> status: own ExitStatus pure {\n  let left = PayloadEmpty();\n  let right = PayloadEmpty();\n  let equal = eeq(move left, move right);\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum PayloadEq {\n  PayloadEmpty();\n  PayloadValue(value: u32);\n}\n\nfn main() -> status: own ExitStatus pure {\n  let left = PayloadEmpty();\n  let right = PayloadEmpty();\n  let equal = eeq(left, right);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
@@ -968,19 +969,19 @@ fn step(value: own i32) -> result: own Result<i32, StepError> pure {
 fn forward(value: own i32) -> result: own Result<Pair, StepError> pure {
   let accepted = propagate step(value: value);
   let pair = Pair(value: accepted);
-  return Ok<Pair, StepError>(value: move pair);
+  return Ok<Pair, StepError>(value: pair);
 }
 
 fn direct(error: own StepError) -> result: own Result<Pair, StepError> pure {
   let accepted = propagate Err<i32, StepError>(error: error);
   let pair = Pair(value: accepted);
-  return Ok<Pair, StepError>(value: move pair);
+  return Ok<Pair, StepError>(value: pair);
 }
 
 fn bare(outcome: own Result<i32, StepError>) -> result: own Result<Pair, StepError> pure {
   let accepted = propagate outcome;
   let pair = Pair(value: accepted);
-  return Ok<Pair, StepError>(value: move pair);
+  return Ok<Pair, StepError>(value: pair);
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -1007,7 +1008,7 @@ fn main() -> status: own ExitStatus pure {
     });
 
     assert_rule(
-        br#"enum StepError {
+        br#"nocopy enum StepError {
   Failed();
 }
 
@@ -1079,7 +1080,7 @@ fn main() -> status: own ExitStatus pure {
   let number = 1_i32;
   set number = 2_i32;
   let inner = Inner(value: 3_i32);
-  let outer = Outer(inner: move inner, other: 4_i32);
+  let outer = Outer(inner: inner, other: 4_i32);
   set outer.inner.value = number;
   return exit_status(code: 0_u8);
 }
@@ -1144,7 +1145,7 @@ fn set_rejections_keep_their_exact_rule_owners() {
 #[test]
 fn an_affine_assignment_releases_its_old_value() {
     with_semantics(
-        b"struct Cell {\n  value: i32;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let left = Cell(value: 1_i32);\n  let right = Cell(value: 2_i32);\n  set left = move right;\n  let seen = left.value;\n  return exit_status(code: 0_u8);\n}\n",
+        b"nocopy struct Cell {\n  value: i32;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let left = Cell(value: 1_i32);\n  let right = Cell(value: 2_i32);\n  set left = move right;\n  let seen = left.value;\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
                 panic!("an affine overwrite releases the old value: {outcome:?}");
@@ -1152,7 +1153,7 @@ fn an_affine_assignment_releases_its_old_value() {
         },
     );
     with_semantics(
-        br#"struct Counts {
+        br#"nocopy struct Counts {
   lines: u64;
   bytes: u64;
 }
@@ -1177,7 +1178,7 @@ fn main() -> status: own ExitStatus pure {
     // The two-statement form stays accepted beside it: [OP-12] adds a
     // spelling and removes none.
     with_semantics(
-        br#"struct Counts {
+        br#"nocopy struct Counts {
   lines: u64;
   bytes: u64;
 }
@@ -1327,7 +1328,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn set_revalidates_the_target_after_rhs_ownership_changes() {
-    let source = br#"struct Cell {
+    let source = br#"nocopy struct Cell {
   value: i32;
 }
 
@@ -1352,7 +1353,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn checked_cleanup_edges_cover_every_current_affine_exit() {
-    let source = br#"struct Cell {
+    let source = br#"nocopy struct Cell {
   value: i32;
 }
 

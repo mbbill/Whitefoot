@@ -1,5 +1,6 @@
-//! [PROV-6] the release graph, the linearity predicate, the `linear`
-//! modifier, and the two statements that read them.
+//! [PROV-6] the release graph, the linearity predicate, the `nodrop` and
+//! `nocopy` modifiers, the capability bounds, and the statements that read
+//! them.
 //!
 //! Everything here is derived from a type and a scope, never from a name, a
 //! signature, or a statement's shape. The release graph is the one object the
@@ -14,21 +15,25 @@ use crate::{Production, SemanticIssueKind, SemanticRule, TerminalPredicate};
 use super::super::model::{CheckedNominalKind, CheckedReleaseMode, CheckedType, NominalId};
 use super::{CheckStop, Checker};
 
-/// [PROV-6, S37] the linearity class a declaration writes as a bound, and the
-/// class this compiler computes for a type in a scope.
+/// [OWN-1, PROV-6] the class read from a type's two capabilities, copy and
+/// drop, and the class a type parameter's bound grants its body.
 ///
-/// The three form the strict chain `copy < affine < linear`, ordered by what a
+/// A type with both capabilities is copy, a type with drop alone is affine,
+/// and a type with neither is linear; no type has copy without drop. The
+/// three form the strict chain `copy < affine < linear`, ordered by what a
 /// body may do with a value of the class: `copy` may duplicate it, use it bare
 /// and drop it; `affine` may `move` it at most once and may drop it; `linear`
-/// must consume it exactly once and may never drop it.
+/// must consume it exactly once and may never drop it. A parameter written
+/// `T: copy` is copy, `T: drop` is affine, and one written with no bound is
+/// linear.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(in crate::semantic) enum LinearityClass {
     /// Duplicated on use and dropped without any action [OWN-1].
     Copy,
     /// Reclaimed without spending a capability and unmarked.
     Affine,
-    /// Marked by the modifier, or reclaimed by spending a capability this
-    /// scope does not hold.
+    /// Marked `nodrop`, or owning a part that is, or a type parameter whose
+    /// declaration writes no bound.
     Linear,
 }
 
@@ -41,11 +46,23 @@ impl LinearityClass {
         }
     }
 
-    /// [PROV-6, S37] satisfaction is the chain read left to right: an argument
-    /// of class `self` instantiates the bound `bound` exactly when
-    /// `self <= bound`. The reverse direction is the rule's hard error.
+    /// [PROV-6] satisfaction is the filter itself: `T: copy` accepts copy
+    /// arguments only, `T: drop` accepts copy and affine arguments, and a
+    /// parameter with no bound accepts every class. With the bound read as
+    /// the class it grants, that is `self <= bound`.
     pub(in crate::semantic) fn satisfies(self, bound: Self) -> bool {
         self <= bound
+    }
+
+    /// [GRAM-2] the `capability_bound` spelling that grants this class, which
+    /// a rejection naming the written bound prints. A linear parameter writes
+    /// no bound, and no argument fails to satisfy it.
+    pub(in crate::semantic) const fn bound_spelling(self) -> &'static str {
+        match self {
+            Self::Copy => "copy",
+            Self::Affine => "drop",
+            Self::Linear => "no bound",
+        }
     }
 }
 
@@ -153,7 +170,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// [PROV-6] whether any node of this type's release graph carries the
-    /// `linear` modifier, this type's own node included.
+    /// `nodrop` modifier, this type's own node included.
     pub(in crate::semantic) fn owns_modifier_linear_node(
         &self,
         ty: CheckedType,
@@ -171,17 +188,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [PROV-6] the linearity class of a value of this type in the scope now
     /// being checked.
     ///
-    /// The copy half is [OWN-1]'s own classification, which [PROV-6] refines
-    /// and replaces nothing of: a copy value is never affine and never linear.
-    /// The capability half is stated over the provider a scope holds. In this
-    /// version the only provider is the ambient heap, which every scope
-    /// holds, so the capability half makes nothing linear here and the
-    /// modifier is the whole of the remaining answer. The version that makes a
-    /// provider a written value is where the second half first fires.
+    /// The copy half is [OWN-1]'s structural capability: every owned part is
+    /// copy and the declaration removes nothing. The drop half is [PROV-6]'s
+    /// closure: a type lacks drop exactly when its declaration carries
+    /// `nodrop`, or it owns at any depth a type that lacks it, a type
+    /// parameter written with no bound included.
     ///
     /// A type parameter standing for itself at a symbolic instance [FN-2] has
-    /// exactly the class its written bound names [S37]: the body is checked
-    /// once under that bound and the bound is what the body was written for.
+    /// exactly the class its written bound grants: the body is checked once
+    /// under that bound and the bound is what the body was written for.
     pub(in crate::semantic) fn linearity_class(
         &self,
         ty: CheckedType,
@@ -192,7 +207,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.is_copy_type(ty)? {
             return Ok(LinearityClass::Copy);
         }
-        Ok(if self.owns_modifier_linear_node(ty)?.is_some() {
+        Ok(if self.linear_release_obligation(ty)?.is_some() {
             LinearityClass::Linear
         } else {
             LinearityClass::Affine
@@ -228,7 +243,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Vec::new())
     }
 
-    pub(super) fn linear_release_obligation(&self, ty: CheckedType) -> Result<Option<String>, CheckStop> {
+    pub(super) fn linear_release_obligation(
+        &self,
+        ty: CheckedType,
+    ) -> Result<Option<String>, CheckStop> {
         if let Some(marked) = self.owns_modifier_linear_node(ty)? {
             return Ok(Some(self.nominal(marked)?.name.clone()));
         }
@@ -239,7 +257,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 && self.generic_parameter_class(declaration)? == LinearityClass::Linear
             {
                 return Ok(Some(format!(
-                    "the `linear` bound written on {}",
+                    "the absent bound of {}, which grants its body no drop capability",
                     self.declaration_spelling(declaration)?
                 )));
             }
@@ -293,11 +311,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(in crate::semantic) fn scope_holds_store_capability(
         &self,
         bindings: &std::collections::HashMap<crate::DeclarationId, super::LocalBinding>,
-        store: crate::DeclarationId,
+        _store: crate::DeclarationId,
     ) -> bool {
-        bindings.values().any(|local| {
-            local.live && false
-        })
+        bindings.values().any(|local| local.live && false)
     }
 
     /// [PROV-6, D3] the refusal of a value whose release spends a capability
@@ -342,11 +358,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         name: &str,
         node: NodeId,
     ) -> Result<(), CheckStop> {
-        // [S37] a `linear`-bounded type parameter is linear at its symbolic
-        // instance: the body is checked once under its written bound, and
-        // under `linear` it must consume the value exactly once and may never
-        // drop it. The obligation names the bound rather than a nominal,
-        // because at the symbolic instance no nominal carries it.
+        // [PROV-6] a type parameter with no bound is linear at its symbolic
+        // instance: the body is checked once under what its bound grants, and
+        // with no bound it must consume the value exactly once and may never
+        // drop it. The obligation names the absent bound rather than a
+        // nominal, because at the symbolic instance no nominal carries it.
         let Some(marked) = self.linear_release_obligation(ty)? else {
             return Ok(());
         };
@@ -409,55 +425,47 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// [PROV-6] the `linear` modifier is admitted only on a nominal [OWN-1]
-    /// classifies as affine.
-    pub(in crate::semantic) fn check_linear_modifier_admission(
-        &self,
-        id: NominalId,
-        node: NodeId,
-    ) -> Result<(), CheckStop> {
-        let nominal = self.nominal(id)?;
-        if !nominal.linear || !nominal.is_copy() {
-            return Ok(());
-        }
-        self.issue_node::<()>(
-            SemanticRule::Prov6,
-            node,
-            SemanticIssueKind::LinearModifierOnCopyNominal {
-                nominal: nominal.name.clone(),
-                mechanical_fix: "give a variant a payload, or put the obligation on the \
-                     value the issuer hands out",
-            },
-        )?;
-        Ok(())
-    }
-
-    /// Whether a `struct_decl` or `enum_decl` node writes the modifier.
+    /// Whether a `struct_decl` or `enum_decl` node writes `nodrop`, the
+    /// modifier that removes the drop capability and copy with it [OWN-1].
     pub(in crate::semantic) fn declaration_is_linear(
         &self,
         node: NodeId,
     ) -> Result<bool, CheckStop> {
         Ok(self
             .tree
-            .direct_token_with(node, TerminalPredicate::Fixed(crate::FixedTerminal::Linear))?
+            .direct_token_with(node, TerminalPredicate::Fixed(crate::FixedTerminal::Nodrop))?
             .is_some())
     }
 
-    /// [PROV-6, GRAM-2] the linearity bound a `gparam` or a `region_param`
-    /// writes, when it writes one.
+    /// Whether a `struct_decl` or `enum_decl` node writes `nocopy`, the
+    /// modifier that removes the copy capability alone [OWN-1, GRAM-2].
+    pub(in crate::semantic) fn declaration_is_nocopy(
+        &self,
+        node: NodeId,
+    ) -> Result<bool, CheckStop> {
+        Ok(self
+            .tree
+            .direct_token_with(node, TerminalPredicate::Fixed(crate::FixedTerminal::Nocopy))?
+            .is_some())
+    }
+
+    /// [PROV-6, GRAM-2] the class a `gparam`'s written capability bound
+    /// grants, when it writes one: `copy` grants both capabilities and `drop`
+    /// grants drop alone, which are the copy and affine classes read at the
+    /// parameter.
     pub(in crate::semantic) fn written_linearity_bound(
         &self,
         node: NodeId,
     ) -> Result<Option<LinearityClass>, CheckStop> {
         let Some(bound) = self
             .tree
-            .first_child_with(node, Production::LinearityBound)?
+            .first_child_with(node, Production::CapabilityBound)?
         else {
             return Ok(None);
         };
         for (terminal, class) in [
-            (crate::FixedTerminal::Linear, LinearityClass::Linear),
             (crate::FixedTerminal::Copy, LinearityClass::Copy),
+            (crate::FixedTerminal::Drop, LinearityClass::Affine),
         ] {
             if self
                 .tree
@@ -467,15 +475,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Ok(Some(class));
             }
         }
-        Ok(Some(LinearityClass::Affine))
+        Err(crate::SemanticCompilerFailure::InvalidCanonicalTree.into())
     }
 
-    /// [PROV-6, S37] the class a type parameter's written bound names.
+    /// [PROV-6, FN-2] the class a type parameter's bound grants its body.
     ///
-    /// The bound is mandatory [GRAM-2], so a `gparam` that writes no
-    /// `linearity_bound` writes a marker TYPEID instead — `Int` or `Float`,
-    /// each of which is a copy class [OP-1, OWN-1]. The reader is over the
-    /// parameter's own declaration and never over a use of it.
+    /// A `gparam` writes a `capability_bound`, a numeric marker TYPEID —
+    /// `Int` or `Float`, each of which implies copy [OP-1, OWN-1] — or no
+    /// bound at all, which grants no capability and is the linear class. The
+    /// reader is over the parameter's own declaration and never over a use of
+    /// it.
     pub(in crate::semantic) fn generic_parameter_class(
         &self,
         declaration: crate::DeclarationId,
@@ -514,18 +523,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             return Err(crate::SemanticCompilerFailure::InvalidResolution.into());
         }
-        Ok(self
-            .written_linearity_bound(node)?
-            .unwrap_or(LinearityClass::Copy))
+        if let Some(class) = self.written_linearity_bound(node)? {
+            return Ok(class);
+        }
+        // A `gparam` with no `capability_bound` child writes a numeric marker
+        // after its colon, or nothing: the colon tells the two apart.
+        Ok(
+            if self
+                .tree
+                .direct_token_with(node, TerminalPredicate::Fixed(crate::FixedTerminal::Colon))?
+                .is_some()
+            {
+                LinearityClass::Copy
+            } else {
+                LinearityClass::Linear
+            },
+        )
     }
 
-    /// [PROV-6, S37] an instantiation whose argument's class does not satisfy
-    /// the written bound is refused at the call, naming the parameter, the
-    /// bound and the argument.
+    /// [PROV-6] an instantiation whose argument's class does not satisfy the
+    /// written bound is refused at the call, naming the parameter, the bound
+    /// and the argument.
     ///
-    /// Satisfaction is the chain `copy < affine < linear` read left to right,
-    /// so the bound is a ceiling and not an equality: `linear` accepts every
-    /// class, `affine` accepts copy and affine, and `copy` accepts copy alone.
+    /// The bound is a capability filter, so it is a ceiling and not an
+    /// equality: no bound accepts every class, `drop` accepts copy and
+    /// affine, and `copy` accepts copy alone.
     pub(in crate::semantic) fn check_linearity_bound(
         &self,
         parameter: &str,
@@ -543,7 +565,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node,
             SemanticIssueKind::LinearityBoundMismatch {
                 parameter: parameter.to_owned(),
-                bound: bound.spelling(),
+                bound: bound.bound_spelling(),
                 argument,
                 actual: actual.spelling(),
             },
@@ -575,10 +597,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         release: CheckedReleaseMode,
     ) -> Result<Vec<super::super::model::CheckedStatePath>, CheckStop> {
         let mut writes = Vec::new();
-        for store in self.capability_released_stores_for(ty, release)? {
-            if let Some(parameter) = function.parameters.iter().find(
-                |parameter| false,
-            ) {
+        for _store in self.capability_released_stores_for(ty, release)? {
+            if let Some(parameter) = function.parameters.iter().find(|_parameter| false) {
                 writes.push(super::super::model::CheckedStatePath {
                     root: parameter.declaration,
                     steps: Vec::new(),
@@ -587,5 +607,4 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(writes)
     }
-
 }

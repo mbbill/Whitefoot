@@ -147,7 +147,7 @@ fn send_all(send: &TcpSend, source: &[u8], length: own u64) -> result: own Resul
         set sent = next;
       }
       Err(error: problem) => {
-        return Err<unit, IoError>(error: move problem);
+        return Err<unit, IoError>(error: problem);
       }
     }
   }

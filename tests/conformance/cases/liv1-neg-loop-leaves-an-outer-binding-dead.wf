@@ -7,7 +7,7 @@ fn measure(cell: own Slots<u8, 4>) -> size: own u64 pure {
 fn main() -> status: own ExitStatus pure {
   doc "OWN-11: the body consumes an outer binding and does not commit a value back into it, so the backedge disagrees with the entering edge.";
   let values = array_filled::<u8, 4>(value: 0_u8);
-  let c = slots_from_array::<u8, 4>(values: move values);
+  let c = slots_from_array::<u8, 4>(values: values);
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
   }

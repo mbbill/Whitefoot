@@ -1,8 +1,8 @@
-formal Disposer {
+interface Disposer {
   fn release(factory: &HandleFactory, file: own ReadFile) -> function_result: own unit pure;
 }
 
-actual First : Disposer {
+binding First : Disposer {
   release = release_read_file;
 }
 

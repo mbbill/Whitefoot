@@ -28,8 +28,10 @@ pub enum FixedTerminal {
     Semicolon,
     /// `opaque`.
     Opaque,
-    /// `linear`.
-    Linear,
+    /// `nocopy`.
+    Nocopy,
+    /// `nodrop`.
+    Nodrop,
     /// `struct`.
     Struct,
     /// `{`.
@@ -66,10 +68,10 @@ pub enum FixedTerminal {
     When,
     /// `is`.
     Is,
-    /// `formal`.
-    Formal,
-    /// `actual`.
-    Actual,
+    /// `interface`.
+    Interface,
+    /// `binding`.
+    Binding,
     /// `::`.
     ColonColon,
     /// `const`.
@@ -82,8 +84,8 @@ pub enum FixedTerminal {
     RightAngle,
     /// `copy`.
     Copy,
-    /// `affine`.
-    Affine,
+    /// `drop`.
+    Drop,
     /// `&`.
     Ampersand,
     /// `[`.
@@ -215,12 +217,13 @@ pub enum FixedTerminal {
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 96] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 97] = [
     FixedTerminal::Program,
     FixedTerminal::NoHeap,
     FixedTerminal::Semicolon,
     FixedTerminal::Opaque,
-    FixedTerminal::Linear,
+    FixedTerminal::Nocopy,
+    FixedTerminal::Nodrop,
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -239,15 +242,15 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 96] = [
     FixedTerminal::Ensures,
     FixedTerminal::When,
     FixedTerminal::Is,
-    FixedTerminal::Formal,
-    FixedTerminal::Actual,
+    FixedTerminal::Interface,
+    FixedTerminal::Binding,
     FixedTerminal::ColonColon,
     FixedTerminal::Const,
     FixedTerminal::Doc,
     FixedTerminal::LeftAngle,
     FixedTerminal::RightAngle,
     FixedTerminal::Copy,
-    FixedTerminal::Affine,
+    FixedTerminal::Drop,
     FixedTerminal::Ampersand,
     FixedTerminal::LeftBracket,
     FixedTerminal::RightBracket,
@@ -328,7 +331,8 @@ impl FixedTerminal {
             Self::NoHeap => "no_heap",
             Self::Semicolon => ";",
             Self::Opaque => "opaque",
-            Self::Linear => "linear",
+            Self::Nocopy => "nocopy",
+            Self::Nodrop => "nodrop",
             Self::Struct => "struct",
             Self::LeftBrace => "{",
             Self::RightBrace => "}",
@@ -347,15 +351,15 @@ impl FixedTerminal {
             Self::Ensures => "ensures",
             Self::When => "when",
             Self::Is => "is",
-            Self::Formal => "formal",
-            Self::Actual => "actual",
+            Self::Interface => "interface",
+            Self::Binding => "binding",
             Self::ColonColon => "::",
             Self::Const => "const",
             Self::Doc => "doc",
             Self::LeftAngle => "<",
             Self::RightAngle => ">",
             Self::Copy => "copy",
-            Self::Affine => "affine",
+            Self::Drop => "drop",
             Self::Ampersand => "&",
             Self::LeftBracket => "[",
             Self::RightBracket => "]",
@@ -808,35 +812,36 @@ mod tests {
         assert_eq!(FixedTerminal::Program as u8, 0);
         assert_eq!(FixedTerminal::NoHeap as u8, 1);
         assert_eq!(FixedTerminal::Semicolon as u8, 2);
-        // `struct_decl`'s `"opaque"? "linear"?` order [GRAM-2, TYPE-2] puts
-        // the opaque modifier ahead of `linear`, so it takes slot three and
+        // `struct_decl`'s `"opaque"? ("nocopy" | "nodrop")?` order [GRAM-2, TYPE-2] puts
+        // the opaque modifier ahead of both capability modifiers, so it takes slot three and
         // every later ordinal moves down by one.
         assert_eq!(FixedTerminal::Opaque as u8, 3);
-        assert_eq!(FixedTerminal::Linear as u8, 4);
+        assert_eq!(FixedTerminal::Nocopy as u8, 4);
+        assert_eq!(FixedTerminal::Nodrop as u8, 5);
         // x1 [GRAM-2]: `field := "readonly"? IDENT ":" type ";"` reaches the
         // field modifier before the colon of the same production, so
-        // `readonly` takes slot eight and every later ordinal moves down by
+        // `readonly` takes slot nine and every later ordinal moves down by
         // one.
-        assert_eq!(FixedTerminal::Readonly as u8, 8);
-        assert_eq!(FixedTerminal::Colon as u8, 9);
-        assert_eq!(FixedTerminal::Ensures as u8, 20);
-        assert_eq!(FixedTerminal::Is as u8, 22);
-        assert_eq!(FixedTerminal::Copy as u8, 30);
-        assert_eq!(FixedTerminal::Affine as u8, 31);
+        assert_eq!(FixedTerminal::Readonly as u8, 9);
+        assert_eq!(FixedTerminal::Colon as u8, 10);
+        assert_eq!(FixedTerminal::Ensures as u8, 21);
+        assert_eq!(FixedTerminal::Is as u8, 23);
+        assert_eq!(FixedTerminal::Copy as u8, 31);
+        assert_eq!(FixedTerminal::Drop as u8, 32);
         // `&` is reached through `param`'s `"&" "[" type "]"` arm before the
         // bracket atoms of the same arm, so the reference sigil now precedes
         // them; in v0.59 it entered through `mode`'s `&uniq`.
-        assert_eq!(FixedTerminal::Ampersand as u8, 32);
-        assert_eq!(FixedTerminal::DotDot as u8, 48);
-        assert_eq!(FixedTerminal::For as u8, 56);
-        assert_eq!(FixedTerminal::In as u8, 57);
-        assert_eq!(FixedTerminal::Invariant as u8, 58);
-        assert_eq!(FixedTerminal::Use as u8, 59);
-        assert_eq!(FixedTerminal::Times as u8, 60);
-        assert_eq!(FixedTerminal::PercentChecked as u8, 85);
-        assert_eq!(FixedTerminal::Writes as u8, 95);
-        assert_eq!(TerminalPredicate::Identifier.index(), 96);
-        assert_eq!(TerminalPredicate::Digits.index(), 102);
+        assert_eq!(FixedTerminal::Ampersand as u8, 33);
+        assert_eq!(FixedTerminal::DotDot as u8, 49);
+        assert_eq!(FixedTerminal::For as u8, 57);
+        assert_eq!(FixedTerminal::In as u8, 58);
+        assert_eq!(FixedTerminal::Invariant as u8, 59);
+        assert_eq!(FixedTerminal::Use as u8, 60);
+        assert_eq!(FixedTerminal::Times as u8, 61);
+        assert_eq!(FixedTerminal::PercentChecked as u8, 86);
+        assert_eq!(FixedTerminal::Writes as u8, 96);
+        assert_eq!(TerminalPredicate::Identifier.index(), 97);
+        assert_eq!(TerminalPredicate::Digits.index(), 103);
     }
 
     /// The inventory holds every predicate, once.

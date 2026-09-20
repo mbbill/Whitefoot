@@ -1,19 +1,24 @@
+nocopy enum Cell<T> {
+  EmptyCell();
+  Filled(value: T);
+}
+
 struct OptVec {
-  buf: Slots<Option<u32>, 4>;
+  buf: Slots<Cell<u32>, 4>;
   fill: u64;
 }
 
-fn vacant<T: drop, const n: u64>() -> result: own Slots<Option<T>, n> pure contract {
+fn vacant<T: drop, const n: u64>() -> result: own Slots<Cell<T>, n> pure contract {
   ensures result.len >= n;
   ensures result.cap <= result.len;
 } {
   doc "Builds a window of n slots, every one holding None.";
-  let built = slots_new::<Option<T>, n>();
+  let built = slots_new::<Cell<T>, n>();
   for @fill (
     at in 0_u64..n,
     invariant grown: built.len == at
   ) {
-    let empty = None<T>();
+    let empty = EmptyCell<T>();
     place_back(window: &built, value: move empty);
   }
   return move built;
@@ -33,12 +38,12 @@ fn optvec_push(v: own OptVec, x: own u32) -> result: own OptVec pure {
   } else {
     return move v;
   }
-  let filled = Some<u32>(value: x);
+  let filled = Filled<u32>(value: x);
   swap(first: &v.buf[count], second: &filled);
   match filled {
-    None() => {
+    EmptyCell() => {
     }
-    Some(value: stray) => {
+    Filled(value: stray) => {
       return move v;
     }
   }
@@ -62,14 +67,14 @@ fn optvec_pop(v: own OptVec) -> (rest: own OptVec, taken: own u32) pure {
   } else {
     return move v, 0_u32;
   }
-  let hole = None<u32>();
+  let hole = EmptyCell<u32>();
   swap(first: &v.buf[last], second: &hole);
   set v.fill = last;
   match hole {
-    None() => {
+    EmptyCell() => {
       return move v, 0_u32;
     }
-    Some(value: w) => {
+    Filled(value: w) => {
       return move v, w;
     }
   }

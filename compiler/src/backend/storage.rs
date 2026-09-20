@@ -1099,7 +1099,7 @@ mod tests {
     #[test]
     fn a_nonzero_result_field_can_back_an_owned_parameter_and_returned_child() {
         with_program(
-            br#"struct Row {
+            br#"nocopy struct Row {
   left: u64;
   right: u64;
 }
@@ -1535,7 +1535,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn fresh_binding_destinations_keep_call_inputs_and_snapshots_separate() {
         with_program(
-            br#"struct Row {
+            br#"nocopy struct Row {
   left: u64;
   right: u64;
 }
@@ -1637,7 +1637,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn a_synchronous_whole_result_reuses_one_consumed_owned_binding() {
         with_program(
-            br#"struct Row {
+            br#"nocopy struct Row {
   left: u64;
   right: u64;
 }
@@ -1687,7 +1687,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn several_same_typed_owned_inputs_do_not_choose_an_alias_candidate() {
         with_program(
-            br#"struct Row {
+            br#"nocopy struct Row {
   left: u64;
   right: u64;
 }
@@ -1742,7 +1742,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn a_multi_result_retains_its_complete_parent_allocation() {
         with_program(
-            br#"struct Row {
+            br#"nocopy struct Row {
   left: u64;
   right: u64;
 }

@@ -138,8 +138,8 @@ fn is_block_bearing(record: &crate::syntax::parser::finalize::topology::NodeReco
         record.production,
         Production::StructDecl
             | Production::EnumDecl
-            | Production::FormalDecl
-            | Production::ActualDecl
+            | Production::InterfaceDecl
+            | Production::BindingDecl
             | Production::FnDecl
             | Production::ContractBlock
             | Production::LoopStmt
@@ -214,7 +214,7 @@ pub(super) fn build_gap_styles(
             && record
                 .parent
                 .and_then(|parent| topology.node(parent))
-                .is_some_and(|parent| parent.production == Production::FormalDecl)
+                .is_some_and(|parent| parent.production == Production::InterfaceDecl)
         {
             mark_before(&mut gaps, topology, record.first_terminal, GapStyle::Break)?;
             let next = record
@@ -444,7 +444,7 @@ pub(super) fn attachment(
             .get(ordinal)
             .and_then(|record| record.owner)
             .and_then(|owner| topology.node(owner))
-            .is_some_and(|owner| owner.production == Production::ActualDecl);
+            .is_some_and(|owner| owner.production == Production::BindingDecl);
     if compare_angle || actual_separator {
         return Ok(Attachment {
             left: false,

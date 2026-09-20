@@ -1,9 +1,9 @@
-formal Zeroed {
+interface Zeroed {
   doc "A formal declares function-kind signatures [FN-3].";
   fn zero() -> result: own i32 pure;
 }
 
-actual First : Zeroed {
+binding First : Zeroed {
   zero = i32_zero;
 }
 

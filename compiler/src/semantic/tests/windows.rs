@@ -132,8 +132,10 @@ fn member_spellings_reserve_nothing() {
 #[test]
 fn a_readonly_field_is_never_a_write_target() {
     for source in [
-        include_bytes!("../../../../tests/conformance/cases/type2-neg-readonly-field-set-target.wf")
-            .as_slice(),
+        include_bytes!(
+            "../../../../tests/conformance/cases/type2-neg-readonly-field-set-target.wf"
+        )
+        .as_slice(),
         include_bytes!(
             "../../../../tests/conformance/cases/type2-neg-readonly-path-passes-through.wf"
         )
@@ -150,6 +152,70 @@ fn a_readonly_field_is_never_a_write_target() {
     assert_accepts(include_bytes!(
         "../../../../tests/conformance/cases/type2-pos-readonly-field-read-and-whole-replace.wf"
     ));
+}
+
+/// [TYPE-2] readonly provenance follows references and reborrows. A written
+/// actual cannot hide the readonly field by naming an alias or by stepping
+/// through a reference to the enclosing value.
+#[test]
+fn readonly_provenance_survives_reference_aliases_and_reborrows() {
+    for source in [
+        br#"struct Record {
+  readonly value: u8;
+}
+
+fn put(cell: &u8) -> result: own unit writes(cell) {
+  set deref(cell) = 9_u8;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let record = Record(value: 1_u8);
+  let p = &record.value;
+  put(cell: p);
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"struct Record {
+  readonly value: u8;
+}
+
+fn put(cell: &u8) -> result: own unit writes(cell) {
+  set deref(cell) = 9_u8;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let record = Record(value: 1_u8);
+  let p = &record;
+  put(cell: &deref(p).value);
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"struct Record {
+  readonly value: u8;
+}
+
+fn put(cell: &u8) -> result: own unit writes(cell) {
+  set deref(cell) = 9_u8;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let record = Record(value: 1_u8);
+  let p = &record.value;
+  put(cell: &deref(p));
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+    ] {
+        assert_rule_kind(source, SemanticRule::Type2, |kind| {
+            matches!(kind, SemanticIssueKind::ReadonlyWriteTarget { .. })
+        });
+    }
 }
 
 /// [OP-15] a measure read is a place form whose exact type is `own u64`, so
@@ -297,6 +363,133 @@ fn free_empty_of_a_nonempty_window_is_refused() {
     assert_rule_kind(source, SemanticRule::Op14, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedEmptyRunRelease { .. })
     });
+}
+
+/// [OP-14] applies to both window shapes, static and runtime capacities, and
+/// copy and linear elements. Direct static shapes and boxed runtime shapes are
+/// admitted, and every admitted operand must have proved current length zero.
+#[test]
+fn free_empty_uses_the_current_length_for_every_window_shape() {
+    for source in [
+        br#"fn main() -> status: own ExitStatus pure {
+  let window = box_slots_new::<u8>(capacity: 2_u64);
+  free_empty(window: move window);
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"fn main() -> status: own ExitStatus pure {
+  let window = box_ring_new::<u8>(capacity: 2_u64);
+  free_empty(window: move window);
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"fn main() -> status: own ExitStatus pure {
+  let slots = slots_new::<u8, 4>();
+  free_empty(window: move slots);
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"fn main() -> status: own ExitStatus pure {
+  let ring = ring_new::<u8, 4>();
+  free_empty(window: move ring);
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"nodrop enum Ticket {
+  Mark();
+}
+
+fn main() -> status: own ExitStatus pure {
+  let window = box_slots_new::<Ticket>(capacity: 2_u64);
+  let ticket = Mark();
+  place_back(window: &window.inner, value: move ticket);
+  let taken = take_back(window: &window.inner);
+  match move taken {
+    Mark() => {
+      free_empty(window: move window);
+      return exit_status(code: 0_u8);
+    }
+  }
+}
+"#
+        .as_slice(),
+    ] {
+        assert_accepts(source);
+    }
+
+    for source in [
+        br#"fn main() -> status: own ExitStatus pure {
+  let window = box_slots_new::<u8>(capacity: 4_u64);
+  place_back(window: &window.inner, value: 7_u8);
+  free_empty(window: move window);
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"nodrop struct Token {
+  value: u8;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let window = box_slots_new::<Token>(capacity: 1_u64);
+  let token = Token(value: 7_u8);
+  place_back(window: &window.inner, value: move token);
+  free_empty(window: move window);
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"fn main() -> status: own ExitStatus pure {
+  let window = box_ring_new::<Box<u8>>(capacity: 4_u64);
+  let value = box_new::<u8>(value: 7_u8);
+  place_back(window: &window.inner, value: move value);
+  free_empty(window: move window);
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"fn release(window: own Box<Slots<u8>>) -> result: own unit pure {
+  free_empty(window: move window);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+    ] {
+        assert_rule_kind(source, SemanticRule::Op14, |kind| {
+            matches!(kind, SemanticIssueKind::UndischargedEmptyRunRelease { .. })
+        });
+    }
+
+    for source in [
+        br#"fn main() -> status: own ExitStatus pure {
+  let slots = slots_new::<u8, 4>();
+  let window = box_new::<Slots<u8, 4>>(value: move slots);
+  free_empty(window: move window);
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"fn main() -> status: own ExitStatus pure {
+  let ring = ring_new::<u8, 4>();
+  let window = box_new::<Ring<u8, 4>>(value: move ring);
+  free_empty(window: move window);
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+    ] {
+        assert_rule_kind(source, SemanticRule::Op14, |kind| {
+            matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+        });
+    }
 }
 
 /// [TYPE-9] the three shapes have two placements each: constant capacity

@@ -280,3 +280,107 @@ fn main() -> status: own ExitStatus pure {{
         "deref(view).len == 32_u64",
     );
 }
+
+/// [ENT-3.S6] carries the current endpoint images into an inline range actual,
+/// so an ordinary ordering fact proves that the formed range is nonempty.
+#[test]
+fn dynamic_inline_range_length_discharge_uses_its_endpoint_ordering() {
+    let source = br#"fn nonempty(part: &[u8]) -> result: own u64 reads(part.len) contract {
+  requires 0_u64 < deref(part).len;
+} {
+  return deref(part).len;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let a = array_filled::<u8, 4>(value: 0_u8);
+  let lo = 1_u64;
+  let hi = 3_u64;
+  if lo < hi {
+    let n = nonempty(part: &a[lo..hi]);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// Rebinding a range reference replaces its captured measure. The requirement
+/// after the assignment therefore sees the new four-element range.
+#[test]
+fn rebinding_a_range_reference_replaces_its_captured_length() {
+    let source = format!(
+        "{RANGE_OFFSET_CALLEE}
+fn main() -> status: own ExitStatus pure {{
+  let a = array_filled::<u8, 4>(value: 0_u8);
+  let part = &a[2_u64..3_u64];
+  set part = &a[0_u64..4_u64];
+  let x = at(part: part, offset: 3_u64);
+  return exit_status(code: x);
+}}
+"
+    );
+    assert_accepts(source.as_bytes());
+}
+
+/// Endpoint bindings are evaluated when a range is formed. Later assignments
+/// cannot rewrite the length already stored in the reference descriptor.
+#[test]
+fn a_bound_range_keeps_the_endpoint_images_captured_at_formation() {
+    let body = |length: &str| {
+        format!(
+            "fn expects(part: &[u8]) -> result: own u64 reads(part.len) contract {{
+  requires deref(part).len == {length};
+}} {{
+  return deref(part).len;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  let a = array_filled::<u8, 6>(value: 0_u8);
+  let lo = 1_u64;
+  let hi = 3_u64;
+  let part = &a[lo..hi];
+  set lo = 0_u64;
+  set hi = 6_u64;
+  let n = expects(part: part);
+  return exit_status(code: 0_u8);
+}}
+"
+        )
+    };
+    assert_accepts(body("2_u64").as_bytes());
+    assert_call_goal(
+        body("6_u64").as_bytes(),
+        CallRequirementDisposition::Refuted,
+        "deref(part).len == 6_u64",
+    );
+}
+
+/// Two inline ranges reuse the same endpoint binding spellings but evaluate
+/// them at different times, so their call goals retain distinct lengths.
+#[test]
+fn inline_ranges_separated_by_endpoint_mutation_keep_distinct_lengths() {
+    let source = br#"fn below_three(part: &[u8]) -> result: own u64 reads(part.len) contract {
+  requires deref(part).len < 3_u64;
+} {
+  return deref(part).len;
+}
+
+fn above_three(part: &[u8]) -> result: own u64 reads(part.len) contract {
+  requires deref(part).len > 3_u64;
+} {
+  return deref(part).len;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let a = array_filled::<u8, 6>(value: 0_u8);
+  let lo = 1_u64;
+  let hi = 3_u64;
+  let first = below_three(part: &a[lo..hi]);
+  set lo = 0_u64;
+  set hi = 4_u64;
+  let second = above_three(part: &a[lo..hi]);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}

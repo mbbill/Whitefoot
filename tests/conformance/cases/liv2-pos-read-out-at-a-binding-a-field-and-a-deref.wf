@@ -26,7 +26,7 @@ fn refill(out: &Box<u64>) -> done: own unit writes(out) {
 fn main() -> status: own ExitStatus pure {
   doc "OP-12: the atomic in-place update at each of the three place shapes a commit reinitializes - a bare binding, a field of a struct, and Box content reached through a reference parameter whose row writes that path. The old value enters the callee by value and the callee's result is committed, so the place owns exactly one valid value at every program point and none of the three needs a hole.";
   let values = array_filled::<u8, 4>(value: 0_u8);
-  let bare = slots_from_array::<u8, 4>(values: move values);
+  let bare = slots_from_array::<u8, 4>(values: values);
   set bare = regrow(old: move bare);
   let holder = Holder(run: move bare);
   set holder.run = regrow(old: move holder.run);

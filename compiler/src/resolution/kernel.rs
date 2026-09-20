@@ -208,7 +208,7 @@ mod tests {
         );
         assert_eq!(container_nominal(CELL_NOMINAL_ID), Some(&CELL_NOMINAL));
         assert!(crate::ACTIVE_KERNEL_SPEC_TEXT.contains(
-            "`Box<T>` is the prelude's opaque struct `opaque struct Box<T: linear> { inner: T; }`"
+            "`Box<T>` is the prelude's opaque struct `opaque nocopy struct Box<T> { inner: T; }`"
         ));
     }
 
@@ -219,8 +219,7 @@ mod tests {
     fn every_storage_spelling_maps_to_its_container_identity() {
         for (ordinal, nominal) in CONTAINER_NOMINALS.iter().enumerate() {
             assert_eq!(
-                crate::container_nominal_id(nominal.spelling)
-                    .map(|id| usize::from(id.ordinal())),
+                crate::container_nominal_id(nominal.spelling).map(|id| usize::from(id.ordinal())),
                 Some(ordinal),
                 "{} resolves to its own storage identity",
                 nominal.spelling

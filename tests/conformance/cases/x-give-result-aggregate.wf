@@ -4,13 +4,13 @@ fn choose(b: own Bool) -> function_result: own Result<u64, u64> pure {
   } else {
     give Err<u64, u64>(error: 2_u64);
   }
-  return move result;
+  return result;
 }
 
 fn main() -> status: own ExitStatus pure {
   let true_atom_0001 = True();
   let first = choose(b: true_atom_0001);
-  match move first {
+  match first {
     Ok(value: ok_value) => {
       if ok_value == 1_u64 {
       } else {
@@ -23,7 +23,7 @@ fn main() -> status: own ExitStatus pure {
   }
   let false_atom_0002 = False();
   let second = choose(b: false_atom_0002);
-  match move second {
+  match second {
     Ok(value: err_value) => {
       return exit_status(code: 3_u8);
     }

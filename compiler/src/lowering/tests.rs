@@ -598,9 +598,9 @@ fn select(stamp: own u64, value: &Row) -> result: own u64 reads(value) {
 fn main() -> status: own ExitStatus pure {
   let rows = slots_new::<Row, 2>();
   let first = Row(value: 3_u64);
-  place_back(window: &rows, value: move first);
+  place_back(window: &rows, value: first);
   let second = Row(value: 5_u64);
-  place_back(window: &rows, value: move second);
+  place_back(window: &rows, value: second);
   let observed = select(stamp: 7_u64, value: &rows[1_u64]);
   return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-struct Payload {
+nocopy struct Payload {
   value: u64;
 }
 

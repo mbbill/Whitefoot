@@ -918,7 +918,7 @@ fn validate_target_obligation(
         // constant. The scaling is still checked for representability, because
         // that is the joint fact [OP-9]'s obligation and this qualification
         // establish together and neither establishes alone.
-                        IrOperation::ArrayIndex {
+        IrOperation::ArrayIndex {
             root,
             target_domain,
             ..
@@ -1075,7 +1075,12 @@ impl LayoutComputer<'_, '_, '_, '_> {
                 let slots = checked_mul(stride, length, self.target, TargetObject::Representation)?;
                 let align = element.align.max(8);
                 let header = if shape == IrWindowShape::Ring { 16 } else { 8 };
-                let body = align_up(self.target, header, element.align, TargetObject::Representation)?;
+                let body = align_up(
+                    self.target,
+                    header,
+                    element.align,
+                    TargetObject::Representation,
+                )?;
                 let size = align_up(
                     self.target,
                     body.checked_add(slots)

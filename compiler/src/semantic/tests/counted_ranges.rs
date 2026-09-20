@@ -278,7 +278,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_body_inherits_own11_and_accepts_body_local_ownership() {
     assert_rule(
-        br#"struct Token {
+        br#"nocopy struct Token {
   value: u64;
 }
 
@@ -306,7 +306,7 @@ fn main() -> status: own ExitStatus pure {
     // [REF-2], which is not a rule of its own about loops.
 
     assert_checks(
-        br#"struct Token {
+        br#"nocopy struct Token {
   value: u64;
 }
 

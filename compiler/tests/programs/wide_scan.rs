@@ -71,7 +71,7 @@ fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], le
         set sent = accepted;
       }
       Err(error: problem) => {
-        return Err<unit, IoError>(error: move problem);
+        return Err<unit, IoError>(error: problem);
       }
     }
   }

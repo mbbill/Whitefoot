@@ -1,7 +1,7 @@
-formal Marker {
+interface Marker {
 }
 
-actual First : Marker<i32> {
+binding First : Marker<i32> {
 }
 
 fn main() -> status: own ExitStatus pure {

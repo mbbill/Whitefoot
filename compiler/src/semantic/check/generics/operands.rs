@@ -58,7 +58,8 @@ enum AdmittedShapes {
     /// `Box<Slots<T>>` alone: "`grow` is defined on `Box<Slots<T>>` alone"
     /// [OP-10].
     BoxedRuntimeSlots,
-    /// The window shapes plus `Box<Slots<T>>` and `Box<Ring<T>>` [OP-14].
+    /// The window shapes plus runtime-capacity `Box<Slots<T>>` and
+    /// `Box<Ring<T>>` [OP-14].
     WindowOrBoxedWindow,
     /// Any owned type: `swap` "exchanges the values at two owned places of one
     /// type" [OP-11].
@@ -276,8 +277,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     AdmittedShapes::Ring => "a `Ring` operand, which is what this row admits",
                     AdmittedShapes::BoxedRuntimeSlots => "a `Box<Slots<T>>` operand",
                     AdmittedShapes::WindowOrBoxedWindow => {
-                        "a window, or a `Box` holding one, operand [OP-14]"
-                    },
+                        "a `Slots` or `Ring`, or a `Box` holding its runtime-capacity form [OP-14]"
+                    }
                     AdmittedShapes::AnyValue => "an owned place of one type [OP-11]",
                 },
                 "an operand outside this operation's admitted set",
@@ -310,22 +311,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ),
             AdmittedShapes::WindowOrBoxedWindow => {
                 matches!(operand, CheckedType::Window { .. })
-                    || matches!(self.box_content(operand)?, Some(CheckedType::Window { .. }))
+                    || matches!(
+                        self.box_content(operand)?,
+                        Some(CheckedType::Window { capacity: None, .. })
+                    )
             }
         })
     }
 
     /// The content of a [TYPE-9] `Box`, for an operand that is one.
-    fn box_content(&self, operand: CheckedType) -> Result<Option<CheckedType>, CheckStop> {
+    pub(in crate::semantic::check) fn box_content(
+        &self,
+        operand: CheckedType,
+    ) -> Result<Option<CheckedType>, CheckStop> {
         let CheckedType::Nominal(nominal) = operand else {
             return Ok(None);
         };
-        Ok(
-            match self.nominal(nominal)?.kind {
-                CheckedNominalKind::Box { referent, .. } => Some(referent),
-                _ => None,
-            },
-        )
+        Ok(match self.nominal(nominal)?.kind {
+            CheckedNominalKind::Box { referent, .. } => Some(referent),
+            _ => None,
+        })
     }
 
     fn project_operand_type(
@@ -362,7 +367,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ordinal: usize,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<Option<CheckedType>, CheckStop> {
-        let Some(list) = self.tree.first_child_with(call, Production::FieldinitList)? else {
+        let Some(list) = self
+            .tree
+            .first_child_with(call, Production::FieldinitList)?
+        else {
             return Ok(None);
         };
         let fields = self.tree.children_with(list, Production::Fieldinit)?;

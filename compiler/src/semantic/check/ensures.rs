@@ -443,8 +443,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     // keeps the concrete requirement, which is what excludes
                     // an H0 instance materialized from an incomplete [FN-2]
                     // call.
-                    let symbolic_caller =
-                        !caller.substitution.is_concrete(&self.elements.borrow());
+                    let symbolic_caller = !caller.substitution.is_concrete(&self.elements.borrow());
                     let substitution =
                         match self.call_generic_substitution(call, &template, &caller.substitution)
                         {
@@ -818,9 +817,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 ancestor = self.tree.parent(node)?;
             }
-            if !in_ensures
-                || !parameter.is_some_and(|p| parameter_has_exit_state(function, p))
-            {
+            if !in_ensures || !parameter.is_some_and(|p| parameter_has_exit_state(function, p)) {
                 return self.issue_node(
                     SemanticRule::Msr3,
                     base,
@@ -1669,6 +1666,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             root: PostconditionReturnPlaceRoot::NamedConst(constant.declaration),
                             projections: Vec::new(),
                             ty: constant.ty,
+                            range_referent: false,
                             source: statement.clone(),
                         })
                     }
@@ -1690,6 +1688,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
                 Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
+            }
+            // [FN-9, REF-4] a direct `return deref(part).len` is one exact
+            // ENT-2 range-measure term. TYPE-8 carries the range kind in the
+            // binding mode rather than `CheckedType`, so retain that kind for
+            // the selected-return proof instead of trying to recover it from
+            // the element type.
+            CheckedExpression::RangeMeasure { measure, root } => {
+                let Some(info) = binding_info.get(&root.binding) else {
+                    return Ok(None);
+                };
+                let element = root.element.ty();
+                if info.ty != element {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                Ok(Some(PostconditionReturnDatum::Measure(
+                    *measure,
+                    PostconditionReturnPlace {
+                        root: PostconditionReturnPlaceRoot::Binding(root.binding),
+                        projections: Vec::new(),
+                        ty: element,
+                        range_referent: true,
+                        source: statement.clone(),
+                    },
+                )))
             }
             CheckedExpression::BufferMeasure { measure, root } => {
                 // [TYPE-9] a run reached through its cell has a content step
@@ -1786,6 +1808,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 root: PostconditionReturnPlaceRoot::NamedConst(*declaration),
                 projections: Vec::new(),
                 ty: value.ty(),
+                range_referent: false,
                 source: statement.clone(),
             },
             CheckedExpression::Project {
@@ -1820,8 +1843,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 PostconditionReturnPlace {
                     root: PostconditionReturnPlaceRoot::Binding(*binding),
-                    projections: vec![GoalProjection::Deref],
+                    // A reference binding is already the body-place root of
+                    // its referent. Clause templates retain their written
+                    // wrapper deref, but a concrete selected return does not.
+                    projections: Vec::new(),
                     ty: *ty,
+                    range_referent: false,
                     source: carrier.clone(),
                 }
             }
@@ -1876,16 +1903,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(ty) = self.postcondition_projected_type(info.ty, fields)? else {
             return Ok(None);
         };
-        let projections = info
-            .implicit_deref
-            .then_some(GoalProjection::Deref)
-            .into_iter()
-            .chain(fields.iter().copied().map(GoalProjection::Field))
+        // This is a concrete body place, not a declaration template. A
+        // reference binding roots the referent directly; only projections
+        // written below it belong in the selected-return identity. Recursive
+        // `BoxDeref` classification appends its real content step separately.
+        let projections = fields
+            .iter()
+            .copied()
+            .map(GoalProjection::Field)
             .collect();
         Ok(Some(PostconditionReturnPlace {
             root: PostconditionReturnPlaceRoot::Binding(binding),
             projections,
             ty,
+            range_referent: false,
             source: source.clone(),
         }))
     }
@@ -2095,7 +2126,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// Whether this nominal is a `Box` whose content the measure table gives
     /// a row [TYPE-9, MSR-1].
-    fn boxed_measured_content(&self, nominal: super::super::model::NominalId) -> Result<bool, CheckStop> {
+    fn boxed_measured_content(
+        &self,
+        nominal: super::super::model::NominalId,
+    ) -> Result<bool, CheckStop> {
         let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind else {
             return Ok(false);
         };

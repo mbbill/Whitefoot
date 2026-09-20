@@ -1,6 +1,6 @@
 const base_value: i32 = 5_i32;
 
-formal ConstantSource {
+interface ConstantSource {
   fn base() -> result: own i32 pure;
 }
 
@@ -9,7 +9,7 @@ fn from_const() -> result: own i32 pure {
   return base_value;
 }
 
-actual FromConst : ConstantSource {
+binding FromConst : ConstantSource {
   base = from_const;
 }
 

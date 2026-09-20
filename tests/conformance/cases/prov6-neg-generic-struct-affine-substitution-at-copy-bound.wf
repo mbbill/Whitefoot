@@ -1,0 +1,15 @@
+struct Wrapped<T> {
+  value: T;
+}
+
+fn duplicate<T: copy>(value: own T) -> (first: own T, second: own T) pure {
+  return value, value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "Generic nominal capabilities are decided after substitution. Wrapped<Box<u8>> owns affine content and therefore cannot satisfy a copy bound even though the Wrapped declaration has no modifier.";
+  let content = box_new::<u8>(value: 21_u8);
+  let wrapped = Wrapped<Box<u8>>(value: move content);
+  let (first, second) = duplicate::<Wrapped<Box<u8>>>(value: move wrapped);
+  return exit_status(code: 0_u8);
+}

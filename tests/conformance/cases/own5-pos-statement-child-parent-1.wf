@@ -17,7 +17,7 @@ fn main() -> status: own ExitStatus pure {
   doc "Two calls reaching disjoint fields through one reference each write their own path, and the whole value is written again after both have ended.";
   let l = Cell(value: 3_u64);
   let r = Cell(value: 5_u64);
-  let pair = Pair(left: move l, right: move r);
+  let pair = Pair(left: l, right: r);
   let holder = &pair;
   let first = change(cell: &deref(holder).left);
   let second = change(cell: &deref(holder).right);

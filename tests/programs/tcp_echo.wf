@@ -237,7 +237,7 @@ fn send_all(send: &TcpSend, source: &[u8], length: own u64) -> result: own Resul
         set sent = next;
       }
       Err(error: problem) => {
-        return Err<unit, IoError>(error: move problem);
+        return Err<unit, IoError>(error: problem);
       }
     }
   }
@@ -313,7 +313,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
                     set ended = 1_u8;
                   }
                   ReadFailed(error: problem) => {
-                    let reported = socket_class(error: move problem);
+                    let reported = socket_class(error: problem);
                     set outcome = 20_u8 +wrap reported;
                     set ended = 2_u8;
                   }
@@ -325,7 +325,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
                 Ok(value: delivered) => {
                 }
                 Err(error: problem) => {
-                  let reported = socket_class(error: move problem);
+                  let reported = socket_class(error: problem);
                   set outcome = 30_u8 +wrap reported;
                   set ended = 2_u8;
                 }

@@ -226,12 +226,18 @@ pub(crate) struct PostconditionReturnPlace {
     pub(crate) root: PostconditionReturnPlaceRoot,
     pub(crate) projections: Vec<GoalProjection>,
     pub(crate) ty: CheckedType,
+    /// [TYPE-8, REF-4] the place is a range reference whose measured kind
+    /// cannot be recovered from its element `ty`.
+    pub(crate) range_referent: bool,
     pub(crate) source: NodePath,
 }
 
 impl PartialEq for PostconditionReturnPlace {
     fn eq(&self, other: &Self) -> bool {
-        self.root == other.root && self.projections == other.projections && self.ty == other.ty
+        self.root == other.root
+            && self.projections == other.projections
+            && self.ty == other.ty
+            && self.range_referent == other.range_referent
     }
 }
 

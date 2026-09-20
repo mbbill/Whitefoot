@@ -1,9 +1,9 @@
-formal Pair {
+interface Pair {
   fn first() -> result: own i32 pure;
   fn second() -> result: own i32 pure;
 }
 
-actual First : Pair {
+binding First : Pair {
   first = make_first;
 }
 

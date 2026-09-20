@@ -168,12 +168,12 @@ fn main() -> status: own ExitStatus pure {
   let left_out = &left.inner[0_u64..left_length];
   let right_out = &right.inner[0_u64..right_length];
   let built = build(left: left_out, right: right_out, cursor: &cursor, depth: depth);
-  match move built {
+  match built {
     Ok(value: root) => {
       let left_in = &left.inner[0_u64..left_length];
       let right_in = &right.inner[0_u64..right_length];
       let checksum_result = checksum(left: left_in, right: right_in, root: root);
-      match move checksum_result {
+      match checksum_result {
         Ok(value: nodes) => {
           if nodes == 63_u64 {
           } else {

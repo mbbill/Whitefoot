@@ -73,9 +73,7 @@ pub(super) fn emit_resource_drop_helpers(
             element_ty,
             "%element".to_owned(),
         )?;
-        output.push_str(
-            "  %next = add i64 %index, 1\n  br label %head\ndone:\n  ret void\n}\n\n",
-        );
+        output.push_str("  %next = add i64 %index, 1\n  br label %head\ndone:\n  ret void\n}\n\n");
     }
     for (index, ty) in cleanup_run_types(program)?.into_iter().enumerate() {
         emit_run_drop_helper(program, &mut output, index, ty)?;
@@ -200,8 +198,7 @@ fn emit_run_drop_helper(
 fn cleanup_run_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, BackendFailure> {
     let mut needed = Vec::new();
     for ty in program_types(program)? {
-        let (IrType::Array { element, .. } | IrType::Window { element, .. }) = ty
-        else {
+        let (IrType::Array { element, .. } | IrType::Window { element, .. }) = ty else {
             continue;
         };
         let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
@@ -297,10 +294,7 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
                     IrNominalKind::ArenaStorage | IrNominalKind::Opaque => {}
                 }
             }
-            IrType::Unit
-            | IrType::Bool
-            | IrType::Integer { .. }
-            | IrType::Float { .. } => {}
+            IrType::Unit | IrType::Bool | IrType::Integer { .. } | IrType::Float { .. } => {}
         }
     }
     Ok(types)
@@ -522,9 +516,7 @@ fn emit_cleanup_jobs(
                 // [TYPE-9] and is never an owned value of its own, so the
                 // cell arm above is the one route to its release. Reaching
                 // here would mean a value of a type no storage can hold.
-                IrType::Window {
-                    capacity: None, ..
-                } => return Err(BackendFailure::InvalidIr),
+                IrType::Window { capacity: None, .. } => return Err(BackendFailure::InvalidIr),
                 IrType::Array { element, .. }
                 | IrType::Window {
                     element,

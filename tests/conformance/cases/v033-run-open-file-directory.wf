@@ -104,7 +104,7 @@ fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatu
       if factory_refusal(error: &problem) {
         return exit_status(code: 4_u8);
       }
-      match move problem {
+      match problem {
         NotFound(code: native_code, origin: native_origin) => {
           return exit_status(code: 3_u8);
         }

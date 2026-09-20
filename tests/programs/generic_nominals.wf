@@ -102,8 +102,8 @@ fn main() -> status: own ExitStatus pure {
     }
   }
   let optional = Some<u8>(value: 19_u8);
-  let wrapped = Wrapped<u8>(value: move optional);
-  let recovered_optional = move wrapped.value;
+  let wrapped = Wrapped<u8>(value: optional);
+  let recovered_optional = wrapped.value;
   match recovered_optional {
     None() => {
       return exit_status(code: 1_u8);

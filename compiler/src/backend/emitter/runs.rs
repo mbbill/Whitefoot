@@ -179,7 +179,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-
     /// [MSR-1] one measure of a run or a bump extent, read at run time.
     pub(super) fn emit_container_measure(
         &mut self,
@@ -424,8 +423,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let destination = self.run_storage(run)?.ok_or(BackendFailure::InvalidIr)?;
         let length_address =
             self.aggregate_field_pointer(run_type, &destination, shape.length_field() as usize)?;
-        writeln!(self.output, "  store i64 %{new_length}, ptr {length_address}")
-            .map_err(|_| BackendFailure::TextEmission)?;
+        writeln!(
+            self.output,
+            "  store i64 %{new_length}, ptr {length_address}"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
         // Only a `Ring` stores a window origin [WIN-1]; a `Slots` window
         // begins at slot zero and no operation moves it, so a front
         // operation over one is no row of [OP-10] this emitter can serve.
@@ -739,16 +741,16 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // An opening shift reads the slot below and writes the one at the
         // counter; a closing shift reads the slot above and writes the one at
         // the counter.
-        let destination_offset = self.wrap_offset(shape, run_type, run, &origin, &format!("%{counter}"))?;
-        let destination = self.element_pointer(result, shape, run_type, run, &destination_offset)?;
-        let source_offset = self.wrap_offset(shape, run_type, run, &origin, &format!("%{stepped}"))?;
+        let destination_offset =
+            self.wrap_offset(shape, run_type, run, &origin, &format!("%{counter}"))?;
+        let destination =
+            self.element_pointer(result, shape, run_type, run, &destination_offset)?;
+        let source_offset =
+            self.wrap_offset(shape, run_type, run, &origin, &format!("%{stepped}"))?;
         let source = self.element_pointer(result, shape, run_type, run, &source_offset)?;
         self.copy_between_slots(element, &format!("%{source}"), &format!("%{destination}"))?;
-        writeln!(
-            self.output,
-            "  br label %{head_label}\n{done}:"
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
+        writeln!(self.output, "  br label %{head_label}\n{done}:")
+            .map_err(|_| BackendFailure::TextEmission)?;
         // The boundary move the shift opened or closed.
         let moved = self.next_temporary()?;
         writeln!(
@@ -894,8 +896,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             &source_storage,
             source_shape.length_field() as usize,
         )?;
-        writeln!(self.output, "  store i64 {index}, ptr {source_length_address}")
-            .map_err(|_| BackendFailure::TextEmission)?;
+        writeln!(
+            self.output,
+            "  store i64 {index}, ptr {source_length_address}"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
         let destination_storage = self
             .run_storage(destination)?
             .ok_or(BackendFailure::InvalidIr)?;
@@ -963,8 +968,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         let block_address = self.value_name(result);
-        let length_address =
-            self.aggregate_field_pointer(block_type, &block_address, shape.length_field() as usize)?;
+        let length_address = self.aggregate_field_pointer(
+            block_type,
+            &block_address,
+            shape.length_field() as usize,
+        )?;
         writeln!(self.output, "  store i64 0, ptr {length_address}")
             .map_err(|_| BackendFailure::TextEmission)?;
         let capacity_field = shape.capacity_field().ok_or(BackendFailure::InvalidIr)?;
@@ -1028,8 +1036,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let old_length_address =
             self.aggregate_field_pointer(block_type, &old_block, shape.length_field() as usize)?;
         let length = self.next_temporary()?;
-        writeln!(self.output, "  %{length} = load i64, ptr {old_length_address}")
-            .map_err(|_| BackendFailure::TextEmission)?;
+        writeln!(
+            self.output,
+            "  %{length} = load i64, ptr {old_length_address}"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
         let slots_bytes = self.next_temporary()?;
         let bytes = self.next_temporary()?;
         let fresh = self.next_temporary()?;

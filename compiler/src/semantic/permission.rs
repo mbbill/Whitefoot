@@ -422,8 +422,7 @@ impl<'check> Program<'check> {
             .filter(|pair| pair.verdict.is_eligible())
             .map(|pair| pair.first.statement.clone())
             .collect::<Vec<_>>();
-        permissions.loops =
-            super::loop_permission::judge_loops(self, &places, function, &eligible);
+        permissions.loops = super::loop_permission::judge_loops(self, &places, function, &eligible);
         permissions
     }
 
@@ -469,14 +468,16 @@ impl<'check> Program<'check> {
     }
 
     /// The verdict of one ordered adjacency.
-    fn judge(&self, places: &PlaceMap, first: &Classified, second: &Classified) -> PermissionVerdict {
+    fn judge(
+        &self,
+        places: &PlaceMap,
+        first: &Classified,
+        second: &Classified,
+    ) -> PermissionVerdict {
         for (side, classified) in [(PairSide::First, first), (PairSide::Second, second)] {
             match &classified.footprint {
                 Err(Refusal::Exit(kind)) => {
-                    return PermissionVerdict::Denied(Denial::SkippingExit {
-                        side,
-                        kind: *kind,
-                    });
+                    return PermissionVerdict::Denied(Denial::SkippingExit { side, kind: *kind });
                 }
                 Err(Refusal::Form(form)) => {
                     return PermissionVerdict::Denied(Denial::UnclassifiedForm { side, form });
@@ -606,13 +607,7 @@ impl<'check> Program<'check> {
                     .as_ref()
                     .map_or("a let statement", |_| "a call statement");
                 let call = projection.map(|projection| projection.call.clone());
-                (
-                    Some(node_path),
-                    Some(*binding),
-                    call,
-                    label,
-                    Ok(footprint),
-                )
+                (Some(node_path), Some(*binding), call, label, Ok(footprint))
             }
             CheckedStatement::Set {
                 node_path,
@@ -621,7 +616,13 @@ impl<'check> Program<'check> {
             } => {
                 let mut footprint = self.value_footprint(places, value, node_path);
                 set_target_place(places, target, node_path, &mut footprint);
-                (Some(node_path), None, None, "a set statement", Ok(footprint))
+                (
+                    Some(node_path),
+                    None,
+                    None,
+                    "a set statement",
+                    Ok(footprint),
+                )
             }
             // Exit-bearing forms.
             CheckedStatement::PropagateLet { node_path, .. } => (
@@ -659,9 +660,13 @@ impl<'check> Program<'check> {
             // [PAR-1] carried a sentence putting a scrutinee call's arms
             // outside the judged statement; v0.60's does not, and the
             // fail-closed reading of its absence is this refusal.
-            CheckedStatement::Match { .. } => {
-                (None, None, None, "a match statement", Err(Refusal::Form("a match statement")))
-            }
+            CheckedStatement::Match { .. } => (
+                None,
+                None,
+                None,
+                "a match statement",
+                Err(Refusal::Form("a match statement")),
+            ),
             CheckedStatement::ValueMatchLet { node_path, .. } => (
                 Some(node_path),
                 None,
@@ -687,7 +692,9 @@ impl<'check> Program<'check> {
                 None,
                 None,
                 "a statement that binds an ordered result list",
-                Err(Refusal::Form("a statement that binds an ordered result list")),
+                Err(Refusal::Form(
+                    "a statement that binds an ordered result list",
+                )),
             ),
             // An expression statement's reach is projected by no row, and a
             // discarded result carries its own [STOR-3] release walk.
@@ -726,7 +733,9 @@ impl<'check> Program<'check> {
                 None,
                 None,
                 "a statement form this version no longer writes",
-                Err(Refusal::Form("a statement form this version no longer writes")),
+                Err(Refusal::Form(
+                    "a statement form this version no longer writes",
+                )),
             ),
         };
         let callee_name = statement_value(statement)
@@ -805,10 +814,12 @@ impl<'check> Program<'check> {
                 continue;
             }
             match argument_places(places, argument) {
-                Some(places) => footprint.writes.extend(places.into_iter().map(|place| Access {
-                    place,
-                    argument: node.clone(),
-                })),
+                Some(places) => footprint
+                    .writes
+                    .extend(places.into_iter().map(|place| Access {
+                        place,
+                        argument: node.clone(),
+                    })),
                 None => footprint.unresolved = Some(node.clone()),
             }
         }
@@ -826,10 +837,9 @@ impl<'check> Program<'check> {
                     footprint.unresolved = Some(call.call.clone());
                     continue;
                 };
-                let (Some(argument), Some(node)) = (
-                    call.arguments.get(index),
-                    call.argument_nodes.get(index),
-                ) else {
+                let (Some(argument), Some(node)) =
+                    (call.arguments.get(index), call.argument_nodes.get(index))
+                else {
                     footprint.unresolved = Some(call.call.clone());
                     continue;
                 };
@@ -888,9 +898,7 @@ fn substituted_steps(path: &CheckedStatePath) -> Vec<PlaceStep> {
                 variant: *variant,
                 field: *field,
             },
-            super::model::CheckedEffectStep::Index(_) => {
-                PlaceStep::Index(CapturedValue::unknown())
-            }
+            super::model::CheckedEffectStep::Index(_) => PlaceStep::Index(CapturedValue::unknown()),
             super::model::CheckedEffectStep::Range { .. } => PlaceStep::Range(CapturedRange {
                 start: CapturedValue::unknown(),
                 end: CapturedValue::unknown(),
@@ -985,9 +993,10 @@ pub(super) fn set_target_place(
     footprint: &mut Footprint,
 ) {
     let resolved = match target {
-        CheckedSetTarget::Place(target) => {
-            places.resolve(PlaceRoot::Binding(target.binding), &field_steps(&target.fields))
-        }
+        CheckedSetTarget::Place(target) => places.resolve(
+            PlaceRoot::Binding(target.binding),
+            &field_steps(&target.fields),
+        ),
         CheckedSetTarget::ArrayIndex(target) => {
             collect_operand_reads(places, &target.offset, node, footprint);
             let mut steps = field_steps(&target.fields);
@@ -1016,10 +1025,15 @@ pub(super) fn set_target_place(
             places.resolve(target.root, &container_steps(target))
         }
     };
-    footprint.writes.extend(resolved.into_iter().map(|place| Access {
-        place,
-        argument: node.clone(),
-    }));
+    if resolved.is_empty() {
+        footprint.unresolved.get_or_insert(node.clone());
+    }
+    footprint
+        .writes
+        .extend(resolved.into_iter().map(|place| Access {
+            place,
+            argument: node.clone(),
+        }));
 }
 
 pub(super) fn field_steps(fields: &[u32]) -> Vec<PlaceStep> {
@@ -1042,10 +1056,12 @@ pub(super) fn collect_consumed_places(
     if consumes_root(expression)
         && let Some(resolved) = argument_places(places, expression)
     {
-        footprint.writes.extend(resolved.into_iter().map(|place| Access {
-            place,
-            argument: node.clone(),
-        }));
+        footprint
+            .writes
+            .extend(resolved.into_iter().map(|place| Access {
+                place,
+                argument: node.clone(),
+            }));
     }
     for child in expression_children(expression) {
         collect_consumed_places(places, child, node, footprint);
@@ -1153,6 +1169,10 @@ fn collect_operand_reads(
     footprint: &mut Footprint,
 ) {
     let read = |footprint: &mut Footprint, resolved: Vec<ResolvedPlace>| {
+        if resolved.is_empty() {
+            footprint.unresolved.get_or_insert(node.clone());
+            return;
+        }
         footprint
             .operand_reads
             .extend(resolved.into_iter().map(|place| Access {
@@ -1261,21 +1281,19 @@ fn collect_operand_reads(
 /// A reference argument names a path, so its actual resolves to the path the
 /// reference names rather than to any storage of its own; at a join a
 /// reference names a set, and every check on it must hold for every member.
-fn argument_places(
-    places: &PlaceMap,
-    argument: &CheckedExpression,
-) -> Option<Vec<ResolvedPlace>> {
-    match argument {
+fn argument_places(places: &PlaceMap, argument: &CheckedExpression) -> Option<Vec<ResolvedPlace>> {
+    let resolved = match argument {
         CheckedExpression::Binding { binding, .. }
         | CheckedExpression::DerefAddressed { binding, .. } => {
-            Some(places.resolve(PlaceRoot::Binding(*binding), &[]))
+            places.resolve(PlaceRoot::Binding(*binding), &[])
         }
         CheckedExpression::Project {
             binding, fields, ..
-        } => Some(places.resolve(PlaceRoot::Binding(*binding), &field_steps(fields))),
+        } => places.resolve(PlaceRoot::Binding(*binding), &field_steps(fields)),
         CheckedExpression::BorrowAddressed { root, .. } => {
-            Some(places.resolve(root.root, &container_steps(root)))
+            places.resolve(root.root, &container_steps(root))
         }
-        _ => None,
-    }
+        _ => return None,
+    };
+    (!resolved.is_empty()).then_some(resolved)
 }

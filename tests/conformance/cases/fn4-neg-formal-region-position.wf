@@ -2,7 +2,7 @@ struct Cell {
   value: u8;
 }
 
-formal FirstValue {
+interface FirstValue {
   fn read(x: &Cell, y: &Cell) -> result: own u8 reads(x.value);
 }
 
@@ -11,7 +11,7 @@ fn second_value(first: &Cell, second: &Cell) -> result: own u8 reads(second.valu
   return deref(second).value;
 }
 
-actual Wrong : FirstValue {
+binding Wrong : FirstValue {
   read = second_value;
 }
 

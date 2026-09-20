@@ -720,7 +720,7 @@ fn provide(end: own u64) -> (result: own Result<unit, TestError>, next: own u64,
 
 fn main() -> status: own ExitStatus pure {
   let (outcome, next, count) = provide(end: 4096_u64);
-  match move outcome {
+  match outcome {
     Ok(value: done) => {
       invariant bounded: next <= 4096_u64;
     }

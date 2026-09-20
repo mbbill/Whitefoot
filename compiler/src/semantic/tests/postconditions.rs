@@ -35,6 +35,110 @@ fn assert_fn9_unproved(source: &[u8]) {
     });
 }
 
+fn assert_fn9_refuted(source: &[u8]) {
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("refuted postcondition must be an FN-9 source issue: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn9);
+        let SemanticIssueKind::UndischargedPostcondition(detail) = issue.kind() else {
+            panic!("FN-9 issue must carry its proof disposition: {issue:?}");
+        };
+        assert_eq!(
+            detail.disposition,
+            crate::PostconditionProofDisposition::Refuted
+        );
+    });
+}
+
+#[test]
+fn direct_range_measure_returns_prove_only_the_matching_postcondition() {
+    assert_complete(
+        br#"fn count(part: &[u8]) -> result: own u64 reads(part) contract {
+  ensures result == deref(part).len;
+} {
+  return deref(part).len;
+}
+"#,
+    );
+
+    assert_fn9_refuted(
+        br#"fn count(part: &[u8]) -> result: own u64 reads(part) contract {
+  requires deref(part).len <= 18446744073709551614_u64;
+  ensures result == deref(part).len + 1_u64;
+} {
+  return deref(part).len;
+}
+"#,
+    );
+
+    assert_rule(
+        br#"fn first(part: &[u8]) -> result: own u64 reads(part) contract {
+  requires deref(part).len > 0_u64;
+  ensures result == deref(part).len;
+} {
+  let byte = deref(part)[0_u64];
+  return cvt::<u8, u64>(byte);
+}
+"#,
+        SemanticRule::Fn9,
+        SemanticIssueKind::InvalidPostconditionReturn,
+    );
+}
+
+/// A declared postcondition over a reference parameter substitutes through a
+/// Box content projection written as `&deref(boxed).inner` at the call. The
+/// wrapper publishes the resulting concrete `.inner.len` relation.
+#[test]
+fn a_box_content_actual_preserves_an_imported_length_postcondition() {
+    let source = br#"fn append_one(values: &Slots<u8, 4>) -> result: own unit writes(values.next), writes(values.len) contract {
+  requires deref(values).len == 0_u64;
+  requires 1_u64 <= deref(values).cap;
+  ensures deref(values).len == 1_u64;
+} {
+  place_back(window: values, value: 7_u8);
+  return unit;
+}
+
+fn through_box(slots: &Box<Slots<u8, 4>>) -> result: own unit writes(slots.inner.next), writes(slots.inner.len) contract {
+  requires deref(slots).inner.len == 0_u64;
+  requires 1_u64 <= deref(slots).inner.cap;
+  ensures deref(slots).inner.len == 1_u64;
+} {
+  let appended = append_one(values: &deref(slots).inner);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
+/// A fresh runtime-capacity Slots value has length zero. FN-9 must retain the
+/// `.inner` projection and selected Box result type when checking that fact.
+#[test]
+fn a_fresh_boxed_slots_result_proves_only_its_zero_length() {
+    let source = |length: &str| {
+        format!(
+            "fn make() -> made: own Box<Slots<u8>> pure contract {{
+  ensures made.inner.len == {length};
+}} {{
+  let local = box_slots_new::<u8>(capacity: 4_u64);
+  return move local;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+        )
+    };
+    assert_complete(source("0_u64").as_bytes());
+    assert_fn9_refuted(source("1_u64").as_bytes());
+}
+
 fn postcondition_proof(source: &[u8], function: &str) -> FunctionPostconditionProof {
     with_semantics_dark(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -197,7 +301,7 @@ fn pick(table: own Array<u8, 8>, index: own u64) -> value: own u64 pure contract
 fn caller(table: own Array<u8, 8>) -> result: own u8 pure contract {
   requires table.len >= 1_u64;
 } {
-  let value = pick(table: move table, index: 0_u64);
+  let value = pick(table: table, index: 0_u64);
   return lookup[value];
 }
 
@@ -681,7 +785,7 @@ fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invali
     // measure `len` is the [OP-15] member of the referent; the callee's row
     // carries the write permission the retiring `&uniq MutSlice<u8>` marker
     // used to carry [REF-1, EFF-1].
-    let source = br#"fn append(destination: &[u8], capacity: own u64, filled: own u64, text: &[u8]) -> result: own u64 reads(text), writes(destination) contract {
+    let source = br#"fn append_bytes(destination: &[u8], capacity: own u64, filled: own u64, text: &[u8]) -> result: own u64 reads(text), writes(destination) contract {
   requires capacity == deref(destination).len;
   requires filled <= capacity;
   ensures result <= capacity;
@@ -710,7 +814,7 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
     assert_complete(source);
-    let proof = postcondition_proof(source, "append");
+    let proof = postcondition_proof(source, "append_bytes");
     assert_eq!(
         dispositions(&proof),
         vec![
@@ -964,7 +1068,7 @@ fn main() -> status: own ExitStatus pure {
 /// [OWN-1] and the killed support is the same.
 #[test]
 fn a_consumed_actual_cannot_publish_a_stale_postcondition_relation() {
-    let source = br#"struct Pair {
+    let source = br#"nocopy struct Pair {
   kept: i32;
   changed: i32;
 }
@@ -1590,10 +1694,10 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_ok_selector_rejects_a_stored_whole_result_return() {
-    let source = br#"fn stored(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+    let source = br#"fn stored(value: own i32) -> result: own Result<i32, Box<u8>> pure contract {
   ensures when Ok(value: payload): payload == value;
 } {
-  let outcome = Ok<i32, Overflow>(value: value);
+  let outcome = Ok<i32, Box<u8>>(value: value);
   return move outcome;
 }
 
@@ -1893,7 +1997,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_actual_with_a_different_ensures_is_fn4_before_proof() {
-    let source = br#"formal Maker {
+    let source = br#"interface Maker {
   fn make() -> result: own i32 pure;
 }
 
@@ -1903,7 +2007,7 @@ fn make() -> result: own i32 pure contract {
   return 1_i32;
 }
 
-actual Made : Maker {
+binding Made : Maker {
   make = make;
 }
 
@@ -1916,7 +2020,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_invalid_formal_header_precedes_the_postcondition_proof_boundary() {
-    let source = br#"formal Invalid<fn make() -> result: own u64 pure> {
+    let source = br#"interface Invalid<fn make() -> result: own u64 pure> {
 }
 
 fn identity(value: own i32) -> result: own i32 pure contract {
@@ -1933,7 +2037,7 @@ fn main() -> status: own ExitStatus pure {
         source,
         SemanticRule::Fn3,
         SemanticIssueKind::type_mismatch(
-            "a formal header contains only flat type and const parameters",
+            "an interface header contains only flat type and const parameters",
             "a nonmatching behavior argument",
         ),
     );
@@ -2914,7 +3018,7 @@ fn a_conditional_unique_call_keeps_the_other_branch_measure_image() {
 
 fn main() -> status: own ExitStatus pure {{
   let seed = array_filled::<u8, 16>(value: 0_u8);
-  let values = slots_from_array::<u8, 16>(values: move seed);
+  let values = slots_from_array::<u8, 16>(values: seed);
   let turn = 0_u64;
   loop @rounds (
     invariant room: values.len >= 16_u64
@@ -2924,7 +3028,7 @@ fn main() -> status: own ExitStatus pure {{
     }}
 {branches}
     let spare = array_filled::<u8, 16>(value: 0_u8);
-    let fresh = slots_from_array::<u8, 16>(values: move spare);
+    let fresh = slots_from_array::<u8, 16>(values: spare);
     set values = move fresh;
     set turn = turn +wrap 1_u64;
   }}

@@ -413,7 +413,7 @@ pub const fn diagnostic_terminal_order() -> &'static [LookaheadPredicate] {
 /// Both nodes returned here are the generated ones and the decision that
 /// selects the header is `fn_decl`'s own, so no grammar datum is invented.
 /// Only the prelude record reader uses this sequence, so a writer's `fn_sig`
-/// inside a `formal_decl` still admits no generic header. When [GRAM-2]
+/// inside a `interface_decl` still admits no generic header. When [GRAM-2]
 /// gives `fn_sig` a `generics?`, this function and its two callers collapse
 /// back into the ordinary `Production::FnSig` path.
 pub(crate) fn prelude_signature_children() -> Option<Vec<GrammarNodeId>> {

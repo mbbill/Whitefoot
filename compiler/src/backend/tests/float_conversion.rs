@@ -406,7 +406,7 @@ fn emit_success_case(
     };
     writeln!(
         source,
-        "  let success{conversion} = cvt::<{source_type}, {destination}>({source_value});\n  match move success{conversion} {{\n    Ok(value: success_value{conversion}) => {{\n      if {equality} {{\n      }} else {{\n        return exit_status(code: 1_u8);\n      }}\n    }}\n    Err(error: success_error{conversion}) => {{\n      return exit_status(code: 1_u8);\n    }}\n  }}",
+        "  let success{conversion} = cvt::<{source_type}, {destination}>({source_value});\n  match success{conversion} {{\n    Ok(value: success_value{conversion}) => {{\n      if {equality} {{\n      }} else {{\n        return exit_status(code: 1_u8);\n      }}\n    }}\n    Err(error: success_error{conversion}) => {{\n      return exit_status(code: 1_u8);\n    }}\n  }}",
         destination = destination_type.spelling,
         source_type = source_type.spelling,
     )
@@ -442,7 +442,7 @@ fn emit_failure_case(
     };
     writeln!(
         source,
-        "  let failure{conversion} = cvt::<{source_type}, {destination}>({source_value});\n  match move failure{conversion} {{\n    Ok(value: failure_value{conversion}) => {{\n      return exit_status(code: 1_u8);\n    }}\n    Err(error: failure_error{conversion}) => {{\n    }}\n  }}",
+        "  let failure{conversion} = cvt::<{source_type}, {destination}>({source_value});\n  match failure{conversion} {{\n    Ok(value: failure_value{conversion}) => {{\n      return exit_status(code: 1_u8);\n    }}\n    Err(error: failure_error{conversion}) => {{\n    }}\n  }}",
         destination = destination_type.spelling,
         source_type = source_type.spelling,
     )

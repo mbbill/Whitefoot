@@ -24,7 +24,7 @@ fn executes_every_absolute_mode_for_every_signed_width() {
     return exit_status(code: 4_u8);
   }
   let safe_result = iabs.checked(-42_$TYPE);
-  match move safe_result {
+  match safe_result {
     Ok(value: safe_value) => {
       if safe_value == 42_$TYPE {
       } else {
@@ -36,7 +36,7 @@ fn executes_every_absolute_mode_for_every_signed_width() {
     }
   }
   let overflow_result = iabs.checked($MIN_$TYPE);
-  match move overflow_result {
+  match overflow_result {
     Ok(value: overflow_value) => {
       return exit_status(code: 7_u8);
     }

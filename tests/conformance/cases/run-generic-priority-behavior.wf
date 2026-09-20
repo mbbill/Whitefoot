@@ -19,18 +19,18 @@ fn ascending_compare(env: &Ascending, left: &Item, right: &Item) -> order: own i
   return 0_i32;
 }
 
-formal Order<T, E> {
+interface Order<T, E> {
   fn compare(env: &E, left: &T, right: &T) -> order: own i32 reads(env), reads(left), reads(right) contract {
     ensures order >= -1_i32;
     ensures order <= 1_i32;
   };
 }
 
-struct Queue<Order<T, E>> {
+struct Queue<interface Order<T, E>> {
   heap: Slots<T, 16>;
 }
 
-actual ItemOrder : Order<Item, Ascending> {
+binding ItemOrder : Order<Item, Ascending> {
   compare = ascending_compare;
 }
 
@@ -45,7 +45,7 @@ fn exchange_at<T>(heap: &Slots<T, 16>, left: own u64, right: own u64) -> result:
   return unit;
 }
 
-fn sift_rise<Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
+fn sift_rise<interface Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
   requires deref(queue).heap.len == count;
   requires count >= 1_u64;
   ensures deref(queue).heap.len == count;
@@ -75,7 +75,7 @@ fn sift_rise<Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, env: &E) -
   return unit;
 }
 
-fn sift_sink<Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
+fn sift_sink<interface Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
   requires deref(queue).heap.len == count;
   requires count >= 1_u64;
   ensures deref(queue).heap.len == count;
@@ -113,7 +113,7 @@ fn sift_sink<Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, env: &E) -
   return unit;
 }
 
-fn push<Order<T, E>>(queue: &Queue<Order<T, E>>, value: own T, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
+fn push<interface Order<T, E>>(queue: &Queue<Order<T, E>>, value: own T, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
   requires 1_u64 <= deref(queue).heap.cap - deref(queue).heap.len;
   ensures deref(queue).heap.len == deref(entry(queue)).heap.len + 1_u64;
 } {
@@ -125,7 +125,7 @@ fn push<Order<T, E>>(queue: &Queue<Order<T, E>>, value: own T, env: &E) -> resul
   return unit;
 }
 
-fn pop<Order<T, E>>(queue: &Queue<Order<T, E>>, env: &E) -> minimum: own T reads(env), writes(queue.heap) contract {
+fn pop<interface Order<T, E>>(queue: &Queue<Order<T, E>>, env: &E) -> minimum: own T reads(env), writes(queue.heap) contract {
   requires deref(queue).heap.len >= 1_u64;
   ensures deref(queue).heap.len == deref(entry(queue)).heap.len - 1_u64;
 } {
@@ -179,11 +179,11 @@ fn directed_compare(env: &Direction, left: &Item, right: &Item) -> order: own i3
   return 0_i32;
 }
 
-actual WordOrder : Order<u64, Ascending> {
+binding WordOrder : Order<u64, Ascending> {
   compare = word_compare;
 }
 
-actual DirectedOrder : Order<Item, Direction> {
+binding DirectedOrder : Order<Item, Direction> {
   compare = directed_compare;
 }
 
@@ -244,9 +244,9 @@ fn directed_demo() -> result: own u8 pure {
   let first = Item(rank: 9_u64);
   let second = Item(rank: 2_u64);
   let third = Item(rank: 7_u64);
-  push::<DirectedOrder>(queue: &queue, value: move first, env: &env);
-  push::<DirectedOrder>(queue: &queue, value: move second, env: &env);
-  push::<DirectedOrder>(queue: &queue, value: move third, env: &env);
+  push::<DirectedOrder>(queue: &queue, value: first, env: &env);
+  push::<DirectedOrder>(queue: &queue, value: second, env: &env);
+  push::<DirectedOrder>(queue: &queue, value: third, env: &env);
   let high = pop::<DirectedOrder>(queue: &queue, env: &env);
   let middle = pop::<DirectedOrder>(queue: &queue, env: &env);
   let low = pop::<DirectedOrder>(queue: &queue, env: &env);

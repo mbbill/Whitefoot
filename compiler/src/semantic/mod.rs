@@ -41,12 +41,11 @@ pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBodyDisposition, CheckedBooleanOperation,
     CheckedBufferRoot, CheckedCommitValues, CheckedConst, CheckedContainerRoot, CheckedDrop,
     CheckedElement, CheckedEnumType, CheckedExpression, CheckedFlatElement, CheckedFloatOperation,
-    CheckedFunction, CheckedIntegerOperation, CheckedLayoutCeiling,
-    CheckedLayoutMagnitude, CheckedLoopId, CheckedMatchArm, CheckedMeasure, CheckedMode,
-    CheckedNominalKind, CheckedNumericType, CheckedParameter, CheckedPlaceStep, CheckedProgramData,
+    CheckedFunction, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
+    CheckedLoopId, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind,
+    CheckedNumericType, CheckedParameter, CheckedPlaceStep, CheckedProgramData,
     CheckedProjectedDrop, CheckedRangeRoot, CheckedRangeSource, CheckedReleaseClass,
-    CheckedRuntimeTargetObligations, CheckedSetTarget,
-    CheckedStatement,
+    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedStatement,
     CheckedTargetDomainObligation, CheckedType, CheckedValue, CheckedWritablePlace, FunctionId,
     MeasureCell, MeasuredKind, NominalId, PropagationContext, WindowShape, expression_children,
 };
@@ -644,13 +643,6 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by PROV-6.
         mechanical_fix: &'static str,
     },
-    /// [PROV-6] the `linear` modifier on a nominal [OWN-1] classifies as copy.
-    LinearModifierOnCopyNominal {
-        /// The marked nominal.
-        nominal: String,
-        /// Exact restructuring required by PROV-6.
-        mechanical_fix: &'static str,
-    },
     /// [PROV-6] a `dispose` whose operand type reaches no capability-released
     /// leaf, so the walk would reclaim nothing.
     DisposeWithoutCapabilityLeaf {
@@ -670,7 +662,7 @@ pub enum SemanticIssueKind {
         mechanical_fix: &'static str,
     },
     /// [PROV-6] a `dispose` one of whose release-graph nodes carries the
-    /// `linear` modifier.
+    /// `nodrop` modifier.
     DisposeOfLinearNode {
         /// The marked nominal reached by the walk.
         nominal: String,
@@ -703,13 +695,13 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by PROV-1.
         mechanical_fix: &'static str,
     },
-    /// [PROV-6, S37] a region parameter written `'s: copy`, which is not one
+    /// [PROV-6] a region parameter written `'s: copy`, which is not one
     /// of the two classes a store has.
     InvalidRegionBound {
         /// Exact restructuring required by PROV-6.
         mechanical_fix: &'static str,
     },
-    /// [PROV-6, S37] an instantiation whose argument's linearity class does not
+    /// [PROV-6] an instantiation whose argument's capability class does not
     /// satisfy the parameter's written bound.
     LinearityBoundMismatch {
         /// The bounded parameter's written spelling.

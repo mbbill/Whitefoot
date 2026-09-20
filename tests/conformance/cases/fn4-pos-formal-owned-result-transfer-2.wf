@@ -1,4 +1,4 @@
-formal Factory<T: drop> {
+interface Factory<T: drop> {
   fn make(value: own T) -> result: own T pure;
 }
 
@@ -7,7 +7,7 @@ fn retain(value: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure {
   return slots_new::<u8, 4>();
 }
 
-actual Identity : Factory<Slots<u8, 4>> {
+binding Identity : Factory<Slots<u8, 4>> {
   make = retain;
 }
 

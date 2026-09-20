@@ -12,8 +12,7 @@ use super::super::super::model::{
     CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedLayoutCeiling,
     CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedPlaceStep,
     CheckedPlaceSubscript, CheckedRangeRoot, CheckedRangeSetTarget, CheckedSetTarget,
-    CheckedTargetDomainObligation, CheckedType,
-    IntegerType, MeasureCell, MeasuredKind, NominalId,
+    CheckedTargetDomainObligation, CheckedType, IntegerType, MeasureCell, MeasuredKind, NominalId,
 };
 use super::super::super::places::{
     CaptureId, CapturedTerm, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace,
@@ -444,8 +443,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // exactly as any other measured place is, and [MSR-1] gives the
         // measure no storage below itself, so it ends the written path.
         if self.trailing_measure_member(suffixes)?.is_some() {
-            return self
-                .check_constant_storage_measure(node, constant, suffixes, bindings, function, options);
+            return self.check_constant_storage_measure(
+                node, constant, suffixes, bindings, function, options,
+            );
         }
         let place = self.constant_storage_place(
             constant,
@@ -472,7 +472,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.check_storage_read(node, place, bindings, options)
     }
-
 
     pub(in crate::semantic::check) fn layout_ceiling(
         &self,
@@ -583,9 +582,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let result = match &nominal.kind {
                     // [OP-9] `Box<T>` is `(8,8)`, one pointer; its `inner`
                     // field lives in the heap object and enters no sequence.
-                    CheckedNominalKind::Box { .. } => {
-                        finish(CheckedLayoutMagnitude::Finite(8), 8)
-                    }
+                    CheckedNominalKind::Box { .. } => finish(CheckedLayoutMagnitude::Finite(8), 8),
                     CheckedNominalKind::Arena { .. } | CheckedNominalKind::ArenaStorage => None,
                     CheckedNominalKind::Opaque => finish(CheckedLayoutMagnitude::Finite(32), 16),
                     CheckedNominalKind::Struct { fields } => {
@@ -650,7 +647,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             stride,
         })
     }
-
 
     /// The [MSR-1] measure read over one already-resolved indexed place.
     ///
@@ -735,7 +731,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             loop_depth,
             false,
         )?;
-        place.resolved.path.extend(path.iter().map(CheckedPlaceStep::place_step));
+        place
+            .resolved
+            .path
+            .extend(path.iter().map(CheckedPlaceStep::place_step));
         place.root.path.extend(path);
         place.root.ty = ty;
         place.offsets.effects = place.offsets.effects.union(offsets.effects);
@@ -1141,7 +1140,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         };
         self.check_mutation_target_class(node, element_type)?;
-        let offset_place = Self::captured_of(offset_node, &offset.expression).unwrap_or(CapturedValue::unknown());
+        let offset_place =
+            Self::captured_of(offset_node, &offset.expression).unwrap_or(CapturedValue::unknown());
         let mut effects = offset.effects;
         let (declaration, place, target) = match indexed {
             CheckedIndexedPlace::Array(array) => {
@@ -1412,7 +1412,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } => Some(CapturedValue::new(capture, CapturedTerm::Literal(*bits))),
             CheckedExpression::Constant(
                 super::super::super::model::CheckedValue::ConstGeneric { declaration, .. },
-            ) => Some(CapturedValue::new(capture, CapturedTerm::Const(*declaration))),
+            ) => Some(CapturedValue::new(
+                capture,
+                CapturedTerm::Const(*declaration),
+            )),
             CheckedExpression::Binding {
                 binding,
                 consume_root: false,
@@ -1548,10 +1551,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             _ => self.issue_node(
                 SemanticRule::Op4,
                 node,
-                SemanticIssueKind::type_mismatch(
-                    "an indexable base",
-                    self.checked_type_name(ty)?,
-                ),
+                SemanticIssueKind::type_mismatch("an indexable base", self.checked_type_name(ty)?),
             ),
         }
     }

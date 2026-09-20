@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::super::super::super::goal::{
-    EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalProjection,
+    EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalOperation, GoalProjection,
 };
 use super::super::super::super::model::{
     CheckedCallSeparation, CheckedEffectStep, CheckedExpression, CheckedMode, CheckedNominalKind,
@@ -34,9 +34,19 @@ struct SubstitutedEntry {
     /// Whether this entry writes, replaces, moves out of, or frees the
     /// storage at its path and everything below it [EFF-1].
     write: bool,
+    /// Whether this is the consuming contribution of a by-value argument.
+    /// Unlike a declared content write, a move also invalidates a reference
+    /// naming the argument's exact path [REF-2].
+    consuming: bool,
     /// The argument ordinal this entry came from, so the pairwise comparison
-    /// can skip a pair of entries belonging to one argument.
+    /// can attribute an entry to the parameter that supplied it.
     argument: usize,
+    /// The declared effect (or by-value contribution) that produced this
+    /// entry. One declared effect can expand to several mutually exclusive
+    /// paths when a joined reference is passed; those alternatives are not a
+    /// pairwise conflict with each other. Distinct effects still compare when
+    /// they came through the same actual argument [EFF-5].
+    origin: usize,
     /// The rendered path the [EFF-5] diagnostic carries.
     spelling: String,
 }
@@ -131,6 +141,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // control-flow join gave more than one path [REF-1]; every check must
         // then hold for every member.
         let mut actual_paths: Vec<Vec<ResolvedPlace>> = Vec::with_capacity(fields.len());
+        let mut actual_captures = Vec::with_capacity(fields.len());
         let mut actual_modes = Vec::with_capacity(fields.len());
         let call = self.tree.path(node)?.clone();
         let mut effects = EffectSet::NONE;
@@ -148,10 +159,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(field, Production::Atom)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let argument = self.check_call_argument_atom(function, atom, bindings, loop_depth)?;
             // [TYPE-2] an argument naming a path that ends at or passes
             // through a readonly field, at a reference parameter whose callee
             // row writes that parameter, is a hard error at the complete
-            // argument `atom`.
+            // argument `atom`. The checked argument supplies the resolved
+            // origin path through aliases and reborrows [REF-1].
             if parameter.mode.is_reference()
                 && signature
                     .declared_effects
@@ -159,10 +172,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .iter()
                     .any(|entry| entry.root == parameter.declaration)
             {
-                self.reject_readonly_written_argument(atom, bindings)?;
+                self.reject_readonly_written_argument(atom, &argument, bindings)?;
             }
-            let argument =
-                self.check_call_argument_atom(function, atom, bindings, loop_depth)?;
             // [TYPE-8] `&[T]` is a kind, so a checked range value carries the
             // element type T beside its `Range` mode. Comparing that element
             // against a parameter's type before the kind would report `u8`
@@ -174,9 +185,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // is [TYPE-5]'s ordinary argument mismatch.
             {
                 use super::super::super::super::model::CheckedMode;
-                if (argument.mode == CheckedMode::Range)
-                    != (parameter.mode == CheckedMode::Range)
-                {
+                if (argument.mode == CheckedMode::Range) != (parameter.mode == CheckedMode::Range) {
                     return self.issue_node(
                         SemanticRule::Type5,
                         atom,
@@ -264,11 +273,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 parameter.mode,
                 parameter.ty,
                 &argument,
-                paths.first(),
+                match paths.as_slice() {
+                    [unique] => Some(unique),
+                    _ => None,
+                },
                 bindings,
             )?);
             argument_nodes.push(self.tree.path(atom)?.clone());
             actual_paths.push(paths);
+            actual_captures.push(
+                Self::captured_of(atom, &argument.expression)
+                    .unwrap_or_else(CapturedValue::unknown),
+            );
             actual_modes.push(parameter.mode);
             effects = effects.union(argument.effects);
             arguments.push(argument.expression);
@@ -283,7 +299,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if signature.declared_effects.allocates {
             effects.add_allocation();
         }
-        let substituted = self.substitute_call_row(node, signature, &actual_paths, &actual_modes)?;
+        let substituted = self.substitute_call_row(
+            node,
+            signature,
+            &actual_paths,
+            &actual_captures,
+            &actual_modes,
+        )?;
         // [OP-12] precedes [EFF-5] here: an atomic update's own refusal is
         // about the callee's row reaching the updated place, and the target
         // argument's own by-value contribution is exactly the overlap
@@ -431,14 +453,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         signature: &FunctionSignature,
         actual_paths: &[Vec<ResolvedPlace>],
+        actual_captures: &[CapturedValue],
         actual_modes: &[CheckedMode],
     ) -> Result<Vec<SubstitutedEntry>, CheckStop> {
         let mut entries = Vec::new();
+        let mut next_origin = 0usize;
         for (write, declared) in [
             (false, &signature.declared_effects.reads),
             (true, &signature.declared_effects.writes),
         ] {
             for formal in declared {
+                let origin = next_origin;
+                next_origin = next_origin
+                    .checked_add(1)
+                    .ok_or(SemanticCompilerFailure::CounterOverflow)?;
                 let Some(index) = signature
                     .parameters
                     .iter()
@@ -449,7 +477,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     // anything else.
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 };
-                let steps = self.substitute_effect_steps(signature, formal, actual_paths)?;
+                let steps = self.substitute_effect_steps(signature, formal, actual_captures)?;
                 for base in actual_paths.get(index).into_iter().flatten() {
                     let mut place = base.clone();
                     place.path.extend_from_slice(&steps);
@@ -457,7 +485,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         spelling: self.render_resolved_place(&place)?,
                         place,
                         write,
+                        consuming: false,
                         argument: index,
+                        origin,
                     });
                 }
             }
@@ -468,14 +498,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if *mode != CheckedMode::Own {
                 continue;
             }
+            let origin = next_origin;
+            next_origin = next_origin
+                .checked_add(1)
+                .ok_or(SemanticCompilerFailure::CounterOverflow)?;
             for place in actual_paths.get(index).into_iter().flatten() {
+                let consuming = self
+                    .is_copy_place_type(signature, index)
+                    .is_none_or(|copy| !copy);
                 entries.push(SubstitutedEntry {
                     spelling: self.render_resolved_place(place)?,
                     place: place.clone(),
                     // A `move` empties the place, which [EFF-1] classes with
                     // the writes; a copy argument observes it.
-                    write: self.is_copy_place_type(signature, index).is_none_or(|copy| !copy),
+                    write: consuming,
+                    consuming,
                     argument: index,
+                    origin,
                 });
             }
         }
@@ -489,25 +528,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         signature: &FunctionSignature,
         formal: &CheckedStatePath,
-        actual_paths: &[Vec<ResolvedPlace>],
+        actual_captures: &[CapturedValue],
     ) -> Result<Vec<PlaceStep>, CheckStop> {
         let captured = |parameter: DeclarationId| -> CapturedValue {
-            // The index position names a value parameter; the value its
-            // argument supplied is the immutable captured value of that
-            // argument's own place, where the argument is a place, and the
-            // unknown offset otherwise, which no family separates.
+            // The index position names a value parameter and therefore takes
+            // the checked value its argument supplied. Its storage access is
+            // unrelated: `indices[1]` supplies the value loaded there, not
+            // the literal one used to address that load [EFF-5].
             signature
                 .parameters
                 .iter()
                 .position(|candidate| candidate.declaration == parameter)
-                .and_then(|index| actual_paths.get(index))
-                .and_then(|paths| paths.first())
-                .and_then(|place| {
-                    place.path.iter().rev().find_map(|step| match step {
-                        PlaceStep::Index(value) => Some(*value),
-                        _ => None,
-                    })
-                })
+                .and_then(|index| actual_captures.get(index).copied())
                 .unwrap_or_else(CapturedValue::unknown)
         };
         Ok(formal
@@ -613,7 +645,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let oracle = UnprovedSeparations;
         for (index, left) in entries.iter().enumerate() {
             for right in entries.iter().skip(index + 1) {
-                if left.argument == right.argument || !(left.write || right.write) {
+                if left.origin == right.origin || !(left.write || right.write) {
                     continue;
                 }
                 if !places_overlap(&oracle, &left.place, &right.place) {
@@ -698,9 +730,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .place
                 .path
                 .iter()
-                .position(|step| {
-                    matches!(step, PlaceStep::Part(_) | PlaceStep::Measure(_))
-                })
+                .position(|step| matches!(step, PlaceStep::Part(_) | PlaceStep::Measure(_)))
                 .unwrap_or(entry.place.path.len());
             let window = ResolvedPlace {
                 root: entry.place.root,
@@ -799,11 +829,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) {
         let _ = call;
         for entry in entries.iter().filter(|entry| entry.write) {
-            Self::invalidate_references(
-                bindings,
-                &entry.place,
-                &InvalidationEvent::CallWrite,
-            );
+            let event = if entry.consuming {
+                InvalidationEvent::PrefixMoved
+            } else {
+                InvalidationEvent::CallWrite
+            };
+            Self::invalidate_references(bindings, &entry.place, &event);
         }
     }
 
@@ -960,6 +991,50 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ty: expected_type,
             }));
         }
+        // [MSR-1, FN-8] a measure actual has already been checked as a
+        // scalar read. Its suffix is a measure operation, not a struct field;
+        // retain that checked operation and its exact storage projection.
+        let measure = match &argument.expression {
+            CheckedExpression::ContainerMeasure { measure, root } => Some((
+                GoalOperation::ContainerMeasure {
+                    measure: *measure,
+                    measured: root
+                        .measured()
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                    element: root.element(),
+                    constant: root.type_constant(),
+                },
+                self.goal_referent_image(
+                    &ResolvedPlace {
+                        root: root.root,
+                        path: root.place_path(),
+                    },
+                    root.ty,
+                    bindings,
+                )?,
+            )),
+            CheckedExpression::RangeMeasure { measure, root } => Some((
+                GoalOperation::RangeMeasure {
+                    measure: *measure,
+                    element: root.element,
+                },
+                GoalExpression::Datum(GoalDatum::Place {
+                    root: root.binding,
+                    projections: Vec::new(),
+                    ty: root.element.ty(),
+                }),
+            )),
+            _ => None,
+        };
+        if let Some((row, measured)) = measure {
+            return Ok(GoalExpression::Operation {
+                row,
+                type_arguments: Vec::new(),
+                const_arguments: Vec::new(),
+                result: expected_type,
+                arguments: vec![measured],
+            });
+        }
         let (image, holder_pending) = self.call_goal_place_inner(place, bindings)?;
         if holder_pending || image.ty() != expected_type {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
@@ -1013,7 +1088,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // quantities [MSR-1], so it is kept and never collapsed onto
                 // its base.
                 PlaceStep::Range(range) => {
-                    projections.push(GoalProjection::Range(range.goal_identity()));
+                    projections.push(GoalProjection::Range(*range));
                 }
                 // [ENT-2] a goal datum's place carries field selections,
                 // `deref` wrappings and subscripts; a payload, part or
@@ -1090,13 +1165,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     if let Some(reference) = &local.reference {
                         (
-                            match reference.paths.first() {
-                                Some(path) => {
-                                    self.goal_referent_image(path, local.ty, bindings)?
-                                }
-                                None => GoalExpression::Datum(GoalDatum::Place {
+                            match reference.paths.as_slice() {
+                                [path] => self.goal_referent_image(path, local.ty, bindings)?,
+                                // [REF-1] a joined reference still denotes
+                                // one selected referent, but no member of its
+                                // possible-target set is its unconditional
+                                // value. Keep the reference's identity so
+                                // proof kills can resolve every candidate.
+                                _ => GoalExpression::Datum(GoalDatum::Place {
                                     root: local.binding,
-                                    projections: vec![GoalProjection::Deref],
+                                    projections: Vec::new(),
                                     ty: local.ty,
                                 }),
                             },
@@ -1173,5 +1251,4 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok((expression, holder_pending))
     }
-
 }

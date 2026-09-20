@@ -238,16 +238,16 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                 RawRoleKind::Declaration(declaration_role) => {
                     let id = DeclarationId::from_index(declarations.len())
                         .ok_or(ResolutionCompilerFailure::CounterOverflow)?;
-                    // A named formal's members have stable function-parameter
+                    // A named interface's members have stable function-parameter
                     // identities, but FN-3 introduces no unqualified lexical
                     // names. Only a raw function binder enters that domain.
-                    // Member distinctness is the formal table's FN-3 judgment.
+                    // Member distinctness is the interface table's FN-3 judgment.
                     let grouped_member = declaration_role == DeclarationRole::FunctionParameter
                         && role
                             .owner_chain
                             .get(1)
                             .and_then(|owner| topology.node(*owner))
-                            .is_some_and(|record| record.production == Production::FormalDecl);
+                            .is_some_and(|record| record.production == Production::InterfaceDecl);
                     // [TYPE-2] an opaque struct's constructor entry "exists to
                     // be refused", so it is an ordinary entry of the
                     // constructor TYPEID domain like any other struct's. The
@@ -853,8 +853,8 @@ fn owner_chain(
                 | Production::FnDecl
                 | Production::StructDecl
                 | Production::EnumDecl
-                | Production::FormalDecl
-                | Production::ActualDecl
+                | Production::InterfaceDecl
+                | Production::BindingDecl
         ) {
             owners.push(node);
         }
@@ -886,8 +886,8 @@ fn declaration_classes(role: DeclarationRole) -> Vec<DeclarationClass> {
         ],
         DeclarationRole::Enum => vec![DeclarationClass::NominalType],
         DeclarationRole::Variant => vec![DeclarationClass::EnumVariant],
-        DeclarationRole::Formal => vec![DeclarationClass::Formal],
-        DeclarationRole::Actual => vec![DeclarationClass::Actual],
+        DeclarationRole::Interface => vec![DeclarationClass::Interface],
+        DeclarationRole::Binding => vec![DeclarationClass::Binding],
         DeclarationRole::NamedConst => vec![DeclarationClass::NamedConst],
         DeclarationRole::GenericType => vec![DeclarationClass::GenericType],
         DeclarationRole::ConstGeneric => vec![DeclarationClass::ConstGeneric],
@@ -1012,8 +1012,8 @@ fn declaration_domain(class: DeclarationClass) -> Option<DeclarationDomain> {
         | DeclarationClass::Value => Some(DeclarationDomain::LexicalIdentifier),
         DeclarationClass::GenericType
         | DeclarationClass::NominalType
-        | DeclarationClass::Formal
-        | DeclarationClass::Actual => Some(DeclarationDomain::NominalType),
+        | DeclarationClass::Interface
+        | DeclarationClass::Binding => Some(DeclarationDomain::NominalType),
         DeclarationClass::StructConstructor | DeclarationClass::EnumVariant => {
             Some(DeclarationDomain::Constructor)
         }

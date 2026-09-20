@@ -122,9 +122,7 @@ use super::permission::{
     Footprint, Program, call_projection, collect_consumed_places, container_steps, field_steps,
     set_target_place, visit_read_bindings,
 };
-use super::places::{
-    PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations,
-};
+use super::places::{PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations};
 use crate::NodePath;
 
 /// The judgment's outcome for one counted loop, and the advice that outlives
@@ -485,13 +483,16 @@ impl<'check> Survey<'check, '_> {
     fn statement(&mut self, statement: &'check CheckedStatement, initializers: usize) {
         match statement {
             CheckedStatement::Let {
-                node_path, value, ..
+                node_path,
+                binding,
+                value,
+                ..
             } => {
                 // A range reference bound inside B is the proved-range
                 // family's own formation [REF-4, PAR-2]; every other `let`
                 // binds iteration-own storage, which its binding being in
                 // `introduced` already states.
-                self.record_range_reference(value, node_path);
+                self.record_range_reference(*binding, value, node_path);
                 self.moved_places(value, node_path);
                 self.expression(value);
             }
@@ -512,6 +513,21 @@ impl<'check> Survey<'check, '_> {
                 target,
                 value,
             } => {
+                // A reference rebinding writes no storage, but its current
+                // origin is flow-sensitive and may be carried from a prior
+                // iteration. This static permission survey must not resolve
+                // it through the binding's initial path and mistake that
+                // path for iteration-own storage. Refuse the loop rather
+                // than widen permission; ordinary sequential acceptance is
+                // unaffected.
+                if matches!(target, CheckedSetTarget::Place(place)
+                    if place.fields.is_empty() && self.places.is_reference(place.binding))
+                {
+                    self.shared.get_or_insert(node_path.clone());
+                    self.moved_places(value, node_path);
+                    self.expression(value);
+                    return;
+                }
                 let combine = match target {
                     CheckedSetTarget::Place(place) if place.fields.is_empty() => {
                         combine_of(place.binding, value)
@@ -689,12 +705,23 @@ impl<'check> Survey<'check, '_> {
     /// [REF-4] obligation, keyed by the capture the range step carries. Where
     /// no such image exists the reference is an ordinary binding and denies
     /// nothing by itself; what it is passed to is judged by that call's row.
-    fn record_range_reference(&mut self, value: &CheckedExpression, node: &NodePath) {
-        let CheckedExpression::BorrowAddressed { carrier, root, .. } = value else {
+    fn record_range_reference(
+        &mut self,
+        binding: BindingId,
+        value: &CheckedExpression,
+        node: &NodePath,
+    ) {
+        let CheckedExpression::RangeOf {
+            obligation,
+            captured,
+            ..
+        } = value
+        else {
             return;
         };
-        let resolved = self.places.resolve(root.root, &container_steps(root));
+        let resolved = self.places.resolve(PlaceRoot::Binding(binding), &[]);
         let [place] = resolved.as_slice() else {
+            self.shared.get_or_insert(node.clone());
             return;
         };
         let Some(PlaceStep::Range(range)) = place.path.last() else {
@@ -710,11 +737,13 @@ impl<'check> Survey<'check, '_> {
             .filter(|outcome| {
                 outcome.discharged
                     && outcome.family == ObligationFamily::RangeFormation
-                    && outcome.node_path == *carrier
+                    && outcome.node_path == *obligation
             })
             .flat_map(|outcome| &outcome.range_partitions)
             .find(|partition| {
-                partition.loop_id == self.outer_loop && partition.range == range.start.capture
+                partition.loop_id == self.outer_loop
+                    && partition.range == captured.start.capture
+                    && partition.range == range.start.capture
             })
             .cloned()
         else {
@@ -736,7 +765,7 @@ impl<'check> Survey<'check, '_> {
         self.range_references.push(ProvenRangeReference {
             origin,
             place: place.clone(),
-            argument: carrier.clone(),
+            argument: obligation.clone(),
             map,
         });
     }
@@ -936,7 +965,11 @@ impl<'check> Survey<'check, '_> {
             }
         };
         if let Some((binding, places)) = occurrence {
-            self.reads.push(ReadOccurrence { binding, places });
+            if places.is_empty() {
+                self.unresolved.get_or_insert(self.cite.clone());
+            } else {
+                self.reads.push(ReadOccurrence { binding, places });
+            }
         }
         for child in expression_children(expression) {
             self.record_reads(child);
@@ -1374,4 +1407,3 @@ fn nested_bodies(statement: &CheckedStatement) -> Vec<&[CheckedStatement]> {
         _ => Vec::new(),
     }
 }
-

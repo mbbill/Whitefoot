@@ -85,7 +85,7 @@ fn main_has_ordinary_parameters_results_and_generics() {
         // here. Region parameters retired with [FORM-8] and the store retired
         // with [PROV-1]; the ordinary-parameter subject survives through the
         // owned-handle row below, and [STOR-8]'s one heap is not a parameter.
-        &b"fn main(cell: own Box<u64>) -> result: own unit pure {\n  let value = move cell.inner;\n  return unit;\n}\n"[..],
+        &b"fn main(cell: own Box<u64>) -> result: own unit pure {\n  let value = cell.inner;\n  return unit;\n}\n"[..],
         &b"fn main(env: own Args, again: own Args) -> result: own unit pure {\n  return unit;\n}\n"[..],
         &b"fn main(args: own DirectoryRead) -> result: own DirectoryRead pure {\n  return move args;\n}\n"[..],
     ] {

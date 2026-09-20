@@ -43,7 +43,7 @@ fn pack<T: drop>(value: own T) -> result: own Wrap<T> pure {
 
 fn main() -> status: own ExitStatus pure {
   let value = Mark(value: 9_u64);
-  let wrapped = pack::<Mark>(value: move value);
+  let wrapped = pack::<Mark>(value: value);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -278,18 +278,18 @@ fn main() -> status: own ExitStatus pure {
 /// gap; the changed verdict follows the explicit specification amendment.
 #[test]
 fn a_generic_cycle_varying_a_const_argument_stops_before_instance_enumeration() {
-    let source = br#"fn grow<const n: u64>(at: own u64) -> total: own u64 pure {
+    let source = br#"fn expand_count<const n: u64>(at: own u64) -> total: own u64 pure {
   let done = at == 0_u64;
   if done {
     return 0_u64;
   }
   let next = at -wrap 1_u64;
-  let rest = grow::<n + 1>(at: next);
+  let rest = expand_count::<n + 1>(at: next);
   return rest +wrap 1_u64;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let total = grow::<1>(at: 3_u64);
+  let total = expand_count::<1>(at: 3_u64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -299,7 +299,7 @@ fn main() -> status: own ExitStatus pure {
         source,
         SemanticRule::Fn6,
         SemanticIssueKind::PolymorphicRecursion {
-            cycle: "grow -> grow".to_owned(),
+            cycle: "expand_count -> expand_count".to_owned(),
             mechanical_fix: "forward the complete type, const and function argument vector unchanged on the cycle, or move the changing instantiation off the cycle",
         },
     );
@@ -418,14 +418,18 @@ fn main() -> status: own ExitStatus pure {
 /// at the instantiation whose value leaves the const domain.
 #[test]
 fn a_move_in_an_affine_bounded_body_denotes_a_copy_at_a_copy_instance() {
-    let source = br#"fn transfer<T: drop>(value: own T) -> result: own T pure {
+    let source = br#"nocopy struct Payload {
+  value: u8;
+}
+
+fn transfer<T: drop>(value: own T) -> result: own T pure {
   return move value;
 }
 
 fn main() -> status: own ExitStatus pure {
   let copied = transfer::<u8>(value: 7_u8);
-  let payload = Some<u8>(value: 3_u8);
-  let held = transfer::<Option<u8>>(value: move payload);
+  let payload = Payload(value: 3_u8);
+  let held = transfer::<Payload>(value: move payload);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -875,7 +879,7 @@ fn consume<T: drop>(value: own T) -> result: own unit pure {
 
 fn wrapper<U: drop>() -> result: own unit pure {
   let pair = Pair<u8>(value: 1_u8);
-  consume::<Pair<u8>>(value: move pair);
+  consume::<Pair<u8>>(value: pair);
   return unit;
 }
 
@@ -1116,19 +1120,19 @@ struct AlternateMarker<T: drop, const n: u64> {
 }
 
 fn base(value: own Marker<u8, 1>) -> back: own Marker<u8, 1> pure {
-  return move value;
+  return value;
 }
 
 fn element(value: own Marker<u16, 1>) -> back: own Marker<u16, 1> pure {
-  return move value;
+  return value;
 }
 
 fn count(value: own Marker<u8, 2>) -> back: own Marker<u8, 2> pure {
-  return move value;
+  return value;
 }
 
 fn declaration(value: own AlternateMarker<u8, 1>) -> back: own AlternateMarker<u8, 1> pure {
-  return move value;
+  return value;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -1375,7 +1379,7 @@ fn consume<T: drop>(value: own T) -> result: own unit pure {
 fn wrapper<U: drop>() -> result: own unit pure {
   let pair = Pair<u8>(value: 7_u8);
   let empty_inner = slots_new::<Pair<u8>, 1>();
-  place_back(window: &empty_inner, value: move pair);
+  place_back(window: &empty_inner, value: pair);
   let inner = move empty_inner;
   let empty_outer = slots_new::<Slots<Pair<u8>, 1>, 1>();
   place_back(window: &empty_outer, value: move inner);

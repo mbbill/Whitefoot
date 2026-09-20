@@ -6,11 +6,11 @@ fn main() -> status: own ExitStatus pure {
   set low = high;
   set high = spare;
   let first_values = array_filled::<u8, 3>(value: 1_u8);
-  let first = slots_from_array::<u8, 3>(values: move first_values);
+  let first = slots_from_array::<u8, 3>(values: first_values);
   let second_values = array_filled::<u8, 3>(value: 2_u8);
-  let second = slots_from_array::<u8, 3>(values: move second_values);
+  let second = slots_from_array::<u8, 3>(values: second_values);
   let third_values = array_filled::<u8, 3>(value: 3_u8);
-  let third = slots_from_array::<u8, 3>(values: move third_values);
+  let third = slots_from_array::<u8, 3>(values: third_values);
   swap(first: &first, second: &second);
   swap(first: &second, second: &third);
   return exit_status(code: low);

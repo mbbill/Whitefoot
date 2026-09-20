@@ -13,7 +13,7 @@ fn refresh(old: own Slots<u8, 4>) -> fresher: own Slots<u8, 4> pure {
 fn main() -> status: own ExitStatus pure {
   doc "OP-12: the atomic in-place update at one field is not the partial consume that kills the whole root. The struct's other field is read after the commit, which no dead root admits, and the exit code reports it; no residual cleanup of the unselected content is derived.";
   let values = array_filled::<u8, 4>(value: 0_u8);
-  let run = slots_from_array::<u8, 4>(values: move values);
+  let run = slots_from_array::<u8, 4>(values: values);
   let frame = Frame(tag: 3_u8, run: move run);
   set frame.run = refresh(old: move frame.run);
   let tag = frame.tag;

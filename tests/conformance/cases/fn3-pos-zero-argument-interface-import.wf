@@ -1,0 +1,25 @@
+interface Source {
+  fn value() -> result: own u8 pure;
+}
+
+fn one() -> result: own u8 pure {
+  return 1_u8;
+}
+
+binding OneSource : Source {
+  value = one;
+}
+
+fn read<interface Source>() -> result: own u8 pure {
+  return Source::value();
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "The interface marker imports a zero-header-argument group into a generic declaration. A concrete binding supplies the group at the call without repeating the marker.";
+  let value = read::<OneSource>();
+  if value == 1_u8 {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
+}

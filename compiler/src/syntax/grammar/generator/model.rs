@@ -157,17 +157,19 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("<=", "LessEqual"),
         (">=", "GreaterEqual"),
         ("::", "ColonColon"),
-        // v0.45 [PROV-6]: the declaration modifier and the linearity bound
-        // alternatives. v0.60 retires `dispose`; [OP-14] `free_empty` is an
+        // [GRAM-2, OWN-1, PROV-6]: the declaration modifiers and the
+        // capability bound alternatives. `linear` and `affine` name classes in
+        // prose only and are ordinary identifiers; [OP-14] `free_empty` is an
         // ordinary [PRE-1] call, not an atom.
         ("opaque", "Opaque"),
-        ("linear", "Linear"),
-        ("affine", "Affine"),
+        ("nocopy", "Nocopy"),
+        ("nodrop", "Nodrop"),
         ("copy", "Copy"),
+        ("drop", "Drop"),
         // v0.48 [PRF-1]: the cited-premise multiplicity atom.
         ("times", "Times"),
-        ("formal", "Formal"),
-        ("actual", "Actual"),
+        ("interface", "Interface"),
+        ("binding", "Binding"),
         // x1 [GRAM-2, TYPE-2]: the field modifier that makes a field never a
         // write target.
         ("readonly", "Readonly"),
@@ -540,7 +542,7 @@ pub fn follow_sets(grammar: &Grammar, first: &First, start: usize) -> Follow {
     if let Some(signature) = grammar.index.get("fn_sig") {
         // The record uses the same separator as an ordinary formal member.
         // Retain that grammar occurrence as the lookahead's provenance.
-        let formal = grammar.index["formal_decl"];
+        let formal = grammar.index["interface_decl"];
         let mut pending = vec![grammar.roots[formal]];
         let mut separator = None;
         while let Some(node) = pending.pop() {

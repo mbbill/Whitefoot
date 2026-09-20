@@ -195,10 +195,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         // [REF-4] the formation reads the source place's own offsets and
         // evaluates both endpoints.
         CheckedExpression::RangeOf {
-            source,
-            start,
-            end,
-            ..
+            source, start, end, ..
         } => {
             if let crate::semantic::CheckedRangeSource::Storage(root) = source {
                 bindings.extend(root.binding());
@@ -451,12 +448,10 @@ impl IrBuilder<'_> {
                             offset,
                             target_domain: subscript.target_domain.into(),
                         },
-                        IrType::Window { .. } => {
-                            IrPlaceStep::RunElement {
-                                offset,
-                                target_domain: subscript.target_domain.into(),
-                            }
-                        }
+                        IrType::Window { .. } => IrPlaceStep::RunElement {
+                            offset,
+                            target_domain: subscript.target_domain.into(),
+                        },
                         _ => return Err(LoweringFailure::InvalidCheckedProgram),
                     };
                     (

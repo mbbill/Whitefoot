@@ -115,31 +115,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// [OWN-1] whether this type has the copy capability: every part it
+    /// owns has it and its declaration does not remove it.
+    ///
+    /// A type parameter standing for itself is copy exactly when its written
+    /// bound grants copy [PROV-6, FN-2], which is what admits the bare use
+    /// and the duplication its body writes; a generic nominal is therefore
+    /// judged per instance, from the arguments its fields carry.
     pub(super) fn is_copy_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
-        Ok(match ty {
-            CheckedType::Nominal(id) => self.nominal(id)?.is_copy(),
-            CheckedType::Unit
-            | CheckedType::Bool
-            | CheckedType::Integer(_)
-            | CheckedType::Float(_)
-            | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_) => true,
-            // [S37] a type parameter standing for itself is copy exactly when
-            // its written bound is `copy`: that bound is what admits the bare
-            // use and the duplication its body writes [OWN-1, FN-2].
-            CheckedType::Generic(declaration) => {
-                self.generic_parameter_class(declaration)? == super::linearity::LinearityClass::Copy
-            }
-            // [VIEW-1, S27] the shared view is copy and the writable one is
-            // affine. Affinity on the shared view buys no safety — a second
-            // copy is a second *shared* loan, which [OWN-5] admits without
-            // limit, and a loan-bearing value owns nothing [PROV-3], so it
-            // has nothing to release twice. The exclusive view stays affine
-            // because [OWN-5] refuses two exclusive loans on one range.
-            CheckedType::Array { .. }
-            | CheckedType::Buffer { .. }
-            | CheckedType::Window { .. } => false,
-        })
+        let failure = std::cell::Cell::new(None);
+        let answer = super::super::model::type_has_copy_capability(
+            ty,
+            &self.nominals,
+            &self.elements.borrow(),
+            &|declaration| match self.generic_parameter_class(declaration) {
+                Ok(class) => Some(class == super::linearity::LinearityClass::Copy),
+                Err(stop) => {
+                    failure.set(Some(stop));
+                    None
+                }
+            },
+        );
+        if let Some(stop) = failure.take() {
+            return Err(stop);
+        }
+        answer.ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     /// Whether the complete type cannot occur at a proper accessible subplace.
@@ -233,6 +233,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 release: super::super::model::CheckedReleaseClass::General,
             },
             linear: false,
+            // [PRE-1] `opaque nocopy struct Box<T>`.
+            nocopy: true,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
@@ -327,6 +329,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             name: format!("({})", rendered.join(", ")),
             kind: CheckedNominalKind::Struct { fields },
             linear: false,
+            nocopy: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
@@ -370,6 +373,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             name,
             kind: CheckedNominalKind::Arena { region, content },
             linear: false,
+            nocopy: true,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
@@ -406,6 +410,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             name: "arena-region-storage".to_owned(),
             kind: CheckedNominalKind::ArenaStorage,
             linear: false,
+            nocopy: true,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
@@ -525,6 +530,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             name,
             kind: CheckedNominalKind::Enum { variants },
             linear: false,
+            nocopy: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);

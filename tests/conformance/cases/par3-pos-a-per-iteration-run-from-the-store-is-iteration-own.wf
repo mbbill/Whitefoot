@@ -93,7 +93,7 @@ fn component() -> made: own Slots<u8, 16> pure contract {
 } {
   doc "One fixed name the loop opens by, built once outside it.";
   let values = array_filled::<u8, 16>(value: 97_u8);
-  let built = slots_from_array::<u8, 16>(values: move values);
+  let built = slots_from_array::<u8, 16>(values: values);
   return move built;
 }
 

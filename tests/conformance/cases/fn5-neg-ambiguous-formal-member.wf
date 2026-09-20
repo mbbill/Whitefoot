@@ -1,8 +1,8 @@
-formal Reader<T: copy> {
+interface Reader<T: copy> {
   fn read(value: own T) -> result: own u64 pure;
 }
 
-fn select<Reader<A>, Reader<B>>(first: own A, second: own B) -> result: own u64 pure {
+fn select<interface Reader<A>, interface Reader<B>>(first: own A, second: own B) -> result: own u64 pure {
   return Reader::read(value: first);
 }
 

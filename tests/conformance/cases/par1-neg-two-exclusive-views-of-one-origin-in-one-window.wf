@@ -11,7 +11,7 @@ fn fill_pair(first: &[u8], second: &[u8]) -> result: own unit writes(first), wri
 fn main() -> status: own ExitStatus pure {
   doc "The writer forms two range references over one run and hands one to each write parameter of a single call, so both substituted write paths resolve to the same storage. EFF-5 compares the substituted effects pairwise and refuses an overlapping pair containing a write that is not proved disjoint; the two identical ranges are not disjoint, so the call is the rejection.";
   let values = array_filled::<u8, 2>(value: 0_u8);
-  let run = slots_from_array::<u8, 2>(values: move values);
+  let run = slots_from_array::<u8, 2>(values: values);
   let first_window = &run[0_u64..2_u64];
   let second_window = &run[0_u64..2_u64];
   fill_pair(first: first_window, second: second_window);

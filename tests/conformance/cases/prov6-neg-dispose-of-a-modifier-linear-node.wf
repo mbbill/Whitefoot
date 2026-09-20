@@ -10,7 +10,7 @@ struct Holder {
 fn main() -> status: own ExitStatus pure {
   doc "PROV-6: a type owning a linear part at any depth is itself linear, the modifier's own node included, so the compiler-derived release never runs for it. Such a value is taken apart by a destructuring consume, which is how the marked component reaches a written statement rather than a silent walk.";
   let values = array_filled::<u8, 4>(value: 0_u8);
-  let run = slots_from_array::<u8, 4>(values: move values);
+  let run = slots_from_array::<u8, 4>(values: values);
   let mark = Tag(slot: 1_u8);
   let holder = Holder(mark: move mark, page: move run);
   return exit_status(code: 0_u8);

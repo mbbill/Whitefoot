@@ -73,15 +73,15 @@ impl ScopeBuild {
                 }
                 Production::StructDecl
                 | Production::EnumDecl
-                | Production::FormalDecl
-                | Production::ActualDecl => {
+                | Production::InterfaceDecl
+                | Production::BindingDecl => {
                     // [TYPE-6] a nominal's generic parameters are its own: a
                     // generic TYPEID "may not redeclare another parameter in
                     // the same generic list or shadow a live nominal type or
                     // enclosing generic", so two nominals may each write `T`.
-                    // A formal group always opens the scope because FN-3 gives
+                    // An interface group always opens the scope because FN-3 gives
                     // it member signatures even when it writes no `generics`.
-                    if node.production == Production::FormalDecl
+                    if node.production == Production::InterfaceDecl
                         || children.iter().any(|child| {
                             topology
                                 .node(*child)

@@ -23,7 +23,7 @@ fn return_static(free: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result
 fn main() -> status: own ExitStatus pure {
   doc "INV-1: the constant extent of Slots<u8, 4> fixes capacity, not initialized length. The helper publishes the pool's own measures and nothing about the block it hands back, and a window operation carries no measure through the slot it writes, so the caller cannot recover that the four slots are initialized even though it stocked a full window itself.";
   let bytes = array_filled::<u8, 4>(value: 0_u8);
-  let payload = slots_from_array::<u8, 4>(values: move bytes);
+  let payload = slots_from_array::<u8, 4>(values: bytes);
   let record = StaticBlock(bytes: move payload);
   let free = slots_new::<StaticBlock, 2>();
   place_back(window: &free, value: move record);

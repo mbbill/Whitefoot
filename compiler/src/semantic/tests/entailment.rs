@@ -2704,10 +2704,7 @@ fn main() -> status: own ExitStatus pure {
         "2 < 4 by the implicit length equality"
     );
     assert!(!outcomes[1].discharged, "9 < 4 is not derivable");
-    assert_eq!(
-        outcomes[1].residual.as_deref(),
-        Some("9_u64 < table.len")
-    );
+    assert_eq!(outcomes[1].residual.as_deref(), Some("9_u64 < table.len"));
     assert!(outcomes[1].derivation.is_none());
     let root = obligation_root(&summary, 0);
     assert_root_contains(
@@ -2993,7 +2990,7 @@ fn consuming_a_middle_vertex_preserves_its_survivor_consequence() {
 
 const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
-struct Pair {
+nocopy struct Pair {
   count: u64;
   other: u64;
 }
@@ -5674,10 +5671,7 @@ fn main() -> status: own ExitStatus pure {
         !outcomes[1].discharged,
         "an index-bearing offset is no term [ENT-2], so the outer obligation is underivable"
     );
-    assert_eq!(
-        outcomes[1].residual.as_deref(),
-        Some("order[j] < lens.len")
-    );
+    assert_eq!(outcomes[1].residual.as_deref(), Some("order[j] < lens.len"));
 }
 
 #[test]
@@ -5754,7 +5748,7 @@ const values: Array<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
 fn from_window() -> result: own u8 pure {
   let filled = array_filled::<u64, 4>(value: 0_u64);
-  let b = slots_from_array::<u64, 4>(values: move filled);
+  let b = slots_from_array::<u64, 4>(values: filled);
   return values[b[0_u64]];
 }
 
@@ -5775,10 +5769,7 @@ fn main() -> status: own ExitStatus pure {
         window[0].discharged,
         "the declared construction length proves the inner offset [ENT-3.S12]"
     );
-    assert_eq!(
-        window[1].residual.as_deref(),
-        Some("b[0_u64] < values.len")
-    );
+    assert_eq!(window[1].residual.as_deref(), Some("b[0_u64] < values.len"));
 
     let ranged = obligations(source, "from_range")
         .into_iter()
@@ -5916,7 +5907,7 @@ fn a_declared_construction_length_proves_a_constant_offset_and_an_unknown_one_do
     // relation, so the proving half now descends from that call's S13 event.
     let source = br#"fn sized() -> result: own u8 pure {
   let filled = array_filled::<u8, 4>(value: 0_u8);
-  let b = slots_from_array::<u8, 4>(values: move filled);
+  let b = slots_from_array::<u8, 4>(values: filled);
   return b[3_u64];
 }
 
@@ -5959,10 +5950,7 @@ fn main() -> status: own ExitStatus pure {
         !unknown_bounds.discharged,
         "a capacity of four bounds nothing about the window's own length"
     );
-    assert_eq!(
-        unknown_bounds.residual.as_deref(),
-        Some("3_u64 < b.len")
-    );
+    assert_eq!(unknown_bounds.residual.as_deref(), Some("3_u64 < b.len"));
 }
 
 #[test]
@@ -6113,7 +6101,7 @@ fn eat(b: own Slots<u8, 4>) -> result: own unit pure {
 
 fn kept() -> result: own u8 pure {
   let filled = array_filled::<u8, 4>(value: 0_u8);
-  let b = slots_from_array::<u8, 4>(values: move filled);
+  let b = slots_from_array::<u8, 4>(values: filled);
   let m = b.len;
   let sample = other[m];
   eat(b: move b);
@@ -6122,7 +6110,7 @@ fn kept() -> result: own u8 pure {
 
 fn killed() -> result: own u8 pure {
   let filled = array_filled::<u8, 4>(value: 0_u8);
-  let b = slots_from_array::<u8, 4>(values: move filled);
+  let b = slots_from_array::<u8, 4>(values: filled);
   let m = b.len;
   eat(b: move b);
   let sample = other[m];

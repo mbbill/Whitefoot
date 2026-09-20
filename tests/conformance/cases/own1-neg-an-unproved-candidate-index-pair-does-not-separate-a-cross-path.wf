@@ -1,4 +1,4 @@
-struct Cell {
+nocopy struct Cell {
   tag: u64;
   weight: u64;
 }

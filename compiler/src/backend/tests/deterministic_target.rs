@@ -837,7 +837,7 @@ fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
       return exit_status(code: 24_u8);
     }}
     Err(error: problem) => {{
-      match move problem {{
+      match problem {{
 {arms}      }}
     }}
   }}
@@ -1359,7 +1359,7 @@ pub(super) fn assert_zero_write_outcome() {
       }}
     }}
     Err(error: problem) => {{
-      match move problem {{
+      match problem {{
 {arms}      }}
     }}
   }}

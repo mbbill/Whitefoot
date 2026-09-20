@@ -1,4 +1,4 @@
-enum Flag {
+nocopy enum Flag {
   A();
   B();
 }
@@ -21,7 +21,7 @@ fn main() -> status: own ExitStatus pure {
     return exit_status(code: 3_u8);
   }
   let f = A();
-  match f {
+  match move f {
     A() => {
     }
     B() => {

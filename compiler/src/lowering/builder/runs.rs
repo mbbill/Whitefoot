@@ -12,10 +12,10 @@
 //! [OP-14] are ordinary [PRE-1] records and reach lowering as ordinary
 //! calls; their bodies are synthesized in `windows.rs`.
 
+use crate::IrMeasure;
 use crate::semantic::{
     CheckedContainerRoot, CheckedMeasure, CheckedPlaceStep, CheckedType, MeasureCell,
 };
-use crate::IrMeasure;
 
 use super::*;
 
@@ -107,13 +107,11 @@ impl IrBuilder<'_> {
                             offset,
                             target_domain: subscript.target_domain.into(),
                         },
-                        IrType::Window { .. } => {
-                            IrOperation::RunIndex {
-                                run: value,
-                                offset,
-                                target_domain: subscript.target_domain.into(),
-                            }
-                        }
+                        IrType::Window { .. } => IrOperation::RunIndex {
+                            run: value,
+                            offset,
+                            target_domain: subscript.target_domain.into(),
+                        },
                         _ => return Err(LoweringFailure::InvalidCheckedProgram),
                     };
                     self.define(lower_type(self.erasure, subscript.element_type)?, operation)?

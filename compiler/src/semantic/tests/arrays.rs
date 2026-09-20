@@ -64,10 +64,9 @@ fn constant_typed_places_remain_immutable_and_proof_checked() {
     });
     for (action, rule) in [
         ("let taken = move rows;", SemanticRule::Own1),
-        // [WIN-3] there is no take operation and no hole, so a move out of an
-        // array element is refused at that place. v0.59 cited [TYPE-2]'s
-        // affine-element rule and pointed at `replace`.
-        ("let taken = move rows[0_u64];", SemanticRule::Win3),
+        // Structural copy makes this array element a copy place, so [OWN-1]
+        // refuses the unnecessary `move` before [WIN-3] is relevant.
+        ("let taken = move rows[0_u64];", SemanticRule::Own1),
         ("let taken = move rows[0_u64][0_u64];", SemanticRule::Own1),
         ("let value = rows[1_u64][0_u64];", SemanticRule::Op4),
     ] {
@@ -494,7 +493,7 @@ const table: Array<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 fn main() -> status: own ExitStatus pure {
   let base = array_filled::<i32, count>(value: 7_i32);
-  let values = slots_from_array::<i32, count>(values: move base);
+  let values = slots_from_array::<i32, count>(values: base);
   let length = values.len;
   let local = values[1_u64];
   let stored = table[2_u64];
@@ -662,7 +661,7 @@ fn main() -> status: own ExitStatus pure {
 fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   let base = array_filled::<u8, 2>(value: 0_u8);
-  let values = slots_from_array::<u8, 2>(values: move base);
+  let values = slots_from_array::<u8, 2>(values: base);
   set values[1_u64] = 9_u8;
   let stored = values[1_u64];
   return exit_status(code: 0_u8);
@@ -711,7 +710,7 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
     // A discharged subscript adds no runtime effect: the indexed set with a
     // constant in-range offset is accepted in a `pure` function.
     with_semantics(
-        b"fn main() -> status: own ExitStatus pure {\n  let base = array_filled::<u8, 2>(value: 0_u8);\n  let values = slots_from_array::<u8, 2>(values: move base);\n  set values[0_u64] = 1_u8;\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let base = array_filled::<u8, 2>(value: 0_u8);\n  let values = slots_from_array::<u8, 2>(values: base);\n  set values[0_u64] = 1_u8;\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             assert!(
                 matches!(outcome, SemanticOutcome::Complete(_)),
@@ -720,12 +719,12 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
         },
     );
     assert_rule_kind(
-        b"fn main() -> status: own ExitStatus pure {\n  let base = array_filled::<u8, 2>(value: 0_u8);\n  let values = slots_from_array::<u8, 2>(values: move base);\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let base = array_filled::<u8, 2>(value: 0_u8);\n  let values = slots_from_array::<u8, 2>(values: base);\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
-        b"fn consume(values: own Slots<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let base = array_filled::<u8, 2>(value: 0_u8);\n  let values = slots_from_array::<u8, 2>(values: move base);\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn consume(values: own Slots<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let base = array_filled::<u8, 2>(value: 0_u8);\n  let values = slots_from_array::<u8, 2>(values: base);\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own1,
         SemanticIssueKind::UseAfterMove {
             mechanical_fix: "introduce a new `let` binding before reuse",
@@ -754,7 +753,7 @@ struct Outer {
 
 fn main() -> status: own ExitStatus pure {
   let base = array_filled::<u8, 2>(value: 0_u8);
-  let values = slots_from_array::<u8, 2>(values: move base);
+  let values = slots_from_array::<u8, 2>(values: base);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
   let length = outer.inner.values.len;
@@ -809,7 +808,7 @@ fn replacement(value: own Outer) -> result: own u8 pure {
 
 fn main() -> status: own ExitStatus pure {
   let base = array_filled::<u8, 2>(value: 0_u8);
-  let values = slots_from_array::<u8, 2>(values: move base);
+  let values = slots_from_array::<u8, 2>(values: base);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
   set outer.inner.values[1_u64] = replacement(value: move outer);
@@ -837,7 +836,7 @@ fn observe(value: &Outer) -> result: own u8 reads(value) {
 
 fn main() -> status: own ExitStatus pure {
   let base = array_filled::<u8, 2>(value: 0_u8);
-  let values = slots_from_array::<u8, 2>(values: move base);
+  let values = slots_from_array::<u8, 2>(values: base);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
   let held = &outer;
@@ -871,7 +870,7 @@ fn general_elements_allow_an_array_value_inside_a_run_slot() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   let row = array_filled::<u64, 2>(value: 7_u64);
   let rows = slots_new::<Array<u64, 2>, 2>();
-  place_back(window: &rows, value: move row);
+  place_back(window: &rows, value: row);
   set rows[0_u64][1_u64] = 9_u64;
   let value = rows[0_u64][1_u64];
   let width = rows[0_u64].len;

@@ -132,11 +132,11 @@ fn main() -> status: own ExitStatus pure {
   }
   let three = ring_new::<Option<u8>, 4>();
   let a = Some<u8>(value: 1_u8);
-  place_back(window: &three, value: move a);
+  place_back(window: &three, value: a);
   let b = Some<u8>(value: 2_u8);
-  place_back(window: &three, value: move b);
+  place_back(window: &three, value: b);
   let c = Some<u8>(value: 3_u8);
-  place_back(window: &three, value: move c);
+  place_back(window: &three, value: c);
   let pulled = take_at::<Option<u8>, 4>(window: &three, at: 0_u64);
   let rest_held = three.len;
   if rest_held == 2_u64 {

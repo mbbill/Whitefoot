@@ -2,9 +2,9 @@ fn main() -> status: own ExitStatus pure {
   doc "A subscript of a run is a swap place, which is what carries an affine element out of a slot and its successor in at one commit. At every program point the slot holds exactly one valid owner, so the window stays the run's complete typestate.";
   let run = slots_new::<Option<u8>, 4>();
   let a = Some<u8>(value: 1_u8);
-  place_back(window: &run, value: move a);
+  place_back(window: &run, value: a);
   let b = Some<u8>(value: 2_u8);
-  place_back(window: &run, value: move b);
+  place_back(window: &run, value: b);
   let fresh = Some<u8>(value: 9_u8);
   swap(first: &run[0_u64], second: &fresh);
   match fresh {

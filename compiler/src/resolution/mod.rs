@@ -19,7 +19,8 @@ pub use engine::resolve;
 
 pub use kernel::{
     CELL_NOMINAL, CELL_NOMINAL_ID, CONTAINER_NOMINAL_CLASS, CONTAINER_NOMINAL_CLASSES,
-    CONTAINER_NOMINALS, ContainerNominal, ContainerNominalId, ContainerShape, container_nominal, container_nominal_id,
+    CONTAINER_NOMINALS, ContainerNominal, ContainerNominalId, ContainerShape, container_nominal,
+    container_nominal_id,
 };
 
 /// Returns the exact OP-1 spelling of a resolved operation family.
@@ -210,9 +211,9 @@ pub enum DeclarationClass {
     /// One built-in numeric bound: Int or Float.
     NumericBound,
     /// A named parameter-group abbreviation.
-    Formal,
+    Interface,
     /// A named argument-group abbreviation.
-    Actual,
+    Binding,
     /// Loop label.
     Label,
     /// One machine-checked invariant fact named by source.
@@ -265,9 +266,9 @@ pub enum DeclarationRole {
     /// D04: source enum variant.
     Variant,
     /// A named parameter-group declaration.
-    Formal,
+    Interface,
     /// A named argument-group declaration.
-    Actual,
+    Binding,
     /// A raw function-kind generic parameter.
     FunctionParameter,
     /// D06: named constant.
@@ -308,7 +309,7 @@ pub enum LexicalUseRole {
     Type,
     /// U02: built-in numeric bound.
     GenericBound,
-    /// A formal group in a header or forwarding/member application.
+    /// An interface group in a header or forwarding/member application.
     FormalGroup,
     /// An explicit argument name, admitting a type or group abbreviation.
     TypeArgument,
@@ -361,7 +362,7 @@ pub enum DeferredUseRole {
     /// [GRAM-5, EFF-1]. Which variant a place's enum type has is the owner
     /// type's judgment, exactly as the paired field name is.
     PayloadVariant,
-    /// The member name on the left side of an actual binding.
+    /// The member name on the left side of a named binding.
     FunctionBinding,
     /// The member selected by a qualified group call.
     FunctionMember,

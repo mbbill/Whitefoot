@@ -57,6 +57,62 @@ use super::owned_places::retain_calls;
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
 #[test]
+fn structural_copy_aggregates_keep_independent_storage_after_generic_substitution() {
+    let source = br#"struct Pair {
+  values: Array<u8, 2>;
+  tag: u8;
+}
+
+fn pass<T>(value: own T) -> result: own T pure {
+  return move value;
+}
+
+fn change(pair: &Pair) -> result: own unit writes(pair.values) {
+  set deref(pair).values[0_u64] = 9_u8;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let seed = array_filled::<u8, 2>(value: 3_u8);
+  let original = Pair(values: seed, tag: 5_u8);
+  let twin = pass::<Pair>(value: original);
+  set seed[0_u64] = 8_u8;
+  change(pair: &original);
+  set twin.values[1_u64] = 7_u8;
+  let heap = box_new::<Pair>(value: twin);
+  let extracted = heap.inner;
+  set extracted.tag = 99_u8;
+  if original.values[0_u64] == 9_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if original.values[1_u64] == 3_u8 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  if twin.values[0_u64] == 3_u8 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  if twin.values[1_u64] == 7_u8 {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  if heap.inner.tag == 5_u8 {
+  } else {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = compile(source);
+    let output = compile_and_run(&module);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+#[test]
 fn ordinary_generic_readers_execute_inline_and_boxed_window_values() {
     let source = br#"enum SmallBytes<const n: u64> {
   Inline(values: Slots<u8, n>);
@@ -310,7 +366,7 @@ fn full_owning_arrays_preserve_insert_order_exchange_and_exact_cleanup() {
 fn make_record(tag: own u64) -> result: own Record pure {
   let payload = array_filled::<u64, 16>(value: tag);
   let owner = box_new::<u64>(value: tag);
-  return Record(payload: move payload, owner: move owner);
+  return Record(payload: payload, owner: move owner);
 }
 
 fn seal(values: own Slots<Record, 3>) -> result: own Array<Record, 3> pure contract {
@@ -642,17 +698,17 @@ fn main() -> status: own ExitStatus pure {
   let first = Empty();
   let second = Empty();
   let empty = slots_new::<Empty, 2>();
-  place_back(window: &empty, value: move first);
-  insert_at(window: &empty, index: 0_u64, value: move second);
+  place_back(window: &empty, value: first);
+  insert_at(window: &empty, index: 0_u64, value: second);
   let empty_values = slots_into_array::<Empty, 2>(values: move empty);
-  let empty_returned = relay::<Array<Empty, 2>>(value: move empty_values);
+  let empty_returned = relay::<Array<Empty, 2>>(value: empty_values);
   set empty_returned[1_u64] = Empty();
-  let empty_run = slots_from_array::<Empty, 2>(values: move empty_returned);
+  let empty_run = slots_from_array::<Empty, 2>(values: empty_returned);
   let empty_again = slots_into_array::<Empty, 2>(values: move empty_run);
   let recursion = slots_new::<Recursive, 0>();
   let children = slots_into_array::<Recursive, 0>(values: move recursion);
-  let node = Recursive(children: move children);
-  let carried = relay::<Recursive>(value: move node);
+  let node = Recursive(children: children);
+  let carried = relay::<Recursive>(value: node);
   let zero_length = zero_again.len;
   let empty_length = empty_again.len;
   if zero_length != 0_u64 {
@@ -729,7 +785,7 @@ fn main() -> status: own ExitStatus pure {
   if length != 4_u64 {
     return exit_status(code: 1_u8);
   }
-  let value = read(values: move values, offset: 3_u64);
+  let value = read(values: values, offset: 3_u64);
   if value != 42_u16 {
     return exit_status(code: 2_u8);
   }
@@ -926,7 +982,7 @@ fn replacement() -> result: own u8 pure {
 
 fn main() -> status: own ExitStatus pure {
   let base = array_filled::<u8, 2>(value: 0_u8);
-  let values = slots_from_array::<u8, 2>(values: move base);
+  let values = slots_from_array::<u8, 2>(values: base);
   let inner = Inner(values: move values, sibling: 77_u16);
   let outer = Outer(prefix: 123_u32, inner: move inner);
   set outer.inner.values[1_u64] = replacement();
@@ -1002,7 +1058,7 @@ fn general_run_elements_preserve_array_places_and_standing_extents() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   let row = array_filled::<u64, 2>(value: 7_u64);
   let rows = slots_new::<Array<u64, 2>, 2>();
-  place_back(window: &rows, value: move row);
+  place_back(window: &rows, value: row);
   let width = rows[0_u64].len;
   set rows[0_u64][1_u64] = 9_u64;
   if rows[0_u64][0_u64] != 7_u64 {
@@ -1141,7 +1197,7 @@ fn heap_full_arrays_preserve_elements_across_calls_and_exchange() {
 fn make_record(tag: own u64) -> result: own Record pure {
   let payload = array_filled::<u64, 16>(value: tag);
   let owner = box_new::<u64>(value: tag);
-  return Record(payload: move payload, owner: move owner);
+  return Record(payload: payload, owner: move owner);
 }
 
 fn relay<T: drop>(value: own T) -> result: own T pure {

@@ -599,4 +599,3 @@ pub(in crate::semantic::check) const fn measure_former(spelling: &str) -> Option
         _ => None,
     }
 }
-

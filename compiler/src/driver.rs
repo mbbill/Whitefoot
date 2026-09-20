@@ -866,7 +866,7 @@ mod tests {
         let host = "/absolute/path/counts.wf";
 
         // [OWN-1], reached in the semantic checker.
-        let affine = br#"struct Counts {
+        let affine = br#"nocopy struct Counts {
   lines: u64;
 }
 
@@ -1044,7 +1044,7 @@ fn bubble(node: &Box<BoxNode>) -> result: own u64 writes(node) {{
     Leaf(w: leaf_w) => {{
       let w = deref(leaf_w);
       let values = array_filled::<u64, 8>(value: 1_u64);
-      let touched = scaled(values: move values, index: w);
+      let touched = scaled(values: values, index: w);
       return w;
     }}
     Branch(left: l, right: r, w: slot) => {{
@@ -1091,8 +1091,8 @@ fn main() -> status: own ExitStatus pure {{
         assert_eq!(
             ledger[3],
             "PAR denied      bubble.wf:27  pair(array_filled, scaled)  condition 1: \
-             the write of s1 overlaps the write of s2 at \
-             let values = array_filled::<u64, 8>(value: 1_u64); vs move values"
+             the write of s1 overlaps the operand read of s2 at \
+             let values = array_filled::<u64, 8>(value: 1_u64); vs values"
         );
         assert_eq!(
             ledger[4],
@@ -1366,7 +1366,7 @@ fn main() -> status: own ExitStatus pure {
     fn a_proven_counted_binder_buffer_map_is_permitted() {
         let source = b"fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 0_u64);
-  let out = slots_from_array::<u64, 64>(values: move values);
+  let out = slots_from_array::<u64, 64>(values: values);
   for @fill (i in 0_u64..64_u64) {
     set out[i] = i *wrap i;
   }
@@ -1377,8 +1377,8 @@ fn main() -> status: own ExitStatus pure {
             ledger_of("mapping.wf", source),
             vec![
                 "PAR denied      mapping.wf:2  pair(array_filled, slots_from_array)  \
-                 condition 1: the write of s1 overlaps the write of s2 at \
-                 let values = array_filled::<u64, 64>(value: 0_u64); vs move values"
+                 condition 1: the write of s1 overlaps the operand read of s2 at \
+                 let values = array_filled::<u64, 64>(value: 0_u64); vs values"
                     .to_owned(),
                 "PAR denied      mapping.wf:3  pair(slots_from_array, a for loop)  \
                  condition 1: s2 is a for loop"
@@ -1401,8 +1401,7 @@ fn main() -> status: own ExitStatus pure {
     /// only the part written in view.
     #[test]
     fn a_counted_loop_whose_callee_writes_carried_state_is_denied_by_condition_two() {
-        let source =
-            b"fn accum(slot: &f64, x: own f64) -> result: own u64 writes(slot) {
+        let source = b"fn accum(slot: &f64, x: own f64) -> result: own u64 writes(slot) {
   set deref(slot) = fadd.strict(deref(slot), x);
   let bits = reinterpret::<f64, u64>(deref(slot));
   return iand(bits, 1_u64);
@@ -1503,7 +1502,7 @@ fn main() -> status: own ExitStatus pure {
 
 fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
-  let data = slots_from_array::<u64, 64>(values: move values);
+  let data = slots_from_array::<u64, 64>(values: values);
   set data[10_u64] = 7_u64;
   let t = scan_until(src: &data, needle: 7_u64);
   return exit_status(code: 0_u8);
@@ -1521,12 +1520,12 @@ fn main() -> status: own ExitStatus pure {
                  2 members through line 9"
                     .to_owned(),
                 "PAR denied      giving.wf:22  pair(array_filled, slots_from_array)  \
-                 condition 1: the write of s1 overlaps the write of s2 at \
-                 let values = array_filled::<u64, 64>(value: 1_u64); vs move values"
+                 condition 1: the write of s1 overlaps the operand read of s2 at \
+                 let values = array_filled::<u64, 64>(value: 1_u64); vs values"
                     .to_owned(),
                 "PAR denied      giving.wf:23  pair(slots_from_array, a set statement)  \
                  condition 1: the write of s1 overlaps the write of s2 at \
-                 let data = slots_from_array::<u64, 64>(values: move values); vs \
+                 let data = slots_from_array::<u64, 64>(values: values); vs \
                  set data[10_u64] = 7_u64;"
                     .to_owned(),
                 "PAR denied      giving.wf:24  pair(a set statement, scan_until)  \
@@ -1560,7 +1559,7 @@ fn main() -> status: own ExitStatus pure {
 
 fn main() -> status: own ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
-  let data = slots_from_array::<u64, 64>(values: move values);
+  let data = slots_from_array::<u64, 64>(values: values);
   set data[10_u64] = 7_u64;
   let t = scan_until(src: &data, needle: 7_u64);
   return exit_status(code: 0_u8);
@@ -1576,12 +1575,12 @@ fn main() -> status: own ExitStatus pure {
                  one accumulator under +wrap"
                     .to_owned(),
                 "PAR denied      giving.wf:18  pair(array_filled, slots_from_array)  \
-                 condition 1: the write of s1 overlaps the write of s2 at \
-                 let values = array_filled::<u64, 64>(value: 1_u64); vs move values"
+                 condition 1: the write of s1 overlaps the operand read of s2 at \
+                 let values = array_filled::<u64, 64>(value: 1_u64); vs values"
                     .to_owned(),
                 "PAR denied      giving.wf:19  pair(slots_from_array, a set statement)  \
                  condition 1: the write of s1 overlaps the write of s2 at \
-                 let data = slots_from_array::<u64, 64>(values: move values); vs \
+                 let data = slots_from_array::<u64, 64>(values: values); vs \
                  set data[10_u64] = 7_u64;"
                     .to_owned(),
                 "PAR denied      giving.wf:20  pair(a set statement, scan_until)  \
@@ -1904,7 +1903,7 @@ fn main() -> status: own ExitStatus pure {{
 
     #[test]
     fn driver_erases_empty_formal_and_actual_groups_before_lowering() {
-        let source = b"formal Empty {\n}\n\nactual Selected : Empty {\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+        let source = b"interface Empty {\n}\n\nbinding Selected : Empty {\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
         let llvm = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -2530,10 +2529,7 @@ fn main() -> status: own ExitStatus pure {
 "#,
         );
         assert!(detail.contains("[GRAM-3]"), "{detail}");
-        assert!(
-            detail.contains(r#"expected: ["own"]"#),
-            "{detail}"
-        );
+        assert!(detail.contains(r#"expected: ["own"]"#), "{detail}");
         assert!(
             detail.contains(
                 r#"at reference-result.wf:1:33 in line "fn caller(anchor: &u64) -> out: &u64 pure {""#

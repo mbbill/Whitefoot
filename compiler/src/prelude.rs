@@ -18,11 +18,15 @@ pub(crate) const DECLARATIONS: &[(&str, PreludeSource, &str)] = &[
     // specification's prose `N` stands for a written const argument; source
     // writes a `const` IDENT, lowercase under [FORM-3], as the [PRE-1] rows
     // do". The rows below therefore write `const n: u64`, exactly as
-    // `slots_new<T: linear, const n: u64>` of the same fence does.
+    // `slots_new<T, const n: u64>` of the same fence does.
+    //
+    // [OWN-1] `Array` carries no capability modifier, so an instance has the
+    // capabilities of its element; `Slots`, `Ring`, `Box` and the host
+    // handles are `nocopy`, or `nodrop` where the handle must be closed.
     (
         "prelude/Array.wf",
         PreludeSource::Opaque,
-        r#"opaque struct Array<T: linear, const n: u64> {
+        r#"opaque struct Array<T, const n: u64> {
   readonly len: u64;
 }
 "#,
@@ -30,7 +34,7 @@ pub(crate) const DECLARATIONS: &[(&str, PreludeSource, &str)] = &[
     (
         "prelude/Slots.wf",
         PreludeSource::Opaque,
-        r#"opaque struct Slots<T: linear, const n: u64> {
+        r#"opaque nocopy struct Slots<T, const n: u64> {
   readonly len: u64;
   readonly cap: u64;
 }
@@ -39,7 +43,7 @@ pub(crate) const DECLARATIONS: &[(&str, PreludeSource, &str)] = &[
     (
         "prelude/Ring.wf",
         PreludeSource::Opaque,
-        r#"opaque struct Ring<T: linear, const n: u64> {
+        r#"opaque nocopy struct Ring<T, const n: u64> {
   readonly len: u64;
   readonly cap: u64;
   readonly head: u64;
@@ -50,15 +54,14 @@ pub(crate) const DECLARATIONS: &[(&str, PreludeSource, &str)] = &[
     // [TYPE-2] makes it an opaque struct with one field and a constructor
     // entry that exists to be refused.
     //
-    // The fence now writes the bound the grammar requires: [GRAM-2]'s
-    // `gparam := TYPEID ":" (TYPEID | linearity_bound)` makes a bound
-    // mandatory and [FN-2] gives no default, so `T: linear` -- the widest
-    // linearity class, and the one `box_new<T: linear>` of the same fence
-    // gives the same parameter -- is written rather than supplied here.
+    // [GRAM-2]'s `gparam := TYPEID (":" (TYPEID | capability_bound))?` makes
+    // the bound optional and [PROV-6] reads an absent bound as no capability,
+    // so `Box<T>` admits a content of every class, as `box_new<T>` of the
+    // same fence does.
     (
         "prelude/Box.wf",
         PreludeSource::Opaque,
-        r#"opaque struct Box<T: linear> {
+        r#"opaque nocopy struct Box<T> {
   inner: T;
 }
 "#,
@@ -66,98 +69,98 @@ pub(crate) const DECLARATIONS: &[(&str, PreludeSource, &str)] = &[
     (
         "prelude/Args.wf",
         PreludeSource::Opaque,
-        r#"opaque struct Args {
+        r#"opaque nocopy struct Args {
 }
 "#,
     ),
     (
         "prelude/HostString.wf",
         PreludeSource::Opaque,
-        r#"opaque struct HostString {
+        r#"opaque nocopy struct HostString {
 }
 "#,
     ),
     (
         "prelude/RelativePath.wf",
         PreludeSource::Opaque,
-        r#"opaque struct RelativePath {
+        r#"opaque nocopy struct RelativePath {
 }
 "#,
     ),
     (
         "prelude/DirectoryRead.wf",
         PreludeSource::Opaque,
-        r#"opaque linear struct DirectoryRead {
+        r#"opaque nodrop struct DirectoryRead {
 }
 "#,
     ),
     (
         "prelude/ReadFile.wf",
         PreludeSource::Opaque,
-        r#"opaque linear struct ReadFile {
+        r#"opaque nodrop struct ReadFile {
 }
 "#,
     ),
     (
         "prelude/OutputStream.wf",
         PreludeSource::Opaque,
-        r#"opaque struct OutputStream {
+        r#"opaque nocopy struct OutputStream {
 }
 "#,
     ),
     (
         "prelude/ExitStatus.wf",
         PreludeSource::Opaque,
-        r#"opaque struct ExitStatus {
+        r#"opaque nocopy struct ExitStatus {
 }
 "#,
     ),
     (
         "prelude/DirectorySource.wf",
         PreludeSource::Opaque,
-        r#"opaque linear struct DirectorySource {
+        r#"opaque nodrop struct DirectorySource {
 }
 "#,
     ),
     (
         "prelude/HandleFactory.wf",
         PreludeSource::Opaque,
-        r#"opaque struct HandleFactory {
+        r#"opaque nocopy struct HandleFactory {
 }
 "#,
     ),
     (
         "prelude/InputStream.wf",
         PreludeSource::Opaque,
-        r#"opaque struct InputStream {
+        r#"opaque nocopy struct InputStream {
 }
 "#,
     ),
     (
         "prelude/SocketAddress.wf",
         PreludeSource::Opaque,
-        r#"opaque struct SocketAddress {
+        r#"opaque nocopy struct SocketAddress {
 }
 "#,
     ),
     (
         "prelude/TcpListener.wf",
         PreludeSource::Opaque,
-        r#"opaque linear struct TcpListener {
+        r#"opaque nodrop struct TcpListener {
 }
 "#,
     ),
     (
         "prelude/TcpReceive.wf",
         PreludeSource::Opaque,
-        r#"opaque linear struct TcpReceive {
+        r#"opaque nodrop struct TcpReceive {
 }
 "#,
     ),
     (
         "prelude/TcpSend.wf",
         PreludeSource::Opaque,
-        r#"opaque linear struct TcpSend {
+        r#"opaque nodrop struct TcpSend {
 }
 "#,
     ),
@@ -473,7 +476,7 @@ enum ListStop {
     (
         "prelude/box_new.wf",
         PreludeSource::Function,
-        r#"fn box_new<T: linear>(value: own T) -> result: own Box<T> pure;
+        r#"fn box_new<T>(value: own T) -> result: own Box<T> pure;
 "#,
     ),
     (
@@ -487,7 +490,7 @@ enum ListStop {
     (
         "prelude/slots_new.wf",
         PreludeSource::Function,
-        r#"fn slots_new<T: linear, const n: u64>() -> result: own Slots<T, n> pure contract {
+        r#"fn slots_new<T, const n: u64>() -> result: own Slots<T, n> pure contract {
   ensures result.len == 0_u64;
   ensures result.cap == n;
 };
@@ -496,7 +499,7 @@ enum ListStop {
     (
         "prelude/ring_new.wf",
         PreludeSource::Function,
-        r#"fn ring_new<T: linear, const n: u64>() -> result: own Ring<T, n> pure contract {
+        r#"fn ring_new<T, const n: u64>() -> result: own Ring<T, n> pure contract {
   ensures result.len == 0_u64;
   ensures result.cap == n;
   ensures result.head == 0_u64;
@@ -514,7 +517,7 @@ enum ListStop {
     (
         "prelude/box_slots_new.wf",
         PreludeSource::Function,
-        r#"fn box_slots_new<T: linear>(capacity: own u64) -> result: own Box<Slots<T>> pure contract {
+        r#"fn box_slots_new<T>(capacity: own u64) -> result: own Box<Slots<T>> pure contract {
   ensures result.inner.len == 0_u64;
   ensures result.inner.cap == capacity;
 };
@@ -523,7 +526,7 @@ enum ListStop {
     (
         "prelude/box_ring_new.wf",
         PreludeSource::Function,
-        r#"fn box_ring_new<T: linear>(capacity: own u64) -> result: own Box<Ring<T>> pure contract {
+        r#"fn box_ring_new<T>(capacity: own u64) -> result: own Box<Ring<T>> pure contract {
   ensures result.inner.len == 0_u64;
   ensures result.inner.cap == capacity;
   ensures result.inner.head == 0_u64;
@@ -533,7 +536,7 @@ enum ListStop {
     (
         "prelude/slots_from_array.wf",
         PreludeSource::Function,
-        r#"fn slots_from_array<T: linear, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pure contract {
+        r#"fn slots_from_array<T, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pure contract {
   ensures result.len == n;
   ensures result.cap == n;
 };
@@ -542,7 +545,7 @@ enum ListStop {
     (
         "prelude/slots_into_array.wf",
         PreludeSource::Function,
-        r#"fn slots_into_array<T: linear, const n: u64>(values: own Slots<T, n>) -> result: own Array<T, n> pure contract {
+        r#"fn slots_into_array<T, const n: u64>(values: own Slots<T, n>) -> result: own Array<T, n> pure contract {
   requires values.len == n;
   ensures result.len == n;
 };
@@ -551,7 +554,7 @@ enum ListStop {
     (
         "prelude/place_back.wf",
         PreludeSource::Function,
-        r#"fn place_back<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window.next), writes(window.len) contract {
+        r#"fn place_back<W, T>(window: &W, value: own T) -> result: own unit writes(window.next), writes(window.len) contract {
   requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
 };
@@ -560,7 +563,7 @@ enum ListStop {
     (
         "prelude/take_back.wf",
         PreludeSource::Function,
-        r#"fn take_back<W: linear, T: linear>(window: &W) -> value: own T writes(window.last), writes(window.len) contract {
+        r#"fn take_back<W, T>(window: &W) -> value: own T writes(window.last), writes(window.len) contract {
   requires deref(window).len > 0_u64;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
 };
@@ -569,7 +572,7 @@ enum ListStop {
     (
         "prelude/insert_at.wf",
         PreludeSource::Function,
-        r#"fn insert_at<W: linear, T: linear>(window: &W, index: own u64, value: own T) -> result: own unit writes(window.filled), writes(window.next), writes(window.len) contract {
+        r#"fn insert_at<W, T>(window: &W, index: own u64, value: own T) -> result: own unit writes(window.filled), writes(window.next), writes(window.len) contract {
   requires index <= deref(window).len;
   requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
@@ -579,7 +582,7 @@ enum ListStop {
     (
         "prelude/remove_at.wf",
         PreludeSource::Function,
-        r#"fn remove_at<W: linear, T: linear>(window: &W, index: own u64) -> value: own T writes(window.filled), writes(window.len) contract {
+        r#"fn remove_at<W, T>(window: &W, index: own u64) -> value: own T writes(window.filled), writes(window.len) contract {
   requires index < deref(window).len;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
 };
@@ -588,7 +591,7 @@ enum ListStop {
     (
         "prelude/append.wf",
         PreludeSource::Function,
-        r#"fn append<W: linear, X: linear>(destination: &W, source: &X) -> result: own unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
+        r#"fn append<W, X>(destination: &W, source: &X) -> result: own unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
   requires deref(source).len <= deref(destination).cap - deref(destination).len;
   ensures deref(destination).len >= deref(entry(destination)).len;
   ensures deref(source).len == 0_u64;
@@ -598,7 +601,7 @@ enum ListStop {
     (
         "prelude/split_off.wf",
         PreludeSource::Function,
-        r#"fn split_off<W: linear, X: linear>(source: &W, index: own u64, destination: &X) -> result: own unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
+        r#"fn split_off<W, X>(source: &W, index: own u64, destination: &X) -> result: own unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
   requires index <= deref(source).len;
   requires deref(source).len - index <= deref(destination).cap - deref(destination).len;
   ensures deref(source).len == index;
@@ -609,7 +612,7 @@ enum ListStop {
     (
         "prelude/grow.wf",
         PreludeSource::Function,
-        r#"fn grow<T: linear>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(cell) contract {
+        r#"fn grow<T>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(cell) contract {
   requires capacity >= deref(cell).inner.cap;
   ensures deref(cell).inner.cap == capacity;
   ensures deref(cell).inner.len == deref(entry(cell)).inner.len;
@@ -619,7 +622,7 @@ enum ListStop {
     (
         "prelude/place_front.wf",
         PreludeSource::Function,
-        r#"fn place_front<W: linear, T: linear>(window: &W, value: own T) -> result: own unit writes(window) contract {
+        r#"fn place_front<W, T>(window: &W, value: own T) -> result: own unit writes(window) contract {
   requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
   ensures deref(window).cap == deref(entry(window)).cap;
@@ -631,7 +634,7 @@ enum ListStop {
     (
         "prelude/take_front.wf",
         PreludeSource::Function,
-        r#"fn take_front<W: linear, T: linear>(window: &W) -> value: own T writes(window) contract {
+        r#"fn take_front<W, T>(window: &W) -> value: own T writes(window) contract {
   requires deref(window).len > 0_u64;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
   ensures deref(window).cap == deref(entry(window)).cap;
@@ -643,13 +646,13 @@ enum ListStop {
     (
         "prelude/swap.wf",
         PreludeSource::Function,
-        r#"fn swap<T: linear>(first: &T, second: &T) -> result: own unit writes(first), writes(second);
+        r#"fn swap<T>(first: &T, second: &T) -> result: own unit writes(first), writes(second);
 "#,
     ),
     (
         "prelude/free_empty.wf",
         PreludeSource::Function,
-        r#"fn free_empty<W: linear>(window: own W) -> result: own unit pure contract {
+        r#"fn free_empty<W>(window: own W) -> result: own unit pure contract {
   requires window.len == 0_u64;
 };
 "#,

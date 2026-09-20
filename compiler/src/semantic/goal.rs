@@ -208,7 +208,9 @@ pub(crate) enum GoalProjection {
     /// under [`GoalDatum::Parameter`], and both readers -- the caller's
     /// instantiation and the callee body's own reading -- replace it with an
     /// ordinary [`GoalProjection::Subscript`] before any term is interned.
-    FormalSubscript { ordinal: u32 },
+    FormalSubscript {
+        ordinal: u32,
+    },
 }
 
 /// One structural goal row and its exact selected type/domain identity.

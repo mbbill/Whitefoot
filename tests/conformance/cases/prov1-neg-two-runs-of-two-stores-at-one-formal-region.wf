@@ -12,9 +12,9 @@ fn wider<T: drop, const n: u64>(one: &Slots<T, n>, two: &Slots<T, n>) -> width: 
 fn main() -> status: own ExitStatus pure {
   doc "TYPE-5: one const parameter occupying two container parameter positions is fixed by its written instantiation argument, and every argument position must match the resulting parameter type exactly. The second window's capacity is eight where the instantiation fixed four, so the second argument does not match.";
   let first_values = array_filled::<u8, 4>(value: 0_u8);
-  let first = slots_from_array::<u8, 4>(values: move first_values);
+  let first = slots_from_array::<u8, 4>(values: first_values);
   let second_values = array_filled::<u8, 8>(value: 0_u8);
-  let second = slots_from_array::<u8, 8>(values: move second_values);
+  let second = slots_from_array::<u8, 8>(values: second_values);
   let width = wider::<u8, 4>(one: &first, two: &second);
   if width == 0_u64 {
     return exit_status(code: 0_u8);

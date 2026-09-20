@@ -747,24 +747,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // `deref` [REF-1, TYPE-7], which is how section 16's example writes
         // `deref(p).len`. A bare `deref(p)` naming no measure is still no
         // affine atom, and the refusal for it stands below.
-        let dereferenced =
-            self.has_fixed(pbase, crate::syntax::terminal::FixedTerminal::Deref)?;
+        let dereferenced = self.has_fixed(pbase, crate::syntax::terminal::FixedTerminal::Deref)?;
         // [INV-1, OP-15] one `place` formed from an admitted measure place by
         // one measure-member `psuffix`. The relation evaluates nothing and
         // reads no storage, so the factor reaches the resolved place and the
         // measure row and stops there: no access, no effect, and no goal.
         if let Some(measure) = self.trailing_measure_member(&suffixes)? {
             let base = &suffixes[..suffixes.len() - 1];
-            let measured =
-                self.check_indexed_place_rooted(
-                    place,
-                    bindings,
-                    base,
-                    place,
-                    function,
-                    loop_depth,
-                    owner.value_role(),
-                )?;
+            let measured = self.check_indexed_place_rooted(
+                place,
+                bindings,
+                base,
+                place,
+                function,
+                loop_depth,
+                owner.value_role(),
+            )?;
             // [INV-1] the place resolves in the same context an IDENT does,
             // and its root is one of the values that context admits.
             if let Some(declaration) = measured.root_declaration()

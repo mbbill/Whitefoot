@@ -132,7 +132,7 @@ const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destinatio
       return Ok<u64, CopyError>(value: copied);
     }
     Err(error: problem) => {
-      return Err<u64, CopyError>(error: move problem);
+      return Err<u64, CopyError>(error: problem);
     }
   }
 }
@@ -186,7 +186,7 @@ fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts()
     // reason the wrapper above gives: `next` is one of the eight reserved
     // measure and part names and a `fn_sig` inside a `formal_decl` is
     // ordinary writer source.
-    let formal = r#"formal Copier {
+    let formal = r#"interface Copier {
   fn transfer(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
     requires start <= end;
     requires end <= deref(destination).len;
@@ -197,13 +197,13 @@ fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts()
 
 "#;
     let forwarding = COPY_BYTES_WRAPPER
-        .replacen("fn copy_bytes(", "fn copy_through<Copier>(", 1)
+        .replacen("fn copy_bytes(", "fn copy_through<interface Copier>(", 1)
         .replace("host_copy_bytes(", "Copier::transfer(");
     let original = String::from_utf8(corpus_source("run-syshost-nontext-argv-bytes-roundtrip"))
         .expect("source is UTF-8");
     let caller = original.replace("host_copy_bytes(", "copy_through::<Selected>(");
     for member in ["host_copy_bytes", "copy_bytes"] {
-        let actual = format!("actual Selected : Copier {{\n  transfer = {member};\n}}\n\n");
+        let actual = format!("binding Selected : Copier {{\n  transfer = {member};\n}}\n\n");
         let prefix = format!("{formal}{actual}{COPY_BYTES_WRAPPER}{forwarding}");
         let source = format!("{prefix}{caller}");
         let forwarding_name = with_ir(source.as_bytes(), |program| {

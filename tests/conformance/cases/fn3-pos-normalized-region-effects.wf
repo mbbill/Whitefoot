@@ -2,11 +2,11 @@ struct Cell {
   value: u64;
 }
 
-formal BorrowedSum {
+interface BorrowedSum {
   fn sum(x: &Cell, y: &Cell) -> result: own u64 reads(x.value), reads(y.value);
 }
 
-actual First : BorrowedSum {
+binding First : BorrowedSum {
   sum = add_borrowed;
 }
 

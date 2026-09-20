@@ -32,7 +32,7 @@ fn main() -> status: own ExitStatus pure {
   set bytes[6_u64] = 55_u8;
   set bytes[7_u64] = 56_u8;
   set bytes[8_u64] = 57_u8;
-  let checksum = crc32::<9>(bytes: move bytes);
+  let checksum = crc32::<9>(bytes: bytes);
   if checksum == 3421780262_u32 {
   } else {
     return exit_status(code: 201_u8);

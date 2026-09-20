@@ -7,7 +7,7 @@ fn measure(cell: own Slots<u8, 4>) -> size: own u64 pure {
 fn main() -> status: own ExitStatus pure {
   doc "LIV-1: one branch consumes the window and the other does not, so the two predecessors of the join disagree about whether it is live there.";
   let values = array_filled::<u8, 4>(value: 0_u8);
-  let c = slots_from_array::<u8, 4>(values: move values);
+  let c = slots_from_array::<u8, 4>(values: values);
   let flag = 1_u64;
   let taken = 0_u64;
   if flag == 1_u64 {

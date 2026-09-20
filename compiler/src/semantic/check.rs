@@ -8,8 +8,8 @@ mod generics;
 mod linearity;
 mod nominal_instances;
 mod nominals;
-mod references;
 pub(crate) mod publication;
+mod references;
 mod requires;
 mod support;
 mod type_regions;
@@ -47,9 +47,9 @@ use super::places::ResolvedPlace;
 use super::postcondition::CheckedPostconditionSelector;
 use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
-use references::{AccessKind, ReferenceInfo};
 use control::{ControlCounters, ControlScope};
 use generics::{GenericParameter, GenericSubstitution, PendingGenericRequirement};
+use references::{AccessKind, ReferenceInfo};
 
 /// The syntax tree, as the permission ledger's citations reach it.
 struct PermissionLedgerSource<'view, 'unit, 'classified, 'lexed, 'source> {
@@ -158,9 +158,12 @@ struct NominalTemplate {
     /// instance is keyed on them beside its type and const arguments and two
     /// instances at two regions are two types [PROV-1].
     region_parameters: Vec<DeclarationId>,
-    /// [PROV-6] whether the declaration writes the `linear` modifier. Every
+    /// [PROV-6] whether the declaration writes the `nodrop` modifier. Every
     /// instance of a marked declaration is marked.
     linear: bool,
+    /// [OWN-1, GRAM-2] whether the declaration writes the `nocopy` modifier.
+    /// Every instance of a marked declaration is marked.
+    nocopy: bool,
     /// [FORM-8] one entry per constructor of this declaration — a struct has
     /// one, an enum one per variant in tag order — and empty for a
     /// declaration carrying no `region_params`.
@@ -494,13 +497,14 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// `struct_decl` or `enum_decl` body is being read, and `None`
     /// everywhere else, where FORM-8 requires a written store argument.
     elided_store_brand: std::cell::Cell<Option<DeclarationId>>,
-    /// [FN-2, OWN-1, S37] whether the body now being checked is a *concrete
+    /// [FN-2, OWN-1, PROV-6] whether the body now being checked is a *concrete
     /// instance* of a generic template whose spelling one symbolic instance
     /// has already judged.
     ///
-    /// The template is the spelling authority: an `affine` or `linear` body
-    /// writes `move`, a `copy` body writes bare use, and the one symbolic
-    /// instance decides both once. The concrete-instance recheck therefore
+    /// The template is the spelling authority: a body whose parameter lacks
+    /// copy writes `move`, a `copy`-bounded body writes bare use, and the one
+    /// symbolic instance decides both once. The concrete-instance recheck
+    /// therefore
     /// does not re-judge the [OWN-1]/[FORM-1] spelling, and a `move` of a
     /// template-affine value at a copy instance denotes a copy. Every other
     /// [OWN-1] judgment — consume-once, dead roots, exclusivity — is
@@ -1548,9 +1552,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             }
                         }
                     }
-                    if self.nominals.len() == before
-                        && self.signatures.len() == before_signatures
-                    {
+                    if self.nominals.len() == before && self.signatures.len() == before_signatures {
                         return Err(SemanticCompilerFailure::InvalidResolution.into());
                     }
                 }
@@ -1570,7 +1572,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_function_signature(signature)
     }
 
-    /// [FN-2, OWN-1, S37] one body, checked with the template's spelling
+    /// [FN-2, OWN-1, PROV-6] one body, checked with the template's spelling
     /// authority recorded for the instance it is.
     ///
     /// A concrete instance of a generic template is exactly the body whose
@@ -1591,9 +1593,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         outcome
     }
 
-    /// [OP-10] whether this instance still carries a compiler-owned window
-    /// type parameter unsubstituted, which is exactly the symbolic instance
-    /// of a window row.
+    /// [OP-10, OP-14] whether this instance still carries a compiler-owned
+    /// window type parameter unsubstituted, which is exactly the symbolic
+    /// instance of a window row.
     fn has_unsupplied_window_type_parameter(
         &self,
         signature: &FunctionSignature,
@@ -1610,11 +1612,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             // Once an operand has supplied the shape, `deref(window).len`
             // names a measure of one of [MSR-1]'s measured types whatever
-            // that shape's element type and capacity still are, and the row's
-            // clauses are judged exactly as any other generic row's. Only the
-            // unsubstituted parameter of the symbolic schema instance is no
-            // measured type, and it is the one this answers for.
-            if ty.measured().is_none() {
+            // that shape's element type and capacity still are. [OP-14] also
+            // admits a Box holding a runtime-capacity window; its concrete W
+            // is not itself measured, but the prelude clause's measure place
+            // instantiates as `window.inner` [TYPE-9]. Only the unsubstituted
+            // parameter of the symbolic schema instance has neither form.
+            let boxed_runtime_window = matches!(
+                self.box_content(*ty)?,
+                Some(CheckedType::Window { capacity: None, .. })
+            );
+            if ty.measured().is_none() && !boxed_runtime_window {
                 return Ok(true);
             }
         }
@@ -1825,8 +1832,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             body: (!declaration_only).then_some(checked.statements),
             body_disposition: super::model::CheckedBodyDisposition::Inhabited,
             call_separations: {
-                let mut separations =
-                    std::mem::take(&mut *self.call_separations.borrow_mut());
+                let mut separations = std::mem::take(&mut *self.call_separations.borrow_mut());
                 separations.sort_by_key(|separation| separation.site.components().to_vec());
                 separations
             },
@@ -2313,10 +2319,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // [REF-4] both endpoints are ordinary operands evaluated at the
             // formation, and a storage source carries its own offsets.
             CheckedExpression::RangeOf {
-                source,
-                start,
-                end,
-                ..
+                source, start, end, ..
             } => {
                 if let super::model::CheckedRangeSource::Storage(root) = source {
                     for offset in root.offsets_mut() {
@@ -2550,10 +2553,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Self::install_expression_allocation_bounds(offset, bounds)?;
             }
             CheckedExpression::RangeOf {
-                source,
-                start,
-                end,
-                ..
+                source, start, end, ..
             } => {
                 if let super::model::CheckedRangeSource::Storage(root) = source {
                     for offset in root.offsets_mut() {
@@ -2628,11 +2628,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     // index positions: the offset the place is identified
                     // over is the value that argument names here.
                     let projection = match projection {
-                        GoalProjection::FormalSubscript { ordinal } => {
-                            GoalProjection::Subscript(Self::goal_argument_offset(
-                                arguments.get(*ordinal as usize),
-                            )?)
-                        }
+                        GoalProjection::FormalSubscript { ordinal } => GoalProjection::Subscript(
+                            Self::goal_argument_offset(arguments.get(*ordinal as usize))?,
+                        ),
                         other => *other,
                     };
                     image = image
@@ -2708,7 +2706,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             GoalDatum::Literal(CheckedValue::ConstGeneric { declaration, .. }) => {
                 CapturedValue::new(unknown.capture, CapturedTerm::Const(*declaration))
             }
-            GoalDatum::Place { root, projections, .. } if projections.is_empty() => {
+            GoalDatum::Place {
+                root, projections, ..
+            } if projections.is_empty() => {
                 CapturedValue::new(unknown.capture, CapturedTerm::Binding(*root))
             }
             _ => return Ok(unknown),
@@ -2915,7 +2915,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::GenericInt(declaration) => CheckedFlatElement::GenericInt(declaration),
             CheckedType::GenericFloat(declaration) => CheckedFlatElement::GenericFloat(declaration),
             CheckedType::Nominal(nominal) => {
-                if self.nominal(nominal)?.is_copy() {
+                if self.nominal(nominal)?.is_tag_only_enum() {
                     CheckedFlatElement::TagOnlyNominal(nominal)
                 } else {
                     CheckedFlatElement::Nominal(nominal)
