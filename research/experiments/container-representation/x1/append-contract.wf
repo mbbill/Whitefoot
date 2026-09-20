@@ -1,0 +1,14 @@
+fn concatenate(destination: &Slots<u64, 4>, source: &Slots<u64, 4>) -> result: own unit writes(destination), writes(source) contract {
+  requires deref(source).len <= deref(destination).cap - deref(destination).len;
+  ensures deref(destination).len == deref(entry(destination)).len + deref(entry(source)).len;
+} {
+  append(destination: destination, source: source);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let destination = slots_new::<u64, 4>();
+  let source = slots_new::<u64, 4>();
+  concatenate(destination: &destination, source: &source);
+  return exit_status(code: 0_u8);
+}

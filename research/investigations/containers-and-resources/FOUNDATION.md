@@ -1,5 +1,9 @@
 # Container performance ceiling and the foundation decision
 
+[Containers over x1](X1-LIBRARY.md) re-derives the next library comparison under
+PR #70's decided framework. The interface selections and measurements below
+retain their original conditions, including interfaces that x1 has superseded.
+
 The question is how Whitefoot can support efficient system containers while
 preserving machine-checked safety. Performance has priority over breadth;
 common containers are a basic coverage requirement, and kernel, database and
