@@ -102,6 +102,56 @@ as the handle. Release remains outside the timed call. This is an interface
 repair, with no change to the native algorithms or timing boundaries; C
 syntax/type checking passed, and full harness execution remains unverified.
 
+The existing `ref4-pos-range-reference-and-reslice` conformance case now also
+forms and re-slices a range of affine `Option<Slots<u64, 1>>` elements, replaces
+an element through that range, and checks the original slot. Its expectation
+is strengthened from acceptance to exit-zero execution, so its existing
+scalar length checks also execute. This adds one native construction/run to
+the same corpus case, not another Rust test executable or duplicate WF case.
+On the repaired compiler, WF analysis plus native construction took 0.57 s
+and process launch/execution took 0.36 s, both exit zero. The initial compiler
+stops on this extended case as unsupported. Changing the replacement offset
+to an unproved `1_u64` still rejects at OP-4; the element-domain repair does
+not waive the subscript bound. `make conformance` passed its 28 runner tests
+and reported 125/125 rules covered.
+
+#### Reference-source and tally probes
+
+The [reference-source candidate](reference-scatter.wf) belongs to this
+investigation while full consumer validation is blocked; remove it when its
+chosen form replaces the formal consumer or when this candidate is retired.
+It keeps the current block decomposition and padded streams. Tally reads a
+chunk in place; packing reads the containing Box through a reference and
+advances an explicit chunk position. The whole-Box form follows the current
+TYPE-9 placement rule. Explicit finite steps carry the same padded-capacity
+argument through that position. The formal scatter fixture is unchanged at
+this checkpoint.
+
+With compiler sources at `0f9edadd`, the candidate reaches FN-8 at
+`copy_run(values: &deref(payload).low, output: first_low)`: the substituted
+requirement names `deref(chunks).inner[first].len`, losing the payload and
+`low` field. PR #70's in-progress changes already address payload projections
+in `goal_referent_image`; they are not independently applied here. The owned
+control on the same Box/position signature additionally loses the expected
+remaining-range length relation after the output copies. These observations
+must be rechecked on a committed upstream checkpoint before timing.
+
+An isolated code-shape probe extracts the `Chunk` and `tally` definitions
+from `efd6ebc9:tests/programs/compute/radix_scatter.wf` and from the candidate,
+appending the same empty `main` returning exit zero. Both sources emit LLVM
+through `whitefootc --emit-llvm SOURCE -o MODULE.ll`. Apple clang 21.0.0 on
+arm64 Darwin compiles each with
+`clang -O2 -Wno-override-module -S -x ir MODULE.ll -o MODULE.s`. The `_wf_tally`
+body, bounded by its label and `-- End function`, has 954 assembly instruction
+lines in the owned form and 11 in the reference form. The owned form reserves
+4,096 stack bytes plus 64 bytes of saved registers; the reference form has no
+stack frame. Its live path reads the tag and two lengths, adds the prior
+counts and stores two scalars. Although its unoptimized LLVM contains an
+aggregate snapshot, native optimization removes that unused payload copy.
+These are isolated emitted-code observations, not elapsed-time results or
+an end-to-end scatter speedup; caller placement and full consumer correctness
+remain to be checked.
+
 ## Consumers and discriminating criteria
 
 These criteria are recorded before the new experiments. All source programs
