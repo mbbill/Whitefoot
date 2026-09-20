@@ -219,12 +219,39 @@ Items the owner asked to be kept on this list during the redesign recorded in
 `design/language` on 2026-09-19. None of them is a decision; each names the
 condition under which it is taken up.
 
-- **Iterative descent of owned links by reference.** A path has a static
-  shape, so `loop { p = &deref(p.next) }` over a Box-linked list is refused
-  and the walk is recursion or a pool with an index. Revisit if the
-  pool-plus-index form proves too slow or inexpressible on a real workload;
-  the candidate mechanism on record is a wildcard path form (`x.**`) with
-  conservative overlap and invalidation against everything under `x`.
+- **Iterative descent of owned links by reference (wildcard path).** A path
+  has a static shape, so `loop { set p = &deref(p).next.Some.value.inner; }`
+  over a Box-linked list is refused and the walk is a tail recursion or a
+  pool with an index. Owner's direction (2026-09-20): add the wildcard path
+  after PR 70 merges, because it is purely additive and costs the compiler
+  almost nothing. Design on record, needing no new syntax because a
+  reference's path is never written: when a loop-carried rebinding extends
+  the reference's loop-entry path through itself, the checker widens the
+  path to `R.**` ("somewhere under R") and rechecks the loop body once to
+  its fixed point. Rules: (1) `R.**` overlaps every path at or under R, one
+  prefix test; (2) while `p` is valid, a write, move or free of a place
+  under R that does not go through `p` invalidates `p`, except a write of a
+  primitive leaf field, which is a prefix of nothing; reads are free; (3) a
+  write through `p` of a non-leaf place invalidates every other reference
+  under R and leaves `p` valid. Runtime cost none (a reference stays a bare
+  pointer). Checked against: tree descent through either child, a cursor
+  reset to the root, node removal through a single cursor on the link slot.
+  Known price: two live cursors under one root invalidate each other on a
+  link write, and a live cursor is the whole subtree's footprint for the
+  parallel judgments.
+- **`musttail` at the call.** Owner's ruling (2026-09-20): a call-site marker
+  named `musttail`, rejected with the failing condition named when the call
+  is not a guaranteed tail call. Conditions for a self call: it is the
+  operand of `return`; every reference argument's path is rooted at a
+  reference parameter and never at a local of the current activation; no
+  local with a non-empty release is live across the call (a local nothing
+  refers to may be released before the call, release order being
+  unobservable). Lower a self tail call in the compiler's own lowering as
+  parameter reassignment plus a branch to the entry, so it holds on every
+  target; mutual recursion needs LLVM `musttail` with a matching
+  convention and is a later step. Without the marker the stack bound rests
+  on an implementation obligation the writer cannot check, and a pending
+  release silently breaks tail position. Implement after PR 70 merges.
 - **Totality and recursion-depth proofs.** Stack depth is an implementation
   obligation, not a language promise: the compiler-derived release of an
   owned chain must run in bounded stack (using the freed cells as its
