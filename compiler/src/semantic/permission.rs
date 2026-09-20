@@ -51,15 +51,12 @@
 //!
 //! "Permission composes: any run of adjacent statements that pairwise may
 //! overlap may all overlap, and 'pairwise' means every ordered pair in the
-//! run." The runs are computed over a running union footprint, as
-//! `compiler/checker-facts` decides: a statement joins the current run when
-//! its write paths miss the union's read and write paths and its read paths
-//! miss the union's write paths, and otherwise starts a new run. Disjointness
-//! from a union is the conjunction of disjointness from each member, so the
-//! running test accepts exactly the runs the rule's every-ordered-pair
-//! condition accepts, at a cost linear in the statements of the block. A
-//! greedy partition can lose an opportunity and can never change a verdict,
-//! because permission is never an obligation.
+//! run." A statement therefore joins the current run only after an exact
+//! comparison with every earlier member. The pair identity matters: range
+//! separation is proved in the flow state before that pair's first statement,
+//! so an origin-free union could incorrectly reuse another pair's branch or
+//! later fact. A greedy partition can lose an opportunity and can never
+//! change a verdict, because permission is never an obligation.
 //!
 //! A run's members that are not calls carry no hand-out and leave the
 //! parallel lowering's clone set untouched, as
@@ -100,8 +97,8 @@ use super::model::{
     expression_children,
 };
 use super::places::{
-    CapturedRange, CapturedValue, PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace,
-    UnprovedSeparations,
+    CapturedRange, CapturedValue, PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace, SeparationOracle,
+    UnprovedSeparations, places_overlap, range_separation_candidate,
 };
 use crate::NodePath;
 
@@ -109,8 +106,33 @@ use crate::NodePath;
 /// the callable boundary only: no body fact enters.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PermissionSignature {
+    pub(crate) name: String,
+    pub(crate) parameter_declarations: Vec<crate::DeclarationId>,
+    pub(crate) parameter_modes: Vec<CheckedMode>,
     pub(crate) reads: Vec<CheckedStatePath>,
     pub(crate) writes: Vec<CheckedStatePath>,
+}
+
+/// One bounded [PAR-1] range question, interpreted in the flow state before
+/// `first` executes and consumed only by this exact ordered statement pair.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PermissionSeparationQuery {
+    pub(crate) first: NodePath,
+    pub(crate) second: NodePath,
+    pub(crate) left: CapturedRange,
+    pub(crate) right: CapturedRange,
+}
+
+/// The retained optional proof of one pair-scoped range question.
+///
+/// A false result is a permission denial, never a source rejection. Every
+/// successful visit has its own retained root; a query reached more than once
+/// is discharged only when every visit proves it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PermissionSeparationProof {
+    pub(crate) query: PermissionSeparationQuery,
+    pub(crate) discharged: bool,
+    pub(crate) derivations: Vec<super::entailment::DerivationId>,
 }
 
 /// Which statement of an analyzed adjacency a denial cites.
@@ -316,10 +338,7 @@ pub(crate) fn analyze_permission(
     functions: &[CheckedFunction],
     signatures: &[PermissionSignature],
 ) -> PermissionMetadata {
-    let program = Program {
-        functions,
-        signatures,
-    };
+    let program = Program { signatures };
     PermissionMetadata {
         functions: functions
             .iter()
@@ -328,8 +347,19 @@ pub(crate) fn analyze_permission(
     }
 }
 
+/// Plans the finite proof-carrying range comparisons before entailment walks
+/// the function. The planner uses the same classified footprints as the final
+/// permission judgment and preserves every resolved alternative. It merely
+/// identifies questions; absence of a later proof remains ordinary overlap.
+pub(crate) fn plan_permission_separations(
+    function: &CheckedFunction,
+    signatures: &[PermissionSignature],
+) -> Vec<PermissionSeparationQuery> {
+    let program = Program { signatures };
+    program.plan_function_separations(function)
+}
+
 pub(super) struct Program<'check> {
-    functions: &'check [CheckedFunction],
     signatures: &'check [PermissionSignature],
 }
 
@@ -383,6 +413,62 @@ enum Refusal {
 }
 
 impl<'check> Program<'check> {
+    fn plan_function_separations(
+        &self,
+        function: &'check CheckedFunction,
+    ) -> Vec<PermissionSeparationQuery> {
+        let places = PlaceMap::for_function(function);
+        let mut queries = Vec::new();
+        let mut blocks = vec![function.body.as_deref().unwrap_or_default()];
+        while let Some(block) = blocks.pop() {
+            let classified = block
+                .iter()
+                .map(|statement| self.classify(&places, statement))
+                .collect::<Vec<_>>();
+            for (first_index, first) in classified.iter().enumerate() {
+                let (Some(first_site), Ok(first_footprint)) = (&first.site, &first.footprint)
+                else {
+                    continue;
+                };
+                if first_footprint.unresolved.is_some() {
+                    continue;
+                }
+                for second in classified.iter().skip(first_index + 1) {
+                    let (Some(second_site), Ok(second_footprint)) =
+                        (&second.site, &second.footprint)
+                    else {
+                        // A form that carries no complete straight-line
+                        // footprint ends every run through it.
+                        break;
+                    };
+                    if second_footprint.unresolved.is_some() {
+                        break;
+                    }
+                    collect_footprint_range_queries(
+                        first_site,
+                        second_site,
+                        first_footprint,
+                        second_footprint,
+                        &mut queries,
+                    );
+                }
+            }
+            for statement in block {
+                push_nested_blocks(statement, &mut blocks);
+            }
+        }
+        queries.sort_by(|left, right| {
+            left.first
+                .components()
+                .cmp(right.first.components())
+                .then(left.second.components().cmp(right.second.components()))
+                .then(left.left.cmp(&right.left))
+                .then(left.right.cmp(&right.right))
+        });
+        queries.dedup();
+        queries
+    }
+
     fn analyze_function(&self, function: &'check CheckedFunction) -> FunctionPermissions {
         let places = PlaceMap::for_function(function);
         let mut permissions = FunctionPermissions {
@@ -393,7 +479,12 @@ impl<'check> Program<'check> {
         };
         let mut blocks = vec![function.body.as_deref().unwrap_or_default()];
         while let Some(block) = blocks.pop() {
-            self.analyze_block(&places, block, &mut permissions);
+            self.analyze_block(
+                &places,
+                block,
+                &function.entailment.permission_separations,
+                &mut permissions,
+            );
             for statement in block {
                 push_nested_blocks(statement, &mut blocks);
             }
@@ -433,6 +524,7 @@ impl<'check> Program<'check> {
         &self,
         places: &PlaceMap,
         block: &'check [CheckedStatement],
+        proofs: &[PermissionSeparationProof],
         permissions: &mut FunctionPermissions,
     ) {
         if block.len() < 2 {
@@ -459,18 +551,18 @@ impl<'check> Program<'check> {
             permissions.pairs.push(PermissionPair {
                 first: first_site.clone(),
                 second: second_site.clone(),
-                verdict: self.judge(places, first, second),
+                verdict: self.judge(first, second, proofs),
             });
         }
-        self.collect_runs(places, &classified, permissions);
+        self.collect_runs(&classified, proofs, permissions);
     }
 
     /// The verdict of one ordered adjacency.
     fn judge(
         &self,
-        places: &PlaceMap,
         first: &Classified,
         second: &Classified,
+        proofs: &[PermissionSeparationProof],
     ) -> PermissionVerdict {
         for (side, classified) in [(PairSide::First, first), (PairSide::Second, second)] {
             match &classified.footprint {
@@ -502,28 +594,37 @@ impl<'check> Program<'check> {
                 });
             }
         };
-        match footprint_conflict(places, left, right) {
+        let (Some(first_site), Some(second_site)) = (&first.site, &second.site) else {
+            return PermissionVerdict::Denied(Denial::UnclassifiedForm {
+                side: PairSide::First,
+                form: "a statement form this judgment does not compute",
+            });
+        };
+        let oracle = PairSeparationOracle {
+            first: &first_site.statement,
+            second: &second_site.statement,
+            proofs,
+        };
+        match footprint_conflict(&oracle, left, right) {
             Some(denial) => PermissionVerdict::Denied(denial),
             None => PermissionVerdict::PermittedEligible,
         }
     }
 
-    /// Grows maximal runs over a running union footprint [checker-facts].
+    /// Grows maximal runs by checking every source-ordered member pair.
     ///
-    /// A statement joins the current run when its write paths miss the
-    /// union's read and write paths and its read paths miss the union's write
-    /// paths; otherwise it starts a new run. Disjointness from a union is the
-    /// conjunction of disjointness from each member, so this accepts exactly
-    /// the runs [PAR-1]'s every-ordered-pair condition accepts.
+    /// A statement joins the current run only when its pair-local oracle
+    /// separates it from every earlier member. This is the literal [PAR-1]
+    /// composition rule and preserves the first-statement proof context that
+    /// an origin-free union would erase.
     fn collect_runs(
         &self,
-        places: &PlaceMap,
         classified: &[Classified],
+        proofs: &[PermissionSeparationProof],
         permissions: &mut FunctionPermissions,
     ) {
         let mut run: Vec<usize> = Vec::new();
-        let mut union = Footprint::default();
-        let mut flush = |run: &mut Vec<usize>, union: &mut Footprint| {
+        let mut flush = |run: &mut Vec<usize>| {
             let sites = run
                 .iter()
                 .filter_map(|index| classified[*index].site.clone())
@@ -536,35 +637,45 @@ impl<'check> Program<'check> {
                 permissions.runs.push(PermissionRun { sites });
             }
             run.clear();
-            *union = Footprint::default();
         };
         for (index, statement) in classified.iter().enumerate() {
             let Ok(footprint) = &statement.footprint else {
                 // An exit-bearing or unclassified statement joins no run and
                 // ends the one before it: the statements after it are not
                 // reached from the same straight-line edge.
-                flush(&mut run, &mut union);
+                flush(&mut run);
                 continue;
             };
             if footprint.unresolved.is_some() {
-                flush(&mut run, &mut union);
+                flush(&mut run);
                 continue;
             }
             if run.is_empty() {
                 run.push(index);
-                union.absorb(footprint);
                 continue;
             }
-            if footprint_conflict(places, &union, footprint).is_some() {
-                flush(&mut run, &mut union);
+            let conflicts = run.iter().any(|earlier| {
+                let first = &classified[*earlier];
+                let (Some(first_site), Some(second_site), Ok(first_footprint)) =
+                    (&first.site, &statement.site, &first.footprint)
+                else {
+                    return true;
+                };
+                let oracle = PairSeparationOracle {
+                    first: &first_site.statement,
+                    second: &second_site.statement,
+                    proofs,
+                };
+                footprint_conflict(&oracle, first_footprint, footprint).is_some()
+            });
+            if conflicts {
+                flush(&mut run);
                 run.push(index);
-                union.absorb(footprint);
             } else {
                 run.push(index);
-                union.absorb(footprint);
             }
         }
-        flush(&mut run, &mut union);
+        flush(&mut run);
     }
 
     /// One statement, reduced to what [PAR-1] judges, or the reason it cannot
@@ -734,9 +845,9 @@ impl<'check> Program<'check> {
         let callee_name = statement_value(statement)
             .and_then(call_projection)
             .and_then(|projection| {
-                self.functions
+                self.signatures
                     .get(projection.target.0 as usize)
-                    .map(|function| function.name.clone())
+                    .map(|signature| signature.name.clone())
             })
             .unwrap_or_else(|| label.to_owned());
         Classified {
@@ -783,10 +894,7 @@ impl<'check> Program<'check> {
         call: &CallProjection<'_>,
         footprint: &mut Footprint,
     ) {
-        let (Some(signature), Some(callee)) = (
-            self.signatures.get(call.target.0 as usize),
-            self.functions.get(call.target.0 as usize),
-        ) else {
+        let Some(signature) = self.signatures.get(call.target.0 as usize) else {
             footprint.unresolved = Some(call.call.clone());
             return;
         };
@@ -794,8 +902,8 @@ impl<'check> Program<'check> {
         // "A by-value consumption counts as a write of the argument's place"
         // [PAR-1]. The affine discipline already forbids two consumers of one
         // place; the footprint states it rather than assuming it.
-        for (index, parameter) in callee.parameters.iter().enumerate() {
-            if !matches!(parameter.mode, CheckedMode::Own) {
+        for (index, mode) in signature.parameter_modes.iter().enumerate() {
+            if !matches!(mode, CheckedMode::Own) {
                 continue;
             }
             let Some(argument) = call.arguments.get(index) else {
@@ -822,10 +930,10 @@ impl<'check> Program<'check> {
         let writes = effects.map_or(&signature.writes, |effects| &effects.writes);
         for (written, declared) in [(false, reads), (true, writes)] {
             for path in declared {
-                let Some(index) = callee
-                    .parameters
+                let Some(index) = signature
+                    .parameter_declarations
                     .iter()
-                    .position(|parameter| parameter.declaration == path.root)
+                    .position(|declaration| *declaration == path.root)
                 else {
                     footprint.unresolved = Some(call.call.clone());
                     continue;
@@ -942,14 +1050,104 @@ impl Footprint {
     }
 }
 
+fn canonical_range_pair(
+    left: CapturedRange,
+    right: CapturedRange,
+) -> (CapturedRange, CapturedRange) {
+    if left <= right {
+        (left, right)
+    } else {
+        (right, left)
+    }
+}
+
+fn push_range_query(
+    first: &PermissionSite,
+    second: &PermissionSite,
+    left: &ResolvedPlace,
+    right: &ResolvedPlace,
+    queries: &mut Vec<PermissionSeparationQuery>,
+) {
+    if !places_overlap(&UnprovedSeparations, left, right) {
+        return;
+    }
+    let Some((left, right)) = range_separation_candidate(left, right) else {
+        return;
+    };
+    let (left, right) = canonical_range_pair(left, right);
+    queries.push(PermissionSeparationQuery {
+        first: first.statement.clone(),
+        second: second.statement.clone(),
+        left,
+        right,
+    });
+}
+
+/// Collects every proof-shaped conflict of one ordered statement pair. A
+/// multi-target pair needs every such query: finding one separated access
+/// never hides a later overlapping access.
+fn collect_footprint_range_queries(
+    first: &PermissionSite,
+    second: &PermissionSite,
+    earlier: &Footprint,
+    later: &Footprint,
+    queries: &mut Vec<PermissionSeparationQuery>,
+) {
+    for write in &earlier.writes {
+        for access in later
+            .writes
+            .iter()
+            .chain(later.reads.iter())
+            .chain(&later.operand_reads)
+        {
+            push_range_query(first, second, &write.place, &access.place, queries);
+        }
+    }
+    for write in &later.writes {
+        for access in earlier.reads.iter().chain(&earlier.operand_reads) {
+            push_range_query(first, second, &write.place, &access.place, queries);
+        }
+    }
+}
+
+struct PairSeparationOracle<'proof> {
+    first: &'proof NodePath,
+    second: &'proof NodePath,
+    proofs: &'proof [PermissionSeparationProof],
+}
+
+impl SeparationOracle for PairSeparationOracle<'_> {
+    fn indices_distinct(&self, _left: CapturedValue, _right: CapturedValue) -> bool {
+        false
+    }
+
+    fn ranges_disjoint(&self, left: CapturedRange, right: CapturedRange) -> bool {
+        let (left, right) = canonical_range_pair(left, right);
+        self.proofs.iter().any(|proof| {
+            proof.discharged
+                && proof.query.first == *self.first
+                && proof.query.second == *self.second
+                && proof.query.left == left
+                && proof.query.right == right
+        })
+    }
+
+    fn index_is_not_last(&self, _window: &ResolvedPlace, _index: CapturedValue) -> bool {
+        false
+    }
+}
+
 /// [PAR-1]'s disjointness clause over one ordered pair of footprints.
 ///
 /// The earlier statement's writes are judged against every half of the later
 /// one, and the later one's writes against every half of the earlier one.
 /// Read/read overlap is admitted. The relation is [OWN-7]'s, asked of the
-/// resolved paths through the function's overlap memo.
-fn footprint_conflict(places: &PlaceMap, earlier: &Footprint, later: &Footprint) -> Option<Denial> {
-    let oracle = UnprovedSeparations;
+/// resolved paths through this exact statement pair's retained-proof oracle.
+fn footprint_conflict(
+    oracle: &dyn SeparationOracle,
+    earlier: &Footprint,
+    later: &Footprint,
+) -> Option<Denial> {
     for write in &earlier.writes {
         for (half, access) in later
             .writes
@@ -957,7 +1155,7 @@ fn footprint_conflict(places: &PlaceMap, earlier: &Footprint, later: &Footprint)
             .map(|access| (FootprintHalf::Write, access))
             .chain(later.read_halves())
         {
-            if places.overlaps(&oracle, &write.place, &access.place) {
+            if places_overlap(oracle, &write.place, &access.place) {
                 return Some(Denial::Footprint {
                     kind: ConflictKind::new(FootprintHalf::Write, half),
                     left: write.clone(),
@@ -969,7 +1167,7 @@ fn footprint_conflict(places: &PlaceMap, earlier: &Footprint, later: &Footprint)
     }
     for write in &later.writes {
         for (half, access) in earlier.read_halves() {
-            if places.overlaps(&oracle, &write.place, &access.place) {
+            if places_overlap(oracle, &write.place, &access.place) {
                 return Some(Denial::Footprint {
                     kind: ConflictKind::new(half, FootprintHalf::Write),
                     left: access.clone(),

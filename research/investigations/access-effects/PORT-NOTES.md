@@ -36,13 +36,14 @@ a complete gate result. The separate generic OP-9 regressions still expose
 the held production defect.
 
 After correcting the joined fixture's reserved name, its conflicting-target
-variant reaches the intended FN-8 refusal. The guarded variant passes source
-checking but exposes a separate native gap: a range-valued `ValueMatchLet`
-currently lowers its join as `Address(T)` instead of `Range(element)`.
-A reduced guarded-range program fails identically before its element measure
-is lowered. The native range-join repair and a two-target execution control
-are therefore still required; the passing semantic control is not a claim of
-complete native support.
+variant reaches the intended FN-8 refusal. The guarded variant initially
+passed source checking but exposed a separate native gap: a range-valued
+`ValueMatchLet` lowered its join as `Address(T)` instead of `Range(element)`.
+The repair retains the range element handle through the checked join and
+physical type discovery. Its native control now executes both target choices
+and observes their distinct nested lengths; the complete unit execution also
+passes this control. Semantic acceptance alone was not used as evidence of
+native support.
 
 The corresponding complete corpus executable then passed the full native
 conformance adapter and 63 other cases. Seven network cases were blocked only
@@ -83,6 +84,57 @@ known-slowdown controls passed, while records measured 0.922809 at two workers
 and 0.867225 at four, with all five pairs adverse at both widths. One worker
 improved to 1.077917 and the other four kernels again passed, retaining the
 width-specific diagnosis.
+
+Run 35519103811 compared the Box-capture repair in `b5e7a99f` through its
+synthetic merge `60a5e589` against `c12d6dd1`. Compiler and native-image
+construction, identity checks, identical-image null control, known-slowdown
+control, and instrument self-tests all passed. The complete five-pair
+comparison still failed only for records: one worker passed at 1.077677,
+while two and four workers measured 0.935847 and 0.873395, each with five
+adverse pairs. The repair removes the repeated parent Box-slot load in the
+inspected optimized IR and assembly, but does not establish performance
+recovery; the remaining generated-code differences require investigation.
+No threshold, workload, output oracle, or comparison control was relaxed.
+
+The same published revision's correctness run 35519101963 passed static,
+corpus/conformance, and runtime groups on Linux and macOS. Both unit groups
+reported 1515 passed and seven failed: four missing range-permission
+observations and three OP-9 or downstream generic-capacity regressions.
+The library group still stops at that generic capacity defect. The earlier
+fixture syntax, PAR-2 condition selection, and LLVM provenance-parser
+corrections therefore have fresh hosted evidence; these results still do
+not constitute a green canonical gate.
+
+The next integration tree repairs the joined-range native representation and
+the pair-scoped PAR-1 proof handoff. Canonical `make check` passed its complete
+static group (including all-target clippy with warnings denied), compiler
+construction, and test construction. Unit execution passed 1520 cases and
+failed only three: the generic-grow result publication, exact symbolic numeric
+OP-9 bounds, and known stored layouts inside symbolic schemas. All three are
+the held OP-9 defect or its downstream consequence. The gate stopped there;
+later groups require their own fresh executions and are not implicitly green.
+After strengthening the positive permission fixtures to require the exact
+`LeftBeforeRight` conclusion as well as the captured pair and retained root,
+optimized test construction and all 202 focused proof, permission and native
+range cases passed. Rust formatting and diff whitespace checks also passed.
+The separate fresh canonical corpus group passed all 72 tests, including the
+complete native conformance adapter and network fixtures, in 122.15 seconds.
+The final static group passed in 22.82 seconds, and the complete runtime group
+passed in 0.65 seconds. The library group still stops with
+`Semantics/Compiler: InvalidResolution` while constructing `vector-default.ll`,
+the same visible stop as both `b5e7a99f` hosted library jobs. These separate
+group results do not replace the failed canonical gate.
+
+The remaining records performance investigation compared the exact `c12d6dd1`
+baseline and `b5e7a99f` candidate without starting another timing campaign.
+With local LLVM 22 retargeting to x86-64, the hot chunk instruction streams
+match apart from the new Box descriptor's eight-byte content offset; grain
+selection, chunk counts and loop alignment also match. The hosted comparison
+uses Clang 18, so this does not establish the cause of its regression. The
+existing CI artifact upload now retains both arms' already-generated LLVM
+modules and native objects, allowing the next ordinary run to settle whether
+the captured pointer reload survives that exact toolchain. Timing, thresholds,
+workloads, and output oracles are unchanged.
 
 The first canonical `make check` integration attempt stopped at design lint:
 the FN-4 refinement amendment has two decisions missing the required
@@ -156,12 +208,11 @@ its 17 self-tests; canonical integration must be rerun after compiler work.
   bound on the root's parent chain, preserves the u16 exhaustion requirement,
   and changes no source, outcome, obligation, or proof behavior. The revised
   assertion passed in the rebuilt focused run and the full unit harness.
-- PAR-1 range-separation evidence handoff: automatic review refused the
+- Resolved PAR-1 range-separation evidence handoff: automatic review refused the
   proposed first-statement proof requests and retained per-pair outcomes,
-  citing insufficient soundness evidence. No implementation of that proposal
-  was applied, and delegated work on it was stopped. Recursive sort/merge
-  therefore still lose the parallel opportunity in the current native test.
-  The subsequent read-only audit established constraints for any replacement:
+  citing insufficient soundness evidence. That proposal was not applied and
+  delegated work on it stopped. A subsequent read-only audit and discriminating
+  positive/negative controls established constraints for its replacement:
   the planner must reuse the ordinary permission footprints and enumerate
   every source-ordered statement pair in each candidate straight-line segment,
   including nonadjacent run members; the proof must use the flow state before
@@ -178,7 +229,21 @@ its 17 self-tests; canonical integration must be rerun after compiler work.
   earlier are immutable snapshots, while general scalar-index mapping through
   the first call's `ensures` remains a separate unstated operation and must not
   be approximated by proving in the second statement's state, which also holds
-  intervening facts.
+  intervening facts. The replacement now implements this bounded handoff;
+  dynamic separation, guarded-versus-joined scope, stale endpoints, and native
+  recursive sort/merge controls exercise it. An all-pairs run can include
+  independent surrounding statements, so the nonadjacent control checks its
+  three consecutive members inside the maximal run rather than imposing an
+  unrelated exact run length.
+  Enabling the existing DAG validator for all permission fixtures exposed two
+  distinct issues. A bound may legitimately use a stronger equality parent;
+  the validator now checks that directed implication with `retained_bound`
+  instead of requiring identical relation variants. In contrast, a targetless
+  affine range proof had lost which of OWN-7's four orderings it established.
+  The compiler now wraps that proof with the exact captured range pair,
+  selected ordering, and parent, shared by EFF-5 and PAR-1. The validator keeps
+  rejecting a bare targetless root and checks PAR-1's exact query pair.
+  This repair changes retained evidence, not the solver or source acceptance.
 - A measure read through a composite range element, such as
   `deref(items)[0].len` for `items: &[Slots<u64, 2>]`, previously stopped at
   TYPE-5 although borrowing the element first admitted the descriptor read.
@@ -554,6 +619,26 @@ the library bodies.
 
 ### open decisions
 - permission.rs:~1050 footprint_conflict and loop_permission.rs:~1095/~1130 - both judgments ask [OWN-7] with UnprovedSeparations, so every index and range pair answers 'overlapping'. Permission runs after the entailment flow is discarded and holds no proof state; [OWN-7]'s own default for an undischarged pair is overlap, so this only loses opportunities. Material; drafted as design-compiler-checker-facts-permission-oracle.md, which names retaining the per-function separation ledger on CheckedFunction as the successor.
+
+- check/control/loops.rs:33-39,179-185 loop_binding_agrees - exact `LocalBinding` equality currently stops every changed loop-carried reference as `OwnershipJoin`; this is a compiler capability gap, not a source-language rejection, and it prevents the current compiler from reaching permission on the following time-shift case. Let `stamp` write its range argument and place these statements in a function over `values: &Array<u8, 8>`:
+
+  ```whitefoot
+  let seed = &deref(values)[0_u64..1_u64];
+  let saved = &deref(seed)[0_u64..deref(seed).len];
+  for (i in 0_u64..2_u64) {
+    let current_start = 5_u64 - i;
+    let current_end = 6_u64 - i;
+    let other_start = 6_u64 - i;
+    let other_end = 7_u64 - i;
+    let current = &deref(values)[current_start..current_end];
+    let other = &deref(values)[other_start..other_end];
+    let a = stamp(part: saved);
+    let b = stamp(part: other);
+    set saved = &deref(current)[0_u64..deref(current).len];
+  }
+  ```
+
+  At `i == 1`, `saved` carries the prior iteration's `[5..6]` while `other` is the current iteration's `[5..6]`; the current formation at that same static capture site is `[4..5]`. Before [REF-1] support removes the `OwnershipJoin` stop, the loop header must therefore make the prior-iteration origin unknown or otherwise distinguish its generation. Reusing the current iteration's affine image for the shared static `CaptureId` would unsoundly grant [PAR-1]. Preserve this as a permission negative when the source becomes supported; do not preserve `OwnershipJoin` as its expected verdict.
 
 - permission.rs:~600 classify - a match, value initializer, loop or for statement is refused as a [PAR-1] member rather than judged on its scrutinee. This retires v0.59's scrutinee-call candidate and with it the scrutinee hand-out lowering reads at builder.rs:796. Material; drafted as design-compiler-checker-facts-adjacency-exit-edges.md.
 

@@ -41,7 +41,7 @@ use super::model::{
     CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId,
     ValueInitializerKind, evaluate_const_operation,
 };
-use super::permission::{PermissionSignature, analyze_permission};
+use super::permission::{PermissionSignature, analyze_permission, plan_permission_separations};
 use super::permission_ledger::{LedgerSource, render_ledger};
 use super::places::ResolvedPlace;
 use super::postcondition::CheckedPostconditionSelector;
@@ -1203,6 +1203,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // program-level goal summaries extend this same complete context.
         let callees = self.entailment_callees()?;
         self.install_call_requirements(&mut function_inventory)?;
+        let permission_signatures = self
+            .signatures
+            .iter()
+            .map(|signature| PermissionSignature {
+                name: signature.name.clone(),
+                parameter_declarations: signature
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.declaration)
+                    .collect(),
+                parameter_modes: signature
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.mode)
+                    .collect(),
+                reads: signature.declared_effects.reads.clone(),
+                writes: signature.declared_effects.writes.clone(),
+            })
+            .collect::<Vec<_>>();
+        for checked in &mut function_inventory {
+            checked.function.permission_separation_queries =
+                plan_permission_separations(&checked.function, &permission_signatures);
+        }
         let optimistic_batch = function_inventory.iter().any(|checked| {
             !checked.function.postconditions.is_empty()
                 || Self::statements_contain_value_if(
@@ -1281,14 +1304,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // program. The affine-map rule consumes a successful OP-4 disposition
         // and exact value image retained on that program; no permission rule
         // repeats a local invariant or changes source acceptance.
-        let permission_signatures = self
-            .signatures
-            .iter()
-            .map(|signature| PermissionSignature {
-                reads: signature.declared_effects.reads.clone(),
-                writes: signature.declared_effects.writes.clone(),
-            })
-            .collect::<Vec<_>>();
         let permission = analyze_permission(&functions, &permission_signatures);
         // The ledger is rendered here because only the checker still holds the
         // syntax tree the citations name. It is pure presentation over the
@@ -1878,6 +1893,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 separations.sort_by_key(|separation| separation.site.components().to_vec());
                 separations
             },
+            permission_separation_queries: Vec::new(),
             entailment: super::entailment::FunctionEntailment::default(),
         };
         Ok(CheckedFunctionInventory {

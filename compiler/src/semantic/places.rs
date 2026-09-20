@@ -73,7 +73,7 @@ const SPELLING_DETERMINED_CAPTURE: CaptureId = CaptureId(u32::MAX - 3);
 /// can reason about but this module cannot, and everything else is opaque to
 /// both; each of the latter two is decided, if at all, by the fixed [ENT-6]
 /// families through [`SeparationOracle`].
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum CapturedTerm {
     /// A written integer literal.
     Literal(u64),
@@ -87,7 +87,7 @@ pub(crate) enum CapturedTerm {
 }
 
 /// The immutable value one index step or range endpoint captured [REF-1].
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct CapturedValue {
     pub(crate) capture: CaptureId,
     pub(crate) term: CapturedTerm,
@@ -189,7 +189,7 @@ impl CapturedValue {
 
 /// One captured range step's two endpoints [REF-4], both evaluated at the
 /// formation under the obligation `lo <= hi` and `hi <= x.len`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct CapturedRange {
     pub(crate) start: CapturedValue,
     pub(crate) end: CapturedValue,
@@ -638,6 +638,42 @@ pub(crate) fn places_overlap(
     right: &ResolvedPlace,
 ) -> bool {
     left.root == right.root && paths_overlap(oracle, left, &left.path, &right.path)
+}
+
+/// The exact range pair that could separate two otherwise-overlapping paths.
+///
+/// This follows the ordinary [OWN-7] walk with no proof oracle. A candidate
+/// exists only when the first unresolved divergence is two range frames; an
+/// earlier syntactic separation needs no proof, while every other unresolved
+/// divergence and every prefix overlap has no answer in the bounded range
+/// family. Keeping this beside [`separation`] prevents a permission planner
+/// from reimplementing the path relation with subtly different prefix or
+/// nested-frame rules.
+pub(crate) fn range_separation_candidate(
+    left: &ResolvedPlace,
+    right: &ResolvedPlace,
+) -> Option<(CapturedRange, CapturedRange)> {
+    if left.root != right.root {
+        return None;
+    }
+    let oracle = UnprovedSeparations;
+    for (depth, (left_step, right_step)) in left.path.iter().zip(&right.path).enumerate() {
+        let window = ResolvedPlace {
+            root: left.root,
+            path: left.path[..depth].to_vec(),
+        };
+        match separation(&oracle, &window, *left_step, *right_step) {
+            StepSeparation::Separate => return None,
+            StepSeparation::Same => {}
+            StepSeparation::Overlapping => {
+                return match (*left_step, *right_step) {
+                    (PlaceStep::Range(left), PlaceStep::Range(right)) => Some((left, right)),
+                    _ => None,
+                };
+            }
+        }
+    }
+    None
 }
 
 /// The oracle of a consumer that holds no proof state [OWN-7].

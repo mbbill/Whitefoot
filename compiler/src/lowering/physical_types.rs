@@ -26,25 +26,27 @@ pub(super) fn base_elements(
     data: &CheckedProgramData,
     nominals: &[IrNominalId],
 ) -> Result<(Vec<IrType>, Vec<Option<IrElement>>), LoweringFailure> {
-    let mut pending = data
-        .functions
-        .iter()
-        .flat_map(specialize::executable_types)
-        .collect::<Vec<_>>();
+    let mut pending = Vec::new();
+    let mut needed = BTreeSet::new();
+    for function in &data.functions {
+        let (types, elements) = specialize::executable_storage(function);
+        pending.extend(types);
+        needed.extend(elements.into_iter().map(CheckedElement::index));
+        needed.extend(
+            function
+                .parameters
+                .iter()
+                .filter_map(|parameter| parameter.range_element)
+                .map(CheckedElement::index),
+        );
+    }
     pending.extend(data.constants.iter().map(|constant| constant.ty));
-    // [REF-4, TYPE-8] a range parameter carries its element kind separately
-    // from `CheckedType`: the written parameter type is the element type, so
-    // the ordinary executable-type walk cannot discover the interned element
+    // [REF-4, TYPE-8] a range parameter or value-if result carries its element
+    // kind separately from `CheckedType`: the written type is the element
+    // type, so the ordinary executable-type walk cannot discover the interned
     // handle. Seed those handles explicitly before building the physical map;
-    // otherwise every range-bearing prelude signature reaches lowering with
-    // a `None` element even when the element itself is concrete.
-    let mut needed = data
-        .functions
-        .iter()
-        .flat_map(|function| &function.parameters)
-        .filter_map(|parameter| parameter.range_element)
-        .map(CheckedElement::index)
-        .collect::<BTreeSet<_>>();
+    // otherwise a range reaches lowering with a `None` element even when the
+    // element itself is concrete.
     for index in needed.iter().copied() {
         pending.push(
             *data

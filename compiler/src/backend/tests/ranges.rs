@@ -885,6 +885,58 @@ fn a_measured_range_element_has_its_observable_inner_length() {
     assert!(output.stderr.is_empty(), "{output:?}");
 }
 
+/// [REF-1, REF-4, ENT-2, OP-4, OP-15] a value-if may join range references
+/// to different storage roots. The joined value keeps its pointer-and-count
+/// representation, and a nested measured element is addressed through the
+/// target selected at runtime. Calling both ways makes the driver observe
+/// both possible targets rather than accepting an unused semantic join.
+#[test]
+fn joined_range_element_measures_select_each_runtime_target() {
+    let source = br#"fn observe(flag: own Bool, expected: own u64) -> result: own u8 pure {
+  let left_row = slots_new::<u64, 3>();
+  place_back(window: &left_row, value: 11_u64);
+  let right_row = slots_new::<u64, 3>();
+  place_back(window: &right_row, value: 21_u64);
+  place_back(window: &right_row, value: 22_u64);
+  let left = slots_new::<Slots<u64, 3>, 1>();
+  place_back(window: &left, value: move left_row);
+  let right = slots_new::<Slots<u64, 3>, 1>();
+  place_back(window: &right, value: move right_row);
+  let items = if flag {
+    give &left[0_u64..1_u64];
+  } else {
+    give &right[0_u64..1_u64];
+  }
+  if 0_u64 < deref(items).len {
+    let observed = deref(items)[0_u64].len;
+    if observed == expected {
+      return 0_u8;
+    }
+  }
+  return 1_u8;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let selected_left = 0_u64 == 0_u64;
+  let left_status = observe(flag: selected_left, expected: 1_u64);
+  if left_status != 0_u8 {
+    return exit_status(code: 1_u8);
+  }
+  let selected_right = 0_u64 != 0_u64;
+  let right_status = observe(flag: selected_right, expected: 2_u64);
+  if right_status != 0_u8 {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    let output = compile_and_run(&llvm);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
 /// One `&[u8]` consumer reads the three storage origins [STOR-1]: a `const`
 /// item's read-only static storage, a frame-resident constant-capacity window,
 /// and a runtime-capacity window inside its own cell. The range reference is

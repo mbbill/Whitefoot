@@ -205,4 +205,9 @@ jobs:
         with:
           name: compute-regression-ubuntu-24.04
           if-no-files-found: warn
-          path: ${{ runner.temp }}/performance-results/
+          path: |
+            ${{ runner.temp }}/performance-results/
+            ${{ runner.temp }}/performance-candidate/*.ll
+            ${{ runner.temp }}/performance-candidate/*.o
+            ${{ runner.temp }}/performance-baseline/*.ll
+            ${{ runner.temp }}/performance-baseline/*.o

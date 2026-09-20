@@ -288,6 +288,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             body_disposition: Default::default(),
             allocates: false,
             call_separations: Vec::new(),
+            permission_separation_queries: Vec::new(),
             entailment: FunctionEntailment::default(),
         };
         let binding_names = function

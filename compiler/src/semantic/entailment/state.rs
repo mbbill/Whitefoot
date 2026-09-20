@@ -15,6 +15,7 @@ use super::super::goal::{GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
     BindingId, CheckedBooleanOperation, CheckedLoopId, CheckedMeasure, CheckedValue, IntegerType,
 };
+use super::super::places::CapturedRange;
 use super::VerifiedPostconditionSummaryRef;
 use super::term::{MeasureBound, TermId, TermKind, TermTable, ZERO, type_range};
 use crate::{BuiltinPreludeId, NodePath};
@@ -438,6 +439,11 @@ pub(crate) enum DerivationNode {
         sign: GoalSign,
         parent: DerivationId,
     },
+    /// One exact [OWN-7] conclusion wrapped around the affine proof of the
+    /// selected ordering. Both EFF-5 and PAR-1 retain this same evidence.
+    RangeSeparation {
+        detail: Box<RangeSeparationDetail>,
+    },
     /// One finite truth-table introduction for an already-interned Boolean
     /// parent (`band`, `bor`, or `bnot`).
     BooleanIntroduction {
@@ -635,6 +641,29 @@ pub(crate) struct PostconditionDeliveryJoinDetail {
     pub(crate) parents: Vec<JoinParent>,
 }
 
+/// Which fixed [OWN-7] ordering discharged one pair of captured ranges.
+/// The declaration order is the proof entry's deterministic probe order.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum RangeSeparationOrdering {
+    LeftBeforeRight,
+    RightBeforeLeft,
+    LeftEmpty,
+    RightEmpty,
+}
+
+/// The exact conclusion of one successful range-separation proof.
+///
+/// Range endpoints may have affine images that are not L0 terms, so the
+/// targetless affine parent cannot state this conclusion by itself. The
+/// uncommon payload stays out of line to keep the derivation arena compact.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct RangeSeparationDetail {
+    pub(crate) left: CapturedRange,
+    pub(crate) right: CapturedRange,
+    pub(crate) ordering: RangeSeparationOrdering,
+    pub(crate) parent: DerivationId,
+}
+
 impl DerivationNode {
     fn for_each_parent(&self, mut visit: impl FnMut(DerivationId)) {
         match self {
@@ -698,6 +727,7 @@ impl DerivationNode {
                     visit(*parent);
                 }
             }
+            Self::RangeSeparation { detail } => visit(detail.parent),
             Self::ContractCall { parents, .. } => {
                 for parent in parents {
                     visit(*parent);
@@ -767,6 +797,7 @@ impl DerivationNode {
             | Self::GoalNormalization { parents, .. }
             | Self::BooleanIntroduction { parents, .. } => parents.len(),
             Self::PostconditionCall { detail } => detail.parents.len(),
+            Self::RangeSeparation { .. } => 1,
             Self::ContractCall { parents, .. } => parents.len(),
             Self::SourceBound { .. }
             | Self::SourceDistinct { .. }
@@ -827,6 +858,7 @@ impl DerivationNode {
             Self::GoalAffineConsequence { .. } => 34,
             Self::RequirementAffineImage { .. } => 37,
             Self::ContractCall { .. } => 38,
+            Self::RangeSeparation { .. } => 39,
         }
     }
 }
@@ -866,6 +898,11 @@ pub(crate) enum DerivationRootKind {
     /// One declaration-only [FN-4] compatibility query. Its ledger and dense
     /// identity namespace belong only to the retained contract query.
     ContractGoal(u32),
+    /// One successful visit of an optional pair-scoped [PAR-1] range query.
+    PermissionSeparation {
+        query: u32,
+        occurrence: u32,
+    },
     BitAndBound(u32),
     ShiftOneNonzero(u32),
     UnsignedDivisionBound(u32),
@@ -1470,6 +1507,7 @@ impl DerivationLedger {
                     DerivationNode::ContractCall { parents, .. } => {
                         parents.capacity() * size_of::<DerivationId>()
                     }
+                    DerivationNode::RangeSeparation { .. } => size_of::<RangeSeparationDetail>(),
                     _ => 0,
                 })
                 .sum::<usize>()
@@ -1506,6 +1544,13 @@ fn compare_node_ties(left: &DerivationNode, right: &DerivationNode) -> std::cmp:
     let rank = left.rank().cmp(&right.rank());
     if !rank.is_eq() {
         return rank;
+    }
+    if let (
+        DerivationNode::RangeSeparation { detail: left },
+        DerivationNode::RangeSeparation { detail: right },
+    ) = (left, right)
+    {
+        return left.cmp(right);
     }
     let mut index = 0;
     loop {
@@ -1636,6 +1681,7 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         ]
         .get(index)
         .copied(),
+        DerivationNode::RangeSeparation { detail } => (index == 0).then_some(detail.parent.0),
         DerivationNode::BooleanIntroduction {
             goal,
             sign,
@@ -1923,6 +1969,9 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
             for parent in parents {
                 remap_id(parent, remap);
             }
+        }
+        DerivationNode::RangeSeparation { detail } => {
+            remap_id(&mut detail.parent, remap);
         }
         DerivationNode::SourceBound { .. }
         | DerivationNode::SourceDistinct { .. }

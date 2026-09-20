@@ -7,9 +7,10 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::semantic::{
-    CheckedBodyDisposition, CheckedContainerRoot, CheckedEnumType, CheckedExpression,
-    CheckedFunction, CheckedNominalKind, CheckedPlaceStep, CheckedProgramData, CheckedReleaseClass,
-    CheckedSetTarget, CheckedStatement, CheckedType, FunctionId, NominalId, expression_children,
+    CheckedBodyDisposition, CheckedContainerRoot, CheckedElement, CheckedEnumType,
+    CheckedExpression, CheckedFunction, CheckedNominalKind, CheckedPlaceStep, CheckedProgramData,
+    CheckedReleaseClass, CheckedSetTarget, CheckedStatement, CheckedType, FunctionId, NominalId,
+    expression_children,
 };
 use crate::{DeclarationId, NodePath};
 
@@ -39,6 +40,7 @@ struct CallEdge {
 #[derive(Default)]
 struct FunctionDependencies {
     types: Vec<CheckedType>,
+    elements: Vec<CheckedElement>,
     calls: Vec<CallEdge>,
 }
 
@@ -321,8 +323,11 @@ fn collect_regions(
     Ok(())
 }
 
-pub(super) fn executable_types(function: &CheckedFunction) -> Vec<CheckedType> {
-    FunctionDependencies::collect(function).types
+pub(super) fn executable_storage(
+    function: &CheckedFunction,
+) -> (Vec<CheckedType>, Vec<CheckedElement>) {
+    let dependencies = FunctionDependencies::collect(function);
+    (dependencies.types, dependencies.elements)
 }
 
 fn insert_default(
@@ -404,8 +409,14 @@ impl FunctionDependencies {
                     arms,
                     ..
                 } => {
-                    if let CheckedStatement::ValueMatchLet { result_type, .. } = statement {
+                    if let CheckedStatement::ValueMatchLet {
+                        result_type,
+                        result_range_element,
+                        ..
+                    } = statement
+                    {
                         self.types.push(*result_type);
+                        self.elements.extend(result_range_element.iter().copied());
                     }
                     if let CheckedEnumType::Nominal(nominal) = enum_type {
                         self.types.push(CheckedType::Nominal(*nominal));

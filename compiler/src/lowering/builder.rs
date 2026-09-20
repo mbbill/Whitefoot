@@ -1081,22 +1081,36 @@ impl<'program> IrBuilder<'program> {
                     binding,
                     result_type,
                     result_mode,
+                    result_range_element,
                     scrutinee,
                     enum_type,
                     arms,
                     continues,
                     ..
                 } => {
-                    // [REF-1] a binder every arm of which delivers a
-                    // reference is a reference variable: what the join
-                    // carries is the one address the delivering arms
-                    // produced, so the binder's representation is that
-                    // address and not a value of the referent type.
-                    let result = lower_borrow_mode_type(
-                        *result_mode,
-                        lower_type(self.erasure, *result_type)?,
-                        self.nominals,
-                    )?;
+                    // [REF-1, REF-4] a binder every arm of which delivers a
+                    // reference is a reference variable. An addressed join
+                    // carries the selected address; a range join carries the
+                    // selected pointer and count. Neither has the by-value
+                    // representation of its written referent type.
+                    let result = if *result_mode == CheckedMode::Range {
+                        IrType::Range {
+                            element: lower_element(
+                                self.erasure,
+                                result_range_element
+                                    .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                            )?,
+                        }
+                    } else {
+                        if result_range_element.is_some() {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        }
+                        lower_borrow_mode_type(
+                            *result_mode,
+                            lower_type(self.erasure, *result_type)?,
+                            self.nominals,
+                        )?
+                    };
                     self.lower_match(
                         scrutinee,
                         *enum_type,

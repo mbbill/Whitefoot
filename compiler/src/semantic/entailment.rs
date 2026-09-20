@@ -40,7 +40,7 @@ use term::TermId;
 pub(crate) use state::{
     CountedRootAtom, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind,
     GoalSign, ImplicitBoundKind, JoinParent, PostconditionCallDetail,
-    PostconditionDeliveryJoinDetail, Relation,
+    PostconditionDeliveryJoinDetail, RangeSeparationOrdering, Relation,
 };
 #[cfg(test)]
 pub(crate) use term::{
@@ -1143,6 +1143,10 @@ pub(crate) struct FunctionEntailment {
     /// O11 candidate decomposition sets recorded at the signed-goal
     /// establishments; never an acceptance input in this version.
     pub(crate) boolean_decompositions: Vec<BooleanGoalDecomposition>,
+    /// Optional [PAR-1] range-separation proofs, keyed by the exact ordered
+    /// statement pair and captured ranges whose first-point state proved
+    /// them. Absence or an undischarged entry retains sequential lowering.
+    pub(crate) permission_separations: Vec<super::permission::PermissionSeparationProof>,
     /// Function-local, lifetime-bound derivations for mandatory DIAG-2 roots.
     pub(crate) derivations: DerivationLedger,
     /// Canonical term and goal identities moved from the analyzer so every

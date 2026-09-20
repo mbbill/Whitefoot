@@ -3,7 +3,7 @@ use crate::{BuiltinPreludeId, DeclarationId, NodePath};
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct FunctionId(pub(crate) u32);
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct BindingId(pub(crate) u32);
 
 /// Checked-program-private identity of one exact instantiated FN-4
@@ -2362,6 +2362,11 @@ pub(crate) enum CheckedStatement {
         /// the referent type; that distinction is not recoverable from
         /// `result_type`, which is the referent's [TYPE-8].
         result_mode: CheckedMode,
+        /// A range result's complete element handle. [TYPE-8] keeps the
+        /// written element type in `result_type`, but the pointer-and-count
+        /// lowering needs the interned element identity just as a range
+        /// parameter does; no other result mode carries one.
+        result_range_element: Option<CheckedElement>,
         scrutinee: CheckedExpression,
         enum_type: CheckedEnumType,
         arms: Vec<CheckedMatchArm>,
@@ -2498,6 +2503,9 @@ pub(crate) struct CheckedFunction {
     /// the pairwise comparison could not separate by syntax alone, each
     /// submitted to the entailment fragment where the call is walked.
     pub(crate) call_separations: Vec<CheckedCallSeparation>,
+    /// Finite optional [PAR-1] range questions planned from the complete
+    /// structural footprints before entailment walks their first statements.
+    pub(crate) permission_separation_queries: Vec<super::permission::PermissionSeparationQuery>,
     /// Retained [ENT] analysis summary [DIAG-2]. Semantic acceptance and
     /// diagnostics read it; lowering deliberately does not.
     #[allow(dead_code)]

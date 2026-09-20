@@ -16,8 +16,9 @@ use super::super::entailment::{
     DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind, FunctionEntailment,
     GoalId, GoalSign, ImplicitBoundKind, JoinParent, MeasureBound, ObligationFamily,
     ObligationOutcome, PlaceRoot, PostconditionCallDetail, PostconditionDeliveryJoinDetail,
-    PostconditionDisposition, Relation, RemainderEndpoint, S7Derivation, S7DerivationKind,
-    S7Subject, ShiftOneIdentity, SourceAffineFactRef, TermId, TermKind, ZERO, type_range,
+    PostconditionDisposition, RangeSeparationOrdering, Relation, RemainderEndpoint, S7Derivation,
+    S7DerivationKind, S7Subject, ShiftOneIdentity, SourceAffineFactRef, TermId, TermKind, ZERO,
+    type_range,
 };
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
@@ -27,7 +28,7 @@ use super::super::model::{
 // [REF-1] the v0.59 `PlaceProjection` is retired; one resolved path step is a
 // `PlaceStep`, and a term's place carries the whole resolved path rather than
 // a separate deref flag and field list.
-use super::super::places::PlaceStep;
+use super::super::places::{CapturedRange, PlaceStep};
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
@@ -184,9 +185,17 @@ fn accepted_discharge_flags(source: &[u8], function: &str) -> Vec<bool> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum DerivationConclusion {
     Relation(Relation),
-    Goal { goal: GoalId, sign: GoalSign },
+    Goal {
+        goal: GoalId,
+        sign: GoalSign,
+    },
     IntegerDomain(Option<GoalId>),
     AffineConsequence,
+    RangeSeparation {
+        left: CapturedRange,
+        right: CapturedRange,
+        ordering: RangeSeparationOrdering,
+    },
     UnsignedDivisionProduct,
     RequirementAffineImage,
     ContractCall,
@@ -1068,6 +1077,10 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                             || (parent_left == right && parent_right == left),
                         "disequality parents use unordered fact identity"
                     ),
+                    (_, Relation::Bound { left, right, bound }) => assert!(
+                        retained_bound(&conclusions, *parent, *left, *right) <= *bound,
+                        "a projected bound's parent must imply it in the requested direction"
+                    ),
                     _ => assert_eq!(parent_relation, relation),
                 }
                 let retained_goal = summary
@@ -1246,6 +1259,17 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 DerivationConclusion::Goal {
                     goal: *goal,
                     sign: *sign,
+                }
+            }
+            DerivationNode::RangeSeparation { detail } => {
+                assert!(matches!(
+                    retained_conclusion(&conclusions, detail.parent),
+                    DerivationConclusion::AffineConsequence | DerivationConclusion::Contradiction
+                ));
+                DerivationConclusion::RangeSeparation {
+                    left: detail.left,
+                    right: detail.right,
+                    ordering: detail.ordering,
                 }
             }
             DerivationNode::BooleanIntroduction {
@@ -1681,6 +1705,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         | DerivationConclusion::UnsignedDivisionProduct
                         | DerivationConclusion::RequirementAffineImage
                         | DerivationConclusion::ContractCall
+                        | DerivationConclusion::RangeSeparation { .. }
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("delivery join parent must be a relation or contradiction")
                         }
@@ -1806,7 +1831,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     assert_eq!(outcome.family, ObligationFamily::RangeSeparation);
                     assert!(matches!(
                         conclusion,
-                        DerivationConclusion::Relation(_) | DerivationConclusion::Contradiction
+                        DerivationConclusion::RangeSeparation { .. }
                     ));
                 } else {
                     let [requested] = outcome.components.as_slice() else {
@@ -1853,6 +1878,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         | DerivationConclusion::UnsignedDivisionProduct
                         | DerivationConclusion::RequirementAffineImage
                         | DerivationConclusion::ContractCall
+                        | DerivationConclusion::RangeSeparation { .. }
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("this obligation root cannot conclude that goal")
                         }
@@ -1959,6 +1985,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     | DerivationConclusion::UnsignedDivisionProduct
                     | DerivationConclusion::RequirementAffineImage
                     | DerivationConclusion::PostconditionAggregate
+                    | DerivationConclusion::RangeSeparation { .. }
                     | DerivationConclusion::ContractCall => {
                         panic!("a discharged call root cannot be a postcondition aggregate")
                     }
@@ -1996,6 +2023,22 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     DerivationConclusion::Contradiction => {}
                     _ => panic!("a discharged FN-4 root must be positive or contradictory"),
                 }
+            }
+            DerivationRootKind::PermissionSeparation { query, occurrence } => {
+                let proof = summary
+                    .permission_separations
+                    .get(query as usize)
+                    .expect("PAR-1 range-query root ordinal must resolve");
+                assert!(proof.discharged);
+                assert_eq!(
+                    proof.derivations.get(occurrence as usize),
+                    Some(&root.node),
+                    "each successful query visit retains its exact root"
+                );
+                let DerivationConclusion::RangeSeparation { left, right, .. } = conclusion else {
+                    panic!("a discharged PAR-1 range query retains its exact conclusion");
+                };
+                assert_eq!((*left, *right), (proof.query.left, proof.query.right));
             }
             DerivationRootKind::CountedS11 { occurrence, atom } => {
                 counted_root_order.push((occurrence, atom));

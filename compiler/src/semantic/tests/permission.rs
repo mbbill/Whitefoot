@@ -23,6 +23,7 @@
 
 use crate::{SemanticOutcome, SemanticRule};
 
+use super::super::entailment::{DerivationNode, RangeSeparationOrdering};
 use super::super::permission::{
     ConflictKind, Denial, ExitKind, FootprintHalf, FunctionPermissions, PairSide,
     PermissionMetadata, PermissionPair, PermissionRun, PermissionVerdict,
@@ -59,11 +60,47 @@ fn main() -> status: own ExitStatus pure {
 const MARKER: &str = "fn write_marker(output: &u64, source: &[u8], start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(source), writes(output) {\n  let previous = deref(output);\n  let length = deref(source).len;\n  set deref(output) = previous +wrap start;\n  return Ok<u64, IoError>(value: end);\n}\n\n";
 
 fn permission_of(source: &[u8]) -> PermissionMetadata {
+    permission_of_with_discharged_query(source, None)
+}
+
+fn permission_of_with_discharged_query(
+    source: &[u8],
+    expected: Option<(&str, RangeSeparationOrdering)>,
+) -> PermissionMetadata {
     let combined = [MARKER.as_bytes(), source].concat();
     with_semantics(&combined, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("permission fixture must check: {outcome:?}");
         };
+        for function in &program.data.functions {
+            super::entailment::validate_derivations(&function.entailment);
+        }
+        if let Some((expected_function, expected_ordering)) = expected {
+            let function = program
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == expected_function)
+                .unwrap_or_else(|| panic!("no checked function named {expected_function}"));
+            assert!(
+                function
+                    .entailment
+                    .permission_separations
+                    .iter()
+                    .any(|proof| {
+                        proof.discharged && proof.derivations.iter().any(|derivation| {
+                            matches!(
+                                function.entailment.derivations.nodes.get(derivation.0 as usize),
+                                Some(DerivationNode::RangeSeparation { detail })
+                                    if detail.left == proof.query.left
+                                        && detail.right == proof.query.right
+                                        && detail.ordering == expected_ordering
+                            )
+                        })
+                    }),
+                "the permitted range pair must retain its exact {expected_ordering:?} conclusion"
+            );
+        }
         program.data.permission.clone()
     })
 }
@@ -1408,7 +1445,10 @@ fn separated(values: &Array<u8, 4>, split: own u64) -> result: own u64 writes(va
 }}
 "
     );
-    let table = permission_of(source.as_bytes());
+    let table = permission_of_with_discharged_query(
+        source.as_bytes(),
+        Some(("separated", RangeSeparationOrdering::LeftBeforeRight)),
+    );
     assert_eq!(
         pair_of(&table, "separated", "stamp_range", "stamp_range").verdict,
         PermissionVerdict::PermittedEligible
@@ -1436,13 +1476,22 @@ fn separated(values: &Array<u8, 4>, split: own u64) -> result: own u64 writes(va
 }}
 "
     );
-    let table = permission_of(source.as_bytes());
-    let run = run_of(
-        &table,
-        "separated",
-        &["stamp_range", "a let statement", "stamp_range"],
+    let table = permission_of_with_discharged_query(
+        source.as_bytes(),
+        Some(("separated", RangeSeparationOrdering::LeftBeforeRight)),
     );
-    assert_eq!(run.sites.len(), 3);
+    let permissions = function_table(&table, "separated");
+    assert!(
+        permissions.runs.iter().any(|run| {
+            run.sites.windows(3).any(|sites| {
+                sites[0].callee_name == "stamp_range"
+                    && sites[1].callee_name == "a let statement"
+                    && sites[2].callee_name == "stamp_range"
+            })
+        }),
+        "the two calls and their benign interposed statement must remain in one all-pairs run: {:?}",
+        permissions.runs
+    );
 }
 
 /// [REF-4, PAR-1] endpoint values belong to their range-formation captures.

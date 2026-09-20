@@ -36,6 +36,7 @@ use super::super::model::{
     CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType,
     MeasureCell, MeasuredKind, ValueInitializerKind,
 };
+use super::super::permission::{PermissionSeparationProof, PermissionSeparationQuery};
 use super::super::places::{
     BindingSummary, CaptureId, CapturedRange, CapturedTerm, CapturedValue, PlaceMap, PlaceStep,
     ResolvedPlace, SeparationOracle,
@@ -55,9 +56,10 @@ use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
-    PostconditionCallSubstitution, Relation, SourceAffineFactRef, SourceLoopInvariantRef,
-    WordHashMap, close, close_excluding_term, closure_is_seeded, contradiction_without_proofs,
-    join_at, materialize_closure_at, materialize_closure_before_kill,
+    PostconditionCallSubstitution, RangeSeparationDetail, RangeSeparationOrdering, Relation,
+    SourceAffineFactRef, SourceLoopInvariantRef, WordHashMap, close, close_excluding_term,
+    closure_is_seeded, contradiction_without_proofs, join_at, materialize_closure_at,
+    materialize_closure_before_kill,
 };
 use super::term::{
     CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceRoot, TermId, TermKind, TermTable,
@@ -265,6 +267,13 @@ struct AffineRangeImage {
     source: crate::NodePath,
     start: AffineForm,
     end: AffineForm,
+}
+
+struct PermissionSeparationAttempt {
+    query: PermissionSeparationQuery,
+    attempted: bool,
+    discharged: bool,
+    derivations: Vec<DerivationId>,
 }
 
 /// Exact `stride * i + base` decomposition for one counted binder. Both
@@ -980,6 +989,7 @@ fn analyze_candidate_inner(
         s7_derivations: run.s7_derivations,
         postconditions: run.postconditions,
         boolean_decompositions: run.boolean_decompositions,
+        permission_separations: run.permission_separations,
         derivations: run.derivations,
         inventory: run.inventory,
     }
@@ -996,6 +1006,7 @@ struct AnalysisRun {
     s7_derivations: Vec<S7Derivation>,
     postconditions: Vec<super::FunctionPostconditionProof>,
     boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
+    permission_separations: Vec<PermissionSeparationProof>,
     derivations: DerivationLedger,
     inventory: DerivationInventory,
 }
@@ -1052,6 +1063,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
     analyzer.reject_unjudged_separations();
     analyzer.scopes.pop();
     analyzer.finalize_postcondition_aggregates();
+    let permission_separations = analyzer.finalize_permission_separations();
     assert_eq!(
         analyzer.completed_counted_roots, analyzer.encountered_counted,
         "every encountered counted statement must publish one complete S11 root group"
@@ -1073,6 +1085,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         s7_derivations: analyzer.s7_derivations,
         postconditions: analyzer.postconditions,
         boolean_decompositions: analyzer.boolean_decompositions,
+        permission_separations,
         derivations: analyzer.derivations,
         inventory,
     }
@@ -1085,6 +1098,17 @@ impl<'check, 'unit> Analyzer<'check, 'unit> {
             function,
             places: PlaceMap::default(),
             judged_separations: HashSet::new(),
+            permission_separations: function
+                .permission_separation_queries
+                .iter()
+                .cloned()
+                .map(|query| PermissionSeparationAttempt {
+                    query,
+                    attempted: false,
+                    discharged: true,
+                    derivations: Vec::new(),
+                })
+                .collect(),
             terms: TermTable::new(),
             goals: GoalTable::default(),
             derivations: DerivationLedger::default(),
@@ -1172,6 +1196,16 @@ pub(super) fn finish(entailment: &mut FunctionEntailment) {
         outcome.derivation = outcome
             .derivation
             .and_then(|id| remap.nodes.get(id.0 as usize).copied().flatten());
+    }
+    for proof in &mut entailment.permission_separations {
+        for derivation in &mut proof.derivations {
+            *derivation = remap
+                .nodes
+                .get(derivation.0 as usize)
+                .copied()
+                .flatten()
+                .expect("successful PAR-1 range proof retained by its exact query root");
+        }
     }
     for counted in &mut entailment.counted_derivations {
         remap_counted_derivations(counted, &remap.nodes);
@@ -1361,6 +1395,9 @@ struct Analyzer<'check, 'unit> {
     places: PlaceMap,
     /// The [EFF-5] pairs already judged, by the call they were recorded at.
     judged_separations: HashSet<crate::NodePath>,
+    /// Optional [PAR-1] range questions. Each one is evaluated only at its
+    /// first statement's entry and meets every visit with logical AND.
+    permission_separations: Vec<PermissionSeparationAttempt>,
     terms: TermTable,
     goals: GoalTable,
     derivations: DerivationLedger,
@@ -9521,38 +9558,11 @@ impl Analyzer<'_, '_> {
         separation: &super::super::model::CheckedCallSeparation,
         state: &mut ProofFlowState,
     ) -> bool {
-        let images = Self::range_step(&separation.left)
-            .zip(Self::range_step(&separation.right))
-            .and_then(|(left, right)| {
-                let left_image = state.affine.ranges.get(&left.start.capture)?;
-                let right_image = state.affine.ranges.get(&right.start.capture)?;
-                Some((left, right, left_image.clone(), right_image.clone()))
-            });
-        let mut proofs = Vec::new();
-        if let Some((_, _, left, right)) = &images {
-            for (end, start) in [
-                (&left.end, &right.start),
-                (&right.end, &left.start),
-                (&left.end, &left.start),
-                (&right.end, &right.start),
-            ] {
-                if let Ok(inequality) =
-                    AffineInequality::from_forms(end, start, &mut AffineCheckState::new())
-                {
-                    proofs.push(self.prove(
-                        ProofContext::new(&state.facts, &state.affine),
-                        ProofGoal::Affine {
-                            inequality: &inequality,
-                        },
-                    ));
-                }
-            }
-        }
-        let proof = proofs
-            .into_iter()
-            .find(|proof| proof.disposition == ProofDisposition::Proved);
+        let images = Self::range_step(&separation.left).zip(Self::range_step(&separation.right));
+        let proof =
+            images.and_then(|(left, right)| self.prove_range_separation(left, right, state));
         let discharged = proof.is_some();
-        if discharged && let Some((left, right, _, _)) = images {
+        if discharged && let Some((left, right)) = images {
             state.separations.record_ranges_disjoint(left, right);
         }
         let derivation = proof.as_ref().and_then(|proof| proof.derivation);
@@ -9588,6 +9598,126 @@ impl Analyzer<'_, '_> {
             range_partitions: Vec::new(),
         });
         discharged
+    }
+
+    fn prove_range_separation(
+        &mut self,
+        left: CapturedRange,
+        right: CapturedRange,
+        state: &ProofFlowState,
+    ) -> Option<ProofResult> {
+        let left_image = state.affine.ranges.get(&left.start.capture)?.clone();
+        let right_image = state.affine.ranges.get(&right.start.capture)?.clone();
+        for (ordering, end, start) in [
+            (
+                RangeSeparationOrdering::LeftBeforeRight,
+                &left_image.end,
+                &right_image.start,
+            ),
+            (
+                RangeSeparationOrdering::RightBeforeLeft,
+                &right_image.end,
+                &left_image.start,
+            ),
+            (
+                RangeSeparationOrdering::LeftEmpty,
+                &left_image.end,
+                &left_image.start,
+            ),
+            (
+                RangeSeparationOrdering::RightEmpty,
+                &right_image.end,
+                &right_image.start,
+            ),
+        ] {
+            let Ok(inequality) =
+                AffineInequality::from_forms(end, start, &mut AffineCheckState::new())
+            else {
+                continue;
+            };
+            let mut proof = self.prove(
+                ProofContext::new(&state.facts, &state.affine),
+                ProofGoal::Affine {
+                    inequality: &inequality,
+                },
+            );
+            if proof.disposition == ProofDisposition::Proved {
+                let parent = proof
+                    .derivation
+                    .expect("a proved range ordering retains its affine or contradiction parent");
+                proof.derivation = Some(self.derivations.intern(DerivationNode::RangeSeparation {
+                    detail: Box::new(RangeSeparationDetail {
+                        left,
+                        right,
+                        ordering,
+                        parent,
+                    }),
+                }));
+                return Some(proof);
+            }
+        }
+        None
+    }
+
+    /// Judges every optional [PAR-1] query whose first statement is this
+    /// exact site. The incoming flow state is still the state before the
+    /// statement: none of its effects, postconditions, or later branch facts
+    /// have executed. Answers remain outside the flow separation ledger so a
+    /// permission proof can never authorize an EFF-5 or kill judgment.
+    fn judge_permission_separations(&mut self, site: &crate::NodePath, state: &ProofFlowState) {
+        let pending = self
+            .permission_separations
+            .iter()
+            .enumerate()
+            .filter_map(|(index, attempt)| (attempt.query.first == *site).then_some(index))
+            .collect::<Vec<_>>();
+        for index in pending {
+            let query = self.permission_separations[index].query.clone();
+            let derivation = self
+                .prove_range_separation(query.left, query.right, state)
+                .and_then(|proof| proof.derivation);
+            let attempt = &mut self.permission_separations[index];
+            attempt.attempted = true;
+            attempt.discharged &= derivation.is_some();
+            if let Some(derivation) = derivation {
+                attempt.derivations.push(derivation);
+            }
+        }
+    }
+
+    fn finalize_permission_separations(&mut self) -> Vec<PermissionSeparationProof> {
+        let mut retained = Vec::with_capacity(self.permission_separations.len());
+        let attempts = std::mem::take(&mut self.permission_separations);
+        for (query, attempt) in attempts.into_iter().enumerate() {
+            let PermissionSeparationAttempt {
+                query: identity,
+                attempted,
+                discharged,
+                mut derivations,
+            } = attempt;
+            let discharged = attempted && discharged;
+            if discharged {
+                for (occurrence, root) in derivations.iter().copied().enumerate() {
+                    self.derivations.add_root(
+                        DerivationRootKind::PermissionSeparation {
+                            query: u32::try_from(query)
+                                .expect("PAR-1 range queries exceed the u32 identity space"),
+                            occurrence: u32::try_from(occurrence)
+                                .expect("PAR-1 range-query visits exceed the u32 identity space"),
+                        },
+                        root,
+                    );
+                }
+            } else {
+                derivations.clear();
+            }
+            retained.push(PermissionSeparationProof {
+                query: identity,
+                discharged,
+                derivations,
+            });
+        }
+        retained
     }
 
     /// The last range step of a resolved path, which is the step [OWN-7]'s
@@ -14170,6 +14300,20 @@ impl Analyzer<'_, '_> {
     }
 
     fn walk_statement(&mut self, statement: &CheckedStatement, state: &mut ProofFlowState) -> bool {
+        let permission_site = match statement {
+            CheckedStatement::Proof(proof) => Some(&proof.node_path),
+            CheckedStatement::Let { node_path, .. } | CheckedStatement::Set { node_path, .. } => {
+                Some(node_path)
+            }
+            CheckedStatement::Match {
+                scrutinee: CheckedExpression::UserCall { call, .. },
+                ..
+            } => Some(call),
+            _ => None,
+        };
+        if let Some(site) = permission_site {
+            self.judge_permission_separations(site, state);
+        }
         match statement {
             CheckedStatement::Let {
                 node_path,
@@ -15299,6 +15443,7 @@ impl Analyzer<'_, '_> {
                 else {
                     unreachable!("selected receiver preparation admits only a set statement");
                 };
+                self.judge_permission_separations(node_path, &state);
                 let outcome = self.walk_set(node_path, target, value, true, &mut state);
                 let target_event = outcome
                     .target_event

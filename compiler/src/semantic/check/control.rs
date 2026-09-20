@@ -486,6 +486,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some((mode, expected)) = matched.delivered else {
                 return self.issue_node(SemanticRule::Give1, node, SemanticIssueKind::InvalidGive);
             };
+            let result_range_element = if mode == CheckedMode::Range {
+                Some(self.intern_element(expected)?)
+            } else {
+                None
+            };
             // [REF-1] a binder every arm of which delivers a reference is
             // itself a reference variable, naming the union of the path sets
             // its delivering arms name, rather than taking a type [TYPE-5].
@@ -530,6 +535,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     binding,
                     result_type: expected,
                     result_mode: mode,
+                    result_range_element,
                     scrutinee: matched.scrutinee,
                     enum_type: matched.enum_type,
                     arms: matched.arms,
