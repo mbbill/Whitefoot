@@ -200,7 +200,7 @@ impl IrAddressed {
         }
     }
 
-    const fn of(ty: IrType) -> Option<Self> {
+    pub(crate) const fn of(ty: IrType) -> Option<Self> {
         Some(match ty {
             IrType::Unit => Self::Unit,
             IrType::Bool => Self::Bool,
@@ -234,8 +234,6 @@ impl IrAddressed {
 pub enum IrReleaseClass {
     /// A free to the general store the run was taken from.
     General,
-    /// Empty: the extent's reclamation is its region's own reset [BLK-2].
-    Extent,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -315,7 +313,6 @@ pub(crate) const fn lower_release_class(
 ) -> IrReleaseClass {
     match value {
         crate::semantic::CheckedReleaseClass::General => IrReleaseClass::General,
-        crate::semantic::CheckedReleaseClass::Extent => IrReleaseClass::Extent,
     }
 }
 
@@ -442,10 +439,7 @@ pub(crate) fn type_derives_release(
                             .map(IrField::ty),
                     );
                 }
-                IrNominalKind::Box { .. }
-                // The allocation-list drop is the region's storage
-                // release [STOR-3]: walk and free.
-                | IrNominalKind::ArenaStorage => {
+                IrNominalKind::Box { .. } => {
                     return Some(true);
                 }
                 // An arena value's storage is released with its region,
@@ -570,9 +564,6 @@ pub enum IrNominalKind {
     Arena {
         content: IrType,
     },
-    /// One region block's compiler-owned arena allocation-list cell; its
-    /// drop walks and frees every registered allocation [STOR-3].
-    ArenaStorage,
     /// An ordinary opaque nominal supplied by PRE-1.
     Opaque,
 }
@@ -1126,10 +1117,6 @@ pub enum IrOperation {
         layout_ceiling: IrLayoutCeiling,
         target_domains: IrRuntimeTargetObligations,
     },
-    BufferFits {
-        length: IrValueId,
-        maximum_length: u64,
-    },
     /// [MSR-1] the one measure a runtime-capacity `Array<T>` has, read from
     /// the `len` word at the head of its block. `buffer` is the block's
     /// address.
@@ -1282,6 +1269,13 @@ pub enum IrOperation {
         offset: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
+    /// The address of one discharged range element, retained for a source
+    /// reference instead of loaded as an owned value.
+    SliceAddress {
+        slice: IrValueId,
+        offset: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    },
     BoxNew {
         nominal: IrNominalId,
         value: IrValueId,
@@ -1294,23 +1288,6 @@ pub enum IrOperation {
         value: IrValueId,
     },
     BoxDeref {
-        nominal: IrNominalId,
-        value: IrValueId,
-    },
-    /// One region block's arena allocation-list cell, materialized at region
-    /// entry: a stack cell reset to empty, whose address is the operation's
-    /// value [STOR-1, STOR-3].
-    ArenaListNew,
-    /// One `arena_new` allocation: heap storage for the content, registered
-    /// on the owning region's allocation list so the region's exit release
-    /// frees it [STOR-1, STOR-3]. The value is the content address.
-    ArenaNew {
-        nominal: IrNominalId,
-        list: IrValueId,
-        value: IrValueId,
-    },
-    /// Arena content read through explicit `deref` [STOR-1].
-    ArenaDeref {
         nominal: IrNominalId,
         value: IrValueId,
     },

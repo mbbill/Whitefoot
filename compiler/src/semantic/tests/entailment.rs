@@ -135,16 +135,9 @@ fn collect_direct_calls<'checked>(
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Set { value, .. }
-            | CheckedStatement::Replace { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. }
-            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. } => record(value, callee, calls),
-            CheckedStatement::SetList { values, .. } => {
-                for value in values.expressions() {
-                    record(value, callee, calls);
-                }
-            }
             CheckedStatement::PropagateLet { scrutinee, .. } => record(scrutinee, callee, calls),
             CheckedStatement::Evaluate(expression) => record(expression, callee, calls),
             CheckedStatement::Match {
@@ -158,7 +151,7 @@ fn collect_direct_calls<'checked>(
                     collect_direct_calls(&arm.body, callee, calls);
                 }
             }
-            CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+            CheckedStatement::Loop { body, .. } => {
                 collect_direct_calls(body, callee, calls);
             }
             CheckedStatement::CountedRange {
@@ -1724,6 +1717,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
 
     let mut seen_obligations = vec![false; summary.obligations.len()];
     let mut seen_calls = vec![false; summary.call_goals.len()];
+    let mut seen_contracts = vec![false; summary.contract_goals.len()];
     let mut seen_counted = vec![[false; 8]; summary.counted_derivations.len()];
     let mut seen_s7 = vec![false; summary.s7_derivations.len()];
     let mut seen_postcondition_exits = summary
@@ -1944,6 +1938,32 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     | DerivationConclusion::PostconditionAggregate => {
                         panic!("a discharged call root cannot be a postcondition aggregate")
                     }
+                }
+            }
+            DerivationRootKind::ContractGoal(ordinal) => {
+                let ordinal = ordinal as usize;
+                let outcome = summary
+                    .contract_goals
+                    .get(ordinal)
+                    .expect("contract-root ordinal must resolve");
+                assert!(!seen_contracts[ordinal], "one exact root per FN-4 query");
+                seen_contracts[ordinal] = true;
+                assert_eq!(outcome.disposition, CallGoalDisposition::Discharged);
+                assert_eq!(outcome.derivation, Some(root.node));
+                match conclusion {
+                    DerivationConclusion::Goal {
+                        goal,
+                        sign: GoalSign::Positive,
+                    } => {
+                        let retained_goal = summary
+                            .inventory
+                            .goals
+                            .get(goal.0 as usize)
+                            .expect("contract goal ID must resolve");
+                        assert_eq!(retained_goal.expression, outcome.goal.root);
+                    }
+                    DerivationConclusion::Contradiction => {}
+                    _ => panic!("a discharged FN-4 root must be positive or contradictory"),
                 }
             }
             DerivationRootKind::CountedS11 { occurrence, atom } => {
@@ -2306,6 +2326,11 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
         let discharged = outcome.disposition == CallGoalDisposition::Discharged;
         assert_eq!(outcome.derivation.is_some(), discharged);
         assert_eq!(seen_calls[ordinal], discharged);
+    }
+    for (ordinal, outcome) in summary.contract_goals.iter().enumerate() {
+        let discharged = outcome.disposition == CallGoalDisposition::Discharged;
+        assert_eq!(outcome.derivation.is_some(), discharged);
+        assert_eq!(seen_contracts[ordinal], discharged);
     }
     assert!(
         seen_counted

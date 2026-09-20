@@ -131,14 +131,27 @@ impl IrBuilder<'_> {
             }
             // [REF-4, SET-1] one element position of the run a range names.
             CheckedSetTarget::RangeIndex(target) => {
-                let slice = self.range_root(&target.root)?;
-                let index = self.expression(&target.offset)?;
-                let target_domain = target.target_domain.into();
-                self.check_target_offset(index, target_domain)?;
-                TargetStorage::Slice {
-                    slice,
-                    index,
-                    target_domain,
+                if !target.path.is_empty() {
+                    let address = self.lower_range_address(
+                        &target.root,
+                        &target.offset,
+                        &target.path,
+                        target.target_domain,
+                    )?;
+                    let IrType::Address(referent) = self.value_type(address)? else {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    };
+                    address_kind(address, referent)
+                } else {
+                    let slice = self.range_root(&target.root)?;
+                    let index = self.expression(&target.offset)?;
+                    let target_domain = target.target_domain.into();
+                    self.check_target_offset(index, target_domain)?;
+                    TargetStorage::Slice {
+                        slice,
+                        index,
+                        target_domain,
+                    }
                 }
             }
         };

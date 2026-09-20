@@ -846,6 +846,9 @@ pub(crate) enum DerivationRootKind {
     },
     IntegerDomainObligation(u32),
     CallGoal(u32),
+    /// One declaration-only [FN-4] compatibility query. Its ledger and dense
+    /// identity namespace belong only to the retained contract query.
+    ContractGoal(u32),
     BitAndBound(u32),
     ShiftOneNonzero(u32),
     UnsignedDivisionBound(u32),

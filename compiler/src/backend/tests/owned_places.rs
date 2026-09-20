@@ -1182,11 +1182,11 @@ fn main() -> status: own ExitStatus pure {
 /// A duplicate or unknown release aborts instead of allowing a use-after-free
 /// to appear successful because its bytes happened to remain unchanged.
 pub(super) fn allocation_observer(limit: usize, refused: usize) -> String {
-    allocation_observer_body(limit, &refused.to_string())
+    allocation_observer_body(limit, &refused.to_string(), false)
 }
 
 pub(super) fn allocation_observer_by_process(limit: usize) -> String {
-    let body = allocation_observer_body(limit, "wf_test_refusal()");
+    let body = allocation_observer_body(limit, "wf_test_refusal()", false);
     format!(
         r#"#include <stdlib.h>
 static unsigned long wf_test_refusal(void) {{
@@ -1201,36 +1201,58 @@ static unsigned long wf_test_refusal(void) {{
     )
 }
 
-fn allocation_observer_body(limit: usize, refused: &str) -> String {
+fn allocation_observer_body(limit: usize, refused: &str, observe_u64_payload: bool) -> String {
     let slots = limit + 1;
+    let release_record = if observe_u64_payload {
+        "uint64_t value; memcpy(&value, allocation, sizeof(value)); printf(\"V%\" PRIu64 \";\", value);"
+    } else {
+        "printf(\"F%u;\", id);"
+    };
     format!(
         r#"#include <stddef.h>
+#include <inttypes.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static void *held[{slots}];
 static unsigned attempts;
+static atomic_flag observer_lock = ATOMIC_FLAG_INIT;
+
+static void lock_observer(void) {{
+    while (atomic_flag_test_and_set_explicit(&observer_lock, memory_order_acquire)) {{}}
+}}
+
+static void unlock_observer(void) {{
+    atomic_flag_clear_explicit(&observer_lock, memory_order_release);
+}}
 
 void *wf_test_allocate(size_t size) {{
+    lock_observer();
     unsigned id = ++attempts;
     if (id > {limit}) abort();
     if (id == {refused}) {{
         printf("X%u;", id);
+        unlock_observer();
         return NULL;
     }}
     void *allocation = malloc(size);
     if (allocation == NULL) abort();
     held[id] = allocation;
     printf("A%u;", id);
+    unlock_observer();
     return allocation;
 }}
 
 void wf_test_release(void *allocation) {{
+    lock_observer();
     for (unsigned id = 1; id <= attempts && id <= {limit}; ++id) {{
         if (allocation != NULL && held[id] == allocation) {{
             held[id] = NULL;
-            printf("F%u;", id);
+            {release_record}
             free(allocation);
+            unlock_observer();
             return;
         }}
     }}
@@ -1508,20 +1530,21 @@ fn main() -> status: own ExitStatus pure {
 /// differ in exactly the way the two rules say:
 ///
 /// - no commit: both cells live to the scope exit and are released newest
-///   first, `A1;A2;F2;F1;`;
+///   first, carrying values 22 and 11;
 /// - a commit over a live affine binding: the displaced first cell is released
-///   at the commit and the installed second at the scope exit, `A1;A2;F1;F2;`;
+///   at the commit and the installed second at the scope exit, values 11 and 22;
 /// - a commit over a `u64` binding: the previous value "needs none", so the
-///   program's one cell is released once at the scope exit, `A1;F1;`.
+///   program's one cell, value 11, is released once at the scope exit.
 ///
-/// The second allocating body derives `fresh`'s value from `cell`, making the
-/// two calls dependent under [PAR-1]. Its observer IDs therefore name source
-/// owners rather than an unobservable worker schedule.
+/// The first body's allocations stay independent under [PAR-1]. Allocation
+/// order cannot identify its source owners: the observer instead records each
+/// released Box<u64>'s payload, while still checking the allocation limit and
+/// rejecting unknown or duplicate frees. Its own shared ledger is synchronized.
 ///
 /// A lowering that derived the release from the target's type alone would
 /// still produce the first two and would free nothing extra in the third; one
 /// that emitted no release for a named binding leaks the first cell of the
-/// second body and prints `A1;A2;F2;`.
+/// second body and records only the payload 22.
 #[test]
 fn a_commit_over_a_named_binding_releases_exactly_the_owner_it_displaces() {
     let program = |body: &str, expected: &str| {
@@ -1551,7 +1574,7 @@ fn main() -> status: own ExitStatus pure {{
                 "33_u64",
             ),
             2,
-            &b"A1;A2;F2;F1;"[..],
+            vec!["V22", "V11"],
         ),
         (
             program(
@@ -1564,7 +1587,7 @@ fn main() -> status: own ExitStatus pure {{
                 "22_u64",
             ),
             2,
-            &b"A1;A2;F1;F2;"[..],
+            vec!["V11", "V22"],
         ),
         (
             program(
@@ -1575,7 +1598,7 @@ fn main() -> status: own ExitStatus pure {{
                 "22_u64",
             ),
             1,
-            &b"A1;F1;"[..],
+            vec!["V11"],
         ),
     ];
     for (source, limit, trace) in cases {
@@ -1584,9 +1607,30 @@ fn main() -> status: own ExitStatus pure {{
             let observed = retain_calls(&module)
                 .replace("@malloc(", "@wf_test_allocate(")
                 .replace("@free(", "@wf_test_release(");
-            let output = compile_link_and_run(&observed, Some(&allocation_observer(limit, 0)), &[]);
+            let observer = allocation_observer_body(limit, "0", true);
+            let output = compile_link_and_run(&observed, Some(&observer), &[]);
             assert_eq!(output.status.code(), Some(0), "{source}\n{output:?}");
-            assert_eq!(output.stdout, trace, "{source}\n{output:?}");
+            let records = std::str::from_utf8(&output.stdout)
+                .expect("observer emits ASCII")
+                .split_terminator(';')
+                .collect::<Vec<_>>();
+            assert_eq!(
+                records
+                    .iter()
+                    .filter(|record| record.starts_with('A'))
+                    .count(),
+                limit,
+                "{source}\n{output:?}"
+            );
+            assert_eq!(
+                records
+                    .iter()
+                    .copied()
+                    .filter(|record| record.starts_with('V'))
+                    .collect::<Vec<_>>(),
+                trace,
+                "{source}\n{output:?}"
+            );
             assert!(output.stderr.is_empty(), "{output:?}");
         }
     }

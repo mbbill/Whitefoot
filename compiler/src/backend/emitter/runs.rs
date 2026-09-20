@@ -393,14 +393,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             let physical = self.boundary_slot(shape, run_type, run, row)?;
             let element_pointer =
                 self.element_pointer(result, shape, run_type, updated, &physical)?;
-            let element_type = llvm_type(self.program, shape.element_type(self.program)?)?;
-            let operand = self.value_operand(value)?;
-            writeln!(
-                self.output,
-                "  store {element_type} {}, ptr %{element_pointer}",
-                operand,
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
+            self.store_value_at(value, &format!("%{element_pointer}"))?;
         }
         // The new descriptor words. A back operation leaves `head` where it
         // was; a front operation moves it by one, modulo the capacity.

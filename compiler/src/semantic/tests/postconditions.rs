@@ -120,6 +120,47 @@ fn main() -> status: own ExitStatus pure {
     assert_complete(source);
 }
 
+/// A generic wrapper around `grow` publishes its ordinary integer result
+/// relation together with the two measured relations it derives from the
+/// supplied row. The written count bound is the wrapper's concrete [OP-9]
+/// premise; without it the source is invalid before any summary can publish.
+#[test]
+fn a_generic_grow_wrapper_publishes_its_integer_result_relation() {
+    let source = br#"struct Holder<T> {
+  storage: Box<Slots<T>>;
+}
+
+fn reserve<T>(values: &Holder<T>, total: own u64) -> capacity: own u64 writes(values.storage) contract {
+  requires total <= 1_u64;
+  ensures capacity == deref(values).storage.inner.cap;
+  ensures capacity >= total;
+  ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len;
+} {
+  let current = deref(values).storage.inner.cap;
+  if current >= total {
+    return current;
+  }
+  grow(cell: &deref(values).storage, capacity: total);
+  return total;
+}
+
+fn needs_one(value: own u64) -> result: own unit pure contract {
+  requires value >= 1_u64;
+} {
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let storage = box_slots_new::<u64>(capacity: 0_u64);
+  let holder = Holder<u64>(storage: move storage);
+  let opened = reserve::<u64>(values: &holder, total: 1_u64);
+  needs_one(value: opened);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
 /// A fresh runtime-capacity Slots value has length zero. FN-9 must retain the
 /// `.inner` projection and selected Box result type when checking that fact.
 #[test]
@@ -3275,4 +3316,107 @@ fn main() -> status: own ExitStatus pure {{
         assert_complete(program("deref(free).len == 1_u64", body).as_bytes());
         assert_fn9_rejects(program("deref(free).len == 2_u64", body).as_bytes());
     }
+}
+
+/// [MSR-2, MSR-3] a postcondition over a window descriptor survives a write
+/// to one element reached through the same reference holder. Writes that can
+/// change the descriptor, replace the whole referent, or reach it through a
+/// joined holder still invalidate the relation, as does rebinding the holder
+/// on which the substitution itself depends.
+#[test]
+fn postcondition_measure_candidates_distinguish_holder_rebinding_from_descendant_writes() {
+    let descendant_write = br#"fn take_at(window: &Ring<Box<u64>, 4>, at: own u64) -> taken: own Box<u64> writes(window) contract {
+  requires at + 2_u64 <= deref(window).len;
+  ensures deref(window).len + 1_u64 == deref(entry(window)).len;
+} {
+  let end = take_back(window: window);
+  swap(first: &deref(window)[at], second: &end);
+  return move end;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(descendant_write);
+
+    let descriptor_write =
+        br#"fn take_twice(window: &Ring<u64, 4>) -> taken: own u64 writes(window) contract {
+  requires deref(window).len >= 2_u64;
+  ensures deref(window).len + 1_u64 == deref(entry(window)).len;
+} {
+  let taken = take_back(window: window);
+  let extra = take_back(window: window);
+  return taken;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_fn9_rejects(descriptor_write);
+
+    let whole_replacement =
+        br#"fn clear(window: &Ring<u64, 4>) -> result: own unit writes(window) {
+  let empty = ring_new::<u64, 4>();
+  set deref(window) = move empty;
+  return unit;
+}
+
+fn replace_after_take(window: &Ring<u64, 4>) -> taken: own u64 writes(window) contract {
+  requires deref(window).len >= 2_u64;
+  ensures deref(window).len + 1_u64 == deref(entry(window)).len;
+} {
+  let taken = take_back(window: window);
+  clear(window: window);
+  return taken;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_fn9_rejects(whole_replacement);
+
+    let joined_write = br#"fn clear(window: &Ring<u64, 4>) -> result: own unit writes(window) {
+  let empty = ring_new::<u64, 4>();
+  set deref(window) = move empty;
+  return unit;
+}
+
+fn maybe_replace(first: &Ring<u64, 4>, second: &Ring<u64, 4>, choose: own Bool) -> taken: own u64 writes(first), writes(second) contract {
+  requires deref(first).len >= 2_u64;
+  ensures deref(first).len + 1_u64 == deref(entry(first)).len;
+} {
+  let taken = take_back(window: first);
+  let selected = if choose {
+    give first;
+  } else {
+    give second;
+  }
+  clear(window: selected);
+  return taken;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_fn9_rejects(joined_write);
+
+    let holder_rebinding = br#"fn rebind_after_take(first: &Ring<u64, 4>, second: &Ring<u64, 4>) -> taken: own u64 writes(first) contract {
+  requires deref(first).len >= 2_u64;
+  ensures deref(first).len + 1_u64 == deref(entry(first)).len;
+} {
+  let selected = first;
+  let taken = take_back(window: selected);
+  set selected = &deref(second);
+  return taken;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_fn9_rejects(holder_rebinding);
 }

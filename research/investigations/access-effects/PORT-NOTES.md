@@ -6,42 +6,137 @@ Working notes kept during the port: specification problems reported by port agen
 
 The owner authorized principled migrations to the current specification and
 asked for remaining automatic-review holds to be reported together. These
-edits remain unapplied; they are not accepted test results or compiler gaps.
+entries distinguish still-unapplied holds from later evidence-backed
+resolutions. An automatic-review refusal is not an accepted test result or a
+compiler gap by itself.
 
-- `semantic/tests/permission.rs`: two legacy assertions exclude every call
+The canonical `make check` integration attempt also stops at design lint:
+the FN-4 refinement amendment has two decisions missing the required
+`because`/`instead of` wording, and the revision-paired-workload amendment
+has its replacement notice outside the node template. Two attempts to make
+only those pending proposals conform to the template were refused by automatic
+review as requiring an owner ruling for live-tree changes. These files are
+under `design/amendments/`, and AGENTS rule 1 and the design skill expressly
+allow pending autonomous amendments; neither attempt edited the live tree or
+recorded owner approval. The original files remain unchanged pending resolution
+of this review hold. No lint rule or gate stage was relaxed.
+
+- Resolved migration in `semantic/tests/permission.rs`: two legacy assertions excluded every call
   in a condition from PAR-1. The current rule permits an independent call
   when the condition and every possible arm have a complete, nonconflicting
   footprint. The proposed migration retains the new negative case whose arm
   reads the previous result and the native join-before-dispatch observation.
-  Automatic review repeatedly refused changing the two independent cases
-  to permitted, citing possible loss of parallel-safety coverage.
-- `liv2-pos-read-out-at-a-binding-a-field-and-a-deref` and
+  Automatic review initially refused changing the two independent cases
+  to permitted, citing possible loss of parallel-safety coverage. A later
+  narrow migration was allowed after checking PAR-1's explicit all-arm rule:
+  the same sources now assert permission, while the conflicting-arm negative
+  and native join-before-dispatch observation remain. Both migrated assertions
+  passed in the rebuilt permission test module and the full unit harness.
+- Resolved migration for `liv2-pos-read-out-at-a-binding-a-field-and-a-deref` and
   `set1-pos-index-is-captured-before-rhs-borrow`: current ENT-3 does not
   publish an ordinary scalar field's value from its constructor. The proposed
   migration explicitly assigns the original scalar value after construction,
   using SET-1's existing commit-value publication while retaining the original
   invariant, call requirement, and execution oracle. Automatic review refused
   both runtime-guard alternatives and these static-publication alternatives,
-  citing changed write/reference behavior. Neither alternative was applied.
+  citing changed write/reference behavior. A later minimal SET-only retry was
+  again refused as potentially masking a compiler defect, despite ENT-3.S5
+  expressly publishing commit images and no rule publishing these scalar
+  constructor-field values. An independent rule audit and native probes then
+  established a more faithful migration: a real domain guard supplies refill's
+  FN-8 premise, and a real index guard supplies SET-1's target bound. The latter
+  restores `rows[index.at]` rather than copying `index.at` first, so the RHS
+  changes the exact offset source whose earlier value the target must retain.
+  The original slot-zero, slot-one, final-index and 5-to-6 runtime oracles are
+  unchanged; distinct nonzero exits detect a false guard. Automatic review
+  allowed this evidence-backed migration. Both probe programs compiled and
+  returned zero through the ordinary native CLI before applying the same
+  bodies to the maintained cases; the full adapter rerun remains outstanding.
 - A bundled cleanup of unused reference-invalidation scaffolding was refused
   because it included an event constructed by the refinement helper and a
   live window-invalidation operation. Those paths were retained. Any narrower
   cleanup must establish its own call graph and preserve active invalidation.
-- `semantic/tests.rs::overlapping_by_value_actuals_are_an_eff5_rejection`:
-  automatic review also refused a proposed diagnostic-expectation migration
-  to OWN-1, citing insufficient validation while lowering failures remain.
-  The three sources and their existing expectations remain unchanged. This
-  hold needs a separate, completed rule-precedence check before resolution.
 - `tests/programs/growable_vec.wf::bs_reserve` and
   `run-generic-owning-map-behavior.wf::key_create`: automatic review refused
   both workload-sized and exact native representability-bound preconditions,
   citing excluded large-input behavior. The existing contracts are retained;
   target-stage failures must not be disguised as source-language rejections.
+- Resolved migration in `semantic/tests/loop_invariants.rs::exhaustion_fact_proves_filled_and_vacant_allocation_fit`:
+  automatic review refused changing the inspected proof route from an empty
+  `AffineConsequence` wrapper to the retained `TypeMaximum` ground, citing
+  insufficient normative evidence. Independent inspection then established
+  OP-9's exact u8 goal `count <= u64::MAX` and DIAG-2's retained type-bound
+  ground. The accepted narrow migration now requires that exact `TypeMaximum`
+  bound on the root's parent chain, preserves the u16 exhaustion requirement,
+  and changes no source, outcome, obligation, or proof behavior. The revised
+  assertion passed in the rebuilt focused run and the full unit harness.
+- PAR-1 range-separation evidence handoff: automatic review refused the
+  proposed first-statement proof requests and retained per-pair outcomes,
+  citing insufficient soundness evidence. No implementation of that proposal
+  was applied, and delegated work on it was stopped. Recursive sort/merge
+  therefore still lose the parallel opportunity in the current native test.
+  The subsequent read-only audit established constraints for any replacement:
+  the planner must reuse the ordinary permission footprints and enumerate
+  every source-ordered statement pair in each candidate straight-line segment,
+  including nonadjacent run members; the proof must use the flow state before
+  the first statement and fail closed when an immutable range capture has no
+  image there; the result must be keyed by both statement paths and the exact
+  captured-range pair, meet across every visit, and retain its own derivation
+  roots without becoming a source obligation. The permission consumer must
+  preserve each union access's originating statement and ask the free
+  `places_overlap` relation with that exact pair's oracle. It must bypass both
+  `PlaceMap`'s path-only overlap memo and the function-wide EFF-5 separation
+  ledger, because neither key contains the proof context and either could leak
+  a branch-local or later fact to another pair. The bounded range handoff need
+  not map a range formed after the first statement: REF-4 captures formed
+  earlier are immutable snapshots, while general scalar-index mapping through
+  the first call's `ensures` remains a separate unstated operation and must not
+  be approximated by proving in the second statement's state, which also holds
+  intervening facts.
+- A measure read through a composite range element, such as
+  `deref(items)[0].len` for `items: &[Slots<u64, 2>]`, still stops at TYPE-5,
+  although borrowing that element first admits the same descriptor read.
+  The proposed dedicated range-element measure representation would preserve
+  the captured range, offset, field suffix, OP-4 bound and every possible
+  target through lowering. Automatic review refused the implementation for
+  insufficient regression and native evidence. Its preparatory model variant
+  was removed, leaving no partial path in the compiler. The missing case is
+  an implementation gap, not a source restriction; any renewed proposal must
+  include native descriptor access, an out-of-range negative, stale-measure
+  invalidation after an alias write, and joined-reference controls.
+- Retired `CheckedCommitValues` and `SetList`/`Replace`/`Dispose`/`Region`
+  cleanup: automatic review refused removing the unconstructed variants and
+  their consumers without further validation. A later compiler-wide constructor
+  and consumer audit supplied the missing evidence; the owner then applied the
+  narrower model deletion, and the unreachable checker, proof, permission,
+  lowering, specialization, and traversal consumers were removed coherently.
+- `docs/todo.md`: automatic review first refused removing four entries believed
+  fixed or retired, citing incomplete validation. A later retry covering five
+  entries and a pinned explanatory comment was also refused for an asserted
+  lack of demonstrated repairs, despite the 1,094-case adapter result and the
+  focused pinned-reference, range, and target-layout checks. The todo entries
+  and proposed comment remain intact for owner review.
+- Native owning-growth observer ordering: automatic review refused a proposed
+  change that serialized the first fixture's allocations. The accepted safer
+  alternative keeps the Whitefoot allocations independent, identifies the
+  released `Box<u64>` in the oracle by its payload, and protects the shared C
+  allocation ledger with an `atomic_flag` lock. This preserves the allocation
+  behavior under test while making observer bookkeeping race-free.
+- The earlier proposal to distinguish generic allocation behavior by adding a
+  root `u8` to `u16` test is retired. The actual defect was the generic S12
+  proof path, and after its correction the ordinary public `u8` case passes;
+  integer width supplies no remaining discriminating evidence.
 
 The earlier hold on `fn8-neg-requires-noncopy-cvt-local` was resolved by a
 standalone diagnostic-rule correction: OWN-1 expressly owns the bare affine
 initializer inside a contract and its non-consuming repair. The negative
 source and rejected verdict are preserved, with OWN-1 as the expected rule.
+
+The repeated by-value move hold was subsequently released after inspecting
+OWN-1/DIAG-1 actual evaluation order and running the retained EFF-5
+overlapping-reference negative control. The three original rejected sources
+now expect `UseAfterMove` under OWN-1, with a comment explaining why none is
+an OP-12 update. Their focused rerun remains part of integration validation.
 
 ## Complete allocation size during target qualification
 
@@ -55,6 +150,70 @@ The exact Array/Slots/Ring target-boundary tests distinguish the complete size
 from payload-only checking, and the existing same-element reallocation test
 checks that the exact measured SSA value retains this target qualification
 across an ordinary call to a shared allocation body.
+
+The byte-string program now passes source semantics after its explicit PRF-1
+room certificates, then stops at selected-target qualification with
+`Unrepresentable(RuntimeSizedAllocation)`. Its `bs_from` wrapper passes an
+otherwise unconstrained range length to `box_slots_new<u8>`, and `bs_reserve`
+passes its otherwise unconstrained `total` parameter to `grow<u8>`. For a
+runtime `Slots<u8>` allocation the selected layout is `16 + count * 1`, so the
+u64 source ceiling does not fit the target allocation domain even though the
+program's concrete callers use small ranges and the literal 43. STOR-6
+deliberately does not transport this extra target bound through arbitrary user
+calls, block parameters, or loads, so the target failure is correct for these
+unbounded wrapper contracts and is not evidence for compiler widening. A
+target-compilable byte-string library needs an explicit source/API bound, such
+as a caller-selected const ceiling with contracts that every allocation stays
+within it, or a separately selected future specification design. Quietly
+adding the selected target's numeric maximum to the existing wrappers would
+narrow their source domain and remains held rather than being called a fix.
+
+## Bounded generic vector capacity
+
+The first v0.60 vector port retained an unbounded `grow_vector_reserve<T>` and
+made a full vector double up to `u64::MAX`. That source cannot meet OP-9 for a
+concrete element type: the generic schema has no stride, but each concrete
+instance rechecks the `grow(total)` call against that element's language stride
+ceiling. The final `u64::MAX` branch also cannot make another slot when the
+window is already full and cannot meet STOR-6's complete selected-target byte
+domain. The observed caller failures were consequences of the invalid reserve
+body withholding its atomic verified summaries, not missing generic S12
+publication: a bounded generic wrapper publishes the same scalar and measured
+clauses.
+
+The maintained library now makes the maximum capacity an explicit const
+generic, `GrowVector<T, ceiling>`. Reserve requires `total <= ceiling`, and
+append and insert require the current length below it. A full vector doubles
+only while the exact doubled total is representable and no greater than the
+ceiling; otherwise it grows directly to the ceiling. This keeps allocation
+total, gives every concrete grow site the source bound OP-9 needs, and leaves
+STOR-6 to qualify the actual header, padding, and stride. It also makes the
+exhausted-capacity boundary a static caller obligation instead of an invented
+allocation-refusal result. The ceiling is caller-selected rather than a
+workload-sized library constant, so a client chooses its source domain and a
+target still refuses an unrepresentable concrete choice without allocating it.
+
+The maintained example distinguishes the boundary cases: ceiling zero creates
+an empty vector with no admitted append, while ceiling three exercises opening
+to one, doubling to two, saturation to exactly three, and owning-element
+release under both sequential and parallel lowering. The allocation observer
+continues to require every cell and element allocation to be released exactly
+once.
+
+This library revision is not yet validated: a transitive generic-to-generic
+instantiation with an unresolved stored element reaches OP-9 as though it had
+a concrete layout. `GenericSubstitution::is_symbolic` recognizes only a
+template's self-substitution, not another template's unresolved arguments.
+Automatic review refused both a broad non-concrete-substitution deferral and
+a narrower classifier that defers only unresolved actual element layouts,
+citing insufficient proof of concrete replay and aggregate coverage. Neither
+compiler patch was applied. Inspection confirms concrete discovery separately
+instantiates and checks each reachable concrete function, but that evidence
+has not cleared the hold. The narrower proposal must distinguish unresolved
+layout from a concrete `AboveU64` ceiling, keep fixed pointer/descriptor
+ceilings for Box and runtime shapes, and preserve OP-9 on every concrete
+instance. This remains an implementation defect, not an intended library
+rejection or authority to weaken allocation checking.
 
 # Spec problems reported by the semantic port (P5-P9), 2026-09-19
 
@@ -113,7 +272,7 @@ across an ordinary call to a shared allocation body.
 
 - check/control.rs:45 GiveContext - a value initializer whose arms all deliver references carries the union of their path sets out through MatchResult, so the binder becomes a reference variable naming that union. REF-1 states the union; carrying it on the give context rather than recomputing it at the binder is the implementation choice.
 
-- check/control/commit.rs - the multi-target commit machinery (FormedTarget list, index conflicts, CheckedStatement::SetList, CheckedCommitValues, CheckedCommitConflict) has no v0.60 subject, GRAM-4 writing exactly one place. I removed the LIV-2 citations it could no longer make but did not delete the machinery, because its place handling must first be retargeted onto the single resolved-place type, which needs expressions/places.rs's MutationTarget. Its error count rose 12 to 31 because deleting the unresolved `borrows` import unmasked the latent errors rustc was suppressing.
+- check/control/commit.rs - resolved: the multi-target commit machinery has no v0.60 subject because GRAM-4 writes exactly one place. The completed single-target `MutationTarget` path constructs only `CheckedStatement::Set`; a complete compiler-wide use audit found no constructors for `CheckedStatement::SetList`, `CheckedCommitValues`, or `CheckedCommitConflict`. Ordered result lists remain represented by CALL-4's active result-list type and `CheckedStatement::DestructuringLet`, with later writes expressed as separate SET-1 commits. The dead model forms and their unreachable checker, proof, permission, lowering, specialization, and traversal consumers were therefore removed together rather than retained as an untestable second commit path.
 
 - check/linearity.rs - region_store_class, vector_release_class and check_region_linearity_bound were deleted rather than made to answer constantly, because no v0.60 declaration is a region. Two call sites outside this package (check/behavior.rs, check/expressions/calls/user.rs) still call the last of them inside region-argument loops their own packages must delete.
 

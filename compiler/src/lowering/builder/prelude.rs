@@ -601,9 +601,7 @@ fn ceiling_pair(
             match nominal.kind() {
                 // One pointer; the content lives in the heap object and
                 // enters no sequence.
-                IrNominalKind::Box { .. }
-                | IrNominalKind::Arena { .. }
-                | IrNominalKind::ArenaStorage => (8, 8),
+                IrNominalKind::Box { .. } | IrNominalKind::Arena { .. } => (8, 8),
                 // Every fieldless opaque struct carries the host handles'
                 // host-supplied representation.
                 IrNominalKind::Opaque => (32, 16),

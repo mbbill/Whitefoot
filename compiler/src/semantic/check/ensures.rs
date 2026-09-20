@@ -1248,7 +1248,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // construction row's `ensures result.len == 0_u64` was published to
         // no generic body, and every window proof inside one started with no
         // length at all.
-        let measured_result_only = selector.result_type.measured().is_some()
+        let measured_result = selector.result_type.measured().is_some()
+            || match selector.result_type {
+                CheckedType::Nominal(nominal) => self.boxed_measured_content(nominal)?,
+                _ => false,
+            };
+        let measured_result_only = measured_result
             && relation
                 .operands
                 .iter()
@@ -1418,13 +1423,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for statement in statements {
             match statement {
                 CheckedStatement::Let { binding, value, .. } => {
-                    let implicit_deref = matches!(value, CheckedExpression::BorrowAddressed { .. })
-                        || match value {
-                            CheckedExpression::Binding { binding, .. } => bindings
-                                .get(binding)
-                                .is_some_and(|source| source.implicit_deref),
-                            _ => false,
-                        };
+                    let implicit_deref = matches!(
+                        value,
+                        CheckedExpression::BorrowAddressed { .. }
+                            | CheckedExpression::BorrowRangeIndex { .. }
+                    ) || match value {
+                        CheckedExpression::Binding { binding, .. } => bindings
+                            .get(binding)
+                            .is_some_and(|source| source.implicit_deref),
+                        _ => false,
+                    };
                     bindings.insert(
                         *binding,
                         PostconditionBindingInfo {
@@ -1500,7 +1508,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         self.collect_postcondition_binding_info(&arm.body, bindings);
                     }
                 }
-                CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+                CheckedStatement::Loop { body, .. } => {
                     self.collect_postcondition_binding_info(body, bindings);
                 }
                 CheckedStatement::CountedRange {
@@ -1610,15 +1618,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                 }
                 CheckedStatement::Loop { body, .. }
-                | CheckedStatement::CountedRange { body, .. }
-                | CheckedStatement::Region { body, .. } => self.collect_postcondition_returns(
-                    function,
-                    selector,
-                    named,
-                    body,
-                    binding_info,
-                    selected,
-                )?,
+                | CheckedStatement::CountedRange { body, .. } => self
+                    .collect_postcondition_returns(
+                        function,
+                        selector,
+                        named,
+                        body,
+                        binding_info,
+                        selected,
+                    )?,
                 _ => {}
             }
         }

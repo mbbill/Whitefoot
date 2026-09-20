@@ -830,7 +830,8 @@ fn rewrite(records: &[Record]) -> previous: own u64 writes(records) contract {
 
 fn main() -> status: own ExitStatus pure {
   let records = slots_new::<Record, 1>();
-  let record = Record(cell: box_new::<u64>(value: 41_u64), marker: 17_u64);
+  let cell = box_new::<u64>(value: 41_u64);
+  let record = Record(cell: move cell, marker: 17_u64);
   place_back(window: &records, value: move record);
   let part = &records[0_u64..1_u64];
   let previous = rewrite(records: part);

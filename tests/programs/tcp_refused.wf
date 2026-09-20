@@ -283,7 +283,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
             set outcome = 4_u8;
           }
           Err(error: second_problem) => {
-            let second = socket_class(error: move second_problem);
+            let second = socket_class(error: second_problem);
             let refused = first == 1_u8;
             let twice = second == 1_u8;
             let both = band(refused, twice);

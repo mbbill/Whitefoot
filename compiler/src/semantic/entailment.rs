@@ -1033,6 +1033,17 @@ pub(crate) struct CallGoalOutcome {
     pub(crate) derivation: Option<DerivationId>,
 }
 
+/// One retained declaration-only [FN-4] implication result. Its enclosing
+/// [`FunctionEntailment`] is an isolated proof namespace, not a source
+/// function summary and not a premise published to either callable body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ContractGoalOutcome {
+    pub(crate) goal: ConcreteGoal,
+    pub(crate) disposition: CallGoalDisposition,
+    pub(crate) evidence: Vec<CallGoalEvidence>,
+    pub(crate) derivation: Option<DerivationId>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct BooleanGoalDecomposition {
     /// The established parent goal.
@@ -1053,6 +1064,10 @@ pub(crate) struct FunctionEntailment {
     pub(crate) obligations: Vec<ObligationOutcome>,
     /// Ordinary call-goal judgments in deterministic checked-tree walk order.
     pub(crate) call_goals: Vec<CallGoalOutcome>,
+    /// Declaration-only FN-4 queries. Ordinary function summaries leave this
+    /// empty; each retained contract query owns one isolated summary with one
+    /// entry here.
+    pub(crate) contract_goals: Vec<ContractGoalOutcome>,
     /// One complete five-relation/eight-atomic S11 group per counted
     /// statement, in deterministic statement-walk order.
     pub(crate) counted_derivations: Vec<CountedDerivationSet>,
@@ -1097,6 +1112,19 @@ pub(crate) fn analyze_function_candidate(
     context: &EntailmentContext<'_>,
 ) -> FunctionEntailment {
     flow::analyze_candidate(function, context)
+}
+
+/// Checks one [FN-4] contract implication in a declaration-only proof
+/// context. The supplied function carries only alpha-renamed contract
+/// variables and the hypothetical premise set; [`flow`] submits both the
+/// premises and goal through the ordinary S4/AUTO path. The caller finalizes
+/// the returned ledger only after the query discharges.
+pub(crate) fn contract_implies(
+    function: &CheckedFunction,
+    context: &EntailmentContext<'_>,
+    goal: &super::goal::GoalExpression,
+) -> FunctionEntailment {
+    flow::contract_implies(function, context, goal)
 }
 
 /// Performs the sole root retention and dense-ID remap for one accepted
@@ -1276,7 +1304,6 @@ pub(super) fn collect_statement_calls(
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
-            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. } => {
@@ -1285,34 +1312,7 @@ pub(super) fn collect_statement_calls(
             CheckedStatement::PropagateLet { scrutinee, .. } => {
                 collect_expression_calls(caller, scrutinee, calls);
             }
-            CheckedStatement::SetList {
-                targets, values, ..
-            } => {
-                for target in targets {
-                    match target {
-                        CheckedSetTarget::Place(_) => {}
-                        CheckedSetTarget::ArrayIndex(target) => {
-                            collect_expression_calls(caller, &target.offset, calls);
-                        }
-                        CheckedSetTarget::BufferIndex(target) => {
-                            collect_expression_calls(caller, &target.offset, calls);
-                        }
-                        CheckedSetTarget::RangeIndex(target) => {
-                            collect_expression_calls(caller, &target.offset, calls);
-                        }
-                        CheckedSetTarget::Storage(target) => {
-                            for offset in target.offsets() {
-                                collect_expression_calls(caller, offset, calls);
-                            }
-                        }
-                    }
-                }
-                for value in values.expressions() {
-                    collect_expression_calls(caller, value, calls);
-                }
-            }
-            CheckedStatement::Set { target, value, .. }
-            | CheckedStatement::Replace { target, value, .. } => {
+            CheckedStatement::Set { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
                     CheckedSetTarget::ArrayIndex(target) => {
@@ -1343,7 +1343,7 @@ pub(super) fn collect_statement_calls(
                     collect_statement_calls(caller, &arm.body, calls);
                 }
             }
-            CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+            CheckedStatement::Loop { body, .. } => {
                 collect_statement_calls(caller, body, calls);
             }
             CheckedStatement::CountedRange {

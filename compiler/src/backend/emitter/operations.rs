@@ -61,14 +61,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         {
             return Err(BackendFailure::InvalidIr);
         }
-        writeln!(
-            self.output,
-            "  store {} {}, ptr {}",
-            llvm_type(self.program, referent.ty())?,
-            self.value_name(value),
-            self.value_name(address)
-        )
-        .map_err(|_| BackendFailure::TextEmission)
+        let destination = self.value_name(address);
+        self.store_value_at(value, &destination)
     }
 
     fn referent_is_stored(&self, referent: IrAddressed) -> Result<bool, BackendFailure> {

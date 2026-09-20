@@ -1,12 +1,14 @@
-# Current formal fixtures compiled by one arm's compiler and linked with that
-# arm's ordinary runtime. No framework, research input or timing in this file.
+# One revision's formal fixtures compiled by that revision's compiler and
+# linked with that revision's ordinary runtime. The hosted runner may override
+# FIXTURES when constructing the merge-base image with this timing instrument.
+# No framework, research input or timing is selected in this file.
 HERE := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 CURRENT := $(abspath $(HERE)/../..)
 ROOT ?= $(CURRENT)
 BUILD ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot-performance-candidate
 WFC ?= $(ROOT)/compiler/target/gate/whitefootc
 CLANG ?= /usr/bin/clang
-FIXTURES := $(CURRENT)/tests/programs/compute
+FIXTURES ?= $(CURRENT)/tests/programs/compute
 KERNELS := mandelbrot records fir quadrature stencil
 IMAGES := $(addprefix $(BUILD)/,$(KERNELS))
 .DEFAULT_GOAL := build

@@ -259,12 +259,6 @@ pub(crate) enum GoalOperation {
         equal: bool,
         operand_type: CheckedType,
     },
-    /// Pure, total `array_new`. FN-8's copy-only clause-local rule keeps this
-    /// out of GoalTemplates, but ENT-3 body-origin expansion may retain it.
-    ArrayFill {
-        element: CheckedElement,
-        length: CheckedConst,
-    },
     ArrayMeasure {
         measure: CheckedMeasure,
         element: CheckedElement,

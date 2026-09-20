@@ -317,7 +317,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             reference: None,
             reference_value: false,
             effects: place.offsets.effects,
-            accesses: place.offsets.accesses,
+            accesses: place
+                .offsets
+                .accesses
+                .into_iter()
+                .map(PlaceAccess::operand)
+                .collect(),
         })
     }
 
@@ -416,13 +421,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 effects.add_read(path);
             }
         }
-        let mut accesses = container.offsets.accesses;
+        let mut accesses = container
+            .offsets
+            .accesses
+            .into_iter()
+            .map(PlaceAccess::operand)
+            .collect::<Vec<_>>();
         accesses.extend(
             container
                 .resolved
                 .members
                 .into_iter()
-                .map(|place| PlaceAccess { place }),
+                .map(|place| PlaceAccess {
+                    place,
+                    selected: true,
+                }),
         );
         Ok(TypedExpression {
             expression: CheckedExpression::ContainerMeasure {
@@ -590,7 +603,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     // [OP-9] `Box<T>` is `(8,8)`, one pointer; its `inner`
                     // field lives in the heap object and enters no sequence.
                     CheckedNominalKind::Box { .. } => finish(CheckedLayoutMagnitude::Finite(8), 8),
-                    CheckedNominalKind::Arena { .. } | CheckedNominalKind::ArenaStorage => None,
+                    CheckedNominalKind::Arena { .. } => None,
                     CheckedNominalKind::Opaque => finish(CheckedLayoutMagnitude::Finite(32), 16),
                     CheckedNominalKind::Struct { fields } => {
                         self.aggregate_layout_ceiling(fields.iter().map(|field| field.ty), visiting)
@@ -808,14 +821,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 effects.add_read(path);
             }
         }
-        let mut accesses = place.offsets.accesses;
-        accesses.extend(
-            place
-                .resolved
-                .members
-                .into_iter()
-                .map(|place| PlaceAccess { place }),
-        );
+        let mut accesses = place
+            .offsets
+            .accesses
+            .into_iter()
+            .map(PlaceAccess::operand)
+            .collect::<Vec<_>>();
+        accesses.extend(place.resolved.members.into_iter().map(|place| PlaceAccess {
+            place,
+            selected: true,
+        }));
         Ok(TypedExpression {
             expression: CheckedExpression::ReadStorage {
                 carrier: self.tree.path(node)?.clone(),
@@ -898,13 +913,41 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )?;
             return self.check_storage_read(use_node, container, bindings, options);
         }
-        if subscript + 1 != suffixes.len() {
-            // General suffix paths are legal source. Even when the legacy
-            // representation cannot carry a valid projection, selecting a
-            // nonexistent field of its known element type is TYPE-5.
-            self.resolve_struct_path(&suffixes[subscript + 1..], indexed.element_type(self)?)?;
-            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place);
-        }
+        let element_type = indexed.element_type(self)?;
+        let (range_path, selected_type, carried) =
+            if matches!(indexed, CheckedIndexedPlace::Range(_)) {
+                let resolved = self.resolve_storage_path(
+                    &suffixes[subscript + 1..],
+                    element_type,
+                    bindings,
+                    function,
+                    options.loop_depth,
+                    true,
+                )?;
+                if resolved
+                    .0
+                    .iter()
+                    .any(|step| matches!(step, CheckedPlaceStep::Subscript(_)))
+                {
+                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place);
+                }
+                resolved
+            } else if subscript + 1 == suffixes.len() {
+                (Vec::new(), element_type, CarriedOperands::default())
+            } else {
+                // General suffix paths are legal source. Even when the legacy
+                // flat-buffer representation cannot carry a valid projection,
+                // select the source path first so an invalid field is TYPE-5.
+                self.resolve_storage_path(
+                    &suffixes[subscript + 1..],
+                    element_type,
+                    bindings,
+                    function,
+                    options.loop_depth,
+                    true,
+                )?;
+                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place);
+            };
         // [SET-1, WIN-1] the one affine element read a subscript admits: a
         // `move P[i]` in the right-hand side of the `set` whose own target is
         // `P[i]`. The element leaves through the read-out and the same
@@ -912,14 +955,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // program point sees the slot empty and no second owner is minted —
         // which is exactly the ground [SET-2]'s exchange stands on. Every
         // other affine subscript read is the rejection below.
-        let element_read_out = options.explicit_move
-            && !self.is_copy_type(indexed.element_type(self)?)?
+        let element_read_out = range_path.is_empty()
+            && options.explicit_move
+            && !self.is_copy_type(selected_type)?
             && self.element_read_out(function, &indexed, suffix, bindings, options.loop_depth)?;
         // [TYPE-2] affine elements leave and enter their slots only through
         // [SET-2] replacement and are read in place through borrowed match:
         // a subscript read would mint a second owner of the stored value, so
         // both the bare and the `move` spelling reject here.
-        if !element_read_out && !self.is_copy_type(indexed.element_type(self)?)? {
+        if !element_read_out && !self.is_copy_type(selected_type)? {
             if options.explicit_move {
                 // [WIN-3] there is no take operation and no hole: the move
                 // out of the slot is refused at the place, and the three
@@ -975,12 +1019,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // psuffix identity that the [ENT-6] obligation judgment and [OP-4]
         // rejection cite.
         let obligation = self.tree.path(suffix)?.clone();
-        let mut effects = offset.effects;
-        let mut accesses = offset.accesses;
+        let captured =
+            Self::captured_of(offset_node, &offset.expression).unwrap_or(CapturedValue::unknown());
+        let mut effects = offset.effects.union(carried.effects);
+        let mut accesses = offset
+            .accesses
+            .into_iter()
+            .map(PlaceAccess::operand)
+            .collect::<Vec<_>>();
+        accesses.extend(carried.accesses.into_iter().map(PlaceAccess::operand));
         match &indexed {
             CheckedIndexedPlace::Array(array) => {
                 if let Some(place) = array.resolved_place() {
-                    accesses.push(PlaceAccess { place });
+                    accesses.push(PlaceAccess {
+                        place,
+                        selected: true,
+                    });
                 }
             }
             CheckedIndexedPlace::Buffer(buffer) => accesses.extend(
@@ -989,16 +1043,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .members
                     .iter()
                     .cloned()
-                    .map(|place| PlaceAccess { place }),
+                    .map(|place| PlaceAccess {
+                        place,
+                        selected: true,
+                    }),
             ),
-            CheckedIndexedPlace::Range(range) => accesses.extend(
-                range
-                    .resolved
-                    .members
-                    .iter()
-                    .cloned()
-                    .map(|place| PlaceAccess { place }),
-            ),
+            CheckedIndexedPlace::Range(range) => {
+                accesses.extend(range.resolved.members.iter().cloned().map(|mut place| {
+                    place.path.push(PlaceStep::Index(captured));
+                    place
+                        .path
+                        .extend(range_path.iter().map(CheckedPlaceStep::place_step));
+                    PlaceAccess {
+                        place,
+                        selected: true,
+                    }
+                }))
+            }
             CheckedIndexedPlace::Container(_) => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
@@ -1029,7 +1090,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedIndexedPlace::Range(range) => {
                 for member in &range.resolved.members {
-                    for path in self.effect_paths_for_place(use_node, member, bindings)? {
+                    let mut member = member.clone();
+                    member.path.push(PlaceStep::Index(captured));
+                    member
+                        .path
+                        .extend(range_path.iter().map(CheckedPlaceStep::place_step));
+                    for path in self.effect_paths_for_place(use_node, &member, bindings)? {
                         effects.add_read(path);
                     }
                 }
@@ -1037,6 +1103,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     carrier: self.tree.path(use_node)?.clone(),
                     root: range.root,
                     offset: Box::new(offset.expression),
+                    path: range_path,
+                    ty: selected_type,
                     obligation,
                     target_domain: CheckedTargetDomainObligation::ElementAddress,
                 }
@@ -1136,10 +1204,38 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 unsupported: None,
             });
         }
-        if subscript + 1 != suffixes.len() {
-            self.resolve_struct_path(&suffixes[subscript + 1..], indexed.element_type(self)?)?;
-            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
-        }
+        let element_type = indexed.element_type(self)?;
+        let (range_path, selected_type, carried) =
+            if matches!(indexed, CheckedIndexedPlace::Range(_)) {
+                let resolved = self.resolve_storage_path(
+                    &suffixes[subscript + 1..],
+                    element_type,
+                    bindings,
+                    function,
+                    loop_depth,
+                    true,
+                )?;
+                if resolved
+                    .0
+                    .iter()
+                    .any(|step| matches!(step, CheckedPlaceStep::Subscript(_)))
+                {
+                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+                }
+                resolved
+            } else if subscript + 1 == suffixes.len() {
+                (Vec::new(), element_type, CarriedOperands::default())
+            } else {
+                self.resolve_storage_path(
+                    &suffixes[subscript + 1..],
+                    element_type,
+                    bindings,
+                    function,
+                    loop_depth,
+                    true,
+                )?;
+                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+            };
         if matches!(indexed, CheckedIndexedPlace::Container(_)) {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
@@ -1164,18 +1260,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let obligation = self.tree.path(suffix)?.clone();
         // [SET-1]/[SET-2] partition the selected element class exactly as
         // they partition every other final selected type.
-        let element_type = match &indexed {
-            CheckedIndexedPlace::Array(array) => array.element_type,
-            CheckedIndexedPlace::Buffer(buffer) => buffer.root.element.ty(),
-            CheckedIndexedPlace::Range(range) => range.element_type,
-            CheckedIndexedPlace::Container(_) => {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-        };
-        self.check_mutation_target_class(node, element_type)?;
+        self.check_mutation_target_class(node, selected_type)?;
         let offset_place =
             Self::captured_of(offset_node, &offset.expression).unwrap_or(CapturedValue::unknown());
-        let mut effects = offset.effects;
+        let mut effects = offset.effects.union(carried.effects);
         let (declaration, place, target) = match indexed {
             CheckedIndexedPlace::Array(array) => {
                 let Some(declaration) = array.declaration else {
@@ -1229,7 +1317,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedIndexedPlace::Range(range) => {
                 for member in &range.resolved.members {
-                    for path in self.effect_paths_for_place(node, member, bindings)? {
+                    let mut member = member.clone();
+                    member.path.push(PlaceStep::Index(offset_place));
+                    member
+                        .path
+                        .extend(range_path.iter().map(CheckedPlaceStep::place_step));
+                    for path in self.effect_paths_for_place(node, &member, bindings)? {
                         effects.add_write(path);
                     }
                 }
@@ -1239,6 +1332,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     CheckedSetTarget::RangeIndex(Box::new(CheckedRangeSetTarget {
                         root: range.root,
                         offset: offset.expression,
+                        path: range_path.clone(),
+                        ty: selected_type,
                         obligation,
                         target_domain: CheckedTargetDomainObligation::ElementAddress,
                     })),
@@ -1253,6 +1348,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // both read the element flag rather than the place alone.
         let mut place = place;
         place.append_step(PlaceStep::Index(offset_place));
+        for step in range_path.iter().map(CheckedPlaceStep::place_step) {
+            place.append_step(step);
+        }
         for member in &place.members {
             self.reject_unwritable_reference_target(function, node, member, bindings)?;
         }

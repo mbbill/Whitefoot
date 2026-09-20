@@ -33,7 +33,7 @@ use crate::{
 use super::super::model::{
     BindingId, CheckedContainerRoot, CheckedEffectStep, CheckedExpression, CheckedMeasure,
     CheckedMode, CheckedNominalKind, CheckedPlaceStep, CheckedRangeRoot, CheckedRangeSource,
-    CheckedStatePath, CheckedType, WindowShape,
+    CheckedStatePath, CheckedTargetDomainObligation, CheckedType, IntegerType, WindowShape,
 };
 use super::super::places::{
     CapturedRange, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations,
@@ -100,8 +100,6 @@ pub(super) enum InvalidationEvent {
     PrefixWritten,
     /// The path or a prefix of it was moved out of [OWN-1, WIN-3].
     PrefixMoved,
-    /// The path or a prefix of it was released [STOR-3].
-    PrefixReleased,
     /// A call's substituted row writes a proper prefix of the path
     /// [EFF-5 clause 3].
     CallWrite,
@@ -128,7 +126,6 @@ impl InvalidationEvent {
         match self {
             Self::PrefixWritten => "a proper prefix of the reference's path was written",
             Self::PrefixMoved => "the reference's path or a prefix of it was moved out of",
-            Self::PrefixReleased => "the reference's path or a prefix of it was released",
             Self::CallWrite => "a call wrote a proper prefix of the reference's path",
             Self::RootScopeEnded => "the scope of the local variable the path starts at ended",
             Self::RefinementLost => {
@@ -252,6 +249,16 @@ impl ReferenceInfo {
                 .iter()
                 .any(|right| path_shapes_agree(left, right))
         })
+    }
+
+    /// Whether this path set depends on a refinement fact that no currently
+    /// live witness supplies. A dependency is satisfied by any valid
+    /// occurrence of the same `(place, variant)` fact; occurrence identity is
+    /// retained separately so joins cannot revive one fact with another.
+    fn lacks_refinement_witness(&self, available: &[(ResolvedPlace, u32)]) -> bool {
+        self.refinements
+            .iter()
+            .any(|dependency| !available.contains(dependency))
     }
 }
 
@@ -431,12 +438,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         written: &ResolvedPlace,
         event: &InvalidationEvent,
     ) {
-        let include_equal = matches!(
-            event,
-            InvalidationEvent::PrefixMoved | InvalidationEvent::PrefixReleased
-        );
+        let include_equal = matches!(event, InvalidationEvent::PrefixMoved);
         let oracle = UnprovedSeparations;
         for local in bindings.values_mut() {
+            // A write to the enum itself ends every refinement occurrence for
+            // that enum even when an equal-path reference remains valid under
+            // the proper-prefix write rule. A payload-field write is below
+            // the witnessed enum and therefore does not end the fact.
+            for witness in &mut local.refinement_witnesses {
+                if written.may_be_prefix_of(&oracle, &witness.place, true) {
+                    witness.valid = false;
+                }
+            }
             let Some(reference) = &mut local.reference else {
                 continue;
             };
@@ -503,23 +516,47 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
-    /// [REF-1, ENT-3.S15] the arm-exit half: a payload reference is valid
-    /// exactly while the arm's refinement fact holds [OWN-13].
-    pub(super) fn invalidate_refinement_dependents(
+    /// [REF-1, ENT-3.S15] the arm-exit half: a payload reference remains
+    /// valid only when every refinement dependency in its resolved paths has
+    /// a valid witness that survives this scope boundary.
+    pub(super) fn invalidate_references_without_refinement_witness(
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        scrutinee: &ResolvedPlace,
+        leaving: &[BindingId],
     ) {
+        let available = bindings
+            .values()
+            .filter(|local| !leaving.contains(&local.binding))
+            .flat_map(|local| &local.refinement_witnesses)
+            .filter(|witness| witness.valid)
+            .map(|witness| (witness.place.clone(), witness.variant))
+            .collect::<Vec<_>>();
         for local in bindings.values_mut() {
             let Some(reference) = &mut local.reference else {
                 continue;
             };
-            if reference
-                .refinements
-                .iter()
-                .any(|(place, _)| place == scrutinee)
-            {
+            if reference.lacks_refinement_witness(&available) {
                 reference.invalidate(InvalidationEvent::RefinementLost);
             }
+        }
+    }
+
+    /// The delivery set stores its joined reference outside the edge's
+    /// ownership map. Apply the same refinement-witness meet to that one
+    /// reference before the value initializer publishes it.
+    pub(super) fn invalidate_reference_without_refinement_witness(
+        reference: &mut ReferenceInfo,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        leaving: &[BindingId],
+    ) {
+        let available = bindings
+            .values()
+            .filter(|local| !leaving.contains(&local.binding))
+            .flat_map(|local| &local.refinement_witnesses)
+            .filter(|witness| witness.valid)
+            .map(|witness| (witness.place.clone(), witness.variant))
+            .collect::<Vec<_>>();
+        if reference.lacks_refinement_witness(&available) {
+            reference.invalidate(InvalidationEvent::RefinementLost);
         }
     }
 
@@ -688,6 +725,99 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 loop_depth,
             );
         }
+        // [REF-1, REF-4, OP-4] borrowing one element through a range names
+        // that element place. The range's checked type is its element type,
+        // so sending this suffix through the ordinary storage-path walk
+        // would incorrectly ask whether T itself is an indexable base.
+        if written_deref
+            && root_binding
+                .as_ref()
+                .is_some_and(|local| local.mode == CheckedMode::Range)
+            && let Some(first) = suffixes.first()
+            && let Some(offset_node) = self.subscript_offset(*first)?
+        {
+            let local = root_binding
+                .as_ref()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let mut probe = bindings.clone();
+            let offset = self.check_atom(function, offset_node, &mut probe, loop_depth)?;
+            if offset.expression.ty() != CheckedType::Integer(IntegerType::U64)
+                || offset.mode != CheckedMode::Own
+            {
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    offset_node,
+                    SemanticIssueKind::type_mismatch(
+                        "own u64",
+                        self.checked_value_name(offset.mode, offset.expression.ty())?,
+                    ),
+                );
+            }
+            let captured = Self::captured_of(offset_node, &offset.expression)
+                .unwrap_or(CapturedValue::unknown());
+            let mut places = local
+                .reference
+                .as_ref()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .paths
+                .clone();
+            for place in &mut places {
+                place.path.push(PlaceStep::Index(captured));
+            }
+            let (path, ty, carried) = self.resolve_storage_path(
+                &suffixes[1..],
+                local.ty,
+                bindings,
+                function,
+                loop_depth,
+                true,
+            )?;
+            if path
+                .iter()
+                .any(|step| matches!(step, CheckedPlaceStep::Subscript(_)))
+            {
+                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place_node);
+            }
+            for place in &mut places {
+                place
+                    .path
+                    .extend(path.iter().map(CheckedPlaceStep::place_step));
+            }
+            let element = self.intern_element(local.ty)?;
+            let expression = CheckedExpression::BorrowRangeIndex {
+                carrier: self.tree.path(carrier)?.clone(),
+                root: CheckedRangeRoot {
+                    binding: local.binding,
+                    element,
+                    element_type: local.ty,
+                },
+                offset: Box::new(offset.expression),
+                path,
+                ty,
+                obligation: self.tree.path(*first)?.clone(),
+                target_domain: CheckedTargetDomainObligation::ElementAddress,
+                captured,
+            };
+            let effects = offset.effects.union(carried.effects);
+            let mut accesses = offset
+                .accesses
+                .into_iter()
+                .map(PlaceAccess::operand)
+                .collect::<Vec<_>>();
+            accesses.extend(carried.accesses.into_iter().map(PlaceAccess::operand));
+            accesses.extend(places.iter().cloned().map(|place| PlaceAccess {
+                place,
+                selected: true,
+            }));
+            return Ok(TypedExpression {
+                expression,
+                mode: CheckedMode::Reference,
+                reference: Some(ReferenceInfo::formed_paths(ReferenceKind::Single, places)),
+                reference_value: true,
+                effects,
+                accesses,
+            });
+        }
         let (path, ty, carried) =
             self.resolve_storage_path(&suffixes, root_type, bindings, function, loop_depth, true)?;
         let place = ResolvedPlace {
@@ -718,8 +848,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             carrier: self.tree.path(carrier)?.clone(),
             root: CheckedContainerRoot { root, path, ty },
         };
-        let mut accesses = carried.accesses;
-        accesses.extend(places.iter().cloned().map(|place| PlaceAccess { place }));
+        let mut accesses = carried
+            .accesses
+            .into_iter()
+            .map(PlaceAccess::operand)
+            .collect::<Vec<_>>();
+        accesses.extend(places.iter().cloned().map(|place| PlaceAccess {
+            place,
+            selected: true,
+        }));
         Ok(TypedExpression {
             expression,
             mode: match kind {
@@ -926,8 +1063,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             obligation: self.tree.path(suffix)?.clone(),
             captured,
         };
-        let mut accesses = carried.accesses;
-        accesses.extend(places.iter().cloned().map(|place| PlaceAccess { place }));
+        let mut accesses = carried
+            .accesses
+            .into_iter()
+            .map(PlaceAccess::operand)
+            .collect::<Vec<_>>();
+        accesses.extend(places.iter().cloned().map(|place| PlaceAccess {
+            place,
+            selected: true,
+        }));
         Ok(TypedExpression {
             expression,
             mode: CheckedMode::Range,
@@ -1167,7 +1311,7 @@ mod tests {
         );
     }
 
-    /// [REF-2] every one of the seven enumerated events, and no other, carries
+    /// [REF-2] every remaining observable invalidating event, and no other, carries
     /// its own phrase into the diagnostic. The phrases are distinct, so a
     /// rejection names which event happened.
     #[test]
@@ -1175,7 +1319,6 @@ mod tests {
         let events = [
             InvalidationEvent::PrefixWritten,
             InvalidationEvent::PrefixMoved,
-            InvalidationEvent::PrefixReleased,
             InvalidationEvent::CallWrite,
             InvalidationEvent::RootScopeEnded,
             InvalidationEvent::RefinementLost,

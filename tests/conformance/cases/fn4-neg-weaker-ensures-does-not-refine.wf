@@ -5,7 +5,7 @@ interface Hash {
 }
 
 fn constant_hash(input: own u64) -> output: own u64 pure contract {
-  ensures output < 100_u64;
+  ensures output <= 100_u64;
 } {
   return 17_u64;
 }

@@ -17,10 +17,9 @@ use crate::CheckedProgram;
 use crate::NodePath;
 use crate::semantic::CheckedSetTarget;
 use crate::semantic::{
-    BindingId, CheckedArrayRoot, CheckedCommitValues, CheckedDrop, CheckedExpression,
-    CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedParameter,
-    CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue, FunctionPermissions,
-    MeasureCell, MeasuredKind,
+    BindingId, CheckedArrayRoot, CheckedDrop, CheckedExpression, CheckedMatchArm, CheckedMeasure,
+    CheckedMode, CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
+    CheckedStatement, CheckedValue, FunctionPermissions, MeasureCell, MeasuredKind,
 };
 
 use super::*;
@@ -344,7 +343,6 @@ fn lower_nominals(
                 CheckedNominalKind::Arena { content, .. } => IrNominalKind::Arena {
                     content: lower_type(erasure, *content)?,
                 },
-                CheckedNominalKind::ArenaStorage => IrNominalKind::ArenaStorage,
                 CheckedNominalKind::Opaque => IrNominalKind::Opaque,
             };
             Ok(IrNominal {
@@ -451,9 +449,9 @@ fn lower_source_argument(argument: &CheckedExpression) -> IrSourceArgument {
         CheckedExpression::Project { consume_root, .. } => IrSourceArgument::Projection {
             consume_root: *consume_root,
         },
-        CheckedExpression::BorrowAddressed { .. } | CheckedExpression::RangeOf { .. } => {
-            IrSourceArgument::Borrow
-        }
+        CheckedExpression::BorrowAddressed { .. }
+        | CheckedExpression::BorrowRangeIndex { .. }
+        | CheckedExpression::RangeOf { .. } => IrSourceArgument::Borrow,
         CheckedExpression::ReadStorage { .. }
         | CheckedExpression::DerefAddressed { .. }
         | CheckedExpression::ArrayIndex { .. }
@@ -981,38 +979,9 @@ impl<'program> IrBuilder<'program> {
                         self.promote_binding_if_needed(*binding)?;
                     }
                 }
-                CheckedStatement::SetList {
-                    targets, values, ..
-                } => self.set_list(targets, values)?,
                 CheckedStatement::Set { target, value, .. } => self.set(target, value)?,
-                CheckedStatement::Replace {
-                    binding,
-                    target,
-                    value,
-                    ..
-                } => self.replace(*binding, target, value)?,
                 CheckedStatement::Evaluate(expression) => {
                     self.expression(expression)?;
-                }
-                // [PROV-6] `dispose p;` runs exactly the walk the scope exit
-                // would have run for this value, at the point it is written.
-                CheckedStatement::Dispose { value, drops, .. } => {
-                    // Reading a binding solely to release it does not need a
-                    // value snapshot. Computed/proper-part consumes still run
-                    // their checked expression, including residual releases.
-                    let root = if let CheckedExpression::Binding { binding, .. } = value {
-                        self.bindings
-                            .get(binding)
-                            .copied()
-                            .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                    } else {
-                        self.expression(value)?
-                    };
-                    let mut lowered = Vec::with_capacity(drops.len());
-                    for drop in drops {
-                        lowered.push(self.lower_projected_drop(root, drop)?);
-                    }
-                    self.append_drops(lowered)?;
                 }
                 CheckedStatement::DropExpression {
                     value: expression, ..
@@ -1094,33 +1063,6 @@ impl<'program> IrBuilder<'program> {
                         arguments,
                         drops,
                     })?;
-                }
-                CheckedStatement::Region {
-                    arena_list,
-                    body,
-                    fallthrough_drops,
-                } => {
-                    // The region's arena allocation list is materialized at
-                    // region entry; its compiler-derived drop on each normal
-                    // exit edge is the region's storage release [STOR-3].
-                    if let Some(list) = arena_list {
-                        let storage = self
-                            .nominals
-                            .iter()
-                            .find(|nominal| nominal.kind == IrNominalKind::ArenaStorage)
-                            .map(|nominal| nominal.id)
-                            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-                        let value =
-                            self.define(IrType::Nominal(storage), IrOperation::ArenaListNew)?;
-                        if self.bindings.insert(*list, value).is_some() {
-                            return Err(LoweringFailure::InvalidCheckedProgram);
-                        }
-                    }
-                    self.lower_statements(body, give_target.clone())?;
-                    if self.current.is_some() {
-                        let drops = self.lower_drops(fallthrough_drops)?;
-                        self.append_drops(drops)?;
-                    }
                 }
                 CheckedStatement::Match {
                     scrutinee,
@@ -1671,9 +1613,17 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::RangeIndex {
                 root,
                 offset,
+                path,
                 target_domain,
                 ..
-            } => self.lower_range_index(root, offset, *target_domain),
+            } => self.lower_range_index(root, offset, path, *target_domain),
+            CheckedExpression::BorrowRangeIndex {
+                root,
+                offset,
+                path,
+                target_domain,
+                ..
+            } => self.lower_range_address(root, offset, path, *target_domain),
             CheckedExpression::BoxDeref { nominal, value, .. } => {
                 let value = self.expression(value)?;
                 let nominal = self.erased(*nominal);
@@ -1837,76 +1787,6 @@ impl<'program> IrBuilder<'program> {
         }
     }
 
-    /// [SET-2] capture the target, evaluate the RHS, then exchange the old
-    /// and new owners at one commit. The old value includes the RHS's effects.
-    fn replace(
-        &mut self,
-        binding: BindingId,
-        target: &CheckedSetTarget,
-        value: &CheckedExpression,
-    ) -> Result<(), LoweringFailure> {
-        let target = self.prepare_target(target)?;
-        let replacement = self.expression(value)?;
-        let previous = self.read_target(&target)?;
-        self.write_target(&target, replacement)?;
-        if self.bindings.insert(binding, previous).is_some() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        self.promote_binding_if_needed(binding)
-    }
-
-    /// [GRAM-4, SET-1, CALL-4] `set (x, y) = f(...);`.
-    ///
-    /// One evaluation of the call, then one projection per result ordinal in
-    /// written order, each committed to its checked target exactly as a
-    /// single-target `set` commits.
-    /// [SET-1] one commit of a target list.
-    ///
-    /// The whole right-hand side is evaluated first — the one call, or every
-    /// written value in order — and only then is any target written, so a
-    /// statement whose targets and values name the same places, the swap
-    /// included, reads every previous value before the first commit.
-    fn set_list(
-        &mut self,
-        targets: &[CheckedSetTarget],
-        values: &CheckedCommitValues,
-    ) -> Result<(), LoweringFailure> {
-        let prepared = targets
-            .iter()
-            .map(|target| self.prepare_target(target))
-            .collect::<Result<Vec<_>, _>>()?;
-        let ordinals = match values {
-            CheckedCommitValues::ResultList { nominal, value } => {
-                let aggregate = self.expression(value)?;
-                self.note_call_result(value, aggregate)?;
-                if self.value_type(aggregate)? != IrType::Nominal(self.erased(*nominal)) {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                let mut ordinals = Vec::with_capacity(targets.len());
-                for ordinal in 0..targets.len() {
-                    let field = u32::try_from(ordinal)
-                        .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
-                    ordinals.push(self.project_struct_path(aggregate, &[field], true)?);
-                }
-                ordinals
-            }
-            CheckedCommitValues::Written(values) => {
-                if values.len() != targets.len() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                let mut ordinals = Vec::with_capacity(values.len());
-                for value in values {
-                    ordinals.push(self.expression(value)?);
-                }
-                ordinals
-            }
-        };
-        for (target, value) in prepared.iter().zip(ordinals) {
-            self.write_target(target, value)?;
-        }
-        Ok(())
-    }
-
     /// One target root's new value, written to the storage that holds it.
     fn commit_root_storage(
         &mut self,
@@ -1983,7 +1863,6 @@ impl<'program> IrBuilder<'program> {
                 IrNominalKind::Enum { .. }
                 | IrNominalKind::Box { .. }
                 | IrNominalKind::Arena { .. }
-                | IrNominalKind::ArenaStorage
                 | IrNominalKind::Opaque => {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
@@ -2030,7 +1909,6 @@ impl<'program> IrBuilder<'program> {
             IrNominalKind::Enum { .. }
             | IrNominalKind::Box { .. }
             | IrNominalKind::Arena { .. }
-            | IrNominalKind::ArenaStorage
             | IrNominalKind::Opaque => {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }

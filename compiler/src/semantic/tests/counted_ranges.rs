@@ -69,7 +69,7 @@ fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
             })
         ));
         assert!(matches!(
-            upper,
+            upper.as_ref(),
             CheckedExpression::Constant(CheckedValue::Integer {
                 ty: IntegerType::U64,
                 bits: 1

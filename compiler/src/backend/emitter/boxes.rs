@@ -28,13 +28,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let ready = box_new_ready_label(result);
         writeln!(
             self.output,
-            "  {} = call ptr @malloc(i64 ptrtoint (ptr getelementptr ({referent_type}, ptr null, i64 1) to i64))\n  %{nonnull} = icmp ne ptr {}, null\n  br i1 %{nonnull}, label %{ready}, label %{oom}\n{oom}:\n  call void @wf_resource_abort()\n  unreachable\n{ready}:\n  store {referent_type} {}, ptr {}",
+            "  {} = call ptr @malloc(i64 ptrtoint (ptr getelementptr ({referent_type}, ptr null, i64 1) to i64))\n  %{nonnull} = icmp ne ptr {}, null\n  br i1 %{nonnull}, label %{ready}, label %{oom}\n{oom}:\n  call void @wf_resource_abort()\n  unreachable\n{ready}:",
             self.value_name(result),
             self.value_name(result),
-            self.value_name(value),
-            self.value_name(result)
         )
-        .map_err(|_| BackendFailure::TextEmission)
+        .map_err(|_| BackendFailure::TextEmission)?;
+        let destination = self.value_name(result);
+        self.store_value_at(value, &destination)
     }
 
     /// [S39, PROV-6] the destructuring consume of one cell: the referent is

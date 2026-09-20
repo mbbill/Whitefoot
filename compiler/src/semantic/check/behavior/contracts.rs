@@ -1,32 +1,68 @@
-//! Structural equality of the existing FN-8/FN-9 clause trees after binding.
-//! Ordinary clause checking owns formation and define expansion here too.
+//! [FN-4] compatibility of the existing FN-8/FN-9 clause trees after
+//! binding. Ordinary clause checking owns formation and define expansion;
+//! the shared entailment engine owns each finite implication query.
 
 use std::collections::HashMap;
 
 use crate::syntax::NodeId;
-use crate::{Production, SemanticCompilerFailure, SemanticRule};
+use crate::{DeclarationId, NodePath, Production, SemanticCompilerFailure, SemanticRule};
 
-use super::super::super::goal::GoalTemplate;
-use super::super::super::model::{BindingId, CheckedType};
+use super::super::super::entailment::{
+    CallGoalDisposition, EntailmentContext, FunctionEntailment, contract_implies,
+    finalize_function_entailment,
+};
+use super::super::super::goal::{CheckedRequirement, GoalDatum, GoalExpression, GoalTemplate};
+use super::super::super::model::{
+    BindingId, CheckedContractQuery, CheckedFunction, CheckedParameter, CheckedType,
+};
 use super::super::super::postcondition::PostconditionConstantOrigin;
 use super::super::requires::{ExpandedClauseDatum, ExpandedClauseExpression};
 use super::super::{CheckStop, Checker, ControlCounters, FunctionSignature};
 
 #[derive(Eq, PartialEq)]
 struct InterfaceContracts {
-    requires: Vec<GoalTemplate>,
+    requires: Vec<InterfaceRequirement>,
     ensures: Vec<InterfaceEnsures>,
 }
 
 #[derive(Eq, PartialEq)]
+struct InterfaceRequirement {
+    clause: NodePath,
+    template: GoalTemplate,
+}
+
+#[derive(Eq, PartialEq)]
 struct InterfaceEnsures {
+    clause: NodePath,
     ordinal: u32,
     variant: Option<crate::BuiltinPreludeId>,
     field: Option<crate::BuiltinPreludeId>,
+    result_type: CheckedType,
     expression: ExpandedClauseExpression,
 }
 
+#[derive(Clone, Copy)]
+struct ContractVariable {
+    mode: super::super::super::model::CheckedMode,
+    ty: CheckedType,
+}
+
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    pub(in crate::semantic::check) fn formal_call_requirements(
+        &self,
+        signature: &FunctionSignature,
+    ) -> Result<Vec<CheckedRequirement>, CheckStop> {
+        Ok(self
+            .behavior_contracts(signature)?
+            .requires
+            .into_iter()
+            .map(|requirement| CheckedRequirement {
+                template: requirement.template,
+                clause: requirement.clause,
+            })
+            .collect())
+    }
+
     pub(super) fn check_formal_contract_formation(
         &self,
         signature: &FunctionSignature,
@@ -56,50 +92,187 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         normalized.result = actual.result;
         normalized.result_mode = actual.result_mode;
         normalized.result_list = actual.result_list;
-        // [FN-4] the actual's `requires` must be WEAKER than the formal's and
-        // its `ensures` STRONGER, each decided by a fixed finite check inside
-        // the affine entailment fragment: the discharging set is the only
-        // premise set, and both sets are finite, so the check terminates.
-        //
-        // The refinement query itself is not yet wired to the declaration-level
-        // proof context, so this check admits only the case in which the goal
-        // is literally one of its own premises: a formal requirement the actual
-        // also states, and a formal ensures relation the actual also states.
-        // That is deliberately fail-closed [FN-4 has no permissive default]:
-        // it refuses refinements the language admits and admits none it
-        // refuses, and it is strictly weaker than the structural set equality
-        // it replaces only in that the two sets may now differ in size.
         let formal_contracts = self.behavior_contracts(&normalized)?;
         let actual_contracts = self.behavior_contracts(actual)?;
+        let site = self.tree.path(node)?.clone();
+        let mut accepted_queries = Vec::new();
+        let requirement_variables = normalized
+            .parameters
+            .iter()
+            .map(|parameter| ContractVariable {
+                mode: parameter.mode,
+                ty: parameter.ty,
+            })
+            .collect::<Vec<_>>();
         // Weaker precondition: every requirement the actual states must
-        // already be one the formal's callers establish.
-        if actual_contracts
+        // follow from the formal set its callers establish.
+        let formal_requirements = formal_contracts
             .requires
             .iter()
-            .any(|goal| !formal_contracts.requires.contains(goal))
-        {
-            return self.behavior_mismatch(
-                SemanticRule::Fn4,
-                node,
-                "a requirement no caller of the formal interface establishes",
-            );
+            .map(|requirement| requirement.template.clone())
+            .collect::<Vec<_>>();
+        let formal_requirement_paths = formal_contracts
+            .requires
+            .iter()
+            .map(|requirement| requirement.clause.clone())
+            .collect::<Vec<_>>();
+        for required in &actual_contracts.requires {
+            let mut proof = self.contract_implication(
+                &normalized,
+                &requirement_variables,
+                &formal_requirement_paths,
+                &formal_requirements,
+                &required.template.root,
+            )?;
+            if !contract_query_discharged(&proof) {
+                return self.behavior_mismatch(
+                    SemanticRule::Fn4,
+                    node,
+                    "a requirement no caller of the formal interface establishes",
+                );
+            }
+            finalize_function_entailment(&mut proof);
+            accepted_queries.push(CheckedContractQuery {
+                site: site.clone(),
+                premises: formal_requirement_paths.clone(),
+                goal: required.clause.clone(),
+                proof,
+            });
         }
-        // Stronger postcondition: every relation the formal promises must
-        // already be one the actual publishes.
-        if formal_contracts.ensures.iter().any(|promised| {
-            !actual_contracts.ensures.iter().any(|published| {
-                published.variant == promised.variant
-                    && published.field == promised.field
-                    && published.expression == promised.expression
-            })
-        }) {
-            return self.behavior_mismatch(
-                SemanticRule::Fn4,
-                node,
-                "a promised relation the supplied function does not publish",
-            );
+        // Stronger postcondition: at each result route, the actual set alone
+        // must discharge every relation the formal promises there. Entry
+        // parameter, exit parameter and result identities are distinct even
+        // where their selected types and written projections agree.
+        let parameter_count = normalized.parameters.len();
+        for promised in &formal_contracts.ensures {
+            let available = actual_contracts
+                .ensures
+                .iter()
+                .filter(|published| ensures_available_on_route(published, promised))
+                .collect::<Vec<_>>();
+            let premises = available
+                .iter()
+                .map(|published| {
+                    expanded_contract_goal(&published.expression, parameter_count)
+                        .map(GoalTemplate::new)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let premise_paths = available
+                .iter()
+                .map(|published| published.clause.clone())
+                .collect::<Vec<_>>();
+            let goal = expanded_contract_goal(&promised.expression, parameter_count)?;
+            let postcondition_variables = contract_postcondition_variables(&normalized, promised);
+            let mut proof = self.contract_implication(
+                &normalized,
+                &postcondition_variables,
+                &premise_paths,
+                &premises,
+                &goal,
+            )?;
+            if !contract_query_discharged(&proof) {
+                return self.behavior_mismatch(
+                    SemanticRule::Fn4,
+                    node,
+                    "a promised relation the supplied function does not publish",
+                );
+            }
+            finalize_function_entailment(&mut proof);
+            accepted_queries.push(CheckedContractQuery {
+                site: site.clone(),
+                premises: premise_paths,
+                goal: promised.clause.clone(),
+                proof,
+            });
+        }
+        let mut retained = self.contract_queries.borrow_mut();
+        for query in accepted_queries {
+            if !retained.contains(&query) {
+                retained.push(query);
+            }
         }
         Ok(())
+    }
+
+    /// One finite [FN-4] query over alpha-renamed declaration datums. The
+    /// temporary checked function has no body and publishes no summary; its
+    /// requirements are only the hypothetical premise set submitted to the
+    /// ordinary S4/AUTO entry.
+    fn contract_implication(
+        &self,
+        signature: &FunctionSignature,
+        variables: &[ContractVariable],
+        premise_paths: &[NodePath],
+        premises: &[GoalTemplate],
+        goal: &GoalExpression,
+    ) -> Result<FunctionEntailment, CheckStop> {
+        if premise_paths.len() != premises.len() {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        }
+        let parameters = variables
+            .iter()
+            .enumerate()
+            .map(|(ordinal, variable)| {
+                let ordinal =
+                    u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                Ok(CheckedParameter {
+                    name: format!("contract_{ordinal}"),
+                    declaration: DeclarationId::from_index(ordinal as usize)
+                        .ok_or(SemanticCompilerFailure::CounterOverflow)?,
+                    node_path: NodePath {
+                        components: vec![ordinal],
+                    },
+                    binding: BindingId(ordinal),
+                    mode: variable.mode,
+                    ty: variable.ty,
+                    range_element: None,
+                })
+            })
+            .collect::<Result<Vec<_>, CheckStop>>()?;
+        let requirements = premise_paths
+            .iter()
+            .zip(premises)
+            .map(|(clause, template)| CheckedRequirement {
+                template: template.clone(),
+                clause: clause.clone(),
+            })
+            .collect::<Vec<_>>();
+        let function = CheckedFunction {
+            formal_hypothesis: true,
+            id: signature.id,
+            declaration: signature.declaration,
+            name: signature.name.clone(),
+            symbol: signature.symbol.clone(),
+            region_parameters: Vec::new(),
+            parameters,
+            result_mode: signature.result_mode,
+            result: signature.result,
+            declared_state_writes: Vec::new(),
+            requirements,
+            postconditions: Vec::new(),
+            body: None,
+            body_disposition: Default::default(),
+            allocates: false,
+            call_separations: Vec::new(),
+            entailment: FunctionEntailment::default(),
+        };
+        let binding_names = function
+            .parameters
+            .iter()
+            .map(|parameter| parameter.name.clone())
+            .collect::<Vec<_>>();
+        let elements = self.elements.borrow();
+        let context = EntailmentContext {
+            callees: &[],
+            constants: &self.checked_constants,
+            constant_ids: &self.constants,
+            nominals: &self.nominals,
+            elements: &elements,
+            verified_postconditions: &[],
+            verified_postcondition_proofs: &[],
+            binding_names: &binding_names,
+        };
+        Ok(contract_implies(&function, &context, goal))
     }
 
     fn behavior_contracts(
@@ -142,7 +315,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .check_requires(signature, block, &mut bindings.clone(), &mut counters)?
             .requirements
             .into_iter()
-            .map(|requirement| requirement.template)
+            .map(|requirement| InterfaceRequirement {
+                clause: requirement.clause,
+                template: requirement.template,
+            })
             .collect();
         let mut ensures = Vec::new();
         let selectors = self.postcondition_selectors_from_source(signature)?;
@@ -162,15 +338,142 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )?;
             normalize_substituted_constants(&mut expression);
             ensures.push(InterfaceEnsures {
+                clause: selector.block.clone(),
                 ordinal: selector.ordinal,
                 variant: selector.variant,
                 field: selector.field.as_ref().map(|field| field.declaration),
+                result_type: selector.result_type,
                 expression,
             });
         }
         self.check_published_relation_consistency(signature, &selectors, &relations)?;
         Ok(InterfaceContracts { requires, ensures })
     }
+}
+
+fn contract_query_discharged(proof: &FunctionEntailment) -> bool {
+    matches!(
+        proof.contract_goals.as_slice(),
+        [outcome] if outcome.disposition == CallGoalDisposition::Discharged
+            && outcome.derivation.is_some()
+    )
+}
+
+/// The clauses available everywhere a promised clause is selected. An
+/// unrouted actual clause holds on every normal return, including an Ok route;
+/// a routed clause holds only on that exact result ordinal and route.
+fn ensures_available_on_route(published: &InterfaceEnsures, promised: &InterfaceEnsures) -> bool {
+    match (published.variant, promised.variant) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(published_variant), Some(promised_variant)) => {
+            published.ordinal == promised.ordinal
+                && published_variant == promised_variant
+                && published.field == promised.field
+        }
+    }
+}
+
+fn contract_postcondition_variables(
+    signature: &FunctionSignature,
+    selector: &InterfaceEnsures,
+) -> Vec<ContractVariable> {
+    signature
+        .parameters
+        .iter()
+        .chain(signature.parameters.iter())
+        .map(|parameter| ContractVariable {
+            mode: parameter.mode,
+            ty: parameter.ty,
+        })
+        .chain(
+            signature
+                .results
+                .iter()
+                .enumerate()
+                .map(|(ordinal, result)| ContractVariable {
+                    mode: result.mode,
+                    // A routed ordinal's datum is the Ok payload, not the
+                    // whole Result value declared at that ordinal [FN-9].
+                    ty: if selector.variant.is_some()
+                        && usize::try_from(selector.ordinal).ok() == Some(ordinal)
+                    {
+                        selector.result_type
+                    } else {
+                        result.ty
+                    },
+                }),
+        )
+        .collect()
+}
+
+fn expanded_contract_goal(
+    expression: &ExpandedClauseExpression,
+    parameter_count: usize,
+) -> Result<GoalExpression, CheckStop> {
+    let parameter_count =
+        u32::try_from(parameter_count).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+    Ok(match expression {
+        ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
+            ordinal,
+            projections,
+            ty,
+            exit_state,
+        }) => GoalExpression::Datum(GoalDatum::Parameter {
+            ordinal: if *exit_state {
+                parameter_count
+                    .checked_add(*ordinal)
+                    .ok_or(SemanticCompilerFailure::CounterOverflow)?
+            } else {
+                *ordinal
+            },
+            projections: projections.clone(),
+            ty: *ty,
+        }),
+        ExpandedClauseExpression::Datum(ExpandedClauseDatum::Result {
+            ordinal,
+            projections,
+            ty,
+        }) => GoalExpression::Datum(GoalDatum::Parameter {
+            ordinal: parameter_count
+                .checked_mul(2)
+                .and_then(|base| base.checked_add(*ordinal))
+                .ok_or(SemanticCompilerFailure::CounterOverflow)?,
+            projections: projections.clone(),
+            ty: *ty,
+        }),
+        ExpandedClauseExpression::Datum(ExpandedClauseDatum::NamedConst {
+            declaration,
+            projections,
+            ty,
+        }) => GoalExpression::Datum(GoalDatum::NamedConst {
+            declaration: *declaration,
+            projections: projections.clone(),
+            ty: *ty,
+        }),
+        ExpandedClauseExpression::Datum(ExpandedClauseDatum::Literal { value, .. }) => {
+            GoalExpression::Datum(GoalDatum::Literal(value.clone()))
+        }
+        ExpandedClauseExpression::Operation {
+            row,
+            type_arguments,
+            const_arguments,
+            result,
+            arguments,
+        } => GoalExpression::Operation {
+            row: *row,
+            type_arguments: type_arguments.clone(),
+            const_arguments: const_arguments.clone(),
+            result: *result,
+            arguments: arguments
+                .iter()
+                .map(|argument| expanded_contract_goal(argument, parameter_count as usize))
+                .collect::<Result<Vec<_>, _>>()?,
+        },
+        ExpandedClauseExpression::InvalidSelectorUse { .. } => {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+    })
 }
 
 fn normalize_substituted_constants(expression: &mut ExpandedClauseExpression) {

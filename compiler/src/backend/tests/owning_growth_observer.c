@@ -386,6 +386,7 @@ extern uint8_t wf_behavior_contract(uint64_t);
 typedef struct {
     void *pointer;
     uint64_t bytes, id;
+    bool is_resource;
     bool released;
 } ObservedAllocation;
 
@@ -397,6 +398,7 @@ typedef struct {
 static Observation observation;
 static size_t compared_runs, compared_owners, compared_backings;
 static uint64_t expected_requests[7];
+static bool expected_resources[7];
 static size_t expected_request_count;
 static const uint64_t wf_slots_header_bytes = 16;
 static const uint64_t wf_slot_stride_bytes = 24;
@@ -410,14 +412,20 @@ static void require(bool condition, const char *message) {
 
 void *wf_observe_allocate(uint64_t bytes) {
     require(observation.requests < expected_request_count, "unexpected allocation request");
-    require(bytes == expected_requests[observation.requests],
+    const size_t request = observation.requests;
+    require(bytes == expected_requests[request],
             "allocation differs from its exact request-position extent");
     ++observation.requests;
     void *pointer = malloc((size_t)bytes);
     require(pointer != NULL, "host allocation failed");
     memset(pointer, 0xcc, (size_t)bytes);
-    observation.allocations[observation.allocated++] =
-        (ObservedAllocation){pointer, bytes, 0, false};
+    observation.allocations[observation.allocated++] = (ObservedAllocation){
+        .pointer = pointer,
+        .bytes = bytes,
+        .id = 0,
+        .is_resource = expected_resources[request],
+        .released = false,
+    };
     observation.live += (size_t)bytes;
     if (observation.live > observation.peak) observation.peak = observation.live;
     return pointer;
@@ -429,7 +437,8 @@ void wf_observe_release(void *pointer) {
         ObservedAllocation *entry = &observation.allocations[i];
         if (entry->pointer != pointer) continue;
         require(!entry->released, "owner released twice");
-        if (entry->bytes == sizeof(Resource)) {
+        if (entry->is_resource) {
+            require(entry->bytes == sizeof(Resource), "resource extent changed");
             Resource resource;
             memcpy(&resource, pointer, sizeof resource);
             entry->id = resource.id;
@@ -457,6 +466,7 @@ static void observation_reset(uint64_t scenario, bool whitefoot) {
     for (size_t i = 0; i < observation.allocated; ++i)
         free(observation.allocations[i].pointer);
     memset(&observation, 0, sizeof observation);
+    memset(expected_resources, 0, sizeof expected_resources);
     /* LLVM lays out the Whitefoot Slot and sparse-owned.c's ISlot at the same
      * 24-byte element stride. The emitted Whitefoot allocation precedes its
      * payload with the runtime Slots len/cap descriptor. Check each side's
@@ -465,15 +475,22 @@ static void observation_reset(uint64_t scenario, bool whitefoot) {
     expected_requests[0] = (whitefoot ? wf_slots_header_bytes : 0) +
                            (scenario >= 3 ? 1 : 8) * stride;
     const size_t resources = scenario >= 3 ? 1 : scenario == 0 ? 5 : 3;
-    for (size_t i = 1; i <= resources; ++i) expected_requests[i] = sizeof(Resource);
+    for (size_t i = 1; i <= resources; ++i) {
+        expected_requests[i] = sizeof(Resource);
+        expected_resources[i] = true;
+    }
     expected_request_count = resources + 1;
     if (scenario == 4) {
-        expected_requests[expected_request_count++] = sizeof(Resource);
+        expected_requests[expected_request_count] = sizeof(Resource);
+        expected_resources[expected_request_count++] = true;
     } else {
         expected_requests[expected_request_count++] =
             (whitefoot ? wf_slots_header_bytes : 0) +
             (scenario == 0 ? 16 : scenario == 3 ? 1 : 8) * stride;
-        if (scenario == 3) expected_requests[expected_request_count++] = sizeof(Resource);
+        if (scenario == 3) {
+            expected_requests[expected_request_count] = sizeof(Resource);
+            expected_resources[expected_request_count++] = true;
+        }
     }
     reset_ledger();
     require(backing_live_bytes == 0 && backing_live_allocations == 0,
@@ -626,7 +643,9 @@ static void compare(uint64_t seed, uint64_t scenario, size_t budget) {
     for (size_t i = 0; i < wf.allocated; ++i) {
         require(wf.allocations[i].id == native.allocations[i].id,
                 "exact owner release ledger differs from native control");
-        if (native.allocations[i].bytes == sizeof(Resource)) {
+        require(wf.allocations[i].is_resource == native.allocations[i].is_resource,
+                "allocation role differs from native control");
+        if (native.allocations[i].is_resource) {
             require(wf.allocations[i].bytes == sizeof(Resource), "resource extent changed");
             ++compared_owners;
         } else {
@@ -652,6 +671,11 @@ static void check_behavior_demos(void) {
      * request includes the 16-byte runtime Slots descriptor; later requests
      * are scalar Box allocations with their exact content extents. */
     const uint64_t extents[3][4] = {{112, 40, 0, 0}, {112, 8, 8, 40}, {64, 40, 40, 0}};
+    const bool resources[3][4] = {
+        {false, true, false, false},
+        {false, false, false, true},
+        {false, true, true, false},
+    };
     const uint64_t owners[3][4] = {{0, 81, 0, 0}, {0, 9, 9, 81}, {0, 81, 82, 0}};
     const size_t counts[3] = {2, 4, 3};
     size_t executions = 0;
@@ -659,6 +683,7 @@ static void check_behavior_demos(void) {
         observation_reset(0, true);
         expected_request_count = counts[variant];
         memcpy(expected_requests, extents[variant], sizeof extents[variant]);
+        memcpy(expected_resources, resources[variant], sizeof resources[variant]);
         uint8_t result = wf_behavior_contract(variant);
         Observation done = completed_observation();
         require(result == 0, "behavior result changed");

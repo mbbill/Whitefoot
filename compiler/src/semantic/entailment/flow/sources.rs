@@ -651,7 +651,6 @@ impl Analyzer<'_, '_> {
             }
             CheckedNominalKind::Box { .. }
             | CheckedNominalKind::Arena { .. }
-            | CheckedNominalKind::ArenaStorage
             | CheckedNominalKind::Opaque => {}
         }
         found

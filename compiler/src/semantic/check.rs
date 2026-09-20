@@ -259,6 +259,25 @@ struct LocalBinding {
     /// was the loan apparatus's way of stating what [REF-2] now states
     /// directly as a validity fact.
     reference: Option<ReferenceInfo>,
+    /// [REF-2, ENT-3.S15] the borrowed-match refinement occurrences this
+    /// binding witnesses. The occurrence identity is immutable even when a
+    /// reference binding is rebound; only its flow-sensitive validity meets
+    /// at joins.
+    refinement_witnesses: Vec<RefinementWitness>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RefinementWitness {
+    origin: NodePath,
+    place: ResolvedPlace,
+    variant: u32,
+    valid: bool,
+}
+
+impl RefinementWitness {
+    fn same_occurrence(&self, other: &Self) -> bool {
+        self.origin == other.origin && self.place == other.place && self.variant == other.variant
+    }
 }
 
 impl LocalBinding {
@@ -272,6 +291,24 @@ impl LocalBinding {
     fn join_from(&mut self, other: &Self) {
         if let (Some(left), Some(right)) = (&mut self.reference, &other.reference) {
             left.join(right);
+        }
+        for witness in &mut self.refinement_witnesses {
+            witness.valid &= other
+                .refinement_witnesses
+                .iter()
+                .find(|candidate| witness.same_occurrence(candidate))
+                .is_some_and(|candidate| candidate.valid);
+        }
+        for witness in &other.refinement_witnesses {
+            if !self
+                .refinement_witnesses
+                .iter()
+                .any(|candidate| candidate.same_occurrence(witness))
+            {
+                let mut absent_on_left = witness.clone();
+                absent_on_left.valid = false;
+                self.refinement_witnesses.push(absent_on_left);
+            }
         }
     }
 
@@ -332,6 +369,18 @@ struct TypedExpression {
 #[derive(Clone)]
 struct PlaceAccess {
     place: ResolvedPlace,
+    /// This place is the storage selected by the enclosing place expression,
+    /// rather than storage read while evaluating one of its offsets or other
+    /// operands. Effects retain both; borrowed-match path recovery needs only
+    /// the selected members [REF-1, OWN-13].
+    selected: bool,
+}
+
+impl PlaceAccess {
+    fn operand(mut self) -> Self {
+        self.selected = false;
+        self
+    }
 }
 
 impl TypedExpression {
@@ -357,7 +406,10 @@ impl TypedExpression {
             reference: None,
             reference_value: false,
             effects,
-            accesses: vec![PlaceAccess { place }],
+            accesses: vec![PlaceAccess {
+                place,
+                selected: true,
+            }],
         }
     }
 }
@@ -508,6 +560,10 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// syntax could not settle, handed to the entailment fragment with the
     /// finished body.
     call_separations: RefCell<Vec<super::model::CheckedCallSeparation>>,
+    /// Successful declaration-only FN-4 queries. A complete member check
+    /// stages its batch before publishing here, and the whole checker remains
+    /// failure-atomic with the prospective checked program [DIAG-2].
+    contract_queries: RefCell<Vec<super::model::CheckedContractQuery>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
     nominal_templates: Vec<NominalTemplate>,
@@ -1066,6 +1122,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
             call_separations: RefCell::new(Vec::new()),
+            contract_queries: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             prelude_types: Vec::new(),
             nominal_templates: Vec::new(),
@@ -1252,6 +1309,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             constants: self.checked_constants.clone(),
             derived_consts,
             functions,
+            contract_queries: self.contract_queries.borrow().clone(),
             postcondition_schedule,
             generic_requirements: self.generic_requirements.clone(),
             permission,
@@ -1831,17 +1889,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedStatement::Match { arms, .. } => arms
                 .iter()
                 .any(|arm| Self::statements_contain_value_if(&arm.body)),
-            CheckedStatement::Loop { body, .. }
-            | CheckedStatement::CountedRange { body, .. }
-            | CheckedStatement::Region { body, .. } => Self::statements_contain_value_if(body),
+            CheckedStatement::Loop { body, .. } | CheckedStatement::CountedRange { body, .. } => {
+                Self::statements_contain_value_if(body)
+            }
             CheckedStatement::Let { .. }
             | CheckedStatement::DestructuringLet { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
-            | CheckedStatement::SetList { .. }
-            | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
-            | CheckedStatement::Dispose { .. }
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Proof(_)
             | CheckedStatement::Return { .. }
@@ -1898,6 +1953,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ResolvedPlace::binding(binding),
                 )
             }),
+            refinement_witnesses: Vec::new(),
         })
     }
 
@@ -2180,7 +2236,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Let { value, .. }
                 | CheckedStatement::DestructuringLet { value, .. }
                 | CheckedStatement::Evaluate(value)
-                | CheckedStatement::Dispose { value, .. }
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Return { value, .. }
                 | CheckedStatement::Give { value, .. } => {
@@ -2189,43 +2244,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::PropagateLet { scrutinee, .. } => {
                     self.install_expression_call_requirements(scrutinee, requirements)?;
                 }
-                CheckedStatement::SetList {
-                    targets, values, ..
-                } => {
-                    for target in targets {
-                        match target {
-                            CheckedSetTarget::Place(_) => {}
-                            CheckedSetTarget::ArrayIndex(target) => self
-                                .install_expression_call_requirements(
-                                    &mut target.offset,
-                                    requirements,
-                                )?,
-                            CheckedSetTarget::BufferIndex(target) => self
-                                .install_expression_call_requirements(
-                                    &mut target.offset,
-                                    requirements,
-                                )?,
-                            CheckedSetTarget::RangeIndex(target) => self
-                                .install_expression_call_requirements(
-                                    &mut target.offset,
-                                    requirements,
-                                )?,
-                            CheckedSetTarget::Storage(target) => {
-                                for offset in target.offsets_mut() {
-                                    self.install_expression_call_requirements(
-                                        offset,
-                                        requirements,
-                                    )?;
-                                }
-                            }
-                        }
-                    }
-                    for value in values.expressions_mut() {
-                        self.install_expression_call_requirements(value, requirements)?;
-                    }
-                }
-                CheckedStatement::Set { target, value, .. }
-                | CheckedStatement::Replace { target, value, .. } => {
+                CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => self
@@ -2262,7 +2281,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         self.install_statement_call_requirements(&mut arm.body, requirements)?;
                     }
                 }
-                CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+                CheckedStatement::Loop { body, .. } => {
                     self.install_statement_call_requirements(body, requirements)?;
                 }
                 CheckedStatement::CountedRange {
@@ -2290,6 +2309,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 arguments,
                 goal_arguments,
                 goal_regions,
+                formal_requirements,
                 requirements: call_requirements,
                 ..
             } => {
@@ -2300,9 +2320,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .signatures
                     .get(function.0 as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let boundary = requirements
-                    .get(function.0 as usize)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let boundary = match formal_requirements {
+                    Some(boundary) => boundary.as_slice(),
+                    None => requirements
+                        .get(function.0 as usize)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                };
                 *call_requirements = boundary
                     .iter()
                     .map(|boundary| {
@@ -2346,7 +2369,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::RangeIndex { offset, .. } => {
+            | CheckedExpression::RangeIndex { offset, .. }
+            | CheckedExpression::BorrowRangeIndex { offset, .. } => {
                 self.install_expression_call_requirements(offset, requirements)?;
             }
             // [REF-4] both endpoints are ordinary operands evaluated at the
@@ -2412,7 +2436,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Let { value, .. }
                 | CheckedStatement::DestructuringLet { value, .. }
                 | CheckedStatement::Evaluate(value)
-                | CheckedStatement::Dispose { value, .. }
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Return { value, .. }
                 | CheckedStatement::Give { value, .. } => {
@@ -2421,43 +2444,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::PropagateLet { scrutinee, .. } => {
                     Self::install_expression_allocation_bounds(scrutinee, bounds)?;
                 }
-                CheckedStatement::SetList {
-                    targets, values, ..
-                } => {
-                    for target in targets {
-                        match target {
-                            CheckedSetTarget::Place(_) => {}
-                            CheckedSetTarget::ArrayIndex(target) => {
-                                Self::install_expression_allocation_bounds(
-                                    &mut target.offset,
-                                    bounds,
-                                )?;
-                            }
-                            CheckedSetTarget::BufferIndex(target) => {
-                                Self::install_expression_allocation_bounds(
-                                    &mut target.offset,
-                                    bounds,
-                                )?;
-                            }
-                            CheckedSetTarget::RangeIndex(target) => {
-                                Self::install_expression_allocation_bounds(
-                                    &mut target.offset,
-                                    bounds,
-                                )?;
-                            }
-                            CheckedSetTarget::Storage(target) => {
-                                for offset in target.offsets_mut() {
-                                    Self::install_expression_allocation_bounds(offset, bounds)?;
-                                }
-                            }
-                        }
-                    }
-                    for value in values.expressions_mut() {
-                        Self::install_expression_allocation_bounds(value, bounds)?;
-                    }
-                }
-                CheckedStatement::Set { target, value, .. }
-                | CheckedStatement::Replace { target, value, .. } => {
+                CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => {
@@ -2488,7 +2475,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         Self::install_statement_allocation_bounds(&mut arm.body, bounds)?;
                     }
                 }
-                CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+                CheckedStatement::Loop { body, .. } => {
                     Self::install_statement_allocation_bounds(body, bounds)?;
                 }
                 CheckedStatement::CountedRange {
@@ -2553,7 +2540,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::RangeIndex { offset, .. } => {
+            | CheckedExpression::RangeIndex { offset, .. }
+            | CheckedExpression::BorrowRangeIndex { offset, .. } => {
                 Self::install_expression_allocation_bounds(offset, bounds)?;
             }
             CheckedExpression::RangeOf {
@@ -2755,10 +2743,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } => GoalOperation::EnumEquality {
                 equal,
                 operand_type: self.instantiate_goal_type(operand_type, signature, regions)?,
-            },
-            GoalOperation::ArrayFill { element, length } => GoalOperation::ArrayFill {
-                element: self.instantiate_goal_element(element, signature, regions)?,
-                length: self.instantiate_goal_const(length, signature)?,
             },
             GoalOperation::ArrayMeasure {
                 measure,

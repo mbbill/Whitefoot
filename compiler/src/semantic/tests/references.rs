@@ -661,3 +661,487 @@ fn main() -> status: own ExitStatus pure {
 "#;
     super::assert_accepts(source);
 }
+
+/// [REF-2, ENT-3.S15] a reference to a borrowed payload is valid only inside
+/// the arm that established that payload step's refinement.
+#[test]
+fn a_payload_reference_rebound_into_an_outer_local_dies_at_arm_exit() {
+    let source = br#"enum Packet {
+  Data(value: u64);
+  Idle();
+}
+
+fn examine(packet: &Packet) -> result: own u64 pure {
+  let fallback = 7_u64;
+  let selected = &fallback;
+  match deref(packet) {
+    Data(value: payload) => {
+      set selected = &deref(payload);
+    }
+    Idle() => {
+    }
+  }
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
+            if event.contains("refinement fact"))
+    });
+}
+
+/// [REF-2] an `if` branch is a lexical scope just as a loop body is. A local
+/// root borrowed into an outer reference dies on the branch edge.
+#[test]
+fn a_reference_to_an_if_local_dies_at_branch_exit() {
+    let source = br#"fn examine(flag: own Bool) -> result: own u64 pure {
+  let fallback = 7_u64;
+  let selected = &fallback;
+  if flag {
+    let local = 9_u64;
+    set selected = &local;
+  }
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
+            if event.contains("scope"))
+    });
+}
+
+/// [REF-1] a reference that does not cross a loop backedge may be rebound to
+/// another path shape. The new path, kind, and referent type are retained.
+#[test]
+fn a_non_loop_reference_may_change_path_shape() {
+    let source = br#"fn examine() -> result: own u64 pure {
+  let first = 7_u64;
+  let second = 9_u64;
+  let selected = &first;
+  set selected = &second;
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// Rebinding changes only the path. It cannot silently change the reference
+/// variable's referent type while retaining the old checked type.
+#[test]
+fn a_reference_rebinding_keeps_its_referent_type() {
+    let source = br#"fn examine() -> result: own u64 pure {
+  let first = 7_u64;
+  let second = 9_u8;
+  let selected = &first;
+  set selected = &second;
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Type5, |kind| {
+        matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+    });
+}
+
+/// A single-place reference and a range reference are different reference
+/// kinds even when both name the same element type.
+#[test]
+fn a_reference_rebinding_keeps_its_reference_kind() {
+    let source = br#"fn examine() -> result: own u64 pure {
+  let values = array_filled::<u64, 2>(value: 7_u64);
+  let selected = &values[0_u64];
+  set selected = &values[0_u64..1_u64];
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Type5, |kind| {
+        matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+    });
+}
+
+/// A direct value-match delivery does not extend the selected payload's arm
+/// refinement to the result binding.
+#[test]
+fn a_payload_reference_delivered_by_value_match_is_invalid_outside_the_arm() {
+    let source = br#"enum Packet {
+  Data(value: u64);
+  Idle();
+}
+
+fn examine(packet: &Packet) -> result: own u64 pure {
+  let fallback = 7_u64;
+  let selected = match deref(packet) {
+    Data(value: payload) => {
+      give &deref(payload);
+    }
+    Idle() => {
+      give &fallback;
+    }
+  }
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
+            if event.contains("refinement fact"))
+    });
+}
+
+/// A `give` edge crossing a statement match carries the same arm-exit
+/// invalidation into its enclosing value initializer.
+#[test]
+fn a_payload_reference_on_a_nested_give_edge_loses_the_arm_refinement() {
+    let source = br#"enum Packet {
+  Data(value: u64);
+  Idle();
+}
+
+fn examine(packet: &Packet, choose: own Bool) -> result: own u64 pure {
+  let fallback = 7_u64;
+  let selected = if choose {
+    match deref(packet) {
+      Data(value: payload) => {
+        give &deref(payload);
+      }
+      Idle() => {
+        give &fallback;
+      }
+    }
+  } else {
+    give &fallback;
+  }
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
+            if event.contains("refinement fact"))
+    });
+}
+
+/// A loop-carried reference may change captured indices but not its root and
+/// step kinds [REF-1]. This refusal precedes any arm-exit validity question.
+#[test]
+fn a_loop_carried_reference_cannot_change_static_shape() {
+    let source = br#"enum Packet {
+  Data(value: u64);
+  Idle();
+}
+
+fn examine(packet: &Packet) -> result: own u64 pure {
+  let fallback = 7_u64;
+  let selected = &fallback;
+  loop @done {
+    match deref(packet) {
+      Data(value: payload) => {
+        set selected = &deref(payload);
+        break @done;
+      }
+      Idle() => {
+        break @done;
+      }
+    }
+  }
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref1, |kind| {
+        matches!(kind, SemanticIssueKind::ReferenceShapeChanged { .. })
+    });
+}
+
+/// A break edge can carry a newly formed reference with the same static path
+/// shape as its loop-carried predecessor. Replacing the enum ends the old
+/// witness, and the inner match's new witness ends before the break reaches
+/// the continuation.
+#[test]
+fn a_payload_reference_on_a_break_edge_loses_the_arm_refinement() {
+    let source = br#"enum Packet {
+  Data(value: u64);
+  Idle();
+}
+
+fn examine(packet: &Packet) -> result: own u64 writes(packet) {
+  match deref(packet) {
+    Data(value: outer_payload) => {
+      let selected = &deref(outer_payload);
+      set deref(packet) = Data(value: 2_u64);
+      loop @done {
+        match deref(packet) {
+          Data(value: inner_payload) => {
+            set selected = &deref(inner_payload);
+            break @done;
+          }
+          Idle() => {
+            break @done;
+          }
+        }
+      }
+      return deref(selected);
+    }
+    Idle() => {
+      return 0_u64;
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
+            if event.contains("refinement fact"))
+    });
+}
+
+/// [REF-1] a dereferenced joined scrutinee retains every possible enum root.
+/// Replacing the second root in one arm must invalidate its payload binder;
+/// choosing the first access as a representative would wrongly accept it.
+#[test]
+fn a_joined_match_scrutinee_keeps_every_payload_origin() {
+    let source = br#"enum Packet {
+  Data(value: u64);
+  Idle();
+}
+
+fn examine(choose: own Bool) -> result: own u64 pure {
+  let first = Data(value: 1_u64);
+  let second = Data(value: 2_u64);
+  let selected = if choose {
+    give &first;
+  } else {
+    give &second;
+  }
+  match deref(selected) {
+    Data(value: payload) => {
+      set second = Idle();
+      return deref(payload);
+    }
+    Idle() => {
+      return 0_u64;
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { .. })
+    });
+}
+
+/// The index operand is evaluated to select the matched range element, but
+/// the scalar storage read while doing so is not another enum referent. A
+/// later write to that scalar therefore leaves the payload reference valid.
+#[test]
+fn an_indexed_match_does_not_treat_index_storage_as_an_enum_origin() {
+    let source = br#"enum Packet {
+  Data(value: u64);
+  Idle();
+}
+
+fn examine() -> result: own u64 pure {
+  let seed = Data(value: 7_u64);
+  let packets = array_filled::<Packet, 2>(value: seed);
+  set packets[1_u64] = Data(value: 9_u64);
+  let index = 1_u64;
+  let part = &packets[0_u64..2_u64];
+  if index < deref(part).len {
+    match deref(part)[index] {
+      Data(value: payload) => {
+        set index = 0_u64;
+        return deref(payload);
+      }
+      Idle() => {
+        return 0_u64;
+      }
+    }
+  }
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// The selected indexed member remains the borrowed-match origin. Replacing
+/// that enum invalidates its payload reference even though the index operand
+/// itself came from separate scalar storage.
+#[test]
+fn an_indexed_match_keeps_the_selected_element_as_its_enum_origin() {
+    let source = br#"enum Packet {
+  Data(value: u64);
+  Idle();
+}
+
+fn examine() -> result: own u64 pure {
+  let seed = Data(value: 7_u64);
+  let packets = array_filled::<Packet, 2>(value: seed);
+  set packets[1_u64] = Data(value: 9_u64);
+  let index = 1_u64;
+  let part = &packets[0_u64..2_u64];
+  if index < deref(part).len {
+    match deref(part)[index] {
+      Data(value: payload) => {
+        set packets[1_u64] = Idle();
+        return deref(payload);
+      }
+      Idle() => {
+        return 0_u64;
+      }
+    }
+  }
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { .. })
+    });
+}
+
+/// Re-establishing an already active `(place, variant)` refinement in a
+/// nested match does not end the enclosing arm's fact when the inner arm
+/// exits.
+#[test]
+fn an_outer_payload_reference_survives_a_nested_identical_refinement() {
+    let source = br#"enum Packet {
+  Data(value: u64);
+  Idle();
+}
+
+fn examine(packet: &Packet) -> result: own u64 reads(packet), reads(packet.Data.value) {
+  match deref(packet) {
+    Data(value: outer_payload) => {
+      let saved = &deref(outer_payload);
+      match deref(packet) {
+        Data(value: inner_payload) => {
+          let observed = deref(inner_payload);
+        }
+        Idle() => {
+        }
+      }
+      return deref(saved);
+    }
+    Idle() => {
+      return 0_u64;
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// Replacing an enum ends the outer occurrence of its refinement even when a
+/// nested match later establishes the same `(place, variant)` fact. The new
+/// occurrence cannot borrow the old arm's lifetime at the inner arm exit.
+#[test]
+fn a_replaced_outer_refinement_cannot_preserve_a_new_inner_payload_reference() {
+    let source = br#"enum Packet {
+  Data(value: u64);
+  Idle();
+}
+
+fn examine(packet: &Packet) -> result: own u64 writes(packet) {
+  match deref(packet) {
+    Data(value: outer_payload) => {
+      let selected = &deref(outer_payload);
+      set deref(packet) = Data(value: 2_u64);
+      match deref(packet) {
+        Data(value: inner_payload) => {
+          set selected = &deref(inner_payload);
+        }
+        Idle() => {
+          return 0_u64;
+        }
+      }
+      return deref(selected);
+    }
+    Idle() => {
+      return 0_u64;
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
+            if event.contains("refinement fact"))
+    });
+}
+
+/// A loop body local leaves scope on a nested delivery edge just as it does
+/// on the backedge and break edges. The enclosing value initializer cannot
+/// publish a reference rooted at that local.
+#[test]
+fn a_loop_local_reference_cannot_escape_on_a_give_edge() {
+    let source = br#"fn examine(flag: own Bool) -> result: own u64 pure {
+  let fallback = 7_u64;
+  let selected = if flag {
+    loop @deliver {
+      let local = 9_u64;
+      give &local;
+    }
+    give &fallback;
+  } else {
+    give &fallback;
+  }
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
+            if event.contains("scope"))
+    });
+}

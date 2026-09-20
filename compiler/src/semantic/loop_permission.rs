@@ -116,7 +116,7 @@ use super::entailment::{
 use super::model::{
     BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedExpression, CheckedFunction,
     CheckedIntegerOperation, CheckedLoopId, CheckedPlaceStep, CheckedSetTarget, CheckedStatement,
-    CheckedType, expression_children,
+    CheckedType, WindowShape, expression_children,
 };
 use super::permission::{
     Footprint, Program, call_projection, collect_consumed_places, container_steps, field_steps,
@@ -506,11 +506,6 @@ impl<'check> Survey<'check, '_> {
             CheckedStatement::DestructuringLet { .. } => {
                 self.refuse_form("a statement that binds an ordered result list");
             }
-            // [PROV-6] a release walk writes every released leaf the value
-            // reaches, which this footprint does not describe.
-            CheckedStatement::Dispose { .. } => {
-                self.refuse_form("a statement that runs a release walk");
-            }
             CheckedStatement::Set {
                 node_path,
                 target,
@@ -577,14 +572,6 @@ impl<'check> Survey<'check, '_> {
             CheckedStatement::Evaluate(_) => self.refuse_form("an expression statement"),
             CheckedStatement::DropExpression { .. } => {
                 self.refuse_form("a discarded expression statement");
-            }
-            // Forms whose source production v0.60 no longer has and which the
-            // checker no longer builds: `replace` [SET-2], the multi-target
-            // commit [LIV-2], and the region block [STOR-2].
-            CheckedStatement::Replace { .. }
-            | CheckedStatement::SetList { .. }
-            | CheckedStatement::Region { .. } => {
-                self.refuse_form("a statement form this version no longer writes");
             }
         }
     }
@@ -856,6 +843,13 @@ impl<'check> Survey<'check, '_> {
                         places: Vec::new(),
                     });
                 }
+                None
+            }
+            CheckedExpression::BorrowRangeIndex { root, .. } => {
+                self.reads.push(ReadOccurrence {
+                    binding: root.binding,
+                    places: Vec::new(),
+                });
                 None
             }
             CheckedExpression::ContainerMeasure { root, .. } => root
@@ -1255,22 +1249,18 @@ const fn statement_node(statement: &CheckedStatement) -> Option<&NodePath> {
     match statement {
         CheckedStatement::Let { node_path, .. }
         | CheckedStatement::DestructuringLet { node_path, .. }
-        | CheckedStatement::SetList { node_path, .. }
         | CheckedStatement::PropagateLet { node_path, .. }
         | CheckedStatement::Set { node_path, .. }
-        | CheckedStatement::Replace { node_path, .. }
         | CheckedStatement::Return { node_path, .. }
         | CheckedStatement::ValueMatchLet { node_path, .. }
         | CheckedStatement::Give { node_path, .. }
-        | CheckedStatement::CountedRange { node_path, .. }
-        | CheckedStatement::Dispose { node_path, .. } => Some(node_path),
+        | CheckedStatement::CountedRange { node_path, .. } => Some(node_path),
         CheckedStatement::Proof(proof) => Some(&proof.node_path),
         CheckedStatement::Evaluate(_)
         | CheckedStatement::DropExpression { .. }
         | CheckedStatement::Match { .. }
         | CheckedStatement::Loop { .. }
-        | CheckedStatement::Break { .. }
-        | CheckedStatement::Region { .. } => None,
+        | CheckedStatement::Break { .. } => None,
     }
 }
 
@@ -1287,14 +1277,16 @@ fn element_root(place: &ResolvedPlace) -> Option<ResolvedPlace> {
 ///
 /// A `Ring` subscript selects the slot `(r.head + i) mod r.cap` [WIN-1], a
 /// wrapping map onto storage rather than a linear offset, so [PAR-2] denies
-/// it an element-map position. No checked type is one at this stage of the
-/// port: the checker has no representation for the window origin `head` that
-/// separates a `Ring` from a `Slots`, and forming a `Ring` type stops as an
-/// unimplemented compiler capability before any place over it exists. The
-/// refusal is written against this question so that supplying the
-/// representation supplies the refusal with it.
-const fn checked_type_is_ring(_ty: CheckedType) -> bool {
-    false
+/// it an element-map position. The checked window shape retains that
+/// distinction for both constant and runtime capacities.
+const fn checked_type_is_ring(ty: CheckedType) -> bool {
+    matches!(
+        ty,
+        CheckedType::Window {
+            shape: WindowShape::Ring,
+            ..
+        }
+    )
 }
 
 /// The combine of `set acc = <op>(acc, rest)`, when `op` is one of the ten
@@ -1380,7 +1372,6 @@ fn collect_introduced(statements: &[CheckedStatement], out: &mut Vec<BindingId>)
         match statement {
             CheckedStatement::Let { binding, .. }
             | CheckedStatement::PropagateLet { binding, .. }
-            | CheckedStatement::Replace { binding, .. }
             | CheckedStatement::ValueMatchLet { binding, .. } => out.push(*binding),
             CheckedStatement::CountedRange { binder, .. } => out.push(*binder),
             _ => {}
@@ -1420,9 +1411,9 @@ fn nested_bodies(statement: &CheckedStatement) -> Vec<&[CheckedStatement]> {
         CheckedStatement::Match { arms, .. } | CheckedStatement::ValueMatchLet { arms, .. } => {
             arms.iter().map(|arm| arm.body.as_slice()).collect()
         }
-        CheckedStatement::Loop { body, .. }
-        | CheckedStatement::Region { body, .. }
-        | CheckedStatement::CountedRange { body, .. } => vec![body.as_slice()],
+        CheckedStatement::Loop { body, .. } | CheckedStatement::CountedRange { body, .. } => {
+            vec![body.as_slice()]
+        }
         _ => Vec::new(),
     }
 }

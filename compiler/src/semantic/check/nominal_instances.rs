@@ -1318,7 +1318,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedNominalKind::Struct { .. }
             | CheckedNominalKind::Enum { .. }
-            | CheckedNominalKind::ArenaStorage
             | CheckedNominalKind::Opaque => Ok(CheckedType::Nominal(id)),
         }
     }

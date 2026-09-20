@@ -72,7 +72,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .signatures
             .get(target.0 as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        self.check_selected_user_call(node, signature, None, function, bindings, loop_depth)
+        self.check_selected_user_call(node, signature, None, None, function, bindings, loop_depth)
     }
 
     pub(in crate::semantic::check) fn check_behavior_call(
@@ -94,13 +94,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let formal = self.formal_signature(key, &function.substitution, target)?;
         let binding_site = self.behavior_binding_site(node, key, &function.substitution)?;
-        let effective = self.behavior_call_signature(binding_site, &formal, actual)?;
-        let effects = Some(super::super::super::super::model::CheckedEffects {
-            reads: effective.declared_effects.reads.clone(),
-            writes: effective.declared_effects.writes.clone(),
-            allocates: effective.declared_effects.allocates,
-        });
-        self.check_selected_user_call(node, &effective, effects, function, bindings, loop_depth)
+        let (effective, formal_effects) =
+            self.behavior_call_signature(binding_site, &formal, actual)?;
+        let formal_requirements = self.formal_call_requirements(&formal)?;
+        self.check_selected_user_call(
+            node,
+            &effective,
+            Some(formal_effects),
+            Some(formal_requirements),
+            function,
+            bindings,
+            loop_depth,
+        )
     }
 
     fn check_selected_user_call(
@@ -108,6 +113,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         signature: &FunctionSignature,
         formal_effects: Option<super::super::super::super::model::CheckedEffects>,
+        formal_requirements: Option<Vec<super::super::super::super::goal::CheckedRequirement>>,
         function: &FunctionSignature,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
@@ -144,6 +150,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut actual_captures = Vec::with_capacity(fields.len());
         let mut actual_modes = Vec::with_capacity(fields.len());
         let call = self.tree.path(node)?.clone();
+        self.prepare_atomic_update_call(&call, signature)?;
         let mut effects = EffectSet::NONE;
         for (ordinal, (field, parameter)) in
             fields.into_iter().zip(&signature.parameters).enumerate()
@@ -159,7 +166,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(field, Production::Atom)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            self.enter_atomic_update_argument(&call, ordinal);
             let argument = self.check_call_argument_atom(function, atom, bindings, loop_depth)?;
+            self.reject_failed_atomic_update_argument(atom)?;
             // [CONST-2, OWN-11, TYPE-2] every possible origin of a written
             // reference argument must be writable. The checked argument
             // retains those paths through aliases and control-flow joins.
@@ -308,9 +317,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // about the callee's row reaching the updated place, and the target
         // argument's own by-value contribution is exactly the overlap
         // [EFF-5] would otherwise report against that row.
-        self.check_atomic_update_row(node, signature, &actual_paths, &substituted)?;
+        let atomic_target = self.check_atomic_update_row(node, &actual_paths, &substituted)?;
         self.check_call_pairwise_disjointness(node, signature, &substituted)?;
-        self.invalidate_call_bystanders(&substituted, &call, bindings);
+        self.invalidate_call_bystanders(&substituted, atomic_target.as_ref(), &call, bindings);
         Self::invalidate_window_operation_references(signature, &substituted, bindings);
         self.project_call_effects(node, function, &substituted, bindings, &mut effects)?;
         let result = signature.result;
@@ -319,6 +328,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             expression: CheckedExpression::UserCall {
                 function: target,
                 formal_effects: formal_effects.map(Box::new),
+                formal_requirements,
                 call,
                 argument_nodes,
                 arguments,
@@ -586,22 +596,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn check_atomic_update_row(
         &self,
         node: NodeId,
-        signature: &FunctionSignature,
         actual_paths: &[Vec<ResolvedPlace>],
         entries: &[SubstitutedEntry],
-    ) -> Result<(), CheckStop> {
-        let Some(target) = self.atomic_update_target(signature.result, signature.result_mode)
-        else {
-            return Ok(());
+    ) -> Result<Option<ResolvedPlace>, CheckStop> {
+        let Some(target) = self.atomic_update_target(self.tree.path(node)?) else {
+            return Ok(None);
         };
         // "where the first argument of the call is the target place itself":
         // the target enters `f` by value, so its actual names exactly one
         // place and that place is the target.
         let Some([first]) = actual_paths.first().map(Vec::as_slice) else {
-            return Ok(());
+            return Ok(None);
         };
         if *first != target {
-            return Ok(());
+            return Ok(None);
         }
         for entry in entries {
             // The target argument's own by-value contribution is the update's
@@ -621,7 +629,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        Ok(())
+        Ok(Some(target))
     }
 
     /// [EFF-5] clause 1: two effects on overlapping paths where at least one
@@ -824,13 +832,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn invalidate_call_bystanders(
         &self,
         entries: &[SubstitutedEntry],
+        atomic_target: Option<&ResolvedPlace>,
         call: &crate::NodePath,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
     ) {
         let _ = call;
         for entry in entries.iter().filter(|entry| entry.write) {
             let event = if entry.consuming {
-                InvalidationEvent::PrefixMoved
+                // [OP-12] the recognized first argument is not an ordinary
+                // move out of `p`: its old value enters the call and its
+                // result replaces `p` at one atomic commit, whose effect is
+                // `writes(p)`. Equal-path references therefore remain valid
+                // while references below `p` still die under [REF-2]'s
+                // proper-prefix write rule. Every other consuming argument
+                // retains the ordinary move invalidation, including equality.
+                if entry.argument == 0 && atomic_target.is_some_and(|target| entry.place == *target)
+                {
+                    InvalidationEvent::CallWrite
+                } else {
+                    InvalidationEvent::PrefixMoved
+                }
             } else {
                 InvalidationEvent::CallWrite
             };

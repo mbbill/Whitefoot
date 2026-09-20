@@ -19,18 +19,16 @@
 //! index steps proved distinct by the fixed [ENT-6] families under [MSR-4]'s
 //! disposition, and two range steps proved disjoint by the four non-strict
 //! orderings. Those reach the entailment fragment through [`SeparationOracle`]
-//! and nothing else, and every answer is memoized per function on the pair of
-//! resolved paths, which is a stable key because a path's captured index and
-//! endpoint values are immutable once captured [REF-1, OWN-7].
-
-use std::cell::RefCell;
-use std::collections::HashMap;
+//! and nothing else. A path's captured index and endpoint values are immutable
+//! once captured [REF-1, OWN-7], while the proof that separates two such
+//! values is available only along the control-flow edges it dominates.
 
 use crate::DeclarationId;
 
 use super::model::{
     BindingId, CheckedConstantId, CheckedExpression, CheckedFunction, CheckedMatchArm,
-    CheckedMeasure, CheckedMode, CheckedRangeSource, CheckedStatement, CheckedType, IntegerType,
+    CheckedMeasure, CheckedMode, CheckedPlaceStep, CheckedRangeSource, CheckedStatement,
+    CheckedType, IntegerType,
 };
 
 /// One source occurrence at which an index expression or a range endpoint was
@@ -300,10 +298,10 @@ enum StepSeparation {
 /// answering `false` is always sound because a pair no admitted family
 /// discharges is overlapping.
 ///
-/// An implementation's answers may not depend on the program point the
-/// question is asked at, because [`PlaceMap`] memoizes them for the whole
-/// function. Nothing in a resolved path can move under it: the captured index
-/// and endpoint values are immutable mathematical values [OWN-7, REF-1].
+/// The caller supplies the proof evidence available at the current program
+/// point. Nothing in a resolved path can move under it: the captured index
+/// and endpoint values are immutable mathematical values [OWN-7, REF-1], but
+/// a proof relating those values is available only on edges it dominates.
 pub(crate) trait SeparationOracle {
     /// Two index steps of one base whose offsets the fixed [ENT-6] families
     /// prove distinct.
@@ -404,23 +402,6 @@ impl ResolvedPlace {
         Self { root, path }
     }
 
-    /// The leading `deref`-then-fields reading of this path, where the path
-    /// has exactly that shape, and `None` where any other step occurs in it.
-    pub(crate) fn as_spelled(&self) -> Option<(bool, Vec<u32>)> {
-        let mut steps = self.path.iter();
-        let deref = matches!(steps.clone().next(), Some(PlaceStep::Deref));
-        if deref {
-            steps.next();
-        }
-        let fields = steps
-            .map(|step| match step {
-                PlaceStep::Field(field) => Some(*field),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()?;
-        Some((deref, fields))
-    }
-
     /// Whether this place's path positively selects the same storage as, or a
     /// storage containing, `other`'s.
     ///
@@ -466,22 +447,6 @@ impl ResolvedPlace {
             self.path.len() < other.path.len()
         };
         length_admitted && places_overlap(oracle, self, other)
-    }
-
-    /// The support every captured value in this path contributes [ENT-5].
-    pub(crate) fn captured_support(&self) -> impl Iterator<Item = BindingId> + '_ {
-        self.path
-            .iter()
-            .flat_map(|step| match step {
-                PlaceStep::Index(index) => vec![index.support()],
-                PlaceStep::Range(range) => vec![range.start.support(), range.end.support()],
-                PlaceStep::Field(_)
-                | PlaceStep::Deref
-                | PlaceStep::Payload { .. }
-                | PlaceStep::Part(_)
-                | PlaceStep::Measure(_) => Vec::new(),
-            })
-            .flatten()
     }
 }
 
@@ -728,18 +693,11 @@ pub(crate) struct BindingSummary {
     pub(crate) reference_unknown: bool,
 }
 
-/// Dense per-binding summaries for one checked function, the place resolution
-/// they support, and this function's memo of the [OWN-7] answers.
+/// Dense per-binding summaries for one checked function and the place
+/// resolution they support.
 #[derive(Debug, Default)]
 pub(crate) struct PlaceMap {
     bindings: Vec<BindingSummary>,
-    /// One answer per pair of resolved paths, for this function [OWN-7].
-    ///
-    /// The key is stable because a resolved path carries the immutable
-    /// captured values of its index and endpoint terms, so the answer does
-    /// not depend on the program point at which it is asked, and the memo is
-    /// not a cross-flow fact cache: no kill and no join can change an entry.
-    overlap_memo: RefCell<HashMap<(ResolvedPlace, ResolvedPlace), bool>>,
 }
 
 impl PlaceMap {
@@ -781,15 +739,7 @@ impl PlaceMap {
         if left.root != right.root {
             return false;
         }
-        let key = (left.clone(), right.clone());
-        if let Some(answer) = self.overlap_memo.borrow().get(&key) {
-            return *answer;
-        }
-        let answer = places_overlap(oracle, left, right);
-        let mut memo = self.overlap_memo.borrow_mut();
-        memo.insert((right.clone(), left.clone()), answer);
-        memo.insert(key, answer);
-        answer
+        places_overlap(oracle, left, right)
     }
 
     pub(crate) fn summary_mut(&mut self, binding: BindingId) -> &mut BindingSummary {
@@ -1028,11 +978,6 @@ impl PlaceMap {
                 } => {
                     self.summary_mut(*binding).ty = Some(*ok_type);
                 }
-                CheckedStatement::Replace {
-                    binding, target, ..
-                } => {
-                    self.summary_mut(*binding).ty = Some(target.ty());
-                }
                 // [REF-1] the checker-recorded result mode says whether the
                 // continuing delivery edges bind a reference. Returning and
                 // breaking arms contribute no delivered path; every `give`
@@ -1065,7 +1010,7 @@ impl PlaceMap {
                         self.collect_arm_bindings(arm, &scrutinee_paths);
                     }
                 }
-                CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+                CheckedStatement::Loop { body, .. } => {
                     self.collect_block_bindings(body);
                 }
                 CheckedStatement::CountedRange { binder, body, .. } => {
@@ -1233,7 +1178,6 @@ impl PlaceMap {
                     }
                 }
                 CheckedStatement::Loop { body, .. }
-                | CheckedStatement::Region { body, .. }
                 | CheckedStatement::CountedRange { body, .. } => {
                     self.collect_delivery_reference_paths(body, union, delivered, unresolved)
                 }
@@ -1252,6 +1196,20 @@ impl PlaceMap {
         match value {
             CheckedExpression::BorrowAddressed { root, .. } => {
                 self.resolve(root.root, &root.place_path())
+            }
+            CheckedExpression::BorrowRangeIndex {
+                root,
+                captured,
+                path: suffix,
+                ..
+            } => {
+                let mut paths = self.resolve(PlaceRoot::Binding(root.binding), &[]);
+                for path in &mut paths {
+                    path.path.push(PlaceStep::Index(*captured));
+                    path.path
+                        .extend(suffix.iter().map(CheckedPlaceStep::place_step));
+                }
+                paths
             }
             CheckedExpression::RangeOf {
                 source, captured, ..
@@ -1279,7 +1237,9 @@ impl PlaceMap {
     fn expression_names_reference(&self, value: &CheckedExpression) -> bool {
         matches!(
             value,
-            CheckedExpression::BorrowAddressed { .. } | CheckedExpression::RangeOf { .. }
+            CheckedExpression::BorrowAddressed { .. }
+                | CheckedExpression::BorrowRangeIndex { .. }
+                | CheckedExpression::RangeOf { .. }
         ) || matches!(value, CheckedExpression::Binding { binding, .. } if self.is_reference(*binding))
     }
 }
@@ -1291,9 +1251,9 @@ fn place_nested_bodies(statement: &CheckedStatement) -> Vec<&[CheckedStatement]>
         CheckedStatement::Match { arms, .. } | CheckedStatement::ValueMatchLet { arms, .. } => {
             arms.iter().map(|arm| arm.body.as_slice()).collect()
         }
-        CheckedStatement::Loop { body, .. }
-        | CheckedStatement::Region { body, .. }
-        | CheckedStatement::CountedRange { body, .. } => vec![body.as_slice()],
+        CheckedStatement::Loop { body, .. } | CheckedStatement::CountedRange { body, .. } => {
+            vec![body.as_slice()]
+        }
         _ => Vec::new(),
     }
 }

@@ -176,16 +176,6 @@ fn instantiated_call_goal_arguments(call: &CheckedExpression) -> &[GoalExpressio
     arguments
 }
 
-fn contains_array_fill(expression: &GoalExpression) -> bool {
-    match expression {
-        GoalExpression::Operation { row, arguments, .. } => {
-            matches!(row, GoalOperation::ArrayFill { .. })
-                || arguments.iter().any(contains_array_fill)
-        }
-        GoalExpression::Datum(_) => false,
-    }
-}
-
 #[test]
 fn requires_retains_one_static_goal_without_a_second_expression_tree() {
     let source = br#"fn bounded(x: own i32) -> result: own i32 pure contract {
@@ -408,10 +398,23 @@ fn main() -> status: own ExitStatus pure {
                 .requirements
                 .first()
                 .expect("f carries its admitted requirement");
-            assert!(
-                !contains_array_fill(&requirement.template.root),
-                "ArrayFill is a body-origin operation, never an admitted GoalTemplate row"
-            );
+            let GoalExpression::Operation {
+                row:
+                    GoalOperation::Integer {
+                        operation: CheckedIntegerOperation::Less,
+                        operand_type: CheckedType::Integer(IntegerType::U64),
+                    },
+                arguments,
+                result: CheckedType::Bool,
+                ..
+            } = &requirement.template.root
+            else {
+                panic!(
+                    "the admitted template must retain exactly the written comparison: {:?}",
+                    requirement.template.root
+                );
+            };
+            assert_eq!(arguments.len(), 2);
         },
     );
 }

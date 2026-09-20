@@ -7,26 +7,38 @@ the default, `--par`, and `--no-overlap` lowering modes.
 
 ## Growable vector
 
-[`vector.wf`](vector.wf) defines `GrowVector<T>` over a `Box<Slots<T>>`: a
-runtime-capacity window exists only as the content of a cell [TYPE-9], and the
-cell is the one heap object the vector owns [STOR-1]. Its operations are
-generic over every linearity class accepted by the `linear` bound:
+[`vector.wf`](vector.wf) defines `GrowVector<T, const ceiling: u64>` over a
+`Box<Slots<T>>`: a runtime-capacity window exists only as the content of a cell
+[TYPE-9], and the cell is the one heap object the vector owns [STOR-1]. The
+caller selects the greatest capacity its instance may request. That written
+constant gives each concrete `grow` call the bound OP-9 requires and leaves
+STOR-6 to qualify the complete selected-target allocation. A zero ceiling is
+a valid empty vector; its append and insert requirements cannot be met.
 
 - `grow_vector_new` creates an empty vector over a zero-capacity backing.
 - `grow_vector_reserve` preserves the window and raises capacity to at least a
-  requested total, using `grow`, which remakes the cell's content whole and may
-  reallocate in place [OP-10].
-- `grow_vector_append` doubles full nonempty backing and takes one slot when the
+  requested total no greater than the selected ceiling, using `grow`, which
+  remakes the cell's content whole and may reallocate in place [OP-10].
+- `grow_vector_append` and `grow_vector_insert` require the current length to
+  be below the ceiling. They double full nonempty backing while the doubled
+  total fits, saturate at the ceiling otherwise, and take one slot when the
   backing is empty.
-- `grow_vector_insert` inserts before a proved index and preserves order.
 - `grow_vector_remove` removes a proved index and preserves order.
 - `grow_vector_drain` moves values from front to back into a monomorphized
   `VectorDrain` behavior supplied by the caller.
 
-Every mutating public operation takes an ordinary `&GrowVector<T>` reference and
-declares `writes(values.storage)`; there is no permission marker, and whether a
-callee may write through a reference is its effect row alone [REF-1, EFF-1].
-Contracts publish the exit state of the measures they change.
+Every mutating public operation takes an ordinary
+`&GrowVector<T, ceiling>` reference and declares `writes(values.storage)`;
+there is no permission marker, and whether a callee may write through a
+reference is its effect row alone [REF-1, EFF-1]. Contracts publish the exit
+state of the measures they change.
+
+The maintained example instantiates ceilings of zero and three. The latter
+walks the growth policy through capacities zero, one, two, and exactly three,
+then checks scalar and owning elements and drains or releases every allocation.
+The allocation observer runs the same program in sequential and parallel
+lowering and requires every allocation, including the zero-ceiling cell, to be
+released exactly once.
 
 Three things this library carried in v0.59 are gone with the rules that
 supplied them. Allocation is total in the source [STOR-8], so no operation

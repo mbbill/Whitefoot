@@ -1582,10 +1582,17 @@ fn main() -> status: own ExitStatus pure {
                         ..
                     } if !premises.is_empty()
                 );
+                // OP-9 for u8 is exactly count <= u64::MAX. Its direct
+                // L0 derivation retains the type maximum itself; an empty
+                // affine-premise wrapper is not required by DIAG-2 and is
+                // not the evidence that establishes this bound.
                 used_direct_interval |= matches!(
                     retained,
-                    DerivationNode::AffineConsequence { premises, .. }
-                        if premises.is_empty()
+                    DerivationNode::ImplicitBound {
+                        kind: super::super::entailment::ImplicitBoundKind::TypeMaximum,
+                        bound,
+                        ..
+                    } if *bound == i128::from(u64::MAX)
                 );
                 stack.extend(retained.parent_ids());
             }

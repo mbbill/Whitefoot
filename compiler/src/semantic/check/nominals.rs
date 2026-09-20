@@ -63,7 +63,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .collect(),
             CheckedNominalKind::Box { .. }
             | CheckedNominalKind::Arena { .. }
-            | CheckedNominalKind::ArenaStorage
             | CheckedNominalKind::Opaque => Vec::new(),
         };
         let mut pending: Vec<_> = fields.into_iter().map(|field| field.ty).collect();

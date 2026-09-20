@@ -110,7 +110,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .collect(),
             CheckedNominalKind::Box { referent, .. } => vec![*referent],
             CheckedNominalKind::Arena { content, .. } => vec![*content],
-            CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => Vec::new(),
+            CheckedNominalKind::Opaque => Vec::new(),
         })
     }
 

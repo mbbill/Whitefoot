@@ -3,6 +3,11 @@ use crate::{
     lower_checked,
 };
 
+use super::super::goal::{GoalExpression, GoalOperation};
+use super::super::model::{
+    CheckedExpression, CheckedIntegerOperation, CheckedStatement, CheckedValue,
+};
+
 use super::{assert_parse_rule, assert_rule, with_semantics};
 
 fn assert_behavior_rule(source: &str, rule: SemanticRule) {
@@ -61,7 +66,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
 
 #[test]
-fn group_contracts_publish_only_after_structurally_matched_actual_proofs() {
+fn group_contracts_publish_only_after_implied_actual_proofs() {
     for mode in [OverlapLowering::Off, OverlapLowering::On] {
         with_semantics(BOUNDED_GROUP.as_bytes(), |outcome| {
             let SemanticOutcome::Complete(checked) = outcome else {
@@ -74,6 +79,20 @@ fn group_contracts_publish_only_after_structurally_matched_actual_proofs() {
                     .iter()
                     .all(|function| !function.formal_hypothesis)
             );
+            assert!(!checked.data.contract_queries.is_empty());
+            for query in &checked.data.contract_queries {
+                assert!(!query.site.components().is_empty());
+                assert!(!query.goal.components().is_empty());
+                super::entailment::validate_derivations(&query.proof);
+                let [outcome] = query.proof.contract_goals.as_slice() else {
+                    panic!("one isolated FN-4 goal per retained proof namespace");
+                };
+                assert_eq!(
+                    outcome.disposition,
+                    super::super::entailment::CallGoalDisposition::Discharged
+                );
+                assert!(outcome.derivation.is_some());
+            }
             let lowered = lower_checked(*checked, mode).expect("direct-call lowering");
             assert_eq!(
                 lowered
@@ -85,16 +104,440 @@ fn group_contracts_publish_only_after_structurally_matched_actual_proofs() {
             );
         });
     }
-    // Equivalent integer relations still differ structurally; no theorem
-    // implication or algebraic-law engine selects a behavior binding.
-    assert_behavior_rule(
-        &BOUNDED_GROUP.replace("ensures output <= 99_u64;", "ensures output < 100_u64;"),
-        SemanticRule::Fn4,
+    // FN-4 uses the fixed integer entailment fragment, so equivalent written
+    // bounds need not have byte-identical clause trees.
+    with_semantics(
+        BOUNDED_GROUP
+            .replace("ensures output <= 99_u64;", "ensures output < 100_u64;")
+            .as_bytes(),
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            )
+        },
     );
     assert_behavior_rule(
         &BOUNDED_GROUP.replace("return 17_u64;", "return 100_u64;"),
         SemanticRule::Fn9,
     );
+}
+
+#[test]
+fn behavior_contract_implication_admits_only_weaker_requires_and_stronger_ensures() {
+    let source = r#"interface Refined {
+  fn refine(value: own u64) -> result: own u64 pure contract {
+    requires value <= 10_u64;
+    ensures result <= 10_u64;
+  };
+}
+
+fn refined(value: own u64) -> result: own u64 pure contract {
+  requires value <= 11_u64;
+  ensures result <= 9_u64;
+} {
+  return 9_u64;
+}
+
+binding Refinement : Refined {
+  refine = refined;
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+
+    // The formal caller establishes only `value <= 10`, which does not
+    // establish this stronger actual requirement.
+    assert_behavior_rule(
+        &source.replace("requires value <= 11_u64;", "requires value <= 9_u64;"),
+        SemanticRule::Fn4,
+    );
+    // The actual's independently proved `result <= 11` does not establish
+    // the tighter promise exposed by the interface.
+    assert_behavior_rule(
+        &source.replace("ensures result <= 9_u64;", "ensures result <= 11_u64;"),
+        SemanticRule::Fn4,
+    );
+}
+
+#[test]
+fn behavior_contract_implication_keeps_entry_exit_and_result_datums_distinct() {
+    let source = r#"interface Grower {
+  fn grow(values: &Slots<u64, 4>) -> result: own u64 writes(values) contract {
+    requires deref(values).len < deref(values).cap;
+    ensures result == deref(entry(values)).len;
+  };
+}
+
+fn grow_and_count(values: &Slots<u64, 4>) -> result: own u64 writes(values) contract {
+  requires deref(values).len < deref(values).cap;
+  ensures result == deref(values).len;
+} {
+  place_back(window: values, value: 7_u64);
+  return deref(values).len;
+}
+
+binding CountedGrow : Grower {
+  grow = grow_and_count;
+}
+"#;
+    // The supplied body proves its own exit-state relation, but that relation
+    // does not imply the interface's entry-state promise.
+    assert_behavior_rule(source, SemanticRule::Fn4);
+}
+
+#[test]
+fn behavior_contract_implication_uses_routed_payload_types_and_unrouted_premises() {
+    let equivalent_route = r#"interface RoutedBound {
+  fn choose(value: own i32) -> outcome: own Result<i32, i32> pure contract {
+    requires value < 100_i32;
+    ensures when Ok(value: selected): selected <= 99_i32;
+  };
+}
+
+fn choose(value: own i32) -> outcome: own Result<i32, i32> pure contract {
+  requires value < 100_i32;
+  ensures when Ok(value: selected): selected < 100_i32;
+} {
+  return Ok<i32, i32>(value: value);
+}
+
+binding RoutedChoice : RoutedBound {
+  choose = choose;
+}
+"#;
+    with_semantics(equivalent_route.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+
+    let combined = r#"interface RoutedPair {
+  fn pair() -> (limit: own u64, outcome: own Result<u64, u8>) pure contract {
+    ensures when outcome is Ok(value: selected): selected <= limit;
+  };
+}
+
+fn pair() -> (limit: own u64, outcome: own Result<u64, u8>) pure contract {
+  ensures limit >= 10_u64;
+  ensures when outcome is Ok(value: selected): selected <= 9_u64;
+} {
+  return 10_u64, Ok<u64, u8>(value: 9_u64);
+}
+
+binding RoutedPairChoice : RoutedPair {
+  pair = pair;
+}
+"#;
+    with_semantics(combined.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn behavior_contract_implication_does_not_use_a_different_result_route() {
+    let source = r#"interface RoutedPair {
+  fn pair() -> (first: own Result<u64, u8>, second: own Result<u64, u8>) pure contract {
+    ensures when first is Ok(value: selected): selected <= 9_u64;
+  };
+}
+
+fn pair() -> (first: own Result<u64, u8>, second: own Result<u64, u8>) pure contract {
+  ensures when second is Ok(value: selected): selected <= 9_u64;
+} {
+  return Ok<u64, u8>(value: 9_u64), Ok<u64, u8>(value: 9_u64);
+}
+
+binding RoutedPairChoice : RoutedPair {
+  pair = pair;
+}
+"#;
+    assert_behavior_rule(source, SemanticRule::Fn4);
+}
+
+#[test]
+fn bound_atomic_updates_use_the_formal_result_route_boundary() {
+    let bound = r#"interface Transform {
+  fn update(value: own Result<u64, Box<u64>>) -> result: own Result<u64, Box<u64>> pure;
+}
+
+fn routed_update(value: own Result<u64, Box<u64>>) -> result: own Result<u64, Box<u64>> pure contract {
+  ensures when Ok(value: payload): payload == payload;
+} {
+  match move value {
+    Ok(value: payload) => {
+      return Ok<u64, Box<u64>>(value: payload);
+    }
+    Err(error: problem) => {
+      return Err<u64, Box<u64>>(error: move problem);
+    }
+  }
+}
+
+binding RoutedTransform : Transform {
+  update = routed_update;
+}
+
+fn apply<interface Transform>(value: own Result<u64, Box<u64>>) -> result: own Result<u64, Box<u64>> pure {
+  set value = Transform::update(value: move value);
+  return move value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let owner = box_new::<u64>(value: 7_u64);
+  let wrapped = Err<u64, Box<u64>>(error: move owner);
+  let retained = apply::<RoutedTransform>(value: move wrapped);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(bound.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+
+    // The selected actual's own direct boundary still carries its routed
+    // result. Only the bound call above is governed by the unrouted formal.
+    let direct = r#"fn routed_update(value: own Result<u64, Box<u64>>) -> result: own Result<u64, Box<u64>> pure contract {
+  ensures when Ok(value: payload): payload == payload;
+} {
+  match move value {
+    Ok(value: payload) => {
+      return Ok<u64, Box<u64>>(value: payload);
+    }
+    Err(error: problem) => {
+      return Err<u64, Box<u64>>(error: move problem);
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  let owner = box_new::<u64>(value: 7_u64);
+  let wrapped = Err<u64, Box<u64>>(error: move owner);
+  set wrapped = routed_update(value: move wrapped);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_behavior_rule(direct, SemanticRule::Own1);
+}
+
+#[test]
+fn bound_call_rows_keep_formal_and_actual_parameter_namespaces_distinct() {
+    let source = r#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+interface Mixer {
+  fn mix(target: &Pair, alias: &Pair) -> result: own unit reads(alias.right), writes(target.left);
+}
+
+fn mix(destination: &Pair, observer: &Pair) -> result: own unit reads(observer.right), writes(destination.left) {
+  let observed = deref(observer).right;
+  set deref(destination).left = observed;
+  return unit;
+}
+
+binding PairMixer : Mixer {
+  mix = mix;
+}
+
+fn apply<interface Mixer>(value: &Pair) -> result: own unit reads(value.right), writes(value.left) {
+  return Mixer::mix(target: value, alias: value);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let pair = Pair(left: 0_u64, right: 1_u64);
+  let result = apply::<PairMixer>(value: &pair);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "disjoint formal paths must survive rebasing: {outcome:?}"
+        );
+    });
+
+    // The same holder supplied twice makes the formal whole-object read
+    // overlap its field write. The actual uses different binder names, so
+    // this also guards declaration-identity rebasing at the retained edge.
+    assert_behavior_rule(
+        &source.replace("reads(alias.right)", "reads(alias)"),
+        SemanticRule::Eff5,
+    );
+}
+
+#[test]
+fn bound_allocating_actuals_keep_allocation_metadata_outside_fn4_rows() {
+    let source = br#"interface Factory {
+  fn make(value: own u64) -> result: own Box<u64> pure;
+}
+
+binding Allocate : Factory {
+  make = box_new::<u64>;
+}
+
+fn produce<interface Factory>(value: own u64) -> result: own Box<u64> pure {
+  return Factory::make(value: value);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let made = produce::<Allocate>(value: 7_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("allocation is not an FN-4 row mismatch: {outcome:?}");
+        };
+        let main = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("entry function");
+        let Some(CheckedExpression::UserCall {
+            function: produce_id,
+            ..
+        }) = main.body.as_deref().and_then(|body| {
+            body.iter().find_map(|statement| match statement {
+                CheckedStatement::Let { value, .. } => Some(value),
+                _ => None,
+            })
+        })
+        else {
+            panic!("main must call the concrete generic wrapper");
+        };
+        let produce = checked
+            .data
+            .functions
+            .get(produce_id.0 as usize)
+            .filter(|function| function.id == *produce_id && function.name == "produce")
+            .expect("main's concrete produce instance");
+        assert!(produce.allocates, "EFF-3 must retain the actual allocation");
+        let [
+            CheckedStatement::Return {
+                value:
+                    CheckedExpression::UserCall {
+                        formal_effects: Some(effects),
+                        ..
+                    },
+                ..
+            },
+        ] = produce.body.as_deref().expect("wrapper body")
+        else {
+            panic!("wrapper return must retain its bound call");
+        };
+        assert!(
+            effects.allocates,
+            "the executable actual's allocation metadata must survive the formal boundary"
+        );
+    });
+
+    // Removing allocation from FN-4 does not withdraw the compilation-unit
+    // STOR-8 restriction on the allocating operation itself.
+    assert_behavior_rule(
+        r#"program no_heap;
+
+fn main() -> status: own ExitStatus pure {
+  let made = box_new::<u64>(value: 7_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Stor8,
+    );
+}
+
+#[test]
+fn bound_calls_retain_the_formal_requirement_boundary() {
+    let source = br#"interface Limited {
+  fn accept(value: own u64) -> result: own u64 pure contract {
+    requires value <= 10_u64;
+  };
+}
+
+fn permissive(value: own u64) -> result: own u64 pure contract {
+  requires value <= 11_u64;
+} {
+  return value;
+}
+
+binding PermissiveLimited : Limited {
+  accept = permissive;
+}
+
+fn apply<interface Limited>(value: own u64) -> result: own u64 pure contract {
+  requires value <= 10_u64;
+} {
+  return Limited::accept(value: value);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let result = apply::<PermissiveLimited>(value: 10_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("formal requirement boundary must check: {outcome:?}");
+        };
+        let actual = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "permissive")
+            .expect("selected actual");
+        let apply = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "apply")
+            .expect("concrete wrapper");
+        let [
+            CheckedStatement::Return {
+                value: CheckedExpression::UserCall { requirements, .. },
+                ..
+            },
+        ] = apply.body.as_deref().expect("wrapper body")
+        else {
+            panic!("wrapper return must retain its bound call");
+        };
+        let [requirement] = requirements.as_slice() else {
+            panic!("bound call must retain exactly the formal requirement");
+        };
+        assert_ne!(requirement.requires_clause, actual.requirements[0].clause);
+        let GoalExpression::Operation {
+            row:
+                GoalOperation::Integer {
+                    operation: CheckedIntegerOperation::LessEqual,
+                    ..
+                },
+            arguments,
+            ..
+        } = &requirement.goal.root
+        else {
+            panic!("formal requirement must remain its <= goal");
+        };
+        assert!(matches!(
+            arguments.as_slice(),
+            [
+                _,
+                GoalExpression::Datum(super::super::goal::GoalDatum::Literal(
+                    CheckedValue::Integer { bits: 10, .. }
+                ))
+            ]
+        ));
+    });
 }
 
 #[test]

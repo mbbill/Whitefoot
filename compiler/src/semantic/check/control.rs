@@ -17,8 +17,9 @@ use super::super::model::{
     BindingId, CheckedDrop, CheckedLoopId, CheckedMode, CheckedStatement, CheckedType,
     ValueInitializerKind,
 };
-use super::references::{REF3_RETURN_AN_INDEX, ReferenceInfo};
+use super::references::{InvalidationEvent, REF3_RETURN_AN_INDEX, ReferenceInfo};
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
+use crate::semantic::places::PlaceRoot;
 pub(super) use commit::CommitReadOut;
 use loops::{BreakState, LoopContext};
 
@@ -84,6 +85,38 @@ impl GiveContext {
         match current.as_mut() {
             Some(existing) => existing.join(delivered),
             None => *current = Some(delivered.clone()),
+        }
+    }
+
+    /// [REF-2] a delivered reference is stored separately from the ownership
+    /// state copied onto its `give` edge. Scope exit must invalidate both
+    /// representations before the value initializer publishes its binder.
+    fn invalidate_reference_roots_leaving_scope(&self, leaving: &[BindingId]) {
+        let mut delivered = self.delivered_reference.borrow_mut();
+        let Some(reference) = delivered.as_mut() else {
+            return;
+        };
+        if reference.paths.iter().any(|path| match path.root {
+            PlaceRoot::Binding(binding) => leaving.contains(&binding),
+            PlaceRoot::Constant(_) => false,
+        }) {
+            reference.invalidate(InvalidationEvent::RootScopeEnded);
+        }
+    }
+
+    /// [REF-2, ENT-3.S15] meet the delivered reference with the live
+    /// refinement witnesses on every delivery edge crossing one scope.
+    fn invalidate_reference_refinements(
+        &self,
+        states: &[HashMap<DeclarationId, LocalBinding>],
+        leaving: &[BindingId],
+    ) {
+        let mut delivered = self.delivered_reference.borrow_mut();
+        let Some(reference) = delivered.as_mut() else {
+            return;
+        };
+        for state in states {
+            Checker::invalidate_reference_without_refinement_witness(reference, state, leaving);
         }
     }
 }
@@ -479,6 +512,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             loop_depth: scope.loops.len(),
                             compiler_updated: false,
                             reference,
+                            refinement_witnesses: Vec::new(),
                         },
                     )
                     .is_some()
@@ -560,6 +594,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     loop_depth: scope.loops.len(),
                     compiler_updated: false,
                     reference,
+                    refinement_witnesses: Vec::new(),
                 },
             )
             .is_some()

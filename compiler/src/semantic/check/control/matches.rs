@@ -13,7 +13,9 @@ use super::super::super::model::{
 use super::super::super::places::PlaceStep;
 use super::super::super::tree::ConditionalAlternative;
 use super::super::references::{ReferenceInfo, RequiredReferent};
-use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
+use super::super::{
+    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, RefinementWitness,
+};
 use super::{BlockResult, BreakState, ControlCounters, ControlScope, GiveContext};
 
 #[derive(Clone)]
@@ -138,16 +140,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // at the path `p` names everywhere else, so the reading is made here,
         // where the rule distinguishes the two, and not at the place walk.
         if spelling == ScrutineeSpelling::Dereferenced && scrutinee.reference.is_none() {
-            let place = scrutinee
+            // Place checking retains both the selected members and every
+            // place read to evaluate their operands. Only the selected set is
+            // the borrowed-match referent; an index loaded from another place
+            // must not become another enum root [REF-1, OWN-13].
+            let mut places = scrutinee
                 .accesses
-                .first()
-                .map(|access| access.place.clone())
+                .iter()
+                .filter(|access| access.selected)
+                .map(|access| access.place.clone());
+            let first = places
+                .next()
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let mut reference =
+                ReferenceInfo::formed(super::super::references::ReferenceKind::Single, first);
+            for place in places {
+                reference.join(&ReferenceInfo::formed(
+                    super::super::references::ReferenceKind::Single,
+                    place,
+                ));
+            }
             scrutinee.mode = CheckedMode::Reference;
-            scrutinee.reference = Some(ReferenceInfo::formed(
-                super::super::references::ReferenceKind::Single,
-                place,
-            ));
+            scrutinee.reference = Some(reference);
         }
         let scrutinee = scrutinee;
         let descriptor = self.match_descriptor(scrutinee.expression.ty(), expression_node)?;
@@ -159,10 +173,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
         let local_give_context = value_delivery.then(|| GiveContext::empty(&base_key_set, scope));
-        let arm_scope = ControlScope {
-            loops: scope.loops,
-            give_context: local_give_context.as_ref().or(scope.give_context),
-        };
         let arm_nodes = self.tree.children_with(node, Production::Arm)?;
         let mut seen = HashSet::new();
         let mut duplicate_arm = None;
@@ -203,6 +213,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut effects = scrutinee.effects.clone();
         let mut all_paths_deliver = true;
         for (arm_node, variant) in arm_nodes.into_iter().zip(&resolved_variants) {
+            let arm_scope = ControlScope {
+                loops: scope.loops,
+                give_context: local_give_context.as_ref().or(scope.give_context),
+            };
             let mut arm_bindings = base_bindings.clone();
             let binders = self.check_match_binders(
                 variant,
@@ -213,13 +227,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 &scrutinee,
             )?;
             let statements = self.tree.children_with(arm_node, Production::Stmt)?;
-            let checked = self.check_block(
+            let mut checked = self.check_block(
                 function,
                 &statements,
                 &mut arm_bindings,
                 counters,
                 arm_scope,
             )?;
+            let leaving = Self::bindings_leaving_scope(&arm_bindings, &base_keys);
+            Self::invalidate_control_exits(
+                &mut arm_bindings,
+                &mut checked.give_states,
+                &mut checked.break_states,
+                arm_scope.give_context,
+                &leaving,
+            );
             let fallthrough_drops = if checked.can_continue {
                 self.live_affine_drops(&arm_bindings, &base_key_set, arm_node)?
             } else {
@@ -425,11 +447,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // so the two spellings cannot drift apart. `bool_descriptor` lists the
         // variants in that order.
         let descriptor = Self::bool_descriptor();
-        for (variant, (checked, branch_bindings)) in descriptor
+        for (variant, (mut checked, mut branch_bindings)) in descriptor
             .variants
             .iter()
             .zip([(then_checked, then_bindings), (else_checked, else_bindings)])
         {
+            let leaving = Self::bindings_leaving_scope(&branch_bindings, &base_keys);
+            Self::invalidate_control_exits(
+                &mut branch_bindings,
+                &mut checked.give_states,
+                &mut checked.break_states,
+                arm_scope.give_context,
+                &leaving,
+            );
             let fallthrough_drops = if checked.can_continue {
                 self.live_affine_drops(&branch_bindings, &base_key_set, node)?
             } else {
@@ -701,6 +731,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } else {
                 None
             };
+            let refinement_witnesses = if mode.is_reference() {
+                let origin = self.tree.path(arm)?.clone();
+                scrutinee
+                    .reference
+                    .as_ref()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    .paths
+                    .iter()
+                    .cloned()
+                    .map(|place| RefinementWitness {
+                        origin: origin.clone(),
+                        place,
+                        variant: variant.tag,
+                        valid: true,
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             if bindings
                 .insert(
                     declaration.id(),
@@ -713,6 +762,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         loop_depth,
                         compiler_updated: false,
                         reference,
+                        refinement_witnesses,
                     },
                 )
                 .is_some()
@@ -728,6 +778,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             });
         }
         Ok(binders)
+    }
+
+    /// Applies [REF-2]'s two arm/branch-exit events to every state that can
+    /// cross that boundary. A normal edge, `give`, and `break` carry separate
+    /// ownership maps, while a delivered reference is accumulated separately
+    /// in its [`GiveContext`]; all four must observe the same exit.
+    fn invalidate_control_exits(
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        give_states: &mut [HashMap<DeclarationId, LocalBinding>],
+        break_states: &mut [BreakState],
+        give_context: Option<&GiveContext>,
+        leaving: &[super::super::super::model::BindingId],
+    ) {
+        Self::invalidate_references_leaving_scope(bindings, leaving);
+        Self::invalidate_references_without_refinement_witness(bindings, leaving);
+        for state in give_states.iter_mut() {
+            Self::invalidate_references_leaving_scope(state, leaving);
+            Self::invalidate_references_without_refinement_witness(state, leaving);
+        }
+        for state in break_states.iter_mut() {
+            state.invalidate_references_leaving_scope(leaving);
+            state.invalidate_references_without_refinement_witness(leaving);
+        }
+        if let Some(context) = give_context
+            && !give_states.is_empty()
+        {
+            context.invalidate_reference_roots_leaving_scope(leaving);
+            context.invalidate_reference_refinements(give_states, leaving);
+        }
     }
 
     fn invalid_match_fields<ResultValue>(

@@ -142,6 +142,167 @@ fn main() -> status: own ExitStatus pure {
     assert_accepts(source);
 }
 
+const CONDITIONAL_RANGE_SEPARATION_HELPERS: &str = r#"fn touch(left: &[Slots<u64, 2>], right: &[Slots<u64, 2>]) -> result: own unit writes(left), writes(right) contract {
+  requires 0_u64 < deref(left).len;
+  requires 0_u64 < deref(right).len;
+} {
+  clear(window: &deref(left)[0_u64]);
+  clear(window: &deref(right)[0_u64]);
+  return unit;
+}
+
+fn clear(window: &Slots<u64, 2>) -> result: own unit writes(window) {
+  let empty = slots_new::<u64, 2>();
+  set deref(window) = move empty;
+  return unit;
+}
+"#;
+
+/// [OWN-7, EFF-5] a range-separation proof is available under the guard that
+/// establishes it. This is the positive control for the flow-sensitive
+/// non-leak cases below.
+#[test]
+fn a_range_separation_is_available_in_its_dominating_guard() {
+    let source = format!(
+        "{CONDITIONAL_RANGE_SEPARATION_HELPERS}
+fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64) -> result: own unit writes(values) contract {{
+  requires 1_u64 <= hi;
+  requires hi <= 2_u64;
+  requires lo <= 1_u64;
+}} {{
+  let left = &deref(values)[0_u64..hi];
+  let right = &deref(values)[lo..2_u64];
+  if hi <= lo {{
+    touch(left: left, right: right);
+  }}
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+    );
+    assert_accepts(source.as_bytes());
+}
+
+/// [OWN-7, ENT-5] a proof established only in one arm is unavailable after
+/// the join. Otherwise the write through `right` can retain the stale length
+/// of the overlapping slot selected through `left`.
+#[test]
+fn a_conditional_range_separation_does_not_escape_its_join() {
+    let source = format!(
+        "{CONDITIONAL_RANGE_SEPARATION_HELPERS}
+fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64) -> result: own u64 writes(values) contract {{
+  requires 1_u64 <= hi;
+  requires hi <= 2_u64;
+  requires lo <= 1_u64;
+}} {{
+  let left = &deref(values)[0_u64..hi];
+  let right = &deref(values)[lo..2_u64];
+  if hi <= lo {{
+    touch(left: left, right: right);
+  }}
+  let selected = &deref(left)[0_u64];
+  if deref(selected).len == 1_u64 {{
+    clear(window: &deref(right)[0_u64]);
+    return deref(selected)[0_u64];
+  }}
+  return 0_u64;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Op4, |_| true);
+}
+
+/// The sibling arm has the opposite guard, so a proof recorded while walking
+/// the first arm must not affect its overlap judgments.
+#[test]
+fn a_range_separation_does_not_leak_into_a_sibling_arm() {
+    let source = format!(
+        "{CONDITIONAL_RANGE_SEPARATION_HELPERS}
+fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64) -> result: own u64 writes(values) contract {{
+  requires 1_u64 <= hi;
+  requires hi <= 2_u64;
+  requires lo <= 1_u64;
+}} {{
+  let left = &deref(values)[0_u64..hi];
+  let right = &deref(values)[lo..2_u64];
+  if hi <= lo {{
+    touch(left: left, right: right);
+  }} else {{
+    let selected = &deref(left)[0_u64];
+    if deref(selected).len == 1_u64 {{
+      clear(window: &deref(right)[0_u64]);
+      return deref(selected)[0_u64];
+    }}
+  }}
+  return 0_u64;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Op4, |_| true);
+}
+
+/// A counted loop has a zero-trip predecessor. A separation proved in its
+/// body therefore cannot be available after loop exhaustion.
+#[test]
+fn a_range_separation_does_not_escape_a_maybe_zero_trip_loop() {
+    let source = format!(
+        "{CONDITIONAL_RANGE_SEPARATION_HELPERS}
+fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64, count: own u64) -> result: own u64 writes(values) contract {{
+  requires 1_u64 <= hi;
+  requires hi <= 2_u64;
+  requires lo <= 1_u64;
+}} {{
+  let left = &deref(values)[0_u64..hi];
+  let right = &deref(values)[lo..2_u64];
+  for (i in 0_u64..count) {{
+    if hi <= lo {{
+      touch(left: left, right: right);
+    }}
+  }}
+  let selected = &deref(left)[0_u64];
+  if deref(selected).len == 1_u64 {{
+    clear(window: &deref(right)[0_u64]);
+    return deref(selected)[0_u64];
+  }}
+  return 0_u64;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Op4, |_| true);
+}
+
+/// [REF-4, OP-10] a range reference captures its own immutable descriptor.
+/// Growing its backing Slots writes `next` and `len`, but neither write
+/// changes the range's formed length or the bound for an element inside it.
+#[test]
+fn growing_the_backing_window_preserves_a_formed_range_length() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let values = slots_new::<u8, 4>();
+  place_back(window: &values, value: 11_u8);
+  let part = &values[0_u64..1_u64];
+  place_back(window: &values, value: 22_u8);
+  let first = deref(part)[0_u64];
+  return exit_status(code: first);
+}
+"#;
+    assert_accepts(source);
+}
+
 /// [CALL-1] through a reference the callee only reads, every fact survives.
 #[test]
 fn a_read_only_reference_argument_keeps_every_fact() {
@@ -360,6 +521,22 @@ fn main() -> status: own ExitStatus pure {{
 "
     );
     assert_accepts(source.as_bytes());
+}
+
+/// [REF-4, ENT-5] assigning a new range to the holder replaces its captured
+/// descriptor. A window-part preservation rule must not retain the old
+/// one-element length across this whole-holder write.
+#[test]
+fn rebinding_a_range_reference_does_not_retain_the_old_length() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let a = array_filled::<u8, 2>(value: 0_u8);
+  let part = &a[0_u64..1_u64];
+  set part = &a[0_u64..0_u64];
+  let first = deref(part)[0_u64];
+  return exit_status(code: first);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op4, |_| true);
 }
 
 /// Endpoint bindings are evaluated when a range is formed. Later assignments

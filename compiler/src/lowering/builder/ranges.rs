@@ -74,8 +74,13 @@ impl IrBuilder<'_> {
         &mut self,
         root: &CheckedRangeRoot,
         offset: &CheckedExpression,
+        path: &[crate::semantic::CheckedPlaceStep],
         target_domain: CheckedTargetDomainObligation,
     ) -> Result<IrValueId, LoweringFailure> {
+        if !path.is_empty() {
+            let address = self.lower_range_address(root, offset, path, target_domain)?;
+            return self.load_storage_value(address);
+        }
         let slice = self.range_root(root)?;
         let element = lower_element(self.erasure, root.element)?;
         let offset = self.expression(offset)?;
@@ -95,6 +100,41 @@ impl IrBuilder<'_> {
                 target_domain: target_domain.into(),
             },
         )
+    }
+
+    /// [REF-1, REF-4] the discharged address of one range element. This is
+    /// the same pointer arithmetic as an element read, with the load omitted
+    /// so the resulting source reference continues to name caller storage.
+    pub(super) fn lower_range_address(
+        &mut self,
+        root: &CheckedRangeRoot,
+        offset: &CheckedExpression,
+        path: &[crate::semantic::CheckedPlaceStep],
+        target_domain: CheckedTargetDomainObligation,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let slice = self.range_root(root)?;
+        let element = lower_element(self.erasure, root.element)?;
+        let element_type = self.element_type(element)?;
+        let offset = self.expression(offset)?;
+        if self.value_type(offset)?
+            != (IrType::Integer {
+                width: 64,
+                signed: false,
+            })
+        {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        let address = self.define(
+            IrType::Address(
+                IrAddressed::of(element_type).ok_or(LoweringFailure::InvalidCheckedProgram)?,
+            ),
+            IrOperation::SliceAddress {
+                slice,
+                offset,
+                target_domain: target_domain.into(),
+            },
+        )?;
+        self.project_address_path(address, path)
     }
 
     /// The descriptor value one range reference binding holds [REF-4].

@@ -201,7 +201,6 @@ const POINTER_LAYOUT: Layout = Layout { size: 8, align: 8 };
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum TargetStorageType {
     Source(IrType),
-    Pointer,
     Integer(u16),
     Array {
         element: Box<TargetStorageType>,
@@ -212,10 +211,6 @@ pub(super) enum TargetStorageType {
 impl TargetStorageType {
     pub(super) const fn source(ty: IrType) -> Self {
         Self::Source(ty)
-    }
-
-    pub(super) const fn pointer() -> Self {
-        Self::Pointer
     }
 
     pub(super) const fn integer(width: u16) -> Self {
@@ -883,53 +878,6 @@ fn validate_target_obligation(
                 ));
             }
         }
-        IrOperation::ArenaNew {
-            nominal,
-            list,
-            value,
-        } => {
-            if result_type != IrType::Nominal(*nominal) {
-                return Err(TargetLayoutFailure::InvalidIr);
-            }
-            let content = match layouts
-                .program
-                .nominal(*nominal)
-                .ok_or(TargetLayoutFailure::InvalidIr)?
-                .kind()
-            {
-                IrNominalKind::Arena { content } => *content,
-                _ => return Err(TargetLayoutFailure::InvalidIr),
-            };
-            if function.value_type(*value) != Some(content) {
-                return Err(TargetLayoutFailure::InvalidIr);
-            }
-            let Some(IrType::Nominal(list_nominal)) = function.value_type(*list) else {
-                return Err(TargetLayoutFailure::InvalidIr);
-            };
-            if !matches!(
-                layouts
-                    .program
-                    .nominal(list_nominal)
-                    .ok_or(TargetLayoutFailure::InvalidIr)?
-                    .kind(),
-                IrNominalKind::ArenaStorage
-            ) {
-                return Err(TargetLayoutFailure::InvalidIr);
-            }
-
-            // Emission allocates exactly `{ ptr, content }`, not the
-            // pointer-shaped arena handle. Compute that selected-target
-            // structure including the content offset and tail padding before
-            // `malloc` is emitted.
-            let node = layouts.arena_node_layout(content)?;
-            if node.size > layouts.target.runtime_allocation_max()
-                || node.align > layouts.target.runtime_allocation_alignment()
-            {
-                return Err(TargetLayoutFailure::Unrepresentable(
-                    TargetObject::RuntimeSizedAllocation,
-                ));
-            }
-        }
         IrOperation::ArrayFill { target_domain, .. }
             if *target_domain == IrTargetDomainObligation::ElementAddress => {}
         IrOperation::BufferFill {
@@ -1086,12 +1034,14 @@ fn validate_target_obligation(
         }
         IrOperation::BufferIndex { target_domain, .. }
         | IrOperation::SliceIndex { target_domain, .. }
+        | IrOperation::SliceAddress { target_domain, .. }
             if *target_domain == IrTargetDomainObligation::ElementAddress => {}
         IrOperation::ArrayFill { .. }
         | IrOperation::BufferFill { .. }
         | IrOperation::ArrayIndex { .. }
         | IrOperation::BufferIndex { .. }
-        | IrOperation::SliceIndex { .. } => {
+        | IrOperation::SliceIndex { .. }
+        | IrOperation::SliceAddress { .. } => {
             return Err(TargetLayoutFailure::InvalidIr);
         }
         _ => {}
@@ -1111,7 +1061,6 @@ impl LayoutComputer<'_, '_, '_, '_> {
     fn storage_layout(&mut self, ty: &TargetStorageType) -> Result<Layout, TargetLayoutFailure> {
         match ty {
             TargetStorageType::Source(ty) => self.layout(*ty),
-            TargetStorageType::Pointer => Ok(POINTER_LAYOUT),
             TargetStorageType::Integer(1) | TargetStorageType::Integer(8) => {
                 Ok(Layout { size: 1, align: 1 })
             }
@@ -1286,7 +1235,7 @@ impl LayoutComputer<'_, '_, '_, '_> {
         }
         let layout = if matches!(
             nominal.kind(),
-            IrNominalKind::Box { .. } | IrNominalKind::Arena { .. } | IrNominalKind::ArenaStorage
+            IrNominalKind::Box { .. } | IrNominalKind::Arena { .. }
         ) {
             POINTER_LAYOUT
         } else if nominal.is_tag_only_enum() {
@@ -1316,14 +1265,10 @@ impl LayoutComputer<'_, '_, '_, '_> {
                             .map(|field| field.ty()),
                     );
                 }
-                // A box, arena, or allocation list has its own pointer
-                // layout above, and an opaque nominal returned with its
-                // uniform representation before this match; none
-                // reaches the field walk.
-                IrNominalKind::Box { .. }
-                | IrNominalKind::Arena { .. }
-                | IrNominalKind::ArenaStorage
-                | IrNominalKind::Opaque => {
+                // A box or arena has its own pointer layout above, and an
+                // opaque nominal returned with its uniform representation
+                // before this match; none reaches the field walk.
+                IrNominalKind::Box { .. } | IrNominalKind::Arena { .. } | IrNominalKind::Opaque => {
                     return Err(TargetLayoutFailure::InvalidIr);
                 }
             }
@@ -1340,16 +1285,6 @@ impl LayoutComputer<'_, '_, '_, '_> {
             layouts.push(self.layout(field)?);
         }
         self.aggregate_layout(layouts, TargetObject::Representation)
-    }
-
-    fn arena_node_layout(&mut self, content: IrType) -> Result<Layout, TargetLayoutFailure> {
-        let content = self
-            .layout(content)
-            .map_err(|failure| as_object(failure, TargetObject::RuntimeSizedAllocation))?;
-        self.aggregate_layout(
-            [POINTER_LAYOUT, content],
-            TargetObject::RuntimeSizedAllocation,
-        )
     }
 
     fn aggregate_layout(

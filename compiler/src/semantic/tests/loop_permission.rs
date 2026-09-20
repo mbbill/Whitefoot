@@ -1010,6 +1010,42 @@ fn a_proven_counted_binder_element_map_is_permitted() {
     );
 }
 
+/// Slots use direct logical-to-physical offsets, while a Ring adds its
+/// runtime head and wraps modulo capacity [WIN-1]. The same proved counted
+/// index is therefore an independent element map only for Slots [PAR-2].
+#[test]
+fn a_ring_subscript_is_not_an_affine_element_map() {
+    let source = b"fn slots_map() -> result: own u64 pure {
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  let slots = slots_from_array::<u64, 4>(values: values);
+  for @fill (i in 0_u64..4_u64) {
+    set slots[i] = i;
+  }
+  return slots[0_u64];
+}
+
+fn ring_map() -> result: own u64 pure {
+  let ring = ring_new::<u64, 4>();
+  place_back(window: &ring, value: 0_u64);
+  place_back(window: &ring, value: 0_u64);
+  place_back(window: &ring, value: 0_u64);
+  place_back(window: &ring, value: 0_u64);
+  for @fill (i in 0_u64..4_u64) {
+    set ring[i] = i;
+  }
+  return ring[0_u64];
+}
+";
+    let table = permission_of(source);
+    assert_eq!(
+        only_loop(&table, "slots_map").verdict,
+        LoopVerdict::PermittedEligible
+    );
+    let ring = only_loop(&table, "ring_map");
+    assert!(matches!(denial(ring, 2), LoopDenial::SharedWrite { .. }));
+    assert_eq!(ring.actualization, None);
+}
+
 /// Permission consumes the offset's exact checked value rather than its
 /// spelling. Copying the binder and applying one proved affine transform keeps
 /// the nonzero coefficient, so distinct iterations still select distinct

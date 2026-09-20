@@ -522,7 +522,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         destination: &str,
     ) -> Result<(), BackendFailure> {
         let ty = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
-        if self.storage.slot(value).is_some() {
+        if is_stored_aggregate(self.program, ty)? {
             let source = self.value_place(value)?;
             return self.copy_storage(ty, &source, destination);
         }

@@ -110,7 +110,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .resolved
                         .members
                         .into_iter()
-                        .map(|place| PlaceAccess { place })
+                        .map(|place| PlaceAccess {
+                            place,
+                            selected: true,
+                        })
                         .collect(),
                 });
             }
@@ -131,7 +134,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .resolved
                     .members
                     .into_iter()
-                    .map(|place| PlaceAccess { place })
+                    .map(|place| PlaceAccess {
+                        place,
+                        selected: true,
+                    })
                     .collect(),
             });
         }
@@ -251,7 +257,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .resolved
                 .members
                 .into_iter()
-                .map(|place| PlaceAccess { place })
+                .map(|place| PlaceAccess {
+                    place,
+                    selected: true,
+                })
                 .collect(),
         })
     }
@@ -318,6 +327,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             effects: EffectSet::NONE,
             accesses: vec![PlaceAccess {
                 place: ResolvedPlace::binding(local.binding),
+                selected: true,
             }],
         })
     }
@@ -851,7 +861,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// [TYPE-10] a window part is effect-row vocabulary and never a place.
-
     ///
     /// x1 makes the four spellings reserve nothing: they are "selected by the
     /// window type of the place they follow", so `node.next` on a source

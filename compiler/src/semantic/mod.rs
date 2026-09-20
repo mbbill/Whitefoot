@@ -39,15 +39,14 @@ pub(crate) use loop_permission::{LoopActualization, LoopCombine, LoopPermission}
 
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBodyDisposition, CheckedBooleanOperation,
-    CheckedBufferRoot, CheckedCommitValues, CheckedConst, CheckedContainerRoot, CheckedDrop,
-    CheckedElement, CheckedEnumType, CheckedExpression, CheckedFlatElement, CheckedFloatOperation,
-    CheckedFunction, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
-    CheckedLoopId, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind,
-    CheckedNumericType, CheckedParameter, CheckedPlaceStep, CheckedProgramData,
-    CheckedProjectedDrop, CheckedRangeRoot, CheckedRangeSource, CheckedReleaseClass,
-    CheckedSetTarget, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
-    CheckedWritablePlace, FunctionId, MeasureCell, MeasuredKind, NominalId, PropagationContext,
-    WindowShape, expression_children,
+    CheckedBufferRoot, CheckedConst, CheckedContainerRoot, CheckedDrop, CheckedElement,
+    CheckedEnumType, CheckedExpression, CheckedFlatElement, CheckedFloatOperation, CheckedFunction,
+    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
+    CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType,
+    CheckedParameter, CheckedPlaceStep, CheckedProgramData, CheckedProjectedDrop, CheckedRangeRoot,
+    CheckedRangeSource, CheckedReleaseClass, CheckedSetTarget, CheckedStatement,
+    CheckedTargetDomainObligation, CheckedType, CheckedValue, CheckedWritablePlace, FunctionId,
+    MeasureCell, MeasuredKind, NominalId, PropagationContext, WindowShape, expression_children,
 };
 
 /// Numbered rule owning one post-resolution semantic rejection.

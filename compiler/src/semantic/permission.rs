@@ -730,31 +730,6 @@ impl<'check> Program<'check> {
                 "a discarded expression statement",
                 Err(Refusal::Form("a discarded expression statement")),
             ),
-            CheckedStatement::Dispose { node_path, .. } => (
-                Some(node_path),
-                None,
-                None,
-                "a dispose statement",
-                Err(Refusal::Form("a dispose statement")),
-            ),
-            // Forms whose source production v0.60 no longer has, and which
-            // the checker no longer builds: `replace` [SET-2], the multi-
-            // target commit [LIV-2], and the region block [STOR-2]. They are
-            // refused rather than given a footprint, because the arm cannot
-            // be reached and a footprint written for an unreachable shape
-            // would be unverifiable. Their variants leave `CheckedStatement`
-            // with the lowering that still matches on them.
-            CheckedStatement::Replace { .. }
-            | CheckedStatement::SetList { .. }
-            | CheckedStatement::Region { .. } => (
-                None,
-                None,
-                None,
-                "a statement form this version no longer writes",
-                Err(Refusal::Form(
-                    "a statement form this version no longer writes",
-                )),
-            ),
         };
         let callee_name = statement_value(statement)
             .and_then(call_projection)
@@ -1035,10 +1010,14 @@ pub(super) fn set_target_place(
         // subscript through it writes is that path extended by the index.
         CheckedSetTarget::RangeIndex(target) => {
             collect_operand_reads(places, &target.offset, node, footprint);
-            places.resolve(
-                PlaceRoot::Binding(target.root.binding),
-                &[PlaceStep::Index(CapturedValue::unknown())],
-            )
+            for step in &target.path {
+                if let CheckedPlaceStep::Subscript(index) = step {
+                    collect_operand_reads(places, &index.offset, node, footprint);
+                }
+            }
+            let mut steps = vec![PlaceStep::Index(CapturedValue::unknown())];
+            steps.extend(target.path.iter().map(CheckedPlaceStep::place_step));
+            places.resolve(PlaceRoot::Binding(target.root.binding), &steps)
         }
         CheckedSetTarget::Storage(target) => {
             for offset in target.offsets() {
@@ -1115,17 +1094,14 @@ fn push_nested_blocks<'check>(
                 blocks.push(arm.body.as_slice());
             }
         }
-        CheckedStatement::Loop { body, .. }
-        | CheckedStatement::Region { body, .. }
-        | CheckedStatement::CountedRange { body, .. } => blocks.push(body.as_slice()),
+        CheckedStatement::Loop { body, .. } | CheckedStatement::CountedRange { body, .. } => {
+            blocks.push(body.as_slice())
+        }
         CheckedStatement::Let { .. }
         | CheckedStatement::DestructuringLet { .. }
         | CheckedStatement::PropagateLet { .. }
         | CheckedStatement::Set { .. }
-        | CheckedStatement::SetList { .. }
-        | CheckedStatement::Replace { .. }
         | CheckedStatement::Proof(_)
-        | CheckedStatement::Dispose { .. }
         | CheckedStatement::DropExpression { .. }
         | CheckedStatement::Evaluate(_)
         | CheckedStatement::Return { .. }
@@ -1154,7 +1130,8 @@ pub(super) fn visit_read_bindings(
         CheckedExpression::BufferMeasure { root, .. }
         | CheckedExpression::BufferIndex { root, .. } => note(root.binding),
         CheckedExpression::RangeMeasure { root, .. }
-        | CheckedExpression::RangeIndex { root, .. } => note(root.binding),
+        | CheckedExpression::RangeIndex { root, .. }
+        | CheckedExpression::BorrowRangeIndex { root, .. } => note(root.binding),
         CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => {
             if let CheckedArrayRoot::Binding { binding, .. } = root {
@@ -1245,7 +1222,7 @@ fn collect_operand_reads(
             );
         }
         // Forming a range names a path and reads no content [REF-1, REF-4].
-        CheckedExpression::RangeOf { .. } => {}
+        CheckedExpression::RangeOf { .. } | CheckedExpression::BorrowRangeIndex { .. } => {}
         CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => match root {
             CheckedArrayRoot::Binding { binding, fields } => read(
@@ -1294,6 +1271,22 @@ fn argument_places(places: &PlaceMap, argument: &CheckedExpression) -> Option<Ve
         CheckedExpression::BorrowAddressed { root, .. } => {
             places.resolve(root.root, &container_steps(root))
         }
+        CheckedExpression::BorrowRangeIndex {
+            root,
+            captured,
+            path,
+            ..
+        } => places
+            .resolve(PlaceRoot::Binding(root.binding), &[])
+            .into_iter()
+            .map(|mut place| {
+                place.path.push(PlaceStep::Index(*captured));
+                place
+                    .path
+                    .extend(path.iter().map(CheckedPlaceStep::place_step));
+                place
+            })
+            .collect(),
         _ => return None,
     };
     (!resolved.is_empty()).then_some(resolved)

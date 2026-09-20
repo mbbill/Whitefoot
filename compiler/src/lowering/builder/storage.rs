@@ -25,42 +25,13 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
-            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. } => collect_expression(value, bindings),
             CheckedStatement::PropagateLet { scrutinee, .. } => {
                 collect_expression(scrutinee, bindings);
             }
-            CheckedStatement::SetList {
-                targets, values, ..
-            } => {
-                for target in targets {
-                    match target {
-                        CheckedSetTarget::Place(_) => {}
-                        CheckedSetTarget::ArrayIndex(target) => {
-                            bindings.insert(target.binding);
-                            collect_expression(&target.offset, bindings);
-                        }
-                        CheckedSetTarget::BufferIndex(target) => {
-                            bindings.insert(target.root.binding);
-                            collect_expression(&target.offset, bindings);
-                        }
-                        CheckedSetTarget::RangeIndex(target) => {
-                            collect_expression(&target.offset, bindings);
-                        }
-                        CheckedSetTarget::Storage(root) => {
-                            bindings.extend(root.binding());
-                            collect_place(root, bindings);
-                        }
-                    }
-                }
-                for value in values.expressions() {
-                    collect_expression(value, bindings);
-                }
-            }
-            CheckedStatement::Set { target, value, .. }
-            | CheckedStatement::Replace { target, value, .. } => {
+            CheckedStatement::Set { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
                     CheckedSetTarget::ArrayIndex(target) => {
@@ -99,7 +70,7 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                     collect_statements(&arm.body, bindings);
                 }
             }
-            CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+            CheckedStatement::Loop { body, .. } => {
                 collect_statements(body, bindings);
             }
             CheckedStatement::CountedRange {
@@ -134,6 +105,10 @@ fn collect_borrowed_place_expression(
         | CheckedExpression::ReadStorage { root, .. } => {
             bindings.extend(root.binding());
             collect_place(root, bindings);
+        }
+        CheckedExpression::BorrowRangeIndex { offset, path, .. } => {
+            collect_expression(offset, bindings);
+            collect_steps(path, None, bindings);
         }
         CheckedExpression::BoxDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => {
@@ -171,8 +146,15 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::BoxDeref { value, .. }
         | CheckedExpression::BoxTake { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => collect_expression(value, bindings),
-        CheckedExpression::ArrayIndex { offset, .. }
-        | CheckedExpression::RangeIndex { offset, .. } => collect_expression(offset, bindings),
+        CheckedExpression::ArrayIndex { offset, .. } => collect_expression(offset, bindings),
+        CheckedExpression::RangeIndex { offset, path, .. } => {
+            collect_expression(offset, bindings);
+            collect_steps(path, None, bindings);
+        }
+        CheckedExpression::BorrowRangeIndex { offset, path, .. } => {
+            collect_expression(offset, bindings);
+            collect_steps(path, None, bindings);
+        }
         // [TYPE-9] a runtime-capacity `Array<T>` is only ever `Box` content,
         // and its block is reached through the pointer the owner's slot
         // holds, exactly as a boxed window's is
@@ -209,12 +191,20 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
 }
 
 fn collect_place(root: &crate::semantic::CheckedContainerRoot, bindings: &mut HashSet<BindingId>) {
-    for step in &root.path {
+    collect_steps(&root.path, root.binding(), bindings);
+}
+
+fn collect_steps(
+    steps: &[crate::semantic::CheckedPlaceStep],
+    owner: Option<BindingId>,
+    bindings: &mut HashSet<BindingId>,
+) {
+    for step in steps {
         match step {
             // A Box projection follows the pointer in its actual owner slot,
             // including when only a descriptor measure is read through it.
             crate::semantic::CheckedPlaceStep::BoxReferent(_) => {
-                bindings.extend(root.binding());
+                bindings.extend(owner);
             }
             crate::semantic::CheckedPlaceStep::Subscript(subscript) => {
                 collect_expression(&subscript.offset, bindings);
@@ -300,6 +290,13 @@ impl IrBuilder<'_> {
                 self.lower_addressed_borrow(*binding, ty)?
             }
             CheckedExpression::BorrowAddressed { root, .. } => self.lower_place_address(root)?,
+            CheckedExpression::BorrowRangeIndex {
+                root,
+                offset,
+                path,
+                target_domain,
+                ..
+            } => self.lower_range_address(root, offset, path, *target_domain)?,
             CheckedExpression::ReadStorage { root, .. } => self.lower_place_address(root)?,
             CheckedExpression::BoxDeref {
                 nominal,

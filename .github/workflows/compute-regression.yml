@@ -83,14 +83,55 @@ jobs:
         run: |
           git worktree add --detach "$RUNNER_TEMP/baseline" "$BASE"
           mkdir -p "$RUNNER_TEMP/performance-results"
+          identity_error() {
+            echo "::error::$*" >&2
+            exit 1
+          }
+          candidate_kernels=$(sed -n 's/^KERNELS := //p' tests/performance/Makefile)
+          baseline_kernels=$(sed -n 's/^KERNELS := //p' "$RUNNER_TEMP/baseline/tests/performance/Makefile")
+          test -n "$candidate_kernels" || identity_error 'candidate kernel list is missing'
+          test "$candidate_kernels" = "$baseline_kernels" || \
+            identity_error "kernel lists differ: candidate=[$candidate_kernels] baseline=[$baseline_kernels]"
+          cmp tests/programs/compute/oracle.h \
+            "$RUNNER_TEMP/baseline/tests/programs/compute/oracle.h" || \
+            identity_error 'candidate and baseline oracle interfaces differ'
+          for kernel in $candidate_kernels; do
+            candidate_oracle="tests/programs/compute/${kernel}_oracle.c"
+            baseline_oracle="$RUNNER_TEMP/baseline/tests/programs/compute/${kernel}_oracle.c"
+            for field in name fixture; do
+              candidate_count=$(awk -v field="$field" \
+                '$0 ~ "^const char \\*const wf_oracle_" field " = " { count++ } END { print count + 0 }' \
+                "$candidate_oracle")
+              baseline_count=$(awk -v field="$field" \
+                '$0 ~ "^const char \\*const wf_oracle_" field " = " { count++ } END { print count + 0 }' \
+                "$baseline_oracle")
+              test "$candidate_count" -eq 1 || \
+                identity_error "$kernel candidate has $candidate_count wf_oracle_$field declarations; expected one"
+              test "$baseline_count" -eq 1 || \
+                identity_error "$kernel baseline has $baseline_count wf_oracle_$field declarations; expected one"
+              candidate_identity=$(sed -n "/^const char \\*const wf_oracle_$field = /p" "$candidate_oracle")
+              baseline_identity=$(sed -n "/^const char \\*const wf_oracle_$field = /p" "$baseline_oracle")
+              test "$candidate_identity" = "$baseline_identity" || \
+                identity_error "$kernel wf_oracle_$field differs between candidate and baseline"
+            done
+          done
           {
             printf 'candidate=%s\nbaseline=%s\n' "$(git rev-parse HEAD)" "$BASE"
             printf 'native=-O2; ordinary host runtime; no alignment overrides\n'
+            printf 'kernels=%s\n' "$candidate_kernels"
             rustc -vV
             /usr/bin/clang --version
+            printf '\ncandidate inputs:\n'
             sha256sum tests/programs/compute/*.wf tests/programs/compute/*_host.ll \
               tests/programs/compute/*_oracle.c tests/programs/compute/oracle.h \
               tests/programs/compute/host-adapter.awk tests/performance/* compiler/runtime.mk
+            printf '\nbaseline inputs:\n'
+            sha256sum "$RUNNER_TEMP"/baseline/tests/programs/compute/*.wf \
+              "$RUNNER_TEMP"/baseline/tests/programs/compute/*_host.ll \
+              "$RUNNER_TEMP"/baseline/tests/programs/compute/*_oracle.c \
+              "$RUNNER_TEMP"/baseline/tests/programs/compute/oracle.h \
+              "$RUNNER_TEMP"/baseline/tests/programs/compute/host-adapter.awk \
+              "$RUNNER_TEMP"/baseline/compiler/runtime.mk
           } > "$RUNNER_TEMP/performance-results/identity.txt"
       - name: Build the candidate compiler
         if: steps.scope.outputs.measure == 'true'
@@ -112,7 +153,8 @@ jobs:
             make -j2 -C tests/performance build BUILD="$RUNNER_TEMP/performance-candidate"
           WHITEFOOT_CHECK_TIMEOUT=180 perl .github/run-check.pl performance-baseline-images \
             make -j2 -C tests/performance build BUILD="$RUNNER_TEMP/performance-baseline" \
-            ROOT="$RUNNER_TEMP/baseline" WFC="$RUNNER_TEMP/baseline-target/gate/whitefootc"
+            ROOT="$RUNNER_TEMP/baseline" WFC="$RUNNER_TEMP/baseline-target/gate/whitefootc" \
+            FIXTURES="$RUNNER_TEMP/baseline/tests/programs/compute"
       # Every host invocation needs a null observation: qualification on an
       # earlier runner cannot establish this runner's measurement conditions.
       # Reusing exactly the candidate images also removes construction/layout

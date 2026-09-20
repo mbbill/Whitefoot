@@ -123,7 +123,7 @@ fn pair_of<'table>(
             function_table(table, function).pairs
         );
     };
-    *pair
+    pair
 }
 
 /// The one run of `function` whose members carry exactly these ledger names,
@@ -152,7 +152,7 @@ fn run_of<'table>(
             permissions.runs
         );
     };
-    *run
+    run
 }
 
 fn denial(pair: &PermissionPair, condition: u8) -> &Denial {
@@ -1402,17 +1402,12 @@ fn probe(x: own u64, name: own HostString) -> result: own u64 pure {
 // Call position
 // ----------------------------------------------------------------------
 
-/// A call written in `match` scrutinee position is not a member of any
-/// adjacency.
-///
-/// v0.59 admitted a scrutinee call as a candidate so that one written
-/// spelling of two independent operations was not invisible to the judgment.
-/// v0.60 refuses a `match` statement outright — its arms are statements this
-/// walk does not fold into the statement's own footprint — and the checked
-/// model gives that statement no node, so the pair it would have formed does
-/// not exist to receive a verdict.
+/// [PAR-1] includes the scrutinee and every possible arm in a match's
+/// footprint. Both arms here are empty, so these independent calls remain
+/// eligible. The conflicting-arm control above checks that a nonempty arm
+/// cannot hide a read of the first statement's result.
 #[test]
-fn a_scrutinee_call_forms_no_pair() {
+fn a_scrutinee_call_with_independent_arms_forms_a_pair() {
     let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 65_u8);
   let bytes = slots_from_array::<u8, 2>(values: values);
@@ -1428,17 +1423,16 @@ fn a_scrutinee_call_forms_no_pair() {
 }
 "#;
     let table = permission_of(source);
-    assert!(
-        pairs_of(&table, "main", "write_marker", "write_marker").is_empty(),
-        "a scrutinee call is no member: {:?}",
-        function_table(&table, "main").pairs
+    assert_eq!(
+        pair_of(&table, "main", "write_marker", "write_marker").verdict,
+        PermissionVerdict::PermittedEligible
     );
 }
 
-/// The same two calls with the scrutinee written first, which is refused for
-/// the same reason and by the same absence of a node.
+/// [PAR-1] applies the same complete-footprint check when the match is the
+/// first statement; source order does not exclude its scrutinee call.
 #[test]
-fn a_scrutinee_call_written_first_forms_no_pair() {
+fn a_scrutinee_call_written_first_with_independent_arms_forms_a_pair() {
     let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 65_u8);
   let bytes = slots_from_array::<u8, 2>(values: values);
@@ -1454,9 +1448,8 @@ fn a_scrutinee_call_written_first_forms_no_pair() {
 }
 "#;
     let table = permission_of(source);
-    assert!(
-        pairs_of(&table, "main", "write_marker", "write_marker").is_empty(),
-        "a scrutinee call is no member: {:?}",
-        function_table(&table, "main").pairs
+    assert_eq!(
+        pair_of(&table, "main", "write_marker", "write_marker").verdict,
+        PermissionVerdict::PermittedEligible
     );
 }

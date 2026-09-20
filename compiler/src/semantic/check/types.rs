@@ -1555,8 +1555,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Nominal(id) => match self.nominal(id)?.kind {
                 // An arena is region-bearing [STOR-5] and the region
                 // allocation list is compiler-owned; neither is an element.
-                super::super::model::CheckedNominalKind::Arena { .. }
-                | super::super::model::CheckedNominalKind::ArenaStorage => None,
+                super::super::model::CheckedNominalKind::Arena { .. } => None,
                 _ => Some(CheckedFlatElement::Nominal(id)),
             },
             // [FN-2] the one source-canonical symbolic instance of a generic

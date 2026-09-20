@@ -11,9 +11,9 @@ enum SplitResult {
 fn allocate_split(first: own u64, second: own u64, third: own u64, fourth: own u64) -> result: own SplitResult pure {
   doc "Allocates both children of a B+ tree leaf split before publishing the result. Allocation is total, so neither cell has a failure arm and the result carries the two owners it built.";
   let left_leaf = LeafPair(low: first, high: second);
-  let left = box_new::<LeafPair>(value: move left_leaf);
+  let left = box_new::<LeafPair>(value: left_leaf);
   let right_leaf = LeafPair(low: third, high: fourth);
-  let right = box_new::<LeafPair>(value: move right_leaf);
+  let right = box_new::<LeafPair>(value: right_leaf);
   return Split(separator: third, left: move left, right: move right);
 }
 

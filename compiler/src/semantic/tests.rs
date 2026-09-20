@@ -1237,11 +1237,10 @@ fn main() -> status: own ExitStatus pure {
 // `same_statement_owner_readout_retains_its_atomic_commit_write` wrote its row
 // over a by-value parameter (`reads(file), writes(file)` on `file: own
 // ReadFile`), which [EFF-1] now refuses outright, and the shape it tested is
-// [OP-12]'s atomic in-place update `set p = f(move p, args...);`. That rule's
-// effect is `writes(p)` over an owned place, which [EFF-1]'s root sentence
-// cannot spell, and the checker does not implement [OP-12] yet, so there is no
-// successor assertion to write here. The acceptance half of the shape is kept
-// in `an_affine_assignment_releases_its_old_value` above.
+// [OP-12]'s atomic in-place update `set p = f(move p, args...);`. Its current
+// successor assertions are `an_affine_assignment_releases_its_old_value`, the
+// argument-order controls below, and the singleton/union target controls in
+// `tests/references.rs`.
 //
 // Retired with [OWN-5]: `a_prior_rhs_borrow_cannot_retarget_a_later_atomic_readout`
 // asserted a `BorrowConflict` between an exclusive loan and a later read-out,
@@ -1251,12 +1250,14 @@ fn main() -> status: own ExitStatus pure {
 // `tests/references.rs::two_overlapping_substituted_writes_are_refused`, and
 // [REF-2]'s invalidation of a bystander reference, exercised beside it.
 
-/// [EFF-5] compares every by-value actual before an ordinary call executes.
-/// Two moves of the same place, or of overlapping field and owner paths, are
-/// therefore an overlapping-call refusal. [OWN-1]'s later-use judgment is
-/// retained separately by `set_revalidates_the_target_after_rhs_ownership_changes`.
+/// [OWN-1, DIAG-1] each actual is checked before the call's EFF-5 comparison.
+/// A repeated move therefore fails at the later actual, including an owner
+/// after one of its fields was consumed. None of these is OP-12: the first
+/// actual is a different place from the assignment target. EFF-5's own
+/// overlapping-reference refusal remains covered by
+/// `references::two_overlapping_substituted_writes_are_refused`.
 #[test]
-fn overlapping_by_value_actuals_are_an_eff5_rejection() {
+fn repeated_by_value_moves_are_rejected_before_call_effect_comparison() {
     assert_rule_kind(
         br#"fn pair(other: own Slots<u8, 4>, left: own Slots<u8, 4>, right: own Slots<u8, 4>) -> out: own Slots<u8, 4> pure {
   return move left;
@@ -1269,8 +1270,8 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Eff5,
-        |kind| matches!(kind, SemanticIssueKind::OverlappingCallEffects { .. }),
+        SemanticRule::Own1,
+        |kind| matches!(kind, SemanticIssueKind::UseAfterMove { .. }),
     );
     assert_rule_kind(
         br#"struct Holder {
@@ -1289,8 +1290,8 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Eff5,
-        |kind| matches!(kind, SemanticIssueKind::OverlappingCallEffects { .. }),
+        SemanticRule::Own1,
+        |kind| matches!(kind, SemanticIssueKind::UseAfterMove { .. }),
     );
     assert_rule_kind(
         br#"struct Holder {
@@ -1311,9 +1312,100 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Eff5,
-        |kind| matches!(kind, SemanticIssueKind::OverlappingCallEffects { .. }),
+        SemanticRule::Own1,
+        |kind| matches!(kind, SemanticIssueKind::UseAfterMove { .. }),
     );
+}
+
+#[test]
+fn only_an_op12_first_actual_gets_the_commit_read_out() {
+    let ordinary_whole = br#"nocopy struct Cell {
+  value: u64;
+}
+
+fn forward(other: own u64, value: own Cell) -> result: own Cell pure {
+  return move value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 7_u64);
+  set cell = forward(other: 0_u64, value: move cell);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(ordinary_whole, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "a complete binding is reinitialized from post-RHS liveness: {outcome:?}"
+        );
+    });
+
+    let projected_later = br#"nocopy struct Cell {
+  value: u64;
+}
+
+nocopy struct Holder {
+  cell: Cell;
+  spare: Cell;
+}
+
+fn forward(other: own u64, value: own Cell) -> result: own Cell pure {
+  return move value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let first = Cell(value: 7_u64);
+  let second = Cell(value: 8_u64);
+  let holder = Holder(cell: move first, spare: move second);
+  set holder.cell = forward(other: 0_u64, value: move holder.cell);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(projected_later, SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::UseAfterMove { .. })
+    });
+
+    let failed_result = br#"nocopy struct Cell {
+  value: u64;
+}
+
+fn extract(value: own Cell) -> result: own u64 pure {
+  return value.value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 7_u64);
+  set cell = extract(value: move cell);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(failed_result, SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::UseAfterMove { .. })
+    });
+
+    let routed_result = br#"fn retain(value: own Result<u64, Box<u64>>) -> result: own Result<u64, Box<u64>> pure contract {
+  ensures when Ok(value: payload): payload == payload;
+} {
+  match move value {
+    Ok(value: payload) => {
+      return Ok<u64, Box<u64>>(value: payload);
+    }
+    Err(error: problem) => {
+      return Err<u64, Box<u64>>(error: move problem);
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  let owner = box_new::<u64>(value: 7_u64);
+  let wrapped = Err<u64, Box<u64>>(error: move owner);
+  set wrapped = retain(value: move wrapped);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(routed_result, SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::UseAfterMove { .. })
+    });
 }
 
 #[test]

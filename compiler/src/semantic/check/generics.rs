@@ -1595,9 +1595,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         CheckedNominalKind::Opaque => {
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }
-                        CheckedNominalKind::Struct { .. }
-                        | CheckedNominalKind::Enum { .. }
-                        | CheckedNominalKind::ArenaStorage => {
+                        CheckedNominalKind::Struct { .. } | CheckedNominalKind::Enum { .. } => {
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }
                     }
@@ -2469,8 +2467,7 @@ impl Checker<'_, '_, '_, '_> {
             | GoalOperation::BufferIndex { element } => {
                 self.collect_flat_element_nominals(element, output)?;
             }
-            GoalOperation::ArrayFill { element, .. }
-            | GoalOperation::ArrayMeasure { element, .. }
+            GoalOperation::ArrayMeasure { element, .. }
             | GoalOperation::ArrayIndex { element, .. }
             | GoalOperation::RunIndex { element, .. } => {
                 self.collect_element_nominals(element, output)?
@@ -2628,8 +2625,7 @@ impl Checker<'_, '_, '_, '_> {
             | GoalOperation::BufferIndex { element } => {
                 self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
             }
-            GoalOperation::ArrayFill { element, .. }
-            | GoalOperation::ArrayMeasure { element, .. }
+            GoalOperation::ArrayMeasure { element, .. }
             | GoalOperation::ArrayIndex { element, .. }
             | GoalOperation::RunIndex { element, .. } => {
                 self.rewrite_element_nominals(element, checkpoint, replacements)?;

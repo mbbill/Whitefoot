@@ -66,7 +66,7 @@ pub(super) fn base_elements(
             ),
             CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
             CheckedNominalKind::Arena { content, .. } => pending.push(*content),
-            CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
+            CheckedNominalKind::Opaque => {}
         }
     }
     while let Some(ty) = pending.pop() {
@@ -295,9 +295,7 @@ impl<'a> PhysicalTypes<'a> {
             CheckedNominalKind::Arena { content, .. } => IrNominalKind::Arena {
                 content: self.ty(content, releases)?,
             },
-            CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {
-                self.nominals[id.index()].kind.clone()
-            }
+            CheckedNominalKind::Opaque => self.nominals[id.index()].kind.clone(),
         };
         self.nominals[id.index()].kind = lowered;
         Ok(id)
@@ -449,7 +447,6 @@ impl<'a> PhysicalTypes<'a> {
                                 );
                             }
                         }
-                        (CheckedNominalKind::ArenaStorage, CheckedNominalKind::ArenaStorage) => {}
                         (CheckedNominalKind::Opaque, CheckedNominalKind::Opaque) => {}
                         _ => return Ok(false),
                     }

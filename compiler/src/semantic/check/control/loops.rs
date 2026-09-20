@@ -119,6 +119,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     loop_depth: scope.loops.len() + 1,
                     compiler_updated: true,
                     reference: None,
+                    refinement_witnesses: Vec::new(),
                 },
             )
             .is_some()
@@ -168,6 +169,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for state in &mut checked.break_states {
             state.invalidate_references_leaving_scope(&leaving);
         }
+        if let Some(context) = scope.give_context
+            && !checked.give_states.is_empty()
+        {
+            context.invalidate_reference_roots_leaving_scope(&leaving);
+            context.invalidate_reference_refinements(&checked.give_states, &leaving);
+        }
         self.judge_backedge_liveness(node, &header_keys, &header_bindings, &body_bindings)?;
         if checked.can_continue
             && header_keys.iter().any(|key| {
@@ -211,7 +218,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node_path: self.tree.path(node)?.clone(),
                 binder,
                 lower: lower.expression,
-                upper: upper.expression,
+                upper: Box::new(upper.expression),
                 invariants,
                 body: checked.statements,
                 backedge_drops,
@@ -516,6 +523,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for state in &mut checked.break_states {
             state.invalidate_references_leaving_scope(&leaving);
         }
+        if let Some(context) = scope.give_context
+            && !checked.give_states.is_empty()
+        {
+            context.invalidate_reference_roots_leaving_scope(&leaving);
+            context.invalidate_reference_refinements(&checked.give_states, &leaving);
+        }
         self.judge_backedge_liveness(node, &base_keys, &base_bindings, &body_bindings)?;
         if checked.can_continue
             && base_keys.iter().any(|key| {
@@ -641,5 +654,14 @@ impl BreakState {
     /// this edge.
     pub(super) fn invalidate_references_leaving_scope(&mut self, leaving: &[BindingId]) {
         Checker::invalidate_references_leaving_scope(&mut self.bindings, leaving);
+    }
+
+    /// [REF-2, ENT-3.S15] a break edge also meets reference validity with the
+    /// refinement witnesses that survive the crossed scope.
+    pub(super) fn invalidate_references_without_refinement_witness(
+        &mut self,
+        leaving: &[BindingId],
+    ) {
+        Checker::invalidate_references_without_refinement_witness(&mut self.bindings, leaving);
     }
 }

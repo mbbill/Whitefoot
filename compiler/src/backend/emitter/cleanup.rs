@@ -294,7 +294,7 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
                     }
                     IrNominalKind::Box { referent, .. } => pending.push(*referent),
                     IrNominalKind::Arena { content } => pending.push(*content),
-                    IrNominalKind::ArenaStorage | IrNominalKind::Opaque => {}
+                    IrNominalKind::Opaque => {}
                 }
             }
             IrType::Unit | IrType::Bool | IrType::Integer { .. } | IrType::Float { .. } => {}
@@ -506,13 +506,6 @@ fn emit_cleanup_jobs(
                         // region, never by an owner-scope cleanup
                         // [STOR-3].
                         IrNominalKind::Arena { .. } => {}
-                        // The region's allocation-list drop: walk the list
-                        // and free every registered allocation, then leave
-                        // the cell empty [STOR-3].
-                        IrNominalKind::ArenaStorage => {
-                            writeln!(output, "  call void @wf_arena_release(ptr {operand})")
-                                .map_err(|_| BackendFailure::TextEmission)?;
-                        }
                     }
                 }
                 // A runtime-capacity window exists only as `Box` content
