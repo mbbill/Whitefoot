@@ -12,8 +12,8 @@ use crate::{
 use super::super::goal::{GoalOperation, GoalProjection};
 use super::super::model::{
     BindingId, CheckedArrayRoot, CheckedExpression, CheckedIntegerOperation, CheckedMode,
-    CheckedNominalKind, CheckedParameter, CheckedStatement, CheckedType, CheckedValue, FunctionId,
-    IntegerType,
+    CheckedNominalKind, CheckedParameter, CheckedPlaceStep, CheckedStatement, CheckedType,
+    CheckedValue, FunctionId, IntegerType,
 };
 use super::super::postcondition::{
     CheckedPostcondition, CheckedPostconditionSelector, NormalizedRelation,
@@ -314,12 +314,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &mut self,
         record: &PostconditionResolutionRecord,
     ) -> Result<Option<FunctionSignature>, CheckStop> {
-        // A `fn_sig` is both [FN-3]'s function-kind generic parameter and,
-        // since [PRE-1] declares its records as `fn_sig`s, an ordinary
-        // top-level declaration. Only the first carries a
+        // The internal `FnSig` production carries both [FN-3]'s function-kind
+        // parameter and a [PRE-1] declaration head. Only the first carries a
         // `FunctionParameter` declaration, so the node is asked rather than
         // assumed; a prelude record falls through to the ordinary template
-        // path below, exactly as a `fn_decl` does.
+        // path below, exactly as a source `fn_decl` does.
         if let Some(node) = self.tree.node_with_path(&record.function)
             && self.tree.production(node)? == Production::FnSig
             && let Some(declaration) = self
@@ -1774,64 +1773,44 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )))
             }
             CheckedExpression::BufferMeasure { measure, root } => {
-                // [TYPE-9] a run reached through its cell has a content step
-                // in its path, which this classification's field walk does
-                // not represent; such a return supplies no datum here.
-                let Some(fields) = root
-                    .path
-                    .iter()
-                    .map(|step| match step {
-                        super::super::model::CheckedPlaceStep::Field(field) => Some(*field),
-                        _ => None,
-                    })
-                    .collect::<Option<Vec<_>>>()
-                else {
-                    return Ok(None);
+                let expected = CheckedType::Buffer {
+                    element: root.element,
                 };
                 let Some(
                     place @ PostconditionReturnPlace {
-                        ty: CheckedType::Buffer { element },
+                        ty: CheckedType::Buffer { .. },
                         ..
                     },
-                ) = self.postcondition_binding_place(
+                ) = self.postcondition_storage_place(
                     root.binding,
-                    &fields,
+                    &root.path,
+                    expected,
                     statement,
                     binding_info,
                 )?
                 else {
                     return Ok(None);
                 };
-                if element != root.element {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                }
                 Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
             }
-            // [MSR-1, CALL-4] a measure of a run or a bump extent, in the
-            // same return position the three flat measures already occupy. A
-            // measured place is not a field path, so a path carrying a
-            // subscript names no return place here and falls through to the
-            // ordinary rejection.
+            // [MSR-1, CALL-4] a measure of a run or a bump extent, in the same
+            // return position the three flat measures already occupy. Its
+            // checked path already names the one ENT-2 place, including an
+            // ordinary field, Box content, or admitted measured subscript.
             CheckedExpression::ContainerMeasure { measure, root } => {
                 let Some(binding) = root.binding() else {
                     return Ok(None);
                 };
-                let mut fields = Vec::with_capacity(root.path.len());
-                for step in &root.path {
-                    match step {
-                        super::super::model::CheckedPlaceStep::Field(field) => fields.push(*field),
-                        super::super::model::CheckedPlaceStep::BoxReferent(_)
-                        | super::super::model::CheckedPlaceStep::Subscript(_) => return Ok(None),
-                    }
-                }
-                let Some(place) =
-                    self.postcondition_binding_place(binding, &fields, statement, binding_info)?
+                let Some(place) = self.postcondition_storage_place(
+                    binding,
+                    &root.path,
+                    root.ty,
+                    statement,
+                    binding_info,
+                )?
                 else {
                     return Ok(None);
                 };
-                if place.ty != root.ty {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                }
                 Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
             }
             _ => Ok(None),
@@ -1971,6 +1950,66 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Some(PostconditionReturnPlace {
             root: PostconditionReturnPlaceRoot::Binding(binding),
             projections,
+            ty,
+            range_referent: false,
+            source: source.clone(),
+        }))
+    }
+
+    /// Rebuilds one already-checked storage place for [FN-9]'s selected-return
+    /// substitution. Unlike the source field-only helper above, this path is
+    /// typed checked metadata and retains every [ENT-2] projection, including
+    /// the content step of a `Box` [TYPE-9].
+    fn postcondition_storage_place(
+        &self,
+        binding: BindingId,
+        path: &[CheckedPlaceStep],
+        expected: CheckedType,
+        source: &crate::NodePath,
+        binding_info: &HashMap<BindingId, PostconditionBindingInfo>,
+    ) -> Result<Option<PostconditionReturnPlace>, CheckStop> {
+        let Some(info) = binding_info.get(&binding).copied() else {
+            return Ok(None);
+        };
+        let mut ty = info.ty;
+        for step in path {
+            ty = match step {
+                CheckedPlaceStep::Field(field) => {
+                    let CheckedType::Nominal(nominal) = ty else {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    };
+                    let CheckedNominalKind::Struct { fields } = &self.nominal(nominal)?.kind else {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    };
+                    fields
+                        .get(*field as usize)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                        .ty
+                }
+                CheckedPlaceStep::BoxReferent(nominal) => {
+                    if ty != CheckedType::Nominal(*nominal) {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    }
+                    let CheckedNominalKind::Box { referent, .. } = self.nominal(*nominal)?.kind
+                    else {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    };
+                    referent
+                }
+                CheckedPlaceStep::Subscript(index) => {
+                    if ty != index.base_type {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    }
+                    index.element_type
+                }
+            };
+        }
+        if ty != expected {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        Ok(Some(PostconditionReturnPlace {
+            root: PostconditionReturnPlaceRoot::Binding(binding),
+            projections: path.iter().map(CheckedPlaceStep::goal_projection).collect(),
             ty,
             range_referent: false,
             source: source.clone(),

@@ -6,5 +6,7 @@ Decision: A measure spelling over a place the measure table gives no row falls t
 
 Decision: The routing that sends a trailing measure spelling to the explicit-place resolver stays spelling-directed, because that resolver now owns the ordinary field walk as well, so a misrouted ordinary field resolves there identically, instead of making the route type-directed, which needs the base's type before the place is resolved and would duplicate the walk to obtain it.
 
+Decision: A write-target walk resolves each suffix against the type of the place it follows before assigning the diagnostic owner: a real measure is a [PRE-1] readonly field and is refused by [TYPE-2], a real window part is refused by [TYPE-10], and the same spelling on any other struct continues through its ordinary field declaration, because otherwise a target such as `set window.len = 2_u64` falls through to a missing-field error while a writer's own `len` or `next` field is falsely reserved, instead of testing a global spelling list before the typed field walk.
+
 Rejected:
 - Materializing the prelude's declared `len`, `cap` and `head` fields into the storage shapes' checked types so that one field walk answers both: rejected because [MSR-2] supports a measure term with the measured place's own descriptor storage and with the one word the term names, which a field's storage does not model, and because [MSR-1]'s table, not the declaration, is what gives a cell its *exact*, *bounded* or *absent* class.

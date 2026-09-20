@@ -121,6 +121,7 @@ jobs:
             printf 'kernels=%s\n' "$candidate_kernels"
             rustc -vV
             /usr/bin/clang --version
+            lscpu
             printf '\ncandidate inputs:\n'
             sha256sum tests/programs/compute/*.wf tests/programs/compute/*_host.ll \
               tests/programs/compute/*_oracle.c tests/programs/compute/oracle.h \
@@ -207,7 +208,5 @@ jobs:
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/performance-results/
-            ${{ runner.temp }}/performance-candidate/*.ll
-            ${{ runner.temp }}/performance-candidate/*.o
-            ${{ runner.temp }}/performance-baseline/*.ll
-            ${{ runner.temp }}/performance-baseline/*.o
+            ${{ runner.temp }}/performance-candidate/
+            ${{ runner.temp }}/performance-baseline/

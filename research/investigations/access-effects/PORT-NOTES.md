@@ -125,6 +125,40 @@ passed in 0.65 seconds. The library group still stops with
 the same visible stop as both `b5e7a99f` hosted library jobs. These separate
 group results do not replace the failed canonical gate.
 
+The next pending-proposal reconciliation exposed a real FN-9 gap: returning
+`owner.inner.len` directly from `Box<Slots<u8>>` or `Box<Array<u8>>` was rejected
+as `InvalidPostconditionReturn`, although binding that same measure locally
+and returning the binding passed. ENT-2(b), FN-9 and TYPE-9 admit the direct
+measure. The selected-return classifier now walks the complete typed checked
+path, retaining each field, Box-content and measured-subscript projection,
+and verifies the endpoint type. Result-selector admission is unchanged.
+Controls cover nested Box and struct paths, inline and locally bound measures,
+and different roots, fields, offsets and false arithmetic postconditions; the
+negative cases reach the intended FN-9 refutation. Fresh canonical `make check`
+passes static checks and construction, then reports 1521 unit passes and the
+same three held OP-9 failures (218.72 seconds total). It is still a failed gate.
+The separate fresh canonical corpus group passes all 72 tests, including the
+complete native conformance adapter and network fixtures (121.65 seconds).
+After the pending-proposal reconciliation, design lint and its 17 self-tests
+pass with 69 amendments. These checks do not exercise the held OP-9 repair.
+A separate read-only technical audit found no incorrect selected-return
+admission in the complete typed path or its flow consumer. Its suggested
+reference-root/Box-content control, a Box-plus-index control, and a distinct
+reference-root negative have been added to the same regression and pass after
+optimized reconstruction (0.10 seconds execution). The negative declares only
+its exhibited left-hand read; a right-hand measure appearing solely in erased
+clauses contributes no effect. This audit is not the completion review or DCR.
+
+Four superseded pending proposals have been merged into their current owners
+or removed, leaving 69 amendments for owner review. The current proposals no
+longer retain the retired mandatory generic bound, prelude reserved-name
+exception, room-derived measure kills, spelling-only member rejection, missing
+named-owner displaced release, or temporary unsupported storage variants.
+The allocation-fit proposal now distinguishes known and unresolved layouts,
+but its production implementation remains held as documented below; updating
+the proposal is neither implementation evidence nor an owner ruling. No live
+tree or approval log changed.
+
 The remaining records performance investigation compared the exact `c12d6dd1`
 baseline and `b5e7a99f` candidate without starting another timing campaign.
 With local LLVM 22 retargeting to x86-64, the hot chunk instruction streams
@@ -135,6 +169,34 @@ existing CI artifact upload now retains both arms' already-generated LLVM
 modules and native objects, allowing the next ordinary run to settle whether
 the captured pointer reload survives that exact toolchain. Timing, thresholds,
 workloads, and output oracles are unchanged.
+
+Hosted compute run 35521786714 on `5aaef9ad` retained the Clang 18 modules and
+objects. Records still fails at two/four workers (0.919672/0.871794, five adverse
+pairs each); one worker and the other four kernels pass. Identity, null and
+sensitivity controls pass. Direct object inspection rules out the repeated
+Box-slot load: the two parallel chunks have the same instruction sequence
+apart from the eight-byte payload store displacement, and both are 0x1b8 bytes
+with 25 branches. Split grain and leaf counts agree (32/64 for two/four workers),
+and the candidate splitter is smaller. The chunk strides are whole cache-line
+multiples, and the two output requests share a glibc allocation size class, but
+the artifact records no runtime allocation addresses; a claim about actual
+boundary sharing therefore still depends on an unverified alignment premise.
+Raw-sample reduction and the control environment also agree with the verdict.
+One worker selects a different sequential clone, so its improvement does not
+establish that the parallel chunk improved. The remaining code-placement
+hypothesis cannot be judged from a relocatable object's relative addresses;
+the existing artifact upload now also retains the final executable images,
+and its input identity record includes `lscpu` output to identify the actual
+CPU behind any architecture-dependent code-placement hypothesis.
+No alignment, layout, scheduler or timing change has been selected from this
+unresolved hypothesis.
+
+The same `5aaef9ad` revision's correctness run 35521783830 passes static,
+corpus/conformance and runtime groups on Linux and macOS. Both unit groups
+report 1520 passes and the same three OP-9 failures; both library groups stop
+at `InvalidResolution` in `vector-default.ll`. IO host run 35521783826 passes.
+These hosted results precede the direct-measure FN-9 repair above and are not
+presented as validation of that later change.
 
 The first canonical `make check` integration attempt stopped at design lint:
 the FN-4 refinement amendment has two decisions missing the required

@@ -90,6 +90,144 @@ fn direct_range_measure_returns_prove_only_the_matching_postcondition() {
     );
 }
 
+/// [FN-9, ENT-2(b), TYPE-9] a direct scalar return may be the measure of the
+/// complete place below its owner. Box content and ordinary fields remain
+/// distinct projections of that place; introducing a local binding must not
+/// change which relation the selected return can prove.
+#[test]
+fn direct_box_content_measure_returns_preserve_the_complete_place() {
+    assert_complete(
+        br#"struct Holder {
+  value: u64;
+}
+
+struct Wrapped {
+  cells: Box<Slots<u8>>;
+}
+
+fn slots(owner: own Box<Slots<u8>>) -> result: own u64 pure contract {
+  ensures result == owner.inner.len;
+} {
+  return owner.inner.len;
+}
+
+fn array(owner: own Box<Array<u8>>) -> result: own u64 pure contract {
+  ensures result == owner.inner.len;
+} {
+  return owner.inner.len;
+}
+
+fn nested(owner: own Box<Box<Slots<u8>>>) -> result: own u64 pure contract {
+  ensures result == owner.inner.inner.len;
+} {
+  return owner.inner.inner.len;
+}
+
+fn referenced(owner: &Box<Slots<u8>>) -> result: own u64 reads(owner.inner) contract {
+  ensures result == deref(owner).inner.len;
+} {
+  return deref(owner).inner.len;
+}
+
+fn boxed_indexed(owner: own Box<Array<Slots<u8, 2>, 2>>) -> result: own u64 pure contract {
+  ensures result == owner.inner[0_u64].len;
+} {
+  return owner.inner[0_u64].len;
+}
+
+fn wrapped(owner: own Wrapped) -> result: own u64 pure contract {
+  ensures result == owner.cells.inner.len;
+} {
+  return owner.cells.inner.len;
+}
+
+fn through_local(owner: own Box<Slots<u8>>) -> result: own u64 pure contract {
+  ensures result == owner.inner.len;
+} {
+  let length = owner.inner.len;
+  return length;
+}
+
+fn inline(owner: own Slots<u8, 4>) -> result: own u64 pure contract {
+  ensures result == owner.len;
+} {
+  return owner.len;
+}
+
+fn indexed(owner: own Array<Slots<u8, 2>, 2>) -> result: own u64 pure contract {
+  ensures result == owner[0_u64].len;
+} {
+  return owner[0_u64].len;
+}
+
+fn field(owner: own Holder) -> result: own u64 pure contract {
+  ensures result == owner.value;
+} {
+  return owner.value;
+}
+"#,
+    );
+
+    assert_fn9_refuted(
+        br#"fn wrong(owner: own Box<Slots<u8>>) -> result: own u64 pure contract {
+  requires owner.inner.len <= 18446744073709551614_u64;
+  ensures result == owner.inner.len + 1_u64;
+} {
+  return owner.inner.len;
+}
+"#,
+    );
+
+    assert_fn9_refuted(
+        br#"fn distinct(left: own Box<Slots<u8>>, right: own Box<Slots<u8>>) -> result: own u64 pure contract {
+  requires left.inner.len == 0_u64;
+  requires right.inner.len == 1_u64;
+  ensures result == right.inner.len;
+} {
+  return left.inner.len;
+}
+"#,
+    );
+
+    assert_fn9_refuted(
+        br#"fn distinct_references(left: &Box<Slots<u8>>, right: &Box<Slots<u8>>) -> result: own u64 reads(left.inner) contract {
+  requires deref(left).inner.len == 0_u64;
+  requires deref(right).inner.len == 1_u64;
+  ensures result == deref(right).inner.len;
+} {
+  return deref(left).inner.len;
+}
+"#,
+    );
+
+    assert_fn9_refuted(
+        br#"fn distinct_indices(owner: own Array<Slots<u8, 2>, 2>) -> result: own u64 pure contract {
+  requires owner[0_u64].len == 0_u64;
+  requires owner[1_u64].len == 1_u64;
+  ensures result == owner[1_u64].len;
+} {
+  return owner[0_u64].len;
+}
+"#,
+    );
+
+    assert_fn9_refuted(
+        br#"struct Pair {
+  left: Box<Slots<u8>>;
+  right: Box<Slots<u8>>;
+}
+
+fn distinct_fields(owner: own Pair) -> result: own u64 pure contract {
+  requires owner.left.inner.len == 0_u64;
+  requires owner.right.inner.len == 1_u64;
+  ensures result == owner.right.inner.len;
+} {
+  return owner.left.inner.len;
+}
+"#,
+    );
+}
+
 /// A declared postcondition over a reference parameter substitutes through a
 /// Box content projection written as `&deref(boxed).inner` at the call. The
 /// wrapper publishes the resulting concrete `.inner.len` relation.

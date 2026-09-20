@@ -59,8 +59,11 @@ revision is the explicit measurement entry for both image sets. Each child has
 a 60-second deadline, and the workflow bounds the campaign as a whole.
 `manifest.txt`, `raw.tsv`, `paired.tsv`, `verdict.txt` and per-process logs are
 uploaded on success or failure. The artifact also retains each arm's generated
-LLVM modules and native objects, so a regression can be inspected using the
-exact hosted compiler output rather than a local toolchain approximation.
+LLVM modules, native objects and executable images, so a regression can be
+inspected using the exact hosted code and its final linked addresses rather
+than a local toolchain approximation. The input identity record includes the
+host CPU report so architecture-dependent code-placement hypotheses can be
+checked against the machine that produced the samples.
 Keep these files only while the maintained regression workflow consumes them;
 experimental framework comparisons belong to explicitly requested research
 runs.

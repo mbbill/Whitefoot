@@ -437,11 +437,10 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
                 .classified
                 .source_tokens(source)
                 .ok_or(FinalizeCompilerFailure::InvalidTokenCoverage)?;
-            // PRE-1 supplies a signature record, not a writer fn_decl. Its
-            // fn_sig subtree is verified normally except for the generic
-            // header `grammar::prelude_signature_children` splices in; the
-            // surrounding record consists exactly of that signature and its
-            // semicolon.
+            // PRE-1 supplies a declaration head without a source body. Its
+            // internal fn_sig subtree includes the fn_decl generic header
+            // through `grammar::prelude_signature_children`; the surrounding
+            // record consists exactly of that head and its table semicolon.
             let prelude_record = self
                 .parsed
                 .classified
