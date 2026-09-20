@@ -248,38 +248,11 @@ class VerdictMatchingTests(unittest.TestCase):
 
 
 class CoverageTests(unittest.TestCase):
-    """Coverage measures the corpus against the specification, not what the
-    current toolchain can run, so toolchain readiness must not silently
-    remove a rule from the covered set.
+    """Coverage measures the corpus against the specification."""
 
-    This is asserted on a constructed corpus rather than on the repository's
-    own. Whether some rule happens to be cited ONLY by pending cases is an
-    accident of how much the compiler currently implements — it drops to
-    nothing the moment a batch promotes the last such case — so reading it as
-    a corpus invariant makes a real property untestable exactly when the
-    corpus is healthiest. The property under test is `coverage`'s treatment of
-    `status`, and that is stated directly."""
-
-    def test_a_pending_case_still_supplies_rule_coverage(self):
-        rules, _ = runner.spec_rule_ids()
-        # Two real rule ids; `coverage` intersects against the live spec, so a
-        # synthetic id would be discarded before the property could be seen.
-        self.assertLessEqual({"OP-1", "FN-2"}, rules)
-        cases = [
-            {"id": "runnable-one", "rules": ["OP-1"], "expect": {"kind": "accept"},
-             "status": "runnable", "doc": "d"},
-            {"id": "pending-one", "rules": ["FN-2"], "expect": {"kind": "accept"},
-             "status": "pending", "reason": "toolchain gap", "doc": "d"},
-        ]
-
-        _, _, covered, by_case, _, positive, _, uncovered = runner.coverage(cases, [])
-
-        # The pending case's rule is covered on exactly the same terms as the
-        # runnable one's: by case, and positively.
-        self.assertIn("FN-2", by_case)
-        self.assertIn("FN-2", covered)
-        self.assertIn("FN-2", positive)
-        self.assertNotIn("FN-2", uncovered)
+    # Retired: test_a_pending_case_still_supplies_rule_coverage. Its subject, the
+    # `pending` status, left the manifest with `xfail` on the owner's ruling of
+    # 2026-09-20; every case is runnable, so coverage has no status to ignore.
 
     def test_the_repository_corpus_covers_every_rule_it_cites(self):
         """The live-corpus half: every rule the manifest cites is a real spec

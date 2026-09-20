@@ -21,17 +21,17 @@ Verdict = ("accept",) | ("reject", rule) | ("run", exit) | ("unsupported", why)
 
 Manifest line (JSON):
   {"id": str, "rules": [rule_id...], "expect": EXPECT, "arrange": ARRANGE?,
-   "status": "runnable"|"pending", "reason": str?, "doc": str}
+   "status": "runnable", "doc": str}
   EXPECT = {"kind":"accept"} | {"kind":"reject","rule":R} | {"kind":"run","exit":N}
          | {"kind":"unsupported","why":str}
 
-  status: runnable = must match expect;  pending = toolchain can't run it yet (skip).
-          There is no expected-failure status: a case whose declared verdict the
-          toolchain does not reach is a failing case until the toolchain is fixed.
+  status: runnable = must match expect. It is the only status. There is no
+          skipped and no expected-failure status: a case whose declared verdict
+          the toolchain does not reach is a failing case until the toolchain is
+          fixed.
 
-`expect` is the verdict the SPECIFICATION requires; `status` is the separate
-toolchain-readiness axis. An unimplemented compiler capability is a `status`
-fact and never rewrites `expect`.
+`expect` is the verdict the SPECIFICATION requires. An unimplemented compiler
+capability never rewrites `expect` and never excuses a case from running.
 
 The `unsupported` outcome belongs only to build/link or invocation failure, never
 to source-language rejection. No target qualification or host-specific acceptance
@@ -111,15 +111,11 @@ def run_cases(cases):
         )
     results = []
     for c in cases:
-        status = c.get("status", "runnable")
-        if status == "pending":
-            results.append((c, "SKIP", ("pending",)))
-            continue
         src = (CASES / f"{c['id']}.wf").read_text()
         v = ADAPTER(src, c["expect"]["kind"] == "run")
         m = matches(v, c["expect"])
         if v[0] == "unsupported" and c["expect"]["kind"] != "unsupported":
-            outcome = "FAIL"                     # runnable means supported; gaps belong in pending
+            outcome = "FAIL"                     # runnable means supported
         else:
             outcome = "PASS" if m else "FAIL"
         results.append((c, outcome, v))
@@ -265,7 +261,7 @@ def validate_manifest(cases, annots, root=ROOT, cases_dir=CASES):
     if orphan_sources:
         errors.append("orphan case sources: " + " ".join(orphan_sources))
 
-    valid_statuses = {"runnable", "pending"}
+    valid_statuses = {"runnable"}
     expectation_fields = {
         "accept": {"kind"},
         "reject": {"kind", "rule"},
@@ -288,8 +284,6 @@ def validate_manifest(cases, annots, root=ROOT, cases_dir=CASES):
         status = case.get("status", "runnable")
         if status not in valid_statuses:
             errors.append(f"{case_id}: invalid status {status!r}")
-        if status == "pending" and not case.get("reason"):
-            errors.append(f"{case_id}: {status} case requires a reason")
 
         expect = case.get("expect")
         kind = expect.get("kind") if isinstance(expect, dict) else None
@@ -450,8 +444,6 @@ def main():
                 if o == "FAIL":
                     fail += 1
                     print(f"  {o:5} {c['id']:38} want {c['expect']} got {v}")
-                elif o == "SKIP" and verbose:
-                    print(f"  SKIP  {c['id']:38} {v[1] if len(v) > 1 else 'pending'}")
             print("conformance run: " + "  ".join(f"{k}={tally[k]}" for k in sorted(tally)))
     if cmd == "verdicts":
         if len(sys.argv) < 3:
