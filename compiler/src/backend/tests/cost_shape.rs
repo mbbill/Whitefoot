@@ -157,7 +157,9 @@ fn call_target(line: &str) -> Option<&str> {
 #[test]
 fn the_reused_buffers_are_initialized_once_at_allocation() {
     // `wfgrep` asks for exactly eleven runs, and gets exactly eleven store
-    // takes. Derived from source, function by function: `main` takes the
+    // takes. The numbers here are payload capacities; each runtime `Slots`
+    // allocation also contains its 16-byte `len`/`cap` descriptor. Derived
+    // from source, function by function: `main` takes the
     // pattern (4096), the root name (256), the root path (1024), and the
     // diagnostic report (1280); `walk` takes its enumeration batch (8192),
     // its collected names (65664), its visit order (64 u64 slots, 512
@@ -213,15 +215,17 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
             if let Some(callee @ ("wf_zeroed_bytes" | "wf_zeroed_words")) = call_target(line) {
                 out_of_line += 1;
                 retained_helpers.insert(callee);
-                // Extent is the helper's final source argument. Optimizers can
-                // remove its unused provider argument but do not change that value.
+                // Capacity is the helper's final source argument. Optimizers
+                // can remove its unused provider argument but do not change
+                // that value. The observed allocation also contains the
+                // runtime Slots descriptor before its payload.
                 let count = (0..)
                     .map_while(|ordinal| call_argument(line, callee, ordinal))
                     .last()
                     .and_then(|argument| argument.split_whitespace().next_back())
                     .and_then(|value| value.parse::<u64>().ok())
                     .expect("a retained initialization call has its constant source extent");
-                let bytes = count * if callee == "wf_zeroed_words" { 8 } else { 1 };
+                let bytes = 16 + count * if callee == "wf_zeroed_words" { 8 } else { 1 };
                 *sizes.entry(bytes).or_insert(0) += 1;
             }
         }
@@ -246,15 +250,15 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     assert_eq!(
         sizes,
         std::collections::BTreeMap::from([
-            (4096, 2),
-            (8192, 2),
-            (1024, 2),
-            (1280, 2),
-            (65664, 1),
-            (512, 1),
-            (256, 1),
+            (4112, 2),
+            (8208, 2),
+            (1040, 2),
+            (1296, 2),
+            (65680, 1),
+            (528, 1),
+            (272, 1),
         ]),
-        "all eleven source takes retain their exact byte extents"
+        "all eleven source takes retain their exact descriptor-plus-payload byte extents"
     );
     // Nothing reallocates, and nothing re-initializes. That the fill runs once
     // per take is a source fact under this surface rather than an allocator

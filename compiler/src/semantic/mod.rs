@@ -45,9 +45,9 @@ pub(crate) use model::{
     CheckedLoopId, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind,
     CheckedNumericType, CheckedParameter, CheckedPlaceStep, CheckedProgramData,
     CheckedProjectedDrop, CheckedRangeRoot, CheckedRangeSource, CheckedReleaseClass,
-    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedStatement,
-    CheckedTargetDomainObligation, CheckedType, CheckedValue, CheckedWritablePlace, FunctionId,
-    MeasureCell, MeasuredKind, NominalId, PropagationContext, WindowShape, expression_children,
+    CheckedSetTarget, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
+    CheckedWritablePlace, FunctionId, MeasureCell, MeasuredKind, NominalId, PropagationContext,
+    WindowShape, expression_children,
 };
 
 /// Numbered rule owning one post-resolution semantic rejection.
@@ -73,10 +73,6 @@ pub enum SemanticRule {
     Type5,
     /// Constructor/variant owner agreement.
     Type6,
-    /// A reference kind is not a value type: no aggregate position, no
-    /// element, no `Box` content and no written generic type argument may be
-    /// `&T` or `&[T]`, recursively.
-    Type8,
     /// The three storage shapes and the cell: constant-capacity placement,
     /// the runtime-capacity forms' `Box`-content-only position, and the
     /// refusal of a compiler-owned nominal's constructor `call`.
@@ -119,27 +115,14 @@ pub enum SemanticRule {
     /// modifier, the destructuring consume, the partial-consume refusal, and
     /// the linearity bound on a generic parameter.
     Prov6,
-    /// Storage class as a function of type, stated once.
-    Stor1,
-    /// The window as the complete typestate: `cap` slots, the `len` slots
-    /// beginning at `head`, and the subscript obligation stated against
-    /// `len`.
-    Win1,
-    /// The four window parts and the fixed overlap answers they carry into
-    /// the [`OWN-7`] relation.
-    Win2,
     /// There is no take operation and no hole: a move out of a field or of
     /// `Box` content consuming the whole owner, a remaining linear part, a
     /// move out of a window slot or array element, and an assignment over a
     /// linear owned place.
     Win3,
-    /// Relocation by copying bytes: no judgment depends on a stable address.
-    Stor7,
     /// The one heap: total allocation, and the no-heap declaration's refusal
     /// of `Box`, the runtime-capacity shapes, and the allocating rows.
     Stor8,
-    /// Reference-free and aggregate-closed stored-content formation.
-    Stor5,
     /// Operation-table row selection.
     Op1,
     /// Exact integer arithmetic semantics and the constant-operand-class
@@ -164,15 +147,8 @@ pub enum SemanticRule {
     /// The atomic in-place update: the target class, the result condition,
     /// and the callee row's refusal to reach a prefix of the target.
     Op12,
-    /// Construction: the closed set of construction functions, the copy
-    /// element type `array_filled` requires, and the length agreements
-    /// `slots_from_array` and `slots_into_array` carry.
-    Op13,
     /// `free_empty`: the admitted shape set and the proved-empty obligation.
     Op14,
-    /// A measure read is a place form: exact `own u64`, empty effect row,
-    /// and never a write target.
-    Op15,
     /// Function result, reachability, or completion.
     Fn1,
     /// Explicit generic-instantiation argument presence.
@@ -233,7 +209,6 @@ impl SemanticRule {
             Self::Type2 => "TYPE-2",
             Self::Type5 => "TYPE-5",
             Self::Type6 => "TYPE-6",
-            Self::Type8 => "TYPE-8",
             Self::Type9 => "TYPE-9",
             Self::Type10 => "TYPE-10",
             Self::Type7 => "TYPE-7",
@@ -248,13 +223,8 @@ impl SemanticRule {
             Self::Own11 => "OWN-11",
             Self::Liv1 => "LIV-1",
             Self::Prov6 => "PROV-6",
-            Self::Stor1 => "STOR-1",
-            Self::Win1 => "WIN-1",
-            Self::Win2 => "WIN-2",
             Self::Win3 => "WIN-3",
-            Self::Stor7 => "STOR-7",
             Self::Stor8 => "STOR-8",
-            Self::Stor5 => "STOR-5",
             Self::Op1 => "OP-1",
             Self::Op2 => "OP-2",
             Self::Op4 => "OP-4",
@@ -264,9 +234,7 @@ impl SemanticRule {
             Self::Op10 => "OP-10",
             Self::Op11 => "OP-11",
             Self::Op12 => "OP-12",
-            Self::Op13 => "OP-13",
             Self::Op14 => "OP-14",
-            Self::Op15 => "OP-15",
             Self::Fn1 => "FN-1",
             Self::Fn2 => "FN-2",
             Self::Fn3 => "FN-3",
@@ -316,8 +284,7 @@ impl SemanticRule {
             Self::Gram11 => Self::Type2,
             Self::Type2 => Self::Type5,
             Self::Type5 => Self::Type6,
-            Self::Type6 => Self::Type8,
-            Self::Type8 => Self::Type9,
+            Self::Type6 => Self::Type9,
             Self::Type9 => Self::Type10,
             Self::Type10 => Self::Type7,
             Self::Type7 => Self::Set1,
@@ -331,14 +298,9 @@ impl SemanticRule {
             Self::Ref4 => Self::Own11,
             Self::Own11 => Self::Liv1,
             Self::Liv1 => Self::Prov6,
-            Self::Prov6 => Self::Stor1,
-            Self::Stor1 => Self::Win1,
-            Self::Win1 => Self::Win2,
-            Self::Win2 => Self::Win3,
-            Self::Win3 => Self::Stor7,
-            Self::Stor7 => Self::Stor8,
-            Self::Stor8 => Self::Stor5,
-            Self::Stor5 => Self::Op1,
+            Self::Prov6 => Self::Win3,
+            Self::Win3 => Self::Stor8,
+            Self::Stor8 => Self::Op1,
             Self::Op1 => Self::Op2,
             Self::Op2 => Self::Op4,
             Self::Op4 => Self::Op5,
@@ -347,10 +309,8 @@ impl SemanticRule {
             Self::Op9 => Self::Op10,
             Self::Op10 => Self::Op11,
             Self::Op11 => Self::Op12,
-            Self::Op12 => Self::Op13,
-            Self::Op13 => Self::Op14,
-            Self::Op14 => Self::Op15,
-            Self::Op15 => Self::Fn1,
+            Self::Op12 => Self::Op14,
+            Self::Op14 => Self::Fn1,
             Self::Fn1 => Self::Fn2,
             Self::Fn2 => Self::Fn3,
             Self::Fn3 => Self::Fn4,
@@ -394,59 +354,51 @@ impl SemanticRule {
             Self::Type2 => 7,
             Self::Type5 => 8,
             Self::Type6 => 9,
-            Self::Type8 => 10,
-            Self::Type9 => 11,
-            Self::Type10 => 12,
-            Self::Type7 => 13,
-            Self::Set1 => 14,
-            Self::Const1 => 15,
-            Self::Const2 => 16,
-            Self::Own1 => 17,
-            Self::Ref1 => 18,
-            Self::Ref2 => 19,
-            Self::Ref3 => 20,
-            Self::Ref4 => 21,
-            Self::Own11 => 22,
-            Self::Liv1 => 23,
-            Self::Prov6 => 24,
-            Self::Stor1 => 25,
-            Self::Win1 => 26,
-            Self::Win2 => 27,
-            Self::Win3 => 28,
-            Self::Stor7 => 29,
-            Self::Stor8 => 30,
-            Self::Stor5 => 31,
-            Self::Op1 => 32,
-            Self::Op2 => 33,
-            Self::Op4 => 34,
-            Self::Op5 => 35,
-            Self::Op6 => 36,
-            Self::Op9 => 37,
-            Self::Op10 => 38,
-            Self::Op11 => 39,
-            Self::Op12 => 40,
-            Self::Op13 => 41,
-            Self::Op14 => 42,
-            Self::Op15 => 43,
-            Self::Fn1 => 44,
-            Self::Fn2 => 45,
-            Self::Fn3 => 46,
-            Self::Fn4 => 47,
-            Self::Fn5 => 48,
-            Self::Fn6 => 49,
-            Self::Fn8 => 50,
-            Self::Fn9 => 51,
-            Self::Call4 => 52,
-            Self::Eff1 => 53,
-            Self::Eff2 => 54,
-            Self::Eff5 => 55,
-            Self::Err2 => 56,
-            Self::Err3 => 57,
-            Self::Ent2 => 58,
-            Self::Msr3 => 59,
-            Self::Call6 => 60,
-            Self::Inv1 => 61,
-            Self::Prf1 => 62,
+            Self::Type9 => 10,
+            Self::Type10 => 11,
+            Self::Type7 => 12,
+            Self::Set1 => 13,
+            Self::Const1 => 14,
+            Self::Const2 => 15,
+            Self::Own1 => 16,
+            Self::Ref1 => 17,
+            Self::Ref2 => 18,
+            Self::Ref3 => 19,
+            Self::Ref4 => 20,
+            Self::Own11 => 21,
+            Self::Liv1 => 22,
+            Self::Prov6 => 23,
+            Self::Win3 => 24,
+            Self::Stor8 => 25,
+            Self::Op1 => 26,
+            Self::Op2 => 27,
+            Self::Op4 => 28,
+            Self::Op5 => 29,
+            Self::Op6 => 30,
+            Self::Op9 => 31,
+            Self::Op10 => 32,
+            Self::Op11 => 33,
+            Self::Op12 => 34,
+            Self::Op14 => 35,
+            Self::Fn1 => 36,
+            Self::Fn2 => 37,
+            Self::Fn3 => 38,
+            Self::Fn4 => 39,
+            Self::Fn5 => 40,
+            Self::Fn6 => 41,
+            Self::Fn8 => 42,
+            Self::Fn9 => 43,
+            Self::Call4 => 44,
+            Self::Eff1 => 45,
+            Self::Eff2 => 46,
+            Self::Eff5 => 47,
+            Self::Err2 => 48,
+            Self::Err3 => 49,
+            Self::Ent2 => 50,
+            Self::Msr3 => 51,
+            Self::Call6 => 52,
+            Self::Inv1 => 53,
+            Self::Prf1 => 54,
         }
     }
 }
@@ -597,30 +549,11 @@ pub enum SemanticIssueKind {
         /// Closed set of classes required by SET-1.
         required_classes: &'static str,
     },
-    /// An affine final place cannot be replaced by `set`.
-    AffineSetTarget {
-        /// Exact selected affine type.
-        target_type: String,
-        /// Required STOR-1 restructuring.
-        mechanical_fix: &'static str,
-    },
-    /// [VIEW-4] a commit would displace a live loan: the target's type is
-    /// loan-bearing and the right-hand side does not consume the displaced
-    /// view, so its loan would outlive the descriptor whose place it was
-    /// held from.
-    LoanBearingCommitTarget {
-        /// Exact selected loan-bearing type.
-        target_type: String,
-        /// Required VIEW-4 restructuring.
-        mechanical_fix: &'static str,
-    },
-    /// [VIEW-6] an ordered result list declares two results of the same view
-    /// type at the same formal region, so each would alias every input the
-    /// other reaches.
-    SameRegionViewResults {
-        /// The view type both results write.
-        result_type: String,
-        /// Required VIEW-6 restructuring.
+    /// A written reference argument reaches immutable source storage.
+    ImmutableWrittenArgument {
+        /// The named constant or compiler-updated counted binder.
+        binding: String,
+        /// Restructuring that gives the callee independently writable storage.
         mechanical_fix: &'static str,
     },
     /// [PROV-6] a value linear in this scope is live on an edge leaving it,
@@ -640,64 +573,6 @@ pub enum SemanticIssueKind {
         obligation: String,
         /// The residual the consume would abandon.
         residual: String,
-        /// Exact restructuring required by PROV-6.
-        mechanical_fix: &'static str,
-    },
-    /// [PROV-6] a `dispose` whose operand type reaches no capability-released
-    /// leaf, so the walk would reclaim nothing.
-    DisposeWithoutCapabilityLeaf {
-        /// The operand's exact type.
-        ty: String,
-        /// Exact restructuring required by PROV-6.
-        mechanical_fix: &'static str,
-    },
-    /// [PROV-6] a `dispose` whose operand releases to a store no live
-    /// binding of this scope holds the provider of.
-    DisposeHasNoProvider {
-        /// The store the operand's release spends, as a diagnostic names it.
-        store: String,
-        /// The parameter the scope is missing.
-        provider: String,
-        /// Exact restructuring required by PROV-6.
-        mechanical_fix: &'static str,
-    },
-    /// [PROV-6] a `dispose` one of whose release-graph nodes carries the
-    /// `nodrop` modifier.
-    DisposeOfLinearNode {
-        /// The marked nominal reached by the walk.
-        nominal: String,
-        /// Exact restructuring required by PROV-6.
-        mechanical_fix: &'static str,
-    },
-    /// [PROV-6] a `dispose` whose operand is or reaches a view, which owns
-    /// nothing.
-    DisposeOfLoanBearingOperand {
-        /// The operand's exact type.
-        ty: String,
-        /// Exact restructuring required by PROV-6.
-        mechanical_fix: &'static str,
-    },
-    /// [BLK-2] a reservation whose written store region is not one an
-    /// enclosing `region_stmt` of this function introduced, or whose
-    /// occurrence is not a statement of that region block and of no loop
-    /// inside it.
-    ReservationPlacement {
-        /// The written store region.
-        region: String,
-        /// Exact restructuring required by BLK-2.
-        mechanical_fix: &'static str,
-    },
-    /// [PROV-1] a second reserving occurrence naming a region an earlier one
-    /// already named.
-    SecondStoreInOneRegion {
-        /// The written store region.
-        region: String,
-        /// Exact restructuring required by PROV-1.
-        mechanical_fix: &'static str,
-    },
-    /// [PROV-6] a region parameter written `'s: copy`, which is not one
-    /// of the two classes a store has.
-    InvalidRegionBound {
         /// Exact restructuring required by PROV-6.
         mechanical_fix: &'static str,
     },
@@ -831,12 +706,6 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by BLK-1.
         mechanical_fix: &'static str,
     },
-    /// An affine buffer element was moved out of its slot; elements leave
-    /// and enter their slots only through [SET-2] replacement [TYPE-2].
-    AffineElementMove {
-        /// Exact restructuring required by TYPE-2.
-        mechanical_fix: &'static str,
-    },
     /// A binding was used after ownership had already been consumed.
     UseAfterMove {
         /// Exact restructuring required by OWN-1.
@@ -865,14 +734,6 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by REF-1.
         mechanical_fix: &'static str,
     },
-    /// [REF-1] a loop-carried rebinding extended a reference's path through
-    /// itself, so the path has no static shape.
-    LoopCarriedPathExtension {
-        /// The reference binding the `set_stmt` rebinds.
-        binder: String,
-        /// Exact restructuring required by REF-1.
-        mechanical_fix: &'static str,
-    },
     /// [REF-3] a reference was assigned into an aggregate, returned, or
     /// captured by a stored function value.
     EscapingReference {
@@ -890,14 +751,6 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by WIN-3.
         mechanical_fix: &'static str,
     },
-    /// [WIN-3] a move out of a field or of `Box` content consumed an owner
-    /// with a remaining linear part.
-    RemainingLinearPart {
-        /// The linear part the owner still holds.
-        part: String,
-        /// Exact restructuring required by WIN-3.
-        mechanical_fix: &'static str,
-    },
     /// A borrow holder was used without the required explicit dereference.
     MissingDereference {
         /// Exact mechanical repair selected by TYPE-7.
@@ -910,18 +763,6 @@ pub enum SemanticIssueKind {
         /// The outer binding whose status the backedge changed.
         binding: String,
         /// Exact restructuring required by OWN-11.
-        mechanical_fix: &'static str,
-    },
-    /// A borrow created in a loop names a region introduced outside that loop.
-    BorrowRegionOutsideLoop {
-        /// Exact restructuring required by OWN-11.
-        mechanical_fix: &'static str,
-    },
-    /// A region is spelled at a position [FORM-8] does not spell that way:
-    /// written where the surrounding text already fixes it, or absent where
-    /// nothing fixes it.
-    RegionSpelling {
-        /// Exact mechanical repair selected by FORM-8.
         mechanical_fix: &'static str,
     },
     /// The selected operation family has no row for the written arguments.
@@ -1056,21 +897,6 @@ pub enum SemanticIssueKind {
     },
     /// A return expression disagrees with the written function result.
     ReturnMismatch,
-    /// A returned direct slice may originate outside its signature ceiling.
-    InvalidSliceReturnOrigin {
-        /// Required FN-1 restructuring.
-        mechanical_fix: &'static str,
-    },
-    /// A borrow-mode result cannot directly refer to a slice descriptor.
-    BorrowedSliceResult {
-        /// Required FN-1 restructuring.
-        mechanical_fix: &'static str,
-    },
-    /// A generic type argument contains a region-bearing value.
-    RegionBearingGenericArgument {
-        /// Required FN-2 restructuring.
-        mechanical_fix: &'static str,
-    },
     /// A call on a cycle among generic functions instantiates its callee at
     /// something other than exactly the caller's own type parameters [FN-6].
     PolymorphicRecursion {
@@ -1079,28 +905,6 @@ pub enum SemanticIssueKind {
         /// order, joined by ` -> ` and closed on the caller.
         cycle: String,
         /// Required FN-6 restructuring.
-        mechanical_fix: &'static str,
-    },
-    /// A stored-content position contains a region-bearing value.
-    RegionBearingStorage {
-        /// Required STOR-5 restructuring.
-        mechanical_fix: &'static str,
-    },
-    /// An arena value would leave its region's block [STOR-4]: it may not be
-    /// returned, stored into a field, or moved to an outside destination.
-    ArenaEscape {
-        /// Required STOR-4 restructuring.
-        mechanical_fix: &'static str,
-    },
-    /// [BLK-4] a complete value type names a region that does not outlive
-    /// the destination of an ordinary owned transfer.
-    ConfinedValueEscape {
-        region: String,
-        mechanical_fix: &'static str,
-    },
-    /// A slice-valued value match would require an unselected origin join.
-    SliceValueMatch {
-        /// Required OWN-5 restructuring.
         mechanical_fix: &'static str,
     },
     /// A statement follows a structurally terminating statement.
@@ -1306,18 +1110,10 @@ pub enum UnsupportedSemanticFeature {
     /// name for a path and every admitted root has one, so reaching here is
     /// a checker gap and never a source verdict [OWN-8].
     ReferenceFormation,
-    /// Rebinding a legacy buffer descriptor, directly or inside a selected
-    /// aggregate, through a borrowed place. Direct buffer borrows still carry
-    /// descriptor copies; aggregate borrows can update descriptor slots but
-    /// do not retain backing captured by an enclosing assignment target.
-    /// Element-content writes and owned descriptor replacement are unaffected.
-    BorrowedBufferDescriptorMutation,
     /// Composite types or values outside the implemented nominal-data family.
     CompositeValues,
     /// A recursive nominal layout whose finite representation is not selected.
     RecursiveNominalLayout,
-    /// Moving an affine referent out of owning indirection has no selected cleanup semantics.
-    BoxReferentMove,
     /// An ownership-state join not yet covered by the selected finite rule.
     OwnershipJoin,
     /// Repeated match arms, whose meaning the active specification does not select.
@@ -1328,13 +1124,6 @@ pub enum UnsupportedSemanticFeature {
     /// lowering [STOR-2, STOR-3] is not implemented yet, so a checked
     /// function that would carry an arena value to execution stops here.
     ArenaRuntime,
-    /// Container and provider values at runtime [TYPE-2, BLK-1, PROV-1]. The
-    /// four compiler-owned nominals are named, branded, confined and
-    /// measured by the ordinary source judgments, and the window lowering the
-    /// nine [BLK-0] rows need is not implemented yet, so a checked function
-    /// that would carry one of those values to execution stops here rather
-    /// than lowering wrong code.
-    ContainerRuntime,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

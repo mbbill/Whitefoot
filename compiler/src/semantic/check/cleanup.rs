@@ -228,12 +228,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::NumericConversion { value, .. }
             | CheckedExpression::Reinterpret { value, .. }
-            | CheckedExpression::ArrayFill { value, .. }
-            | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
             | CheckedExpression::BoxTake { value, .. }
-            | CheckedExpression::ArenaNew { value, .. }
-            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.collect_expression_release_effects(function, value, effects)?;
             }
@@ -258,14 +254,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.collect_expression_release_effects(function, start, effects)?;
                 self.collect_expression_release_effects(function, end, effects)?;
             }
-            CheckedExpression::BufferFill { length, value, .. } => {
-                self.collect_expression_release_effects(function, length, effects)?;
-                self.collect_expression_release_effects(function, value, effects)?;
-            }
-            CheckedExpression::BufferVacant { length, .. }
-            | CheckedExpression::BufferFits { length, .. } => {
-                self.collect_expression_release_effects(function, length, effects)?;
-            }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
@@ -273,11 +261,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::RangeMeasure { .. }
-            | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
-            | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::DerefAddressed { .. } => {}
         }
         Ok(())

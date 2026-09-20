@@ -83,36 +83,6 @@ pub(super) const WIN3_NO_TAKE: &str = "use take_back, remove_at, or swap [OP-10,
 pub(super) const OWN1_ROOTED_CONSUME: &str =
     "consume a place rooted in a live own-mode binding of this function";
 
-/// What one use does to the storage at a place.
-///
-/// There are four, and no fifth: v0.59's shared/unique borrow split had the
-/// loan apparatus as its subject and [REF-1] states that there is no
-/// permission marker on a reference, so forming one is one kind of access.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum AccessKind {
-    /// The place's value is observed [EFF-1].
-    Read,
-    /// The storage at the place, and everything below it, is written
-    /// [EFF-1, SET-1].
-    Write,
-    /// The place is consumed [OWN-1], which kills the whole binding rooting
-    /// it.
-    Move,
-    /// A reference is formed to the place [REF-1].
-    Reference,
-}
-
-impl AccessKind {
-    /// Whether this access invalidates every live reference whose path it is
-    /// a proper prefix of [REF-2].
-    pub(super) const fn invalidates_references(self) -> bool {
-        match self {
-            Self::Write | Self::Move => true,
-            Self::Read | Self::Reference => false,
-        }
-    }
-}
-
 /// Which reference kind a binding names [GRAM-3, REF-4].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ReferenceKind {
@@ -424,21 +394,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(reference.paths.clone())
     }
 
-    /// [REF-1] the complete resolved place set of one spelled place: its
-    /// resolved root, with the written steps appended.
-    pub(super) fn resolve_place_set(
-        &self,
-        root: DeclarationId,
-        steps: &[PlaceStep],
-        bindings: &HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<Vec<ResolvedPlace>, CheckStop> {
-        let mut resolved = self.resolve_reference_root(root, bindings)?;
-        for place in &mut resolved {
-            place.path.extend_from_slice(steps);
-        }
-        Ok(resolved)
-    }
-
     /// [REF-2] the validity judgment at one use of a reference binding.
     pub(super) fn check_reference_valid(
         &self,
@@ -565,25 +520,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 reference.invalidate(InvalidationEvent::RefinementLost);
             }
-        }
-    }
-
-    /// [REF-1] the join of a reference binding over two incoming edges.
-    pub(super) fn join_reference(
-        target: &mut LocalBinding,
-        incoming: &LocalBinding,
-    ) -> Result<(), CheckStop> {
-        match (&mut target.reference, &incoming.reference) {
-            (Some(left), Some(right)) => {
-                left.join(right);
-                Ok(())
-            }
-            (None, None) => Ok(()),
-            // A binding that is a reference on one edge and storage on the
-            // other cannot exist: a `let` binder's kind is derived once from
-            // its initializer [TYPE-5, REF-1] and a `set` of a reference
-            // variable rebinds the same name.
-            _ => Err(SemanticCompilerFailure::InvalidResolution.into()),
         }
     }
 
@@ -783,10 +719,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             root: CheckedContainerRoot { root, path, ty },
         };
         let mut accesses = carried.accesses;
-        accesses.extend(places.iter().cloned().map(|place| PlaceAccess {
-            place,
-            kind: AccessKind::Reference,
-        }));
+        accesses.extend(places.iter().cloned().map(|place| PlaceAccess { place }));
         Ok(TypedExpression {
             expression,
             mode: match kind {
@@ -854,10 +787,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .unsupported(UnsupportedSemanticFeature::ReferenceFormation, place_node);
             }
             let local = root_binding.ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let Some(element) = self.flat_element(local.ty)? else {
-                return self
-                    .unsupported(UnsupportedSemanticFeature::ReferenceFormation, place_node);
-            };
+            let element = self.intern_element(local.ty)?;
             let named = local
                 .reference
                 .as_ref()
@@ -867,6 +797,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedRangeSource::Range(CheckedRangeRoot {
                     binding: local.binding,
                     element,
+                    element_type: local.ty,
                 }),
                 named,
                 local.ty,
@@ -940,9 +871,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element,
             )
         };
-        let Some(element) = self.flat_element(element_type)? else {
-            return self.unsupported(UnsupportedSemanticFeature::ReferenceFormation, place_node);
-        };
+        let element = self.intern_element(element_type)?;
         let mut endpoints = Vec::with_capacity(2);
         for node in [start_node, end_node] {
             let mut probe = bindings.clone();
@@ -991,16 +920,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             carrier: self.tree.path(carrier)?.clone(),
             source,
             element,
+            element_type,
             start: Box::new(start.expression),
             end: Box::new(end.expression),
             obligation: self.tree.path(suffix)?.clone(),
             captured,
         };
         let mut accesses = carried.accesses;
-        accesses.extend(places.iter().cloned().map(|place| PlaceAccess {
-            place,
-            kind: AccessKind::Reference,
-        }));
+        accesses.extend(places.iter().cloned().map(|place| PlaceAccess { place }));
         Ok(TypedExpression {
             expression,
             mode: CheckedMode::Range,
@@ -1124,17 +1051,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .collect())
     }
 
-    /// A callee's declared formal effect covers the complete selected actual
-    /// [EFF-5].
-    pub(super) fn effect_paths_for_whole_place(
-        &self,
-        node: NodeId,
-        place: &ResolvedPlace,
-        bindings: &HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<Vec<EffectPath>, CheckStop> {
-        self.effect_paths_for_place(node, place, bindings)
-    }
-
     /// A measure reads the selected run's descriptor storage and no slot
     /// [MSR-2, WIN-2].
     pub(super) fn effect_paths_for_descriptor(
@@ -1147,19 +1063,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut descriptor = place.clone();
         descriptor.path.push(PlaceStep::Measure(measure));
         self.effect_paths_for_place(node, &descriptor, bindings)
-    }
-
-    /// The struct-field prefix of a resolved place, for a diagnostic or a
-    /// drop path that has fields and nothing else.
-    pub(super) fn field_prefix(place: &ResolvedPlace) -> Vec<u32> {
-        place
-            .path
-            .iter()
-            .map_while(|step| match step {
-                PlaceStep::Field(field) => Some(*field),
-                _ => None,
-            })
-            .collect()
     }
 
     /// [TYPE-7] whether this operand would be read through a reference or a
@@ -1221,22 +1124,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .filter(|(declaration, _)| !enclosing.contains(declaration))
             .map(|(_, local)| local.binding)
             .collect()
-    }
-
-    /// Whether a type is a nominal whose kind is a struct, for the field
-    /// walks above.
-    pub(super) fn struct_field_type(
-        &self,
-        ty: CheckedType,
-        field: u32,
-    ) -> Result<Option<CheckedType>, CheckStop> {
-        let CheckedType::Nominal(nominal) = ty else {
-            return Ok(None);
-        };
-        let CheckedNominalKind::Struct { fields } = &self.nominal(nominal)?.kind else {
-            return Ok(None);
-        };
-        Ok(fields.get(field as usize).map(|field| field.ty))
     }
 }
 

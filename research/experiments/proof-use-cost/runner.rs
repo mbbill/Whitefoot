@@ -92,6 +92,11 @@ fn source(family: Family, count: usize) -> String {
 fn run(compiler: &Path, root: &Path, label: &str, source: &str, accepts: bool) -> u128 {
     let input = root.join(format!("{label}.wf"));
     let output = root.join(format!("{label}.ll"));
+    match std::fs::remove_file(&output) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => panic!("remove previous output: {error}"),
+    }
     std::fs::write(&input, source).expect("write generated source");
     let started = Instant::now();
     let child = Command::new(compiler)
@@ -230,8 +235,9 @@ fn compare(baseline: &Path, root: &Path, args: &[String]) {
             std::fs::read_to_string(path).expect("read real source"),
         ));
     }
-    println!("fixture\tsource_bytes\tpair\tcompiler\telapsed_us\tverdict");
+    println!("fixture\tsource_bytes\tpair\tcompiler\telapsed_us\tverdict\tllvm_sha256");
     for (label, source) in fixtures {
+        let mut expected_llvm = None;
         for round in 0..rounds {
             let mut order = [("baseline", baseline), ("candidate", candidate)];
             if round % 2 != 0 {
@@ -239,8 +245,30 @@ fn compare(baseline: &Path, root: &Path, args: &[String]) {
             }
             for (name, compiler) in order {
                 let elapsed = run(compiler, root, &label, &source, true);
+                // Read before the next arm overwrites the same output path.
+                // Equality and hashing are outside the compile interval, and
+                // every arm uses the identical source path and bytes.
+                let output = root.join(format!("{label}.ll"));
+                let llvm = std::fs::read(&output).expect("read emitted LLVM");
+                if let Some(expected) = &expected_llvm {
+                    assert!(
+                        llvm == *expected,
+                        "{label}: LLVM differs for {name}, pair {round}"
+                    );
+                } else {
+                    expected_llvm = Some(llvm);
+                }
+                let digest = Command::new("shasum")
+                    .args(["-a", "256"])
+                    .arg(&output)
+                    .output()
+                    .expect("compare requires shasum for LLVM SHA-256 evidence");
+                assert!(digest.status.success(), "hash emitted LLVM");
+                let digest = String::from_utf8(digest.stdout).expect("UTF-8 SHA-256");
+                let digest = digest.split_whitespace().next().expect("LLVM SHA-256");
+                assert_eq!(digest.len(), 64);
                 println!(
-                    "{label}\t{}\t{round}\t{name}\t{elapsed}\taccept",
+                    "{label}\t{}\t{round}\t{name}\t{elapsed}\taccept\t{digest}",
                     source.len()
                 );
                 std::io::stdout().flush().unwrap();

@@ -738,9 +738,9 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
 /// The third v0.59 case held a shared borrow of the whole owner across an
 /// indexed write and asserted [OWN-5]'s `BorrowConflict`. That rule is
 /// retired: [REF-1] gives a reference a path and nothing else, and the only
-/// reference-use rejection left is the use of an invalid one [REF-2]. The
-/// write of a proper prefix is what invalidates the reference, so the case
-/// moved to a *use* after that write.
+/// reference-use rejection left is the use of an invalid one [REF-2]. A write
+/// below the referenced whole owner is a content write and does not invalidate
+/// that reference, so the case retains a use after the indexed write.
 #[test]
 fn nested_struct_run_places_retain_their_complete_paths() {
     let source = br#"struct Inner {
@@ -821,38 +821,36 @@ fn main() -> status: own ExitStatus pure {
         },
     );
 
-    assert_rule_kind(
+    with_semantics(
         br#"struct Inner {
   values: Slots<u8, 2>;
 }
 
 struct Outer {
   inner: Inner;
+  marker: u8;
 }
 
-fn observe(value: &Outer) -> result: own u8 reads(value) {
-  return deref(value).inner.values[0_u64];
+fn observe(value: &Outer) -> result: own u8 reads(value.marker) {
+  return deref(value).marker;
 }
 
 fn main() -> status: own ExitStatus pure {
   let base = array_filled::<u8, 2>(value: 0_u8);
   let values = slots_from_array::<u8, 2>(values: base);
   let inner = Inner(values: move values);
-  let outer = Outer(inner: move inner);
+  let outer = Outer(inner: move inner, marker: 7_u8);
   let held = &outer;
   set outer.inner.values[1_u64] = 9_u8;
   let seen = observe(value: held);
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Ref2,
-        |kind| {
-            matches!(
-                kind,
-                SemanticIssueKind::InvalidReferenceUse { binder, mechanical_fix, .. }
-                    if binder.as_str() == "held"
-                        && *mechanical_fix == "form the reference again after that event"
-            )
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "a descendant content write must preserve the whole-owner reference: {outcome:?}"
+            );
         },
     );
 }

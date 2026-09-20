@@ -213,6 +213,7 @@ fn key_fill<K>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: own unit 
 }
 
 fn key_create<K>(count: own u64) -> result: own Box<Slots<Slot<K>>> pure contract {
+  requires count <= 768614336404564650_u64;
   ensures result.inner.len == count;
 } {
   doc "Allocation is total, so the creation has no failure arm and the static allocation-size obligation is discharged at the constructor.";

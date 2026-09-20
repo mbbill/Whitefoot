@@ -142,55 +142,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         answer.ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
-    /// Whether the complete type cannot occur at a proper accessible subplace.
-    /// Follow type edges, including owning indirection, rather than expanding
-    /// values or capacities. Recursive occurrences and unresolved generics do
-    /// not establish uniqueness of the whole place.
-    pub(super) fn has_no_same_typed_subplace(&self, ty: CheckedType) -> Result<bool, CheckStop> {
-        let mut pending = vec![ty];
-        let mut visited = HashSet::new();
-        while let Some(current) = pending.pop() {
-            if !visited.insert(current) {
-                continue;
-            }
-            let children = match current {
-                CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
-                    CheckedNominalKind::Struct { fields } => {
-                        fields.iter().map(|field| field.ty).collect::<Vec<_>>()
-                    }
-                    CheckedNominalKind::Enum { variants } => variants
-                        .iter()
-                        .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
-                        .collect(),
-                    CheckedNominalKind::Box { referent, .. } => vec![*referent],
-                    CheckedNominalKind::Arena { content, .. } => vec![*content],
-                    CheckedNominalKind::Opaque => Vec::new(),
-                    CheckedNominalKind::ArenaStorage => return Ok(false),
-                },
-                CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
-                    vec![self.element_type(element)?]
-                }
-                CheckedType::Buffer { element } => {
-                    vec![element.ty()]
-                }
-                CheckedType::Generic(_)
-                | CheckedType::GenericInt(_)
-                | CheckedType::GenericFloat(_) => return Ok(false),
-                CheckedType::Unit
-                | CheckedType::Bool
-                | CheckedType::Integer(_)
-                | CheckedType::Float(_) => Vec::new(),
-            };
-            for child in children {
-                if child == ty {
-                    return Ok(false);
-                }
-                pending.push(child);
-            }
-        }
-        Ok(true)
-    }
-
     pub(super) fn prelude_type(&self, id: NominalId) -> Option<PreludeType> {
         self.prelude_types.get(id.0 as usize).copied().flatten()
     }
@@ -382,41 +333,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.arena_nominals.insert((region, content), id).is_some() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        Ok(id)
-    }
-
-    /// The one compiler-owned region allocation-list nominal [STOR-3],
-    /// deferring interning to the `&mut self` driver on first use.
-    pub(super) fn arena_storage_nominal_or_defer(&self) -> Result<NominalId, CheckStop> {
-        if let Some(id) = self.arena_storage_nominal {
-            return Ok(id);
-        }
-        self.pending_nominals
-            .borrow_mut()
-            .push(PendingNominal::ArenaStorage);
-        Err(CheckStop::DeferredNominal)
-    }
-
-    pub(super) fn intern_arena_storage_nominal(&mut self) -> Result<NominalId, CheckStop> {
-        if let Some(id) = self.arena_storage_nominal {
-            return Ok(id);
-        }
-        let id = NominalId(
-            u32::try_from(self.nominals.len())
-                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
-        );
-        self.nominals.push(CheckedNominal {
-            id,
-            name: "arena-region-storage".to_owned(),
-            kind: CheckedNominalKind::ArenaStorage,
-            linear: false,
-            nocopy: true,
-        });
-        self.nominal_nodes.push(None);
-        self.nominal_states.push(2);
-        self.source_nominal_instances.push(None);
-        self.prelude_types.push(None);
-        self.arena_storage_nominal = Some(id);
         Ok(id)
     }
 

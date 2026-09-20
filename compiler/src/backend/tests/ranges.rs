@@ -809,6 +809,55 @@ fn main() -> status: own ExitStatus pure {
     }
 }
 
+/// [REF-4, TYPE-9] carries the complete stored element type through a range:
+/// the descriptor ABI stays `{ptr, len}` while element addressing uses the
+/// nominal's full layout, including an owned Box nested inside it.
+#[test]
+fn composite_range_elements_keep_nested_box_storage_and_descriptor_abi() {
+    let source = br#"struct Record {
+  cell: Box<u64>;
+  marker: u64;
+}
+
+fn rewrite(records: &[Record]) -> previous: own u64 writes(records) contract {
+  requires 1_u64 <= deref(records).len;
+} {
+  let old = deref(records)[0_u64].cell.inner;
+  set deref(records)[0_u64].cell.inner = 99_u64;
+  set deref(records)[0_u64].marker = 23_u64;
+  return old;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let records = slots_new::<Record, 1>();
+  let record = Record(cell: box_new::<u64>(value: 41_u64), marker: 17_u64);
+  place_back(window: &records, value: move record);
+  let part = &records[0_u64..1_u64];
+  let previous = rewrite(records: part);
+  if previous != 41_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if records[0_u64].cell.inner != 99_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if records[0_u64].marker != 23_u64 {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    let rewrite = emitted_function(&llvm, "rewrite");
+    assert!(
+        rewrite.contains("extractvalue { ptr, i64 }") && rewrite.contains("getelementptr inbounds"),
+        "the range keeps its two-word ABI and addresses the full Record layout: {rewrite}"
+    );
+    let output = compile_and_run(&llvm);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
 /// One `&[u8]` consumer reads the three storage origins [STOR-1]: a `const`
 /// item's read-only static storage, a frame-resident constant-capacity window,
 /// and a runtime-capacity window inside its own cell. The range reference is
@@ -941,15 +990,41 @@ fn a_range_reference_over_a_frame_resident_window_reaches_its_own_slots() {
 "#;
     let llvm = compile(source);
     let main = emitted_function(&llvm, "main");
-    // The window's slots are inline, so forming the range reference stores
-    // the aggregate into the frame slot the planner reserved and indexes
-    // there. A window whose slots live behind a descriptor pointer would
-    // `extractvalue` instead, so this is the shape assertion and not a
-    // spelling one.
-    assert!(
-        main.contains("getelementptr inbounds { [4 x i8], i64, i64 }, ptr %"),
-        "the range reference must index the window's own frame slot:\n{main}"
-    );
+    // A frame-resident `Slots<u8, 4>` is the header-first
+    // `{ i64 len, [4 x i8] slots }`. Forming the range reads that same
+    // aggregate's length field and takes the first inline slot address; the
+    // two GEPs must therefore share one frame-slot base.
+    let length_gep = main
+        .lines()
+        .find(|line| {
+            line.contains("getelementptr inbounds { i64, [4 x i8] }, ptr %")
+                && line.ends_with("i32 0, i32 0")
+        })
+        .expect("range formation must address the window length in its frame slot");
+    let slots_gep = main
+        .lines()
+        .find(|line| {
+            line.contains("getelementptr inbounds { i64, [4 x i8] }, ptr %")
+                && line.ends_with("i64 0, i32 1, i64 0")
+        })
+        .expect("range formation must address the window's first inline slot");
+    fn gep_base(line: &str) -> &str {
+        line.split_once("ptr ")
+            .and_then(|(_, suffix)| suffix.split_once(',').map(|(base, _)| base))
+            .expect("window GEP must carry one base pointer")
+    }
+    assert_eq!(gep_base(length_gep), gep_base(slots_gep));
+    fn result_name(line: &str) -> &str {
+        line.trim_start()
+            .split_once(" =")
+            .map(|(name, _)| name)
+            .expect("window GEP must define one SSA value")
+    }
+    assert!(main.contains(&format!("load i64, ptr {}", result_name(length_gep))));
+    assert!(main.contains(&format!(
+        "insertvalue {{ ptr, i64 }} zeroinitializer, ptr {}, 0",
+        result_name(slots_gep)
+    )));
     // Nothing is allocated or freed: a frame-resident window owns no heap
     // storage and a reference owns none at all [STOR-1].
     assert!(!main.contains("call void @free"));

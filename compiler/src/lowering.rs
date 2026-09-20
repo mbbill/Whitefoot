@@ -8,8 +8,7 @@
 use crate::semantic::{
     CheckedBooleanOperation, CheckedElement, CheckedEnumType, CheckedFlatElement,
     CheckedFloatOperation, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
-    CheckedNumericType, CheckedProgram, CheckedRuntimeTargetObligations,
-    CheckedTargetDomainObligation, CheckedType,
+    CheckedNumericType, CheckedProgram, CheckedTargetDomainObligation, CheckedType,
 };
 
 mod physical_types;
@@ -273,7 +272,7 @@ pub enum IrType {
     /// It is a reference kind and not a type [TYPE-8], so no storage ever
     /// holds one and nothing is ever released through one.
     Range {
-        element: IrFlatElement,
+        element: IrElement,
     },
     /// One `Slots<T, N>`, `Slots<T>`, `Ring<T, N>` or `Ring<T>` [TYPE-9].
     ///
@@ -884,8 +883,10 @@ pub struct IrRuntimeTargetObligations {
     ///
     /// A compiler-owned [PRE-1] construction row is one body per instance,
     /// reached from every call of that row, so no single call's proved bound
-    /// belongs to it (compiler/prelude-records). Target qualification reads
-    /// this to say which of [STOR-6]'s two halves it actually has.
+    /// belongs to it (compiler/prelude-records). Each caller carries and is
+    /// qualified with its own bound in [`IrSourceCall`]; this flag keeps the
+    /// shared body's representation record from reusing the language maximum
+    /// as though it were one caller's target-domain bound.
     call_site_bound: bool,
 }
 
@@ -939,21 +940,6 @@ impl From<CheckedLayoutCeiling> for IrLayoutCeiling {
     }
 }
 
-impl TryFrom<CheckedRuntimeTargetObligations> for IrRuntimeTargetObligations {
-    type Error = LoweringFailure;
-
-    fn try_from(value: CheckedRuntimeTargetObligations) -> Result<Self, Self::Error> {
-        Ok(Self {
-            allocation: value.allocation().into(),
-            element_address: value.element_address().into(),
-            source_length_upper_bound: value
-                .source_length_upper_bound()
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-            call_site_bound: true,
-        })
-    }
-}
-
 impl IrRuntimeTargetObligations {
     pub(crate) const fn is_complete(self) -> bool {
         matches!(
@@ -977,14 +963,12 @@ impl IrRuntimeTargetObligations {
 
     /// The record one compiler-owned [PRE-1] allocation carries [OP-9].
     ///
-    /// A construction row's body is built once per monomorphized instance and
-    /// is reached only from calls the checker accepted, and every accepted
-    /// call discharged [OP-9]'s own predicate on its own count, so the bound
-    /// retained here is that predicate's right-hand side: the largest count
-    /// the language admits for this stored type. Target qualification
-    /// separately requires the actual stride to be no larger than the
-    /// language ceiling [STOR-6], so this bound times the actual stride is
-    /// representable.
+    /// A construction row's body is built once per monomorphized instance.
+    /// This record retains [OP-9]'s language maximum for the body-level
+    /// representation check; each accepted caller separately retains its
+    /// tighter proved bound in [`IrSourceAllocation`] for target byte-domain
+    /// qualification. The language maximum is deliberately not used as a
+    /// selected-target allocation bound here.
     pub(crate) const fn from_language_ceiling(source_length_upper_bound: u64) -> Self {
         Self {
             allocation: IrTargetDomainObligation::RuntimeSizedAllocation,
@@ -998,7 +982,6 @@ impl IrRuntimeTargetObligations {
 impl From<CheckedTargetDomainObligation> for IrTargetDomainObligation {
     fn from(value: CheckedTargetDomainObligation) -> Self {
         match value {
-            CheckedTargetDomainObligation::RuntimeSizedAllocation => Self::RuntimeSizedAllocation,
             CheckedTargetDomainObligation::ElementAddress => Self::ElementAddress,
         }
     }
@@ -1143,21 +1126,6 @@ pub enum IrOperation {
         layout_ceiling: IrLayoutCeiling,
         target_domains: IrRuntimeTargetObligations,
     },
-    /// The same block with every element initialized to the element nominal's
-    /// tag-zero value [OP-9].
-    ///
-    /// v0.59's `buffer_vacant::<T>(n)` head, which built an all-`None` run,
-    /// has no v0.60 spelling: [OP-1]'s table no longer carries the row and
-    /// the identifier is free again, so no accepted source reaches this
-    /// operation. It is retained beside `BufferFill` because the two share
-    /// one block layout and one allocation obligation, and a later
-    /// vacant-element construction row lowers to exactly this.
-    BufferVacant {
-        nominal: IrNominalId,
-        length: IrValueId,
-        layout_ceiling: IrLayoutCeiling,
-        target_domains: IrRuntimeTargetObligations,
-    },
     BufferFits {
         length: IrValueId,
         maximum_length: u64,
@@ -1284,9 +1252,6 @@ pub enum IrOperation {
         index: IrValueId,
         limit: IrValueId,
         needles: Vec<IrValueId>,
-    },
-    SliceFromArray {
-        array: IrArrayRoot,
     },
     SliceFromBuffer {
         buffer: IrValueId,
@@ -1747,6 +1712,38 @@ pub enum IrSourceArgument {
     Value,
 }
 
+/// The accepted source-level allocation judgment attached to one ordinary
+/// call of a compiler-owned construction or growth row [OP-9, STOR-6].
+///
+/// The row body remains one out-of-line monomorphized function. Target
+/// qualification reads this per-call record to qualify the exact proved
+/// count bound against the selected target's element stride and block header.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct IrSourceAllocation {
+    cell: IrNominalId,
+    count_argument: usize,
+    layout_ceiling: IrLayoutCeiling,
+    source_length_upper_bound: u64,
+}
+
+impl IrSourceAllocation {
+    pub(crate) const fn cell(self) -> IrNominalId {
+        self.cell
+    }
+
+    pub(crate) const fn count_argument(self) -> usize {
+        self.count_argument
+    }
+
+    pub(crate) const fn layout_ceiling(self) -> IrLayoutCeiling {
+        self.layout_ceiling
+    }
+
+    pub(crate) const fn source_length_upper_bound(self) -> u64 {
+        self.source_length_upper_bound
+    }
+}
+
 /// Source-call use and direct borrow-result relations tied to one IR call.
 ///
 /// The actual arguments and their typed address/projection operations remain
@@ -1760,6 +1757,9 @@ pub struct IrSourceCall {
     /// A direct borrow result's checked candidate. Absence says nothing about
     /// loans carried inside owned view results or other aggregates.
     returned_borrow_argument: Option<usize>,
+    /// The call's accepted allocation bound, only for the runtime-capacity
+    /// construction and growth rows that carry OP-9.
+    allocation: Option<IrSourceAllocation>,
 }
 
 impl IrSourceCall {
@@ -1769,6 +1769,10 @@ impl IrSourceCall {
 
     pub(crate) fn arguments(&self) -> &[IrSourceArgument] {
         &self.arguments
+    }
+
+    pub(crate) const fn allocation(&self) -> Option<IrSourceAllocation> {
+        self.allocation
     }
 }
 

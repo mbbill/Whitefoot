@@ -17,9 +17,9 @@ mod sources;
 
 use super::super::postcondition::PostconditionPlace;
 use sources::{MeasureCarry, ValueImage};
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use super::super::goal::{
     CheckedRequirement, ConcreteGoal, EvaluatedValueOccurrence, GoalDatum, GoalExpression,
@@ -56,9 +56,9 @@ use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
-    PostconditionCallSubstitution, Relation, SourceAffineFactRef, SourceLoopInvariantRef, close,
-    close_excluding_term, contradiction_without_proofs, join_at, materialize_closure_at,
-    materialize_closure_before_kill,
+    PostconditionCallSubstitution, Relation, SourceAffineFactRef, SourceLoopInvariantRef,
+    WordHashMap, close, close_excluding_term, closure_is_seeded, contradiction_without_proofs,
+    join_at, materialize_closure_at, materialize_closure_before_kill,
 };
 use super::term::{
     CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceRoot, TermId, TermKind, TermTable,
@@ -216,11 +216,11 @@ struct ProofFlowState {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct AffineFlowState {
-    values: HashMap<BindingId, AffineForm>,
+    values: WordHashMap<BindingId, AffineForm>,
     /// Current measure images belong to this control-flow edge. Queries mint
     /// images lazily, but cloning a predecessor isolates its later kills.
-    measure_atoms: RefCell<HashMap<TermId, AffineForm>>,
-    ranges: HashMap<CaptureId, AffineRangeImage>,
+    measure_atoms: RefCell<WordHashMap<TermId, AffineForm>>,
+    ranges: WordHashMap<CaptureId, AffineRangeImage>,
     /// One atom standing for the whole value of a binding whose image is not
     /// already a single atom, minted on first demand.
     ///
@@ -233,7 +233,7 @@ struct AffineFlowState {
     /// the transparent reading available to everything else. Keyed and killed
     /// exactly as `values` is, so a write mints a fresh handle for a fresh
     /// value.
-    opaque_values: HashMap<BindingId, AffineForm>,
+    opaque_values: WordHashMap<BindingId, AffineForm>,
     /// Every published affine conclusion at this control-flow point. Fact
     /// identity is only the canonical inequality over immutable value images;
     /// evidence is retained solely to explain a selected derivation.
@@ -293,21 +293,24 @@ impl<'a> ProofContext<'a> {
         terms: &TermTable,
         goals: &GoalTable,
         ledger: &mut DerivationLedger,
-    ) -> Cow<'a, ClosedState> {
+    ) -> Rc<ClosedState> {
         if let Some(closed) = self.closed.filter(|closed| closed.matches(terms, goals)) {
-            Cow::Borrowed(&closed.state)
+            Rc::clone(&closed.state)
         } else {
-            Cow::Owned(close(self.facts, terms, goals, ledger))
+            close(self.facts, terms, goals, ledger)
         }
     }
 }
 
 /// A query-only view of one immutable entering fact state. It never becomes
-/// live facts or escapes the premise loop that owns that state borrow.
+/// live facts or escapes the premise loop that owns that state borrow. The
+/// fact state's remembered view would also serve the loop's repeated
+/// closures; this explicit view keeps the premise loop's reuse independent of
+/// how that memo is keyed.
 struct ProofClosure {
     term_revision: usize,
     goal_revision: usize,
-    state: ClosedState,
+    state: Rc<ClosedState>,
 }
 
 impl ProofClosure {
@@ -557,8 +560,8 @@ struct AffineDirectQuery<'a> {
     l0: &'a AffineL0Index,
     values: &'a AffineFlowState,
     closed: &'a ClosedState,
-    intervals: HashMap<AffineTermId, AffineAtomInterval>,
-    measures: Option<HashMap<AffineTermId, Vec<TermId>>>,
+    intervals: WordHashMap<AffineTermId, AffineAtomInterval>,
+    measures: Option<WordHashMap<AffineTermId, Vec<TermId>>>,
 }
 
 impl<'a> AffineDirectQuery<'a> {
@@ -567,7 +570,7 @@ impl<'a> AffineDirectQuery<'a> {
             l0,
             values,
             closed,
-            intervals: HashMap::new(),
+            intervals: WordHashMap::default(),
             measures: None,
         }
     }
@@ -758,16 +761,6 @@ struct AvailablePostcondition {
     field: Option<crate::BuiltinPreludeId>,
     summary: VerifiedPostconditionSummary,
     discharged: bool,
-}
-
-/// The one payload-carrying variant of a nominal enum [MSR-3].
-struct SolePayloadVariant {
-    /// Its position in the declared variant list, which is what a
-    /// `construct` names.
-    index: u32,
-    /// Its [GRAM-10] tag, which is what a `match` arm names.
-    tag: u32,
-    fields: Vec<super::super::model::CheckedField>,
 }
 
 /// [MSR-3] one payload placement's datums, held between the mint before the
@@ -987,7 +980,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         encountered_counted: 0,
         completed_counted_roots: 0,
         s12_roots: 0,
-        delivery_give_roots: 0,
+        delivery_give_roots: HashSet::new(),
         delivery_join_roots: 0,
         scopes: Vec::new(),
         loops: Vec::new(),
@@ -1218,21 +1211,24 @@ fn remap_postcondition(
 /// A goal datum's place is a tracked place [ENT-2] clause (a) or a measure
 /// place clause (b): field selections, `deref` wrappings, subscripts, and the
 /// one range step the image of an anonymous `&[T]` actual carries [REF-4]. A
-/// payload step and a window part are steps of the [OWN-7] relation that no
-/// goal datum spells, so a support path stops there. A shorter support path
-/// is the conservative direction: it is a prefix of the place the fact really
-/// rests on, so every event that killed the longer one still kills it.
+/// payload step preserves the selected variant and field. A window part is
+/// effect vocabulary, not a value projection. Support may conservatively
+/// widen to a prefix, but a value identity must never be shortened that way.
 fn goal_projection_of_step(step: &PlaceStep) -> Option<GoalProjection> {
     match step {
         PlaceStep::Deref => Some(GoalProjection::Deref),
         PlaceStep::Field(field) => Some(GoalProjection::Field(*field)),
+        PlaceStep::Payload { variant, field } => Some(GoalProjection::Payload {
+            variant: *variant,
+            field: *field,
+        }),
         PlaceStep::Index(offset) => Some(GoalProjection::Subscript(offset.goal_identity())),
         // [REF-4] a range step's endpoint captures identify the formation
         // whose immutable affine image gives the anonymous range its length.
         // Canonicalizing those captures by endpoint spelling would merge two
         // formations that read the same binding at different times.
         PlaceStep::Range(range) => Some(GoalProjection::Range(*range)),
-        PlaceStep::Payload { .. } | PlaceStep::Part(_) | PlaceStep::Measure(_) => None,
+        PlaceStep::Part(_) | PlaceStep::Measure(_) => None,
     }
 }
 
@@ -1254,11 +1250,6 @@ struct SeparationLedger {
 }
 
 impl SeparationLedger {
-    fn record_indices_distinct(&mut self, left: CapturedValue, right: CapturedValue) {
-        self.distinct_indices.insert((left.capture, right.capture));
-        self.distinct_indices.insert((right.capture, left.capture));
-    }
-
     fn record_ranges_disjoint(&mut self, left: CapturedRange, right: CapturedRange) {
         self.disjoint_ranges.insert((left, right));
         self.disjoint_ranges.insert((right, left));
@@ -1357,7 +1348,7 @@ struct Analyzer<'check, 'unit> {
     encountered_counted: u32,
     completed_counted_roots: u32,
     s12_roots: u32,
-    delivery_give_roots: u32,
+    delivery_give_roots: HashSet<DerivationId>,
     delivery_join_roots: u32,
     /// Lexical scope stack: the bindings declared in each open block.
     scopes: Vec<Vec<BindingId>>,
@@ -1942,7 +1933,6 @@ impl Analyzer<'_, '_> {
                 row:
                     GoalOperation::ArrayMeasure { .. }
                     | GoalOperation::BufferMeasure { .. }
-                    | GoalOperation::RangeMeasure { .. }
                     | GoalOperation::ContainerMeasure { .. },
                 ..
             } => {
@@ -2180,19 +2170,7 @@ impl Analyzer<'_, '_> {
         let fragment = fragment_type(ty)?;
         let projections = projections
             .iter()
-            .map(|projection| match projection {
-                GoalProjection::Field(field) => PlaceStep::Field(*field),
-                GoalProjection::Deref => PlaceStep::Deref,
-                GoalProjection::Subscript(offset) => PlaceStep::Index(*offset),
-                GoalProjection::Range(range) => PlaceStep::Range(*range),
-                // [ENT-2] a formal-valued subscript belongs to a template
-                // alone; both readers replace it before a term is interned,
-                // so an unknown offset here is the conservative reading that
-                // no admitted family separates.
-                GoalProjection::FormalSubscript { .. } => {
-                    PlaceStep::Index(CapturedValue::unknown())
-                }
-            })
+            .map(|projection| projection.place_step())
             .collect::<Vec<_>>();
         let path = ResolvedPlace {
             root,
@@ -2220,19 +2198,7 @@ impl Analyzer<'_, '_> {
     ) -> Option<TermId> {
         let projections = projections
             .iter()
-            .map(|projection| match projection {
-                GoalProjection::Field(field) => PlaceStep::Field(*field),
-                GoalProjection::Deref => PlaceStep::Deref,
-                GoalProjection::Subscript(offset) => PlaceStep::Index(*offset),
-                GoalProjection::Range(range) => PlaceStep::Range(*range),
-                // [ENT-2] a formal-valued subscript belongs to a template
-                // alone; both readers replace it before a term is interned,
-                // so an unknown offset here is the conservative reading that
-                // no admitted family separates.
-                GoalProjection::FormalSubscript { .. } => {
-                    PlaceStep::Index(CapturedValue::unknown())
-                }
-            })
+            .map(|projection| projection.place_step())
             .collect::<Vec<_>>();
         // [MSR-1] gives `&[T]` a row of its own, and [TYPE-8] makes the
         // range kind a mode and not a type: the checked type of a `&[T]`
@@ -2378,8 +2344,6 @@ impl Analyzer<'_, '_> {
         match argument {
             CheckedExpression::Binding { binding, .. }
             | CheckedExpression::Project { binding, .. }
-            | CheckedExpression::BorrowBox { binding, .. }
-            | CheckedExpression::ReborrowAddressed { binding, .. }
             | CheckedExpression::DerefAddressed { binding, .. } => {
                 self.append_holder_chain(*binding, holders);
             }
@@ -2388,8 +2352,7 @@ impl Analyzer<'_, '_> {
                     self.append_holder_chain(binding, holders);
                 }
             }
-            CheckedExpression::BorrowBuffer { root, .. }
-            | CheckedExpression::BufferMeasure { root, .. } => {
+            CheckedExpression::BufferMeasure { root, .. } => {
                 self.append_holder_chain(root.binding, holders);
             }
             CheckedExpression::RangeMeasure { root, .. }
@@ -2404,7 +2367,6 @@ impl Analyzer<'_, '_> {
             // do not create a second consume, but M must retain the holder on
             // which the resulting caller image depends.
             CheckedExpression::BoxDeref { value, .. }
-            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.collect_checked_argument_holders(value, holders);
             }
@@ -2591,6 +2553,9 @@ impl Analyzer<'_, '_> {
     }
 
     fn kill_s12_candidates_for_event(&self, state: &mut FactState, event: &KillEvent) {
+        if !state.may_hold_postcondition_candidates() {
+            return;
+        }
         state.kill_proof_candidates(&self.derivations, |left, right, proof| {
             self.derivations.depends_on_postcondition_call(proof)
                 && (self.s12_candidate_term_killed(left, event)
@@ -2599,6 +2564,9 @@ impl Analyzer<'_, '_> {
     }
 
     fn kill_s12_candidates_for_scope(&self, state: &mut FactState, exited: &HashSet<BindingId>) {
+        if !state.may_hold_postcondition_candidates() {
+            return;
+        }
         state.kill_proof_candidates(&self.derivations, |left, right, proof| {
             self.derivations.depends_on_postcondition_call(proof)
                 && (self.s12_candidate_scope_kills_term(left, exited)
@@ -2693,15 +2661,7 @@ impl Analyzer<'_, '_> {
             formal,
             projections: projections
                 .iter()
-                .map(|projection| match projection {
-                    GoalProjection::Deref => PlaceStep::Deref,
-                    GoalProjection::Field(field) => PlaceStep::Field(*field),
-                    GoalProjection::Subscript(offset) => PlaceStep::Index(*offset),
-                    GoalProjection::Range(range) => PlaceStep::Range(*range),
-                    GoalProjection::FormalSubscript { .. } => {
-                        PlaceStep::Index(CapturedValue::unknown())
-                    }
-                })
+                .map(|projection| projection.place_step())
                 .collect(),
             measure,
             ty,
@@ -4173,15 +4133,7 @@ impl Analyzer<'_, '_> {
             formal,
             projections: projections
                 .iter()
-                .map(|projection| match projection {
-                    GoalProjection::Deref => PlaceStep::Deref,
-                    GoalProjection::Field(field) => PlaceStep::Field(*field),
-                    GoalProjection::Subscript(offset) => PlaceStep::Index(*offset),
-                    GoalProjection::Range(range) => PlaceStep::Range(*range),
-                    GoalProjection::FormalSubscript { .. } => {
-                        PlaceStep::Index(CapturedValue::unknown())
-                    }
-                })
+                .map(|projection| projection.place_step())
                 .collect(),
             measure,
         }
@@ -4264,7 +4216,7 @@ impl Analyzer<'_, '_> {
 
     /// Whether a kill event kills a fact supported by `term` [ENT-5].
     fn event_kills_term(&self, term: TermId, event: &KillEvent) -> bool {
-        match self.terms.kind(term).clone() {
+        match self.terms.kind(term) {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
             // Counted captures and commit values are immutable. A counted
             // capture dies with its construct-scope exit, handled separately
@@ -4288,7 +4240,7 @@ impl Analyzer<'_, '_> {
             // P's root: a write to a sibling field of P overlaps neither.
             TermKind::Measure(measure, place) => {
                 let support = self.resolve(&place);
-                self.event_kills_measure(measure, &support, place.root, event)
+                self.event_kills_measure(*measure, &support, place.root, event)
                     || self.event_kills_offset_support(&support, event)
             }
         }
@@ -4321,10 +4273,16 @@ impl Analyzer<'_, '_> {
         event: &KillEvent,
     ) -> bool {
         match event {
-            KillEvent::Write { place: written, .. }
-            | KillEvent::EntryImageHolderWrite { place: written, .. } => {
-                self.write_overlaps_measure(written, support, measure)
+            KillEvent::Write {
+                place: written,
+                element,
+                ..
             }
+            | KillEvent::EntryImageHolderWrite {
+                place: written,
+                element,
+                ..
+            } => self.write_overlaps_measure(written, support, measure, *element),
             KillEvent::Consume { binding, .. } => root == PlaceRoot::Binding(*binding),
             KillEvent::EntryImageHolderConsume { .. } => false,
         }
@@ -4340,10 +4298,32 @@ impl Analyzer<'_, '_> {
         written: &ResolvedPlace,
         support: &ResolvedPlace,
         measure: CheckedMeasure,
+        element_write: bool,
     ) -> bool {
+        // [REF-4, MSR-2] a range reference's `len` is the immutable
+        // descriptor value captured at formation. An element write through
+        // any range view reaches only element storage, even when that view
+        // overlaps this one. The ordinary path walk cannot discover this
+        // after two unequal range steps: conservative range overlap stops it
+        // before the final Index/Measure pair. A measured element has an
+        // Index after its range step and therefore does not take this case.
+        if element_write && self.is_range_descriptor_support(support) {
+            return false;
+        }
         let mut descriptor = support.clone();
         descriptor.path.push(PlaceStep::Measure(measure));
         self.resolved_places_overlap(written, &descriptor)
+    }
+
+    /// Whether `support` is the range value itself, rather than an element
+    /// selected from it. A unique resolved origin ends in its captured range
+    /// step; a joined reference may have several such origins.
+    fn is_range_descriptor_support(&self, support: &ResolvedPlace) -> bool {
+        let resolved = self.places.resolve(support.root, &support.path);
+        !resolved.is_empty()
+            && resolved
+                .iter()
+                .all(|place| matches!(place.path.last(), Some(PlaceStep::Range(_))))
     }
 
     /// [ENT-5] whether one event writes or consumes a binding an offset
@@ -4416,28 +4396,12 @@ impl Analyzer<'_, '_> {
             .then_some(support.root)
             .into_iter()
             .collect::<Vec<_>>();
-        for projection in &support.projections {
-            match projection {
-                GoalProjection::Field(field) => resolved.path.push(PlaceStep::Field(*field)),
-                GoalProjection::Subscript(offset) => {
-                    resolved.path.push(PlaceStep::Index(*offset));
-                }
-                // [REF-4] the anonymous range an actual formed at a call. Its
-                // support is the storage the range was formed over, reached
-                // through this step [MSR-2].
-                GoalProjection::Range(range) => {
-                    resolved.path.push(PlaceStep::Range(*range));
-                }
-                GoalProjection::FormalSubscript { .. } => {
-                    resolved
-                        .path
-                        .push(PlaceStep::Index(CapturedValue::unknown()));
-                }
-                GoalProjection::Deref => {
-                    resolved.path.push(PlaceStep::Deref);
-                }
-            }
-        }
+        resolved.path.extend(
+            support
+                .projections
+                .iter()
+                .map(|projection| projection.place_step()),
+        );
         (resolved, holders)
     }
 
@@ -4455,10 +4419,16 @@ impl Analyzer<'_, '_> {
                 // replaces was [ENT-5]'s element-position carve-out, which
                 // was only ever true of a table with no measured element
                 // type.
-                KillEvent::Write { place: written, .. }
-                | KillEvent::EntryImageHolderWrite { place: written, .. }
-                    if support.measure.is_some() =>
-                {
+                KillEvent::Write {
+                    place: written,
+                    element,
+                    ..
+                }
+                | KillEvent::EntryImageHolderWrite {
+                    place: written,
+                    element,
+                    ..
+                } if support.measure.is_some() => {
                     // [MSR-2, WIN-2] a row naming a measure word of P --
                     // `writes(window.len)` in an [OP-10] row -- writes exactly
                     // that word of P's own descriptor, which contains no
@@ -4470,7 +4440,7 @@ impl Analyzer<'_, '_> {
                     // changed it and stands beside the row's own post-state
                     // relation as a contradiction.
                     support.measure.is_some_and(|measure| {
-                        self.write_overlaps_measure(written, &place, measure)
+                        self.write_overlaps_measure(written, &place, measure, *element)
                     })
                 }
                 KillEvent::Write { place: written, .. }
@@ -4514,12 +4484,20 @@ impl Analyzer<'_, '_> {
     /// before every kill entry so a write cannot erase one premise and make
     /// an unreachable point reachable again.
     fn promote_contradiction(&mut self, state: &mut FactState) {
-        if !state.all_derivable && contradiction_without_proofs(state, &self.terms, &self.goals) {
-            let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
-            if closed.contradictory() {
-                state.all_derivable = true;
-                state.contradiction = closed.contradiction_proof();
-            }
+        if state.all_derivable {
+            return;
+        }
+        // A seeded closure costs about what the proof-free probe does over a
+        // closed core and answers the same question directly; the probe stays
+        // the cheaper test for a state with no closed part.
+        if !closure_is_seeded(state)
+            && !contradiction_without_proofs(state, &self.terms, &self.goals)
+        {
+            return;
+        }
+        let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
+        if closed.contradictory() {
+            state.promote_to_contradiction(closed.contradiction_proof());
         }
     }
 
@@ -4915,10 +4893,12 @@ impl Analyzer<'_, '_> {
             }),
             CheckedExpression::DerefAddressed { binding, .. } => Some(ResolvedPlace {
                 root: PlaceRoot::Binding(*binding),
-                path: vec![PlaceStep::Deref],
+                // A reference binding is the body-local name of its referent
+                // path [REF-1]. The written `deref` is that boundary wrapper;
+                // concrete Box/Arena content steps are appended below.
+                path: Vec::new(),
             }),
-            CheckedExpression::BoxDeref { value, .. }
-            | CheckedExpression::ArenaDeref { value, .. } => {
+            CheckedExpression::BoxDeref { value, .. } => {
                 let mut path = self.read_place_path(value)?;
                 path.path.push(PlaceStep::Deref);
                 Some(path)
@@ -4933,7 +4913,8 @@ impl Analyzer<'_, '_> {
     }
 
     /// [ENT-3] comparison-origin shape (a): a direct comparison call whose
-    /// operands are each a term or constant.
+    /// operands are each a term or constant. A measure is itself an [ENT-2]
+    /// term, including when its place contains admitted subscripts.
     fn direct_comparison(&mut self, expression: &CheckedExpression) -> Option<Relation> {
         let CheckedExpression::IntegerOperation {
             operation,
@@ -4948,8 +4929,12 @@ impl Analyzer<'_, '_> {
         let [left_expression, right_expression] = arguments.as_slice() else {
             return None;
         };
-        let left = self.read_operand(left_expression)?;
-        let right = self.read_operand(right_expression)?;
+        let left = self
+            .measure_operand(left_expression)
+            .or_else(|| self.read_operand(left_expression))?;
+        let right = self
+            .measure_operand(right_expression)
+            .or_else(|| self.read_operand(right_expression))?;
         sources::comparison_relation(*operation, left, right, 0)
     }
 
@@ -5081,8 +5066,8 @@ impl Analyzer<'_, '_> {
                 projections: path
                     .path
                     .iter()
-                    .map_while(goal_projection_of_step)
-                    .collect(),
+                    .map(goal_projection_of_step)
+                    .collect::<Option<Vec<_>>>()?,
                 ty: expression.ty(),
             }));
         }
@@ -5127,7 +5112,7 @@ impl Analyzer<'_, '_> {
             CheckedExpression::DerefAddressed { binding, ty, .. } if self.is_copy(*ty) => {
                 Some(GoalExpression::Datum(GoalDatum::Place {
                     root: *binding,
-                    projections: vec![GoalProjection::Deref],
+                    projections: Vec::new(),
                     ty: *ty,
                 }))
             }
@@ -5136,9 +5121,6 @@ impl Analyzer<'_, '_> {
             } if self.is_copy(*referent) => self
                 .goal_expression(value, admitted_partial)?
                 .with_projection(GoalProjection::Deref, *referent),
-            CheckedExpression::ArenaDeref { content, value, .. } if self.is_copy(*content) => self
-                .goal_expression(value, admitted_partial)?
-                .with_projection(GoalProjection::Deref, *content),
             CheckedExpression::ProjectValue {
                 value, field, ty, ..
             } if self.is_copy(*ty) => self
@@ -5252,21 +5234,6 @@ impl Analyzer<'_, '_> {
                     .map(|argument| self.goal_expression(argument, admitted_partial))
                     .collect::<Option<Vec<_>>>()?,
             ),
-            CheckedExpression::ArrayFill { ty, value, .. } => {
-                let CheckedType::Array { element, length } = ty else {
-                    return None;
-                };
-                build_operation(
-                    GoalOperation::ArrayFill {
-                        element: *element,
-                        length: *length,
-                    },
-                    vec![*self.context.elements.get(element.index())?],
-                    vec![*length],
-                    *ty,
-                    vec![self.goal_expression(value, admitted_partial)?],
-                )
-            }
             CheckedExpression::ArrayMeasure {
                 measure,
                 root,
@@ -5397,11 +5364,16 @@ impl Analyzer<'_, '_> {
             // [MSR-1, REF-4] the one measure a range reference has.
             CheckedExpression::RangeMeasure { measure, root } => {
                 let argument =
-                    self.goal_binding_place(root.binding, Vec::new(), root.element.ty());
+                    self.goal_binding_place(root.binding, Vec::new(), root.element_type);
                 build_operation(
-                    GoalOperation::RangeMeasure {
+                    // Clause formation uses the ordinary measured-place
+                    // row. A body read must have that same structural goal
+                    // identity, including after let-origin expansion.
+                    GoalOperation::ContainerMeasure {
                         measure: *measure,
-                        element: root.element,
+                        measured: MeasuredKind::Range,
+                        element: Some(root.element),
+                        constant: None,
                     },
                     Vec::new(),
                     Vec::new(),
@@ -5411,14 +5383,16 @@ impl Analyzer<'_, '_> {
             }
             CheckedExpression::RangeIndex { root, offset, .. } if admitted_partial => {
                 let collection =
-                    self.goal_binding_place(root.binding, Vec::new(), root.element.ty());
+                    self.goal_binding_place(root.binding, Vec::new(), root.element_type);
                 build_operation(
-                    GoalOperation::RangeIndex {
+                    GoalOperation::RunIndex {
+                        measured: MeasuredKind::Range,
                         element: root.element,
+                        constant: None,
                     },
                     Vec::new(),
                     Vec::new(),
-                    root.element.ty(),
+                    root.element_type,
                     vec![collection, self.goal_expression(offset, admitted_partial)?],
                 )
             }
@@ -5441,21 +5415,6 @@ impl Analyzer<'_, '_> {
                     vec![collection, self.goal_expression(offset, admitted_partial)?],
                 )
             }
-            CheckedExpression::BufferFits {
-                element,
-                layout_ceiling,
-                length,
-                ..
-            } => build_operation(
-                GoalOperation::BufferFits {
-                    element: *element,
-                    maximum_length: layout_ceiling.stride.allocation_limit(),
-                },
-                vec![*element],
-                Vec::new(),
-                CheckedType::Bool,
-                vec![self.goal_expression(length, admitted_partial)?],
-            ),
             CheckedExpression::Binding { .. }
             | CheckedExpression::Project { .. }
             | CheckedExpression::DerefAddressed { .. }
@@ -5465,21 +5424,12 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::BoxTake { .. }
             | CheckedExpression::ProjectValue { .. }
             | CheckedExpression::UserCall { .. }
-            | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::ReadStorage { .. }
             | CheckedExpression::ArrayIndex { .. }
-            | CheckedExpression::BufferFill { .. }
-            | CheckedExpression::BufferVacant { .. }
             | CheckedExpression::BufferIndex { .. }
             | CheckedExpression::RangeIndex { .. }
             | CheckedExpression::RangeOf { .. }
-            | CheckedExpression::BoxNew { .. }
-            | CheckedExpression::ArenaNew { .. }
-            | CheckedExpression::ArenaDeref { .. }
-            | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
-            | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::ConstructStruct { .. }
             | CheckedExpression::ConstructEnum { .. } => None,
         }
@@ -5698,6 +5648,22 @@ impl Analyzer<'_, '_> {
                     return None;
                 };
                 fields.get(field as usize).map(|field| field.ty)
+            }
+            GoalProjection::Payload { variant, field } => {
+                let CheckedType::Nominal(nominal) = input else {
+                    return None;
+                };
+                let CheckedNominalKind::Enum { variants } =
+                    &self.context.nominals.get(nominal.0 as usize)?.kind
+                else {
+                    return None;
+                };
+                variants
+                    .iter()
+                    .find(|candidate| candidate.tag == variant)?
+                    .fields
+                    .get(field as usize)
+                    .map(|field| field.ty)
             }
             // [OP-4] a subscript selects the base's element type, which
             // [MSR-1] admits in a measure place and [WIN-1] gives the one
@@ -6001,7 +5967,6 @@ impl Analyzer<'_, '_> {
                 let node_measure = match row {
                     GoalOperation::ArrayMeasure { measure, .. }
                     | GoalOperation::BufferMeasure { measure, .. }
-                    | GoalOperation::RangeMeasure { measure, .. }
                     | GoalOperation::ContainerMeasure { measure, .. } => Some(*measure),
                     _ => None,
                 };
@@ -6145,7 +6110,6 @@ impl Analyzer<'_, '_> {
                     row,
                     GoalOperation::ArrayMeasure { .. }
                         | GoalOperation::BufferMeasure { .. }
-                        | GoalOperation::RangeMeasure { .. }
                         | GoalOperation::ContainerMeasure { .. }
                 ) =>
             {
@@ -6162,9 +6126,6 @@ impl Analyzer<'_, '_> {
                     } => (*measure, MeasuredKind::ConstantArray, Some(*length)),
                     GoalOperation::BufferMeasure { measure, .. } => {
                         (*measure, MeasuredKind::RuntimeArray, None)
-                    }
-                    GoalOperation::RangeMeasure { measure, .. } => {
-                        (*measure, MeasuredKind::Range, None)
                     }
                     // [MSR-1]'s row for a run or a bump extent. The written
                     // constant is what `measure_term` reads for a cell the
@@ -6296,15 +6257,7 @@ impl Analyzer<'_, '_> {
             root,
             path: projections
                 .iter()
-                .map(|projection| match projection {
-                    GoalProjection::Deref => PlaceStep::Deref,
-                    GoalProjection::Field(field) => PlaceStep::Field(*field),
-                    GoalProjection::Subscript(offset) => PlaceStep::Index(*offset),
-                    GoalProjection::Range(range) => PlaceStep::Range(*range),
-                    GoalProjection::FormalSubscript { .. } => {
-                        PlaceStep::Index(CapturedValue::unknown())
-                    }
-                })
+                .map(|projection| projection.place_step())
                 .collect(),
         })
     }
@@ -6504,18 +6457,8 @@ impl Analyzer<'_, '_> {
             }
         };
         let (places, through_reference) = match argument {
-            CheckedExpression::BorrowBuffer { root, .. } => {
-                let steps = root.place_path();
-                (resolve(PlaceRoot::Binding(root.binding), &steps), false)
-            }
             CheckedExpression::BorrowAddressed { root, .. } => {
                 (resolve(root.root, &root.place_path()), false)
-            }
-            CheckedExpression::BorrowBox { binding, .. } => {
-                (resolve(PlaceRoot::Binding(*binding), &[]), false)
-            }
-            CheckedExpression::ReborrowAddressed { binding, .. } => {
-                (resolve(PlaceRoot::Binding(*binding), &[]), false)
             }
             CheckedExpression::Binding { binding, .. } if self.places.is_reference(*binding) => {
                 (resolve(PlaceRoot::Binding(*binding), &[]), true)
@@ -6614,9 +6557,7 @@ impl Analyzer<'_, '_> {
             // These wrappers are checked reads of one place. Their nested
             // expression preserves source spelling and lowering structure;
             // it is not a second consuming evaluation of an affine holder.
-            CheckedExpression::BoxDeref { .. }
-            | CheckedExpression::ArenaDeref { .. }
-            | CheckedExpression::ProjectValue { .. } => {}
+            CheckedExpression::BoxDeref { .. } | CheckedExpression::ProjectValue { .. } => {}
             CheckedExpression::UserCall {
                 function,
                 call,
@@ -7168,57 +7109,6 @@ impl Analyzer<'_, '_> {
                 ExpressionJudgment {
                     prepared_call: None,
                     reached,
-                }
-            }
-            CheckedExpression::BufferFill {
-                carrier,
-                element,
-                layout_ceiling,
-                length,
-                value,
-                ..
-            } => {
-                let reaches_allocation =
-                    self.judge_children_reach_parent([length.as_ref(), value.as_ref()], states);
-                let obligation_start = self.obligations.len();
-                if reaches_allocation {
-                    self.judge_allocation_fit(
-                        element.ty(),
-                        layout_ceiling.stride.allocation_limit(),
-                        length,
-                        carrier.clone(),
-                        states,
-                    );
-                }
-                ExpressionJudgment {
-                    prepared_call: None,
-                    reached: reaches_allocation
-                        && self.obligations_since_discharged(obligation_start),
-                }
-            }
-            CheckedExpression::BufferVacant {
-                carrier,
-                element,
-                layout_ceiling,
-                length,
-                ..
-            } => {
-                let reaches_allocation =
-                    self.judge_children_reach_parent(std::iter::once(length.as_ref()), states);
-                let obligation_start = self.obligations.len();
-                if reaches_allocation {
-                    self.judge_allocation_fit(
-                        CheckedType::Nominal(*element),
-                        layout_ceiling.stride.allocation_limit(),
-                        length,
-                        carrier.clone(),
-                        states,
-                    );
-                }
-                ExpressionJudgment {
-                    prepared_call: None,
-                    reached: reaches_allocation
-                        && self.obligations_since_discharged(obligation_start),
                 }
             }
             CheckedExpression::IntegerOperation {
@@ -8364,22 +8254,30 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         value: &CheckedExpression,
         state: &mut ProofFlowState,
-    ) -> Vec<(u32, MeasureCarry)> {
-        let fields = match value {
-            CheckedExpression::ConstructStruct { fields, .. } => fields,
-            // [MSR-3] an enum's payload is a place only where the nominal
-            // carries one payload variant, which is what makes the field
-            // path select one storage; see `sole_payload_variant`.
+    ) -> Vec<(PlaceStep, MeasureCarry)> {
+        let (fields, payload) = match value {
+            CheckedExpression::ConstructStruct { fields, .. } => (fields, None),
+            // [MSR-3] every enum variant has its own payload step. The
+            // constructor selects the exact variant now, so its field
+            // destination is `.Variant.field`, even when another variant
+            // also carries fields.
             CheckedExpression::ConstructEnum {
                 nominal,
                 variant,
                 fields,
                 ..
-            } if self
-                .sole_payload_variant(*nominal)
-                .is_some_and(|sole| sole.index == *variant) =>
-            {
-                fields
+            } => {
+                let Some(nominal) = self.context.nominals.get(nominal.0 as usize) else {
+                    return Vec::new();
+                };
+                let CheckedNominalKind::Enum { variants } = &nominal.kind else {
+                    return Vec::new();
+                };
+                let Some(selected) = variants.get(*variant as usize) else {
+                    return Vec::new();
+                };
+                let tag = selected.tag;
+                (fields, Some(tag))
             }
             _ => return Vec::new(),
         };
@@ -8402,7 +8300,12 @@ impl Analyzer<'_, '_> {
                 *ty,
                 state,
             ) {
-                carried.push((ordinal, carry));
+                let destination =
+                    payload.map_or(PlaceStep::Field(ordinal), |variant| PlaceStep::Payload {
+                        variant,
+                        field: ordinal,
+                    });
+                carried.push((destination, carry));
             }
         }
         carried
@@ -8415,51 +8318,15 @@ impl Analyzer<'_, '_> {
         &mut self,
         node_path: &crate::NodePath,
         base: &ResolvedPlace,
-        carried: &[(u32, MeasureCarry)],
+        carried: &[(PlaceStep, MeasureCarry)],
         state: &mut FactState,
     ) {
-        for (ordinal, carry) in carried {
+        for (step, carry) in carried {
             let mut destination = base.clone();
-            destination.path.push(PlaceStep::Field(*ordinal));
+            destination.path.push(*step);
             let destination = destination;
             self.establish_measure_datums(node_path, destination, carry, state);
         }
-    }
-
-    /// The one variant of a nominal enum that carries fields, where exactly
-    /// one does, together with its declared order in the variant list.
-    ///
-    /// A tracked place's path is field selections, derefs and subscripts
-    /// [ENT-2], and none of those steps names a variant: two variants'
-    /// payloads are two storages one path cannot separate, so `Result`'s
-    /// `Ok(value)` and `Err(error)` would be one place. Where the nominal
-    /// carries a single payload variant — the prelude `Option` among them —
-    /// the field path selects one storage on every execution and the payload
-    /// is an ordinary [MSR-1] measure place. Everything else has no payload
-    /// place in this version and carries no measure across the event
-    /// [MSR-3].
-    fn sole_payload_variant(
-        &self,
-        nominal: super::super::model::NominalId,
-    ) -> Option<SolePayloadVariant> {
-        let CheckedNominalKind::Enum { variants } =
-            &self.context.nominals.get(nominal.0 as usize)?.kind
-        else {
-            return None;
-        };
-        let mut carrying = variants
-            .iter()
-            .enumerate()
-            .filter(|(_, variant)| !variant.fields.is_empty());
-        let (index, variant) = carrying.next()?;
-        if carrying.next().is_some() {
-            return None;
-        }
-        Some(SolePayloadVariant {
-            index: u32::try_from(index).ok()?,
-            tag: variant.tag,
-            fields: variant.fields.clone(),
-        })
     }
 
     /// [MSR-3] the payload placement: the datums a `match` over an own enum
@@ -8474,44 +8341,68 @@ impl Analyzer<'_, '_> {
         scrutinee: &CheckedExpression,
         enum_type: CheckedEnumType,
         state: &mut ProofFlowState,
-    ) -> Option<PayloadPlacement> {
+    ) -> Vec<PayloadPlacement> {
         let CheckedExpression::Binding {
             carrier: node_path,
             binding,
             ..
         } = scrutinee
         else {
-            return None;
+            return Vec::new();
         };
         let CheckedEnumType::Nominal(nominal) = enum_type else {
-            return None;
+            return Vec::new();
         };
-        let sole = self.sole_payload_variant(nominal)?;
+        let Some(nominal) = self.context.nominals.get(nominal.0 as usize) else {
+            return Vec::new();
+        };
+        let CheckedNominalKind::Enum { variants } = &nominal.kind else {
+            return Vec::new();
+        };
+        // Clone declaration data before minting terms through `self`.
+        let variants = variants.clone();
         let base = ResolvedPlace::spelled(
             PlaceRoot::Binding(*binding),
             self.is_holder(*binding),
             Vec::new(),
         );
-        let mut carried = Vec::new();
-        for (ordinal, field) in sole.fields.iter().enumerate() {
-            let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
-            let mut source = base.clone();
-            source.path.push(PlaceStep::Field(ordinal));
-            if let Some(carry) = self.mint_measure_datums(
-                node_path,
-                ordinal,
-                MeasurePlacement::Payload,
-                source,
-                field.ty,
-                state,
-            ) {
-                carried.push((ordinal, carry));
+        let mut placements = Vec::new();
+        // [MSR-3] `ordinal within that statement` counts payload binders
+        // across the whole match, not separately inside each variant. Two
+        // variants' field zero are different naming events and must mint
+        // different immutable datums.
+        let mut placement_ordinal = 0u32;
+        for variant in variants {
+            let mut carried = Vec::new();
+            for (ordinal, field) in variant.fields.iter().enumerate() {
+                let field_ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
+                let mut source = base.clone();
+                source.path.push(PlaceStep::Payload {
+                    variant: variant.tag,
+                    field: field_ordinal,
+                });
+                if let Some(carry) = self.mint_measure_datums(
+                    node_path,
+                    placement_ordinal,
+                    MeasurePlacement::Payload,
+                    source,
+                    field.ty,
+                    state,
+                ) {
+                    carried.push((field_ordinal, carry));
+                }
+                placement_ordinal = placement_ordinal
+                    .checked_add(1)
+                    .expect("payload placement ordinal exceeds u32");
+            }
+            if !carried.is_empty() {
+                placements.push(PayloadPlacement {
+                    tag: variant.tag,
+                    carried,
+                });
             }
         }
-        (!carried.is_empty()).then_some(PayloadPlacement {
-            tag: sole.tag,
-            carried,
-        })
+        placements
     }
 
     /// [MSR-3] the destructuring placement: the datums a destructuring
@@ -10390,6 +10281,15 @@ impl Analyzer<'_, '_> {
                 value: CheckedValue::Integer { ty, bits },
                 ..
             } => Some(AffineForm::constant(integer_value(*ty, *bits))),
+            // [MSR-6] a symbolic const generic is one declaration-anchored
+            // value throughout the generic body. Counted-range endpoint
+            // capture must use that same image as an invariant or contract
+            // spelling of the parameter; treating the endpoint as an
+            // unrelated unknown loses the exhaustion fact at the return.
+            CheckedExpression::Constant(CheckedValue::ConstGeneric { declaration, .. }) => {
+                let term = self.terms.intern(TermKind::ConstParameter(*declaration));
+                Some(self.measure_atom(term, state))
+            }
             CheckedExpression::Binding { binding, ty, .. } => {
                 let CheckedType::Integer(integer) = *ty else {
                     return None;
@@ -10816,7 +10716,7 @@ impl Analyzer<'_, '_> {
         };
         let mut bindings = first.affine.values.keys().copied().collect::<Vec<_>>();
         bindings.sort_by_key(|binding| binding.0);
-        let mut values = HashMap::new();
+        let mut values = WordHashMap::default();
         for binding in bindings {
             let Some(first_value) = first.affine.values.get(&binding) else {
                 continue;
@@ -10890,7 +10790,7 @@ impl Analyzer<'_, '_> {
         // An opaque handle is a convenience for one certificate, not a fact,
         // so a join keeps none: the next demand re-mints against whatever the
         // joined image is.
-        let opaque_values: HashMap<BindingId, AffineForm> = HashMap::new();
+        let opaque_values = WordHashMap::default();
 
         // A measure keeps its current image only when every predecessor
         // carries that exact image. Otherwise a later query mints a fresh
@@ -11095,11 +10995,13 @@ impl Analyzer<'_, '_> {
             ) {
                 continue;
             }
-            let occurrence = self.delivery_give_roots;
-            self.delivery_give_roots = self
-                .delivery_give_roots
-                .checked_add(1)
+            let occurrence = u32::try_from(self.delivery_give_roots.len())
                 .expect("value-if give roots exceed the u32 identity space");
+            // A full and an ordinary delivery join can share an edge parent.
+            // The ledger retains one required root per Give node.
+            if !self.delivery_give_roots.insert(parent.parent) {
+                continue;
+            }
             self.derivations.add_root(
                 DerivationRootKind::PostconditionGive { occurrence },
                 parent.parent,
@@ -11145,8 +11047,22 @@ impl Analyzer<'_, '_> {
             receiver,
             event,
         };
+        let mut delivered = self.delivery_edge_state(facts, &edge);
+        if delivered.may_hold_postcondition_candidates() {
+            let mut ordinary = source.facts.clone();
+            ordinary.retain_non_postcondition_candidates(&self.derivations);
+            let ordinary = close_excluding_term(
+                &ordinary,
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+                receiver,
+            );
+            let fallback = self.delivery_edge_state(ordinary, &edge);
+            delivered.merge_relation_candidates_from(&fallback, &self.derivations);
+        }
         let mut image = ProofFlowState {
-            facts: self.delivery_edge_state(facts, &edge),
+            facts: delivered,
             entry_images: Vec::new(),
             // Delivery-image construction currently exists only to retain
             // postcondition relations.  Withholding an affine image is
@@ -11167,6 +11083,30 @@ impl Analyzer<'_, '_> {
         context: &DeliveryJoinContext<'_>,
         target: &mut FactState,
     ) {
+        self.establish_delivery_join_once(images, context, target, false);
+        if !images
+            .iter()
+            .any(FactState::may_hold_postcondition_candidates)
+        {
+            return;
+        }
+        // Substitution preserves both proof layers. The join must do so too:
+        // selecting only the strongest edge proof here would lose an ordinary
+        // fallback when a later holder event removes call-dependent proofs.
+        let mut ordinary = images.to_vec();
+        for image in &mut ordinary {
+            image.retain_non_postcondition_candidates(&self.derivations);
+        }
+        self.establish_delivery_join_once(&ordinary, context, target, true);
+    }
+
+    fn establish_delivery_join_once(
+        &mut self,
+        images: &[FactState],
+        context: &DeliveryJoinContext<'_>,
+        target: &mut FactState,
+        ordinary_only: bool,
+    ) {
         assert!(images.iter().all(|image| {
             image.all_derivable
                 || image.live_l0_relations().iter().all(|(_, proof)| {
@@ -11185,19 +11125,35 @@ impl Analyzer<'_, '_> {
             return;
         };
         let first = &images[first_index];
-        let mut bound_pairs = first.bounds.keys().copied().collect::<Vec<_>>();
-        bound_pairs.sort_unstable();
-        for pair in bound_pairs {
+        let bound_pairs = first
+            .bounds
+            .cells()
+            .map(|(left, right, bound, _)| ((left, right), bound))
+            .collect::<Vec<_>>();
+        for (pair, first_bound) in bound_pairs {
             if pair.0 != context.receiver && pair.1 != context.receiver {
                 continue;
             }
-            let mut weakest = first.bounds[&pair];
+            let mut weakest = first_bound;
             if !rest.iter().all(|index| {
-                images[*index].bounds.get(&pair).is_some_and(|bound| {
-                    weakest = weakest.max(*bound);
-                    true
-                })
+                images[*index]
+                    .bounds
+                    .get(pair.0, pair.1)
+                    .is_some_and(|(bound, _)| {
+                        weakest = weakest.max(bound);
+                        true
+                    })
             }) {
+                continue;
+            }
+            if ordinary_only
+                && target
+                    .bounds
+                    .get(pair.0, pair.1)
+                    .is_some_and(|(bound, proof)| {
+                        bound <= weakest && !self.derivations.depends_on_postcondition_call(proof)
+                    })
+            {
                 continue;
             }
             let parents = images
@@ -11211,7 +11167,11 @@ impl Analyzer<'_, '_> {
                             .contradiction
                             .expect("contradictory delivery image has one proof")
                     } else {
-                        image.bound_proofs[&pair]
+                        image
+                            .bounds
+                            .get(pair.0, pair.1)
+                            .map(|(_, proof)| proof)
+                            .expect("every contributing delivery image holds the pair")
                     },
                 })
                 .collect::<Vec<_>>();
@@ -11257,6 +11217,14 @@ impl Analyzer<'_, '_> {
                 || !rest
                     .iter()
                     .all(|index| images[*index].distinct.contains(&pair))
+            {
+                continue;
+            }
+            if ordinary_only
+                && target
+                    .distinct_proofs
+                    .get(&pair)
+                    .is_some_and(|proof| !self.derivations.depends_on_postcondition_call(*proof))
             {
                 continue;
             }
@@ -11601,6 +11569,13 @@ impl Analyzer<'_, '_> {
                 value: CheckedValue::Integer { ty, bits },
                 ..
             } => Some(AffineForm::constant(integer_value(*ty, *bits))),
+            // [MSR-6] endpoint and initializer value flow must use the same
+            // declaration-anchored image as an invariant or contract
+            // spelling of the symbolic const parameter.
+            CheckedExpression::Constant(CheckedValue::ConstGeneric { declaration, .. }) => {
+                let term = self.terms.intern(TermKind::ConstParameter(*declaration));
+                Some(self.measure_atom(term, state))
+            }
             CheckedExpression::Binding { binding, ty, .. } => {
                 let CheckedType::Integer(integer) = *ty else {
                     return None;
@@ -12740,9 +12715,9 @@ impl Analyzer<'_, '_> {
             return;
         }
         let atom = self.measure_atom(live, state);
-        if atom.terms().is_empty() {
-            return;
-        }
+        // A constant image is still the exact immutable value this datum
+        // captures. Retaining it is what carries an affine exact measure
+        // across the transfer that kills the live place.
         state.measure_atoms.borrow_mut().insert(datum, atom);
     }
 
@@ -12792,8 +12767,8 @@ impl Analyzer<'_, '_> {
     fn measure_terms_by_atom(
         &mut self,
         state: &AffineFlowState,
-    ) -> HashMap<AffineTermId, Vec<TermId>> {
-        let mut grouped: HashMap<AffineTermId, Vec<TermId>> = HashMap::new();
+    ) -> WordHashMap<AffineTermId, Vec<TermId>> {
+        let mut grouped: WordHashMap<AffineTermId, Vec<TermId>> = WordHashMap::default();
         for term in self.measure_terms() {
             if let Some(atom) = self.measure_atom(term, state).unit_term() {
                 grouped.entry(atom).or_default().push(term);
@@ -13667,10 +13642,7 @@ impl Analyzer<'_, '_> {
         // Only a direct fragment place can receive that image, so only such a
         // commit forms a value term: with no destination to carry it to, the
         // image would relate nothing to the program's later state.
-        let commit_carries_image = matches!(
-            target,
-            CheckedSetTarget::Place(place) if fragment_type(place.ty).is_some()
-        );
+        let commit_carries_image = self.commit_target_term(target).is_some();
         let mut commit_event = None;
         let commit_division = (commit_reached && commit_carries_image)
             .then(|| {
@@ -13972,6 +13944,16 @@ impl Analyzer<'_, '_> {
                 let mut destinations = Vec::with_capacity(bindings.len());
                 for (binding, ty, _) in bindings {
                     self.declare(*binding);
+                    // A call's result list has no single expression image to
+                    // copy into each destination. Each fragment result still
+                    // receives its own current-value atom, so S12's ordinary
+                    // result relation can bridge published affine facts to
+                    // that ordinal without conflating sibling results.
+                    if judgment.reached
+                        && let Some(value) = self.affine_unknown_integer(*ty)
+                    {
+                        state.affine.values.insert(*binding, value);
+                    }
                     destinations.push(Some((*binding, Vec::new(), *ty)));
                 }
                 if judgment.reached {
@@ -14488,9 +14470,8 @@ impl Analyzer<'_, '_> {
                     let direct_call = prepared
                         .as_ref()
                         .map(|prepared| (scrutinee, *enum_type, prepared));
-                    if let Some(exit) =
-                        self.walk_arm(arm, state, &facts, direct_call, payload.as_ref())
-                    {
+                    let payload = payload.iter().find(|payload| payload.tag == arm.tag);
+                    if let Some(exit) = self.walk_arm(arm, state, &facts, direct_call, payload) {
                         exits.push(exit);
                     }
                 }
@@ -14540,7 +14521,8 @@ impl Analyzer<'_, '_> {
                     let direct_call = prepared
                         .as_ref()
                         .map(|prepared| (scrutinee, *enum_type, prepared));
-                    let _ = self.walk_arm(arm, state, &facts, direct_call, payload.as_ref());
+                    let payload = payload.iter().find(|payload| payload.tag == arm.tag);
+                    let _ = self.walk_arm(arm, state, &facts, direct_call, payload);
                 }
                 let frame = self
                     .gives
@@ -14968,7 +14950,7 @@ impl Analyzer<'_, '_> {
         // [MSR-3] the payload placement's second half: on the arm whose
         // variant carries the payload, the binder that names it has the
         // measures the payload had before the consume.
-        if let Some(payload) = payload.filter(|payload| payload.tag == arm.tag) {
+        if let Some(payload) = payload {
             for (field, carry) in &payload.carried {
                 let Some(binder) = arm.binders.iter().find(|binder| binder.field == *field) else {
                     continue;
@@ -15924,6 +15906,28 @@ impl Analyzer<'_, '_> {
                         }
                     }
                 }
+                GoalProjection::Payload { variant, field } => {
+                    let selected = ty.and_then(|current| {
+                        let CheckedType::Nominal(nominal) = current else {
+                            return None;
+                        };
+                        let CheckedNominalKind::Enum { variants } =
+                            &self.context.nominals.get(nominal.0 as usize)?.kind
+                        else {
+                            return None;
+                        };
+                        let variant = variants.iter().find(|item| item.tag == *variant)?;
+                        let field = variant.fields.get(*field as usize)?;
+                        Some((&variant.name, &field.name, field.ty))
+                    });
+                    if let Some((variant, field, field_type)) = selected {
+                        rendered.push_str(&format!(".{variant}.{field}"));
+                        ty = Some(field_type);
+                    } else {
+                        rendered.push_str(&format!(".{variant}.{field}"));
+                        ty = None;
+                    }
+                }
                 GoalProjection::Subscript(offset) => {
                     rendered.push_str(&format!("[{}]", self.render_offset(*offset)));
                     ty = ty.and_then(|ty| element_type(ty, self.context.elements));
@@ -16041,9 +16045,6 @@ impl Analyzer<'_, '_> {
             }
             CheckedExpression::BoxDeref { value, .. } => {
                 format!("{}.inner", self.render_expression(value))
-            }
-            CheckedExpression::ArenaDeref { value, .. } => {
-                format!("deref({})", self.render_expression(value))
             }
             CheckedExpression::ProjectValue {
                 value,
@@ -16213,15 +16214,13 @@ fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
         // v0.59 `len_of(p)` former is not a v0.60 spelling.
         GoalOperation::ArrayMeasure { measure, .. }
         | GoalOperation::BufferMeasure { measure, .. }
-        | GoalOperation::RangeMeasure { measure, .. }
         | GoalOperation::ContainerMeasure { measure, .. } => match arguments {
             [place] => format!("{place}.{}", measure.spelling()),
             _ => "<invalid measure goal>".to_owned(),
         },
         GoalOperation::ArrayIndex { .. }
         | GoalOperation::BufferIndex { .. }
-        | GoalOperation::RunIndex { .. }
-        | GoalOperation::RangeIndex { .. } => match arguments {
+        | GoalOperation::RunIndex { .. } => match arguments {
             [collection, offset] => format!("{collection}[{offset}]"),
             _ => "<invalid index goal>".to_owned(),
         },
@@ -16279,8 +16278,7 @@ mod proof_closure_tests {
         };
         for _ in 0..3 {
             let view = context.close(&terms, &goals, &mut ledger);
-            assert!(matches!(view, Cow::Borrowed(_)));
-            assert!(std::ptr::eq(view.as_ref(), &closed.state));
+            assert!(Rc::ptr_eq(&view, &closed.state));
             assert!(view.derives_bound(ZERO, ZERO, 0));
         }
     }
@@ -16302,9 +16300,9 @@ mod proof_closure_tests {
             affine: &affine,
             closed: Some(&closed),
         };
-        assert!(matches!(
-            context.close(&terms, &goals, &mut ledger),
-            Cow::Owned(_)
+        assert!(!Rc::ptr_eq(
+            &context.close(&terms, &goals, &mut ledger),
+            &closed.state
         ));
 
         let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
@@ -16317,7 +16315,7 @@ mod proof_closure_tests {
             closed: Some(&closed),
         };
         let view = context.close(&terms, &goals, &mut ledger);
-        assert!(matches!(view, Cow::Owned(_)));
+        assert!(!Rc::ptr_eq(&view, &closed.state));
         assert!(view.derives_bound(term, ZERO, 7));
         assert!(view.derives_bound(ZERO, term, -7));
     }
@@ -16350,9 +16348,9 @@ mod proof_closure_tests {
             affine: &affine,
             closed: Some(&closed),
         };
-        assert!(matches!(
-            context.close(&terms, &goals, &mut ledger),
-            Cow::Owned(_)
+        assert!(!Rc::ptr_eq(
+            &context.close(&terms, &goals, &mut ledger),
+            &closed.state
         ));
     }
 }

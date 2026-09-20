@@ -448,21 +448,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Bool,
                 arguments.as_slice(),
             )),
-            CheckedExpression::BufferFits {
-                element,
-                layout_ceiling,
-                length,
-                ..
-            } => Some((
-                GoalOperation::BufferFits {
-                    element: *element,
-                    maximum_length: layout_ceiling.stride.allocation_limit(),
-                },
-                vec![*element],
-                Vec::new(),
-                CheckedType::Bool,
-                std::slice::from_ref(length.as_ref()),
-            )),
             _ => None,
         };
         if let Some((row, type_arguments, const_arguments, result, checked_arguments)) = operation {
@@ -485,29 +470,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             });
         }
 
-        // [CALL-4] a measure over a result place: the operand is the
-        // clause's own result datum, so there is no atom below it to expand.
-        if let CheckedExpression::PostconditionResultMeasure {
-            measure,
-            ordinal,
-            ty,
-        } = checked
-        {
-            let row = self.clause_measure_row(*measure, *ty, false)?;
-            return Ok(ExpandedClauseExpression::Operation {
-                row,
-                type_arguments: Vec::new(),
-                const_arguments: Vec::new(),
-                result: CheckedType::Integer(super::super::model::IntegerType::U64),
-                arguments: vec![ExpandedClauseExpression::Datum(
-                    ExpandedClauseDatum::Result {
-                        ordinal: *ordinal,
-                        projections: Vec::new(),
-                        ty: *ty,
-                    },
-                )],
-            });
-        }
         if matches!(
             checked,
             CheckedExpression::ArrayMeasure { .. }

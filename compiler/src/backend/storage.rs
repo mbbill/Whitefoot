@@ -835,9 +835,6 @@ impl FlowInstruction {
                 let exposed = match operation {
                     IrOperation::AddressOf { value, .. } => Some(index(*value)),
                     IrOperation::SliceFromRun { run } => Some(index(*run)),
-                    IrOperation::SliceFromArray {
-                        array: IrArrayRoot::Value(value),
-                    } => Some(index(*value)),
                     _ => None,
                 };
                 (Some(index(*result)), reuse, exposed)
@@ -926,9 +923,7 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
             .chain([*offset])
             .collect(),
         IrOperation::BufferFill { length, value, .. } => vec![*length, *value],
-        IrOperation::BufferVacant { length, .. } | IrOperation::BufferFits { length, .. } => {
-            vec![*length]
-        }
+        IrOperation::BufferFits { length, .. } => vec![*length],
         IrOperation::BufferMeasure { buffer } | IrOperation::SliceFromBuffer { buffer } => {
             vec![*buffer]
         }
@@ -959,7 +954,6 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
             .into_iter()
             .chain(needles.iter().copied())
             .collect(),
-        IrOperation::SliceFromArray { array } => array_root_operand(*array).into_iter().collect(),
         IrOperation::SliceMeasure { slice } => vec![*slice],
         IrOperation::SliceIndex { slice, offset, .. } => vec![*slice, *offset],
         IrOperation::ArenaNew { list, value, .. } => vec![*list, *value],

@@ -801,7 +801,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             constructors.push(super::ConstructorShape {
                 fields: fields.iter().map(|field| field.name.clone()).collect(),
                 determining_field,
-                field_regions,
             });
         }
         Ok(constructors)
@@ -1727,12 +1726,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .retain(|_, id| (id.0 as usize) < checkpoint);
         self.result_list_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
-        if self
-            .arena_storage_nominal
-            .is_some_and(|id| (id.0 as usize) >= checkpoint)
-        {
-            self.arena_storage_nominal = None;
-        }
         Ok(())
     }
 }

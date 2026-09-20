@@ -2,6 +2,60 @@
 
 Working notes kept during the port: specification problems reported by port agents, owner rulings pending at the time, verified audit findings, and compiler gaps. Not normative; superseded by docs/todo.md and the design tree where those record the same item. Delete when PR 70 merges.
 
+## Automatic approval review holds during integration
+
+The owner authorized principled migrations to the current specification and
+asked for remaining automatic-review holds to be reported together. These
+edits remain unapplied; they are not accepted test results or compiler gaps.
+
+- `semantic/tests/permission.rs`: two legacy assertions exclude every call
+  in a condition from PAR-1. The current rule permits an independent call
+  when the condition and every possible arm have a complete, nonconflicting
+  footprint. The proposed migration retains the new negative case whose arm
+  reads the previous result and the native join-before-dispatch observation.
+  Automatic review repeatedly refused changing the two independent cases
+  to permitted, citing possible loss of parallel-safety coverage.
+- `liv2-pos-read-out-at-a-binding-a-field-and-a-deref` and
+  `set1-pos-index-is-captured-before-rhs-borrow`: current ENT-3 does not
+  publish an ordinary scalar field's value from its constructor. The proposed
+  migration explicitly assigns the original scalar value after construction,
+  using SET-1's existing commit-value publication while retaining the original
+  invariant, call requirement, and execution oracle. Automatic review refused
+  both runtime-guard alternatives and these static-publication alternatives,
+  citing changed write/reference behavior. Neither alternative was applied.
+- A bundled cleanup of unused reference-invalidation scaffolding was refused
+  because it included an event constructed by the refinement helper and a
+  live window-invalidation operation. Those paths were retained. Any narrower
+  cleanup must establish its own call graph and preserve active invalidation.
+- `semantic/tests.rs::overlapping_by_value_actuals_are_an_eff5_rejection`:
+  automatic review also refused a proposed diagnostic-expectation migration
+  to OWN-1, citing insufficient validation while lowering failures remain.
+  The three sources and their existing expectations remain unchanged. This
+  hold needs a separate, completed rule-precedence check before resolution.
+- `tests/programs/growable_vec.wf::bs_reserve` and
+  `run-generic-owning-map-behavior.wf::key_create`: automatic review refused
+  both workload-sized and exact native representability-bound preconditions,
+  citing excluded large-input behavior. The existing contracts are retained;
+  target-stage failures must not be disguised as source-language rejections.
+
+The earlier hold on `fn8-neg-requires-noncopy-cvt-local` was resolved by a
+standalone diagnostic-rule correction: OWN-1 expressly owns the bare affine
+initializer inside a contract and its non-consuming repair. The negative
+source and rejected verdict are preserved, with OWN-1 as the expected rule.
+
+## Complete allocation size during target qualification
+
+STOR-1 stores each boxed runtime-capacity shape in one allocation. Its exact
+size includes the descriptor and padding, so STOR-6's earlier shorthand
+`count * stride` could admit a count whose payload fits but whose complete
+allocation does not. The rule now names the complete size explicitly, and
+the target bound on a measured length subtracts the padded descriptor before
+division. OP-9's target-independent language predicate is unchanged.
+The exact Array/Slots/Ring target-boundary tests distinguish the complete size
+from payload-only checking, and the existing same-element reallocation test
+checks that the exact measured SSA value retains this target qualification
+across an ordinary call to a shared allocation body.
+
 # Spec problems reported by the semantic port (P5-P9), 2026-09-19
 
 ## P5 - the semantic rule table, the checked model and the place relation

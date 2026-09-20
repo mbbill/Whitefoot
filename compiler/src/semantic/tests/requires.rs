@@ -1,5 +1,5 @@
 use crate::lowering::{OverlapLowering, lower_checked};
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
+use crate::{DeclarationRole, SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::super::entailment::{CallGoalDisposition, CallGoalEvidence};
 use super::super::goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
@@ -317,16 +317,20 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
     );
-    // An initializer is a computation, so a bare atom is not one.
-    assert_rule(
+    // A non-consuming datum is itself an admitted definition expression;
+    // alpha-expansion substitutes the parameter datum into the requirement.
+    with_semantics(
         b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
           define candidate = x;\n  \
           requires candidate > 0_i32;\n} {\n  \
           return x;\n}\n\n\
           fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Fn8,
-        SemanticIssueKind::InvalidRequires,
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("a non-consuming datum definition is admitted: {outcome:?}");
+            };
+        },
     );
 }
 
@@ -745,8 +749,27 @@ fn main() -> status: own ExitStatus pure {
             1
         );
         assert_eq!(checked.data.functions[0].name, "main");
-        assert_eq!(checked.data.generic_requirements.len(), 1);
-        let symbolic = &checked.data.generic_requirements[0];
+        let positive = checked
+            ._resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Function
+                    && declaration.spelling() == "positive"
+            })
+            .expect("positive source declaration")
+            .id();
+        let user_requirements = checked
+            .data
+            .generic_requirements
+            .iter()
+            .filter(|symbolic| symbolic.declaration == positive)
+            .collect::<Vec<_>>();
+        let [symbolic] = user_requirements.as_slice() else {
+            panic!(
+                "exactly one user GenericInt requirement must remain symbolic: {user_requirements:#?}"
+            );
+        };
         let GoalExpression::Operation {
             row:
                 GoalOperation::Integer {
@@ -765,15 +788,15 @@ fn main() -> status: own ExitStatus pure {
 fn a_nominal_bearing_generic_requirement_survives_the_symbolic_checkpoint_as_metadata() {
     // v0.59 reached the symbolic nominal through `buffer_fits::<Pair<T>>(n)`.
     // [OP-9]'s allocation-size predicate "has no writer-callable spelling" in
-    // v0.60, so the requirement reaches `Pair<T>` the way any other clause
-    // reaches a nominal: as the parameter whose fields it projects.
+    // v0.60, so a measure over `Slots<Pair<T>, 1>` retains the nominal as the
+    // exact element type of its ContainerMeasure row.
     let source = br#"struct Pair<T: Int> {
   left: T;
   right: T;
 }
 
-fn need<T: Int>(pair: own Pair<T>) -> result: own unit pure contract {
-  requires pair.left < pair.right;
+fn need<T: Int>(pairs: own Slots<Pair<T>, 1>) -> result: own unit pure contract {
+  requires pairs.len <= 1_u64;
 } {
   return unit;
 }
@@ -786,13 +809,32 @@ fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("symbolic nominal requirements must remain valid metadata: {outcome:?}");
         };
-        assert_eq!(checked.data.generic_requirements.len(), 1);
-        let requirement = &checked.data.generic_requirements[0].requirement;
+        let need = checked
+            ._resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Function && declaration.spelling() == "need"
+            })
+            .expect("need source declaration")
+            .id();
+        let user_requirements = checked
+            .data
+            .generic_requirements
+            .iter()
+            .filter(|symbolic| symbolic.declaration == need)
+            .collect::<Vec<_>>();
+        let [symbolic] = user_requirements.as_slice() else {
+            panic!(
+                "exactly one nominal-bearing user requirement must remain symbolic: {user_requirements:#?}"
+            );
+        };
+        let requirement = &symbolic.requirement;
         let GoalExpression::Operation {
             row:
                 GoalOperation::Integer {
-                    operand_type: CheckedType::GenericInt(_),
-                    ..
+                    operation: CheckedIntegerOperation::LessEqual,
+                    operand_type: CheckedType::Integer(IntegerType::U64),
                 },
             arguments,
             ..
@@ -800,17 +842,42 @@ fn main() -> status: own ExitStatus pure {
         else {
             panic!("the retained requirement must preserve its exact symbolic goal");
         };
-        let GoalExpression::Datum(GoalDatum::Parameter { projections, .. }) = &arguments[0] else {
-            panic!("the projected field must remain the formal datum");
+        let GoalExpression::Operation {
+            row:
+                GoalOperation::ContainerMeasure {
+                    measure: super::super::model::CheckedMeasure::Length,
+                    measured: MeasuredKind::ConstantSlots,
+                    element: Some(element),
+                    constant: Some(CheckedConst::Value(1)),
+                },
+            arguments: measure_arguments,
+            ..
+        } = &arguments[0]
+        else {
+            panic!("the left operand must retain the exact Slots measure row");
         };
-        assert_eq!(projections, &[GoalProjection::Field(0)]);
-        let (index, retained) = checked
+        assert!(matches!(
+            measure_arguments.as_slice(),
+            [GoalExpression::Datum(GoalDatum::Parameter { projections, .. })]
+                if projections.is_empty()
+        ));
+        assert!(matches!(
+            &arguments[1],
+            GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Integer {
+                ty: IntegerType::U64,
+                bits: 1,
+            }))
+        ));
+        let CheckedType::Nominal(nominal) = checked.data.elements[element.index()] else {
+            panic!("the Slots element must retain Pair<T>'s nominal identity");
+        };
+        let index = nominal.0 as usize;
+        let retained = checked
             .data
             .nominals
-            .iter()
-            .enumerate()
-            .find(|(_, nominal)| nominal.name.starts_with("Pair<"))
-            .expect("Pair<T> remains a symbolic nominal of the checked program");
+            .get(index)
+            .expect("Pair<T>'s nominal identity must address checked metadata");
+        assert!(retained.name.starts_with("Pair<"));
         assert!(
             index >= checked.data.executable_nominal_count,
             "metadata-only symbolic nominals must follow the executable prefix"
@@ -846,18 +913,31 @@ fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("the symbolic const requirement must be retained: {outcome:?}");
         };
-        assert_eq!(checked.data.generic_requirements.len(), 1);
         assert_eq!(checked.data.derived_consts.len(), 1);
         let derived = checked.data.derived_consts[0];
         assert!(matches!(derived.left, CheckedConst::Parameter(_)));
         assert_eq!(derived.right, CheckedConst::Value(1));
-        let rendered = format!(
-            "{:#?}",
-            checked.data.generic_requirements[0]
-                .requirement
-                .template
-                .root
-        );
+        let need = checked
+            ._resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Function && declaration.spelling() == "need"
+            })
+            .expect("need source declaration")
+            .id();
+        let user_requirements = checked
+            .data
+            .generic_requirements
+            .iter()
+            .filter(|symbolic| symbolic.declaration == need)
+            .collect::<Vec<_>>();
+        let [symbolic] = user_requirements.as_slice() else {
+            panic!(
+                "exactly one user requirement must retain a derived const: {user_requirements:#?}"
+            );
+        };
+        let rendered = format!("{:#?}", symbolic.requirement.template.root);
         assert!(
             rendered.contains("DerivedConstId") && rendered.contains("0,"),
             "the retained goal must name the checked-program-owned table entry: {rendered}"
@@ -894,11 +974,18 @@ fn main() -> status: own ExitStatus pure {
             .filter(|function| function.name == "positive")
             .collect::<Vec<_>>();
         assert_eq!(concrete.len(), 2);
-        assert_eq!(checked.data.generic_requirements.len(), 1);
-        assert_eq!(
-            checked.data.generic_requirements[0].declaration,
-            concrete[0].declaration
-        );
+        let user_requirements = checked
+            .data
+            .generic_requirements
+            .iter()
+            .filter(|requirement| requirement.declaration == concrete[0].declaration)
+            .collect::<Vec<_>>();
+        let [symbolic] = user_requirements.as_slice() else {
+            panic!(
+                "the called user generic must retain exactly one symbolic requirement: {user_requirements:#?}"
+            );
+        };
+        assert_eq!(symbolic.declaration, concrete[0].declaration);
         assert!(concrete.iter().all(|function| {
             function
                 .requirements
@@ -939,10 +1026,44 @@ fn main() -> status: own ExitStatus pure {
                 .count(),
             1
         );
-        assert_eq!(checked.data.generic_requirements.len(), 2);
-        assert_ne!(
-            checked.data.generic_requirements[0].declaration,
-            checked.data.generic_requirements[1].declaration
+        let inner = checked
+            ._resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Function && declaration.spelling() == "inner"
+            })
+            .expect("inner source declaration")
+            .id();
+        let outer = checked
+            ._resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Function && declaration.spelling() == "outer"
+            })
+            .expect("outer source declaration")
+            .id();
+        let user_requirements = checked
+            .data
+            .generic_requirements
+            .iter()
+            .filter(|symbolic| symbolic.declaration == inner || symbolic.declaration == outer)
+            .collect::<Vec<_>>();
+        assert_eq!(user_requirements.len(), 2, "{user_requirements:#?}");
+        assert_eq!(
+            user_requirements
+                .iter()
+                .filter(|requirement| requirement.declaration == inner)
+                .count(),
+            1
+        );
+        assert_eq!(
+            user_requirements
+                .iter()
+                .filter(|requirement| requirement.declaration == outer)
+                .count(),
+            1
         );
     });
 }
@@ -1240,8 +1361,11 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// A concrete reference-root datum already denotes its referent. Substituting
+/// `&deref(value)` therefore removes the callee wrapper and retains the
+/// caller's reference binding as the root with no projection step.
 #[test]
-fn borrow_substitution_removes_callee_deref_and_retains_caller_opaque_deref() {
+fn borrow_substitution_normalizes_a_reborrow_to_the_caller_reference_root() {
     let source = br#"fn observe(value: &u64) -> result: own unit reads(value) contract {
   requires deref(value) > 0_u64;
 } {
@@ -1285,7 +1409,7 @@ fn main() -> status: own ExitStatus pure {
             &arguments[0],
             GoalExpression::Datum(GoalDatum::Place { root, projections, .. })
                 if *root == proxy.parameters[0].binding
-                    && projections == &[GoalProjection::Deref]
+                    && projections.is_empty()
         ));
         assert_eq!(proxy.entailment.call_goals.len(), 1);
         assert_eq!(
@@ -1461,8 +1585,8 @@ fn requires_clause_bare_affine_use_carries_the_static_repair() {
     let expected_fix =
         "restate the definition or clause over copy operands or non-consuming admitted reads";
     assert_rule(
-        br#"enum Holder {
-  Value(content: u64);
+        br#"nocopy enum Holder {
+  Value();
 }
 
 fn inspect(holder: own Holder) -> result: own unit pure contract {
@@ -1472,7 +1596,7 @@ fn inspect(holder: own Holder) -> result: own unit pure contract {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let holder = Value(content: 4_u64);
+  let holder = Value();
   let held = inspect(holder: move holder);
   return exit_status(code: 0_u8);
 }

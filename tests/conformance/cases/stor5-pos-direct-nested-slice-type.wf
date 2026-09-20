@@ -1,4 +1,4 @@
-fn nested_length(values: &[u8], lo: own u64, hi: own u64) -> function_result: own u64 pure contract {
+fn nested_length(values: &[u8], lo: own u64, hi: own u64) -> function_result: own u64 reads(values[lo..hi].len) contract {
   requires lo <= hi;
   requires hi <= deref(values).len;
 } {

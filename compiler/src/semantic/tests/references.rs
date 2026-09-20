@@ -367,6 +367,118 @@ fn a_join_takes_the_union_of_the_path_sets() {
     ));
 }
 
+/// A direct write through a joined holder must be writable at every possible
+/// target. The runtime address is singular, but the constant alternative
+/// cannot disappear behind the writable local alternative [REF-1, CONST-2].
+#[test]
+fn a_joined_dereference_cannot_write_a_possible_constant_target() {
+    let source = br#"const permanent: u64 = 1_u64;
+
+fn examine(flag: own Bool) -> result: own unit pure {
+  let spare = 0_u64;
+  let selected = if flag {
+    give &spare;
+  } else {
+    give &permanent;
+  }
+  set deref(selected) = 9_u64;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Const2, |kind| {
+        matches!(kind, SemanticIssueKind::ImmutableSetTarget)
+    });
+}
+
+/// [EFF-2] reads through a joined holder exhibit every formal-rooted member.
+/// Declaring only one incoming path is narrower than the body access.
+#[test]
+fn a_joined_dereference_exhibits_every_possible_parameter_read() {
+    let source = br#"fn choose(flag: own Bool, a: &u64, b: &u64) -> result: own u64 reads(a) {
+  let selected = if flag {
+    give a;
+  } else {
+    give b;
+  }
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { .. })
+    });
+}
+
+/// [REF-1, OP-12] two holders with the same singleton resolved path name the
+/// same target. The old affine value may therefore enter the updating call
+/// through either holder while the commit uses the other holder's runtime
+/// address.
+#[test]
+fn singleton_reference_aliases_name_one_atomic_update_target() {
+    let source = br#"nocopy struct Token {
+  value: u64;
+}
+
+fn retain(old: own Token) -> result: own Token pure {
+  return move old;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let token = Token(value: 7_u64);
+  let target = &token;
+  let alias = &token;
+  set deref(target) = retain(old: move deref(alias));
+  if deref(target).value == 7_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// Sharing one possible member does not make a joined target exact. Selecting
+/// that member would make the update atomic only on one runtime branch, so the
+/// move through the singleton alias remains [OWN-1]'s refusal.
+#[test]
+fn an_overlapping_join_is_not_one_atomic_update_target() {
+    let source = br#"nocopy struct Token {
+  value: u64;
+}
+
+fn retain(old: own Token) -> result: own Token pure {
+  return move old;
+}
+
+fn examine(flag: own Bool) -> result: own unit pure {
+  let first = Token(value: 1_u64);
+  let second = Token(value: 2_u64);
+  let target = if flag {
+    give &first;
+  } else {
+    give &second;
+  }
+  let alias = &first;
+  set deref(target) = retain(old: move deref(alias));
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::MoveThroughReference { .. })
+    });
+}
+
 /// A call requirement over a joined reference must hold for every path the
 /// reference may name. One target carrying the required value cannot hide the
 /// other target's contradictory value.
@@ -499,4 +611,53 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
     assert_rule_kind(source, SemanticRule::Op2, |_| true);
+}
+#[test]
+fn a_written_reference_cannot_select_named_constant_storage() {
+    let source = br#"const permanent: u64 = 1_u64;
+
+fn overwrite(target: &u64) -> result: own unit writes(target) {
+  set deref(target) = 9_u64;
+  return unit;
+}
+
+fn examine(flag: own Bool) -> result: own unit pure {
+  let spare = 0_u64;
+  let original = &permanent;
+  let alias = original;
+  let selected = if flag {
+    give &spare;
+  } else {
+    give alias;
+  }
+  overwrite(target: selected);
+  return unit;
+}
+"#;
+    super::assert_rule_kind(source, SemanticRule::Const2, |kind| {
+        matches!(kind, SemanticIssueKind::ImmutableWrittenArgument { binding, .. }
+            if binding == "permanent")
+    });
+}
+
+#[test]
+fn a_constant_can_be_read_by_reference_and_copied_to_writable_storage() {
+    let source = br#"const permanent: u64 = 1_u64;
+
+fn observe(value: &u64) -> result: own u64 reads(value) {
+  return deref(value);
+}
+
+fn overwrite(target: &u64) -> result: own unit writes(target) {
+  set deref(target) = 9_u64;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let copied = observe(value: &permanent);
+  overwrite(target: &copied);
+  return exit_status(code: 0_u8);
+}
+"#;
+    super::assert_accepts(source);
 }

@@ -1075,8 +1075,12 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_ir(source, |program| {
         let mut sites: Vec<(&str, Vec<u64>)> = Vec::new();
+        let mut shared_allocators = Vec::new();
         for function in program.functions() {
-            let bounds = function
+            // Keep inspecting the actual allocation instructions. With the
+            // ordinary PRE-1 ABI they reside in one shared body per type,
+            // which cannot carry both callers' different bounds.
+            let shared = function
                 .blocks()
                 .iter()
                 .flat_map(IrBlock::instructions)
@@ -1085,15 +1089,55 @@ fn main() -> status: own ExitStatus pure {
                         return None;
                     };
                     match operation {
-                        IrOperation::BufferFill { target_domains, .. }
-                        | IrOperation::BufferVacant { target_domains, .. } => {
-                            Some(target_domains.source_length_upper_bound())
-                        }
+                        IrOperation::BufferFill { target_domains, .. } => Some(*target_domains),
                         IrOperation::WindowBlockNew { obligations, .. } => {
-                            Some(obligations.target_domains.source_length_upper_bound())
+                            Some(obligations.target_domains)
                         }
                         _ => None,
                     }
+                })
+                .collect::<Vec<_>>();
+            for domains in shared {
+                assert!(!domains.has_call_site_bound());
+                shared_allocators.push(function.name());
+            }
+            // These are lowered IR call records, attached to the result of
+            // the actual Call instruction. Target qualification consumes
+            // them; backend arrays tests separately pin each shape's exact
+            // byte boundary and its one-byte-short rejection.
+            let bounds = function
+                .source_calls()
+                .iter()
+                .filter_map(|call| {
+                    let allocation = call.allocation()?;
+                    let instruction = function
+                        .blocks()
+                        .iter()
+                        .flat_map(IrBlock::instructions)
+                        .find(|instruction| {
+                            matches!(instruction,
+                                IrInstruction::Define { result, .. } if *result == call.result()
+                            )
+                        })
+                        .expect("an allocation bound names an emitted IR definition");
+                    let IrInstruction::Define {
+                        operation:
+                            IrOperation::Call {
+                                function: callee,
+                                arguments,
+                            },
+                        ..
+                    } = instruction
+                    else {
+                        panic!("an allocation bound must belong to an ordinary Call");
+                    };
+                    assert!(allocation.count_argument() < arguments.len());
+                    let callee = &program.functions()[*callee as usize];
+                    assert!(
+                        callee.name().starts_with("box_array_filled")
+                            || callee.name().starts_with("box_slots_new")
+                    );
+                    Some(allocation.source_length_upper_bound())
                 })
                 .collect::<Vec<_>>();
             if !bounds.is_empty() {
@@ -1105,6 +1149,17 @@ fn main() -> status: own ExitStatus pure {
             vec![("allocate", vec![1000, 1000]), ("small", vec![7, 7])],
             "each allocation site keeps its own caller's proved ceiling"
         );
+        assert_eq!(shared_allocators.len(), 2, "one body per constructor type");
+        for constructor in ["box_array_filled", "box_slots_new"] {
+            assert_eq!(
+                shared_allocators
+                    .iter()
+                    .filter(|name| name.starts_with(constructor))
+                    .count(),
+                1,
+                "site bounds do not clone the ordinary prelude body"
+            );
+        }
     });
 }
 

@@ -10,6 +10,7 @@ fn regrow(old: own Slots<u8, 4>) -> bigger: own Slots<u8, 4> pure contract {
 }
 
 fn bump(cell: own u64) -> back: own u64 pure contract {
+  requires cell +defined 1_u64;
   ensures back == cell + 1_u64;
 } {
   doc "One more than the value it is handed.";
@@ -17,7 +18,9 @@ fn bump(cell: own u64) -> back: own u64 pure contract {
   return raised;
 }
 
-fn refill(out: &Box<u64>) -> done: own unit writes(out) {
+fn refill(out: &Box<u64>) -> done: own unit writes(out) contract {
+  requires deref(out).inner +defined 1_u64;
+} {
   doc "The atomic update at a cell's content reached through a reference parameter: the old value enters the callee by value and the result is committed with no program point between.";
   set deref(out).inner = bump(cell: deref(out).inner);
   return unit;

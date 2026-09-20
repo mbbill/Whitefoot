@@ -14,8 +14,9 @@ fn main() -> status: own ExitStatus pure {
   place_back(window: &rows, value: 3_u64);
   place_back(window: &rows, value: 5_u64);
   let index = Cursor(at: 0_u64);
-  invariant bounded: index.at < rows.len;
-  set rows[index.at] = change(index: &index);
+  let at = index.at;
+  invariant bounded: at < rows.len;
+  set rows[at] = change(index: &index);
   let first = rows[0_u64];
   if first != 41_u64 {
     return exit_status(code: 1_u8);

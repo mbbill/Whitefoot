@@ -636,11 +636,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 }
 
 impl BreakState {
-    pub(super) fn retain_bindings(&mut self, preserved: &HashSet<DeclarationId>) {
-        self.bindings
-            .retain(|declaration, _| preserved.contains(declaration));
-    }
-
     /// [REF-2] the scope of the local variables a break edge leaves ends
     /// there, so a reference whose path starts at one of them is invalid on
     /// this edge.

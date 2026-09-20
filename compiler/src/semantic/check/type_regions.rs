@@ -12,33 +12,13 @@ use crate::{DeclarationClass, DeclarationId, LexicalUseRole, Production, Resolve
 use super::super::model::{CheckedNominalKind, CheckedType};
 use super::{CheckStop, Checker, PreludeType, SemanticCompilerFailure};
 
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum TypeConstructor {
-    Leaf,
-    Nominal(DeclarationId),
-    Box,
-    LegacyBox,
-    Arena,
-    Option,
-    Result,
-    Array,
-    Buffer,
-    Slice,
-    FixedVector,
-    Vector,
-    Heap,
-    Extent,
-}
-
 #[derive(Clone, Copy)]
 pub(super) struct RegionPosition {
     pub(super) formal: DeclarationId,
-    pub(super) invariant: bool,
 }
 
 #[derive(Clone)]
 pub(super) struct TypeRegionShape {
-    constructor: TypeConstructor,
     regions: Vec<RegionPosition>,
     arguments: Vec<Self>,
 }
@@ -70,7 +50,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if !visited.insert(ty) {
                 continue;
             }
-            let (_, axes, arguments) = self.type_region_axes(ty)?;
+            let (axes, arguments) = self.type_region_axes(ty)?;
             regions.extend(axes.into_iter().map(|axis| axis.formal));
             pending.extend(arguments);
             if let CheckedType::Nominal(id) = ty {
@@ -118,19 +98,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn type_region_axes(
         &self,
         ty: CheckedType,
-    ) -> Result<(TypeConstructor, Vec<RegionPosition>, Vec<CheckedType>), CheckStop> {
-        let brand = |formal| {
-            vec![RegionPosition {
-                formal,
-                invariant: true,
-            }]
-        };
-        let loan = |formal| {
-            vec![RegionPosition {
-                formal,
-                invariant: false,
-            }]
-        };
+    ) -> Result<(Vec<RegionPosition>, Vec<CheckedType>), CheckStop> {
+        let one_region = |formal| vec![RegionPosition { formal }];
         let axes = match ty {
             CheckedType::Nominal(id) => {
                 if let Some((template, substitution)) = self.source_nominal_instance_entry(id)? {
@@ -138,10 +107,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let regions = substitution
                         .region_arguments()
                         .iter()
-                        .map(|(_, formal)| RegionPosition {
-                            formal: *formal,
-                            invariant: true,
-                        })
+                        .map(|(_, formal)| RegionPosition { formal: *formal })
                         .collect();
                     let arguments = template
                         .generic_parameters
@@ -153,53 +119,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             _ => None,
                         })
                         .collect();
-                    (
-                        TypeConstructor::Nominal(template.declaration),
-                        regions,
-                        arguments,
-                    )
+                    (regions, arguments)
                 } else {
                     match self.nominal(id)?.kind {
                         CheckedNominalKind::Box {
-                            region, referent, ..
-                        } => (
-                            if region.is_some() {
-                                TypeConstructor::Box
-                            } else {
-                                TypeConstructor::LegacyBox
-                            },
-                            region.map(brand).unwrap_or_default(),
-                            vec![referent],
-                        ),
+                            region: brand,
+                            referent,
+                            ..
+                        } => (brand.map(one_region).unwrap_or_default(), vec![referent]),
                         CheckedNominalKind::Arena { region, content } => {
-                            (TypeConstructor::Arena, loan(region), vec![content])
+                            (one_region(region), vec![content])
                         }
                         _ => match self.prelude_type(id) {
-                            Some(PreludeType::Option(value)) => {
-                                (TypeConstructor::Option, vec![], vec![value])
-                            }
-                            Some(PreludeType::Result(ok, error)) => {
-                                (TypeConstructor::Result, vec![], vec![ok, error])
-                            }
-                            _ => (TypeConstructor::Leaf, vec![], vec![]),
+                            Some(PreludeType::Option(value)) => (vec![], vec![value]),
+                            Some(PreludeType::Result(ok, error)) => (vec![], vec![ok, error]),
+                            _ => (vec![], vec![]),
                         },
                     }
                 }
             }
-            CheckedType::Array { element, .. } => (
-                TypeConstructor::Array,
-                vec![],
-                vec![self.element_type(element)?],
-            ),
-            CheckedType::Window { element, .. } => (
-                TypeConstructor::FixedVector,
-                vec![],
-                vec![self.element_type(element)?],
-            ),
-            CheckedType::Buffer { element } => {
-                (TypeConstructor::Buffer, vec![], vec![element.ty()])
+            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+                (vec![], vec![self.element_type(element)?])
             }
-            _ => (TypeConstructor::Leaf, vec![], vec![]),
+            CheckedType::Buffer { element } => (vec![], vec![element.ty()]),
+            _ => (vec![], vec![]),
         };
         Ok(axes)
     }
@@ -226,12 +169,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )
         {
             return Ok(TypeRegionShape {
-                constructor: TypeConstructor::Leaf,
                 regions: vec![],
                 arguments: vec![],
             });
         }
-        let (constructor, regions, types) = self.type_region_axes(ty)?;
+        let (regions, types) = self.type_region_axes(ty)?;
         let mut sources = Vec::new();
         if let Some(source) = source {
             sources = self.tree.children_with(source, Production::Type)?;
@@ -251,37 +193,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .enumerate()
             .map(|(index, ty)| self.type_region_shape(ty, sources.get(index).copied()))
             .collect::<Result<_, _>>()?;
-        Ok(TypeRegionShape {
-            constructor,
-            regions,
-            arguments,
-        })
-    }
-
-    /// Pair every region ordinal at matching constructors. A mismatching
-    /// constructor supplies no correspondence; the caller still performs
-    /// ordinary exact whole-type checking and reports [TYPE-5].
-    pub(super) fn match_type_regions(
-        &self,
-        shape: &TypeRegionShape,
-        actual: CheckedType,
-    ) -> Result<Vec<(RegionPosition, DeclarationId)>, CheckStop> {
-        let mut matched = Vec::new();
-        let mut pending = vec![(shape, actual)];
-        while let Some((shape, actual)) = pending.pop() {
-            let (constructor, regions, arguments) = self.type_region_axes(actual)?;
-            if shape.constructor != constructor {
-                continue;
-            }
-            matched.extend(
-                shape
-                    .regions
-                    .iter()
-                    .copied()
-                    .zip(regions.into_iter().map(|p| p.formal)),
-            );
-            pending.extend(shape.arguments.iter().zip(arguments).rev());
-        }
-        Ok(matched)
+        Ok(TypeRegionShape { regions, arguments })
     }
 }

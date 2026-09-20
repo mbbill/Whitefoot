@@ -1,0 +1,34 @@
+struct Pair {
+  left: i32;
+  right: i32;
+}
+
+fn observe(pair: &Pair) -> result: own i32 reads(pair.left) contract {
+  ensures result == deref(pair).left;
+} {
+  return deref(pair).left;
+}
+
+fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
+  requires left == right;
+} {
+  return unit;
+}
+
+fn ordinary(pair: &Pair) -> result: own unit reads(pair.left), writes(pair.right) {
+  let observed = deref(pair).left;
+  set deref(pair).right = 1_i32;
+  guard(left: observed, right: deref(pair).left);
+  return unit;
+}
+
+fn from_call(pair: &Pair) -> result: own unit reads(pair.left), writes(pair.right) {
+  let observed = observe(pair: &deref(pair));
+  set deref(pair).right = 1_i32;
+  guard(left: observed, right: deref(pair).left);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

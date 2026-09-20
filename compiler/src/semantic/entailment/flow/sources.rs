@@ -341,9 +341,7 @@ impl Analyzer<'_, '_> {
         id
     }
 
-    /// The exact term named by one writable fragment place. A borrow holder
-    /// keeps its canonical deref projection so the post-write destination is
-    /// identical to a later read of that same place [ENT-2].
+    /// The exact term named by one writable fragment place [ENT-2].
     fn writable_place_term(
         &mut self,
         binding: BindingId,
@@ -359,6 +357,28 @@ impl Analyzer<'_, '_> {
             fragment,
         );
         Some(self.terms.intern(kind))
+    }
+
+    /// [ENT-3.S5] admits direct scalar places, including fields and Box
+    /// content reached through a reference. A subscript anywhere in the
+    /// path excludes a commit image, even if its offset is a literal.
+    pub(super) fn commit_target_term(&mut self, target: &CheckedSetTarget) -> Option<TermId> {
+        match target {
+            CheckedSetTarget::Place(target) => {
+                self.writable_place_term(target.binding, &target.fields, target.ty)
+            }
+            CheckedSetTarget::Storage(target)
+                if !target
+                    .path
+                    .iter()
+                    .any(|step| matches!(step, CheckedPlaceStep::Subscript(_))) =>
+            {
+                let fragment = fragment_type(target.ty)?;
+                let place = self.container_root_path(target);
+                Some(self.terms.intern(TermKind::Place(place, fragment)))
+            }
+            _ => None,
+        }
     }
 
     /// The term one evaluated value's image is established on, when its type
@@ -533,9 +553,7 @@ impl Analyzer<'_, '_> {
             };
             let constant = super::type_constant(measured_type);
             let mut place = source.clone();
-            place
-                .path
-                .extend(path.iter().map(|field| PlaceStep::Field(*field)));
+            place.path.extend(path.iter().copied());
             let event = self.proof_event(FlowEventKind::S5, Some(node_path));
             let mut datums = Vec::with_capacity(4);
             for measure in MEASURES {
@@ -570,29 +588,26 @@ impl Analyzer<'_, '_> {
     }
 
     /// [MSR-1, MSR-3] every measured place one placement's operand reaches by
-    /// field selection, as its field path from the operand and the type
-    /// selected there.
+    /// field or enum-payload selection, as its projection path from the
+    /// operand and the type selected there.
     ///
     /// A placement is per placement, not per depth. [MSR-1] admits a measure
-    /// place formed with any number of field-selection `psuffix`es, so a
-    /// struct operand one of whose fields is itself a struct holding a run
-    /// names a measured place two levels down; the naming event renames that
-    /// place along with the operand, and without a datum for it the run
-    /// arrives at its new path with no measures at all — which is exactly
-    /// what every placement exists to prevent.
+    /// place formed with any number of field and payload `psuffix`es, so an
+    /// aggregate operand holding a run two levels down names that measured
+    /// place; the naming event renames the aggregate, and without a datum for
+    /// the complete projection the run arrives at its new path with no
+    /// measures at all. Payload steps remain distinct by variant [REF-1].
     ///
-    /// The walk descends through source `struct` fields only. A cell, a run
-    /// element and an enum payload are reached by a step this walk does not
-    /// take — a `deref`, a subscript, and a variant selection respectively —
-    /// so none of them is a field path from the operand.
-    fn measured_paths(&self, ty: CheckedType) -> Vec<(Vec<u32>, CheckedType)> {
+    /// The walk does not cross a cell or run element: those require `deref`
+    /// and subscript steps rather than aggregate ownership projections.
+    fn measured_paths(&self, ty: CheckedType) -> Vec<(Vec<PlaceStep>, CheckedType)> {
         if super::measured_kind(ty).is_some() {
             return vec![(Vec::new(), ty)];
         }
         let CheckedType::Nominal(nominal) = ty else {
             return Vec::new();
         };
-        let Some(CheckedNominalKind::Struct { fields }) = self
+        let Some(kind) = self
             .context
             .nominals
             .get(nominal.0 as usize)
@@ -600,16 +615,44 @@ impl Analyzer<'_, '_> {
         else {
             return Vec::new();
         };
-        let fields = fields.clone();
         let mut found = Vec::new();
-        for (ordinal, field) in fields.iter().enumerate() {
-            let Ok(ordinal) = u32::try_from(ordinal) else {
-                continue;
-            };
-            for (mut path, selected) in self.measured_paths(field.ty) {
-                path.insert(0, ordinal);
-                found.push((path, selected));
+        match kind {
+            CheckedNominalKind::Struct { fields } => {
+                let fields = fields.clone();
+                for (ordinal, field) in fields.iter().enumerate() {
+                    let Ok(ordinal) = u32::try_from(ordinal) else {
+                        continue;
+                    };
+                    for (mut path, selected) in self.measured_paths(field.ty) {
+                        path.insert(0, PlaceStep::Field(ordinal));
+                        found.push((path, selected));
+                    }
+                }
             }
+            CheckedNominalKind::Enum { variants } => {
+                let variants = variants.clone();
+                for variant in variants {
+                    for (ordinal, field) in variant.fields.iter().enumerate() {
+                        let Ok(field_ordinal) = u32::try_from(ordinal) else {
+                            continue;
+                        };
+                        for (mut path, selected) in self.measured_paths(field.ty) {
+                            path.insert(
+                                0,
+                                PlaceStep::Payload {
+                                    variant: variant.tag,
+                                    field: field_ordinal,
+                                },
+                            );
+                            found.push((path, selected));
+                        }
+                    }
+                }
+            }
+            CheckedNominalKind::Box { .. }
+            | CheckedNominalKind::Arena { .. }
+            | CheckedNominalKind::ArenaStorage
+            | CheckedNominalKind::Opaque => {}
         }
         found
     }
@@ -640,9 +683,7 @@ impl Analyzer<'_, '_> {
         let event = self.proof_event(FlowEventKind::S5, Some(node_path));
         for carried in &carry.carried {
             let mut place = destination.clone();
-            place
-                .path
-                .extend(carried.path.iter().map(|field| PlaceStep::Field(*field)));
+            place.path.extend(carried.path.iter().copied());
             for (measure, datum) in MEASURES.into_iter().zip(&carried.datums) {
                 let left = self.place_measure_term(
                     measure,
@@ -695,18 +736,13 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) {
-        let CheckedSetTarget::Place(target) = target else {
-            return;
-        };
-        let Some(destination) = self.writable_place_term(target.binding, &target.fields, target.ty)
-        else {
+        let Some(destination) = self.commit_target_term(target) else {
             return;
         };
         self.establish_copy_equality(node_path, destination, commit, state, event);
     }
 
-    /// [ENT-3] S6: `buffer_new::<T>(n, v)` establishes len_of(b) = n;
-    /// `len::<T>(P)` for a tracked P establishes m = len_of(P); and
+    /// [ENT-3] S6: `len::<T>(P)` for a tracked P establishes m = len_of(P); and
     /// `slice_of…(&'r P)` for a tracked P establishes len_of(s) = len_of(P).
     ///
     /// An `array<T, N>` allocation needs no clause here: its length equality
@@ -720,56 +756,23 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
-        // A length equality is stated over the destination place. One commit
-        // value is no place, so an allocation or slice-formation right-hand
-        // side has no commit image; the length operand row below is an
-        // ordinary fragment value and applies to both destinations.
-        match value {
-            CheckedExpression::BufferFill { length, .. }
-            | CheckedExpression::BufferVacant { length, .. } => {
-                let ValueImage::Binding(binding) = destination else {
-                    return true;
-                };
-                let Some(allocated) = self.read_operand(length) else {
-                    return true;
-                };
-                let place = self.bound_place(binding);
-                let length_term = self.place_measure_term(
-                    CheckedMeasure::Length,
-                    place,
-                    MeasuredKind::RuntimeArray,
-                    None,
-                );
-                let event = self.binding_event(event, FlowEventKind::S6, node_path);
-                state.establish(
-                    &Relation::Equal {
-                        left: length_term,
-                        right: allocated,
-                        difference: 0,
-                    },
-                    &mut self.derivations,
-                    event,
-                );
+        match self.measure_operand(value) {
+            Some(source_length) => {
+                if let Some(bound) = self.bound_term(destination, value) {
+                    let event = self.binding_event(event, FlowEventKind::S6, node_path);
+                    state.establish(
+                        &Relation::Equal {
+                            left: bound,
+                            right: source_length,
+                            difference: 0,
+                        },
+                        &mut self.derivations,
+                        event,
+                    );
+                }
                 true
             }
-            _ => match self.measure_operand(value) {
-                Some(source_length) => {
-                    if let Some(bound) = self.bound_term(destination, value) {
-                        let event = self.binding_event(event, FlowEventKind::S6, node_path);
-                        state.establish(
-                            &Relation::Equal {
-                                left: bound,
-                                right: source_length,
-                                difference: 0,
-                            },
-                            &mut self.derivations,
-                            event,
-                        );
-                    }
-                    true
-                }
-                None => false,
-            },
+            None => false,
         }
     }
 
@@ -1566,16 +1569,16 @@ const MEASURES: [CheckedMeasure; 3] = [
 /// statement's kills and the establishment after them.
 ///
 /// One placement carries one entry per measured place its operand reaches by
-/// field selection, so a struct operand carries the measures of every run
-/// beneath it and not only its own.
+/// field or payload selection, so an aggregate operand carries the measures
+/// of every run beneath it and not only its own.
 pub(super) struct MeasureCarry {
     carried: Vec<CarriedMeasures>,
 }
 
-/// The four datums of one measured place under one placement, with the field
-/// path that reaches it from the placement's source and destination.
+/// The datums of one measured place under one placement, with the aggregate
+/// projection path that reaches it from the placement's source and destination.
 struct CarriedMeasures {
-    path: Vec<u32>,
+    path: Vec<PlaceStep>,
     measured: MeasuredKind,
     constant: Option<CheckedConst>,
     datums: Vec<TermId>,

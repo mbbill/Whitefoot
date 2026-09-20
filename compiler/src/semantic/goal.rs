@@ -182,6 +182,12 @@ pub(crate) enum EvaluatedValueOccurrence {
 pub(crate) enum GoalProjection {
     Deref,
     Field(u32),
+    /// One refined enum payload, preserving both the variant and field
+    /// identity when a reference actual is substituted [REF-1, ENT-2].
+    Payload {
+        variant: u32,
+        field: u32,
+    },
     /// One [OP-4] subscript of the base reached so far, which [MSR-1] admits
     /// in a measure place so that `table[i].len` is a term. The offset is a
     /// logical one, its captured value is immutable once the place is formed
@@ -211,6 +217,22 @@ pub(crate) enum GoalProjection {
     FormalSubscript {
         ordinal: u32,
     },
+}
+
+impl GoalProjection {
+    /// The complete storage projection used by ENT-2 terms and ENT-5 kills.
+    /// A formal subscript must be instantiated before it can prove separation.
+    pub(crate) fn place_step(self) -> super::places::PlaceStep {
+        use super::places::{CapturedValue, PlaceStep};
+        match self {
+            Self::Deref => PlaceStep::Deref,
+            Self::Field(field) => PlaceStep::Field(field),
+            Self::Payload { variant, field } => PlaceStep::Payload { variant, field },
+            Self::Subscript(offset) => PlaceStep::Index(offset),
+            Self::Range(range) => PlaceStep::Range(range),
+            Self::FormalSubscript { .. } => PlaceStep::Index(CapturedValue::unknown()),
+        }
+    }
 }
 
 /// One structural goal row and its exact selected type/domain identity.
@@ -270,13 +292,6 @@ pub(crate) enum GoalOperation {
         element: CheckedType,
         maximum_length: u64,
     },
-    /// [MSR-1] the one measure a range reference has, its element count
-    /// [REF-4]. A range reference carries no region and no capacity, so the
-    /// element type is the whole of the row's identity beside the measure.
-    RangeMeasure {
-        measure: CheckedMeasure,
-        element: CheckedFlatElement,
-    },
     /// One [MSR-1] measure of a run [BLK-1] or a bump extent [PROV-1]. The
     /// measured kind is part of the row identity because the measure table
     /// gives each its own row, and the written constant is what a
@@ -296,12 +311,6 @@ pub(crate) enum GoalOperation {
         measured: MeasuredKind,
         element: CheckedElement,
         constant: Option<CheckedConst>,
-    },
-    /// One element of the run a range reference names, whose own [OP-4]
-    /// obligation has already been discharged before this expression is used
-    /// as a proof operand [REF-4].
-    RangeIndex {
-        element: CheckedFlatElement,
     },
 }
 

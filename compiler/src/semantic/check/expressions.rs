@@ -2,7 +2,7 @@ pub(in crate::semantic::check) mod calls;
 pub(in crate::semantic::check) mod flat_storage;
 mod places;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::syntax::NodeId;
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
@@ -17,10 +17,15 @@ use super::super::model::{
     CheckedWritablePlace, FloatType, IntegerType,
 };
 use super::super::places::ResolvedPlace;
-use super::references::AccessKind;
 use super::{
     CheckStop, Checker, Constructor, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
 };
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum AccessKind {
+    Read,
+    Move,
+}
 
 #[derive(Clone, Copy)]
 pub(in crate::semantic::check) enum PlaceUseContext {
@@ -33,6 +38,47 @@ struct PlaceUseOptions {
     explicit_move: bool,
     context: PlaceUseContext,
     loop_depth: usize,
+}
+
+/// One exact-target identity and every storage path a place may name.
+///
+/// A reference with one resolved member uses that member as `identity`, so
+/// distinct holders known to name the same place satisfy exact same-target
+/// judgments. A true join carries one selected address at run time but no
+/// statically selected member, so its identity remains rooted at the holder.
+/// Structural judgments always range over `members`: effects, readonly
+/// provenance, reference invalidation and overlap may not select one incoming
+/// path or replace several roots by a common prefix [REF-1].
+#[derive(Clone)]
+pub(in crate::semantic::check) struct ResolvedPlaceSet {
+    pub(in crate::semantic::check) identity: ResolvedPlace,
+    pub(in crate::semantic::check) members: Vec<ResolvedPlace>,
+}
+
+impl ResolvedPlaceSet {
+    pub(in crate::semantic::check) fn one(place: ResolvedPlace) -> Self {
+        Self {
+            identity: place.clone(),
+            members: vec![place],
+        }
+    }
+
+    pub(in crate::semantic::check) fn append_step(
+        &mut self,
+        step: super::super::places::PlaceStep,
+    ) {
+        self.identity.path.push(step);
+        for member in &mut self.members {
+            member.path.push(step);
+        }
+    }
+
+    pub(in crate::semantic::check) fn extend_fields(&mut self, fields: &[u32]) {
+        self.identity.extend_fields(fields);
+        for member in &mut self.members {
+            member.extend_fields(fields);
+        }
+    }
 }
 
 /// One formed and judged [SET-1] target.
@@ -48,8 +94,9 @@ pub(in crate::semantic::check) struct MutationTarget {
     /// binding for a `deref` target, whose [REF-2] validity is rechecked at
     /// the commit.
     pub(in crate::semantic::check) declaration: DeclarationId,
-    /// The resolved place this target writes [REF-1, OWN-7].
-    pub(in crate::semantic::check) place: ResolvedPlace,
+    /// The exact-target identity and complete resolved path set this target writes
+    /// [REF-1, OWN-7].
+    pub(in crate::semantic::check) place: ResolvedPlaceSet,
     /// The reference binding the target is reached through, when it is
     /// `deref(p)` or a path below one [SET-1]. Its [REF-2] validity is
     /// rechecked after the right-hand side.
@@ -297,7 +344,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         Ok(MutationTarget {
             declaration,
-            place: resolved,
+            place: ResolvedPlaceSet::one(resolved),
             through_reference: None,
             element: false,
             target: CheckedSetTarget::Place(CheckedWritablePlace {
@@ -1361,7 +1408,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                         effects,
                         access,
-                        access_kind,
                     ))
                 } else {
                     Ok(TypedExpression::owned_with_access(
@@ -1375,7 +1421,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                         effects,
                         access,
-                        access_kind,
                     ))
                 }
             }
@@ -1491,12 +1536,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<MutationTarget, CheckStop> {
         let place = self.resolve_explicit_place(node, node, bindings)?;
-        self.reject_readonly_resolved_write(node, &place.resolved, bindings)?;
+        if place
+            .resolved
+            .members
+            .iter()
+            .any(|member| matches!(member.root, crate::semantic::places::PlaceRoot::Constant(_)))
+        {
+            return self.issue_node(
+                SemanticRule::Const2,
+                node,
+                SemanticIssueKind::ImmutableSetTarget,
+            );
+        }
+        for member in &place.resolved.members {
+            self.reject_readonly_resolved_write(node, member, bindings)?;
+        }
         let local = bindings
             .get(&place.declaration)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         self.check_reference_valid(local, node)?;
-        if !self.reference_row_writes(function, &place.resolved, bindings)? {
+        let mut writable = true;
+        for member in &place.resolved.members {
+            writable &= self.reference_row_writes(function, member, bindings)?;
+        }
+        if !writable {
             return self.issue_node(
                 SemanticRule::Set1,
                 node,
@@ -1509,13 +1572,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.check_mutation_target_class(node, place.ty)?;
         let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(node, &place.resolved, bindings)? {
-            effects.add_write(path);
+        for member in &place.resolved.members {
+            for path in self.effect_paths_for_place(node, member, bindings)? {
+                effects.add_write(path);
+            }
         }
         let (binding, path) = self.explicit_container_path(&place.expression, node)?;
         Ok(MutationTarget {
             declaration: place.declaration,
-            place: place.resolved.clone(),
+            place: place.resolved,
             through_reference: Some(place.declaration),
             element: false,
             target: CheckedSetTarget::Storage(super::super::model::CheckedContainerRoot {
@@ -1551,7 +1616,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         };
         if !local.mode.is_reference() {
-            return Ok(local.live);
+            // [SET-1] a reference does not make a counted binder writable.
+            return Ok(local.live && !local.compiler_updated);
         }
         let Some(target) = self.state_path(place, bindings)? else {
             return Ok(false);
@@ -1565,49 +1631,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .zip(&target.steps)
                     .all(|(left, right)| left == right)
         }))
-    }
-
-    /// A borrowed descriptor replacement needs both writable descriptor-slot
-    /// lowering and retention of any descendant backing an enclosing target
-    /// already captured. The retiring buffer surface implements neither
-    /// completely. This is a capability stop after the source judgments, not
-    /// a writability rule. Inspect the selected value, so writes of its scalar
-    /// contents remain admitted even when an ancestor owns a buffer.
-    fn borrowed_descriptor_mutation_capability(
-        &self,
-        ty: CheckedType,
-    ) -> Result<Option<UnsupportedSemanticFeature>, CheckStop> {
-        let mut pending = vec![ty];
-        let mut visited = HashSet::new();
-        while let Some(current) = pending.pop() {
-            match current {
-                CheckedType::Buffer { .. } => {
-                    return Ok(Some(
-                        UnsupportedSemanticFeature::BorrowedBufferDescriptorMutation,
-                    ));
-                }
-                CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
-                    pending.push(self.element_type(element)?);
-                }
-                CheckedType::Nominal(id) if visited.insert(id) => match &self.nominal(id)?.kind {
-                    CheckedNominalKind::Struct { fields } => {
-                        pending.extend(fields.iter().map(|field| field.ty));
-                    }
-                    CheckedNominalKind::Enum { variants } => {
-                        pending.extend(
-                            variants
-                                .iter()
-                                .flat_map(|variant| variant.fields.iter().map(|field| field.ty)),
-                        );
-                    }
-                    CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
-                    CheckedNominalKind::Arena { content, .. } => pending.push(*content),
-                    CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
-                },
-                _ => {}
-            }
-        }
-        Ok(None)
     }
 
     pub(super) fn check_match_expression(

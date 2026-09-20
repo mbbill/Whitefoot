@@ -160,11 +160,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(field, Production::Atom)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let argument = self.check_call_argument_atom(function, atom, bindings, loop_depth)?;
-            // [TYPE-2] an argument naming a path that ends at or passes
-            // through a readonly field, at a reference parameter whose callee
-            // row writes that parameter, is a hard error at the complete
-            // argument `atom`. The checked argument supplies the resolved
-            // origin path through aliases and reborrows [REF-1].
+            // [CONST-2, OWN-11, TYPE-2] every possible origin of a written
+            // reference argument must be writable. The checked argument
+            // retains those paths through aliases and control-flow joins.
             if parameter.mode.is_reference()
                 && signature
                     .declared_effects
@@ -172,7 +170,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .iter()
                     .any(|entry| entry.root == parameter.declaration)
             {
-                self.reject_readonly_written_argument(atom, &argument, bindings)?;
+                self.check_written_reference_argument(atom, &argument, bindings)?;
             }
             // [TYPE-8] `&[T]` is a kind, so a checked range value carries the
             // element type T beside its `Range` mode. Comparing that element
@@ -383,9 +381,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         Ok(Some(
             super::super::super::super::model::CheckedAllocationFit {
+                cell,
                 element,
                 layout_ceiling: self.layout_ceiling(element, node)?,
                 count,
+                source_length_upper_bound: None,
             },
         ))
     }
@@ -915,7 +915,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     })
                 }
                 _ => match passed_place {
-                    Some(place) => self.goal_referent_image(place, expected_type, bindings)?,
+                    Some(place) => self.goal_referent_image(place, expected_type, atom)?,
                     None => GoalExpression::Datum(GoalDatum::EvaluatedValue {
                         function: caller,
                         occurrence: EvaluatedValueOccurrence::CallArgument {
@@ -931,7 +931,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if expected_mode != CheckedMode::Own {
             if let Some(place) = passed_place {
-                return self.goal_referent_image(place, expected_type, bindings);
+                return self.goal_referent_image(place, expected_type, atom);
             }
             // FN-1's candidate protects every mutable origin a returned
             // borrow may reach, including when the delivered value is a
@@ -1010,18 +1010,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         path: root.place_path(),
                     },
                     root.ty,
-                    bindings,
+                    atom,
                 )?,
             )),
             CheckedExpression::RangeMeasure { measure, root } => Some((
-                GoalOperation::RangeMeasure {
+                GoalOperation::ContainerMeasure {
                     measure: *measure,
-                    element: root.element,
+                    measured: super::super::super::super::model::MeasuredKind::Range,
+                    element: Some(root.element),
+                    constant: None,
                 },
                 GoalExpression::Datum(GoalDatum::Place {
                     root: root.binding,
                     projections: Vec::new(),
-                    ty: root.element.ty(),
+                    ty: root.element_type,
                 }),
             )),
             _ => None,
@@ -1072,12 +1074,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         place: &ResolvedPlace,
         ty: CheckedType,
-        bindings: &HashMap<DeclarationId, LocalBinding>,
+        node: NodeId,
     ) -> Result<GoalExpression, CheckStop> {
         let mut projections = Vec::new();
         for step in &place.path {
             match step {
                 PlaceStep::Field(field) => projections.push(GoalProjection::Field(*field)),
+                PlaceStep::Payload { variant, field } => {
+                    projections.push(GoalProjection::Payload {
+                        variant: *variant,
+                        field: *field,
+                    });
+                }
                 PlaceStep::Deref => projections.push(GoalProjection::Deref),
                 PlaceStep::Index(index) => {
                     projections.push(GoalProjection::Subscript(index.goal_identity()));
@@ -1090,13 +1098,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 PlaceStep::Range(range) => {
                     projections.push(GoalProjection::Range(*range));
                 }
-                // [ENT-2] a goal datum's place carries field selections,
-                // `deref` wrappings and subscripts; a payload, part or
-                // measure step is no datum spelling, so the image stops here.
-                PlaceStep::Payload { .. } | PlaceStep::Part(_) | PlaceStep::Measure(_) => break,
+                // A window-part effect is not a value projection. Failing
+                // to represent a value must not substitute its parent.
+                PlaceStep::Part(_) | PlaceStep::Measure(_) => {
+                    return self.unsupported(
+                        super::super::super::super::UnsupportedSemanticFeature::CompositeValues,
+                        node,
+                    );
+                }
             }
         }
-        let _ = bindings;
         let datum = match place.root {
             PlaceRoot::Constant(constant) => GoalDatum::NamedConst {
                 declaration: self
@@ -1166,7 +1177,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     if let Some(reference) = &local.reference {
                         (
                             match reference.paths.as_slice() {
-                                [path] => self.goal_referent_image(path, local.ty, bindings)?,
+                                [path] => self.goal_referent_image(path, local.ty, place)?,
                                 // [REF-1] a joined reference still denotes
                                 // one selected referent, but no member of its
                                 // possible-target set is its unconditional

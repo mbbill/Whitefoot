@@ -366,10 +366,8 @@ pub(super) fn call_projection(value: &CheckedExpression) -> Option<CallProjectio
 /// One statement of a block, classified once for every adjacency it takes
 /// part in.
 ///
-/// `site` is absent for a statement the checked model gives no node of its
-/// own — an expression statement, a `match`, a `loop`, a `break`. Every such
-/// form is refused below, so an absent site is never a run member and never a
-/// reported pair member; it still ends the run it interrupts.
+/// A call-rooted match uses its scrutinee call's node as its site. Other
+/// statements without a node of their own remain unreported run boundaries.
 struct Classified {
     site: Option<PermissionSite>,
     footprint: Result<Footprint, Refusal>,
@@ -653,13 +651,33 @@ impl<'check> Program<'check> {
                 "a break statement",
                 Err(Refusal::Exit(ExitKind::BlockExit)),
             ),
-            // Forms carrying their own control flow and their own drops. A
-            // `match` statement's arms are statements this walk does not
-            // fold into the statement's own footprint, so the statement is
-            // refused rather than judged on its scrutinee alone. v0.59's
-            // [PAR-1] carried a sentence putting a scrutinee call's arms
-            // outside the judged statement; v0.60's does not, and the
-            // fail-closed reading of its absence is this refusal.
+            // A call-rooted match can be the last actualized member: its
+            // call joins before dispatch. PAR-1 still judges the complete
+            // statement, so include every arm's footprint, not only the
+            // condition's call. An unclassified or exiting arm fails closed.
+            CheckedStatement::Match {
+                scrutinee: value @ CheckedExpression::UserCall { call, .. },
+                arms,
+                ..
+            } => {
+                let mut footprint = self.value_footprint(places, value, call);
+                let mut result = Ok(());
+                for arm in arms {
+                    for child in &arm.body {
+                        match self.classify(places, child).footprint {
+                            Ok(child) => footprint.absorb(&child),
+                            Err(refusal) => result = Err(refusal),
+                        }
+                    }
+                }
+                (
+                    Some(call),
+                    None,
+                    Some(call.clone()),
+                    "a call-rooted match",
+                    result.map(|()| footprint),
+                )
+            }
             CheckedStatement::Match { .. } => (
                 None,
                 None,
@@ -876,6 +894,7 @@ impl<'check> Program<'check> {
 fn statement_value(statement: &CheckedStatement) -> Option<&CheckedExpression> {
     match statement {
         CheckedStatement::Let { value, .. } => Some(value),
+        CheckedStatement::Match { scrutinee, .. } => Some(scrutinee),
         _ => None,
     }
 }
@@ -930,6 +949,9 @@ impl Footprint {
         self.reads.extend(other.reads.iter().cloned());
         self.operand_reads
             .extend(other.operand_reads.iter().cloned());
+        if let Some(unresolved) = &other.unresolved {
+            self.unresolved.get_or_insert_with(|| unresolved.clone());
+        }
     }
 
     /// Every place this footprint reads, in either half.
@@ -1121,8 +1143,6 @@ pub(super) fn visit_read_bindings(
     match expression {
         CheckedExpression::Binding { binding, .. }
         | CheckedExpression::Project { binding, .. }
-        | CheckedExpression::BorrowBox { binding, .. }
-        | CheckedExpression::ReborrowAddressed { binding, .. }
         | CheckedExpression::DerefAddressed { binding, .. } => note(*binding),
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ContainerMeasure { root, .. }
@@ -1131,8 +1151,7 @@ pub(super) fn visit_read_bindings(
                 note(binding);
             }
         }
-        CheckedExpression::BorrowBuffer { root, .. }
-        | CheckedExpression::BufferMeasure { root, .. }
+        CheckedExpression::BufferMeasure { root, .. }
         | CheckedExpression::BufferIndex { root, .. } => note(root.binding),
         CheckedExpression::RangeMeasure { root, .. }
         | CheckedExpression::RangeIndex { root, .. } => note(root.binding),
@@ -1190,7 +1209,6 @@ fn collect_operand_reads(
         | CheckedExpression::Reinterpret { .. }
         | CheckedExpression::BooleanOperation { .. }
         | CheckedExpression::EnumEquality { .. }
-        | CheckedExpression::ArrayFill { .. }
         | CheckedExpression::ConstructStruct { .. }
         | CheckedExpression::ConstructEnum { .. }
         | CheckedExpression::ProjectValue { .. } => {}
@@ -1247,27 +1265,10 @@ fn collect_operand_reads(
         CheckedExpression::UserCall { .. } => {
             footprint.unresolved = Some(node.clone());
         }
-        // One clause-only datum; no executable statement carries one.
-        CheckedExpression::PostconditionResultMeasure { .. } => {}
-        // Expression forms whose v0.60 operation left [OP-1]'s table and
-        // which the checker no longer builds: the buffer and arena formers
-        // [BLK-1, STOR-2], the box former [OP-13 builds one through a call],
-        // and the two reborrow shapes [OWN-6]. An occurrence would be
-        // storage this walk cannot account for, so it fails closed rather
-        // than contributing nothing.
-        CheckedExpression::BufferFill { .. }
-        | CheckedExpression::BufferVacant { .. }
-        | CheckedExpression::BufferFits { .. }
-        | CheckedExpression::BufferMeasure { .. }
+        CheckedExpression::BufferMeasure { .. }
         | CheckedExpression::BufferIndex { .. }
-        | CheckedExpression::BorrowBuffer { .. }
-        | CheckedExpression::BorrowBox { .. }
-        | CheckedExpression::ReborrowAddressed { .. }
-        | CheckedExpression::BoxNew { .. }
         | CheckedExpression::BoxDeref { .. }
-        | CheckedExpression::BoxTake { .. }
-        | CheckedExpression::ArenaNew { .. }
-        | CheckedExpression::ArenaDeref { .. } => {
+        | CheckedExpression::BoxTake { .. } => {
             footprint.unresolved = Some(node.clone());
         }
     }

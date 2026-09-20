@@ -244,9 +244,8 @@ fn main() -> status: own ExitStatus pure {
 }
 
 /// Two range references of one origin carrying different bases. Their
-/// per-iteration extents interleave across iterations, and "all proved range
-/// references whose resolved origins overlap must name the same origin place
-/// and carry identical s and b images", so the second one denies.
+/// per-iteration writes interleave across iterations, so the two written
+/// partitions on one origin cannot have different maps.
 #[test]
 fn disjoint_siblings_with_shifted_partitions_can_cross_between_iterations() {
     let source = RUNTIME_PARTITION_SOURCE.replace(
@@ -257,6 +256,44 @@ fn disjoint_siblings_with_shifted_partitions_can_cross_between_iterations() {
         denied(source.as_bytes(), "partition", 2),
         LoopDenial::SharedWrite { .. }
     ));
+}
+
+#[test]
+fn a_shifted_read_of_a_written_origin_can_cross_between_iterations() {
+    let source = RUNTIME_PARTITION_SOURCE.replace(
+        "    let painted = paint(output: row);",
+        "    let painted = paint(output: row);\n    let shifted = end + stride;\n    invariant room: shifted <= total {\n      use stride times (i + 2_u64 <= 6_u64);\n    }\n    let other = &values.inner[end..shifted];\n    let size = deref(other).len;\n    if 0_u64 < size {\n      let observed = deref(other)[0_u64];\n    }",
+    );
+    assert!(matches!(
+        denied(source.as_bytes(), "partition", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+}
+
+#[test]
+fn forming_an_unused_shifted_reference_reads_no_written_elements() {
+    let source = RUNTIME_PARTITION_SOURCE.replace(
+        "    let painted = paint(output: row);",
+        "    let painted = paint(output: row);\n    let shifted = end + stride;\n    invariant room: shifted <= total {\n      use stride times (i + 2_u64 <= 6_u64);\n    }\n    let other = &values.inner[end..shifted];",
+    );
+    assert_eq!(
+        permitted(source.as_bytes(), "partition").actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+}
+
+#[test]
+fn read_only_range_work_does_not_fabricate_an_independent_write_map() {
+    let source = RUNTIME_PARTITION_SOURCE
+        .replace("writes(output)", "reads(output)")
+        .replace(
+            "    set deref(output)[x] = 1_u64;",
+            "    let observed = deref(output)[x];",
+        );
+    assert_eq!(
+        permitted(source.as_bytes(), "partition").actualization,
+        None
+    );
 }
 
 /// "A whole-origin access ... denies." The guarded element read reaches the
@@ -1267,12 +1304,12 @@ fn an_unproved_source_premise_is_rejected_before_affine_map_permission() {
   for @fill (i in 0_u64..limit) {
     set output[i] = i;
   }
-  return move output;
+  return output;
 }
 
 fn main() -> status: own ExitStatus pure {
   let output = array_filled::<u64, 64>(value: 0_u64);
-  let filled = fill(output: move output, limit: 64_u64);
+  let filled = fill(output: output, limit: 64_u64);
   return exit_status(code: 0_u8);
 }
 "#;

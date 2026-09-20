@@ -69,7 +69,8 @@ const U64_CELL: &[u8] = br#"fn main() -> status: own ExitStatus pure {
 "#;
 
 /// [STOR-6] multiplies the retained source bound for a runtime-capacity
-/// construction by the actual target stride and requires the result to fit the
+/// construction by the actual target stride, adds its emitted header, and
+/// requires the result to fit the
 /// allocator-parameter domain. The affine invariant supplies that bound, and
 /// the boundary is pinned from both sides at the exact byte.
 ///
@@ -82,10 +83,11 @@ fn affine_invariant_ceiling_controls_the_exact_selected_target_boundary() {
     with_ir(AFFINE_INVARIANT_BOUNDED_ALLOCATION, |program| {
         let host = TargetLayout::host().expect("the backend test runs on a supported host layout");
 
-        let exact = host.with_runtime_allocation_limits_for_test(2000, 8);
+        // Array<u16> has one u64 header followed by 1000 two-byte elements.
+        let exact = host.with_runtime_allocation_limits_for_test(2008, 8);
         assert_eq!(validate_program(exact, program), Ok(()));
 
-        let one_byte_short = host.with_runtime_allocation_limits_for_test(1999, 8);
+        let one_byte_short = host.with_runtime_allocation_limits_for_test(2007, 8);
         assert_eq!(
             validate_program(one_byte_short, program),
             Err(TargetLayoutFailure::Unrepresentable(
@@ -226,13 +228,15 @@ fn main() -> status: own ExitStatus pure {
 /// writer could have written.
 #[test]
 fn a_runtime_capacity_window_crosses_functions_updates_and_frees_once() {
+    // STOR-1 stores the length and elements in one allocation. The largest
+    // u16 count is (i64::MAX - 8) / 2, including the Array header.
     let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
-  ensures result <= 4611686018427387903_u64;
+  ensures result <= 4611686018427387899_u64;
 } {
-  if n <= 4611686018427387903_u64 {
+  if n <= 4611686018427387899_u64 {
     return n;
   } else {
-    return 4611686018427387903_u64;
+    return 4611686018427387899_u64;
   }
 }
 
@@ -448,18 +452,22 @@ fn range_references_cross_helpers_without_transferring_ownership() {
     // second comparison remains for either proved window bound.
     assert_eq!(fill.matches("icmp ult i64").count(), 1);
     assert_eq!(fold.matches("icmp ult i64").count(), 1);
-    // The ported corpus case has six status exits: the four length checks
-    // before the two calls, the checksum branch and the success exit. The two
-    // store-refusal arms went with the fallible take [STOR-8].
+    // The case has six status exits: the four length checks before the two
+    // calls, the checksum branch and the success exit.
     assert!(!main.contains("call void @wf_trap"));
     assert_eq!(main.matches("call void @wf_exit_status").count(), 6);
-    // KEPT AS WRITTEN for the lowering port: the release count is a property
-    // of how the `Columns` struct's two `Box` cells are released on each of
-    // those edges - inline per cell, or one derived helper call per edge - and
-    // that is the lowering's choice, not the source's. Seventeen was the v0.59
-    // figure over the fallible-take shape; re-derive it against the ported
-    // case and the v0.60 release walk [STOR-3, PROV-6].
-    assert_eq!(main.matches("call void @free").count(), 17);
+    // Every exit leaves the scope that owns exactly the two `Box` fields.
+    // Check each return edge independently so one edge cannot leak while
+    // another happens to contribute the missing releases [STOR-3, PROV-6].
+    let exits = main
+        .split("ret void")
+        .filter(|block| block.contains("call void @wf_exit_status"))
+        .collect::<Vec<_>>();
+    assert_eq!(exits.len(), 6);
+    for exit in exits {
+        assert_eq!(exit.matches("call void @free").count(), 2, "{exit}");
+    }
+    assert_eq!(main.matches("call void @free").count(), 12);
     assert!(main.contains("call i8 @wf_fill"));
     assert!(main.contains("call i64 @wf_fold"));
 
@@ -545,10 +553,8 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
     let checksum = emitted_function(&llvm, "checksum");
     let main = emitted_function(&llvm, "main");
     // The case lends the pool as two range references and one ordinary
-    // reference to a scalar-bearing struct. KEPT AS WRITTEN for the lowering
-    // port: the `{ ptr, i64 }` pair below is the v0.59 emitted shape of a
-    // reference into a run, and [REF-4]'s range reference is the successor
-    // whose emitted pair the lowering port fixes.
+    // reference to a scalar-bearing struct. A range reference crosses this
+    // boundary as its `{ ptr, i64 }` address-and-length pair [REF-4].
     assert!(build.starts_with("define void @wf_build(ptr %wf.result, "));
     assert!(checksum.starts_with("define void @wf_checksum(ptr %wf.result, "));
     for function in [build, checksum] {
@@ -575,16 +581,21 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
     assert!(!build.contains("call void @free"));
     assert!(!checksum.contains("call void @free"));
     // Bounds and arithmetic failures are typed results rather than written
-    // proofs, so build and checksum contain no trap edge. KEPT AS WRITTEN for
-    // the lowering port: the status-exit and release counts below were derived
-    // over the v0.59 bump-extent shape, and the ported corpus case builds its
-    // two runs by [OP-13] over the one heap [STOR-8] instead; re-derive both
-    // against that case.
+    // proofs, so build and checksum contain no trap edge. Main owns two
+    // `Box<Slots<u64>>` cells and releases both on each of its five exits.
     assert!(!build.contains("call void @wf_trap"));
     assert!(!checksum.contains("call void @wf_trap"));
     assert!(!main.contains("call void @wf_trap"));
     assert_eq!(main.matches("call void @wf_exit_status").count(), 5);
-    assert_eq!(main.matches("call void @free").count(), 0);
+    let exits = main
+        .split("ret void")
+        .filter(|block| block.contains("call void @wf_exit_status"))
+        .collect::<Vec<_>>();
+    assert_eq!(exits.len(), 5);
+    for exit in exits {
+        assert_eq!(exit.matches("call void @free").count(), 2, "{exit}");
+    }
+    assert_eq!(main.matches("call void @free").count(), 10);
 }
 
 /// The case counts lines, words and bytes over two chunks and combines the
@@ -737,11 +748,9 @@ fn main() -> status: own ExitStatus pure {
     // target captures that field's block address once before the RHS, and the
     // store uses the captured address without rereading its parent.
     //
-    // KEPT AS WRITTEN for the lowering port: `{ ptr, i64 }` was the v0.59
-    // `buffer<u16>` descriptor. A v0.60 `Box<Array<u16>>` is one cell holding
-    // one block [TYPE-9, STOR-1], so the captured operand's emitted shape is
-    // the lowering's to fix; the property under test - captured once, before
-    // the RHS, and not reread - is unchanged.
+    // STOR-1 places the descriptor in the one heap object. Capture therefore
+    // loads the Box pointer from its field slot, then forms an address into
+    // that object; it no longer loads a by-value {pointer, length} descriptor.
     assert_eq!(update.matches("getelementptr inbounds %wf.t0,").count(), 2);
     let guard = update
         .find("icmp ult i64")
@@ -754,16 +763,40 @@ fn main() -> status: own ExitStatus pure {
         .expect("the target must receive one store");
     assert_eq!(update.matches("call i16 @wf_replacement").count(), 1);
     let captured = update
-        .rfind(" = load { ptr, i64 }, ptr ")
-        .expect("the projected window block must be captured");
-    let descriptor = update[..captured]
+        .rfind(" = load ptr, ptr ")
+        .expect("the projected Box pointer must be captured");
+    let pointer = update[..captured]
         .lines()
         .next_back()
-        .expect("descriptor definition")
+        .expect("captured pointer definition")
         .trim();
     assert!(guard < captured && captured < rhs && rhs < store);
-    assert!(update[rhs..store].contains(&format!("extractvalue {{ ptr, i64 }} {descriptor}, 0")));
-    assert!(!update[rhs..store].contains("load { ptr, i64 }"));
+    assert_eq!(update[guard..rhs].matches(" = load ptr, ptr ").count(), 1);
+    let address = update[captured..rhs]
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_suffix(&format!(" = getelementptr i8, ptr {pointer}, i64 0"))
+        })
+        .expect("the captured pointer forms the array address before the RHS");
+    let element = update[rhs..store]
+        .lines()
+        .find(|line| {
+            line.contains(&format!(
+                " = getelementptr inbounds {{ i64, [0 x i16] }}, ptr {address}, i64 0, i32 1, i64 "
+            ))
+        })
+        .and_then(|line| line.trim().split_once(" = ").map(|(result, _)| result))
+        .expect("the post-RHS element address uses exactly the captured array address");
+    assert!(
+        update[store..]
+            .lines()
+            .next()
+            .unwrap()
+            .ends_with(&format!("ptr {element}"))
+    );
+    assert!(!update[rhs..store].contains("load ptr, ptr "));
+    assert!(!update[rhs..store].contains("getelementptr inbounds %wf.t0,"));
     assert!(!update.contains("call void @wf_trap"));
 
     let output = compile_and_run(&llvm);

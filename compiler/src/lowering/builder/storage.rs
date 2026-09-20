@@ -124,9 +124,7 @@ fn collect_borrowed_place_expression(
 ) {
     match expression {
         CheckedExpression::Binding { binding, .. }
-        | CheckedExpression::DerefAddressed { binding, .. }
-        | CheckedExpression::ReborrowAddressed { binding, .. }
-        | CheckedExpression::BorrowBox { binding, .. } => {
+        | CheckedExpression::DerefAddressed { binding, .. } => {
             bindings.insert(*binding);
         }
         CheckedExpression::Project { binding, .. } => {
@@ -147,9 +145,6 @@ fn collect_borrowed_place_expression(
 
 fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<BindingId>) {
     match expression {
-        CheckedExpression::BorrowBox { binding, .. } => {
-            bindings.insert(*binding);
-        }
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ReadStorage { root, .. } => {
             bindings.extend(root.binding());
@@ -173,12 +168,8 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         }
         CheckedExpression::NumericConversion { value, .. }
         | CheckedExpression::Reinterpret { value, .. }
-        | CheckedExpression::ArrayFill { value, .. }
-        | CheckedExpression::BoxNew { value, .. }
         | CheckedExpression::BoxDeref { value, .. }
         | CheckedExpression::BoxTake { value, .. }
-        | CheckedExpression::ArenaNew { value, .. }
-        | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => collect_expression(value, bindings),
         CheckedExpression::ArrayIndex { offset, .. }
         | CheckedExpression::RangeIndex { offset, .. } => collect_expression(offset, bindings),
@@ -204,14 +195,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
             collect_expression(start, bindings);
             collect_expression(end, bindings);
         }
-        CheckedExpression::BufferFill { length, value, .. } => {
-            collect_expression(length, bindings);
-            collect_expression(value, bindings);
-        }
-        CheckedExpression::BufferVacant { length, .. }
-        | CheckedExpression::BufferFits { length, .. } => collect_expression(length, bindings),
-        CheckedExpression::BufferMeasure { root, .. }
-        | CheckedExpression::BorrowBuffer { root, .. } => {
+        CheckedExpression::BufferMeasure { root, .. } => {
             bindings.insert(root.binding);
         }
         CheckedExpression::Constant(_)
@@ -219,8 +203,6 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::Binding { .. }
         | CheckedExpression::ArrayMeasure { .. }
         | CheckedExpression::RangeMeasure { .. }
-        | CheckedExpression::PostconditionResultMeasure { .. }
-        | CheckedExpression::ReborrowAddressed { .. }
         | CheckedExpression::DerefAddressed { .. }
         | CheckedExpression::Project { .. } => {}
     }
@@ -314,15 +296,11 @@ impl IrBuilder<'_> {
         let ty = lower_type(self.erasure, checked_ty)?;
         let address = match expression {
             CheckedExpression::Binding { binding, .. }
-            | CheckedExpression::DerefAddressed { binding, .. }
-            | CheckedExpression::ReborrowAddressed { binding, .. } => {
+            | CheckedExpression::DerefAddressed { binding, .. } => {
                 self.lower_addressed_borrow(*binding, ty)?
             }
             CheckedExpression::BorrowAddressed { root, .. } => self.lower_place_address(root)?,
             CheckedExpression::ReadStorage { root, .. } => self.lower_place_address(root)?,
-            CheckedExpression::BorrowBox {
-                binding, nominal, ..
-            } => self.lower_addressed_borrow(*binding, IrType::Nominal(self.erased(*nominal)))?,
             CheckedExpression::BoxDeref {
                 nominal,
                 referent,

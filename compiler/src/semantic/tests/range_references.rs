@@ -102,6 +102,46 @@ fn a_write_through_a_range_reference_keeps_both_lengths() {
     ));
 }
 
+/// [REF-4, MSR-2] overlapping views still carry distinct immutable range
+/// descriptors. A direct element commit and a projected callee element write
+/// through the wider view therefore preserve the narrower view's formed
+/// length. Whole-origin replacement remains the [REF-2] rejection exercised
+/// by `references::a_reslice_of_a_joined_range_is_invalidated_by_either_origin_replacement`.
+#[test]
+fn overlapping_range_element_writes_preserve_each_formed_length() {
+    let source = br#"fn needs_two(part: &[u8]) -> result: own unit reads(part) contract {
+  requires deref(part).len == 2_u64;
+} {
+  let observed = deref(part).len;
+  return unit;
+}
+
+fn write_first(part: &[u8]) -> result: own unit writes(part) contract {
+  requires 0_u64 < deref(part).len;
+} {
+  set deref(part)[0_u64] = 9_u8;
+  return unit;
+}
+
+fn exercise(values: &Slots<u8, 4>) -> result: own unit writes(values) contract {
+  requires deref(values).len == 3_u64;
+} {
+  let wider = &deref(values)[0_u64..3_u64];
+  let narrower = &deref(values)[1_u64..3_u64];
+  set deref(wider)[1_u64] = 7_u8;
+  let after_direct = needs_two(part: narrower);
+  let written = write_first(part: wider);
+  let after_call = needs_two(part: narrower);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
 /// [CALL-1] through a reference the callee only reads, every fact survives.
 #[test]
 fn a_read_only_reference_argument_keeps_every_fact() {

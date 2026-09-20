@@ -64,11 +64,11 @@
 //! images `[s*i+b, s*i+b+s)` with `s` and `b` fixed throughout L and both
 //! proved nonnegative. For distinct indices `i < j`, discreteness gives
 //! `i+1 <= j` and nonnegative `s` gives `s*i+b+s <= s*j+b`, so the half-open
-//! ranges do not overlap under [OWN-7]. All proved range references whose
-//! origins overlap must name the same origin and carry identical images;
-//! every element access overlapping such an origin must descend from one of
-//! them, and mixing an element map with an overlapping range reference
-//! denies.
+//! ranges do not overlap under [OWN-7]. Proved range references reached by
+//! writes and whose origins overlap must name the same origin and carry
+//! identical images. Every element access overlapping a written origin must
+//! descend from a range with that partition. Read-only input origins may
+//! overlap across iterations; they require no write partition.
 //!
 //! Forming a range reference reads its endpoints, reads no element content,
 //! and authorizes no change to the origin's storage. There is no loan
@@ -392,6 +392,9 @@ struct ProvenRangeReference {
     place: ResolvedPlace,
     argument: NodePath,
     map: ProvedRangePartition,
+    /// Formation alone grants no write authority or independent-map work.
+    /// The body's resolved write footprints select its actual partitions.
+    written: bool,
 }
 
 /// One source read occurrence and the places reached by that spelling.
@@ -606,7 +609,7 @@ impl<'check> Survey<'check, '_> {
             if self.is_iteration_own(&write.place) {
                 continue;
             }
-            if self.covering_range_reference(&write.place).is_some() {
+            if self.record_range_write(&write.place) {
                 continue;
             }
             if let Some(map) = affine_map
@@ -749,34 +752,31 @@ impl<'check> Survey<'check, '_> {
         else {
             return;
         };
-        // "Same-iteration sibling separation alone cannot establish
-        // cross-iteration independence between two different range
-        // references": two overlapping origins must name one place and carry
-        // identical images.
-        let oracle = UnprovedSeparations;
-        if self.range_references.iter().any(|existing| {
-            self.places.overlaps(&oracle, &existing.origin, &origin)
-                && (existing.origin != origin
-                    || existing.map.stride != map.stride
-                    || existing.map.base != map.base)
-        }) {
-            self.shared.get_or_insert(node.clone());
-        }
+        // Compare partitions only after the complete body's footprints have
+        // selected written origins. Overlapping read-only input ranges need
+        // no common map, and forming a range reads no element content.
         self.range_references.push(ProvenRangeReference {
             origin,
             place: place.clone(),
             argument: obligation.clone(),
             map,
+            written: false,
         });
     }
 
     /// The proved range reference whose extent contains this place, when one
     /// does. A descendant of a proved range inherits its per-iteration
     /// extent; nothing else does.
-    fn covering_range_reference(&self, place: &ResolvedPlace) -> Option<&ProvenRangeReference> {
-        self.range_references
-            .iter()
+    fn record_range_write(&mut self, place: &ResolvedPlace) -> bool {
+        let Some(reference) = self
+            .range_references
+            .iter_mut()
             .find(|reference| reference.place.contains(place))
+        else {
+            return false;
+        };
+        reference.written = true;
+        true
     }
 
     /// One write into storage that outlives the iteration.
@@ -845,13 +845,20 @@ impl<'check> Survey<'check, '_> {
     /// condition 2 and *widen* permission.
     fn record_reads(&mut self, expression: &CheckedExpression) {
         let occurrence = match expression {
-            // Naming a path reads no element content [REF-1, REF-4], but the
-            // formation is an occurrence of its root binding and its place is
-            // what a proved range reference must be descended from, so both
-            // are recorded here and the formation's own endpoint atoms are
-            // this node's children.
-            CheckedExpression::BorrowAddressed { root, .. }
-            | CheckedExpression::ContainerMeasure { root, .. } => root
+            // Forming a reference reads no content, but naming an
+            // accumulator outside its one combine operand still violates
+            // PAR-2's occurrence restriction. Keep the occurrence without
+            // inventing an element-read footprint for address formation.
+            CheckedExpression::BorrowAddressed { root, .. } => {
+                if let Some(binding) = root.binding() {
+                    self.reads.push(ReadOccurrence {
+                        binding,
+                        places: Vec::new(),
+                    });
+                }
+                None
+            }
+            CheckedExpression::ContainerMeasure { root, .. } => root
                 .binding()
                 .map(|binding| (binding, self.places.resolve(root.root, &container_steps(root)))),
             // A subscripted storage read: its own discharged [OP-4] image is
@@ -909,6 +916,23 @@ impl<'check> Survey<'check, '_> {
                 }
                 Some((*binding, places))
             }
+            // A direct subscript of a runtime-capacity `Array` [TYPE-9]. Its
+            // checked buffer root is the complete place above the selected
+            // element, so it participates in the same retained affine-map
+            // family as a constant-capacity `Array` subscript.
+            CheckedExpression::BufferIndex {
+                root, obligation, ..
+            } => {
+                let places = self
+                    .places
+                    .resolve(PlaceRoot::Binding(root.binding), &root.place_path());
+                if let Some(map) = self.proven_affine_map_at(obligation) {
+                    for root in places.iter().cloned() {
+                        self.element_reads.push(ProvenElementRead { root, map });
+                    }
+                }
+                Some((root.binding, places))
+            }
             CheckedExpression::ArrayMeasure {
                 root: CheckedArrayRoot::Binding { binding, fields },
                 ..
@@ -930,36 +954,21 @@ impl<'check> Survey<'check, '_> {
             | CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::UserCall { .. }
-            | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::IntegerOperation { .. }
             | CheckedExpression::FloatOperation { .. }
             | CheckedExpression::NumericConversion { .. }
             | CheckedExpression::Reinterpret { .. }
             | CheckedExpression::BooleanOperation { .. }
             | CheckedExpression::EnumEquality { .. }
-            | CheckedExpression::ArrayFill { .. }
             | CheckedExpression::ConstructStruct { .. }
             | CheckedExpression::ConstructEnum { .. }
             // Naming a path reads no element content [REF-1, REF-4]; the
             // endpoints are this node's children.
             | CheckedExpression::RangeOf { .. }
             | CheckedExpression::ProjectValue { .. } => None,
-            // Expression forms whose v0.60 operation left [OP-1]'s table and
-            // which the checker no longer builds. An occurrence would be
-            // storage this walk cannot account for, so the body is refused.
-            CheckedExpression::BufferFill { .. }
-            | CheckedExpression::BufferVacant { .. }
-            | CheckedExpression::BufferFits { .. }
-            | CheckedExpression::BufferMeasure { .. }
-            | CheckedExpression::BufferIndex { .. }
-            | CheckedExpression::BorrowBuffer { .. }
-            | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::ReborrowAddressed { .. }
-            | CheckedExpression::BoxNew { .. }
+            CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::BoxDeref { .. }
-            | CheckedExpression::BoxTake { .. }
-            | CheckedExpression::ArenaNew { .. }
-            | CheckedExpression::ArenaDeref { .. } => {
+            | CheckedExpression::BoxTake { .. } => {
                 self.refuse_form("an expression form this version no longer writes");
                 None
             }
@@ -1037,7 +1046,7 @@ impl<'check> Survey<'check, '_> {
             if self.is_iteration_own(&write.place) {
                 continue;
             }
-            if self.covering_range_reference(&write.place).is_some() {
+            if self.record_range_write(&write.place) {
                 continue;
             }
             self.shared.get_or_insert(write.argument.clone());
@@ -1084,7 +1093,9 @@ impl<'check> Survey<'check, '_> {
                 accumulator: accumulate.binding,
                 combine: accumulate.combine,
             })
-        } else if self.element_writes.is_empty() && self.range_references.is_empty() {
+        } else if self.element_writes.is_empty()
+            && !self.range_references.iter().any(|range| range.written)
+        {
             None
         } else {
             Some(LoopActualization::IndependentMap)
@@ -1128,13 +1139,21 @@ impl<'check> Survey<'check, '_> {
         self.exit.map(|edge| LoopDenial::Exit { edge })
     }
 
-    /// "Every element access overlapping such an origin must descend from one
-    /// of those identical range references; ... A whole-origin access, a
-    /// different range reference, an unresolved origin, or mixing an element
-    /// map with an overlapping range reference denies."
+    /// Written origins must have one map, and every access to one of those
+    /// origins must stay in that map's current-iteration extent. Read-only
+    /// origins carry no cross-iteration write conflict.
     fn range_reference_coverage(&self) -> Option<LoopDenial> {
         let oracle = UnprovedSeparations;
-        for reference in &self.range_references {
+        for reference in self.range_references.iter().filter(|range| range.written) {
+            let incompatible_write = self.range_references.iter().any(|other| {
+                other.written
+                    && self
+                        .places
+                        .overlaps(&oracle, &reference.origin, &other.origin)
+                    && (reference.origin != other.origin
+                        || reference.map.stride != other.map.stride
+                        || reference.map.base != other.map.base)
+            });
             let covered = |place: &ResolvedPlace| {
                 self.range_references.iter().any(|assigned| {
                     assigned.origin == reference.origin
@@ -1152,7 +1171,7 @@ impl<'check> Survey<'check, '_> {
                 self.places
                     .overlaps(&oracle, &reference.origin, &written.root)
             });
-            if uncovered_read || mixed_element_map {
+            if incompatible_write || uncovered_read || mixed_element_map {
                 return Some(LoopDenial::SharedWrite {
                     argument: reference.argument.clone(),
                 });

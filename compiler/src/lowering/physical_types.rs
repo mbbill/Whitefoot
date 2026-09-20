@@ -32,6 +32,27 @@ pub(super) fn base_elements(
         .flat_map(specialize::executable_types)
         .collect::<Vec<_>>();
     pending.extend(data.constants.iter().map(|constant| constant.ty));
+    // [REF-4, TYPE-8] a range parameter carries its element kind separately
+    // from `CheckedType`: the written parameter type is the element type, so
+    // the ordinary executable-type walk cannot discover the interned element
+    // handle. Seed those handles explicitly before building the physical map;
+    // otherwise every range-bearing prelude signature reaches lowering with
+    // a `None` element even when the element itself is concrete.
+    let mut needed = data
+        .functions
+        .iter()
+        .flat_map(|function| &function.parameters)
+        .filter_map(|parameter| parameter.range_element)
+        .map(CheckedElement::index)
+        .collect::<BTreeSet<_>>();
+    for index in needed.iter().copied() {
+        pending.push(
+            *data
+                .elements
+                .get(index)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+        );
+    }
     for nominal in data.nominals.iter().take(data.executable_nominal_count) {
         match &nominal.kind {
             CheckedNominalKind::Struct { fields } => {
@@ -48,7 +69,6 @@ pub(super) fn base_elements(
             CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
         }
     }
-    let mut needed = BTreeSet::new();
     while let Some(ty) = pending.pop() {
         if let CheckedType::Array { element, .. } | CheckedType::Window { element, .. } = ty
             && needed.insert(element.index())

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    IrAddressed, IrArrayRoot, IrElement, IrFlatElement, IrFunction, IrInstruction, IrNominalId,
+    IrArrayRoot, IrElement, IrFlatElement, IrFunction, IrInstruction, IrLayoutCeiling, IrNominalId,
     IrNominalKind, IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId,
     IrWindowShape,
 };
@@ -539,6 +539,7 @@ fn validate_function(
             .map_err(|failure| as_object(failure, TargetObject::FunctionAbi))?;
     }
     let integer_upper_bounds = target_integer_result_bounds(layouts, function)?;
+    validate_source_call_allocations(layouts, function, &integer_upper_bounds)?;
 
     for block in function.blocks() {
         for (_, ty) in block.parameters() {
@@ -558,6 +559,219 @@ fn validate_function(
         }
     }
     Ok(())
+}
+
+/// Qualifies each ordinary call whose compiler-owned callee performs a
+/// runtime-capacity allocation. The callee stays one out-of-line instance;
+/// the accepted OP-9 upper bound stays on the call whose proof established it.
+fn validate_source_call_allocations(
+    layouts: &mut LayoutComputer<'_, '_, '_, '_>,
+    function: &IrFunction,
+    integer_upper_bounds: &HashMap<IrValueId, u64>,
+) -> Result<(), TargetLayoutFailure> {
+    let mut validated = HashSet::new();
+    for block in function.blocks() {
+        for instruction in block.instructions() {
+            let IrInstruction::Define {
+                result,
+                operation:
+                    IrOperation::Call {
+                        function: callee,
+                        arguments,
+                    },
+                ..
+            } = instruction
+            else {
+                continue;
+            };
+            let callee = layouts
+                .program
+                .functions()
+                .get(*callee as usize)
+                .ok_or(TargetLayoutFailure::InvalidIr)?;
+            let allocation_cell = function_runtime_allocation_cell(callee)?;
+            let mut source_calls = function
+                .source_calls()
+                .iter()
+                .filter(|source| source.result() == *result);
+            let source_call = source_calls.next();
+            if source_calls.next().is_some() {
+                return Err(TargetLayoutFailure::InvalidIr);
+            }
+            match (
+                allocation_cell,
+                source_call.and_then(|call| call.allocation()),
+            ) {
+                (None, None) => {}
+                (None, Some(_)) | (Some(_), None) => {
+                    return Err(TargetLayoutFailure::InvalidIr);
+                }
+                (Some(cell), Some(allocation)) => {
+                    if allocation.cell() != cell {
+                        return Err(TargetLayoutFailure::InvalidIr);
+                    }
+                    let count = arguments
+                        .get(allocation.count_argument())
+                        .copied()
+                        .ok_or(TargetLayoutFailure::InvalidIr)?;
+                    if function.value_type(count)
+                        != Some(IrType::Integer {
+                            width: 64,
+                            signed: false,
+                        })
+                    {
+                        return Err(TargetLayoutFailure::InvalidIr);
+                    }
+                    let IrNominalKind::Box { referent, .. } = layouts
+                        .program
+                        .nominal(cell)
+                        .ok_or(TargetLayoutFailure::InvalidIr)?
+                        .kind()
+                    else {
+                        return Err(TargetLayoutFailure::InvalidIr);
+                    };
+                    let allocation_layout = runtime_capacity_allocation_layout(
+                        layouts,
+                        *referent,
+                        allocation.layout_ceiling(),
+                    )?;
+                    // A count read from an already represented allocation
+                    // also has that allocation's selected-target bound.
+                    // This is the same SSA-value qualification used for a
+                    // direct allocation node; an out-of-line row must not
+                    // lose it at the ordinary call boundary.
+                    let source_upper_bound = allocation.source_length_upper_bound();
+                    let length_upper_bound = integer_upper_bounds
+                        .get(&count)
+                        .copied()
+                        .map_or(source_upper_bound, |bound| source_upper_bound.min(bound));
+                    let byte_upper_bound = length_upper_bound
+                        .checked_mul(allocation_layout.stride)
+                        .and_then(|slots| slots.checked_add(allocation_layout.header))
+                        .ok_or(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::RuntimeSizedAllocation,
+                        ))?;
+                    if byte_upper_bound > layouts.target.runtime_allocation_max() {
+                        return Err(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::RuntimeSizedAllocation,
+                        ));
+                    }
+                    validated.insert(*result);
+                }
+            }
+        }
+    }
+    if function
+        .source_calls()
+        .iter()
+        .any(|call| call.allocation().is_some() && !validated.contains(&call.result()))
+    {
+        return Err(TargetLayoutFailure::InvalidIr);
+    }
+    Ok(())
+}
+
+/// The cell allocated by one compiler-owned out-of-line row, if any. A row
+/// has exactly one such operation; its callers carry that operation's OP-9
+/// bound rather than specializing or cloning this function.
+fn function_runtime_allocation_cell(
+    function: &IrFunction,
+) -> Result<Option<IrNominalId>, TargetLayoutFailure> {
+    let mut cell = None;
+    for block in function.blocks() {
+        for instruction in block.instructions() {
+            let IrInstruction::Define { operation, .. } = instruction else {
+                continue;
+            };
+            let candidate = match operation {
+                IrOperation::BufferFill { nominal, .. }
+                | IrOperation::WindowBlockNew { nominal, .. }
+                | IrOperation::WindowGrow { nominal, .. } => Some(*nominal),
+                _ => None,
+            };
+            if let Some(candidate) = candidate
+                && cell.replace(candidate).is_some()
+            {
+                return Err(TargetLayoutFailure::InvalidIr);
+            }
+        }
+    }
+    Ok(cell)
+}
+
+#[derive(Clone, Copy)]
+struct RuntimeCapacityAllocationLayout {
+    stride: u64,
+    header: u64,
+}
+
+/// Computes the exact terms the emitter uses for `header + count * stride`.
+/// The zero-length tail array can require padding after the fixed words, so
+/// the header is its selected-target field offset rather than merely its word
+/// count.
+fn runtime_capacity_allocation_layout(
+    layouts: &mut LayoutComputer<'_, '_, '_, '_>,
+    content: IrType,
+    ceiling: IrLayoutCeiling,
+) -> Result<RuntimeCapacityAllocationLayout, TargetLayoutFailure> {
+    let (actual, allocation) = runtime_capacity_layout(layouts, content)?;
+    if !ceiling.size.permits(actual.size)
+        || actual.align > ceiling.align
+        || !ceiling.stride.permits(allocation.stride)
+    {
+        return Err(TargetLayoutFailure::Unrepresentable(
+            TargetObject::Representation,
+        ));
+    }
+    Ok(allocation)
+}
+
+fn runtime_capacity_layout(
+    layouts: &mut LayoutComputer<'_, '_, '_, '_>,
+    content: IrType,
+) -> Result<(Layout, RuntimeCapacityAllocationLayout), TargetLayoutFailure> {
+    let (element, header_words) = match content {
+        IrType::Buffer { element } => (element.ty(), 1_u64),
+        IrType::Window {
+            shape,
+            element,
+            capacity: None,
+        } => (
+            layouts
+                .program
+                .element(element)
+                .ok_or(TargetLayoutFailure::InvalidIr)?,
+            match shape {
+                IrWindowShape::Slots => 2,
+                IrWindowShape::Ring => 3,
+            },
+        ),
+        _ => return Err(TargetLayoutFailure::InvalidIr),
+    };
+    let actual = layouts.layout(element)?;
+    let stride = align_up(
+        layouts.target,
+        actual.size,
+        actual.align,
+        TargetObject::Representation,
+    )?;
+    if actual.align.max(8) > layouts.target.runtime_allocation_alignment() {
+        return Err(TargetLayoutFailure::Unrepresentable(
+            TargetObject::RuntimeSizedAllocation,
+        ));
+    }
+    let fixed = header_words
+        .checked_mul(8)
+        .ok_or(TargetLayoutFailure::Unrepresentable(
+            TargetObject::RuntimeSizedAllocation,
+        ))?;
+    let header = align_up(
+        layouts.target,
+        fixed,
+        actual.align,
+        TargetObject::RuntimeSizedAllocation,
+    )?;
+    Ok((actual, RuntimeCapacityAllocationLayout { stride, header }))
 }
 
 /// Attaches selected-target integer bounds to the exact SSA values that carry
@@ -582,18 +796,34 @@ fn target_integer_result_bounds(
             else {
                 continue;
             };
-            let upper_bound = match operation {
-                IrOperation::BufferMeasure { buffer } => {
-                    let Some(IrType::Address(IrAddressed::Buffer { element })) =
-                        function.value_type(*buffer)
-                    else {
-                        return Err(TargetLayoutFailure::InvalidIr);
-                    };
-                    let stride = flat_element_stride(layouts, element)?;
-                    Some(element_count_max(
-                        layouts.target.runtime_allocation_max(),
-                        stride,
-                    ))
+            let measured = match operation {
+                IrOperation::BufferMeasure { buffer } => Some(*buffer),
+                IrOperation::ContainerMeasure {
+                    measure: crate::IrMeasure::Length,
+                    container,
+                } => Some(*container),
+                _ => None,
+            };
+            let content = measured
+                .and_then(|value| function.value_type(value))
+                .map(|ty| {
+                    if let IrType::Address(addressed) = ty {
+                        addressed.ty()
+                    } else {
+                        ty
+                    }
+                });
+            let upper_bound = match content {
+                Some(content @ (IrType::Buffer { .. } | IrType::Window { capacity: None, .. })) => {
+                    let (_, allocation) = runtime_capacity_layout(layouts, content)?;
+                    let payload_max = layouts
+                        .target
+                        .runtime_allocation_max()
+                        .checked_sub(allocation.header)
+                        .ok_or(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::RuntimeSizedAllocation,
+                        ))?;
+                    Some(element_count_max(payload_max, allocation.stride))
                 }
                 _ => None,
             };
@@ -609,19 +839,6 @@ fn target_integer_result_bounds(
         }
     }
     Ok(bounds)
-}
-
-fn flat_element_stride(
-    layouts: &mut LayoutComputer<'_, '_, '_, '_>,
-    element: IrFlatElement,
-) -> Result<u64, TargetLayoutFailure> {
-    let layout = layouts.flat_element(element)?;
-    align_up(
-        layouts.target,
-        layout.size,
-        layout.align,
-        TargetObject::Representation,
-    )
 }
 
 const fn element_count_max(byte_maximum: u64, stride: u64) -> u64 {
@@ -721,13 +938,6 @@ fn validate_target_obligation(
             target_domains,
             layout_ceiling,
             ..
-        }
-        | IrOperation::BufferVacant {
-            nominal,
-            length,
-            target_domains,
-            layout_ceiling,
-            ..
         } if target_domains.is_complete() => {
             if result_type != IrType::Nominal(*nominal) {
                 return Err(TargetLayoutFailure::InvalidIr);
@@ -740,34 +950,8 @@ fn validate_target_obligation(
             else {
                 return Err(TargetLayoutFailure::InvalidIr);
             };
-            let IrType::Buffer { element } = *referent else {
-                return Err(TargetLayoutFailure::InvalidIr);
-            };
-            let actual = layouts.layout(element.ty())?;
-            let stride = align_up(
-                layouts.target,
-                actual.size,
-                actual.align,
-                TargetObject::Representation,
-            )?;
-            if !layout_ceiling.size.permits(actual.size)
-                || actual.align > layout_ceiling.align
-                || !layout_ceiling.stride.permits(stride)
-            {
-                return Err(TargetLayoutFailure::Unrepresentable(
-                    TargetObject::Representation,
-                ));
-            }
-            // The block carries its `len` word in the same allocation, so the
-            // heap has to promise the stronger of the two alignments
-            // (compiler/storage-representation), exactly as a boxed window
-            // block does.
-            let block = layouts.layout(*referent)?;
-            if actual.align.max(block.align) > layouts.target.runtime_allocation_alignment() {
-                return Err(TargetLayoutFailure::Unrepresentable(
-                    TargetObject::RuntimeSizedAllocation,
-                ));
-            }
+            let allocation_layout =
+                runtime_capacity_allocation_layout(layouts, *referent, *layout_ceiling)?;
             if function.value_type(*length)
                 != Some(IrType::Integer {
                     width: 64,
@@ -776,33 +960,36 @@ fn validate_target_obligation(
             {
                 return Err(TargetLayoutFailure::InvalidIr);
             }
-            let source_upper_bound = target_domains.source_length_upper_bound();
-            let length_upper_bound = integer_upper_bounds
-                .get(length)
-                .copied()
-                .map_or(source_upper_bound, |target_upper_bound| {
-                    source_upper_bound.min(target_upper_bound)
-                });
-            let byte_upper_bound = length_upper_bound.checked_mul(stride).ok_or(
-                TargetLayoutFailure::Unrepresentable(TargetObject::RuntimeSizedAllocation),
-            )?;
-            // KNOWN DEFECT, recorded at compiler/prelude-records: the byte
-            // ceiling is compared only where the retained bound is the
-            // allocation site's own [OP-9] discharge. Inside a compiler-owned
-            // [PRE-1] construction row the bound is [OP-9]'s ceiling standing
-            // in for one the checked program does not retain across the call,
-            // and that ceiling times any stride exceeds every supported
-            // target's allocation maximum, so comparing it would stop every
-            // runtime-capacity construction rather than the unbounded ones.
-            // The source obligation was discharged at the call; what is
-            // missing is its numeric record on the call, and this comparison
-            // returns as soon as the checker carries it.
-            if target_domains.has_call_site_bound()
-                && byte_upper_bound > layouts.target.runtime_allocation_max()
-            {
-                return Err(TargetLayoutFailure::Unrepresentable(
-                    TargetObject::RuntimeSizedAllocation,
-                ));
+            // A direct allocation node retains its own call-site bound here.
+            // A compiler-owned out-of-line row carries the language ceiling
+            // instead. validate_function unconditionally invokes
+            // validate_source_call_allocations, which requires an allocation
+            // record for EVERY call of this row and checks its exact
+            // bound * stride + header against the selected target. Missing
+            // records are InvalidIr, never an exemption. Do not scale the
+            // unrelated language maximum here: MAX/stride plus a header
+            // can overflow even when every actual call allocates one byte.
+            // The direct-node check and the per-call check both retain the
+            // full header and fail on arithmetic overflow or an excess.
+            if target_domains.has_call_site_bound() {
+                let source_upper_bound = target_domains.source_length_upper_bound();
+                let length_upper_bound = integer_upper_bounds
+                    .get(length)
+                    .copied()
+                    .map_or(source_upper_bound, |target_upper_bound| {
+                        source_upper_bound.min(target_upper_bound)
+                    });
+                let byte_upper_bound = length_upper_bound
+                    .checked_mul(allocation_layout.stride)
+                    .and_then(|slots| slots.checked_add(allocation_layout.header))
+                    .ok_or(TargetLayoutFailure::Unrepresentable(
+                        TargetObject::RuntimeSizedAllocation,
+                    ))?;
+                if byte_upper_bound > layouts.target.runtime_allocation_max() {
+                    return Err(TargetLayoutFailure::Unrepresentable(
+                        TargetObject::RuntimeSizedAllocation,
+                    ));
+                }
             }
         }
         // [OP-13, OP-10] the runtime-capacity window block and `grow`, on the
@@ -830,43 +1017,8 @@ fn validate_target_obligation(
             else {
                 return Err(TargetLayoutFailure::InvalidIr);
             };
-            let IrType::Window {
-                element,
-                capacity: None,
-                ..
-            } = *referent
-            else {
-                return Err(TargetLayoutFailure::InvalidIr);
-            };
-            let element = layouts
-                .program
-                .element(element)
-                .ok_or(TargetLayoutFailure::InvalidIr)?;
-            let actual = layouts.layout(element)?;
-            let stride = align_up(
-                layouts.target,
-                actual.size,
-                actual.align,
-                TargetObject::Representation,
-            )?;
-            let ceiling = obligations.layout_ceiling;
-            if !ceiling.size.permits(actual.size)
-                || actual.align > ceiling.align
-                || !ceiling.stride.permits(stride)
-            {
-                return Err(TargetLayoutFailure::Unrepresentable(
-                    TargetObject::Representation,
-                ));
-            }
-            // The block carries its header in the same allocation, so the
-            // heap has to promise the stronger of the two alignments
-            // (compiler/storage-representation).
-            let block = layouts.layout(*referent)?;
-            if actual.align.max(block.align) > layouts.target.runtime_allocation_alignment() {
-                return Err(TargetLayoutFailure::Unrepresentable(
-                    TargetObject::RuntimeSizedAllocation,
-                ));
-            }
+            let allocation_layout =
+                runtime_capacity_allocation_layout(layouts, *referent, obligations.layout_ceiling)?;
             if function.value_type(*length)
                 != Some(IrType::Integer {
                     width: 64,
@@ -875,12 +1027,9 @@ fn validate_target_obligation(
             {
                 return Err(TargetLayoutFailure::InvalidIr);
             }
-            // The same recorded defect as the fill above: the byte ceiling is
-            // established only where the retained bound is the allocation
-            // site's own [OP-9] discharge (compiler/prelude-records). The
-            // standing-in ceiling is [OP-9]'s own, whose product with any
-            // stride leaves the u64 domain, so scaling it at all would report
-            // every runtime-capacity construction as unrepresentable.
+            // Direct allocation nodes retain their own call-site bound here;
+            // the shared compiler-owned row is qualified at each source call
+            // above and therefore does not reuse one caller's bound here.
             if obligations.target_domains.has_call_site_bound() {
                 let source_upper_bound = obligations.target_domains.source_length_upper_bound();
                 let length_upper_bound = integer_upper_bounds
@@ -890,8 +1039,8 @@ fn validate_target_obligation(
                         source_upper_bound.min(target_upper_bound)
                     });
                 let byte_upper_bound = length_upper_bound
-                    .checked_mul(stride)
-                    .and_then(|slots| slots.checked_add(block.size))
+                    .checked_mul(allocation_layout.stride)
+                    .and_then(|slots| slots.checked_add(allocation_layout.header))
                     .ok_or(TargetLayoutFailure::Unrepresentable(
                         TargetObject::RuntimeSizedAllocation,
                     ))?;
@@ -940,7 +1089,6 @@ fn validate_target_obligation(
             if *target_domain == IrTargetDomainObligation::ElementAddress => {}
         IrOperation::ArrayFill { .. }
         | IrOperation::BufferFill { .. }
-        | IrOperation::BufferVacant { .. }
         | IrOperation::ArrayIndex { .. }
         | IrOperation::BufferIndex { .. }
         | IrOperation::SliceIndex { .. } => {
@@ -1039,7 +1187,7 @@ impl LayoutComputer<'_, '_, '_, '_> {
                 })
             }
             IrType::Range { element } => {
-                self.flat_element(element)?;
+                self.element(element)?;
                 Ok(Layout { size: 16, align: 8 })
             }
             // [TYPE-9] a runtime-capacity block is reached only through the

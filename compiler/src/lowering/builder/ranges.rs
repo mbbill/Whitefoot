@@ -20,9 +20,9 @@ impl IrBuilder<'_> {
         source: &CheckedRangeSource,
         start: &CheckedExpression,
         end: &CheckedExpression,
-        element: crate::semantic::CheckedFlatElement,
+        element: crate::semantic::CheckedElement,
     ) -> Result<IrValueId, LoweringFailure> {
-        let element = lower_flat_element(self.erasure, element)?;
+        let element = lower_element(self.erasure, element)?;
         let ty = IrType::Range { element };
         let slice = match source {
             CheckedRangeSource::Storage(root) => {
@@ -77,7 +77,7 @@ impl IrBuilder<'_> {
         target_domain: CheckedTargetDomainObligation,
     ) -> Result<IrValueId, LoweringFailure> {
         let slice = self.range_root(root)?;
-        let element = lower_flat_element(self.erasure, root.element)?;
+        let element = lower_element(self.erasure, root.element)?;
         let offset = self.expression(offset)?;
         if self.value_type(offset)?
             != (IrType::Integer {
@@ -88,7 +88,7 @@ impl IrBuilder<'_> {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         self.define(
-            element.ty(),
+            self.element_type(element)?,
             IrOperation::SliceIndex {
                 slice,
                 offset,
@@ -105,7 +105,7 @@ impl IrBuilder<'_> {
         let slice = self.binding_value(root.binding)?;
         if self.value_type(slice)?
             != (IrType::Range {
-                element: lower_flat_element(self.erasure, root.element)?,
+                element: lower_element(self.erasure, root.element)?,
             })
         {
             return Err(LoweringFailure::InvalidCheckedProgram);

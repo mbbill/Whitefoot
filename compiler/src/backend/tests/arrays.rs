@@ -54,7 +54,85 @@
 //!   observed is kept by the three reading helpers that remain.
 
 use super::owned_places::retain_calls;
+use super::system::with_ir;
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
+use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject, validate_program};
+
+fn invariant_bounded_runtime_allocation(
+    construction: &str,
+    half_ceiling: u64,
+    count_ceiling: u64,
+) -> Vec<u8> {
+    format!(
+        r#"fn allocate(n: own u64, half: own u64) -> result: own unit pure contract {{
+  requires half <= {half_ceiling}_u64;
+}} {{
+  let doubled = half * 2_u64;
+  let within = n <= doubled;
+  if within {{
+    invariant tight: n <= {count_ceiling}_u64;
+    let values = {construction};
+  }}
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+    )
+    .into_bytes()
+}
+
+/// [STOR-6] qualifies each accepted runtime allocation at its source call,
+/// using the selected target's actual element stride and padded block header.
+/// The retained bound comes from an invariant rather than a literal count.
+/// Validation alone observes the oversized cases, so no impossible allocation
+/// is executed.
+#[test]
+fn runtime_allocation_bounds_include_each_shape_header_at_target_qualification() {
+    let host = TargetLayout::host().expect("the backend test runs on a supported host layout");
+    for (shape, construction, header) in [
+        (
+            "Array",
+            "box_array_filled::<u16>(count: n, value: 0_u16)",
+            8_u64,
+        ),
+        ("Slots", "box_slots_new::<u16>(capacity: n)", 16_u64),
+        ("Ring", "box_ring_new::<u16>(capacity: n)", 24_u64),
+    ] {
+        let boundary = invariant_bounded_runtime_allocation(construction, 500, 1_000);
+        with_ir(&boundary, |program| {
+            let exact_bytes = header + 2_000;
+            let exact = host.with_runtime_allocation_limits_for_test(exact_bytes, 8);
+            assert_eq!(validate_program(exact, program), Ok(()), "{shape}");
+
+            let one_byte_short = host.with_runtime_allocation_limits_for_test(exact_bytes - 1, 8);
+            assert_eq!(
+                validate_program(one_byte_short, program),
+                Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::RuntimeSizedAllocation
+                )),
+                "{shape}"
+            );
+        });
+
+        let oversized = invariant_bounded_runtime_allocation(
+            construction,
+            2_500_000_000_000_000_000,
+            5_000_000_000_000_000_000,
+        );
+        with_ir(&oversized, |program| {
+            assert_eq!(
+                validate_program(host, program),
+                Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::RuntimeSizedAllocation
+                )),
+                "{shape}"
+            );
+        });
+    }
+}
 
 #[test]
 fn structural_copy_aggregates_keep_independent_storage_after_generic_substitution() {

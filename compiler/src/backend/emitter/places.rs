@@ -91,9 +91,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::FullArrayConversion { value } => {
                 self.emit_full_array_conversion(result, ty, *value)?;
             }
-            IrOperation::SliceFromArray { array } => {
-                self.emit_slice_from_array(result, ty, *array)?
-            }
             IrOperation::RunIndex {
                 run,
                 offset,

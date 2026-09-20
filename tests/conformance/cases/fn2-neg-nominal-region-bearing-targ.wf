@@ -2,7 +2,7 @@ struct Marker<T: drop> {
 }
 
 fn invalid() -> result: own unit pure {
-  doc "Even an empty source nominal cannot be instantiated with a reference kind; FN-2 refuses the written `targ` independently of stored-field analysis [TYPE-8].";
+  doc "Even an empty source nominal cannot be instantiated with a reference kind; GRAM-3 gives `targ` no reference-kind production, independently of stored-field analysis [TYPE-8].";
   let marker = Marker<&[u8]>();
   return unit;
 }

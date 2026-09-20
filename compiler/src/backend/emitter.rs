@@ -1731,19 +1731,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 *layout_ceiling,
                 *target_domains,
             ),
-            IrOperation::BufferVacant {
-                nominal,
-                length,
-                layout_ceiling,
-                target_domains,
-            } => self.emit_buffer_vacant(
-                result,
-                ty,
-                *nominal,
-                *length,
-                *layout_ceiling,
-                *target_domains,
-            ),
             IrOperation::BufferFits {
                 length,
                 maximum_length,
@@ -1798,7 +1785,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 limit,
                 needles,
             } => self.emit_buffer_probe_skip(result, ty, *buffer, *index, *limit, needles),
-            IrOperation::SliceFromArray { array } => self.emit_slice_from_array(result, ty, *array),
             IrOperation::SliceFromBuffer { buffer } => {
                 self.emit_slice_from_buffer(result, ty, *buffer)
             }
@@ -2447,7 +2433,7 @@ fn definition_exit_label(
         } => *label = arena_new_ready_label(*result),
         IrInstruction::Define {
             result,
-            operation: IrOperation::BufferFill { .. } | IrOperation::BufferVacant { .. },
+            operation: IrOperation::BufferFill { .. },
             ..
         } => *label = buffer_fill_done_label(*result),
         IrInstruction::Define {

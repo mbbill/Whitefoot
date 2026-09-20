@@ -273,7 +273,10 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
             IrType::Array { element, .. } | IrType::Window { element, .. } => {
                 pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?);
             }
-            IrType::Buffer { element } | IrType::Range { element } => pending.push(element.ty()),
+            IrType::Buffer { element } => pending.push(element.ty()),
+            IrType::Range { element } => {
+                pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?);
+            }
             IrType::Address(referent) => pending.push(referent.ty()),
             IrType::Nominal(id) => {
                 let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;

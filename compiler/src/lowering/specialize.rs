@@ -497,7 +497,6 @@ impl FunctionDependencies {
                 });
             }
             CheckedExpression::BoxDeref { nominal, .. }
-            | CheckedExpression::ArenaDeref { nominal, .. }
             | CheckedExpression::ProjectValue { nominal, .. } => {
                 self.types.push(CheckedType::Nominal(*nominal));
             }
@@ -507,7 +506,6 @@ impl FunctionDependencies {
             CheckedExpression::ContainerMeasure { root, .. }
             | CheckedExpression::ReadStorage { root, .. }
             | CheckedExpression::BorrowAddressed { root, .. } => self.root_types(root),
-            CheckedExpression::BufferFits { element, .. } => self.types.push(*element),
             _ => {}
         }
         for child in expression_children(expression) {

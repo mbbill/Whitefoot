@@ -1491,20 +1491,11 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ..
                 } = detail.as_ref();
                 assert_relation_terms_resolve(summary, relation);
-                // A source callee publishes a verified summary and a
-                // kernel-domain row publishes its own declaration data
-                // [ENT-3.S13, CALL-6]; both reach this node, and B7c4b-1 is
-                // where the second one does, because these frozen sources now
-                // take their runs from a store or an extent rather than from
-                // an [OP-1] `buffer_new`.
-                match &reference.summary {
-                    crate::semantic::entailment::RelationProvenance::Verified(published) => {
-                        assert!(!published.block.components().is_empty());
-                    }
-                    crate::semantic::entailment::RelationProvenance::Kernel { .. } => {
-                        assert!(substitutions.is_empty());
-                    }
-                }
+                // A source callee publishes a verified summary
+                // [ENT-3.S13, CALL-6].
+                let crate::semantic::entailment::RelationProvenance::Verified(published) =
+                    &reference.summary;
+                assert!(!published.block.components().is_empty());
                 for parent in parents {
                     assert!(summary.derivations.nodes.get(parent.0 as usize).is_some());
                 }
@@ -3352,6 +3343,8 @@ fn main() -> status: own ExitStatus pure {
     assert!(outcomes[2].evidence.is_empty());
     let mut counts = DistinctGroundCounts::default();
     collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
+    // Each strict-derived disequality first becomes independently live at
+    // its one-edge join; the merging join retains both of those boundaries.
     assert_eq!(
         counts,
         DistinctGroundCounts {
@@ -3424,6 +3417,8 @@ fn main() -> status: own ExitStatus pure {
     let mut counts = DistinctGroundCounts::default();
     collect_distinct_grounds(&summary, distinct, &mut counts);
     assert_eq!(counts.strict, 2);
+    // Keep the two strict-derived facts' independence boundaries as well as
+    // the join that combines their paths.
     assert_eq!(counts.joins, 3);
     assert_eq!(counts.join_edges, 4);
 }
@@ -3483,6 +3478,7 @@ fn main() -> status: own ExitStatus pure {
         &mut kept_counts,
     );
     assert_eq!(kept_counts.strict, 2);
+    // The derived facts retain their one-edge independence boundaries.
     assert_eq!(kept_counts.join_edges, 4);
 
     let killed_summary = entailment(source, "killed");
@@ -3571,12 +3567,14 @@ fn main() -> status: own ExitStatus pure {
             collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
             assert_eq!(
                 counts,
+                // The source fact is already live; only the strict-derived
+                // fact needs its one-edge independence boundary.
                 DistinctGroundCounts {
                     source: 1,
                     strict: 1,
-                    joins: 3,
-                    join_edges: 4,
-                    join_parent_counts: vec![2, 1, 1],
+                    joins: 2,
+                    join_edges: 3,
+                    join_parent_counts: vec![2, 1],
                     ..DistinctGroundCounts::default()
                 },
                 "the mixed join names its explicit and strict-derived predecessor roots"
@@ -3635,11 +3633,13 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(counts.source, 1);
     assert_eq!(counts.strict, 2);
     assert_eq!(counts.contradiction, 1);
-    assert_eq!(counts.joins, 6);
+    // The two strict-derived inputs need independence boundaries; the
+    // explicit source input can be reused directly.
+    assert_eq!(counts.joins, 5);
     counts.join_parent_counts.sort_unstable();
-    assert_eq!(counts.join_parent_counts, vec![1, 1, 1, 2, 2, 2]);
+    assert_eq!(counts.join_parent_counts, vec![1, 1, 2, 2, 2]);
     assert_eq!(
-        counts.join_edges, 9,
+        counts.join_edges, 8,
         "the guarded inputs retain all four reaching grounds through the nested joins"
     );
 }
@@ -4174,6 +4174,93 @@ fn main() -> status: own ExitStatus pure {
             _ => true,
         }),
         "the fresh receiver contributes no reflexive source fact"
+    );
+}
+
+#[test]
+fn value_if_delivery_retains_the_ordinary_fallback_and_shared_give_root() {
+    // Acceptance alone does not observe the fallback. Inspect both retained
+    // derivations: a later candidate kill must be able to expose the ordinary
+    // bound even when the selected full bound came from an S12 call.
+    let source = br#"fn limit(value: own i32) -> result: own i32 pure contract {
+  requires value < 8_i32;
+  ensures result < 8_i32;
+} {
+  return value;
+}
+
+fn guard(value: own i32) -> result: own unit pure contract {
+  requires value < 32_i32;
+} {
+  return unit;
+}
+
+fn choose(value: own i32, narrow: own Bool) -> result: own unit pure contract {
+  requires value < 8_i32;
+} {
+  let picked = if narrow {
+    let bounded = limit(value: value);
+    if bounded < 16_i32 {
+      give bounded;
+    } else {
+      return unit;
+    }
+  } else if value < 32_i32 {
+    give value;
+  } else {
+    return unit;
+  }
+  guard(value: picked);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "choose");
+    validate_derivations(&summary);
+    let mut call_dependent = Vec::new();
+    for node in &summary.derivations.nodes {
+        call_dependent.push(
+            matches!(node, DerivationNode::PostconditionCall { .. })
+                || node
+                    .parent_ids()
+                    .iter()
+                    .any(|parent| call_dependent[parent.0 as usize]),
+        );
+    }
+    let joins = summary
+        .derivations
+        .nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, node)| {
+            let DerivationNode::PostconditionDeliveryJoin { detail } = node else {
+                return None;
+            };
+            let Relation::Bound {
+                right: ZERO, bound, ..
+            } = detail.relation
+            else {
+                return None;
+            };
+            Some((bound, call_dependent[index], &detail.parents))
+        })
+        .collect::<Vec<_>>();
+    let full = joins
+        .iter()
+        .find(|(bound, call, _)| *bound == 7 && *call)
+        .expect("delivery keeps the strongest call-dependent bound");
+    let ordinary = joins
+        .iter()
+        .find(|(bound, call, _)| *bound == 15 && !*call)
+        .expect("delivery keeps the weaker ordinary fallback");
+    assert_eq!(full.2.len(), 2);
+    assert_eq!(ordinary.2.len(), 2);
+    assert_eq!(
+        full.2[1].parent, ordinary.2[1].parent,
+        "both layers reuse the ordinary second edge, with one required Give root"
     );
 }
 
@@ -5054,6 +5141,11 @@ fn main() -> status: own ExitStatus pure {
         vec![true],
         "the ordinary write projects i < 4 before killing the mutable middle upper"
     );
+    // The survivor consequence must be derived through the killed middle
+    // `upper`. Which closed endpoint the step reaches — the constant four or Z
+    // through that constant's implicit bound — is an equal-bound derivation
+    // choice [ENT-4] leaves open, and a seeded closure retains whichever it
+    // reaches first.
     assert_root_contains(
         &ordinary,
         obligation_root(&ordinary, 0),
@@ -5062,7 +5154,6 @@ fn main() -> status: own ExitStatus pure {
                 left,
                 middle,
                 right,
-                bound: -1,
                 ..
             } => {
                 matches!(
@@ -5074,14 +5165,14 @@ fn main() -> status: own ExitStatus pure {
                     (
                         TermKind::Place(i, IntegerType::U64),
                         TermKind::Place(upper, IntegerType::U64),
-                        TermKind::Constant(4),
+                        TermKind::Constant(4) | TermKind::Zero,
                     ) if i.root == PlaceRoot::Binding(BindingId(0))
                         && upper.root == PlaceRoot::Binding(BindingId(1))
                 )
             }
             _ => false,
         },
-        "the exact i - upper <= -1 plus upper - 4 <= 0 projection",
+        "a projection of i - upper <= -1 through the killed middle upper",
     );
 }
 
@@ -5904,7 +5995,8 @@ fn a_declared_construction_length_proves_a_constant_offset_and_an_unknown_one_do
     // [ENT-3.S6] carries no construction row in v0.60: a construction
     // function's length and capacity facts are the `ensures` of its [PRE-1]
     // record and reach the caller through [ENT-3.S12] like any other declared
-    // relation, so the proving half now descends from that call's S13 event.
+    // relation. Its length is the const-generic n, so the proving half must
+    // retain S12 publication; no runtime argument datum is needed for n.
     let source = br#"fn sized() -> result: own u8 pure {
   let filled = array_filled::<u8, 4>(value: 0_u8);
   let b = slots_from_array::<u8, 4>(values: filled);
@@ -5936,10 +6028,11 @@ fn main() -> status: own ExitStatus pure {
         .iter()
         .position(|outcome| outcome.family == ObligationFamily::Bounds)
         .expect("the subscript carries one bounds obligation");
-    assert_root_has_event_kind(
+    assert_root_contains(
         &sized,
         obligation_root(&sized, sized_bounds),
-        FlowEventKind::S13,
+        |node| matches!(node, DerivationNode::PostconditionDirectResult { .. }),
+        "the constructor's S12 result publication",
     );
     let unknown = obligations(source, "unknown");
     let unknown_bounds = unknown
@@ -7746,7 +7839,8 @@ fn indexed_guards_discharge_structurally_identical_signature_ranges() {
     assert!(
         ranges
             .iter()
-            .all(|range| range.disposition == CallGoalDisposition::Discharged)
+            .all(|range| range.disposition == CallGoalDisposition::Discharged),
+        "the indexed guards and actual values must retain the same goals: {ranges:#?}"
     );
     let GoalExpression::Operation {
         arguments: first, ..
@@ -8608,44 +8702,99 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
             .count(),
         13
     );
-    // The boundary driver's `assemble_reason` publishes `result <= capacity`
-    // over its own declared result, which is the direct-result route. It came
-    // in with B3: a helper handed a view cannot form the shared child a
-    // `write_once` source needs [VIEW-2], so it hands its assembled length back
-    // and its caller publishes, and the caller proves the publish bound from
-    // that clause. Five call sites and the two returns of the clause's own
-    // proof were the seven B3 counted; B7c4b-1 made a `set` target the same
-    // [ENT-3.S12] destination a `let` binder is, so every `set x = helper(...)`
-    // of these sources publishes on this route too. The raw DEFLATE chain's
-    // migration off `buffer<T>` (B7c4b) then made every helper hand its run
-    // back by value under an `ensures` over that result, and every caller
-    // commits it with `set`. Under the exclusive boundary rows the kernel
-    // state relations publish at call completion, without a result binder;
-    // those roots move from DirectResult to PostconditionState. Source
-    // helper results and view/conversion results keep their original route.
-    // `give` and delivery-join routes stay absent.
-    assert_eq!(
-        program
+    // Check every source call, rather than retaining totals from the retired
+    // owned-view API. PRE-1 gives slots_new two result clauses (len and cap),
+    // and place_back one exit-state clause. The two source helpers each
+    // declare result <= capacity. Reference formation has no call contract.
+    // The site counts below come from the maintained WF sources; the clause
+    // counts come from those declarations, independently of the proof DAG.
+    let mut expected_results = 0;
+    let mut expected_states = 0;
+    for (caller_name, callee_name, sites_expected, clauses, is_result) in [
+        ("build_huffman_table", "slots_new", 3, 2, true),
+        ("decode_dynamic", "slots_new", 3, 2, true),
+        ("assemble_reason", "append_slice", 8, 1, true),
+        ("exercise", "slots_new", 4, 2, true),
+        ("exercise", "assemble_reason", 7, 1, true),
+        ("build_huffman_table", "place_back", 3, 1, false),
+        ("decode_dynamic", "place_back", 3, 1, false),
+        ("exercise", "place_back", 4, 1, false),
+    ] {
+        let caller = program
+            .functions
+            .iter()
+            .find(|function| function.name == caller_name)
+            .expect("source caller");
+        let mut sites = Vec::new();
+        // Type/const arguments select distinct ordinary function instances.
+        // Count source sites across every instance of the named declaration.
+        for callee in program
+            .functions
+            .iter()
+            .filter(|function| function.name == callee_name)
+        {
+            collect_direct_calls(
+                caller.body.as_deref().expect("WF body"),
+                callee.id,
+                &mut sites,
+            );
+        }
+        assert_eq!(sites.len(), sites_expected, "{caller_name}: {callee_name}");
+        let derivations = &caller.entailment.derivations;
+        for (path, _) in sites {
+            let publications = derivations
+                .roots
+                .iter()
+                .filter_map(|root| {
+                    let call_node = match (is_result, root.kind) {
+                        (true, DerivationRootKind::PostconditionDirectResult { .. }) => {
+                            let DerivationNode::PostconditionDirectResult { parent, .. } =
+                                &derivations.nodes[root.node.0 as usize]
+                            else {
+                                panic!("direct-result root must retain its publication route");
+                            };
+                            &derivations.nodes[parent.0 as usize]
+                        }
+                        (false, DerivationRootKind::PostconditionState { .. }) => {
+                            &derivations.nodes[root.node.0 as usize]
+                        }
+                        _ => return None,
+                    };
+                    let DerivationNode::PostconditionCall { detail } = call_node else {
+                        panic!("publication must name its source call");
+                    };
+                    (detail.call == *path).then_some(())
+                })
+                .count();
+            assert_eq!(
+                publications, clauses,
+                "{caller_name}: every {callee_name} call publishes each declared clause"
+            );
+        }
+        if is_result {
+            expected_results += sites_expected * clauses;
+        } else {
+            expected_states += sites_expected * clauses;
+        }
+    }
+    for (is_result, expected) in [(true, expected_results), (false, expected_states)] {
+        let actual = program
             .functions
             .iter()
             .flat_map(|function| &function.entailment.derivations.roots)
-            .filter(|root| matches!(
-                root.kind,
-                DerivationRootKind::PostconditionDirectResult { .. }
-            ))
-            .count(),
-        107
-    );
-    assert_eq!(
-        program
-            .functions
-            .iter()
-            .flat_map(|function| &function.entailment.derivations.roots)
-            .filter(|root| matches!(root.kind, DerivationRootKind::PostconditionState { .. }))
-            .count(),
-        108,
-        "each exclusive kernel state clause publishes once at its call"
-    );
+            .filter(|root| {
+                matches!(
+                    (is_result, root.kind),
+                    (true, DerivationRootKind::PostconditionDirectResult { .. })
+                        | (false, DerivationRootKind::PostconditionState { .. })
+                )
+            })
+            .count();
+        assert_eq!(
+            actual, expected,
+            "no publication escapes the source inventory"
+        );
+    }
     assert!(program.functions.iter().all(|function| {
         function.entailment.derivations.roots.iter().all(|root| {
             !matches!(
@@ -9034,7 +9183,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn counted_range_restores_a_reference_deref_before_nested_box_content_steps() {
+fn counted_range_keeps_nested_box_steps_without_a_reference_wrapper_step() {
     let source = br#"fn probe(holder: &Box<Box<u64>>) -> result: own unit reads(holder) {
   for @items (i in deref(holder).inner.inner..1_u64) {
   }
@@ -9053,12 +9202,9 @@ fn main() -> status: own ExitStatus pure {
         panic!("the lower capture identity must be an equality");
     };
     let TermKind::Place(endpoint, IntegerType::U64) = retained_term(&summary, right) else {
-        panic!("the referenced nested endpoint must keep all three content steps");
+        panic!("the referenced nested endpoint must keep both Box content steps");
     };
-    assert_eq!(
-        endpoint.path,
-        vec![PlaceStep::Deref, PlaceStep::Deref, PlaceStep::Deref]
-    );
+    assert_eq!(endpoint.path, vec![PlaceStep::Deref, PlaceStep::Deref]);
 }
 
 #[test]

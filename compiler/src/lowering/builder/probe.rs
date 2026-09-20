@@ -171,7 +171,10 @@ fn recognize_load(
     };
     let (root, offset) = match value {
         CheckedExpression::BufferIndex { root, offset, .. } => {
-            if crate::lowering::lower_type(TypeLowering::EMPTY, root.element.ty()).ok()? != U8
+            if crate::lowering::lower_flat_element(TypeLowering::EMPTY, root.element)
+                .ok()?
+                .ty()
+                != U8
                 || root
                     .path
                     .iter()

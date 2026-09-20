@@ -14,14 +14,14 @@
 //! because reproducing compiler behaviour in Python would create a second,
 //! divergent implementation of the language.
 //!
-//! A case reaches its verdict through the ordinary compiler path and, when
-//! the expectation is a `run`, through a real invocation: the
-//! emitted module is linked with the same host arguments every Whitefoot
-//! executable uses, the manifest's `arrange` is realized as actual fixture
-//! files, actual argument bytes, an actual standard input, and actual
-//! redirection, and the process's own exit status is the verdict. A process
-//! that ends without an exit status is a harness stop, never a language
-//! verdict.
+//! A source `accept` or `reject` reaches the complete semantic-publication
+//! boundary of the ordinary compiler path. A `run` or `unsupported` case
+//! continues through ordinary lowering and target compilation, and a `run`
+//! then reaches a real invocation: the emitted module is linked with the same
+//! host arguments every Whitefoot executable uses, the manifest's `arrange`
+//! is realized as actual fixture files, actual argument bytes, an actual
+//! standard input, and actual redirection. A process that ends without an exit
+//! status is a harness stop, never a language verdict.
 //! Nothing about a case's identity, name, or family selects a path here.
 //!
 //! The corpus-wide run is an ordinary test in the shared source-corpus
@@ -41,7 +41,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
     CompilationFailureKind, CompilerLimits, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
-    SourceInput, compile,
+    SourceInput, check, compile,
 };
 
 use crate::support::append_runtime_objects;
@@ -64,10 +64,21 @@ struct Reached {
 fn reach(case: &Case) -> Reached {
     let source = case.source();
     let path = case.logical_path();
-    let module = match compile(
-        &[SourceInput::new(&path, &source)],
-        CompilerLimits::default(),
-    ) {
+    let inputs = [SourceInput::new(&path, &source)];
+    // `accept` and `reject` are source-language verdicts. [STOR-6] begins only
+    // after their complete semantic boundary, so target qualification cannot
+    // change either one. A runtime or unsupported expectation still needs the
+    // complete toolchain: the former executes its module, while the latter may
+    // name a capability first encountered during lowering.
+    let module = match &case.expect {
+        Expectation::Accept | Expectation::Reject(_) => {
+            check(&inputs, CompilerLimits::default()).map(|()| None)
+        }
+        Expectation::Run(_) | Expectation::Unsupported => {
+            compile(&inputs, CompilerLimits::default()).map(Some)
+        }
+    };
+    let module = match module {
         Ok(module) => module,
         Err(failure) => {
             let note = Some(failure.to_string());
@@ -97,7 +108,12 @@ fn reach(case: &Case) -> Reached {
         };
     }
     Reached {
-        verdict: execute(&module, case.arrange.as_ref()),
+        verdict: execute(
+            module
+                .as_deref()
+                .expect("a run expectation uses the complete compiler path"),
+            case.arrange.as_ref(),
+        ),
         note: None,
     }
 }

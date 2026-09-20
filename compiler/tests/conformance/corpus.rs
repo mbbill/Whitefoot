@@ -15,7 +15,7 @@ use super::json::{self, Value};
 /// `accept | reject(rule) | run(exit) | unsupported`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Verdict {
-    /// The unit is a complete accepted program.
+    /// The unit reached complete target-independent source acceptance.
     Accept,
     /// The unit violates the named numbered rule, or an unnamed one.
     Reject(Option<String>),

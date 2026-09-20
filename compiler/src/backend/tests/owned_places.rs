@@ -425,7 +425,7 @@ fn an_owned_parameter_uses_same_or_distinct_result_storage_after_entry_transfer(
     // ABI under test. The wide array still forces indirect storage; the watch
     // read and both result aliases still expose a misplaced or premature entry
     // transfer. `set same = extend(items: move same, ...)` is [OP-12]'s atomic
-    // in-place update: the target place is the call's first argument, `append`
+    // in-place update: the target place is the call's first argument, `extend`
     // returns the place's type and has no failure exit, and its row writes no
     // prefix of the target. A by-value parameter carries no effect entry
     // [EFF-1], so the row states the watch read alone.
@@ -474,7 +474,7 @@ fn main() -> status: own ExitStatus pure {
     let main = super::emitted_function(&module, "main");
     let calls = main
         .lines()
-        .filter_map(|line| line.split_once("@wf_append(").map(|(_, tail)| tail))
+        .filter_map(|line| line.split_once("@wf_extend(").map(|(_, tail)| tail))
         .map(|arguments| {
             let mut arguments = arguments.split(',').map(str::trim);
             let result = arguments.next().expect("result pointer");
@@ -615,7 +615,8 @@ fn observe(owner: own Box<u64>, incoming: own Box<u64>) -> result: own Observed 
 
 fn main() -> status: own ExitStatus pure {
   let owner = box_new::<u64>(value: 11_u64);
-  let incoming = box_new::<u64>(value: 22_u64);
+  let incoming_value = owner.inner +wrap 11_u64;
+  let incoming = box_new::<u64>(value: incoming_value);
   let seen = observe(owner: move owner, incoming: move incoming);
   if seen.previous != 11_u64 {
     return exit_status(code: 1_u8);
@@ -724,8 +725,10 @@ fn read_child(tree: &Box<Node>) -> result: own u64 reads(tree) {
 
 fn main() -> status: own ExitStatus pure {
   let first = box_new::<u64>(value: 11_u64);
-  let incoming = box_new::<u64>(value: 22_u64);
-  let sibling = box_new::<u64>(value: 33_u64);
+  let incoming_value = first.inner +wrap 11_u64;
+  let incoming = box_new::<u64>(value: incoming_value);
+  let sibling_value = incoming.inner +wrap 11_u64;
+  let sibling = box_new::<u64>(value: sibling_value);
   let node = HasChildren(left: move sibling, right: move first);
   let tree = box_new::<Node>(value: move node);
   let kept = exchange_child(tree: &tree, incoming: move incoming);
@@ -747,6 +750,8 @@ fn main() -> status: own ExitStatus pure {
         let host = allocation_observer(4, 0);
         let output = compile_link_and_run(&observed, Some(&host), &[]);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
+        // Each cell construction reads the preceding cell, so [PAR-1] cannot
+        // overlap the allocations whose observer IDs name these owners.
         // The displaced child is released at the commit, before the caller
         // rereads its tree. That tree must own the replacement child, not a
         // copied enum's slot. PROV-6 then visits the sibling and replacement
@@ -1509,6 +1514,10 @@ fn main() -> status: own ExitStatus pure {
 /// - a commit over a `u64` binding: the previous value "needs none", so the
 ///   program's one cell is released once at the scope exit, `A1;F1;`.
 ///
+/// The second allocating body derives `fresh`'s value from `cell`, making the
+/// two calls dependent under [PAR-1]. Its observer IDs therefore name source
+/// owners rather than an unobservable worker schedule.
+///
 /// A lowering that derived the release from the target's type alone would
 /// still produce the first two and would free nothing extra in the third; one
 /// that emitted no release for a named binding leaks the first cell of the
@@ -1547,7 +1556,8 @@ fn main() -> status: own ExitStatus pure {{
         (
             program(
                 "  let cell = box_new::<u64>(value: 11_u64);\n  \
-                 let fresh = box_new::<u64>(value: 22_u64);\n  \
+                 let fresh_value = cell.inner +wrap 11_u64;\n  \
+                 let fresh = box_new::<u64>(value: fresh_value);\n  \
                  set cell = move fresh;\n  \
                  let seen = cell.inner;\n  \
                  return seen;",

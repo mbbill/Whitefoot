@@ -114,47 +114,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         self.emit_buffer_block(result, block, element, length, Some(&stored))
     }
 
-    /// The same block with every element at its element type's
-    /// `zeroinitializer` [OP-9].
-    ///
-    /// v0.59's `buffer_vacant::<T>(n)` built an all-`None` run of an
-    /// `Option<T>` instance, whose tag-zero variant is exactly that pattern.
-    /// [OP-1]'s v0.60 table carries no such row, so no accepted source
-    /// reaches here; the block below is the one a vacant-element
-    /// construction row would allocate.
-    pub(super) fn emit_buffer_vacant(
-        &mut self,
-        result: IrValueId,
-        ty: IrType,
-        nominal: IrNominalId,
-        length: IrValueId,
-        _layout_ceiling: IrLayoutCeiling,
-        target_domains: IrRuntimeTargetObligations,
-    ) -> Result<(), BackendFailure> {
-        if !target_domains.is_complete() || ty != IrType::Nominal(nominal) {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let block = self.buffer_block_type(nominal)?;
-        let IrType::Buffer { element } = block else {
-            return Err(BackendFailure::InvalidIr);
-        };
-        let IrFlatElement::Nominal(id) = element else {
-            return Err(BackendFailure::InvalidIr);
-        };
-        if self.nominal(id)?.is_tag_only_enum() {
-            return Err(BackendFailure::InvalidIr);
-        }
-        if self.value_type(length)
-            != Some(IrType::Integer {
-                width: 64,
-                signed: false,
-            })
-        {
-            return Err(BackendFailure::InvalidIr);
-        }
-        self.emit_buffer_block(result, block, element, length, None)
-    }
-
     /// One allocation of `header + count * stride` bytes, the `len` word, and
     /// the element loop.
     ///

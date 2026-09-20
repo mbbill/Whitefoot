@@ -239,7 +239,7 @@ fn a_move_out_of_a_window_slot_is_refused() {
     let source =
         include_bytes!("../../../../tests/conformance/cases/win3-neg-move-out-of-window-slot.wf");
     assert_rule_kind(source, SemanticRule::Win3, |kind| {
-        matches!(kind, SemanticIssueKind::InvalidElementMove { .. })
+        matches!(kind, SemanticIssueKind::MoveOutOfSlot { .. })
     });
 }
 
@@ -509,7 +509,7 @@ fn a_runtime_capacity_shape_outside_a_box_is_refused() {
         "../../../../tests/conformance/cases/type9-neg-runtime-capacity-outside-box.wf"
     );
     assert_rule_kind(source, SemanticRule::Type9, |kind| {
-        matches!(kind, SemanticIssueKind::InlineRuntimeCapacityShape { .. })
+        matches!(kind, SemanticIssueKind::TypeMismatch { .. })
     });
 }
 

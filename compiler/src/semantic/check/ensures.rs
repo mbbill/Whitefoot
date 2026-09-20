@@ -1132,7 +1132,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 row:
                     GoalOperation::ArrayMeasure { measure, .. }
                     | GoalOperation::BufferMeasure { measure, .. }
-                    | GoalOperation::RangeMeasure { measure, .. }
                     | GoalOperation::ContainerMeasure { measure, .. },
                 arguments,
                 ..
@@ -1264,6 +1263,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             return Ok(None);
         }
+        // [CALL-4, FN-9] schema admission classifies only the result ordinals
+        // the relation names. An unnamed ordinal imposes no postcondition, so
+        // its symbolic or affine value cannot disqualify an otherwise closed
+        // integer relation over another ordinal.
+        let direct_result_ordinals = relation
+            .operands
+            .iter()
+            .filter_map(|operand| match &operand.datum {
+                RelationDatum::Result { ordinal, .. } => Some(*ordinal),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let measured_result_ordinals = relation
+            .operands
+            .iter()
+            .filter_map(|operand| match &operand.datum {
+                RelationDatum::Measure(
+                    _,
+                    PostconditionPlace {
+                        root: PostconditionPlaceRoot::Result { ordinal },
+                        ..
+                    },
+                ) => Some(*ordinal),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         let checked = self.build_checked_postcondition_inner(
             function, parameters, selector, relation, body, true,
         )?;
@@ -1272,14 +1297,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // returned on those edges (for example unit) is not evidence for it.
         let fragment_returns = exclusive_state_only
             || checked.selected_returns.iter().all(|selected| {
-                selected.values.iter().flatten().all(|value| match value {
-                    PostconditionReturnDatum::Place(place) => {
-                        matches!(place.ty, CheckedType::Integer(_))
-                    }
-                    PostconditionReturnDatum::Literal { value, .. } => {
-                        matches!(value.ty(), CheckedType::Integer(_))
-                    }
-                    PostconditionReturnDatum::Measure(..) => true,
+                direct_result_ordinals.iter().all(|ordinal| {
+                    selected
+                        .values
+                        .get(*ordinal as usize)
+                        .and_then(Option::as_ref)
+                        .is_some_and(|value| match value {
+                            PostconditionReturnDatum::Place(place) => {
+                                matches!(place.ty, CheckedType::Integer(_))
+                            }
+                            PostconditionReturnDatum::Literal { value, .. } => {
+                                matches!(value.ty(), CheckedType::Integer(_))
+                            }
+                            PostconditionReturnDatum::Measure(..) => true,
+                        })
+                }) && measured_result_ordinals.iter().all(|ordinal| {
+                    matches!(
+                        selected
+                            .values
+                            .get(*ordinal as usize)
+                            .and_then(Option::as_ref),
+                        Some(PostconditionReturnDatum::Place(_))
+                    )
                 })
             });
         Ok(fragment_returns.then_some(checked))
@@ -1379,18 +1418,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for statement in statements {
             match statement {
                 CheckedStatement::Let { binding, value, .. } => {
-                    let implicit_deref = matches!(
-                        value,
-                        CheckedExpression::BorrowAddressed { .. }
-                            | CheckedExpression::BorrowBuffer { .. }
-                            | CheckedExpression::BorrowBox { .. }
-                            | CheckedExpression::ReborrowAddressed { .. }
-                    ) || match value {
-                        CheckedExpression::Binding { binding, .. } => bindings
-                            .get(binding)
-                            .is_some_and(|source| source.implicit_deref),
-                        _ => false,
-                    };
+                    let implicit_deref = matches!(value, CheckedExpression::BorrowAddressed { .. })
+                        || match value {
+                            CheckedExpression::Binding { binding, .. } => bindings
+                                .get(binding)
+                                .is_some_and(|source| source.implicit_deref),
+                            _ => false,
+                        };
                     bindings.insert(
                         *binding,
                         PostconditionBindingInfo {
@@ -1698,7 +1732,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let Some(info) = binding_info.get(&root.binding) else {
                     return Ok(None);
                 };
-                let element = root.element.ty();
+                let element = root.element_type;
                 if info.ty != element {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
@@ -1907,11 +1941,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // reference binding roots the referent directly; only projections
         // written below it belong in the selected-return identity. Recursive
         // `BoxDeref` classification appends its real content step separately.
-        let projections = fields
-            .iter()
-            .copied()
-            .map(GoalProjection::Field)
-            .collect();
+        let projections = fields.iter().copied().map(GoalProjection::Field).collect();
         Ok(Some(PostconditionReturnPlace {
             root: PostconditionReturnPlaceRoot::Binding(binding),
             projections,
@@ -2011,25 +2041,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let path = usage.origin.node().components();
             path.len() > owner.len() && path.starts_with(owner)
         }))
-    }
-
-    /// The result ordinal and datum type a bare selector atom names, when the
-    /// atom is exactly one written result datum [FN-9, CALL-4].
-    pub(super) fn postcondition_selector_is_bare_atom(
-        &self,
-        atom: NodeId,
-    ) -> Result<Option<(u32, CheckedType)>, CheckStop> {
-        let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
-            return Ok(None);
-        };
-        if !self
-            .tree
-            .children_with(place, Production::Psuffix)?
-            .is_empty()
-        {
-            return Ok(None);
-        }
-        self.postcondition_selector_place_base(place)
     }
 
     /// The result ordinal and datum type one clause `place` is rooted at,

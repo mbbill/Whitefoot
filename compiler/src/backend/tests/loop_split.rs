@@ -408,27 +408,28 @@ fn map_and_reduction_source() -> Vec<u8> {
         .into_bytes()
 }
 
-/// The same work as [`INDEPENDENT_MAP`], expressed through a range-reference
-/// output parameter and a same-index read-modify-write. This keeps the result
-/// bytes unchanged while exercising both read-side map evidence and holder
-/// capture.
+/// The same work as [`INDEPENDENT_MAP`], expressed through an ordinary
+/// reference to its boxed Array and a same-index read-modify-write. PAR-2's
+/// single-element family requires an Array or Slots subscript; it does not
+/// admit indexing an unpartitioned range reference. This exercises that
+/// family's reference-parameter route without changing its access pattern.
 fn borrowed_read_modify_map_source() -> Vec<u8> {
     let source = std::str::from_utf8(INDEPENDENT_MAP).expect("the fixture is UTF-8");
     source
         .replacen(
             "fn mapped() -> result: own Box<Array<u8>> pure {\n  let out = box_array_filled::<u8>(count: 400000_u64, value: 0_u8);\n",
-            "fn mapped(out: &[u8]) -> result: own unit writes(out) contract {\n  define spare = deref(out).len;\n  requires 400000_u64 <= spare;\n} {\n",
+            "fn mapped(out: &Box<Array<u8>>) -> result: own unit writes(out.inner) contract {\n  define spare = deref(out).inner.len;\n  requires 400000_u64 <= spare;\n} {\n",
             1,
         )
         .replacen(
             "    set out.inner[slot] = byte;\n",
-            "    let old = deref(out)[slot];\n    let blended = old +wrap byte;\n    set deref(out)[slot] = blended;\n",
+            "    let old = deref(out).inner[slot];\n    let blended = old +wrap byte;\n    set deref(out).inner[slot] = blended;\n",
             1,
         )
         .replacen("  return move out;\n", "  return unit;\n", 1)
         .replacen(
             "  let report = mapped();\n",
-            "  let report = box_array_filled::<u8>(count: 400000_u64, value: 173_u8);\n  let target = &report.inner[0_u64..400000_u64];\n  let done = mapped(out: target);\n",
+            "  let report = box_array_filled::<u8>(count: 400000_u64, value: 173_u8);\n  let done = mapped(out: &report);\n",
             1,
         )
         .into_bytes()
@@ -668,6 +669,21 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
 /// A proved single-binder affine map uses the same split machinery without inventing
 /// a source accumulator: Unit carries the worker join, while the captured
 /// buffer carries the only observable result.
+fn assert_map_capture_signature(chunk: &str, seed_type: &str) {
+    let signature = chunk.lines().next().expect("chunk definition");
+    let (_, arguments) = signature.split_once('(').expect("chunk parameters");
+    let (arguments, _) = arguments.split_once(')').expect("closed parameters");
+    let types = arguments
+        .split(',')
+        .map(|argument| argument.split_whitespace().next().expect("parameter type"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        types,
+        [seed_type, "i64", "i64", "ptr"],
+        "the chunk must capture exactly the outer owner's address after its seed and bounds:\n{chunk}"
+    );
+}
+
 #[test]
 fn an_independent_map_joins_and_preserves_its_outer_buffer() {
     let unsplit = emit(INDEPENDENT_MAP);
@@ -693,18 +709,10 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
         splitter.starts_with("define i8 "),
         "an independent map splitter must return the Unit token:\n{splitter}"
     );
-    // KEPT AS WRITTEN for the lowering port: `{ ptr, i64 }` is the emitted
-    // descriptor of the mapped run, whose source spelling moved from
-    // `buffer<u8>` to `Box<Array<u8>>` [TYPE-9, OP-13]. If the runtime-count
-    // run's physical type changes, re-derive the literal here; the property -
-    // the chunk captures the descriptor rather than copying the run - does not.
-    assert!(
-        chunk
-            .lines()
-            .next()
-            .is_some_and(|signature| signature.contains("{ ptr, i64 }")),
-        "the mapped buffer descriptor must be captured by the chunk:\n{chunk}"
-    );
+    // STOR-1 puts the descriptor inside the allocation. The complete chunk
+    // signature is Unit seed, two bounds, and exactly one address of the
+    // outer owner slot. Native bytes and per-exit releases are checked below.
+    assert_map_capture_signature(chunk, "i8");
     for step in [
         "call ptr @wf__par_acquire_lane(",
         "call void @wf__par_publish(",
@@ -844,15 +852,9 @@ fn a_map_and_reduction_preserves_both_results() {
         splitter.starts_with("define i64 "),
         "the combined loop must retain its real reduction result:\n{splitter}"
     );
-    // KEPT AS WRITTEN for the lowering port: the same emitted run descriptor
-    // as in `an_independent_map_joins_and_preserves_its_outer_buffer`.
-    assert!(
-        chunk
-            .lines()
-            .next()
-            .is_some_and(|signature| signature.contains("{ ptr, i64 }")),
-        "the reduction chunk must also capture its mapped buffer:\n{chunk}"
-    );
+    // The reduction seed replaces Unit; bounds and the one owner-slot
+    // address retain exactly the independent map's capture ABI.
+    assert_map_capture_signature(chunk, "i64");
 
     let directory = test_directory();
     let reference = Command::new(build_executable(&unsplit, &directory))

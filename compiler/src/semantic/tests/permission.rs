@@ -30,6 +30,27 @@ use super::super::permission::{
 use super::super::places::ResolvedPlace;
 use super::with_semantics;
 
+#[test]
+fn a_condition_call_cannot_hide_an_arm_read_of_the_previous_result() {
+    let source = br#"fn predicate(value: own u64) -> result: own Bool pure {
+  return value == 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let first = predicate(value: 1_u64);
+  if predicate(value: 0_u64) {
+    let observed = first;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    assert!(matches!(
+        pair_of(&table, "main", "predicate", "predicate").verdict,
+        PermissionVerdict::Denied(Denial::Footprint { .. })
+    ));
+}
+
 // Scalar state keeps the ordinary adjacency tests independent of a library
 // API. The shared-factory tests below exercise the linked declarations
 // separately. `writes(p)` subsumes `reads(p)` [EFF-1], so the write row is

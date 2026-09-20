@@ -20,8 +20,8 @@ use crate::syntax::NodeId;
 use crate::{DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKind, SemanticRule};
 
 use super::super::super::model::{CheckedMode, CheckedSetTarget, CheckedStatement};
-use super::super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
-use super::super::expressions::{MutationTarget, WIN3_LINEAR_TARGET};
+use super::super::super::places::{PlaceRoot, ResolvedPlace};
+use super::super::expressions::{MutationTarget, ResolvedPlaceSet, WIN3_LINEAR_TARGET};
 use super::super::references::{InvalidationEvent, RequiredReferent};
 use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
 use super::{ControlScope, StatementResult};
@@ -29,7 +29,7 @@ use super::{ControlScope, StatementResult};
 /// [SET-1] the target of the commit whose right-hand side is being checked,
 /// and whether that right-hand side has read it out.
 pub(in crate::semantic::check) struct CommitReadOut {
-    place: ResolvedPlace,
+    place: ResolvedPlaceSet,
     /// Whether the read-out owes the element-position judgment [MSR-2]. A
     /// measured place can itself carry a subscript [MSR-1], so `grid[0][1]`
     /// and `grid[1][1]` differ despite agreeing in their last offset; the
@@ -55,8 +55,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let targets = self.commit_read_outs.borrow();
         let spent = targets.iter().any(|target| {
             target.read_out
-                && target.place.contains(place)
-                && (!descriptor || target.place.path.len() <= place.path.len())
+                && target.place.members.iter().any(|member| {
+                    member.contains(place) && (!descriptor || member.path.len() <= place.path.len())
+                })
         });
         if spent {
             return self.issue_node(
@@ -98,7 +99,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn take_commit_storage_read_out(&self, place: &ResolvedPlace, element: bool) -> bool {
         let mut targets = self.commit_read_outs.borrow_mut();
         for target in targets.iter_mut() {
-            if target.read_out || target.element != element || !target.place.contains(place) {
+            if target.read_out
+                || target.element != element
+                || !target.place.identity.contains(place)
+            {
                 continue;
             }
             target.read_out = true;
@@ -133,21 +137,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if result_mode != CheckedMode::Own || target.ty != result {
             return None;
         }
-        Some(target.place.clone())
-    }
-
-    /// Extraction below a `Box` target needs an explicit account of the old
-    /// target's unselected owning content. Retain that capability boundary.
-    pub(in crate::semantic::check) fn is_box_descendant_read_out(
-        &self,
-        place: &ResolvedPlace,
-    ) -> bool {
-        place.path.contains(&PlaceStep::Deref)
-            && self.commit_read_outs.borrow().iter().any(|target| {
-                !target.read_out
-                    && target.place.path.len() < place.path.len()
-                    && target.place.contains(place)
-            })
+        Some(target.place.identity.clone())
     }
 
     /// [GRAM-4, SET-1] one `set` statement.
@@ -251,7 +241,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [REF-2] the write invalidates every live reference whose path this
         // target is a proper prefix of. Writing the storage at the target's
         // own path, or below it, is a content write and invalidates nothing.
-        Self::invalidate_references(bindings, &mutation.place, &InvalidationEvent::PrefixWritten);
+        for place in &mutation.place.members {
+            Self::invalidate_references(bindings, place, &InvalidationEvent::PrefixWritten);
+        }
         if self.commit_reinitializes_binding(&mutation) {
             bindings
                 .get_mut(&mutation.declaration)
@@ -283,6 +275,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_depth: usize,
     ) -> Result<(super::super::TypedExpression, bool), CheckStop> {
         self.commit_read_outs.replace(vec![CommitReadOut {
+            // [REF-1, OP-12] exact read-out matching uses the unique member
+            // where one exists and the holder identity for a true union.
+            // After a read-out, liveness ranges over every storage member.
             place: mutation.place.clone(),
             element: mutation.element,
             ty: mutation.target.ty(),
@@ -441,8 +436,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn commit_reinitializes_binding(&self, mutation: &MutationTarget) -> bool {
         matches!(&mutation.target, CheckedSetTarget::Place(place) if place.fields.is_empty())
             && mutation.through_reference.is_none()
-            && mutation.place.path.is_empty()
-            && matches!(mutation.place.root, PlaceRoot::Binding(_))
+            && mutation.place.identity.path.is_empty()
+            && matches!(mutation.place.identity.root, PlaceRoot::Binding(_))
     }
 
     /// Whether this written target is a complete binding that is already

@@ -213,14 +213,6 @@ impl GenericSubstitution {
         self.bindings.len()
     }
 
-    /// The actual region one formal region parameter of the owning nominal
-    /// denotes in this instance [S20, PROV-1].
-    pub(super) fn region_argument(&self, declaration: DeclarationId) -> Option<DeclarationId> {
-        self.regions
-            .iter()
-            .find_map(|(formal, actual)| (*formal == declaration).then_some(*actual))
-    }
-
     pub(super) fn region_arguments(&self) -> &[(DeclarationId, DeclarationId)] {
         &self.regions
     }
@@ -1094,7 +1086,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // v0.60: a reference is a name for a path [REF-1] and its validity is
         // the [REF-2] flow fact, not a brand on the signature.
         let region_parameters = Vec::new();
-        let written_regions = 0;
         let parameters = self.parse_parameters_with(template.node, &substitution)?;
         // [GRAM-2] the declaration writes one result or an ordered result
         // list. Every ordinal is judged by the ordinary result rules below;
@@ -1197,7 +1188,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             name: template.name.clone(),
             symbol,
             region_parameters,
-            written_regions,
             parameters,
             result_mode,
             result,
@@ -2476,9 +2466,7 @@ impl Checker<'_, '_, '_, '_> {
                 ..
             } => self.collect_type_nominals(operand_type, output)?,
             GoalOperation::BufferMeasure { element, .. }
-            | GoalOperation::BufferIndex { element }
-            | GoalOperation::RangeMeasure { element, .. }
-            | GoalOperation::RangeIndex { element, .. } => {
+            | GoalOperation::BufferIndex { element } => {
                 self.collect_flat_element_nominals(element, output)?;
             }
             GoalOperation::ArrayFill { element, .. }
@@ -2637,9 +2625,7 @@ impl Checker<'_, '_, '_, '_> {
                 ..
             } => self.rewrite_type_nominals(operand_type, checkpoint, replacements)?,
             GoalOperation::BufferMeasure { element, .. }
-            | GoalOperation::BufferIndex { element }
-            | GoalOperation::RangeMeasure { element, .. }
-            | GoalOperation::RangeIndex { element, .. } => {
+            | GoalOperation::BufferIndex { element } => {
                 self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
             }
             GoalOperation::ArrayFill { element, .. }

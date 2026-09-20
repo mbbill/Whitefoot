@@ -28,7 +28,7 @@ use crate::{
 use super::entailment::{
     CallGoalDisposition, EntailmentCallee, EntailmentContext, PostconditionSchedule,
     VerifiedPostconditionSummary, analyze_function, analyze_function_candidate,
-    finalize_function_entailment, postcondition_schedule,
+    collect_statement_calls, finalize_function_entailment, postcondition_schedule,
 };
 use super::goal::{
     CheckedCallRequirement, CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression,
@@ -49,7 +49,7 @@ use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
 use control::{ControlCounters, ControlScope};
 use generics::{GenericParameter, GenericSubstitution, PendingGenericRequirement};
-use references::{AccessKind, ReferenceInfo};
+use references::ReferenceInfo;
 
 /// The syntax tree, as the permission ledger's citations reach it.
 struct PermissionLedgerSource<'view, 'unit, 'classified, 'lexed, 'source> {
@@ -93,12 +93,8 @@ struct FunctionSignature {
     node: NodeId,
     name: String,
     symbol: String,
-    /// Every formal region of the callable: the written `region_params`
-    /// first, in their written order, then the regions [FORM-8] leaves
-    /// unwritten at a parameter position, in parameter order.
+    /// Every formal region of the callable.
     region_parameters: Vec<DeclarationId>,
-    /// How many leading `region_parameters` entries the declaration writes.
-    written_regions: usize,
     parameters: Vec<ParameterSignature>,
     /// The callable result [FN-1]: the written result of a single-result
     /// declaration, and the compiler-owned result-list value of a declaration
@@ -200,7 +196,6 @@ struct ConstructorShape {
     /// of this constructor does, which is exactly the region argument the
     /// construct writes.
     determining_field: Vec<Option<usize>>,
-    field_regions: Vec<type_regions::TypeRegionShape>,
 }
 
 /// A nominal instance a derived type named, awaiting interning.
@@ -214,8 +209,6 @@ enum PendingNominal {
     ResultList(Vec<(String, CheckedType)>),
     /// [STOR-2] an `arena<'r, T>` instance over this region and content.
     Arena(DeclarationId, CheckedType),
-    /// The one compiler-owned region allocation-list nominal [STOR-3].
-    ArenaStorage,
     /// A prelude instance, such as the `Result<T, E>` a checked row produces.
     Prelude(PreludeType),
     /// [S20, FN-2] one source nominal instance at a region a call determined.
@@ -339,7 +332,6 @@ struct TypedExpression {
 #[derive(Clone)]
 struct PlaceAccess {
     place: ResolvedPlace,
-    kind: AccessKind,
 }
 
 impl TypedExpression {
@@ -358,7 +350,6 @@ impl TypedExpression {
         expression: CheckedExpression,
         effects: EffectSet,
         place: ResolvedPlace,
-        kind: AccessKind,
     ) -> Self {
         Self {
             expression,
@@ -366,7 +357,7 @@ impl TypedExpression {
             reference: None,
             reference_value: false,
             effects,
-            accesses: vec![PlaceAccess { place, kind }],
+            accesses: vec![PlaceAccess { place }],
         }
     }
 }
@@ -476,9 +467,6 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// share one nominal; the value a multi-result callable hands back is one
     /// value of it, and a destructuring binder list is its projection.
     result_list_nominals: HashMap<Vec<(String, CheckedType)>, NominalId>,
-    /// The one compiler-owned region allocation-list nominal, interned on
-    /// first use [STOR-3].
-    arena_storage_nominal: Option<NominalId>,
     /// Nominal instances a derived type named that were not interned yet.
     /// Written by the `&self` checking path and drained by the `&mut self`
     /// driver between attempts at one function.
@@ -520,10 +508,6 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// syntax could not settle, handed to the entailment fragment with the
     /// finished body.
     call_separations: RefCell<Vec<super::model::CheckedCallSeparation>>,
-    /// Complete target-ordinal pairs whose distinctness is deferred to the
-    /// statement's index-separation entailment obligation. Candidate index
-    /// pairs are never facts in the RHS ownership check.
-    commit_separation_targets: RefCell<std::collections::HashSet<(usize, usize)>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
     nominal_templates: Vec<NominalTemplate>,
@@ -936,16 +920,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok((missing, extra))
     }
 
-    /// The source spelling of one region, or `None` where [FORM-8] leaves it
-    /// unwritten and no name exists to quote.
-    pub(in crate::semantic::check) fn written_region_name(
-        &self,
-        region: DeclarationId,
-    ) -> Result<Option<String>, CheckStop> {
-        let spelling = self.declaration_spelling(region)?;
-        Ok((!spelling.starts_with("'0_")).then_some(spelling))
-    }
-
     /// [OWN-1, FORM-1, FN-2] whether this body is the authority on the one
     /// spelling [FORM-1] keys on a value's copy/affine class.
     ///
@@ -1086,14 +1060,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             box_nominals: HashMap::new(),
             arena_nominals: HashMap::new(),
             result_list_nominals: HashMap::new(),
-            arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
             pending_instances: RefCell::new(Vec::new()),
             elided_store_brand: std::cell::Cell::new(None),
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
             call_separations: RefCell::new(Vec::new()),
-            commit_separation_targets: RefCell::new(std::collections::HashSet::new()),
             prelude_nominals: HashMap::new(),
             prelude_types: Vec::new(),
             nominal_templates: Vec::new(),
@@ -1173,8 +1145,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
         });
 
-        let postcondition_schedule =
-            self.analyze_function_inventory(&mut function_inventory, &callees, optimistic_batch)?;
+        let postcondition_schedule = self.analyze_function_inventory(
+            &mut function_inventory,
+            &callees,
+            optimistic_batch,
+            None,
+        )?;
         let baseline_functions = function_inventory
             .iter()
             .map(|checked| &checked.function)
@@ -1538,9 +1514,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             PendingNominal::Arena(region, content) => {
                                 self.intern_arena_nominal(region, content)?;
                             }
-                            PendingNominal::ArenaStorage => {
-                                self.intern_arena_storage_nominal()?;
-                            }
                             PendingNominal::Prelude(ty) => {
                                 self.intern_prelude_nominal(ty)?;
                             }
@@ -1658,6 +1631,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 binding,
                 mode: parameter.mode,
                 ty: parameter.ty,
+                range_element: (parameter.mode == CheckedMode::Range)
+                    .then(|| self.intern_element(parameter.ty))
+                    .transpose()?,
             });
         }
 
@@ -1944,10 +1920,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     checked.function.body.as_deref().unwrap_or_default(),
                 )
         });
-        self.analyze_function_inventory(functions, callees, optimistic_batch)?;
+        // Only the canonical instances are judged below, and a judged body
+        // reads another function's analysis solely through the postcondition
+        // summaries of its callees. The other bodies of this scratch
+        // inventory — every nongeneric function among them — are analyzed
+        // again by the concrete phase, so analyzing them here would repeat
+        // that whole cost for a result nothing reads.
+        let analyzed = Self::generic_validation_scope(functions, canonical)?;
+        self.analyze_function_inventory(functions, callees, optimistic_batch, Some(&analyzed))?;
         if optimistic_batch {
-            for checked in functions.iter_mut() {
-                finalize_function_entailment(&mut checked.function.entailment);
+            for (checked, analyzed) in functions.iter_mut().zip(&analyzed) {
+                if *analyzed {
+                    finalize_function_entailment(&mut checked.function.entailment);
+                }
             }
         }
         if !self.reject_entailment {
@@ -1962,19 +1947,62 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(())
     }
+    /// The functions whose bodies symbolic validation must analyze: the
+    /// canonical instances and everything their calls reach, by the same
+    /// call-graph shape the postcondition schedule is built from.
+    ///
+    /// The set is closed under callees, so a strongly connected component is
+    /// either wholly inside it or wholly outside, and every summary an
+    /// analyzed body can consume is published by an analyzed component.
+    fn generic_validation_scope(
+        functions: &[CheckedFunctionInventory],
+        canonical: &[(usize, DeclarationId)],
+    ) -> Result<Vec<bool>, CheckStop> {
+        let mut analyzed = vec![false; functions.len()];
+        let mut pending = canonical
+            .iter()
+            .map(|(index, _)| *index)
+            .collect::<Vec<_>>();
+        let mut calls = Vec::new();
+        while let Some(index) = pending.pop() {
+            let slot = analyzed
+                .get_mut(index)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            if std::mem::replace(slot, true) {
+                continue;
+            }
+            let function = &functions[index].function;
+            calls.clear();
+            collect_statement_calls(
+                function.id,
+                function.body.as_deref().unwrap_or_default(),
+                &mut calls,
+            );
+            pending.extend(calls.iter().map(|call| call.callee.0 as usize));
+        }
+        Ok(analyzed)
+    }
+
+    /// Analyzes every function of the inventory, or only those `analyzed`
+    /// marks. A caller that restricts the set must close it under callees.
     fn analyze_function_inventory(
         &self,
         functions: &mut [CheckedFunctionInventory],
         callees: &[EntailmentCallee],
         optimistic_batch: bool,
+        analyzed: Option<&[bool]>,
     ) -> Result<PostconditionSchedule, CheckStop> {
+        let selected = |index: usize| analyzed.is_none_or(|analyzed| analyzed[index]);
         // ENT is the single acceptance-bearing proof path for ordinary
         // obligations, call requirements, invariants and postconditions.
         let mut schedule =
             postcondition_schedule(functions.iter().map(|checked| &checked.function))
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if schedule.components.is_empty() {
-            for checked in functions.iter_mut() {
+            for (index, checked) in functions.iter_mut().enumerate() {
+                if !selected(index) {
+                    continue;
+                }
                 let context = EntailmentContext {
                     callees,
                     constants: &self.checked_constants,
@@ -1993,6 +2021,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         } else {
             for component in &mut schedule.components {
+                // Callee closure keeps components whole: skipping one skips
+                // both its analysis and the summaries no analyzed body reads.
+                if !component
+                    .functions
+                    .iter()
+                    .any(|function| selected(function.0 as usize))
+                {
+                    continue;
+                }
                 for function in &component.functions {
                     let function_index = function.0 as usize;
                     let verified_postconditions = functions
@@ -2297,12 +2334,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::NumericConversion { value, .. }
             | CheckedExpression::Reinterpret { value, .. }
-            | CheckedExpression::ArrayFill { value, .. }
-            | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
             | CheckedExpression::BoxTake { value, .. }
-            | CheckedExpression::ArenaNew { value, .. }
-            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.install_expression_call_requirements(value, requirements)?;
             }
@@ -2329,14 +2362,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.install_expression_call_requirements(start, requirements)?;
                 self.install_expression_call_requirements(end, requirements)?;
             }
-            CheckedExpression::BufferFill { length, value, .. } => {
-                self.install_expression_call_requirements(length, requirements)?;
-                self.install_expression_call_requirements(value, requirements)?;
-            }
-            CheckedExpression::BufferVacant { length, .. }
-            | CheckedExpression::BufferFits { length, .. } => {
-                self.install_expression_call_requirements(length, requirements)?;
-            }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
@@ -2344,11 +2369,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::RangeMeasure { .. }
-            | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
-            | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::DerefAddressed { .. }
             | CheckedExpression::Project { .. } => {}
         }
@@ -2489,35 +2510,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bounds: &HashMap<NodePath, u64>,
     ) -> Result<(), SemanticCompilerFailure> {
         match expression {
-            CheckedExpression::BufferFill {
-                carrier,
-                length,
-                value,
-                target_domains,
+            CheckedExpression::UserCall {
+                call,
+                arguments,
+                allocation,
                 ..
             } => {
-                // Acceptance-dark test hooks deliberately retain failed OP-9
-                // sites. They keep the pending None value and never lower;
-                // an accepted ordinary program has a bound for every site.
-                if let Some(upper) = bounds.get(carrier).copied() {
-                    target_domains.install_source_length_upper_bound(upper);
+                if let Some(allocation) = allocation
+                    && let Some(upper) = bounds.get(call).copied()
+                {
+                    allocation.install_source_length_upper_bound(upper);
                 }
-                Self::install_expression_allocation_bounds(length, bounds)?;
-                Self::install_expression_allocation_bounds(value, bounds)?;
-            }
-            CheckedExpression::BufferVacant {
-                carrier,
-                length,
-                target_domains,
-                ..
-            } => {
-                if let Some(upper) = bounds.get(carrier).copied() {
-                    target_domains.install_source_length_upper_bound(upper);
+                for argument in arguments {
+                    Self::install_expression_allocation_bounds(argument, bounds)?;
                 }
-                Self::install_expression_allocation_bounds(length, bounds)?;
             }
-            CheckedExpression::UserCall { arguments, .. }
-            | CheckedExpression::IntegerOperation { arguments, .. }
+            CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
             | CheckedExpression::BooleanOperation { arguments, .. }
             | CheckedExpression::EnumEquality { arguments, .. }
@@ -2533,12 +2541,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::NumericConversion { value, .. }
             | CheckedExpression::Reinterpret { value, .. }
-            | CheckedExpression::ArrayFill { value, .. }
-            | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
             | CheckedExpression::BoxTake { value, .. }
-            | CheckedExpression::ArenaNew { value, .. }
-            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 Self::install_expression_allocation_bounds(value, bounds)?;
             }
@@ -2563,9 +2567,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Self::install_expression_allocation_bounds(start, bounds)?;
                 Self::install_expression_allocation_bounds(end, bounds)?;
             }
-            CheckedExpression::BufferFits { length, .. } => {
-                Self::install_expression_allocation_bounds(length, bounds)?;
-            }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
@@ -2573,11 +2574,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::RangeMeasure { .. }
-            | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
-            | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::DerefAddressed { .. }
             | CheckedExpression::Project { .. } => {}
         }
@@ -2798,10 +2795,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     maximum_length,
                 }
             }
-            GoalOperation::RangeMeasure { measure, element } => GoalOperation::RangeMeasure {
-                measure,
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
-            },
             GoalOperation::ContainerMeasure {
                 measure,
                 measured,
@@ -2827,9 +2820,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 constant: constant
                     .map(|constant| self.instantiate_goal_const(constant, signature))
                     .transpose()?,
-            },
-            GoalOperation::RangeIndex { element } => GoalOperation::RangeIndex {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
         })
     }
@@ -3010,25 +3000,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         u32::try_from(index)
             .ok()
             .map(|index| CheckedConst::Derived(DerivedConstId(index)))
-    }
-
-    fn instantiate_goal_region(
-        &self,
-        region: DeclarationId,
-        signature: &FunctionSignature,
-        regions: &[DeclarationId],
-    ) -> Result<DeclarationId, CheckStop> {
-        let Some(index) = signature
-            .region_parameters
-            .iter()
-            .position(|formal| *formal == region)
-        else {
-            return Ok(region);
-        };
-        regions
-            .get(index)
-            .copied()
-            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn instantiate_goal_value(

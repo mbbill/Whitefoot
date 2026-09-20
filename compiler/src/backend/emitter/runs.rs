@@ -272,9 +272,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             length,
         } = run_type
         {
-            if self.program.element(actual) != Some(element.ty())
-                || !matches!(self.value_type(run), Some(IrType::Address(_)))
-            {
+            if actual != element || !matches!(self.value_type(run), Some(IrType::Address(_))) {
                 return Err(BackendFailure::InvalidIr);
             }
             let pointer = self.value_name(run);
@@ -283,7 +281,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let Some(shape) = RunShape::of(run_type) else {
             return Err(BackendFailure::InvalidIr);
         };
-        if shape.element_type(self.program)? != element.ty() {
+        if shape.element_type(self.program)?
+            != self
+                .program
+                .element(element)
+                .ok_or(BackendFailure::InvalidIr)?
+        {
             return Err(BackendFailure::InvalidIr);
         }
         let head = self.window_origin(shape, run_type, run)?;

@@ -16,11 +16,11 @@ mod pinned_sentences;
 use rejection::Located;
 
 use crate::{
-    ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome, FinalizeLimits,
-    FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
-    ResolutionOutcome, SemanticLocation, SemanticOutcome, SourceBundle, SourceInput, SourceLimits,
-    TerminalLimits, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
-    emit_llvm, finalize, lex, lower_checked, parse, resolve,
+    ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome, CheckedProgram,
+    FinalizeLimits, FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits,
+    ParseOutcome, ResolutionOutcome, SemanticLocation, SemanticOutcome, SourceBundle, SourceInput,
+    SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
+    classify_terminals, emit_llvm, finalize, lex, lower_checked, parse, resolve,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -286,6 +286,17 @@ pub fn compile(
     compile_with_overlap(inputs, limits, crate::OverlapLowering::Off)
 }
 
+/// Checks one ordered closed source bundle through complete target-independent
+/// semantic acceptance and monomorphization.
+///
+/// This is the source-verdict projection of the same front-end path [`compile`]
+/// uses. It stops before lowering, selected-target layout qualification, and
+/// executable-caller construction, so a later target or backend failure cannot
+/// become a source rejection or erase successful source acceptance [STOR-6].
+pub fn check(inputs: &[SourceInput<'_>], limits: CompilerLimits) -> Result<(), CompilationFailure> {
+    with_checked_program(inputs, limits, |_, _| Ok(()))
+}
+
 /// [`compile`] with the [PAR-1 candidate] overlap lowering named explicitly.
 ///
 /// [`crate::OverlapLowering::Off`] emits the module a compiler without this
@@ -343,6 +354,25 @@ fn compile_selected(
     overlap: crate::OverlapLowering,
     selected: &str,
 ) -> Result<Reported, CompilationFailure> {
+    with_checked_program(inputs, limits, |checked, bundle| {
+        lower_selected(inputs, limits, overlap, selected, bundle, checked)
+    })
+}
+
+/// Runs the one source front end and lends its checked program to one
+/// projection while every borrowed stage input remains alive. Both `check`
+/// and `compile` enter here; neither reconstructs a source verdict.
+fn with_checked_program<T, F>(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    continuation: F,
+) -> Result<T, CompilationFailure>
+where
+    F: for<'classified, 'lexed, 'source> FnOnce(
+        CheckedProgram<'classified, 'lexed, 'source>,
+        &SourceBundle,
+    ) -> Result<T, CompilationFailure>,
+{
     let bundle = SourceBundle::with_prelude(inputs, limits.source).map_err(|failure| {
         CompilationFailure::new(
             CompilationStage::SourceEnvelope,
@@ -554,6 +584,17 @@ fn compile_selected(
             ));
         }
     };
+    continuation(checked, &bundle)
+}
+
+fn lower_selected(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    overlap: crate::OverlapLowering,
+    selected: &str,
+    bundle: &SourceBundle,
+    checked: CheckedProgram<'_, '_, '_>,
+) -> Result<Reported, CompilationFailure> {
     let launcher_contract_ready = checked
         .data
         .functions
@@ -648,7 +689,7 @@ fn compile_selected(
 #[cfg(test)]
 mod tests {
     use super::{
-        CompilationFailureKind, CompilationStage, CompilerLimits, compile,
+        CompilationFailureKind, CompilationStage, CompilerLimits, check, compile,
         compile_with_permission_ledger,
     };
     use crate::{OverlapLowering, RecursionBudget, SourceInput};
@@ -2004,6 +2045,11 @@ fn main() -> status: own ExitStatus pure {{
     #[test]
     fn unrepresentable_array_is_a_target_failure_without_a_source_rule() {
         let source = b"fn main() -> status: own ExitStatus pure {\n  let values = array_filled::<u8, 18446744073709551615>(value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+        check(
+            &[SourceInput::new("value.wf", source)],
+            CompilerLimits::default(),
+        )
+        .expect("the array is source-valid before selected-target layout");
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -2037,6 +2083,11 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
+        check(
+            &[SourceInput::new("value.wf", source)],
+            CompilerLimits::default(),
+        )
+        .expect("the OP-9 proof is accepted before selected-target qualification");
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),

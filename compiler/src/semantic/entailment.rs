@@ -923,19 +923,11 @@ pub(crate) struct VerifiedPostconditionSummary {
 
 /// Where one published relation comes from [CALL-6].
 ///
-/// [ENT-3.S13]'s population is every callee whose declared relation list is
-/// published data: a source `fn_decl` with a verified [FN-9] summary, and
-/// every kernel-domain row [BLK-0], whose relations are declaration data
-/// rather than a body's proved consequence. A record has no source node, so
-/// its provenance names the row and the relation's position in that row's own
-/// declared list, exactly as an [OP-1] diagnostic names its family.
+/// [ENT-3.S13]'s population is every source `fn_decl` whose declared relation
+/// list has a verified [FN-9] summary.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum RelationProvenance {
     Verified(VerifiedPostconditionSummary),
-    Kernel {
-        operation: u8,
-        relation_ordinal: u32,
-    },
 }
 
 impl RelationProvenance {
@@ -944,10 +936,6 @@ impl RelationProvenance {
     pub(crate) const fn identity(&self) -> [u32; 2] {
         match self {
             Self::Verified(summary) => [summary.function.0, summary.component],
-            Self::Kernel {
-                operation,
-                relation_ordinal,
-            } => [*operation as u32, *relation_ordinal],
         }
     }
 }
