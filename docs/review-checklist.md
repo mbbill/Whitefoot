@@ -166,10 +166,6 @@ Source: [compiler rules](../AGENTS.md#compiler-rules) and
   relevant evidence is supplied when those paths change. If a semantic safety
   question cannot be settled by local inspection and cases, flag it for deeper
   review rather than certifying soundness.
-- [ ] **C5 — Architectural fit.** Apply the design skill's
-  [G3](../design/skill/SKILL.md#design-checks) to structural choices. Check that
-  assessment occurred when making or revising the choice and was explained
-  to the owner, rather than supplied retrospectively at completion.
 
 ## T. Specification and checks — changed language rules, design premises, tests or gate wiring
 
