@@ -260,11 +260,23 @@ condition under which it is taken up.
   proved recursion depth as obligation families; the atomic in-place update
   deliberately requires only a function that returns the place's type with no
   failure exit.
-- **Facts beyond affine comparisons in contracts.** A `requires` stating a
-  variant refinement (`p is Some`) and an `ensures` naming a single indexed
-  path (`deref(p.slots)[h.idx].gen == h.gen`). The second decides whether a
-  guarded pool access pays one load, compare, and branch per call. Take up
-  when the fact language is next revised.
+- **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
+  Three additive widenings, taken up together, each measured:
+  (1) Affine `ensures`. A `requires` may already be an affine relation and
+  enters the body as affine premises, but an `ensures` must fit the
+  difference-bound template, one datum a side, so `append` and `split_off`
+  cannot publish their exact sum. The affine layer [ENT-6] already holds
+  arbitrary affine inequalities over immutable value atoms and proves with
+  the fixed AUTO families, so publishing an `ensures` as affine premises in
+  the caller changes neither determinism nor termination. Costs to
+  measure first: AUTO tries every pair of premises, so checking time grows
+  with the square of the premises a body accumulates; and a proof chaining
+  more than two published facts needs written `use` steps. When it lands,
+  restore the exact-sum contracts of `append` and `split_off`.
+  (2) A `requires` stating a variant refinement (`p is Some`).
+  (3) An `ensures` naming a single indexed path
+  (`deref(p.slots)[h.idx].gen == h.gen`), which decides whether a guarded
+  pool access pays one load, compare and branch per call.
 - **Open-addressing tables with non-Copy payloads.** One null check per hit
   versus hashbrown, because occupancy that is decided by data is stored as
   data. Measure on a real table before deciding whether any mechanism is
@@ -286,12 +298,6 @@ condition under which it is taken up.
   alias metadata and `llvm.loop.parallel_accesses` (the emitter has no
   metadata table). Build the metadata subsystem as its own step with a
   before/after benchmark.
-- **Exact sum contracts for `append` and `split_off`.** Their rows publish
-  only `source.len == 0` (or `== index`) and
-  `destination.len >= entry(destination).len`, because a contract side
-  admits one datum and the exact sum needs two. A caller that needs the
-  exact length reads `destination.len` after the call. Revisit with the
-  contract-fact widening item above.
 - **Subscripted integer places as terms.** Today a place with subscripts is
   a term only when its last step is a readonly field. The kill machinery
   (offset support, overlapping element writes) already serves measure terms
