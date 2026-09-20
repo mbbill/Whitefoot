@@ -289,6 +289,10 @@ the subtree you are changing and its ancestors; a decision the tree does not
 cover is an amendment, never an edit to the tree, as `design/skill/SKILL.md`
 prescribes.
 
+Apply the [design skill's structural-choice assessment](design/skill/SKILL.md#workflow)
+when choosing or revising compiler code structure, including during
+implementation. Record deferred compiler design defects in `docs/todo.md`.
+
 ## Data safety
 
 Preserve unrelated user changes in a dirty worktree. Never discard, overwrite,
