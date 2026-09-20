@@ -1,0 +1,75 @@
+# Disposable construction/correctness replay for the ac34 records artifact.
+# It never measures performance and is removed with its research branch.
+name: worker-placement-replay
+on:
+  push:
+    branches:
+      - research/pr70-worker-placement-replay
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+defaults:
+  run:
+    shell: bash
+concurrency:
+  group: worker-placement-replay-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  construct-and-verify:
+    name: construct and verify worker placement (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Identify native toolchain
+        run: |
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          test -x /usr/bin/clang
+          /usr/bin/clang --version
+          readelf --version | sed -n '1p'
+          objcopy --version | sed -n '1p'
+      - name: Download the exact ac34 compute artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/ac34"
+          gh run download 35527433610 --repo "$GITHUB_REPOSITORY" \
+            --name compute-regression-ubuntu-24.04 \
+            --dir "$RUNNER_TEMP/ac34"
+          identity="$RUNNER_TEMP/ac34/performance-results/identity.txt"
+          test -f "$identity"
+          grep -Fx 'candidate=8609625800d60cab59e302b744917ed1073536ed' "$identity"
+          grep -Fx 'baseline=c12d6dd10d7a536507b30523dd9837a52c915028' "$identity"
+          grep -Fx 'native=-O2; ordinary host runtime; no alignment overrides' "$identity"
+      - name: Construct and statically audit four placement images
+        env:
+          WHITEFOOT_CHECK_TIMEOUT: 180
+        run: |
+          perl .github/run-check.pl worker-placement-construct \
+            bash research/investigations/access-effects/worker-placement-replay/prepare.sh \
+            "$RUNNER_TEMP/ac34" "$RUNNER_TEMP/worker-placement"
+      - name: Run correctness verification only
+        env:
+          WHITEFOOT_CHECK_TIMEOUT: 180
+        run: |
+          perl .github/run-check.pl worker-placement-verify \
+            bash research/investigations/access-effects/worker-placement-replay/verify-and-stage.sh \
+            "$RUNNER_TEMP/worker-placement" \
+            "$RUNNER_TEMP/worker-placement/verify-logs"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: worker-placement-replay-ubuntu-24.04
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/ac34/performance-results/identity.txt
+            ${{ runner.temp }}/worker-placement/STATIC-CHECKS.txt
+            ${{ runner.temp }}/worker-placement/images/
+            ${{ runner.temp }}/worker-placement/build/trampoline-*.txt
+            ${{ runner.temp }}/worker-placement/build/symbols-*.txt
+            ${{ runner.temp }}/worker-placement/build/program-headers-*.txt
+            ${{ runner.temp }}/worker-placement/build/section-headers-*.txt
+            ${{ runner.temp }}/worker-placement/verify-logs/verify-*.log
