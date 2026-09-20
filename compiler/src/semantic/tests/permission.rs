@@ -29,7 +29,7 @@ use super::super::permission::{
     PermissionMetadata, PermissionPair, PermissionRun, PermissionVerdict,
 };
 use super::super::places::ResolvedPlace;
-use super::with_semantics;
+use super::{assert_rule_kind, with_semantics};
 
 #[test]
 fn a_condition_call_cannot_hide_an_arm_read_of_the_previous_result() {
@@ -1424,6 +1424,108 @@ fn stamp_two_ranges(first: &[u8], second: &[u8]) -> result: own u64 writes(first
   return 2_u64;
 }
 "#;
+
+/// [REF-1, PAR-1] a source occurrence evaluated in a loop is not the runtime
+/// generation a carried reference retained from the prior iteration. At
+/// `i == 1`, `saved` is `[5..6]` from the preceding iteration and `other` is
+/// the current `[5..6]`; the current formation at the same source occurrence
+/// is `[4..5]`. `observed` snapshots that carried value before the rebinding,
+/// so alias closure must retain the header alternative and deny the pair,
+/// while using the freshly formed `current` in that same iteration keeps the
+/// ordinary range-separation permission. The dominating length guards admit
+/// each helper's real element store without supplying an affine image for the
+/// carried range endpoints.
+#[test]
+fn loop_carried_range_generations_do_not_reuse_the_current_iteration_image() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn shifted(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
+  let seed = &deref(values)[0_u64..1_u64];
+  let saved = &deref(seed)[0_u64..deref(seed).len];
+  for (i in 0_u64..2_u64) {{
+    let current_start = 5_u64 - i;
+    let current_end = 6_u64 - i;
+    let other_start = 6_u64 - i;
+    let other_end = 7_u64 - i;
+    let current = &deref(values)[current_start..current_end];
+    let other = &deref(values)[other_start..other_end];
+    let observed = saved;
+    if 0_u64 < deref(observed).len {{
+      if 0_u64 < deref(other).len {{
+        let a = stamp_range(part: observed);
+        let b = stamp_range(part: other);
+      }}
+    }}
+    set saved = &deref(current)[0_u64..deref(current).len];
+  }}
+  return 0_u64;
+}}
+
+fn current_iteration(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
+  for (i in 0_u64..2_u64) {{
+    let current_start = 5_u64 - i;
+    let current_end = 6_u64 - i;
+    let other_start = 6_u64 - i;
+    let other_end = 7_u64 - i;
+    let current = &deref(values)[current_start..current_end];
+    let other = &deref(values)[other_start..other_end];
+    if 0_u64 < deref(current).len {{
+      if 0_u64 < deref(other).len {{
+        let a = stamp_range(part: current);
+        let b = stamp_range(part: other);
+      }}
+    }}
+  }}
+  return 0_u64;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    let shifted = pair_of(&table, "shifted", "stamp_range", "stamp_range");
+    let Denial::Footprint { kind, .. } = denial(shifted, 1) else {
+        panic!(
+            "the prior iteration overlaps the current other range: {:?}",
+            shifted.verdict
+        );
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
+    assert_eq!(
+        pair_of(&table, "current_iteration", "stamp_range", "stamp_range").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+}
+
+/// [REF-1, EFF-5] the same time shift is a source conflict when both writes
+/// are effects of one call. The loop-header generation must fail closed in
+/// the ordinary call-effect judgment as well as in optional [PAR-1].
+#[test]
+fn loop_carried_range_generations_do_not_discharge_overlapping_call_effects() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn shifted(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
+  let seed = &deref(values)[0_u64..1_u64];
+  let saved = &deref(seed)[0_u64..deref(seed).len];
+  for (i in 0_u64..2_u64) {{
+    let current_start = 5_u64 - i;
+    let current_end = 6_u64 - i;
+    let other_start = 6_u64 - i;
+    let other_end = 7_u64 - i;
+    let current = &deref(values)[current_start..current_end];
+    let other = &deref(values)[other_start..other_end];
+    let observed = saved;
+    if 0_u64 < deref(observed).len {{
+      if 0_u64 < deref(other).len {{
+        let conflict = stamp_two_ranges(first: observed, second: other);
+      }}
+    }}
+    set saved = &deref(current)[0_u64..deref(current).len];
+  }}
+  return 0_u64;
+}}
+"
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Eff5, |_| true);
+}
 
 /// [PAR-1, OWN-7] both captured ranges exist before the first statement, and
 /// its entering state proves the first range ends where the second starts.

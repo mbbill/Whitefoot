@@ -1822,17 +1822,51 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 }
                 assert_eq!(outcome.derivation, Some(root.node));
                 assert!(!outcome.node_path.components().is_empty());
-                // [EFF-5] a range separation is discharged by one of the four
-                // non-strict orderings and retains no single normalized
-                // component of its own, so it is the one live family whose
-                // component list is empty; every other family normalizes to
-                // exactly one requested relation.
-                if outcome.components.is_empty() {
-                    assert_eq!(outcome.family, ObligationFamily::RangeSeparation);
+                // [EFF-5] a range separation has no canonical goal or single
+                // normalized component; its retained wrapper names the exact
+                // pair and selected ordering. Another family may lack an L0
+                // component when its source operands have only the canonical
+                // goal plus an affine normalization. That root must conclude
+                // the exact retained positive goal (or the actual entering
+                // contradiction), rather than being accepted by shape alone.
+                if outcome.family == ObligationFamily::RangeSeparation {
+                    assert!(outcome.components.is_empty());
+                    assert!(outcome.canonical_goal.is_none());
                     assert!(matches!(
                         conclusion,
                         DerivationConclusion::RangeSeparation { .. }
                     ));
+                } else if outcome.components.is_empty() {
+                    let canonical = outcome
+                        .canonical_goal
+                        .as_ref()
+                        .expect("an affine-only bounds obligation retains its canonical goal");
+                    match conclusion {
+                        DerivationConclusion::Goal {
+                            goal,
+                            sign: GoalSign::Positive,
+                        } => {
+                            let retained = summary
+                                .inventory
+                                .goals
+                                .get(goal.0 as usize)
+                                .expect("affine-only bounds goal ID must resolve");
+                            assert_eq!(&retained.expression, canonical);
+                            assert!(!outcome.contradictory);
+                        }
+                        DerivationConclusion::Contradiction => assert!(outcome.contradictory),
+                        DerivationConclusion::Relation(_)
+                        | DerivationConclusion::Goal { .. }
+                        | DerivationConclusion::IntegerDomain(_)
+                        | DerivationConclusion::AffineConsequence
+                        | DerivationConclusion::UnsignedDivisionProduct
+                        | DerivationConclusion::RequirementAffineImage
+                        | DerivationConclusion::ContractCall
+                        | DerivationConclusion::RangeSeparation { .. }
+                        | DerivationConclusion::PostconditionAggregate => {
+                            panic!("an affine-only bounds root must conclude its exact goal")
+                        }
+                    }
                 } else {
                     let [requested] = outcome.components.as_slice() else {
                         panic!("a bounds obligation has one normalized relation");
@@ -1869,7 +1903,12 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                             ObligationFamily::AllocationFit | ObligationFamily::RangeFormation
                         ) =>
                         {
-                            assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                            let retained = summary
+                                .inventory
+                                .goals
+                                .get(goal.0 as usize)
+                                .expect("bounds goal ID must resolve");
+                            assert_eq!(Some(&retained.expression), outcome.canonical_goal.as_ref());
                             assert!(!outcome.contradictory);
                         }
                         DerivationConclusion::Goal { .. }
@@ -2336,7 +2375,8 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
             DerivationNode::SourceGoal { .. }
             | DerivationNode::JoinGoal { .. }
             | DerivationNode::MaterializedGoal { .. } => class_counts[1] += 1,
-            DerivationNode::GoalProjection { .. } => class_counts[2] += 1,
+            DerivationNode::GoalProjection { .. }
+            | DerivationNode::GoalAffineConsequence { .. } => class_counts[2] += 1,
             DerivationNode::L0Contradiction { .. }
             | DerivationNode::GoalContradiction { .. }
             | DerivationNode::JoinContradiction { .. }

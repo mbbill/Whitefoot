@@ -1166,6 +1166,145 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [MSR-4] applies its affine-left/L0-right bridge to an FN-8 numeric goal.
+/// Here `larger` publishes `doubled <= widened`, while the caller's entry
+/// requirement and nonzero edge prove `length < doubled`. Neither half alone
+/// proves the call requirement.
+fn scalar_growth_bridge_program(
+    length_requirement: bool,
+    nonzero_guard: bool,
+    total_postcondition: bool,
+    nested_requirement: bool,
+) -> String {
+    let length_contract = if length_requirement {
+        " contract {\n  requires length <= capacity;\n}"
+    } else {
+        ""
+    };
+    let nonzero_guard = if nonzero_guard {
+        "  if capacity == 0_u64 {\n    return unit;\n  }\n"
+    } else {
+        ""
+    };
+    let total_postcondition = if total_postcondition {
+        "  ensures result >= total;\n"
+    } else {
+        ""
+    };
+    let room_contract = if nested_requirement {
+        "  define room = length < capacity;\n  define positive = capacity > 0_u64;\n  define complete = band(room, positive);\n  requires complete;"
+    } else {
+        "  requires length < capacity;"
+    };
+    format!(
+        r#"fn larger(current: own u64, total: own u64) -> result: own u64 pure contract {{
+  ensures result >= current;
+{total_postcondition}}} {{
+  if current >= total {{
+    return current;
+  }}
+  return total;
+}}
+
+fn require_room(length: own u64, capacity: own u64) -> result: own unit pure contract {{
+{room_contract}
+}} {{
+  return unit;
+}}
+
+fn prove_growth(length: own u64, capacity: own u64) -> result: own unit pure{length_contract} {{
+{nonzero_guard}  if capacity <= 9223372036854775807_u64 {{
+    let doubled = capacity + capacity;
+    let widened = larger(current: capacity, total: doubled);
+    require_room(length: length, capacity: widened);
+  }}
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+    )
+}
+
+#[test]
+fn fn8_uses_the_affine_left_l0_right_bridge_for_scalar_growth() {
+    for nested_requirement in [false, true] {
+        let source = scalar_growth_bridge_program(true, true, true, nested_requirement);
+        with_semantics(source.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "the complete scalar growth proof must discharge FN-8: {outcome:?}"
+            );
+        });
+    }
+}
+
+#[test]
+fn fn8_growth_bridge_requires_each_written_source_fact() {
+    for source in [
+        scalar_growth_bridge_program(false, true, true, false),
+        scalar_growth_bridge_program(true, false, true, false),
+        scalar_growth_bridge_program(true, true, false, false),
+    ] {
+        super::assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::UndischargedCallRequirement(detail)
+                    if detail.disposition == crate::CallRequirementDisposition::Unproved
+            )
+        });
+    }
+}
+
+/// The right bridge may be a live measure rather than a scalar binding. The
+/// nonzero-start range captures `3 * capacity - capacity`, so its length has
+/// no L0 equality to `doubled`, `tripled`, or another scalar binding. Proving
+/// `length < ceiling` therefore needs the live `part.len` candidate and the
+/// callee's `part.len <= ceiling` bridge.
+#[test]
+fn fn8_bridge_visits_a_live_measure_before_scalar_bindings() {
+    let source = br#"fn range_ceiling(part: &[u8]) -> ceiling: own u64 reads(part.len) contract {
+  ensures ceiling >= deref(part).len;
+} {
+  return deref(part).len;
+}
+
+fn require_room(length: own u64, ceiling: own u64) -> result: own unit pure contract {
+  requires length < ceiling;
+} {
+  return unit;
+}
+
+fn caller(length: own u64, capacity: own u64) -> result: own unit pure contract {
+  requires length <= capacity;
+  requires capacity <= 2_u64;
+} {
+  if capacity == 0_u64 {
+    return unit;
+  }
+  let doubled = capacity + capacity;
+  let tripled = doubled + capacity;
+  let storage = array_filled::<u8, 6>(value: 0_u8);
+  let part = &storage[capacity..tripled];
+  let ceiling = range_ceiling(part: part);
+  require_room(length: length, ceiling: ceiling);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the live range measure must be available to the shared MSR-4 bridge: {outcome:?}"
+        );
+    });
+}
+
 #[test]
 fn forward_calls_retain_paths_and_exact_literal_place_and_named_const_images() {
     let source = br#"const requirement_limit: u64 = 8_u64;

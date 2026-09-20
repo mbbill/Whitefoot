@@ -1678,7 +1678,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         occurrence: NodeId,
         offset: &CheckedExpression,
     ) -> Option<CapturedValue> {
-        let capture = CaptureId(u32::try_from(occurrence.index()).unwrap_or(u32::MAX - 1));
+        let capture = CaptureId::source(u32::try_from(occurrence.index()).unwrap_or(u32::MAX - 1));
         match offset {
             CheckedExpression::Constant(super::super::super::model::CheckedValue::Integer {
                 bits,

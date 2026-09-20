@@ -37,7 +37,7 @@ impl CheckedMode {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct CheckedLoopId(pub(crate) u32);
 
 /// One proof-only mathematical integer expression. Each leaf retains
@@ -2210,6 +2210,10 @@ pub(crate) enum CheckedReleaseMode {
 pub(crate) struct CheckedWritablePlace {
     pub(crate) binding: BindingId,
     pub(crate) fields: Vec<u32>,
+    /// The binding's source mode. Reference rebinding replaces the runtime
+    /// address or range descriptor carried by the name; it does not write the
+    /// storage that address names.
+    pub(crate) mode: CheckedMode,
     pub(crate) ty: CheckedType,
     /// [SET-1] this commit declares the binding it writes, exactly as a `let`
     /// does: the target identifier resolved to none, so the statement is the
@@ -2286,6 +2290,19 @@ impl CheckedSetTarget {
 pub(crate) struct PropagationContext {
     pub(crate) function: String,
     pub(crate) node_path: NodePath,
+}
+
+/// One outer reference whose value may cross this loop's normal backedge.
+///
+/// `paths` are the finite static-shape header alternatives [REF-1]. Every
+/// index and range capture that a continuing rebinding may replace carries a
+/// compiler-owned loop generation rather than the source occurrence in the
+/// body. This is proof metadata for place resolution and permission only;
+/// lowering carries the binding's ordinary runtime reference value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedLoopCarriedReference {
+    pub(crate) binding: BindingId,
+    pub(crate) paths: Vec<super::places::ResolvedPlace>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2380,6 +2397,7 @@ pub(crate) enum CheckedStatement {
     },
     Loop {
         id: CheckedLoopId,
+        carried_references: Vec<CheckedLoopCarriedReference>,
         /// Formed source invariants awaiting the normal semantic proof
         /// checker. Their presence alone grants no authority.
         invariants: Vec<CheckedLoopInvariant>,
@@ -2388,6 +2406,7 @@ pub(crate) enum CheckedStatement {
     },
     CountedRange {
         id: CheckedLoopId,
+        carried_references: Vec<CheckedLoopCarriedReference>,
         node_path: NodePath,
         binder: BindingId,
         lower: CheckedExpression,

@@ -312,14 +312,15 @@ impl LocalBinding {
         }
     }
 
-    /// Whether two joined states agree on everything [LIV-1] compares.
+    /// Whether two joined states agree on everything [LIV-1] compares before
+    /// `join_from` meets their flow facts.
     ///
     /// A reference's path set is deliberately excluded: [REF-1] states that
     /// at a join a reference variable's target is the *union* of the incoming
     /// sets, so two different sets are the joined state rather than a
-    /// disagreement. Validity is compared, because a reference valid on one
-    /// edge and invalid on the other is invalid after the join and every
-    /// check on it must hold for every member of the set.
+    /// disagreement. Reference validity and refinement witnesses are likewise
+    /// excluded here because `join_from` meets them after this structural
+    /// comparison.
     fn agrees_with(&self, other: &Self) -> bool {
         self.binding == other.binding
             && self.declaration == other.declaration
@@ -333,6 +334,14 @@ impl LocalBinding {
                 (None, None) => true,
                 _ => false,
             }
+    }
+
+    /// A loop header is checked once rather than materialized by `join_from`.
+    /// Its reference validity has a separate finite equation, but every
+    /// non-reference refinement witness must therefore still agree exactly
+    /// with the backedge as it did before loop-header widening.
+    fn loop_agrees_with(&self, other: &Self) -> bool {
+        self.agrees_with(other) && self.refinement_witnesses == other.refinement_witnesses
     }
 }
 
@@ -560,6 +569,10 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// syntax could not settle, handed to the entailment fragment with the
     /// finished body.
     call_separations: RefCell<Vec<super::model::CheckedCallSeparation>>,
+    /// [REF-2] uses reached under loop-header validity variables. Every
+    /// owning loop resolves its variables before the function is published;
+    /// the function driver clears this scratch state on every retry.
+    deferred_loop_reference_uses: RefCell<Vec<references::DeferredLoopReferenceUse>>,
     /// Successful declaration-only FN-4 queries. A complete member check
     /// stages its batch before publishing here, and the whole checker remains
     /// failure-atomic with the prospective checked program [DIAG-2].
@@ -1130,6 +1143,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
             call_separations: RefCell::new(Vec::new()),
+            deferred_loop_reference_uses: RefCell::new(Vec::new()),
             contract_queries: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             prelude_types: Vec::new(),
@@ -1686,6 +1700,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         signature: &FunctionSignature,
     ) -> Result<CheckedFunctionInventory, CheckStop> {
+        // Function-local loop and binding ids restart for every inventory
+        // attempt, including a DeferredNominal retry and the generic scratch
+        // inventory. No deferred REF-2 dependency may cross that namespace
+        // boundary.
+        self.deferred_loop_reference_uses.borrow_mut().clear();
         self.check_entry_formers(signature)?;
         let mut bindings = HashMap::new();
         let mut parameters = Vec::with_capacity(signature.parameters.len());
@@ -1778,6 +1797,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 give_context: None,
             },
         )?;
+        if !self.deferred_loop_reference_uses.borrow().is_empty() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
         let declaration_only = self.tree.production(signature.node)? == Production::FnSig;
         if declaration_only {
             checked.can_continue = false;

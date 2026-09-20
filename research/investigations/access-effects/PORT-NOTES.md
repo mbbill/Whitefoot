@@ -295,17 +295,95 @@ separate typed storage path. The trace was removed. All 33 requirement tests
 pass, including new symbolic/transitive/concrete forwarding and independent
 const-parameter negative controls. The rebuilt library now reaches an FN-8
 failure at the append after a doubled-capacity reserve, rather than an internal
-compiler failure. That remaining proof failure is still under investigation;
-the source API, direct indexed access, complete-result checks and release
-oracles remain intact.
+compiler failure. A reduced scalar program identifies that remaining failure
+as the missing MSR-4 affine-left/L0-right bridge at the callable boundary:
+`length <= capacity`, `1 <= capacity`, `doubled = 2 * capacity` and
+`doubled <= widened` require Step 6 to prove `length < widened`. The integrated
+repair retains the exact normalized right term and shares that finite bridge
+across numeric consumers, including Boolean leaves and invariant targets;
+measure and measure-datum candidates precede own integer bindings. It neither
+publishes new premises nor recursively applies the bridge. PRF-1 relation-form
+uses remain explicitly AUTO-only, with a paired control against importing
+Step 6 into certificate premise admission. The source API, direct indexed
+access, complete-result checks and release oracles remain intact. The rebuilt
+maintained Vector library passes in sequential and parallel lowering,
+including independent allocation observers: each execution makes 12
+allocations and releases each exactly once. This focused native library run
+takes 2.76 seconds; the complete gate still has loop integration findings.
 
 A fresh scope audit also confirms that same-shape loop-carried reference
-rebinding is an unfinished part of REF-1, not an intentionally retired source
-form. Its minimum completion needs a finite loop-header path abstraction,
-cross-iteration validity checks and a generation boundary for dynamic
-captures. The time-shift witness below must become accepted sequential source
-with parallel permission denied, rather than a test expecting a compiler
-capability stop. No loop implementation is included in this checkpoint.
+rebinding belongs to REF-1 rather than an intentionally retired source form.
+The integrated implementation checks one abstract header, gives potentially
+rebound captures distinct opaque header identities, and resolves owner-tagged
+validity equations over entry and executable backedges. Aliases retain every
+header alternative in the permission path. A noncontinuing edge contributes
+no future invalidation premise, and every deferred use is resolved before a
+checked function is published. The time-shift witness below is tested as
+accepted sequential source with parallel permission denied and as an EFF-5
+negative when both effects belong to one call. Independent native controls
+observe scalar and range-reference values at zero-trip and exhausted exits.
+
+The first complete unit execution of this integrated work passed 1541 cases
+and failed four new loop fixtures: two overdeclared a helper's writes contrary
+to EFF-2, one pinned the wrong REF-2 event text, and one omitted the loop-local
+OP-4 premise after a header kill. The corrected fixtures perform real stores,
+retain the hostile aliases and invalidation, and establish the fresh access's
+own domain. A scalar bound cannot substitute for the strengthened nonzero-start
+range-measure bridge test. The subsequent complete unit run passes 1544 cases,
+including the strengthened measure and PRF-1 authority controls, and fails
+three loop controls: the new native program reaches a lowering capability
+failure, the permission control exposes an incorrectly indexed derivation
+obligation according to the initial diagnosis, and the reform fixture needs
+the grow operation's own OP-9 domain re-established after the header kill.
+The derivation diagnosis was incorrect: its ordinal is right, but the test
+validator assumed every non-separation obligation has an L0 relation
+component. An affine-only range goal instead retains its exact canonical
+positive goal. The validator now verifies that exact goal identity, keeping
+the RangeSeparation wrapper and ordinary relation checks distinct. It does
+not require a fabricated compiler component. The lowering repair retains
+the binding mode on a checked writable place, so reference rebinding replaces
+the address or range descriptor rather than writing its referent; owned
+storage keeps its existing commit and release path. The positive reform
+fixture establishes the grow domain inside the loop, while the prior-header
+invalidation negative remains unchanged. Static checks pass. The next unit
+run passed 1546 cases, including both native loop observations and the reform
+control; its remaining failure was the test validator's metric count omitting
+the existing `GoalAffineConsequence` root class. Adding that class to the
+test's projected-goal count preserves every proof-content check, and the
+hostile PAR-1 control then passes in its focused run.
+
+The next canonical execution passes all 1547 library and 14 CLI unit tests.
+Corpus execution reports 64 passes and eight failures: seven loopback tests
+are blocked by the local sandbox's socket-bind permission, and the byte-string
+program exposes a compiler regression in certificate redundancy. PRF-1 asks
+exactly `AUTO(T)` for that judgment; the first shared-bridge integration instead
+asked the complete MSR-4 disposition and incorrectly rejected a valid written
+four-premise certificate. The repair separates those authorities: a blockless
+INV-1 target gets full MSR-4, while certificate redundancy and relation-form
+use admission both remain AUTO-only. The byte-string source and its complete
+output oracle remain unchanged. Fresh verification is pending; the canonical
+rerun must have ordinary loopback permissions rather than skip network tests.
+
+Pending compiler amendments were reconciled with the current specification
+and implementation: allocation metadata propagates across checked calls but
+is neither a source row category nor an FN-4 refinement dimension; capture
+identity no longer relies on the retired global overlap memo; loop-header
+captures agree with themselves within one arbitrary-header context; and the
+measure/range-place proposals use declared readonly measures and complete
+typed element suffixes. These are still owner-unruled amendments, not edits
+to the live tree or approval log.
+
+Hosted correctness run 35527431099 on `ac34f2a3` passes static, unit, corpus and
+runtime groups on Linux and macOS; both maintained-library groups stop at the
+same doubled-reserve FN-8. IO run 35527431116 passes. Compute run 35527433610
+still fails only records at two/four workers: ratios 0.910210 (five adverse
+pairs) and 0.876937 (four), while one worker passes at 1.079077. Null and
+known-slowdown controls pass. Its baseline and candidate records LLVM modules,
+objects and final executables are byte-identical to run 35523616425, ruling
+out a new generated-code change between those revisions. The hosts differ
+(AMD EPYC 7763 versus Intel Xeon 6973P-C), so the magnitude change establishes
+no compiler cause. The code-placement and allocation-alignment questions
+remain open; no threshold or workload was changed.
 
 The first canonical `make check` integration attempt stopped at design lint:
 the FN-4 refinement amendment has two decisions missing the required
@@ -462,7 +540,13 @@ its 17 self-tests; canonical integration must be rerun after compiler work.
   showing no corresponding implementation fix." No part of that documentation
   or comment patch applied. The published compiler checkpoint and complete
   adapter result remain separate evidence; the guidance reconciliation is
-  still held for the owner.
+  was still held at that checkpoint. A later evidence-backed cleanup was
+  allowed after mapping each stale item to its exact landed repair or retired
+  rule and the complete passing native adapter. The current todo preserves
+  the unresolved symbolic-layout OP-9 distinction; range-length, indexed
+  composite access and S12 sibling support retain their regression cases.
+  The pinned sentence, conformance verdicts, statuses, source behavior and
+  assertions are unchanged. Only obsolete explanatory prose was updated.
 - Native owning-growth observer ordering: automatic review refused a proposed
   change that serialized the first fixture's allocations. The accepted safer
   alternative keeps the Whitefoot allocations independent, identifies the

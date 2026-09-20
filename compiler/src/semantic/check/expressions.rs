@@ -350,6 +350,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             target: CheckedSetTarget::Place(CheckedWritablePlace {
                 binding: local.binding,
                 fields,
+                mode: local.mode,
                 ty,
                 declares: false,
                 // [SET-1] the premise is rechecked after the right-hand side

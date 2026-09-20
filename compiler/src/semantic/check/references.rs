@@ -31,9 +31,10 @@ use crate::{
 };
 
 use super::super::model::{
-    BindingId, CheckedContainerRoot, CheckedEffectStep, CheckedExpression, CheckedMeasure,
-    CheckedMode, CheckedNominalKind, CheckedPlaceStep, CheckedRangeRoot, CheckedRangeSource,
-    CheckedStatePath, CheckedTargetDomainObligation, CheckedType, IntegerType, WindowShape,
+    BindingId, CheckedContainerRoot, CheckedEffectStep, CheckedExpression, CheckedLoopId,
+    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedPlaceStep, CheckedRangeRoot,
+    CheckedRangeSource, CheckedStatePath, CheckedTargetDomainObligation, CheckedType, IntegerType,
+    WindowShape,
 };
 use super::super::places::{
     CapturedRange, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations,
@@ -90,6 +91,29 @@ pub(super) enum ReferenceKind {
     Single,
     /// `&[T]`: a range of elements, whose one measure is `len` [REF-4].
     Range,
+}
+
+/// One validity variable at a loop header, owned by the reference binding
+/// whose preheader and backedge states it joins.
+///
+/// The ids are function-local, but every dependency is eliminated before the
+/// checked function is published. Keeping the owner in the identity makes
+/// aliases and mutually assigned references a finite dependency graph rather
+/// than accidentally one boolean for the whole loop.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct LoopReferenceToken {
+    pub(super) loop_id: CheckedLoopId,
+    pub(super) owner: BindingId,
+}
+
+/// One reference use whose validity depends on an arbitrary loop header.
+/// The checker retains it only until the owning loop closes and resolves all
+/// of its header variables.
+#[derive(Clone, Debug)]
+pub(super) struct DeferredLoopReferenceUse {
+    pub(super) node: NodeId,
+    pub(super) declaration: DeclarationId,
+    pub(super) dependencies: Vec<LoopReferenceToken>,
 }
 
 /// The exactly enumerated events [REF-2] admits as invalidating, carried into
@@ -158,6 +182,12 @@ pub(super) struct ReferenceInfo {
     /// The enum places whose refinement facts the payload steps of `paths`
     /// depend on, with the variant each step selects [REF-1, ENT-3.S15].
     pub(super) refinements: Vec<(ResolvedPlace, u32)>,
+    /// Header validity variables this reference still depends on. A freshly
+    /// formed reference has none. Copying a reference name retains the
+    /// dependencies along with its path; forming a new reference through an
+    /// old one first checks the old dependencies and then creates a fresh
+    /// valid reference.
+    loop_dependencies: Vec<LoopReferenceToken>,
 }
 
 impl ReferenceInfo {
@@ -183,6 +213,7 @@ impl ReferenceInfo {
             paths,
             validity: ReferenceValidity::Valid,
             refinements,
+            loop_dependencies: Vec::new(),
         }
     }
 
@@ -232,6 +263,72 @@ impl ReferenceInfo {
         }
         if let ReferenceValidity::Invalid(event) = &other.validity {
             self.invalidate(event.clone());
+        }
+        for dependency in &other.loop_dependencies {
+            if !self.loop_dependencies.contains(dependency) {
+                self.loop_dependencies.push(*dependency);
+            }
+        }
+    }
+
+    /// Marks this outer reference as one of a loop header's incoming values.
+    /// Only a holder whose source body may rebind it receives generalized
+    /// captures; every other holder retains its exact path precision.
+    pub(super) fn enter_loop_header(
+        &mut self,
+        token: LoopReferenceToken,
+        widen_captures: bool,
+    ) -> Result<Option<Vec<ResolvedPlace>>, SemanticCompilerFailure> {
+        if !self.loop_dependencies.contains(&token) {
+            self.loop_dependencies.push(token);
+        }
+        if !widen_captures {
+            return Ok(None);
+        }
+        let mut widened = Vec::with_capacity(self.paths.len());
+        for (ordinal, path) in self.paths.iter().enumerate() {
+            widened.push(path.loop_carried(
+                token.loop_id,
+                token.owner,
+                u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+            )?);
+        }
+        self.paths.clone_from(&widened);
+        self.refinements = self
+            .paths
+            .iter()
+            .flat_map(refinement_dependencies)
+            .collect();
+        Ok(Some(widened))
+    }
+
+    pub(super) fn loop_dependencies(&self) -> &[LoopReferenceToken] {
+        &self.loop_dependencies
+    }
+
+    /// Eliminates one completed loop's header variable from this reference.
+    /// A failed dependency invalidates the reference with the event that made
+    /// the arbitrary backedge invalid. A successful dependency is replaced
+    /// by the still-open outer-loop variables its equation depends on.
+    pub(super) fn resolve_loop_dependency(
+        &mut self,
+        token: LoopReferenceToken,
+        resolution: Result<&[LoopReferenceToken], &InvalidationEvent>,
+    ) {
+        if !self.loop_dependencies.contains(&token) {
+            return;
+        }
+        self.loop_dependencies
+            .retain(|candidate| *candidate != token);
+        match resolution {
+            Ok(dependencies) => {
+                for dependency in dependencies {
+                    if !self.loop_dependencies.contains(dependency) {
+                        self.loop_dependencies.push(*dependency);
+                    }
+                }
+            }
+            Err(event) => self.invalidate(event.clone()),
         }
     }
 
@@ -410,18 +507,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(reference) = &local.reference else {
             return Ok(());
         };
-        let ReferenceValidity::Invalid(event) = &reference.validity else {
-            return Ok(());
-        };
-        self.issue_node(
-            SemanticRule::Ref2,
-            node,
-            SemanticIssueKind::InvalidReferenceUse {
-                binder: self.declaration_spelling(local.declaration)?,
-                event: event.phrase(),
-                mechanical_fix: REF2_FORM_AGAIN,
-            },
-        )
+        match &reference.validity {
+            ReferenceValidity::Invalid(event) => self.issue_node(
+                SemanticRule::Ref2,
+                node,
+                SemanticIssueKind::InvalidReferenceUse {
+                    binder: self.declaration_spelling(local.declaration)?,
+                    event: event.phrase(),
+                    mechanical_fix: REF2_FORM_AGAIN,
+                },
+            ),
+            ReferenceValidity::Valid if !reference.loop_dependencies().is_empty() => {
+                // The one-pass checker does not yet know which arbitrary
+                // backedge reaches this use. Retain the complete owner-tagged
+                // dependency set; the owning loop solves it over its entry
+                // and every executable backedge before publishing the checked
+                // function. The function driver rejects any dependency that
+                // survives its function-local loop-id namespace.
+                self.deferred_loop_reference_uses
+                    .borrow_mut()
+                    .push(DeferredLoopReferenceUse {
+                        node,
+                        declaration: local.declaration,
+                        dependencies: reference.loop_dependencies().to_vec(),
+                    });
+                Ok(())
+            }
+            ReferenceValidity::Valid => Ok(()),
+        }
     }
 
     /// [REF-2] applies one access's invalidation to every live reference in
@@ -1370,7 +1483,7 @@ mod tests {
         let indexed = |capture: u32, value: u64| {
             let mut place = ResolvedPlace::binding(BindingId(0));
             place.push_subscript(crate::semantic::places::CapturedValue::new(
-                crate::semantic::places::CaptureId(capture),
+                crate::semantic::places::CaptureId::source(capture),
                 crate::semantic::places::CapturedTerm::Literal(value),
             ));
             ReferenceInfo::formed(ReferenceKind::Single, place)
@@ -1384,7 +1497,7 @@ mod tests {
 
         let mut longer = ResolvedPlace::binding(BindingId(0));
         longer.push_subscript(crate::semantic::places::CapturedValue::new(
-            crate::semantic::places::CaptureId(2),
+            crate::semantic::places::CaptureId::source(2),
             crate::semantic::places::CapturedTerm::Literal(1),
         ));
         longer.path.push(PlaceStep::Field(0));

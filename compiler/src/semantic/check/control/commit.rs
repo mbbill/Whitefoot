@@ -544,6 +544,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 target: CheckedSetTarget::Place(super::super::super::model::CheckedWritablePlace {
                     binding: local.binding,
                     fields: Vec::new(),
+                    mode: expected_mode,
                     ty: local.ty,
                     declares: false,
                     // [REF-1] a reference rebinding writes no storage, so

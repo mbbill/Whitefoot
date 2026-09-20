@@ -3,54 +3,20 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
-- **SOUNDNESS: a requirement over a range reference's length is judged
-  against the owner.** `let view = &a[2_u64..4_u64]; touch(part: view, at:
-  3_u64)` with `requires at < deref(part).len` is accepted and the run reads
-  outside the four-element array (found 2026-09-20 by probing; conformance
-  case `ref4-neg-a-requirement-over-a-range-reference-is-the-ranges-length`
-  fails until fixed, and the pinned sentence `wide <= deref(view).len` in
-  `compiler/src/driver/pinned_sentences.rs` likewise). The call-site goal
-  instantiation drops the range step of the actual's path, so the measure
-  becomes the owner's `len` instead of `hi - lo`.
-- **A contract fact stated over `room` does not survive the window write it
-  precedes.** [MSR-1]'s table fixes a window's `room` cell as `cap - len`, so
-  the affine image of `r.room` is the difference of the other two images and a
-  relation over it is an [ENT-4] fact about the `room` *term*. That term has
-  no difference bound relating it to `len` -- `room + len = cap` is a
-  three-term relation no difference-bound domain holds -- so the consequence
-  the relation carries about `len` exists only as an ephemeral affine image at
-  query time and dies with the term at the first descriptor write. A callee
-  whose own `requires deref(window).room > 1_u64` should admit two
-  `place_back` calls therefore stops at the second
-  ([`call6-pos-a-row-relation-establishes-at-a-caller`](../tests/conformance/cases/call6-pos-a-row-relation-establishes-at-a-caller.wf)),
-  while the same program with the requirement restated as a local `invariant`
-  is accepted, because an invariant conclusion is published over the immutable
-  atoms. Decide whether such a relation should also be published over its
-  images, which extends [ENT-6]'s automatic premise sequence, or whether the
-  translation belongs in the fact establishment itself.
-
-- **An accepted [OP-9] site's proved count ceiling does not reach the
-  allocation it authorizes.** The obligation is now submitted and refused at
-  each runtime-capacity construction and at `grow`, but the numeric ceiling
-  the discharge retains is not carried into the compiler-owned row whose
-  lowered body performs the allocation: that row is out of line and one
-  instance's body serves every call site. Target qualification therefore keeps
-  the `has_call_site_bound` gate at
-  [`backend/target.rs`](../compiler/src/backend/target.rs), comparing the byte
-  ceiling only where the retained bound is the allocation site's own, and a
-  proved 5e18-element `u16` construction is still lowered instead of being
-  reported unrepresentable. Either the weakest ceiling over an instance's call
-  sites must reach the row, or the row must be specialized per site.
-
-- **A field projected after dereferencing a runtime-indexed composite element
-  stops as unsupported.** The specification admits ordinary chained element,
-  dereference, and field selection, but
-  `deref(owners.storage[index]).id` stops in semantic checking as
-  `Unsupported(CompositeValues)` with no rule or source diagnostic. The
-  growable-vector executable currently borrows `owners.storage[index]` into a
-  helper and performs `deref(deref(item)).id` there. Complete the general
-  checked-place and lowering path for a subscript followed by dereference and
-  field projection, add owning and copy-element tests, then remove that helper.
+- **A symbolic [OP-9] schema cannot always distinguish an unresolved layout
+  from a real non-finite layout.** Concrete allocation sites carry their
+  proved count ceilings through lowering and target qualification, including
+  exact shape headers, and every inhabited generic instance is rechecked with
+  its concrete layout. The remaining schema gap is narrower: the current
+  layout authority can report `AboveU64` both for a type whose layout still
+  depends on an opaque parameter and for an aggregate already known to exceed
+  the target-independent `u64` domain. The symbolic caller defers both, even
+  though [ENT-1] requires the latter's expressible zero-count ceiling to be
+  checked at the schema. Direct opaque `T`, bounded numeric parameters and
+  fixed-layout wrappers have focused handling and controls; the general
+  unresolved-layout classifier still needs a representation that preserves
+  this distinction without granting a deferred schema any proof summary or
+  lowering authority.
 
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
@@ -95,14 +61,6 @@ of them is a decision. Remove an item when its fix and test land.
   Close this item when the source of both observations and the resulting
   measurement/detection tradeoff are established.
 
-- **A runtime-sized `buffer_new` fails with no rule and no location.** At an
-  unproved runtime capacity the driver stops four stages after semantic
-  checking with `TargetLayout(Unrepresentable(RuntimeSizedAllocation))` and no
-  rule id or source coordinate; the real defect is an undischarged size
-  obligation. The store surface already answers it (`heap_vector` hands back
-  an `Option` and [OP-9] refuses at the source with a rule and a line). The
-  item is removed with `buffer_new` and `buffer_vacant`, not repaired
-  separately.
 - **Large entering proof contexts still have substantial checking cost.**
   In the [pinned row-summary comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#row-summary-selection-2026-09-15),
   256 independent inequality pairs with 256 uses still take a median 5.50 s;
@@ -114,16 +72,6 @@ of them is a decision. Remove an item when its fix and test land.
   unmeasured; these results establish neither linear total cost nor a
   universal cost for the full use ceiling.
   Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
-- **S12 holder kills are too broad at sibling-field writes.**
-  [The conformance case](../tests/conformance/cases/ent5-pos-postcondition-sibling-field-write.wf)
-  expects acceptance under ENT-5: `observed == deref(pair).left` has the same
-  support after a verified postcondition as after an ordinary read, and
-  writing `deref(pair).right` kills neither conclusion. Both `3f205ff6` and
-  the incremental-closure follow-up reject the postcondition route at FN-8
-  while accepting the ordinary twin. `s12_candidate_term_killed` checks each
-  holder's whole root against the write rather than its precise support.
-  The manifest retains the normative accept verdict as an `xfail`; repair
-  the holder-support classification and remove that status together.
 - **Ordinary-fallback views still copy a fact state per materialization.**
   After [incremental closure](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#selection),
   the [retained-proof follow-up](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#retained-proof-follow-up-results)

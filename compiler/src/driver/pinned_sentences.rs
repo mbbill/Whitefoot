@@ -315,11 +315,9 @@ fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "FN-8",
-        // KNOWN DEFECT: the compiler currently instantiates this goal over the
-        // owner (`header.len`) instead of the range the reference names, which
-        // accepts out-of-range accesses (conformance case
-        // ref4-neg-a-requirement-over-a-range-reference-is-the-ranges-length).
-        // The pinned sentence is the correct one and stays failing until fixed.
+        // Regression for the range-root substitution: the goal must retain
+        // the range holder's own `len` rather than becoming `header.len`
+        // (ref4-neg-a-requirement-over-a-range-reference-is-the-ranges-length).
         sentences: &[r#"instantiated_goal: "wide <= deref(view).len""#],
     },
     Probe {

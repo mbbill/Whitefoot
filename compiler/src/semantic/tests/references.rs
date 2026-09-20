@@ -881,6 +881,134 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [REF-1] a loop-carried reference keeps one static path shape while the
+/// captured index may change on each backedge. The arbitrary header must
+/// therefore admit the prior iteration's path instead of stopping at an
+/// ownership-join capability limit.
+#[test]
+fn a_loop_carried_reference_may_change_its_captured_index() {
+    let source = br#"fn inspect(values: &Array<u64, 3>) -> result: own u64 reads(values) {
+  let selected = &deref(values)[0_u64];
+  let result = 0_u64;
+  for (i in 0_u64..3_u64) {
+    let current = deref(selected);
+    set result = result +wrap current;
+    set selected = &deref(values)[i];
+  }
+  return result;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// A counted header has both its zero-trip preheader edge and every possible
+/// backedge. The reference after the loop may consequently name the initial
+/// element or the element selected by the last completed iteration; neither
+/// edge may be dropped merely because the body has one syntactic rebinding.
+#[test]
+fn a_counted_reference_continuation_includes_zero_trip_and_backedges() {
+    let source = br#"fn select(values: &Array<u64, 3>, count: own u64) -> result: own u64 reads(values) contract {
+  requires count <= 2_u64;
+} {
+  let selected = &deref(values)[0_u64];
+  for (i in 0_u64..count) {
+    let next = i + 1_u64;
+    set selected = &deref(values)[next];
+  }
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// [REF-2] the normal backedge can carry an invalid reference to the next
+/// iteration. A use before that iteration reforms the reference is therefore
+/// invalid even though the preheader supplied a valid path on the first trip.
+#[test]
+fn a_loop_head_use_observes_a_prior_iteration_window_invalidation() {
+    let source =
+        br#"fn inspect(owner: &Box<Slots<u64>>) -> result: own u64 writes(owner) contract {
+  requires 0_u64 < deref(owner).inner.len;
+  requires deref(owner).inner.cap <= 4_u64;
+} {
+  let selected = &deref(owner).inner[0_u64];
+  let result = 0_u64;
+  for (i in 0_u64..2_u64) {
+    let current = deref(selected);
+    set result = result +wrap current;
+    let capacity = deref(owner).inner.cap;
+    grow(cell: owner, capacity: capacity);
+  }
+  return result;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
+            if event.contains("call wrote a proper prefix"))
+    });
+}
+
+/// Reforming the reference before every use cuts the dependency on the
+/// possibly invalid header value. The invalidation at the end of one
+/// iteration may therefore flow to the next head without making this body
+/// unsafe. A non-continuing invalidation likewise creates no future use.
+#[test]
+fn reforming_before_use_and_noncontinuing_invalidation_are_valid() {
+    let source = br#"fn reform(owner: &Box<Slots<u64>>) -> result: own u64 writes(owner) contract {
+  requires 0_u64 < deref(owner).inner.len;
+  requires deref(owner).inner.cap <= 4_u64;
+} {
+  let selected = &deref(owner).inner[0_u64];
+  let result = 0_u64;
+  for (i in 0_u64..2_u64) {
+    let nonempty = 0_u64 < deref(owner).inner.len;
+    if nonempty {
+      set selected = &deref(owner).inner[0_u64];
+      let current = deref(selected);
+      set result = result +wrap current;
+      let capacity = deref(owner).inner.cap;
+      let allocation_fits = capacity <= 4_u64;
+      if allocation_fits {
+        grow(cell: owner, capacity: capacity);
+      }
+    }
+  }
+  return result;
+}
+
+fn one_trip(owner: &Box<Slots<u64>>) -> result: own u64 writes(owner) contract {
+  requires 0_u64 < deref(owner).inner.len;
+  requires deref(owner).inner.cap <= 4_u64;
+} {
+  let selected = &deref(owner).inner[0_u64];
+  loop @done {
+    let current = deref(selected);
+    let capacity = deref(owner).inner.cap;
+    grow(cell: owner, capacity: capacity);
+    break @done;
+  }
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
 /// A break edge can carry a newly formed reference with the same static path
 /// shape as its loop-carried predecessor. Replacing the enum ends the old
 /// witness, and the inner match's new witness ends before the break reaches

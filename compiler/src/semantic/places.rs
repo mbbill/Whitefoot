@@ -26,33 +26,70 @@
 use crate::DeclarationId;
 
 use super::model::{
-    BindingId, CheckedConstantId, CheckedExpression, CheckedFunction, CheckedMatchArm,
-    CheckedMeasure, CheckedMode, CheckedPlaceStep, CheckedRangeSource, CheckedStatement,
-    CheckedType, IntegerType,
+    BindingId, CheckedConstantId, CheckedExpression, CheckedFunction, CheckedLoopId,
+    CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedPlaceStep, CheckedRangeSource,
+    CheckedStatement, CheckedType, IntegerType,
 };
 
-/// One source occurrence at which an index expression or a range endpoint was
+/// The generation in which an index expression or range endpoint was
 /// evaluated [REF-1].
 ///
-/// The value that occurrence produced is immutable: the path records it, and
-/// later assignments to the variables the expression used do not change it.
-/// Two steps carrying one `CaptureId` therefore hold one value, whatever the
-/// program did between the two places' formation.
+/// An ordinary formation uses its source occurrence. A loop-header value
+/// carried from an arbitrary earlier iteration uses a compiler-owned header
+/// identity instead, because a source occurrence may evaluate to a different
+/// value on every backedge. Within one generation the captured value is
+/// immutable: later assignments to the variables used to form it do not
+/// retarget the path. Two steps carrying one `CaptureId` therefore hold one
+/// value only when that identity denotes the same generation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct CaptureId(pub(crate) u32);
+pub(crate) enum CaptureId {
+    Source(u32),
+    LoopHeader {
+        loop_id: CheckedLoopId,
+        holder: BindingId,
+        path: u32,
+        position: u32,
+    },
+    ValueDetermined,
+    SpellingDetermined,
+    SubstitutedOffset,
+    Unknown,
+}
+
+impl CaptureId {
+    /// The identity of one source expression occurrence.
+    pub(crate) const fn source(occurrence: u32) -> Self {
+        Self::Source(occurrence)
+    }
+
+    /// One opaque value carried from an arbitrary prior iteration.
+    const fn loop_carried(
+        loop_id: CheckedLoopId,
+        holder: BindingId,
+        path: u32,
+        position: u32,
+    ) -> Self {
+        Self::LoopHeader {
+            loop_id,
+            holder,
+            path,
+            position,
+        }
+    }
+}
 
 /// The occurrence a value-determined capture carries in a goal datum.
 ///
 /// It stands for no source node: a literal and a const denote one value at
 /// every occurrence, so the identity of the place they index is their value
 /// and not where it was written [REF-1, ENT-2].
-const VALUE_DETERMINED_CAPTURE: CaptureId = CaptureId(u32::MAX - 2);
+const VALUE_DETERMINED_CAPTURE: CaptureId = CaptureId::ValueDetermined;
 
 /// The nonidentity marker for a value this relation cannot name.
 ///
 /// Unlike a source occurrence, two uses of this marker are no evidence that
 /// they evaluated to the same value.
-const UNKNOWN_CAPTURE: CaptureId = CaptureId(u32::MAX);
+const UNKNOWN_CAPTURE: CaptureId = CaptureId::Unknown;
 
 /// The occurrence a binding-valued capture carries in a goal datum.
 ///
@@ -64,7 +101,7 @@ const UNKNOWN_CAPTURE: CaptureId = CaptureId(u32::MAX);
 /// that sound is [MSR-2]: the offset's own support is part of every enclosing
 /// measure term's support, so a write to `i` kills every term `i` occurs in
 /// rather than silently retargeting one.
-const SPELLING_DETERMINED_CAPTURE: CaptureId = CaptureId(u32::MAX - 3);
+const SPELLING_DETERMINED_CAPTURE: CaptureId = CaptureId::SpellingDetermined;
 
 /// How the entailment fragment reads one captured value [ENT-2].
 ///
@@ -328,6 +365,49 @@ pub(crate) struct ResolvedPlace {
 }
 
 impl ResolvedPlace {
+    /// The same root and static path shape at an arbitrary loop header.
+    ///
+    /// A loop-carried rebinding may evaluate every written index and range
+    /// endpoint again on each backedge [REF-1]. The source occurrence is not
+    /// the runtime generation: retaining it would let a prior iteration's
+    /// path consume the affine image formed by the current iteration at that
+    /// same source node. Give every captured position a deterministic opaque
+    /// header identity instead. The root and every non-captured step remain
+    /// exact, so aliases still resolve to the real storage and never become a
+    /// fresh local place. A reference which is not rebound across this loop
+    /// never takes this conversion and keeps its original captures.
+    pub(crate) fn loop_carried(
+        &self,
+        loop_id: CheckedLoopId,
+        holder: BindingId,
+        path: u32,
+    ) -> Result<Self, crate::SemanticCompilerFailure> {
+        let mut carried = self.clone();
+        let mut position = 0_u32;
+        let mut next = || {
+            let capture = CaptureId::loop_carried(loop_id, holder, path, position);
+            position = position
+                .checked_add(1)
+                .ok_or(crate::SemanticCompilerFailure::CounterOverflow)?;
+            Ok(CapturedValue::new(capture, CapturedTerm::Opaque))
+        };
+        for step in &mut carried.path {
+            match step {
+                PlaceStep::Index(index) => *index = next()?,
+                PlaceStep::Range(range) => {
+                    range.start = next()?;
+                    range.end = next()?;
+                }
+                PlaceStep::Deref
+                | PlaceStep::Field(_)
+                | PlaceStep::Payload { .. }
+                | PlaceStep::Part(_)
+                | PlaceStep::Measure(_) => {}
+            }
+        }
+        Ok(carried)
+    }
+
     /// The identity this place carries as an [ENT-2] term.
     ///
     /// A term is interned by its path, so `rows[0_u64].len` written twice is
@@ -752,6 +832,7 @@ impl PlaceMap {
             }
         }
         map.collect_block_bindings(function.body.as_deref().unwrap_or_default());
+        map.collect_loop_carried_origins(function.body.as_deref().unwrap_or_default());
         // A reference `set` is flow-sensitive, and one inside a loop may feed
         // an earlier rebinding on the next iteration. Permission needs every
         // possible origin, not one traversal's current origin, so close the
@@ -761,6 +842,43 @@ impl PlaceMap {
         while map.collect_reference_origins(function.body.as_deref().unwrap_or_default()) {}
         while map.mark_unknown_reference_origins(function.body.as_deref().unwrap_or_default()) {}
         map
+    }
+
+    /// Seeds the compiler-owned arbitrary-header alternatives produced by
+    /// the reference checker for every loop-carried holder.
+    ///
+    /// The ordinary all-source fixed point below must see these paths before
+    /// it propagates aliases. It may then conservatively add a later exact
+    /// source formation to an earlier alias, but it can never omit the opaque
+    /// header alternative and use that exact formation as evidence about a
+    /// prior iteration. Every root and static step remains present, so this is
+    /// unknown captured value, not invented local storage.
+    fn collect_loop_carried_origins(&mut self, statements: &[CheckedStatement]) {
+        for statement in statements {
+            if let CheckedStatement::Loop {
+                carried_references, ..
+            }
+            | CheckedStatement::CountedRange {
+                carried_references, ..
+            } = statement
+            {
+                for reference in carried_references {
+                    let summary = self.summary_mut(reference.binding);
+                    summary.reference = true;
+                    if reference.paths.is_empty() {
+                        summary.reference_unknown = true;
+                    }
+                    for path in &reference.paths {
+                        if !summary.reference_paths.contains(path) {
+                            summary.reference_paths.push(path.clone());
+                        }
+                    }
+                }
+            }
+            for nested in place_nested_bodies(statement) {
+                self.collect_loop_carried_origins(nested);
+            }
+        }
     }
 
     /// [OWN-7]: whether the two resolved places overlap.
@@ -1297,21 +1415,21 @@ mod tests {
     };
     use crate::NodePath;
     use crate::semantic::model::{
-        BindingId, CheckedEnumType, CheckedExpression, CheckedMatchArm, CheckedMatchBinder,
-        CheckedMeasure, CheckedMode, CheckedStatement, CheckedType, NominalId,
+        BindingId, CheckedEnumType, CheckedExpression, CheckedLoopId, CheckedMatchArm,
+        CheckedMatchBinder, CheckedMeasure, CheckedMode, CheckedStatement, CheckedType, NominalId,
     };
 
     fn literal(capture: u32, value: u64) -> CapturedValue {
-        CapturedValue::new(CaptureId(capture), CapturedTerm::Literal(value))
+        CapturedValue::new(CaptureId::source(capture), CapturedTerm::Literal(value))
     }
 
     fn opaque(capture: u32) -> CapturedValue {
-        CapturedValue::new(CaptureId(capture), CapturedTerm::Opaque)
+        CapturedValue::new(CaptureId::source(capture), CapturedTerm::Opaque)
     }
 
     fn binding(capture: u32, binding: u32) -> CapturedValue {
         CapturedValue::new(
-            CaptureId(capture),
+            CaptureId::source(capture),
             CapturedTerm::Binding(BindingId(binding)),
         )
     }
@@ -1321,6 +1439,49 @@ mod tests {
             root: PlaceRoot::Binding(BindingId(binding)),
             path: path.to_vec(),
         }
+    }
+
+    #[test]
+    fn loop_carried_paths_keep_shape_but_not_source_capture_generation() {
+        let original = place(
+            7,
+            &[
+                PlaceStep::Field(2),
+                PlaceStep::Index(literal(11, 0)),
+                PlaceStep::Range(CapturedRange {
+                    start: binding(12, 4),
+                    end: opaque(13),
+                }),
+            ],
+        );
+        let carried = original
+            .loop_carried(CheckedLoopId(3), BindingId(9), 1)
+            .expect("small carried identity");
+        let repeated = original
+            .loop_carried(CheckedLoopId(3), BindingId(9), 1)
+            .expect("the same header identity is deterministic");
+        let other_holder = original
+            .loop_carried(CheckedLoopId(3), BindingId(10), 1)
+            .expect("small carried identity");
+
+        assert_eq!(carried, repeated);
+        assert_ne!(carried, other_holder);
+        assert_eq!(carried.root, original.root);
+        assert!(matches!(carried.path[0], PlaceStep::Field(2)));
+        let PlaceStep::Index(carried_index) = carried.path[1] else {
+            panic!("the index step must remain an index");
+        };
+        let PlaceStep::Index(original_index) = original.path[1] else {
+            panic!("the source step must be an index");
+        };
+        assert_eq!(carried_index.term, CapturedTerm::Opaque);
+        assert!(!carried_index.provably_same(original_index));
+        let PlaceStep::Range(carried_range) = carried.path[2] else {
+            panic!("the range step must remain a range");
+        };
+        assert_eq!(carried_range.start.term, CapturedTerm::Opaque);
+        assert_eq!(carried_range.end.term, CapturedTerm::Opaque);
+        assert_ne!(carried_range.start.capture, carried_range.end.capture);
     }
 
     fn node() -> NodePath {

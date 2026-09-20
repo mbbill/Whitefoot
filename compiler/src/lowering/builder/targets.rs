@@ -49,7 +49,25 @@ impl IrBuilder<'_> {
         &mut self,
         target: &'target CheckedSetTarget,
     ) -> Result<PreparedTarget<'target>, LoweringFailure> {
-        let ty = lower_type(self.erasure, target.ty())?;
+        let ty = match target {
+            // [REF-1, REF-4] a reference variable carries its address or
+            // range descriptor as the binding's runtime value. Its written
+            // type names the referent/element, so read the already-lowered
+            // binding type rather than mistaking that logical type for the
+            // representation replaced by this rebinding.
+            CheckedSetTarget::Place(place) if place.mode.is_reference() => {
+                if place.declares || !place.fields.is_empty() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                let value = self
+                    .bindings
+                    .get(&place.binding)
+                    .copied()
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                self.value_type(value)?
+            }
+            _ => lower_type(self.erasure, target.ty())?,
+        };
         // [WIN-3] every other target shape always holds a value at the
         // commit: a referent, a field, and an element inside a window's
         // filled prefix or an array's slots are storage that is there. A
@@ -74,6 +92,8 @@ impl IrBuilder<'_> {
                     if !place.fields.is_empty() {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     }
+                    TargetStorage::Place(place)
+                } else if place.mode.is_reference() {
                     TargetStorage::Place(place)
                 } else {
                     let storage = self
@@ -299,6 +319,14 @@ impl IrBuilder<'_> {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     }
                     return self.promote_binding_if_needed(place.binding);
+                }
+                if place.mode.is_reference() {
+                    if !place.fields.is_empty()
+                        || self.bindings.insert(place.binding, value).is_none()
+                    {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                    return Ok(());
                 }
                 let storage = self
                     .bindings

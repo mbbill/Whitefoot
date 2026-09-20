@@ -258,7 +258,7 @@ struct AffineFlowState {
 /// sits outside the node-derived identities [`CapturedValue`] mints and
 /// outside the unknown offset, so no substituted position is ever taken for a
 /// place's own written subscript or for an offset this version cannot name.
-const SUBSTITUTED_OFFSET_CAPTURE: CaptureId = CaptureId(u32::MAX - 2);
+const SUBSTITUTED_OFFSET_CAPTURE: CaptureId = CaptureId::SubstitutedOffset;
 
 /// The affine images of one range formation's two captured endpoints
 /// [REF-4], with the node the formation stands at.
@@ -353,10 +353,18 @@ impl ProofClosure {
 /// inequality for a direct-root proposition; the proof entry never invents
 /// another formula.
 enum ProofGoal<'a> {
-    /// One source-written canonical affine inequality. PRF-1 submits each
-    /// `use` through the same proof entry as partial operations and callable
-    /// boundaries; it does not call the affine checker as a private fallback.
-    Affine { inequality: &'a AffineInequality },
+    /// One canonical affine target with the right operand retained by its
+    /// source normalization for the complete MSR-4 disposition.
+    Affine {
+        inequality: &'a AffineInequality,
+        /// The exact right-hand term retained by source normalization, when
+        /// it has an L0 spelling. Never reconstructed from coefficients.
+        right: Option<TermId>,
+    },
+    /// PRF-1 admits written relation premises and judges certificate
+    /// redundancy through AUTO alone. Neither query may borrow MSR-4's
+    /// Step 6 route, which a blockless INV-1 target may use.
+    AutomaticAffine { inequality: &'a AffineInequality },
     Signed {
         expression: &'a GoalExpression,
         affine: Option<&'a AffineInequality>,
@@ -382,6 +390,7 @@ enum ProofGoal<'a> {
         goal: Option<GoalId>,
         relation: Option<&'a Relation>,
         affine: Option<&'a AffineInequality>,
+        right: Option<TermId>,
         upper_bound: Option<NumericUpperBoundRequest<'a>>,
     },
 }
@@ -406,12 +415,18 @@ struct FixedAffineBoundBridge<'a> {
     left_to_middle_bound: i128,
 }
 
+#[derive(Clone)]
+struct NumericAffineTarget {
+    inequality: AffineInequality,
+    right: Option<TermId>,
+}
+
 struct IntegerDomainGoal<'a> {
     canonical: Option<GoalId>,
     operation: CheckedIntegerOperation,
     operand_type: CheckedType,
     components: &'a [BoundsRequest],
-    affine_clauses: Option<&'a [Vec<AffineInequality>]>,
+    affine_clauses: Option<&'a [Vec<NumericAffineTarget>]>,
     affine_product: Option<&'a AffineIntegerProduct>,
 }
 
@@ -1865,6 +1880,34 @@ impl Analyzer<'_, '_> {
         state: &AffineFlowState,
     ) -> Option<AffineInequality> {
         self.affine_signed_goal_ordering_target(expression, state, GoalSign::Positive)
+    }
+
+    /// Retains the written right operand after the comparison and truth sign
+    /// choose their fixed orientation. A compound operand without an L0 term
+    /// has no right bridge; its coefficient vector cannot invent one.
+    fn signed_goal_right_term(
+        &mut self,
+        expression: &GoalExpression,
+        sign: GoalSign,
+    ) -> Option<TermId> {
+        let GoalExpression::Operation {
+            row: GoalOperation::Integer { operation, .. },
+            arguments,
+            ..
+        } = expression
+        else {
+            return None;
+        };
+        let [left, right] = arguments.as_slice() else {
+            return None;
+        };
+        let reversed = match operation {
+            CheckedIntegerOperation::Less | CheckedIntegerOperation::LessEqual => false,
+            CheckedIntegerOperation::Greater | CheckedIntegerOperation::GreaterEqual => true,
+            _ => return None,
+        } ^ (sign == GoalSign::Negative);
+        self.goal_side(if reversed { left } else { right })
+            .map(|(term, _)| term)
     }
 
     /// S4 captures only non-L0 affine ordering leaves already established by
@@ -6639,7 +6682,7 @@ impl Analyzer<'_, '_> {
                             .map(|offset| {
                                 GoalProjection::Subscript(
                                     CapturedValue::new(
-                                        CaptureId(u32::MAX),
+                                        CaptureId::source(u32::MAX),
                                         CapturedTerm::Binding(offset.binding),
                                     )
                                     .goal_identity(),
@@ -7655,7 +7698,12 @@ impl Analyzer<'_, '_> {
     /// selected derivation during that same query.
     fn prove(&mut self, context: ProofContext<'_>, goal: ProofGoal<'_>) -> ProofResult {
         match goal {
-            ProofGoal::Affine { inequality } => self.prove_affine(context, inequality),
+            ProofGoal::Affine { inequality, right } => {
+                self.prove_affine(context, inequality, right)
+            }
+            ProofGoal::AutomaticAffine { inequality } => {
+                self.prove_affine(context, inequality, None)
+            }
             ProofGoal::Signed { expression, affine } => {
                 self.prove_signed(context, expression, affine)
             }
@@ -7668,9 +7716,10 @@ impl Analyzer<'_, '_> {
                 goal,
                 relation,
                 affine,
+                right,
                 upper_bound,
             } => {
-                let proof = self.prove_normalized_ordering(&context, goal, relation, affine);
+                let proof = self.prove_normalized_ordering(&context, goal, relation, affine, right);
                 self.project_numeric_upper_bound(&context, proof, upper_bound)
             }
         }
@@ -7680,6 +7729,7 @@ impl Analyzer<'_, '_> {
         &mut self,
         context: ProofContext<'_>,
         inequality: &AffineInequality,
+        right: Option<TermId>,
     ) -> ProofResult {
         let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
         if closed.contradictory() {
@@ -7691,8 +7741,7 @@ impl Analyzer<'_, '_> {
                 product_interval: None,
             };
         }
-        let facts = Self::affine_facts(context.affine);
-        let Some(proof) = self.affine_target_proof(inequality, &facts, context) else {
+        let Some(proof) = self.numeric_affine_proof(inequality, right, context) else {
             return ProofResult {
                 disposition: ProofDisposition::Unknown,
                 route: None,
@@ -7800,11 +7849,12 @@ impl Analyzer<'_, '_> {
         // The affine target is this goal's own comparison, normalized. Proving
         // it proves the goal, so the L0 projection is what the evidence names,
         // not what the route needs: a goal that carries a coefficient has no
-        // two-term projection to name and is proved by the consequence alone.
+        // two-term projection to name and instead retains the exact signed
+        // goal above its affine consequence.
         if let Some(target) = affine_target {
             let projection = self.goals.projection(goal).cloned();
-            let assumptions = Self::affine_facts(context.affine);
-            if let Some(proof) = self.affine_target_proof(target, &assumptions, context) {
+            let right = self.signed_goal_right_term(expression, GoalSign::Positive);
+            if let Some(proof) = self.numeric_affine_proof(target, right, context) {
                 let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
                     relation: projection.clone().map(Box::new),
                     premises: proof.premises.into_boxed_slice(),
@@ -7817,7 +7867,13 @@ impl Analyzer<'_, '_> {
                         relation,
                         parent: consequence,
                     }),
-                    None => consequence,
+                    None => self
+                        .derivations
+                        .intern(DerivationNode::GoalAffineConsequence {
+                            goal,
+                            sign: GoalSign::Positive,
+                            parent: consequence,
+                        }),
                 };
                 return ProofResult {
                     disposition: ProofDisposition::Proved,
@@ -7860,22 +7916,29 @@ impl Analyzer<'_, '_> {
         sign: GoalSign,
     ) -> Option<DerivationId> {
         let target = self.affine_signed_goal_ordering_target(expression, context.affine, sign)?;
-        let mut relation = self.goals.projection(goal)?.clone();
+        let mut relation = self.goals.projection(goal).cloned();
         if sign == GoalSign::Negative {
-            relation = relation.negated();
+            relation = relation.map(|relation| relation.negated());
         }
-        let assumptions = Self::affine_facts(context.affine);
-        let proof = self.affine_target_proof(&target, &assumptions, context)?;
+        let right = self.signed_goal_right_term(expression, sign);
+        let proof = self.numeric_affine_proof(&target, right, context)?;
         let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
-            relation: Some(Box::new(relation.clone())),
+            relation: relation.clone().map(Box::new),
             premises: proof.premises.into_boxed_slice(),
             parents: proof.parents,
         });
-        Some(self.derivations.intern(DerivationNode::GoalProjection {
-            goal,
-            sign,
-            relation,
-            parent: consequence,
+        Some(self.derivations.intern(match relation {
+            Some(relation) => DerivationNode::GoalProjection {
+                goal,
+                sign,
+                relation,
+                parent: consequence,
+            },
+            None => DerivationNode::GoalAffineConsequence {
+                goal,
+                sign,
+                parent: consequence,
+            },
         }))
     }
 
@@ -8020,11 +8083,19 @@ impl Analyzer<'_, '_> {
                 product_interval: None,
             };
         };
-        let assumptions = Self::affine_facts(context.affine);
         let mut premises = Vec::new();
         let mut parents = Vec::new();
-        for target in targets {
-            let Some(proof) = self.affine_target_proof(target, &assumptions, context) else {
+        for (ordinal, target) in targets.iter().enumerate() {
+            let right = match relation {
+                Relation::Bound { right, .. } if ordinal == 0 => Some(*right),
+                Relation::Equal { left, right, .. } => match ordinal {
+                    0 => Some(*right),
+                    1 => Some(*left),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let Some(proof) = self.numeric_affine_proof(target, right, context) else {
                 return ProofResult {
                     disposition: ProofDisposition::Unknown,
                     route: None,
@@ -8253,6 +8324,7 @@ impl Analyzer<'_, '_> {
         goal: Option<GoalId>,
         relation: Option<&Relation>,
         affine_target: Option<&AffineInequality>,
+        right: Option<TermId>,
     ) -> ProofResult {
         let closed = close(
             context.facts,
@@ -8323,8 +8395,7 @@ impl Analyzer<'_, '_> {
                 product_interval: None,
             };
         };
-        let assumptions = Self::affine_facts(context.affine);
-        let Some(proof) = self.affine_target_proof(target, &assumptions, *context) else {
+        let Some(proof) = self.numeric_affine_proof(target, right, *context) else {
             return ProofResult {
                 disposition: ProofDisposition::Unknown,
                 route: None,
@@ -9102,12 +9173,14 @@ impl Analyzer<'_, '_> {
                 ProofContext::new(&states.facts, &states.affine),
                 ProofGoal::Affine {
                     inequality: &stride_target,
+                    right: None,
                 },
             );
             let base = self.prove(
                 ProofContext::new(&states.facts, &states.affine),
                 ProofGoal::Affine {
                     inequality: &base_target,
+                    right: None,
                 },
             );
             if stride.disposition == ProofDisposition::Proved
@@ -9300,12 +9373,104 @@ impl Analyzer<'_, '_> {
         }))
     }
 
+    /// The complete Step 6 inventory. Querying it must not recreate a measure
+    /// image removed by an intervening write. Fixed measures and aliases use
+    /// the same immutable anchor as ordinary measure reads.
+    fn affine_right_bridge_candidates(
+        &mut self,
+        affine: &AffineFlowState,
+    ) -> Vec<AffineL0Candidate> {
+        let mut candidates = Vec::new();
+        for term in self.measure_terms() {
+            let mut anchor = term;
+            let mut fixed = None;
+            for _ in 0..4 {
+                match self.terms.measure_bound(anchor) {
+                    Some(MeasureBound::Constant(value)) => {
+                        fixed = Some(AffineForm::constant(value));
+                        break;
+                    }
+                    Some(MeasureBound::Equal(other)) => anchor = other,
+                    None => break,
+                }
+            }
+            if let Some(value) =
+                fixed.or_else(|| affine.measure_atoms.borrow().get(&anchor).cloned())
+            {
+                candidates.push(AffineL0Candidate { term, value });
+            }
+        }
+        let mut bindings = affine.values.keys().copied().collect::<Vec<_>>();
+        bindings.sort_by_key(|binding| binding.0);
+        for binding in bindings {
+            let Some(ty) = self.affine_binding_type(binding) else {
+                continue;
+            };
+            let term = self.terms.intern(TermKind::Place(
+                ResolvedPlace::spelled(PlaceRoot::Binding(binding), false, Vec::new()),
+                ty,
+            ));
+            candidates.push(AffineL0Candidate {
+                term,
+                value: affine.values[&binding].clone(),
+            });
+        }
+        candidates
+    }
+
+    /// The shared affine portion of MSR-4. AUTO remains nonrecursive: after
+    /// it fails, Step 6 subtracts exactly one closed `m-r <= c` image and
+    /// submits exactly that residual to AUTO. The normalization supplies r;
+    /// a normalized coefficient vector never chooses a new right operand.
+    fn numeric_affine_proof(
+        &mut self,
+        target: &AffineInequality,
+        right: Option<TermId>,
+        context: ProofContext<'_>,
+    ) -> Option<AffineConsequenceProof> {
+        let assumptions = Self::affine_facts(context.affine);
+        if let Some(proof) = self.affine_target_proof(target, &assumptions, context) {
+            return Some(proof);
+        }
+        let right = right?;
+        let right_value = self.affine_term_value(right, context.affine)?;
+        let candidates = self.affine_right_bridge_candidates(context.affine);
+        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
+        for candidate in candidates {
+            let Some(bound) = closed.tight_bound(candidate.term, right) else {
+                continue;
+            };
+            let mut check = AffineCheckState::new();
+            let Ok(image) = AffineInequality::from_bounded_forms(
+                &candidate.value,
+                &right_value,
+                bound,
+                &mut check,
+            ) else {
+                continue;
+            };
+            let Ok(residual) = AffineInequality::residual_after(target, &image, &mut check) else {
+                continue;
+            };
+            let Some(mut proof) = self.affine_target_proof(&residual, &assumptions, context) else {
+                continue;
+            };
+            let Some(bridge) =
+                closed.bound_proof(candidate.term, right, bound, &mut self.derivations)
+            else {
+                continue;
+            };
+            proof.parents.push(bridge);
+            return Some(proof);
+        }
+        None
+    }
+
     /// Combines one affine left-hand value with one already-live L0 bridge to
     /// the requested right-hand term. For a candidate middle term `m`, L0
     /// fixes `m - right <= c`; the single affine target is therefore
-    /// `left - m <= requested - c`. Candidates are visited once in BindingId
-    /// order, so work and selection are deterministic functions of the
-    /// current checker state.
+    /// `left - m <= requested - c`. It uses the same complete Step 6 inventory
+    /// as the general numeric entry and retains an exact transitive L0 node.
     #[allow(clippy::too_many_arguments)]
     fn affine_bound_via_l0_right(
         &mut self,
@@ -9316,25 +9481,16 @@ impl Analyzer<'_, '_> {
         affine: &AffineFlowState,
         facts: &FactState,
     ) -> Option<DerivationId> {
-        let mut bindings = affine.values.keys().copied().collect::<Vec<_>>();
-        bindings.sort_by_key(|binding| binding.0);
-        let candidates = bindings
-            .into_iter()
-            .filter_map(|binding| {
-                let ty = self.affine_binding_type(binding)?;
-                let value = affine.values.get(&binding)?.clone();
-                let term = self.terms.intern(TermKind::Place(
-                    ResolvedPlace::spelled(PlaceRoot::Binding(binding), false, Vec::new()),
-                    ty,
-                ));
-                Some((term, value))
-            })
-            .collect::<Vec<_>>();
+        let candidates = self.affine_right_bridge_candidates(affine);
         let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
         if closed.contradictory() {
             return closed.contradiction_proof();
         }
-        for (middle, middle_value) in candidates {
+        for AffineL0Candidate {
+            term: middle,
+            value: middle_value,
+        } in candidates
+        {
             let Some(bridge) = closed.tight_bound(middle, right_term) else {
                 continue;
             };
@@ -9435,6 +9591,7 @@ impl Analyzer<'_, '_> {
                 goal,
                 relation: ordering_relation.as_ref(),
                 affine: affine_target.as_ref(),
+                right: Some(threshold_term),
                 upper_bound: Some(NumericUpperBoundRequest {
                     term: length_term,
                     affine: affine_length.as_ref(),
@@ -9607,6 +9764,7 @@ impl Analyzer<'_, '_> {
                 ProofContext::new(&state.facts, &state.affine),
                 ProofGoal::Affine {
                     inequality: &inequality,
+                    right: None,
                 },
             );
             if proof.disposition == ProofDisposition::Proved {
@@ -10445,19 +10603,18 @@ impl Analyzer<'_, '_> {
     /// result type here would circularly assume the domain being checked.
     fn affine_integer_domain_derivation(
         &mut self,
-        clauses: &[Vec<AffineInequality>],
+        clauses: &[Vec<NumericAffineTarget>],
         affine: &AffineFlowState,
         facts: &FactState,
         goal: Option<GoalId>,
     ) -> Option<DerivationId> {
-        let assumptions = Self::affine_facts(affine);
         for clause in clauses {
             let mut consequences = Vec::with_capacity(clause.len());
             let mut proved = true;
             for target in clause {
-                let Some(proof) = self.affine_target_proof(
-                    target,
-                    &assumptions,
+                let Some(proof) = self.numeric_affine_proof(
+                    &target.inequality,
+                    target.right,
                     ProofContext::new(facts, affine),
                 ) else {
                     proved = false;
@@ -10687,7 +10844,7 @@ impl Analyzer<'_, '_> {
         operand_type: CheckedType,
         arguments: &[CheckedExpression],
         state: &mut AffineFlowState,
-    ) -> Option<Vec<Vec<AffineInequality>>> {
+    ) -> Option<Vec<Vec<NumericAffineTarget>>> {
         let CheckedType::Integer(ty) = operand_type else {
             return None;
         };
@@ -10706,7 +10863,13 @@ impl Analyzer<'_, '_> {
                 &amount,
                 &AffineForm::constant(i128::from(ty.width()) - 1),
             )?;
-            return Some(vec![vec![target]]);
+            let right = self
+                .terms
+                .intern(TermKind::Constant(i128::from(ty.width()) - 1));
+            return Some(vec![vec![NumericAffineTarget {
+                inequality: target,
+                right: Some(right),
+            }]]);
         }
         if matches!(
             operation,
@@ -10715,11 +10878,17 @@ impl Analyzer<'_, '_> {
             let [value] = arguments else {
                 return None;
             };
+            let right = self
+                .read_operand(value)
+                .or_else(|| self.measure_operand(value));
             let value = self.affine_pre_domain_form(value, state)?;
             let minimum = type_range(ty).0;
             let target =
                 Self::affine_less_equal(&AffineForm::constant(minimum.checked_add(1)?), &value)?;
-            return Some(vec![vec![target]]);
+            return Some(vec![vec![NumericAffineTarget {
+                inequality: target,
+                right,
+            }]]);
         }
         if matches!(
             operation,
@@ -10731,21 +10900,42 @@ impl Analyzer<'_, '_> {
             let [dividend, divisor] = arguments else {
                 return None;
             };
+            let dividend_right = self
+                .read_operand(dividend)
+                .or_else(|| self.measure_operand(dividend));
+            let divisor_right = self
+                .read_operand(divisor)
+                .or_else(|| self.measure_operand(divisor));
             let dividend = self.affine_pre_domain_form(dividend, state)?;
             let divisor = self.affine_pre_domain_form(divisor, state)?;
-            let positive = Self::affine_less_equal(&AffineForm::constant(1), &divisor)?;
+            let positive = NumericAffineTarget {
+                inequality: Self::affine_less_equal(&AffineForm::constant(1), &divisor)?,
+                right: divisor_right,
+            };
             if !ty.signed() {
                 return Some(vec![vec![positive]]);
             }
-            let negative = Self::affine_less_equal(&divisor, &AffineForm::constant(-1))?;
-            let dividend_not_min = Self::affine_less_equal(
-                &AffineForm::constant(type_range(ty).0.checked_add(1)?),
-                &dividend,
-            )?;
-            let divisor_below_minus_one =
-                Self::affine_less_equal(&divisor, &AffineForm::constant(-2))?;
-            let divisor_above_minus_one =
-                Self::affine_less_equal(&AffineForm::constant(0), &divisor)?;
+            let minus_one = self.terms.intern(TermKind::Constant(-1));
+            let minus_two = self.terms.intern(TermKind::Constant(-2));
+            let negative = NumericAffineTarget {
+                inequality: Self::affine_less_equal(&divisor, &AffineForm::constant(-1))?,
+                right: Some(minus_one),
+            };
+            let dividend_not_min = NumericAffineTarget {
+                inequality: Self::affine_less_equal(
+                    &AffineForm::constant(type_range(ty).0.checked_add(1)?),
+                    &dividend,
+                )?,
+                right: dividend_right,
+            };
+            let divisor_below_minus_one = NumericAffineTarget {
+                inequality: Self::affine_less_equal(&divisor, &AffineForm::constant(-2))?,
+                right: Some(minus_two),
+            };
+            let divisor_above_minus_one = NumericAffineTarget {
+                inequality: Self::affine_less_equal(&AffineForm::constant(0), &divisor)?,
+                right: divisor_right,
+            };
             let nonzero = [negative, positive];
             let overflow_safe = [
                 dividend_not_min,
@@ -10806,11 +10996,26 @@ impl Analyzer<'_, '_> {
         };
         let (minimum, maximum) = type_range(ty);
         let mut check = AffineCheckState::new();
+        let maximum_term = self.terms.intern(TermKind::Constant(maximum));
         Some(vec![vec![
-            AffineInequality::from_forms(&result, &AffineForm::constant(maximum), &mut check)
+            NumericAffineTarget {
+                inequality: AffineInequality::from_forms(
+                    &result,
+                    &AffineForm::constant(maximum),
+                    &mut check,
+                )
                 .ok()?,
-            AffineInequality::from_forms(&AffineForm::constant(minimum), &result, &mut check)
+                right: Some(maximum_term),
+            },
+            NumericAffineTarget {
+                inequality: AffineInequality::from_forms(
+                    &AffineForm::constant(minimum),
+                    &result,
+                    &mut check,
+                )
                 .ok()?,
+                right: None,
+            },
         ]])
     }
 
@@ -12335,16 +12540,19 @@ impl Analyzer<'_, '_> {
                 &mut AffineCheckState::new(),
             )
             .map(|partner| partner.ok());
-        let mut members = vec![target];
+        let right = self.checked_affine_right_term(&relation.right);
+        let mut members = vec![(target, right)];
         if let Some(partner) = partner {
-            members.push(partner);
+            let right = self.checked_affine_right_term(&relation.left);
+            members.push((partner, right));
         }
-        members.into_iter().all(|member| {
+        members.into_iter().all(|(member, right)| {
             member.is_some_and(|inequality| {
                 self.prove(
                     ProofContext::new(&state.facts, &state.affine),
                     ProofGoal::Affine {
                         inequality: &inequality,
+                        right,
                     },
                 )
                 .disposition
@@ -12579,6 +12787,42 @@ impl Analyzer<'_, '_> {
         AffineInequality::from_bounded_forms(&left, &right, relation.bound, check)
     }
 
+    /// Recognizes the source right side's one L0 term plus displacement,
+    /// using the existing source normalizer rather than the current value's
+    /// coefficient vector. The displacement already belongs to the target
+    /// inequality, so only the term is needed by Step 6.
+    fn checked_affine_right_term(
+        &mut self,
+        expression: &CheckedAffineExpression,
+    ) -> Option<TermId> {
+        let source = CheckedAffineRelation {
+            node_path: expression.node_path.clone(),
+            left: CheckedAffineExpression {
+                node_path: expression.node_path.clone(),
+                kind: CheckedAffineExpressionKind::Constant {
+                    value: 0,
+                    ty: IntegerType::U64,
+                },
+            },
+            right: expression.clone(),
+            bound: 0,
+            equality: false,
+        };
+        let Relation::Bound {
+            left: ZERO,
+            right,
+            bound,
+        } = self.checked_affine_relation_l0(&source)?
+        else {
+            return None;
+        };
+        if right == ZERO {
+            Some(self.terms.intern(TermKind::Constant(bound)))
+        } else {
+            Some(right)
+        }
+    }
+
     /// Projects the exact source relation into L0 when its normalized binding
     /// coefficients have one of the fixed difference-bound shapes. This does
     /// no discovery: it only recognizes `x - y <= c`, `x <= c`, `c <= x`, or
@@ -12726,7 +12970,6 @@ impl Analyzer<'_, '_> {
     fn source_proof_premise_results(
         &mut self,
         premises: &[Option<AffineInequality>],
-        l0_premises: &[Option<Relation>],
         named_premises: &[bool],
         published_premises: &[bool],
         values: &AffineFlowState,
@@ -12735,10 +12978,9 @@ impl Analyzer<'_, '_> {
         let mut closed: Option<ProofClosure> = None;
         premises
             .iter()
-            .zip(l0_premises)
             .zip(named_premises)
             .zip(published_premises)
-            .map(|(((premise, relation), named), published)| {
+            .map(|((premise, named), published)| {
                 // A bare invariant name means that exact declaration's
                 // published theorem, not merely any proposition with the same
                 // normalized inequality. Only a relation-form use asks AUTO
@@ -12749,15 +12991,9 @@ impl Analyzer<'_, '_> {
                 let Some(premise) = premise.as_ref() else {
                     return false;
                 };
-                let goal = relation.as_ref().map_or(
-                    ProofGoal::Affine {
-                        inequality: premise,
-                    },
-                    |relation| ProofGoal::Ordering {
-                        relation,
-                        affine: Some(std::slice::from_ref(premise)),
-                    },
-                );
+                let goal = ProofGoal::AutomaticAffine {
+                    inequality: premise,
+                };
                 // Each relation source reads these same immutable facts. A
                 // newly registered term or goal changes the closure universe,
                 // so only the unchanged view is reused; no proof is memoized.
@@ -14492,16 +14728,6 @@ impl Analyzer<'_, '_> {
                 }
                 let source_ordinal = u32::try_from(self.source_proofs.len())
                     .expect("local invariant count exceeds the u32 identity space");
-                let l0_premises = proof
-                    .uses
-                    .iter()
-                    .map(|written_use| match &written_use.source {
-                        CheckedProofUseSource::Named(_) => None,
-                        CheckedProofUseSource::Relation(relation) => {
-                            self.checked_affine_relation_l0(relation)
-                        }
-                    })
-                    .collect::<Vec<_>>();
                 let target_result = self.checked_affine_relation_inequality(
                     &proof.target,
                     &mut state.affine,
@@ -14599,15 +14825,29 @@ impl Analyzer<'_, '_> {
                     .map(|(premise, multiplicity)| premise.clone().zip(multiplicity.clone()))
                     .collect::<Option<Vec<_>>>();
 
-                // AUTO is exactly the unified zero-, one-, and exhaustive
-                // unordered two-premise route for this specification version.
-                // A written block is redundant when that route already proves
-                // its target from this same entering context. A blockless local
-                // invariant uses AUTO itself as its complete check.
-                let auto_proved = target.as_ref().is_some_and(|target| {
+                // [INV-1] a blockless target receives the complete MSR-4
+                // disposition. [PRF-1] instead judges a written certificate's
+                // redundancy by AUTO alone: Step 6 may prove a target without
+                // making its explicitly written certificate redundant.
+                let (target_right, partner_right) = if proof.uses.is_empty() {
+                    (
+                        self.checked_affine_right_term(&proof.target.right),
+                        self.checked_affine_right_term(&proof.target.left),
+                    )
+                } else {
+                    (None, None)
+                };
+                let target_goal = |inequality, right| {
+                    if proof.uses.is_empty() {
+                        ProofGoal::Affine { inequality, right }
+                    } else {
+                        ProofGoal::AutomaticAffine { inequality }
+                    }
+                };
+                let target_proved = target.as_ref().is_some_and(|target| {
                     self.prove(
                         ProofContext::new(&state.facts, &state.affine),
-                        ProofGoal::Affine { inequality: target },
+                        target_goal(target, target_right),
                     )
                     .disposition
                         == ProofDisposition::Proved
@@ -14615,14 +14855,12 @@ impl Analyzer<'_, '_> {
                     || partner.as_ref().is_some_and(|partner| {
                         self.prove(
                             ProofContext::new(&state.facts, &state.affine),
-                            ProofGoal::Affine {
-                                inequality: partner,
-                            },
+                            target_goal(partner, partner_right),
                         )
                         .disposition
                             == ProofDisposition::Proved
                     }));
-                let redundant = !proof.uses.is_empty() && auto_proved;
+                let redundant = !proof.uses.is_empty() && target_proved;
                 let certificate_sum = if proof.uses.is_empty() || source_failure.is_some() {
                     None
                 } else {
@@ -14637,7 +14875,6 @@ impl Analyzer<'_, '_> {
                 // help another premise in the same statement.
                 let premise_results = self.source_proof_premise_results(
                     &premises,
-                    &l0_premises,
                     &named_premises,
                     &published_premises,
                     &state.affine,
@@ -14658,7 +14895,7 @@ impl Analyzer<'_, '_> {
                                 .expect("source-proof use index fits the u32 identity")
                         });
                 let residual = if proof.uses.is_empty() {
-                    Ok(auto_proved)
+                    Ok(target_proved)
                 } else if target_failure.is_some()
                     || source_failure.is_some()
                     || certificate_failure_kind.is_some()
@@ -14943,6 +15180,7 @@ impl Analyzer<'_, '_> {
                 invariants,
                 body,
                 backedge_drops,
+                carried_references: _,
             } => {
                 for invariant in invariants {
                     self.judge_affine_relation_subscripts(&invariant.relation, state);
@@ -15020,6 +15258,7 @@ impl Analyzer<'_, '_> {
                 invariants,
                 body,
                 backedge_drops,
+                carried_references: _,
             } => {
                 let occurrence = self.encountered_counted;
                 self.encountered_counted = self
@@ -15077,7 +15316,10 @@ impl Analyzer<'_, '_> {
                 let lower_le_upper = lower_le_upper.as_ref().is_some_and(|target| {
                     self.prove(
                         ProofContext::new(&state.facts, &state.affine),
-                        ProofGoal::Affine { inequality: target },
+                        ProofGoal::Affine {
+                            inequality: target,
+                            right: None,
+                        },
                     )
                     .disposition
                         == ProofDisposition::Proved
@@ -15180,10 +15422,14 @@ impl Analyzer<'_, '_> {
                         )
                         .ok()
                     });
+                    let counter_limit = self.terms.intern(TermKind::Constant(u64::MAX as i128));
                     hidden_update = hidden_target.as_ref().is_some_and(|target| {
                         self.prove(
                             ProofContext::new(&body_state.facts, &body_state.affine),
-                            ProofGoal::Affine { inequality: target },
+                            ProofGoal::Affine {
+                                inequality: target,
+                                right: Some(counter_limit),
+                            },
                         )
                         .disposition
                             == ProofDisposition::Proved
@@ -15214,16 +15460,19 @@ impl Analyzer<'_, '_> {
                                 &mut AffineCheckState::new(),
                             )
                             .map(|partner| partner.ok());
-                        let mut members = vec![next_target];
+                        let right = self.checked_affine_right_term(&invariant.relation.right);
+                        let mut members = vec![(next_target, right)];
                         if let Some(partner) = next_partner {
-                            members.push(partner);
+                            let right = self.checked_affine_right_term(&invariant.relation.left);
+                            members.push((partner, right));
                         }
-                        let proved = members.into_iter().all(|member| {
+                        let proved = members.into_iter().all(|(member, right)| {
                             member.is_some_and(|inequality| {
                                 self.prove(
                                     ProofContext::new(&body_state.facts, &body_state.affine),
                                     ProofGoal::Affine {
                                         inequality: &inequality,
+                                        right,
                                     },
                                 )
                                 .disposition
@@ -16716,6 +16965,7 @@ mod goal_origin_kill_tests {
         let target = CheckedSetTarget::Place(CheckedWritablePlace {
             binding,
             fields: vec![1],
+            mode: crate::semantic::model::CheckedMode::Own,
             ty: CheckedType::Bool,
             declares: false,
             displaces_live_value: false,

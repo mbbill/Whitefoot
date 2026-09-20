@@ -944,6 +944,154 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
     std::fs::remove_dir_all(directory).expect("remove nested range element oracle files");
 }
 
+/// [REF-1, REF-2] a loop header carries the runtime reference value selected
+/// by either its zero-trip entry or its last executed backedge. The scalar
+/// case observes the thin address inside and after the loop. The range case
+/// also observes the two-word pointer/count descriptor after each rebinding.
+/// A C model computes both answers from the source arrays rather than copying
+/// a Whitefoot checksum literal.
+#[test]
+fn loop_carried_references_execute_zero_trip_and_backedge_values() {
+    let source = br#"fn carried_cell(count: own u64) -> result: own u64 pure contract {
+  requires count <= 2_u64;
+} {
+  let values = array_filled::<u64, 3>(value: 0_u64);
+  set values[0_u64] = 11_u64;
+  set values[1_u64] = 22_u64;
+  set values[2_u64] = 33_u64;
+  let selected = &values[0_u64];
+  let observed = 0_u64;
+  for (i in 0_u64..count) {
+    let current = deref(selected);
+    set observed = observed +wrap current;
+    let next = i + 1_u64;
+    set selected = &values[next];
+  }
+  let final_value = deref(selected);
+  let scaled = observed *wrap 100_u64;
+  return scaled +wrap final_value;
+}
+
+fn carried_range(count: own u64) -> result: own u64 pure contract {
+  requires count <= 2_u64;
+} {
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  set values[0_u64] = 11_u64;
+  set values[1_u64] = 23_u64;
+  set values[2_u64] = 37_u64;
+  set values[3_u64] = 53_u64;
+  let selected = &values[0_u64..2_u64];
+  let observed = 0_u64;
+  for (i in 0_u64..count) {
+    let available = 0_u64 < deref(selected).len;
+    if available {
+      let current = deref(selected)[0_u64];
+      set observed = observed +wrap current;
+    } else {
+      return 1_u64;
+    }
+    let next = i + 1_u64;
+    let end = next + 2_u64;
+    set selected = &values[next..end];
+  }
+  let width = deref(selected).len;
+  let has_first = 0_u64 < width;
+  if has_first {
+    let first = deref(selected)[0_u64];
+    let has_second = 1_u64 < width;
+    if has_second {
+      let second = deref(selected)[1_u64];
+      let observed_part = observed *wrap 1000000000_u64;
+      let first_part = first *wrap 1000000_u64;
+      let second_part = second *wrap 1000_u64;
+      let first_sum = observed_part +wrap first_part;
+      let second_sum = first_sum +wrap second_part;
+      return second_sum +wrap width;
+    }
+  }
+  return 2_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source)
+        .replace("@main(", "@wf_loop_carried_main(")
+        .replace("@wf__main_body(", "@wf_loop_carried_body(");
+    let oracle = r#"#include <stdint.h>
+#include <stdio.h>
+extern int wf__floor_run(int, char **);
+extern uint64_t wf_carried_cell(uint64_t);
+extern uint64_t wf_carried_range(uint64_t);
+
+static uint64_t expected_cell(uint64_t count) {
+    const uint64_t values[3] = {11, 22, 33};
+    uint64_t selected = 0;
+    uint64_t observed = 0;
+    for (uint64_t i = 0; i < count; ++i) {
+        observed += values[selected];
+        selected = i + 1;
+    }
+    return observed * 100 + values[selected];
+}
+
+static uint64_t expected_range(uint64_t count) {
+    const uint64_t values[4] = {11, 23, 37, 53};
+    uint64_t start = 0;
+    uint64_t observed = 0;
+    for (uint64_t i = 0; i < count; ++i) {
+        observed += values[start];
+        start = i + 1;
+    }
+    return observed * UINT64_C(1000000000)
+        + values[start] * UINT64_C(1000000)
+        + values[start + 1] * UINT64_C(1000)
+        + UINT64_C(2);
+}
+
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const uint64_t counts[2] = {0, 2};
+    for (uint64_t i = 0; i < 2; ++i) {
+        uint64_t count = counts[i];
+        uint64_t expected = expected_cell(count);
+        uint64_t actual = wf_carried_cell(count);
+        if (actual != expected) {
+            (void)fprintf(stderr,
+                          "carried cell count=%llu expected=%llu actual=%llu\n",
+                          (unsigned long long)count,
+                          (unsigned long long)expected,
+                          (unsigned long long)actual);
+            return 1;
+        }
+        expected = expected_range(count);
+        actual = wf_carried_range(count);
+        if (actual != expected) {
+            (void)fprintf(stderr,
+                          "carried range count=%llu expected=%llu actual=%llu\n",
+                          (unsigned long long)count,
+                          (unsigned long long)expected,
+                          (unsigned long long)actual);
+            return 2;
+        }
+    }
+    return 0;
+}
+
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(oracle), &[], &directory);
+    let output = Command::new(executable)
+        .output()
+        .expect("run loop-carried reference oracle");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove loop-carried reference oracle files");
+}
+
 /// [ENT-2, OP-4, OP-15] lowers the measure of a window selected directly
 /// through a range reference. The inner window contains one value, so the
 /// process observes the descriptor read rather than merely compiling an
