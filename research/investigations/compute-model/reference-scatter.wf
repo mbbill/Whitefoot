@@ -125,18 +125,6 @@ fn pack_chunks(chunks: &Box<Slots<Option<Chunk>>>, first: own u64, lows: &[u64],
       let rest_high = &deref(highs)[high_count..high_capacity];
       let copied_low = copy_run(values: &deref(payload).low, output: first_low);
       let copied_high = copy_run(values: &deref(payload).high, output: first_high);
-      invariant low_tail: 256_u64 * blocks <= deref(rest_low).len + 256_u64 * after {
-        use (256_u64 * blocks <= low_capacity + 256_u64 * first);
-        use (low_count <= 256_u64);
-        use 256 times (first + 1_u64 <= after);
-        use (low_capacity <= deref(rest_low).len + low_count);
-      }
-      invariant high_tail: 256_u64 * blocks <= deref(rest_high).len + 256_u64 * after {
-        use (256_u64 * blocks <= high_capacity + 256_u64 * first);
-        use (high_count <= 256_u64);
-        use 256 times (first + 1_u64 <= after);
-        use (high_capacity <= deref(rest_high).len + high_count);
-      }
       let remaining = pack_chunks(chunks: chunks, first: after, lows: rest_low, highs: rest_high);
     }
   }

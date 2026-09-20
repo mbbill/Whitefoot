@@ -1,0 +1,5 @@
+Node: compiler/parallel-lowering
+
+Decision: Optional PAR-1 range separation uses the ordinary entailment flow to retain a proved answer for the two argument occurrences in the state before their earlier statement, and the permission walk consumes that answer while preserving its running union of access footprints, because the [reference-model scatter investigation](../../research/investigations/compute-model/DESIGN.md#output-overlap-checkpoint) finds valid output ranges denied by a purely structural oracle, while immutable endpoint values alone do not make a branch-dependent proof valid at another program point, instead of a second range solver in permission, a function-wide cache of conditional separation answers, or source restructuring solely to manufacture distinct formal roots.
+
+This adds the parallel consumer's proof-transport choice. It does not approve or change PR #70's pending checker-facts amendments or its acceptance-bearing call separation mechanism. Missing optional evidence leaves the calls sequential; it never rejects source or adds a runtime check.

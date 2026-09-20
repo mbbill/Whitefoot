@@ -152,6 +152,56 @@ These are isolated emitted-code observations, not elapsed-time results or
 an end-to-end scatter speedup; caller placement and full consumer correctness
 remain to be checked.
 
+#### Output-overlap checkpoint
+
+A diagnostic compiler snapshot from PR #70, SHA-256
+`32c6f0dfda8c301268406a1cff397fbb47d1ea32a79f5891796925b99b1378f7`,
+preserves remaining-range lengths across the copy calls. This is an
+uncommitted upstream binary, not an integrated compiler revision or a timing
+baseline. A helper taking the payload as an ordinary `&Chunk` avoids the
+remaining nested-payload contract-image defect. Writing each partition result
+through `&Option<Chunk>` also avoids the nominal range-element reference path;
+both source forms still need their general compiler repairs. The Box/position
+entry needs the explicit finite step `256 times (chunks.inner.len <= blocks)`
+to establish the padded capacity requirement. That missing step is a source
+proof requirement, not a compiler defect.
+
+With those source changes, the unchanged native oracle passes all 109
+configurations and 3,466,725 output values sequentially and in the parallel
+image's one-worker fallback. WF emission took 0.07 s, runtime-object construction
+0.39 s, sequential native construction 0.52 s, and oracle launch/execution
+0.37 s. These are diagnostic verification costs, not kernel measurements.
+At two workers the output values still agree, but the required packing observer
+reports no steals or nonempty helper output; the parallel correctness check
+therefore fails. No performance selection follows from this snapshot.
+
+The permission ledger admits the two adjacent `copy_run` calls but denies the
+following recursive pack because `first_high` and `rest_high` are not separated.
+`permission::footprint_conflict` currently uses `UnprovedSeparations`, so it
+cannot use the ordinary arithmetic proof of those sibling ranges. Separately,
+the lowering keeps only the prefix of a permitted run; a preceding non-call
+statement hides even the admitted two-call suffix. The first repair retains
+each contiguous call subrun, ending it at a non-call, unavailable call result,
+block change, or addressed result. The existing native three-call/join-order
+case now includes an independent non-call prefix and passes (1.01 s inside the
+test function; 1.61 s including the guarded process). Constructing its updated
+gate-profile Rust test executable took 68.55 s. No extra WF compilation or
+native executable is added to that test's normal schedule.
+
+The next compiler comparison keeps acceptance and the four fixed range
+separation queries unchanged. Optional PAR-1 separation evidence must belong
+to the argument pair and the state before its earlier statement; a proof
+obtained under one branch must not grant overlap after a join or in another
+branch. Permission composition must still compare every conflicting access
+against the run's accumulated footprint. The discriminating controls are a
+permitted split, an overlapping split, endpoint reassignment, and a
+branch-local separation that cannot escape its branch, followed by the native
+packing observer. Missing evidence remains a sequential permission outcome.
+The payload helper also changes recursive call-graph depth, so its temporary
+shape is not a valid comparison with the old chain's recursion budget; a
+timing comparison must give both arms the same helper boundaries or remove
+that helper after the upstream contract-image repair.
+
 ## Consumers and discriminating criteria
 
 These criteria are recorded before the new experiments. All source programs
