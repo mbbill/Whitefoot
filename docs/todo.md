@@ -305,6 +305,15 @@ condition under which it is taken up.
   it; (b) one more prelude storage shape carrying a header value beside its
   window, built by a construction function taking the header and the
   capacity, which needs no new struct rule.
+  Undecided (owner, 2026-09-20: revisit later). Notes for that discussion:
+  the tail is always the last field and always one of the runtime-capacity
+  shapes; a `Slots` or `Ring` tail starts empty, an `Array` tail does not
+  (it needs a fill value and a count); a construction sketch is
+  `box_new_tail::<Message>(value: Message(kind: 1_u8, flags: 0_u8, body: _),
+  capacity: n)`, where the capacity is an argument of the boxing function,
+  the expression with the hole is admitted only as that argument because
+  such a struct is never a local value, and `_` would be a new token
+  (`..` exists already as the destructuring rest marker).
 - **Bitmask fact.** `x & (c - 1) < c` for a power-of-two `c`, which would
   remove the per-probe bounds compare in hash tables.
 - **Handing checker facts to the backend.** Emitted since the v0.60 port:
