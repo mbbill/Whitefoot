@@ -270,3 +270,62 @@ Run once under this revision; failure of reproduction or a control is an
 inconclusive result to inspect, not a reason to resample until it passes.
 The measured contrasts can establish only the custom-path sensitivity stated
 above; they still do not by themselves choose a production representation.
+
+## Forced-residue result
+
+Run [35542013762](https://github.com/mbbill/Whitefoot/actions/runs/35542013762)
+at `bfcdc561` completed the six comparisons on an EPYC 7763. The original
+records regression reproduced at W2/W4 (baseline/candidate wall ratios
+0.945476/0.877465, four/five adverse pairs). The original and controlled nulls
+were clean, the slowdown control detected all five kernels, and the complete
+440-byte worker audit passed.
+
+| Forced residue contrast | W1 wall ratio | W2 wall ratio | W4 wall ratio |
+|---|---:|---:|---:|
+| 16 to 24 | 1.005282 | 1.002026 | 0.971017 |
+| 48 to 56 | 0.997268 | 0.993671 | 0.992478 |
+
+Neither records contrast reproduced the original loss. However, the first
+contrast's unchanged stencil control was a W4 suspect (0.961405, four adverse
+pairs). The registered strict control condition therefore failed and the
+overall result is **inconclusive**, not evidence excluding data placement.
+The script exited 2 after retaining all tables; its final per-process count
+audit was not reached. Individual controlled allocations and releases still
+ran their assertions. This result is retained without resampling.
+
+## Element-base diagnostic
+
+The next diagnostic isolates the other observed difference: the pointer passed
+through parallel tasks and the output-store addressing form. It keeps ordinary
+`malloc`/`free`, the allocation size and header, and the effective output
+address `cell + 8 + 8 * index`. The caller passes `cell + 8` into the existing
+splitter, and the worker indexes that element base without a header offset.
+This can change instruction lengths and code placement; it does not isolate
+those two effects from each other and does not alter payload alignment.
+
+`element-base.patch` is applied to the pinned original candidate IR. Its exact
+result must hash to
+`73980c11fd59fb5b09bca2387cdceba67168e5f17a0e1946a769cc1291028e41`.
+`run-element-base.sh` links it at the formal `-O2` setting against the original
+runner, oracle, and native objects. Both files exist only for this diagnostic
+and are removed with the research branch after a formal compiler fix. No
+source workload, runtime, oracle, timing implementation, or gate is changed.
+
+Before timing, register five unchanged `compare.sh` comparisons: exact candidate
+against itself; exact baseline against candidate; the existing slowdown
+control; baseline against element-base; and candidate against element-base.
+Retain every table, including failures. Qualification requires clean oracle
+checks, a null with no suspect or failure, reproduction of the original
+records failure at both W2/W4, detection of all five slowed kernels, and no
+suspect or failure in any unchanged kernel of either experimental contrast
+or reproduction. A qualification failure makes the result inconclusive.
+
+Support for a useful recovery requires baseline/element-base wall ratios at
+least 0.97 at **all three** widths, plus candidate/element-base ratios above
+1.03 at W2 and W4 with at least four of five pairs faster (at most one lower
+pair). All strict controls must pass. A qualified result missing that recovery
+does not justify production changes based on this mechanism. One run is
+planned; an inconclusive result is inspected, not resampled until green.
+Even a supporting result selects no Box ABI: a production change must have a
+general lowering rule, preserve ownership and stable-address premises, and
+pass the full maintained correctness and performance gates.

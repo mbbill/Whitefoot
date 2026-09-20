@@ -1,0 +1,27 @@
+--- a/records.ll
++++ b/records.ll
+@@ -607,12 +607,13 @@
+   store ptr %v6, ptr %v7
+   %v8 = select i1 true, i64 0, i64 0
+   %v9 = load ptr, ptr %v7
++  %v13 = getelementptr inbounds i8, ptr %v9, i64 8
+   %v10 = select i1 true, i8 0, i8 0
+   %t0 = sub i64 %v4, %v8
+   %t1 = icmp ugt i64 %v4, %v8
+   %t2 = select i1 %t1, i64 %t0, i64 0
+   %t3 = call i64 @wf__par_split_budget(i64 %t2, i64 813)
+-  %v11 = call i8 @wf__par_split_37(i8 %v10, i64 %v8, i64 %v4, { ptr, i64 } %v0, { ptr, i64 } %v1, i64 %v2, i64 %v3, i64 %v4, ptr %v9, i64 %t3)
++  %v11 = call i8 @wf__par_split_37(i8 %v10, i64 %v8, i64 %v4, { ptr, i64 } %v0, { ptr, i64 } %v1, i64 %v2, i64 %v3, i64 %v4, ptr %v13, i64 %t3)
+   %v12 = load ptr, ptr %v7
+   ret ptr %v12
+ }
+@@ -1052,8 +1053,7 @@
+   %v44 = phi i64 [ %v30, %bb6 ], [ %v30, %bb8 ], [ %v30, %bb9 ]
+   %v45 = phi i64 [ %v31, %bb6 ], [ %v31, %bb8 ], [ %v31, %bb9 ]
+   %t4 = load ptr, ptr %v39
+-  %v50 = getelementptr i8, ptr %t4, i64 0
+-  %t5 = getelementptr inbounds { i64, [0 x i64] }, ptr %v50, i64 0, i32 1, i64 %v40
++  %t5 = getelementptr inbounds i64, ptr %t4, i64 %v40
+   store i64 %v33, ptr %t5
+   br label %bb10
+ bb6:

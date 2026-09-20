@@ -1,6 +1,6 @@
-# Disposable manual-only controlled records residue experiment. Remove with the
+# Disposable manual-only records element-base experiment. Remove with the
 # research branch. It changes no maintained correctness or performance gate.
-name: records-controlled-data-residue
+name: records-element-base
 on:
   workflow_dispatch:
 permissions:
@@ -10,10 +10,10 @@ defaults:
   run:
     shell: bash
 concurrency:
-  group: records-controlled-data-residue-${{ github.ref }}
+  group: records-element-base-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  controlled-residue:
+  element-base:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -53,30 +53,23 @@ jobs:
             clang --version
             ld --version
           } > "$RUNNER_TEMP/current-host.txt"
-      - name: Construct and statically audit one controlled image
-        env:
-          WHITEFOOT_CHECK_TIMEOUT: 300
-        run: |
-          perl .github/run-check.pl records-controlled-build \
-            bash research/investigations/access-effects/data-placement-provenance/prepare-controlled.sh \
-            "$RUNNER_TEMP/compute" "$RUNNER_TEMP/controlled"
-      - name: Reproduce and run preregistered comparisons
+      - name: Construct the element-base twin and run preregistered comparisons
         env:
           WHITEFOOT_CHECK_TIMEOUT: 1800
           WF_RUN_APPROVED: 1
         run: |
-          perl .github/run-check.pl records-controlled-timing \
-            bash research/investigations/access-effects/data-placement-provenance/run-controlled.sh \
-            "$GITHUB_WORKSPACE" "$RUNNER_TEMP/compute" "$RUNNER_TEMP/controlled" \
+          perl .github/run-check.pl records-element-base \
+            bash research/investigations/access-effects/data-placement-provenance/run-element-base.sh \
+            "$GITHUB_WORKSPACE" "$RUNNER_TEMP/compute" "$RUNNER_TEMP/element-base" \
             "$RUNNER_TEMP/results"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: records-controlled-data-residue-ubuntu-24.04
+          name: records-element-base-ubuntu-24.04
           retention-days: 7
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/compute/performance-results/identity.txt
             ${{ runner.temp }}/current-host.txt
-            ${{ runner.temp }}/controlled/
+            ${{ runner.temp }}/element-base/
             ${{ runner.temp }}/results/
