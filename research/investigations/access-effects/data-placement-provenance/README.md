@@ -98,7 +98,7 @@ within-line eight-byte shifts. Because the preregistered unique-residue gate
 failed, it authorizes no controlled pair, Stage 2 run, or production alignment
 policy.
 
-## New preregistered controlled-residue follow-up (not yet executed)
+## New preregistered controlled-residue follow-up
 
 The earlier Stage 1 unique-residue gate failed, so it authorized no Stage 2.
 This is a new preregistered follow-up with a different controlled construction,
@@ -204,4 +204,14 @@ comparison that preserves the original allocator route.
 wrappers. `run-controlled.sh` is the sole timing caller, and the disposable
 manual-only workflow invokes both through the repository's guarded check
 wrapper. Neither script is part of correctness CI or a maintained performance
-gate. The follow-up has not been built or timed.
+gate.
+
+Run [35538904894](https://github.com/mbbill/Whitefoot/actions/runs/35538904894)
+at `a8de35b0` qualified an EPYC 7763 host and constructed the controlled image,
+but its worker audit stopped before any program execution or timing. GNU
+objdump included eight inter-function alignment bytes after the 440-byte
+worker, while the original extraction stopped only at the next symbol. The
+corrected extraction uses the ELF symbol's exact start and size as disassembly
+bounds and still requires all 440 bytes to match. Applying it to both retained
+images produces identical 440-byte sequences. This is an instrumentation
+failure, not a performance result; the preregistered criteria are unchanged.

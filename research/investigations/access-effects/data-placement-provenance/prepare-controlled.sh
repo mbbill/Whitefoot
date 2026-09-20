@@ -113,14 +113,18 @@ extract_worker() {
   local image=$1
   local symbols
   symbols=$(nm -S --defined-only "$image" \
-    | awk '$4 ~ /^wf__par_chunk_[0-9]+$/ { print $2, $4 }')
+    | awk '$4 ~ /^wf__par_chunk_[0-9]+$/ { print $1, $2, $4 }')
   test "$(printf '%s\n' "$symbols" | sed '/^$/d' | wc -l)" -eq 1
-  test "$symbols" = '00000000000001b8 wf__par_chunk_38'
-  # The symbol label bounds collection, and the symbol table above fixes its
-  # extent at 440 bytes. AWK consumes the complete objdump stream, including
-  # every later symbol and blank line, so pipefail cannot turn an intentional
-  # early exit into an upstream SIGPIPE status.
-  objdump -d "$image" | awk '
+  local address size name
+  read -r address size name <<< "$symbols"
+  test "$size $name" = '00000000000001b8 wf__par_chunk_38'
+  local start=$((16#$address))
+  local stop=$((start + 440))
+  # Bound disassembly by the ELF symbol's address and size. GNU objdump prints
+  # inter-function alignment after the final instruction unless given a stop
+  # address; those bytes are not part of the worker. AWK consumes the complete
+  # bounded stream so pipefail cannot turn an early exit into SIGPIPE.
+  objdump -d --start-address="$start" --stop-address="$stop" "$image" | awk '
     /^[[:space:]]*[0-9a-f]+ <[^>]+>:/ {
       inside = ($0 ~ /<wf__par_chunk_38>:/)
       next
