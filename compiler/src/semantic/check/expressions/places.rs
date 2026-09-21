@@ -187,6 +187,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .path
                     .iter()
                     .any(|step| matches!(step, PlaceStep::Deref))
+                    && place
+                        .resolved
+                        .identity
+                        .path
+                        .iter()
+                        .all(|step| matches!(step, PlaceStep::Field(_) | PlaceStep::Deref))
                 {
                     return self.check_box_unbox(
                         use_node,
