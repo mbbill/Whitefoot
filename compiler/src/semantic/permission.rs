@@ -1451,10 +1451,14 @@ fn collect_operand_reads(
         }
         CheckedExpression::BufferMeasure { .. }
         | CheckedExpression::BufferIndex { .. }
-        | CheckedExpression::BoxDeref { .. }
-        | CheckedExpression::BoxTake { .. } => {
+        | CheckedExpression::BoxDeref { .. } => {
             footprint.unresolved = Some(node.clone());
         }
+        // [TYPE-9, WIN-3, PAR-1] an owned Box-content take has a checked
+        // field/Box-only path and consumes its complete root. That root write
+        // is recorded by `collect_consumed_places`; counting the selected
+        // load separately would only turn a complete footprint unresolved.
+        CheckedExpression::BoxTake { .. } => {}
     }
     for child in expression_children(expression) {
         collect_operand_reads(places, child, node, footprint);

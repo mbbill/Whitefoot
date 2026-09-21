@@ -1035,6 +1035,42 @@ fn a_write_over_the_previous_calls_operand_read_is_denied() {
     assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
+#[test]
+fn an_owned_box_path_take_has_a_complete_root_footprint_and_conflicts_with_an_alias() {
+    let source = br#"nocopy struct Payload { value: u8; }
+nocopy struct Holder { cell: Box<Payload>; }
+
+fn observe(holder: &Holder) -> result: own u8 reads(holder) {
+  return deref(holder).cell.inner.value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let payload = Payload(value: 7_u8);
+  let cell = box_new::<Payload>(value: move payload);
+  let holder = Holder(cell: move cell);
+  let seen = observe(holder: &holder);
+  let taken = move holder.cell.inner;
+  return exit_status(code: taken.value);
+}
+"#;
+    let table = permission_of(source);
+    let pair = pair_of(&table, "main", "observe", "a let statement");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 1) else {
+        panic!(
+            "the known owner root must conflict, not fail unresolved: {:?}",
+            pair.verdict
+        );
+    };
+    assert_eq!(
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::Read,
+            later: FootprintHalf::Write,
+        }
+    );
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
+}
+
 /// The statement after a call reads the binding that call defines. Under the
 /// schedule that hands the call out that value does not exist until the join.
 #[test]
