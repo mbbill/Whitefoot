@@ -1,21 +1,11 @@
-fn identity<T: affine>(value: own T) -> result: own T pure {
+fn identity<T: drop>(value: own T) -> result: own T pure {
   return move value;
 }
 
 fn main() -> status: own ExitStatus pure {
-  region 'a {
-    let store = arena_frame::<256, 16, 'a>();
-    region {
-      match arena_vector::<u64>(store: &uniq store, count: 4_u64) {
-        Some(value: run) => {
-          let kept = identity::<Vector<'a, u64>>(value: move run);
-          let size = room_of(kept);
-          return exit_status(code: 0_u8);
-        }
-        None() => {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
+  doc "FN-2: an identity instantiated with a boxed runtime-capacity run returns that same exact type. There is one heap [STOR-8], so no store brand confines the value and the instance is keyed on the element type alone; the runtime-capacity shape lives inside the `Box` [TYPE-9].";
+  let run = box_slots_new::<u64>(capacity: 4_u64);
+  let kept = identity::<Box<Slots<u64>>>(value: move run);
+  let size = kept.inner.cap - kept.inner.len;
+  return exit_status(code: 0_u8);
 }

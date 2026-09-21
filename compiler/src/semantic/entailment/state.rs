@@ -8,14 +8,16 @@
 //! least-closure answer.
 
 use std::collections::{HashMap, HashSet};
-use std::mem::size_of;
+use std::mem::{size_of, size_of_val};
 use std::rc::Rc;
 
 use super::super::goal::{GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
     BindingId, CheckedBooleanOperation, CheckedLoopId, CheckedMeasure, CheckedValue, IntegerType,
 };
+use super::super::places::{CapturedRange, CapturedValue};
 use super::VerifiedPostconditionSummaryRef;
+use super::affine::{AffineForm, AffineInequality};
 use super::term::{MeasureBound, TermId, TermKind, TermTable, ZERO, type_range};
 use crate::{BuiltinPreludeId, NodePath};
 
@@ -438,6 +440,16 @@ pub(crate) enum DerivationNode {
         sign: GoalSign,
         parent: DerivationId,
     },
+    /// One exact [OWN-7] conclusion wrapped around the affine proof of the
+    /// selected ordering. Both EFF-5 and PAR-1 retain this same evidence.
+    RangeSeparation {
+        detail: Box<RangeSeparationDetail>,
+    },
+    /// One exact EFF-5 indexed-position conclusion and the fixed proof that
+    /// established it for these immutable capture occurrences.
+    IndexSeparation {
+        detail: Box<IndexSeparationDetail>,
+    },
     /// One finite truth-table introduction for an already-interned Boolean
     /// parent (`band`, `bor`, or `bnot`).
     BooleanIntroduction {
@@ -509,10 +521,19 @@ pub(crate) enum DerivationNode {
         block: NodePath,
         relation_ordinal: u32,
     },
-    /// Caller-local S12 evidence for one instantiated earlier-component
-    /// summary, held out of line by [`PostconditionCallDetail`].
+    /// Caller-local S12 evidence for one instantiated authorized relation,
+    /// held out of line by [`PostconditionCallDetail`].
     PostconditionCall {
         detail: Box<PostconditionCallDetail>,
+    },
+    /// Caller-local evidence that proving the formal requirements authorizes
+    /// execution under one exact accepted FN-4 implication. `query` names an
+    /// external checked-program record; its isolated proof DAG is never
+    /// imported into this ledger.
+    ContractCall {
+        call: NodePath,
+        query: super::super::model::ContractQueryId,
+        parents: Vec<DerivationId>,
     },
     PostconditionDirectResult {
         statement: NodePath,
@@ -626,6 +647,47 @@ pub(crate) struct PostconditionDeliveryJoinDetail {
     pub(crate) parents: Vec<JoinParent>,
 }
 
+/// Which fixed [OWN-7] ordering discharged one pair of captured ranges.
+/// The declaration order is the proof entry's deterministic probe order.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum RangeSeparationOrdering {
+    LeftBeforeRight,
+    RightBeforeLeft,
+    LeftEmpty,
+    RightEmpty,
+}
+
+/// The exact conclusion of one successful range-separation proof.
+///
+/// Range endpoints may have affine images that are not L0 terms, so the
+/// targetless affine parent cannot state this conclusion by itself. The
+/// uncommon payload stays out of line to keep the derivation arena compact.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct RangeSeparationDetail {
+    pub(crate) left: CapturedRange,
+    pub(crate) right: CapturedRange,
+    pub(crate) ordering: RangeSeparationOrdering,
+    pub(crate) parent: DerivationId,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct IndexSeparationDetail {
+    pub(crate) left: CapturedValue,
+    pub(crate) right: CapturedValue,
+    pub(crate) parent: DerivationId,
+    pub(crate) affine_target: Option<Box<AffineInequality>>,
+    pub(crate) affine_images: Option<Box<(AffineForm, AffineForm)>>,
+    pub(crate) substitution: Option<Box<IndexCaptureSubstitution>>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct IndexCaptureSubstitution {
+    pub(crate) source_left: TermId,
+    pub(crate) source_right: TermId,
+    pub(crate) left_identity: DerivationId,
+    pub(crate) right_identity: DerivationId,
+}
+
 impl DerivationNode {
     fn for_each_parent(&self, mut visit: impl FnMut(DerivationId)) {
         match self {
@@ -686,6 +748,19 @@ impl DerivationNode {
             }
             Self::PostconditionCall { detail } => {
                 for parent in &detail.parents {
+                    visit(*parent);
+                }
+            }
+            Self::RangeSeparation { detail } => visit(detail.parent),
+            Self::IndexSeparation { detail } => {
+                visit(detail.parent);
+                if let Some(substitution) = &detail.substitution {
+                    visit(substitution.left_identity);
+                    visit(substitution.right_identity);
+                }
+            }
+            Self::ContractCall { parents, .. } => {
+                for parent in parents {
                     visit(*parent);
                 }
             }
@@ -753,6 +828,15 @@ impl DerivationNode {
             | Self::GoalNormalization { parents, .. }
             | Self::BooleanIntroduction { parents, .. } => parents.len(),
             Self::PostconditionCall { detail } => detail.parents.len(),
+            Self::RangeSeparation { .. } => 1,
+            Self::IndexSeparation { detail } => {
+                if detail.substitution.is_some() {
+                    3
+                } else {
+                    1
+                }
+            }
+            Self::ContractCall { parents, .. } => parents.len(),
             Self::SourceBound { .. }
             | Self::SourceDistinct { .. }
             | Self::SourceGoal { .. }
@@ -811,6 +895,9 @@ impl DerivationNode {
             Self::AffineConsequence { .. } => 33,
             Self::GoalAffineConsequence { .. } => 34,
             Self::RequirementAffineImage { .. } => 37,
+            Self::ContractCall { .. } => 38,
+            Self::RangeSeparation { .. } => 39,
+            Self::IndexSeparation { .. } => 40,
         }
     }
 }
@@ -846,6 +933,15 @@ pub(crate) enum DerivationRootKind {
     },
     IntegerDomainObligation(u32),
     CallGoal(u32),
+    CallContract(u32),
+    /// One declaration-only [FN-4] compatibility query. Its ledger and dense
+    /// identity namespace belong only to the retained contract query.
+    ContractGoal(u32),
+    /// One successful visit of an optional pair-scoped [PAR-1] range query.
+    PermissionSeparation {
+        query: u32,
+        occurrence: u32,
+    },
     BitAndBound(u32),
     ShiftOneNonzero(u32),
     UnsignedDivisionBound(u32),
@@ -1447,6 +1543,25 @@ impl DerivationLedger {
                             + detail.transfer_events.capacity() * size_of::<FlowEventId>()
                             + detail.parents.capacity() * size_of::<DerivationId>()
                     }
+                    DerivationNode::ContractCall { parents, .. } => {
+                        parents.capacity() * size_of::<DerivationId>()
+                    }
+                    DerivationNode::RangeSeparation { .. } => size_of::<RangeSeparationDetail>(),
+                    DerivationNode::IndexSeparation { detail } => {
+                        size_of::<IndexSeparationDetail>()
+                            + detail
+                                .substitution
+                                .as_ref()
+                                .map_or(0, |_| size_of::<IndexCaptureSubstitution>())
+                            + detail.affine_target.as_ref().map_or(0, |target| {
+                                size_of::<AffineInequality>() + size_of_val(target.terms())
+                            })
+                            + detail.affine_images.as_ref().map_or(0, |images| {
+                                size_of::<(AffineForm, AffineForm)>()
+                                    + size_of_val(images.0.terms())
+                                    + size_of_val(images.1.terms())
+                            })
+                    }
                     _ => 0,
                 })
                 .sum::<usize>()
@@ -1458,6 +1573,7 @@ impl DerivationLedger {
                     DerivationNode::PostconditionAggregate { block, .. }
                     | DerivationNode::SignatureContract { block, .. } => Some(block),
                     DerivationNode::PostconditionCall { detail } => Some(&detail.call),
+                    DerivationNode::ContractCall { call, .. } => Some(call),
                     DerivationNode::PostconditionDirectMatch { call, .. } => Some(call),
                     DerivationNode::PostconditionDirectResult { statement, .. }
                     | DerivationNode::PostconditionDirectReceiver { statement, .. }
@@ -1482,6 +1598,20 @@ fn compare_node_ties(left: &DerivationNode, right: &DerivationNode) -> std::cmp:
     let rank = left.rank().cmp(&right.rank());
     if !rank.is_eq() {
         return rank;
+    }
+    if let (
+        DerivationNode::RangeSeparation { detail: left },
+        DerivationNode::RangeSeparation { detail: right },
+    ) = (left, right)
+    {
+        return left.cmp(right);
+    }
+    if let (
+        DerivationNode::IndexSeparation { detail: left },
+        DerivationNode::IndexSeparation { detail: right },
+    ) = (left, right)
+    {
+        return left.cmp(right);
     }
     let mut index = 0;
     loop {
@@ -1612,6 +1742,8 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         ]
         .get(index)
         .copied(),
+        DerivationNode::RangeSeparation { detail } => (index == 0).then_some(detail.parent.0),
+        DerivationNode::IndexSeparation { detail } => (index == 0).then_some(detail.parent.0),
         DerivationNode::BooleanIntroduction {
             goal,
             sign,
@@ -1678,6 +1810,13 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
                     let index = index.checked_sub(fixed.len() + parents.len())?;
                     transfer_events.get(index).map(|event| event.0)
                 })
+        }
+        DerivationNode::ContractCall { query, parents, .. } => {
+            if index == 0 {
+                Some(query.0)
+            } else {
+                parents.get(index - 1).map(|parent| parent.0)
+            }
         }
         DerivationNode::PostconditionDirectResult {
             binding, parent, ..
@@ -1886,6 +2025,21 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         DerivationNode::PostconditionCall { detail } => {
             for parent in &mut detail.parents {
                 remap_id(parent, remap);
+            }
+        }
+        DerivationNode::ContractCall { parents, .. } => {
+            for parent in parents {
+                remap_id(parent, remap);
+            }
+        }
+        DerivationNode::RangeSeparation { detail } => {
+            remap_id(&mut detail.parent, remap);
+        }
+        DerivationNode::IndexSeparation { detail } => {
+            remap_id(&mut detail.parent, remap);
+            if let Some(substitution) = &mut detail.substitution {
+                remap_id(&mut substitution.left_identity, remap);
+                remap_id(&mut substitution.right_identity, remap);
             }
         }
         DerivationNode::SourceBound { .. }
@@ -3682,7 +3836,7 @@ fn for_each_implicit_bound(
             emit(id, ZERO, *value, ImplicitBoundKind::Constant);
             emit(ZERO, id, -value, ImplicitBoundKind::Constant);
         }
-        TermKind::Place(_, ty) | TermKind::ProjectedPlace(_, ty) => {
+        TermKind::Place(_, ty) => {
             let (minimum, maximum) = type_range(*ty);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
@@ -3701,7 +3855,7 @@ fn for_each_implicit_bound(
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
         }
-        TermKind::Measure(measure, _) | TermKind::ProjectedMeasure(measure, _) => {
+        TermKind::Measure(measure, _) => {
             let (minimum, maximum) = type_range(IntegerType::U64);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
@@ -3716,8 +3870,11 @@ fn for_each_implicit_bound(
                 }
                 None => {}
             }
-            // `len_of(P) <= cap_of(P)` and `head_of(P) <= cap_of(P)`, emitted from the
-            // capacity term so each ordering is emitted exactly once.
+            // `P.len <= P.cap` and `P.head <= P.cap`, emitted from the
+            // capacity term so each ordering is emitted exactly once. x1's
+            // [MSR-1] table gives the two `Array` rows no `cap` cell, so an
+            // `Array` place registers no capacity term and neither ordering
+            // is emitted for it.
             if *measure == CheckedMeasure::Capacity {
                 for bounded in [CheckedMeasure::Length, CheckedMeasure::Head] {
                     if let Some(other) = terms.sibling_measure(id, bounded) {
@@ -3726,7 +3883,7 @@ fn for_each_implicit_bound(
                 }
             }
         }
-        TermKind::CountedCapture { .. } => {
+        TermKind::CountedCapture { .. } | TermKind::IndexCapture { .. } => {
             let (minimum, maximum) = type_range(IntegerType::U64);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
@@ -5908,8 +6065,8 @@ pub(crate) mod tests {
         assert!(VERIFIED_CLOSURES.with(Cell::get) > 0);
     }
     use crate::DeclarationId;
-    use crate::semantic::entailment::VerifiedPostconditionSummary;
-    use crate::semantic::model::FunctionId;
+    use crate::semantic::entailment::{RelationProvenance, VerifiedPostconditionSummary};
+    use crate::semantic::model::{ContractQueryId, FunctionId};
 
     #[test]
     fn row_summary_skips_only_scalar_rejections() {
@@ -5974,11 +6131,11 @@ pub(crate) mod tests {
         let mut terms = TermTable::new();
         let places = [0, 1, 2, 3].map(|binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(
+                    super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    false,
+                    Vec::new(),
+                ),
                 IntegerType::U8,
             ))
         });
@@ -6084,11 +6241,11 @@ pub(crate) mod tests {
         let length = |terms: &mut TermTable, binding| {
             let term = terms.intern(TermKind::Measure(
                 CheckedMeasure::Length,
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(
+                    super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    false,
+                    Vec::new(),
+                ),
             ));
             terms.set_measure_bound(term, MeasureBound::Equal(parameter));
             term
@@ -6156,15 +6313,57 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn provenance_variants_with_equal_raw_ids_have_distinct_ordering_and_ledger_identity() {
+        let call = NodePath {
+            components: vec![3],
+        };
+        let relation = Relation::Bound {
+            left: ZERO,
+            right: ZERO,
+            bound: 0,
+        };
+        let make_node = |summary| DerivationNode::PostconditionCall {
+            detail: Box::new(PostconditionCallDetail {
+                call: call.clone(),
+                relation: relation.clone(),
+                summary: VerifiedPostconditionSummaryRef { summary },
+                substitutions: Vec::new(),
+                transfer_events: Vec::new(),
+                parents: Vec::new(),
+            }),
+        };
+        let verified = make_node(RelationProvenance::Verified(VerifiedPostconditionSummary {
+            function: FunctionId(7),
+            block: NodePath {
+                components: vec![4],
+            },
+            relation_ordinal: 0,
+            component: 11,
+        }));
+        let formal = make_node(RelationProvenance::FormalBoundary {
+            query: ContractQueryId(7),
+            actual: FunctionId(11),
+            premises: Vec::new(),
+        });
+
+        assert_ne!(
+            compare_node_ties(&verified, &formal),
+            std::cmp::Ordering::Equal
+        );
+        let mut ledger = DerivationLedger::default();
+        assert_ne!(ledger.intern(verified), ledger.intern(formal));
+    }
+
+    #[test]
     fn pre_kill_closure_composes_bounds_in_relation_direction() {
         let mut terms = TermTable::new();
         let mut place = |binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(
+                    super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    false,
+                    Vec::new(),
+                ),
                 IntegerType::U8,
             ))
         };
@@ -6230,11 +6429,11 @@ pub(crate) mod tests {
         let mut terms = TermTable::new();
         let mut place = |binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(
+                    super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    false,
+                    Vec::new(),
+                ),
                 IntegerType::U8,
             ))
         };
@@ -6279,11 +6478,11 @@ pub(crate) mod tests {
         let mut terms = TermTable::new();
         let mut place = |binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(
+                    super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    false,
+                    Vec::new(),
+                ),
                 IntegerType::U8,
             ))
         };
@@ -6322,11 +6521,11 @@ pub(crate) mod tests {
         let mut terms = TermTable::new();
         let mut place = |binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(
+                    super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    false,
+                    Vec::new(),
+                ),
                 IntegerType::U8,
             ))
         };
@@ -6376,11 +6575,7 @@ pub(crate) mod tests {
         let mut terms = TermTable::new();
         let [left, middle, right] = [0, 1, 2].map(|binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::binding(BindingId(binding)),
                 IntegerType::I32,
             ))
         });
@@ -6430,11 +6625,7 @@ pub(crate) mod tests {
     fn a_neutral_contradiction_does_not_make_an_ordinary_join_fact_call_dependent() {
         let mut terms = TermTable::new();
         let left = terms.intern(TermKind::Place(
-            super::super::term::PlaceTerm {
-                root: super::super::term::PlaceRoot::Binding(BindingId(0)),
-                deref: false,
-                fields: Vec::new(),
-            },
+            super::super::term::ResolvedPlace::binding(BindingId(0)),
             IntegerType::I32,
         ));
         let goals = GoalTable::default();
@@ -6491,19 +6682,19 @@ pub(crate) mod tests {
     fn ordinary_fallback_candidates_survive_join_and_materialization() {
         let mut terms = TermTable::new();
         let left = terms.intern(TermKind::Place(
-            super::super::term::PlaceTerm {
-                root: super::super::term::PlaceRoot::Binding(BindingId(0)),
-                deref: false,
-                fields: Vec::new(),
-            },
+            super::super::term::ResolvedPlace::spelled(
+                super::super::term::PlaceRoot::Binding(BindingId(0)),
+                false,
+                Vec::new(),
+            ),
             IntegerType::I32,
         ));
         let right = terms.intern(TermKind::Place(
-            super::super::term::PlaceTerm {
-                root: super::super::term::PlaceRoot::Binding(BindingId(1)),
-                deref: false,
-                fields: Vec::new(),
-            },
+            super::super::term::ResolvedPlace::spelled(
+                super::super::term::PlaceRoot::Binding(BindingId(1)),
+                false,
+                Vec::new(),
+            ),
             IntegerType::I32,
         ));
         let pair = (left, right);
@@ -6693,11 +6884,11 @@ pub(crate) mod tests {
         let mut terms = TermTable::new();
         let mut place = |binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::spelled(
+                    super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    false,
+                    Vec::new(),
+                ),
                 IntegerType::I32,
             ))
         };
@@ -6742,11 +6933,7 @@ pub(crate) mod tests {
         let mut terms = TermTable::new();
         let place = |terms: &mut TermTable, binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::binding(BindingId(binding)),
                 IntegerType::U8,
             ))
         };
@@ -6888,11 +7075,7 @@ pub(crate) mod tests {
         let mut terms = TermTable::new();
         let place = |terms: &mut TermTable, binding| {
             terms.intern(TermKind::Place(
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::binding(BindingId(binding)),
                 IntegerType::U8,
             ))
         };
@@ -7183,11 +7366,7 @@ pub(crate) mod tests {
                     IntegerType::I32
                 };
                 places.push(terms.intern(TermKind::Place(
-                    super::super::term::PlaceTerm {
-                        root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                        deref: false,
-                        fields: Vec::new(),
-                    },
+                    super::super::term::ResolvedPlace::binding(BindingId(binding)),
                     ty,
                 )));
                 binding += 1;
@@ -7198,11 +7377,7 @@ pub(crate) mod tests {
             places.push(terms.intern(TermKind::Constant(3)));
             let measure = terms.intern(TermKind::Measure(
                 CheckedMeasure::Length,
-                super::super::term::PlaceTerm {
-                    root: super::super::term::PlaceRoot::Binding(BindingId(100)),
-                    deref: false,
-                    fields: Vec::new(),
-                },
+                super::super::term::ResolvedPlace::binding(BindingId(100)),
             ));
             terms.set_measure_bound(measure, MeasureBound::Constant(7));
             places.push(measure);

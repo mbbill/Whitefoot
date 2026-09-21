@@ -1,6 +1,48 @@
 //! Parallel compiler internals: frame/clone/ABI emission, native object
 //! observations and controlled runtime boundaries. Complete tree/spine/window
 //! results live in programs; native construction is explicit in these helpers.
+//!
+//! # Kernel spec v0.60
+//!
+//! [PAR-1] survives the amendment and was rewritten around it: two adjacent
+//! statements of one block may overlap exactly when their write paths are
+//! disjoint from each other's read and write paths, judged by the same
+//! path-overlap and index/range-disjointness relation as [EFF-5] and [OWN-7].
+//! Loans and arenas contribute no footprint any more, and [STOR-8] gives
+//! allocation and release no effect entry at all, so neither can deny an
+//! overlap. The lowering cases below therefore keep their subject; their `.wf`
+//! fixtures were retargeted: `region { .. }` wrappers deleted with regions
+//! [OWN-3, OWN-4, OWN-10, FORM-8], `array<T, N>` spelled `Array<T, n>` and
+//! built by [OP-13]'s `array_filled`, `buffer_new(count, value)` replaced by
+//! [OP-13]'s `box_array_filled` over the one heap [STOR-8] whose content is
+//! the field `inner` [TYPE-9], `slice_of` replaced by
+//! [REF-4]'s range reference `&x[lo..hi]` at the parameter kind `&[T]`,
+//! `len_of(p)` replaced by [OP-15]'s member read `p.len`, `&uniq` replaced by
+//! the one reference spelling `&`, and an effect row on a by-value parameter
+//! dropped entirely, because [EFF-1] roots every entry at a reference
+//! parameter and a row rooted at an `own` parameter is a rejection.
+//!
+//! One test retired:
+//!
+//! - `heap_box_loop_keeps_provider_order_and_updates_borrowed_owners` retired
+//!   with [PROV-1] and [BLK-0] through [BLK-4]: its whole subject was a
+//!   store-provider program - a `Heap<'heap>` parameter, an `allocates(heap)`
+//!   effect entry, region-parameterized `Box<'s, u64>` cells - whose
+//!   observation was a per-allocation refusal schedule, refusing each of eight
+//!   `heap_box` calls in turn and reading the `Err` arm the writer had to
+//!   spell. [STOR-8] makes allocation total over one heap: no construction
+//!   returns a `Result`, exhaustion terminates from the trusted base outside
+//!   the language, and allocation carries no effect entry, so there is no
+//!   refusal arm to schedule and nothing left of the ordering this case
+//!   observed. The successors are [STOR-8] for the one heap and the absent
+//!   effect category, [OP-9] for the allocation-size obligation now checked at
+//!   the source, [OP-11] `swap(first: &a, second: &b)` for the two-place
+//!   exchange the helper spelled `set (a, b) = move b, move a;` [SET-2], and
+//!   [WIN-3] for the release of a displaced affine owner. Per-element release
+//!   ordering of a boxed affine run is kept by `heap_programs` and
+//!   `resource_enums`; the lane-side owner accounting this case shared with
+//!   `owned_pair_results_survive_ordinary_join_and_forced_refusal` stays in
+//!   [`run_owned_lane_cases`], which that case still drives.
 
 use std::path::Path;
 use std::process::Command;
@@ -43,11 +85,11 @@ fn fold_module(parallel: bool) -> String {
 }
 
 const LANE_FRAME_LAYOUT_FUNCTIONS: &[u8] =
-    br#"fn exact_frame(values: own array<u8, 255>) -> result: own u8 reads(values) {
+    br#"fn exact_frame(values: own Array<u8, 255>) -> result: own u8 pure {
   return values[0_u64];
 }
 
-fn over_frame(values: own array<u8, 256>) -> result: own u8 reads(values) {
+fn over_frame(values: own Array<u8, 256>) -> result: own u8 pure {
   return values[0_u64];
 }
 
@@ -58,13 +100,13 @@ fn main() -> status: own ExitStatus pure {
 
 fn lane_frame_program(length: u64) -> Vec<u8> {
     format!(
-        "fn first(values: own array<u8, {length}>) -> result: own u8 reads(values) {{\n  \
+        "fn first(values: own Array<u8, {length}>) -> result: own u8 pure {{\n  \
          return values[0_u64];\n}}\n\n\
          fn main() -> status: own ExitStatus pure {{\n  \
-         let left_values = array_new::<u8, {length}>(7_u8);\n  \
-         let right_values = array_new::<u8, {length}>(9_u8);\n  \
-         let left = first(values: move left_values);\n  \
-         let right = first(values: move right_values);\n  \
+         let left_values = array_filled::<u8, {length}>(value: 7_u8);\n  \
+         let right_values = array_filled::<u8, {length}>(value: 9_u8);\n  \
+         let left = first(values: left_values);\n  \
+         let right = first(values: right_values);\n  \
          if left != 7_u8 {{\n    return exit_status(code: 1_u8);\n  }}\n  \
          if right != 9_u8 {{\n    return exit_status(code: 2_u8);\n  }}\n  \
          return exit_status(code: 0_u8);\n}}\n"
@@ -112,29 +154,21 @@ fn last_byte(v: own u64) -> result: own u8 pure {
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "A pure call handed out while a pure call written as an if condition runs.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  let report = buffer_new(2_u64, 0_u8);
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let report = box_array_filled::<u8>(count: 2_u64, value: 0_u8);
   let value = mixdown(a: 11_u64, b: 22_u64);
   if odd(v: 33_u64) {
-    set report[1_u64] = 89_u8;
+    set report.inner[1_u64] = 89_u8;
   }
   let byte = last_byte(v: value);
-  set report[0_u64] = byte;
-  region {
-    region {
-      let ordinary_source_2 = slice_of(&report);
-      region {
-        match write_once(factory: &uniq entry_factory, output: &uniq out, source: &ordinary_source_2, start: 0_u64, end: 2_u64) {
-          Ok(value: next) => {
-            return exit_status(code: 0_u8);
-          }
-          Err(error: problem) => {
-            return exit_status(code: 1_u8);
-          }
-        }
-      }
+  set report.inner[0_u64] = byte;
+  let ordinary_source_2 = &report.inner[0_u64..2_u64];
+  match write_once(factory: &entry_factory, output: &out, source: ordinary_source_2, start: 0_u64, end: 2_u64) {
+    Ok(value: accepted) => {
+      return exit_status(code: 0_u8);
+    }
+    Err(error: problem) => {
+      return exit_status(code: 1_u8);
     }
   }
 }
@@ -242,6 +276,13 @@ fn selected_target_proves_the_complete_ordinary_lane_frame() {
             .find(|function| function.name() == "over_frame")
             .expect("the over-boundary function must lower");
 
+        // KEPT AS WRITTEN for the lowering port: 255 element bytes plus the
+        // one-byte result reach the slot exactly only while a constant-capacity
+        // `Array<u8, 255>` [TYPE-9] is laid out as its 255 elements and nothing
+        // else. If [STOR-6] gives the shape a measure word or padding, the two
+        // fixture lengths (255 and 256) must be re-derived from the new layout;
+        // the property this case is about is that the exact boundary fits and
+        // one byte past it does not.
         let exact_layout = parallel_lane_frame_layout(host, program, exact, false)
             .expect("the exact frame is target-representable")
             .expect("the exact frame fits the lane slot");
@@ -310,6 +351,9 @@ fn ordinary_lane_frame_limits_match_the_runtime_slot() {
 /// preserve the source result.
 #[test]
 fn ordinary_overlap_uses_only_target_proved_lane_frames() {
+    // KEPT AS WRITTEN for the lowering port: 255 and 256 are the exact and
+    // one-past-exact element counts of a constant-capacity `Array<u8, n>`
+    // under the current [STOR-6] layout. Re-derive both if that layout moves.
     let exact = emit_with_overlap(&lane_frame_program(255));
     assert!(module_requires_parallel_runtime(&exact));
     assert!(exact.contains(&format!(
@@ -478,6 +522,14 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
 /// runs both edges.
 #[test]
 fn a_call_written_as_an_if_condition_joins_a_compute_overlap_group() {
+    // KEPT AS WRITTEN for the lowering port: the fixture's statement order is
+    // the v0.59 one, so the run the judgment permits still leads with the
+    // allocation of `report`. Under v0.60's [PAR-1] every adjacent pair is
+    // judged, including a pair whose first member is a construction rather
+    // than a call, so whether this group's leading member is the hand-out the
+    // ordering below names is a lowering decision. If the group's first
+    // published member turns out not to be `mixdown`, re-derive the ordering
+    // here rather than moving the fixture's statements.
     let module = emit_with_overlap(IF_CONDITION_SIBLING);
     let body = function_body(&module, "@wf_main");
     let acquisition = body
@@ -698,9 +750,9 @@ fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
   if done {
     return v;
   }
-  let next = depth -wrap 1_u64;
+  let below = depth -wrap 1_u64;
   let scaled = fmul.strict(v, 1.0009765625_f64);
-  let a = spine(depth: next, v: scaled);
+  let a = spine(depth: below, v: scaled);
   let b = leaf(v: v);
   return fadd.strict(a, b);
 }
@@ -1023,9 +1075,7 @@ fn peek(v: &u64) -> result: own u64 reads(v) {
 fn main() -> status: own ExitStatus pure {
   let first = make();
   let second = make();
-  region {
-    let seen = peek(v: &first);
-  }
+  let seen = peek(v: &first);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1049,9 +1099,7 @@ fn peek(v: &u64) -> result: own u64 reads(v) {
 fn main() -> status: own ExitStatus pure {
   let first = make();
   let second = make();
-  region {
-    let seen = peek(v: &second);
-  }
+  let seen = peek(v: &second);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1462,131 +1510,14 @@ fn owned_pair_results_survive_ordinary_join_and_forced_refusal() {
     run_owned_lane_cases(OWNED_PAIR_RESULTS, &module, 0, 1, 0, 0, 1);
 }
 
-#[test]
-fn heap_box_loop_keeps_provider_order_and_updates_borrowed_owners() {
-    let source = br#"fn probe['s](root: &DirectoryRead, files: &uniq HandleFactory, name: &Slice<u8>, cell: &uniq Box<'s, u64>, incoming: &uniq Box<'s, u64>) -> result: own u64 reads(root, files, name, cell, incoming), writes(files, cell, incoming) contract {
-  define named = len_of(deref(name));
-  requires 4_u64 <= named;
-} {
-  let previous = deref(deref(cell));
-  region {
-    match open_file(factory: &uniq deref(files), root: root, name: name, start: 0_u64, end: 4_u64) {
-      Ok(value: handle) => {
-        close_read(factory: &uniq deref(files), file: move handle);
-      }
-      Err(error: problem) => {
-      }
-    }
-  }
-  set (deref(cell), deref(incoming)) = move deref(incoming), move deref(cell);
-  return previous;
-}
-
-fn exercise['heap](cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq Heap<'heap>) -> status: own ExitStatus reads(cwd, files, heap), writes(files, heap), allocates(heap) {
-  let name = buffer_new(4_u64, 97_u8);
-  let total = 0_u64;
-  let updated = 0_u64;
-  let displaced = 0_u64;
-  for @scan (index in 0_u64..4_u64) {
-    let replacement = index +wrap 100_u64;
-    region {
-      match heap_box(store: &uniq deref(heap), value: index) {
-        Err(error: back) => {
-          return exit_status(code: 70_u8);
-        }
-        Ok(value: cell) => {
-          match heap_box(store: &uniq deref(heap), value: replacement) {
-            Err(error: back) => {
-              return exit_status(code: 70_u8);
-            }
-            Ok(value: incoming) => {
-              region {
-                let names = slice_of(&name);
-                region {
-                  let reported = probe(root: cwd, files: &uniq deref(files), name: &names, cell: &uniq cell, incoming: &uniq incoming);
-                  set total = total +wrap reported;
-                  set updated = updated +wrap deref(cell);
-                  set displaced = displaced +wrap deref(incoming);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  if total != 6_u64 {
-    return exit_status(code: 1_u8);
-  }
-  if updated != 406_u64 {
-    return exit_status(code: 2_u8);
-  }
-  if displaced != 6_u64 {
-    return exit_status(code: 3_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
-  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
-  region {
-    let outcome = exercise(cwd: &cwd, files: &uniq files, heap: &uniq heap);
-    close_directory(factory: &uniq files, directory: move cwd);
-    return move outcome;
-  }
-}
-"#;
-    // Ordinary shared-provider effects retain this loop's ordering: allocation in the
-    // prologue and cell release in the epilogue share the same Heap.
-    // Retain this complete Heap source, including both allocation failures.
-    for overlap in [crate::OverlapLowering::Off, crate::OverlapLowering::On] {
-        let module = super::emit_lowered(source, overlap);
-        let exercise = function_body(&module, "@wf_exercise");
-        assert!(!exercise.contains("par.staged.offered."));
-        assert!(!exercise.contains("call ptr @wf__par_acquire_lane("));
-        let observed = module
-            .replace("@malloc(", "@wf_test_allocate(")
-            .replace("@free(", "@wf_test_release(");
-        // Allocation one belongs to the path buffer. Refuse each of the
-        // eight explicit cell allocations in turn, after any earlier pairs
-        // have completed; every retained owner must still be released once.
-        let directory = test_directory();
-        let host = super::owned_places::allocation_observer_by_process(9);
-        let executable = build_linked_executable(&observed, Some(&host), &[], &directory);
-        for refused in [0, 2, 3, 4, 5, 6, 7, 8, 9] {
-            let mut expected = String::from("A1;");
-            for first in [2, 4, 6, 8] {
-                if refused == first {
-                    expected.push_str(&format!("X{first};"));
-                    break;
-                }
-                expected.push_str(&format!("A{first};"));
-                let second = first + 1;
-                if refused == second {
-                    expected.push_str(&format!("X{second};F{first};"));
-                    break;
-                }
-                // The helper swaps owners. The inner incoming binding owns
-                // the first allocation and leaves before the outer cell.
-                expected.push_str(&format!("A{second};F{first};F{second};"));
-            }
-            expected.push_str("F1;");
-            let output = Command::new(&executable)
-                .env("WF_TEST_REFUSE_ALLOCATION", refused.to_string())
-                .output()
-                .expect("run selected allocation refusal");
-            assert_eq!(
-                output.status.code(),
-                Some(if refused == 0 { 0 } else { 70 }),
-                "{output:?}"
-            );
-            assert_eq!(output.stdout, expected.as_bytes(), "{output:?}");
-            assert!(output.stderr.is_empty(), "{output:?}");
-        }
-        std::fs::remove_dir_all(directory).expect("remove observed heap program");
-    }
-}
+// `heap_box_loop_keeps_provider_order_and_updates_borrowed_owners` retired
+// here with [PROV-1] and [BLK-0] through [BLK-4]: its observation was a
+// per-allocation refusal schedule over a `Heap<'heap>` store provider, and
+// [STOR-8] makes allocation total over one heap with no effect entry and no
+// refusal arm to schedule. Its successors are [STOR-8], [OP-9]'s
+// allocation-size obligation, [OP-11] `swap` for the exchange it spelled
+// `set (a, b) = move b, move a;` [SET-2], and [WIN-3]'s disposition of a
+// displaced affine owner. See this module's header for the full account.
 
 /// The native core still performs every real grant, publication, join and
 /// release. The observer can refuse acquisitions and selects the overlapped
@@ -1830,21 +1761,15 @@ fn main() -> status: own ExitStatus pure {
 fn an_ordinary_worker_helper_can_call_the_linked_io_library() {
     let source = br#"fn write_byte(inputs: own Inputs) -> result: own u64 pure {
   let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
-  region {
-    close_directory(factory: &uniq factory, directory: move cwd);
-  }
-  let bytes = buffer_new(1_u64, 88_u8);
-  region {
-    let window = slice_of(&bytes);
-    region {
-      match write_once(factory: &uniq factory, output: &uniq out, source: &window, start: 0_u64, end: 1_u64) {
-        Ok(value: next) => {
-          return next;
-        }
-        Err(error: problem) => {
-          return 0_u64;
-        }
-      }
+  close_directory(factory: &factory, directory: move cwd);
+  let bytes = box_array_filled::<u8>(count: 1_u64, value: 88_u8);
+  let window = &bytes.inner[0_u64..1_u64];
+  match write_once(factory: &factory, output: &out, source: window, start: 0_u64, end: 1_u64) {
+    Ok(value: accepted) => {
+      return accepted;
+    }
+    Err(error: problem) => {
+      return 0_u64;
     }
   }
 }
@@ -1864,6 +1789,10 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 "#;
     let module = emit_with_overlap(source);
     let helper = function_body(&module, "@wf_write_byte");
+    // KEPT AS WRITTEN for the lowering port: `write_once` now takes its source
+    // as the parameter kind `&[T]` [REF-4, TYPE-8], so its emitted argument
+    // list is whatever the range-reference ABI becomes. Only the `void` return
+    // (the `Result` destination) is asserted here.
     assert!(helper.contains("call void @wf_write_once("));
     assert!(!helper.contains("@wf__completion_"));
     let main = function_body(&module, "@wf_main");
@@ -2146,22 +2075,20 @@ fn recursive_controls_preserve_scalar_and_destination_results() {
     let value = deref(seed);
     return {leaf};
   }}
-  let next = depth - 1_u64;
-  let l = fold(depth: next, seed: seed);
-  let r = fold(depth: next, seed: seed);
+  let below = depth - 1_u64;
+  let l = fold(depth: below, seed: seed);
+  let r = fold(depth: below, seed: seed);
   let combined = {sum};
   return {merged};
 }}
 
 fn main() -> status: own ExitStatus pure {{
   let seed = 2_u64;
-  region {{
-    let answer = fold(depth: 5_u64, seed: &seed);
-    if {read} == 64_u64 {{
-      return exit_status(code: 0_u8);
-    }}
-    return exit_status(code: 1_u8);
+  let answer = fold(depth: 5_u64, seed: &seed);
+  if {read} == 64_u64 {{
+    return exit_status(code: 0_u8);
   }}
+  return exit_status(code: 1_u8);
 }}
 "#
             );

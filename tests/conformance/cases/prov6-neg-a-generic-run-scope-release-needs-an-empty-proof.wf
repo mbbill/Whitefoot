@@ -1,8 +1,9 @@
-fn release_unproved<T: linear>['s](run: own Vector<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(store) {
-  doc "PROV-6: a compiler-derived release uses the same proof-directed empty-run graph. The symbolic linear element prevents the full graph, and no fact proves this run's current length zero at return.";
+fn release_unproved<T, const n: u64>(run: own Slots<T, n>) -> result: own unit pure {
+  doc "PROV-6: a window whose element type is linear is itself linear, so no compiler-derived release carries it off the return edge. The route is to take every element out, consume each one, and then call free_empty with the window's zero length established.";
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "The rejection is in the generic template above; this entry point does nothing.";
   return exit_status(code: 0_u8);
 }

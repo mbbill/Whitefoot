@@ -10,9 +10,12 @@ use super::super::super::model::{
     CheckedConstructor, CheckedEnumType, CheckedExpression, CheckedField, CheckedMatchArm,
     CheckedMatchBinder, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType,
 };
+use super::super::super::places::PlaceStep;
 use super::super::super::tree::ConditionalAlternative;
-use super::super::borrows::{BorrowInfo, RequiredReferent};
-use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
+use super::super::references::{ReferenceInfo, RequiredReferent};
+use super::super::{
+    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, RefinementWitness,
+};
 use super::{BlockResult, BreakState, ControlCounters, ControlScope, GiveContext};
 
 #[derive(Clone)]
@@ -35,6 +38,9 @@ pub(super) struct MatchResult {
     /// [GIVE-1] the mode and type the delivery set derived, or `None` for a
     /// statement `match` and for a value initializer that delivers nothing.
     pub(super) delivered: Option<(CheckedMode, CheckedType)>,
+    /// [REF-1] the union of the path sets the delivering arms name, where the
+    /// delivery set delivers references.
+    pub(super) delivered_reference: Option<ReferenceInfo>,
     pub(super) can_continue: bool,
     pub(super) all_paths_deliver: bool,
     pub(super) effects: EffectSet,
@@ -42,7 +48,57 @@ pub(super) struct MatchResult {
     pub(super) break_states: Vec<BreakState>,
 }
 
+/// How a `match` scrutinee is written, which is what [OWN-13] and [REF-1]
+/// read to decide whether the match goes through a reference.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScrutineeSpelling {
+    /// `&x`: a `borrow_expr` naming the enum's own path [REF-1]. No `deref`
+    /// step stands between the expression and the enum it names.
+    Borrowed,
+    /// `deref(p)` and anything selected below it: the storage a reference
+    /// names, reached under the step [REF-1] requires.
+    Dereferenced,
+    /// Every other written form: an owned place, a call result, a literal.
+    Other,
+}
+
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    fn scrutinee_spelling(&self, expression: NodeId) -> Result<ScrutineeSpelling, CheckStop> {
+        // [GRAM-5] `expr := atom infix_tail? | call`, and [OWN-13] asks its
+        // question of a *place* scrutinee: an `infix_tail` makes the
+        // expression an operation over two atoms, whose value is "a non-place
+        // expression scrutinee", an owned temporary moved into the match,
+        // whatever the first atom happens to spell.
+        if self
+            .tree
+            .first_child_with(expression, Production::InfixTail)?
+            .is_some()
+        {
+            return Ok(ScrutineeSpelling::Other);
+        }
+        let Some(atom) = self.tree.first_child_with(expression, Production::Atom)? else {
+            return Ok(ScrutineeSpelling::Other);
+        };
+        if self
+            .tree
+            .first_child_with(atom, Production::BorrowExpr)?
+            .is_some()
+        {
+            return Ok(ScrutineeSpelling::Borrowed);
+        }
+        let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
+            return Ok(ScrutineeSpelling::Other);
+        };
+        let Some(pbase) = self.tree.first_child_with(place, Production::Pbase)? else {
+            return Ok(ScrutineeSpelling::Other);
+        };
+        Ok(if self.has_fixed(pbase, crate::FixedTerminal::Deref)? {
+            ScrutineeSpelling::Dereferenced
+        } else {
+            ScrutineeSpelling::Other
+        })
+    }
+
     pub(super) fn check_match(
         &self,
         function: &FunctionSignature,
@@ -56,19 +112,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let header_loan_base = self.statement_loans.borrow().len();
-        let scrutinee =
+        let mut scrutinee =
             self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
-        // [OWN-13] matches an enum value or a place reached through a borrow.
-        // A holder written where the enum itself is required — a bare borrow
-        // holder, a `borrow_expr`, a reference-returning call, or a `box` of
-        // an enum — is the [TYPE-7] implicit read, and this scrutinee's own
-        // wrong-type judgment forms no rejection.
-        if self.reads_implicitly_through_holder(
-            scrutinee.reference_value,
-            scrutinee.expression.ty(),
-            RequiredReferent::Enum,
-        )? {
+        let spelling = self.scrutinee_spelling(expression_node)?;
+        // [REF-1] a reference variable denotes the reference, and the storage
+        // it names is reached only through `deref`, so a bare holder written
+        // where the enum itself is required is that missing step. A `Box` is
+        // not one of these at v0.60: its content is the ordinary field
+        // `inner` [TYPE-9], so a `Box` scrutinee is the ordinary wrong-type
+        // judgment [TYPE-5] the descriptor below makes.
+        if spelling == ScrutineeSpelling::Other
+            && scrutinee.reference_value
+            && self
+                .satisfies_referent_requirement(scrutinee.expression.ty(), RequiredReferent::Enum)?
+        {
             return self.issue_node(
                 SemanticRule::Type7,
                 expression_node,
@@ -77,13 +134,37 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let descriptor = self.match_descriptor(scrutinee.expression.ty(), expression_node)?;
-        // [OWN-6] an owned enum cannot carry an argument borrow through its
-        // payloads [STOR-5]. Its completed header ends only the temporaries
-        // created there; bound loans and enclosing evaluation loans survive.
-        if scrutinee.mode == CheckedMode::Own {
-            self.statement_loans.borrow_mut().truncate(header_loan_base);
+        // [OWN-13] matching through a reference leaves the scrutinee live and
+        // binds each payload as a reference naming the scrutinee path
+        // extended by that payload step [REF-1]. `deref(p)` reads the value
+        // at the path `p` names everywhere else, so the reading is made here,
+        // where the rule distinguishes the two, and not at the place walk.
+        if spelling == ScrutineeSpelling::Dereferenced && scrutinee.reference.is_none() {
+            // Place checking retains both the selected members and every
+            // place read to evaluate their operands. Only the selected set is
+            // the borrowed-match referent; an index loaded from another place
+            // must not become another enum root [REF-1, OWN-13].
+            let mut places = scrutinee
+                .accesses
+                .iter()
+                .filter(|access| access.selected)
+                .map(|access| access.place.clone());
+            let first = places
+                .next()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let mut reference =
+                ReferenceInfo::formed(super::super::references::ReferenceKind::Single, first);
+            for place in places {
+                reference.join(&ReferenceInfo::formed(
+                    super::super::references::ReferenceKind::Single,
+                    place,
+                ));
+            }
+            scrutinee.mode = CheckedMode::Reference;
+            scrutinee.reference = Some(reference);
         }
+        let scrutinee = scrutinee;
+        let descriptor = self.match_descriptor(scrutinee.expression.ty(), expression_node)?;
         let base_bindings = bindings.clone();
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
         let base_key_set = base_keys.iter().copied().collect::<HashSet<_>>();
@@ -92,10 +173,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
         let local_give_context = value_delivery.then(|| GiveContext::empty(&base_key_set, scope));
-        let arm_scope = ControlScope {
-            loops: scope.loops,
-            give_context: local_give_context.as_ref().or(scope.give_context),
-        };
         let arm_nodes = self.tree.children_with(node, Production::Arm)?;
         let mut seen = HashSet::new();
         let mut duplicate_arm = None;
@@ -136,6 +213,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut effects = scrutinee.effects.clone();
         let mut all_paths_deliver = true;
         for (arm_node, variant) in arm_nodes.into_iter().zip(&resolved_variants) {
+            let arm_scope = ControlScope {
+                loops: scope.loops,
+                give_context: local_give_context.as_ref().or(scope.give_context),
+            };
             let mut arm_bindings = base_bindings.clone();
             let binders = self.check_match_binders(
                 variant,
@@ -146,13 +227,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 &scrutinee,
             )?;
             let statements = self.tree.children_with(arm_node, Production::Stmt)?;
-            let checked = self.check_block(
+            let mut checked = self.check_block(
                 function,
                 &statements,
                 &mut arm_bindings,
                 counters,
                 arm_scope,
             )?;
+            let leaving = Self::bindings_leaving_scope(&arm_bindings, &base_keys);
+            Self::invalidate_control_exits(
+                &mut arm_bindings,
+                &mut checked.give_states,
+                &mut checked.break_states,
+                arm_scope.give_context,
+                &leaving,
+            );
             let fallthrough_drops = if checked.can_continue {
                 self.live_affine_drops(&arm_bindings, &base_key_set, arm_node)?
             } else {
@@ -182,10 +271,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if !all_paths_deliver {
                 return self.issue_node(SemanticRule::Give1, node, SemanticIssueKind::InvalidGive);
             }
-            self.reject_slice_valued_delivery(
-                node,
-                local_give_context.as_ref().and_then(GiveContext::delivered),
-            )?;
             self.join_states(&base_keys, &give_states, &give_labels, node, bindings)?;
         } else {
             self.join_states(&base_keys, &normal_states, &normal_labels, node, bindings)?;
@@ -195,6 +280,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             enum_type: descriptor.enum_type,
             arms,
             delivered: local_give_context.as_ref().and_then(GiveContext::delivered),
+            delivered_reference: local_give_context
+                .as_ref()
+                .and_then(GiveContext::delivered_reference),
             can_continue: if value_match {
                 !give_states.is_empty()
             } else {
@@ -251,7 +339,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let header_loan_base = self.statement_loans.borrow().len();
         let condition =
             self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
         // [TYPE-7] exclusivity, which [GRAM-6] keeps: a condition reached
@@ -284,7 +371,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         // The exact owned Bool judgment gives the same non-escaping header
         // boundary as an owned enum match [OWN-6, GRAM-6].
-        self.statement_loans.borrow_mut().truncate(header_loan_base);
         let blocks = self.tree.conditional_blocks(node)?;
         self.reject_unspellable_else(node, &blocks.alternative, value_if)?;
 
@@ -361,11 +447,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // so the two spellings cannot drift apart. `bool_descriptor` lists the
         // variants in that order.
         let descriptor = Self::bool_descriptor();
-        for (variant, (checked, branch_bindings)) in descriptor
+        for (variant, (mut checked, mut branch_bindings)) in descriptor
             .variants
             .iter()
             .zip([(then_checked, then_bindings), (else_checked, else_bindings)])
         {
+            let leaving = Self::bindings_leaving_scope(&branch_bindings, &base_keys);
+            Self::invalidate_control_exits(
+                &mut branch_bindings,
+                &mut checked.give_states,
+                &mut checked.break_states,
+                arm_scope.give_context,
+                &leaving,
+            );
             let fallthrough_drops = if checked.can_continue {
                 self.live_affine_drops(&branch_bindings, &base_key_set, node)?
             } else {
@@ -399,10 +493,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if !all_paths_deliver {
                 return self.issue_node(SemanticRule::Give1, node, SemanticIssueKind::InvalidGive);
             }
-            self.reject_slice_valued_delivery(
-                node,
-                local_give_context.as_ref().and_then(GiveContext::delivered),
-            )?;
             self.join_states(&base_keys, &give_states, &give_labels, node, bindings)?;
         } else {
             self.join_states(&base_keys, &normal_states, &normal_labels, node, bindings)?;
@@ -412,6 +502,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             enum_type: CheckedEnumType::Bool,
             arms,
             delivered: local_give_context.as_ref().and_then(GiveContext::delivered),
+            delivered_reference: local_give_context
+                .as_ref()
+                .and_then(GiveContext::delivered_reference),
             can_continue: if opens_delivery {
                 !give_states.is_empty()
             } else {
@@ -611,41 +704,52 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 return self.invalid_match_fields(variant, written);
             }
-            if mode != CheckedMode::Own {
-                let box_payload = matches!(
-                    field.ty,
-                    CheckedType::Nominal(id)
-                        if matches!(self.nominal(id)?.kind, CheckedNominalKind::Box { .. })
-                );
-                if matches!(mode, CheckedMode::Unique(_))
-                    && !box_payload
-                    && !self.is_copy_type(field.ty)?
-                {
-                    return self
-                        .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, written);
-                }
-            }
             let declaration = self.declaration_at(written, DeclarationRole::MatchBinder)?;
             let binding = Self::allocate_binding(counters.next_binding)?;
             counters
                 .binding_names
                 .push(declaration.spelling().to_owned());
-            let borrow = if mode == CheckedMode::Own {
-                None
-            } else {
-                let parent = scrutinee
-                    .borrow
-                    .as_ref()
-                    .cloned()
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let mut place = parent.place;
-                place
-                    .extend_fields(&[u32::try_from(index)
-                        .map_err(|_| SemanticCompilerFailure::CounterOverflow)?]);
-                Some(BorrowInfo { place, ..parent })
-            };
             let field_ordinal =
                 u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            // [OWN-13] matching through a reference leaves the scrutinee live
+            // and binds each payload as a reference naming the scrutinee path
+            // extended by that payload step [REF-1], valid exactly while the
+            // arm's refinement fact holds [REF-2, ENT-3.S15]. Matching an own
+            // place moves it instead, and its binders receive own payloads.
+            let reference = if mode.is_reference() {
+                let parent = scrutinee
+                    .reference
+                    .as_ref()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let step = PlaceStep::Payload {
+                    variant: variant.tag,
+                    field: field_ordinal,
+                };
+                let mut payload = parent.clone();
+                payload.extend(step);
+                Some(payload)
+            } else {
+                None
+            };
+            let refinement_witnesses = if mode.is_reference() {
+                let origin = self.tree.path(arm)?.clone();
+                scrutinee
+                    .reference
+                    .as_ref()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    .paths
+                    .iter()
+                    .cloned()
+                    .map(|place| RefinementWitness {
+                        origin: origin.clone(),
+                        place,
+                        variant: variant.tag,
+                        valid: true,
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             if bindings
                 .insert(
                     declaration.id(),
@@ -657,10 +761,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         live: true,
                         loop_depth,
                         compiler_updated: false,
-                        borrow,
-                        slice: None,
-                        slice_loans: Vec::new(),
-                        suspended: false,
+                        reference,
+                        refinement_witnesses,
                     },
                 )
                 .is_some()
@@ -675,20 +777,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ty: field.ty,
             });
         }
-        // Creating the taken arm's binders from a `uniq`-mode root suspends
-        // that root binding [OWN-13, OWN-5]; the binders' own loans carry the
-        // exclusivity for the region remainder. Shared-mode roots stay plain
-        // overlapping shared borrows without suspension.
-        if matches!(mode, CheckedMode::Unique(_))
-            && !binders.is_empty()
-            && let Some(root) = scrutinee.holder
-        {
-            bindings
-                .get_mut(&root)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                .suspended = true;
-        }
         Ok(binders)
+    }
+
+    /// Applies [REF-2]'s two arm/branch-exit events to every state that can
+    /// cross that boundary. A normal edge, `give`, and `break` carry separate
+    /// ownership maps, while a delivered reference is accumulated separately
+    /// in its [`GiveContext`]; all four must observe the same exit.
+    fn invalidate_control_exits(
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        give_states: &mut [HashMap<DeclarationId, LocalBinding>],
+        break_states: &mut [BreakState],
+        give_context: Option<&GiveContext>,
+        leaving: &[super::super::super::model::BindingId],
+    ) {
+        Self::invalidate_references_leaving_scope(bindings, leaving);
+        Self::invalidate_references_without_refinement_witness(bindings, leaving);
+        for state in give_states.iter_mut() {
+            Self::invalidate_references_leaving_scope(state, leaving);
+            Self::invalidate_references_without_refinement_witness(state, leaving);
+        }
+        for state in break_states.iter_mut() {
+            state.invalidate_references_leaving_scope(leaving);
+            state.invalidate_references_without_refinement_witness(leaving);
+        }
+        if let Some(context) = give_context
+            && !give_states.is_empty()
+        {
+            context.invalidate_reference_roots_leaving_scope(leaving);
+            context.invalidate_reference_refinements(give_states, leaving);
+        }
     }
 
     fn invalid_match_fields<ResultValue>(
@@ -708,32 +826,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .collect(),
             },
         )
-    }
-
-    /// [OWN-5] a slice-valued delivery is prohibited outright, whatever its
-    /// mode and whatever the arms do to their bindings.
-    ///
-    /// It is judged here, before [`Self::join_states`], because the join is a
-    /// capability limit and a capability stop must never stand in front of a
-    /// source rejection. Judged after it, this rejection was unreachable for
-    /// exactly the sources that matter — arms delivering *different* bindings,
-    /// which is what a slice-valued join looks like when it is written on
-    /// purpose.
-    fn reject_slice_valued_delivery(
-        &self,
-        node: NodeId,
-        delivered: Option<(CheckedMode, CheckedType)>,
-    ) -> Result<(), CheckStop> {
-        if matches!(delivered, Some((_, CheckedType::Slice { .. }))) {
-            return self.issue_node(
-                SemanticRule::Own5,
-                node,
-                SemanticIssueKind::SliceValueMatch {
-                    mechanical_fix: "use a match or if statement whose branches return the slice directly, or call helpers with direct slice results",
-                },
-            );
-        }
-        Ok(())
     }
 
     /// [LIV-1] the join of every predecessor's ownership state.
@@ -791,13 +883,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                if !joined.same_except_region_loans(candidate) {
+                if !joined.agrees_with(candidate) {
                     return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
                 }
                 if joined.live {
                     live_predecessor.clone_from(label);
                 }
-                joined.merge_region_loans_from(candidate);
+                joined.join_from(candidate);
             }
             *bindings
                 .get_mut(key)

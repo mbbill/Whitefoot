@@ -1,22 +1,12 @@
-linear struct Chunk['heap] {
-  page: Vector<u8>;
+nodrop struct Chunk {
+  page: Box<Slots<u8>>;
   spare: u8;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "PROV-6: `let N(f1: b1, ..., fk: bk) = move v;` consumes a value of nominal struct type whole and binds every declared field in declaration order. No residual of the consumed value survives it, so the statement is the second route out of a scope for a value linear in it, and its binders are ordinary own bindings of the enclosing block.";
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh) => {
-        let run = move fresh;
-        let chunk = Chunk(page: move run, spare: 7_u8);
-        let Chunk(page: page, spare: spare) = move chunk;
-        dispose page;
-        return exit_status(code: spare);
-      }
-    }
-  }
+fn main() -> status: own ExitStatus pure {
+  doc "PROV-6: `let N(f1: b1, ..., fk: bk) = move v;` consumes a value of nominal struct type whole and binds every declared field in declaration order to a fresh IDENT at that field's declared type and own mode. No residual of the consumed value survives it, so it is the second route out of a scope for a linear value, and its binders are ordinary own bindings of the enclosing block.";
+  let page = box_slots_new::<u8>(capacity: 4_u64);
+  let chunk = Chunk(page: move page, spare: 7_u8);
+  let Chunk(page: taken, spare: left) = move chunk;
+  return exit_status(code: left);
 }

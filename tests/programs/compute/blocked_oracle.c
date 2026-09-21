@@ -28,8 +28,10 @@
 #endif
 
 typedef void (*blocked_entry)(const uint64_t *, uint64_t, uint64_t, uint64_t,
-                              uint64_t **, uint64_t *);
-typedef void (*blocked_release)(uint64_t *, uint64_t);
+                              uint64_t **, uint64_t *, void **);
+/* The owned result is a Box<Array<T>> cell; the adapter hands that cell back
+ * as the retained handle and the release row consumes exactly it. */
+typedef void (*blocked_release)(void *);
 
 static _Noreturn void fail(const char *message) {
     (void)fprintf(stderr, "%s: %s\n", KERNEL_NAME, message);
@@ -122,12 +124,13 @@ static size_t verify_matrix(blocked_entry entry, blocked_release release) {
                 size_t buckets = bucket_counts[b], expected_length = output_count(count, buckets);
                 uint64_t *expected = oracle(input, count, buckets), *actual = NULL;
                 uint64_t length = UINT64_MAX;
-                entry(input, count, block_size, buckets, &actual, &length);
+                void *held = NULL;
+                entry(input, count, block_size, buckets, &actual, &length, &held);
                 if (length != expected_length) fail("wrong result length");
                 compared += compare(expected, actual, expected_length);
                 for (size_t i = 0; i < count; ++i)
                     if (input[i] != key_at(i, distribution)) fail("input modified");
-                release(actual, length);
+                release(held);
                 free(expected);
             }
         }
@@ -137,8 +140,8 @@ static size_t verify_matrix(blocked_entry entry, blocked_release release) {
 }
 
 #ifndef WF_ORACLE_NO_MAIN
-extern void ENTRY(const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *);
-extern void RELEASE(uint64_t *, uint64_t);
+extern void ENTRY(const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *, void **);
+extern void RELEASE(void *);
 
 extern int wf__floor_run(int, char **);
 #ifdef WFB_ORACLE_PARALLEL

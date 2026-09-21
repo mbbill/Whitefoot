@@ -108,17 +108,10 @@ fn stored_fixed_and_dynamic_blocks_execute_with_data_failures() {
         "raw_deflate_dynamic_decode.wf",
         "raw_deflate_vectors.wf",
     ]);
-    // The decoder owns no storage any more, so the three assertions this case
-    // used to make about the allocator have one replacement that is stronger
-    // than all of them. Its compressed input is a `Slice<u8>` copied from a
-    // const table, its destination is an exclusive view of a run its caller
-    // reserved, `build_huffman_table` builds its two columns as inline
-    // `FixedVector` runs of its own frame, and `decode_dynamic` takes the three
-    // code-length runs from a region-confined bump extent that its region exit
-    // reclaims. Nothing in the group therefore reaches the general allocator,
-    // where the retired `buffer<T>` shape had `inflate` free the owned input
-    // buffer, `build_huffman_table` allocate its columns, and `decode_dynamic`
-    // release the length buffers.
+    // Compressed input and output are temporary range references. Huffman
+    // columns and code-length workspaces are fixed-capacity inline Slots in
+    // their owning activation. The complete decoder group therefore needs
+    // neither allocation nor release of a heap block.
     assert!(!llvm.contains("call ptr @malloc"));
     assert!(!llvm.contains("call void @free"));
     let inflate = emitted_function(&llvm, "inflate");

@@ -1,4 +1,5 @@
 fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  doc "Matching through a reference leaves the scrutinee live and binds each payload as a reference naming the scrutinee path.";
   match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
@@ -87,84 +88,45 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn component() -> made: own FixedVector<u8, 16> pure contract {
-  ensures len_of(made) >= 16_u64;
-  ensures room_of(made) <= 0_u64;
-  ensures head_of(made) <= 0_u64;
+fn component() -> made: own Slots<u8, 16> pure contract {
+  ensures made.len == 16_u64;
 } {
   doc "One fixed name the loop opens by, built once outside it.";
-  let built = fixed_vector::<u8, 16>();
-  for @fill (
-    at in 0_u64..16_u64,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= 16_u64,
-    invariant flat: head_of(built) <= 0_u64
-  ) {
-    place_back(vector: &uniq built, value: 97_u8);
-  }
+  let values = array_filled::<u8, 16>(value: 97_u8);
+  let built = slots_from_array::<u8, 16>(values: values);
   return move built;
 }
 
-fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
-  doc "The original allocation, failed-open loop and exit-zero observation remain an ordinary executable program. BLK-2 provider borrowing and PROV-6 cleanup still apply. C2 deletes the PAR-3 replication and staged-grant assertion outright.";
-  region 'a {
-    let workspace = arena_frame::<256, 1, 'a>();
-    region {
-      let name = component();
-      let total = 0_u64;
-      for @scan (index in 0_u64..4_u64) {
-        match arena_vector::<u8>(store: &uniq workspace, count: 64_u64) {
-          None() => {
-            return exit_status(code: 70_u8);
+fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(cwd), writes(files) {
+  doc "The per-iteration cell is declared inside the counted body, so it is owned by its iteration and takes its compiler-derived release on that iteration's own leaving edge. The failed-open loop and the exit-zero observation remain an ordinary executable program.";
+  let name = component();
+  let total = 0_u64;
+  for @scan (index in 0_u64..4_u64) {
+    let data = box_array_filled::<u8>(count: 64_u64, value: 0_u8);
+    let window = &name[0_u64..4_u64];
+    match open_file(factory: files, root: cwd, name: window, start: 0_u64, end: 4_u64) {
+      Ok(value: handle) => {
+        let destination = &data.inner[0_u64..64_u64];
+        match read_at(factory: files, file: &handle, destination: destination, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+          Ok(value: produced) => {
+            let raised = total +wrap produced;
+            set total = raised;
           }
-          Some(value: taken) => {
-            let data = move taken;
-            for @prime (
-              at in 0_u64..64_u64,
-              invariant grown: len_of(data) >= at,
-              invariant spare: room_of(data) + at >= 64_u64,
-              invariant flat: head_of(data) <= 0_u64
-            ) {
-              place_back(vector: &uniq data, value: 0_u8);
-            }
-            region {
-              let window = slice_of(&name);
-              region {
-                match open_file(factory: &uniq deref(files), root: cwd, name: &window, start: 0_u64, end: 4_u64) {
-                  Ok(value: handle) => {
-                    region {
-                      region {
-                        let destination = mut_slice_of(&uniq data);
-                        region {
-                          match read_at(factory: &uniq deref(files), file: &uniq handle, destination: &uniq destination, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                            Ok(value: produced) => {
-                              set total = total +wrap produced;
-                            }
-                            Err(error: read_stop_16) => {
-                              match read_stop_16 {
-                                ReadEnd() => {
-                                }
-                                ReadFailed(error: problem) => {
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                    close_read(factory: &uniq deref(files), file: move handle);
-                  }
-                  Err(error: problem) => {
-                    region {
-                      if factory_refusal(error: &problem) {
-                        return exit_status(code: 1_u8);
-                      }
-                    }
-                  }
-                }
+          Err(error: stop) => {
+            match stop {
+              ReadEnd() => {
+              }
+              ReadFailed(error: problem) => {
               }
             }
           }
+        }
+        close_read(factory: files, file: move handle);
+      }
+      Err(error: problem) => {
+        let refused = factory_refusal(error: &problem);
+        if refused {
+          return exit_status(code: 1_u8);
         }
       }
     }
@@ -173,11 +135,9 @@ fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own Exit
 }
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
-  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
-  region {
-    let outcome = exercise(cwd: &cwd, files: &uniq files);
-    close_directory(factory: &uniq files, directory: move cwd);
-    return move outcome;
-  }
+  doc "PRE-1 ordinary Inputs are destructured once, the rest covered by the rest marker; the referenced operation chain returns before the initial directory is explicitly closed.";
+  let Inputs(cwd: root, handles: files, ..) = move inputs;
+  let outcome = exercise(cwd: &root, files: &files);
+  close_directory(factory: &files, directory: move root);
+  return move outcome;
 }

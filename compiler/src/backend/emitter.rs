@@ -4,7 +4,6 @@
 //! check, emits no overflow or alias promises, initializes complete aggregate
 //! representations, and keeps a defensive abort edge for enum discriminants.
 
-mod arena;
 mod array;
 mod boxes;
 mod buffer;
@@ -26,20 +25,19 @@ use std::fmt::Write;
 
 use super::abi::FunctionAbi;
 pub use super::runtime::*;
-use super::storage::{FunctionStoragePlan, operation_operands};
+use super::storage::{FunctionStoragePlan, is_stored_aggregate, operation_operands};
 use super::target::{
     TargetAggregateLayout, TargetFramePlan, TargetFrameSlot, TargetLayout, TargetLayoutFailure,
     TargetStorageType, parallel_lane_frame_layout, plan_target_frame, validate_program,
     validate_static_storage,
 };
 use crate::{
-    IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop,
-    IrDropSubject, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction,
-    IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind, IrOperation,
-    IrOverlap, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator,
-    IrType, IrValueId,
+    IrAddressed, IrAllocationObligations, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation,
+    IrConstant, IrDrop, IrDropSubject, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue,
+    IrInstruction, IrIntegerOperation, IrNominal, IrNominalId, IrNominalKind, IrOperation,
+    IrOverlap, IrProgram, IrTargetDomainObligation, IrTerminator, IrType, IrValueId, IrWindowShape,
 };
-use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
+use buffer::{buffer_fill_done_label, buffer_probe_join_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
 use floor::FLOOR_RUNTIME_FALLBACK;
 pub use floor::FLOOR_STACK_BYTES;
@@ -247,19 +245,12 @@ pub(super) fn emit_llvm_with_layout(
             .any(|block| matches!(block.terminator(), IrTerminator::Match { .. }))
     });
     let drop_helpers = emit_resource_drop_helpers(program, target)?;
-    let has_arena_storage = program
-        .nominals()
-        .iter()
-        .any(|nominal| matches!(nominal.kind(), IrNominalKind::ArenaStorage));
     let has_heap_storage = !drop_helpers.is_empty()
-        || has_arena_storage
         || program.functions().iter().any(IrFunction::contains_buffer)
-        || program.nominals().iter().any(|nominal| {
-            matches!(
-                nominal.kind(),
-                IrNominalKind::Box { .. } | IrNominalKind::Arena { .. }
-            )
-        });
+        || program
+            .nominals()
+            .iter()
+            .any(|nominal| matches!(nominal.kind(), IrNominalKind::Box { .. }));
     let heap_record_type = TargetStorageType::bytes(
         u64::try_from(HEAP_RECORD.len()).map_err(|_| BackendFailure::CounterOverflow)?,
     );
@@ -339,10 +330,6 @@ pub(super) fn emit_llvm_with_layout(
             HEAP_RECORD.len()
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-    }
-    if has_arena_storage {
-        text.push('\n');
-        text.push_str(arena::ARENA_RELEASE_HELPER);
     }
     text.push_str(&drop_helpers);
     for intrinsic in intrinsics {
@@ -561,6 +548,17 @@ const GRAIN_SPENT_LABEL: &str = "par.grain.spent";
 /// The attribute group every generated definition carries.
 const STACK_PROBE_GROUP: &str = "#0";
 
+/// The spelling of the no-capture parameter attribute this build's assembler
+/// accepts, probed at build time (compiler/backend-facts). LLVM 21 renamed
+/// `nocapture` to `captures(none)` and no version is pinned here.
+const NO_CAPTURE_ATTRIBUTE: &str = env!("WHITEFOOT_NO_CAPTURE_ATTRIBUTE");
+
+/// The one [PRE-1] record whose two reference arguments may name the same
+/// place [OP-11], so its parameters carry every proved fact but `noalias`.
+fn aliasing_admitted_row(name: &str) -> bool {
+    name == "swap" || name.starts_with("swap$")
+}
+
 /// Gives every definition in the assembled module the target's `probe-stack`
 /// attribute, and appends the group it names.
 ///
@@ -698,10 +696,7 @@ fn emit_nominal_declarations(
         if nominal.is_tag_only_enum()
             || matches!(
                 nominal.kind(),
-                IrNominalKind::Box { .. }
-                    | IrNominalKind::Arena { .. }
-                    | IrNominalKind::ArenaStorage
-                    | IrNominalKind::Opaque
+                IrNominalKind::Box { .. } | IrNominalKind::Opaque
             )
         {
             continue;
@@ -727,10 +722,7 @@ fn emit_nominal_declarations(
                     }
                 }
             }
-            IrNominalKind::Box { .. }
-            | IrNominalKind::Arena { .. }
-            | IrNominalKind::ArenaStorage
-            | IrNominalKind::Opaque => {
+            IrNominalKind::Box { .. } | IrNominalKind::Opaque => {
                 return Err(BackendFailure::InvalidIr);
             }
         }
@@ -783,13 +775,8 @@ enum FunctionSlot {
     /// One immutable aggregate value's planned storage, shared only after
     /// complete control-flow interference checks.
     OwnedValue(usize),
-    /// The bump extent one [BLK-2] reservation lays out in the reserving
-    /// activation's own frame, at the byte extent and alignment its two type
-    /// constants fix.
-    ExtentStorage(IrValueId),
     ArrayFillIndex(IrValueId),
     Address(IrValueId),
-    ArenaList(IrValueId),
 }
 
 struct PlannedFunctionSlot {
@@ -865,26 +852,6 @@ impl FunctionFramePlan {
                         let key = FunctionSlot::Address(*result);
                         push_function_slot(&mut specifications, &mut ordered, key, storage, None)?;
                     }
-                    IrOperation::ArenaListNew => push_function_slot(
-                        &mut specifications,
-                        &mut ordered,
-                        FunctionSlot::ArenaList(*result),
-                        TargetStorageType::pointer(),
-                        None,
-                    )?,
-                    // [BLK-2] the reserved extent itself. Its alignment is
-                    // the store's own type constant, which is what makes the
-                    // bump cursor a multiple of it at every program point.
-                    IrOperation::ArenaFrame { bytes, align } => {
-                        if ordered.contains(&FunctionSlot::ExtentStorage(*result)) {
-                            return Err(BackendFailure::InvalidIr);
-                        }
-                        specifications.push(TargetFrameSlot::aligned(
-                            TargetStorageType::bytes(*bytes),
-                            *align,
-                        ));
-                        ordered.push(FunctionSlot::ExtentStorage(*result));
-                    }
                     _ => {}
                 }
             }
@@ -894,9 +861,7 @@ impl FunctionFramePlan {
         let mut slots = HashMap::with_capacity(ordered.len());
         for (logical_index, key) in ordered.iter().copied().enumerate() {
             let pointer = match key {
-                FunctionSlot::Address(result) | FunctionSlot::ArenaList(result) => {
-                    value_name(result)
-                }
+                FunctionSlot::Address(result) => value_name(result),
                 _ => format!("%wf.slot.{logical_index}"),
             };
             if slots
@@ -990,6 +955,9 @@ fn push_function_slot(
 struct FunctionEmitter<'program, 'state> {
     program: &'program IrProgram<'program, 'program, 'program>,
     function: &'program IrFunction,
+    /// The selected target, for the extents a proved fact states in bytes
+    /// (compiler/backend-facts).
+    target: TargetLayout,
     intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     incoming: Vec<Vec<Incoming>>,
     output: String,
@@ -1135,6 +1103,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         Ok(Self {
             program,
             function,
+            target,
             intrinsics,
             incoming: Vec::new(),
             output: String::new(),
@@ -1156,6 +1125,60 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             grain,
             grain_next: None,
         })
+    }
+
+    /// The facts the checked program already proved about one reference
+    /// parameter, as the target attributes that name them
+    /// (compiler/backend-facts).
+    ///
+    /// A reference is a local name for a path that is live where it is used
+    /// [REF-1, REF-2], so it is `nonnull` and `dereferenceable` for the
+    /// referent's own extent; [REF-3] keeps it from escaping, so nothing in
+    /// the callee captures it; and [EFF-5]'s pairwise check runs at every
+    /// call and rejects any program whose substituted paths are not disjoint
+    /// where one of them writes, so the surviving callers are exactly the
+    /// ones for which `noalias` holds.
+    ///
+    /// `swap` is the stated exception: [OP-11] admits the one call whose two
+    /// arguments name the same place, so its two parameters carry every fact
+    /// but that one.
+    fn reference_parameter_facts(
+        &self,
+        index: usize,
+        ty: IrType,
+    ) -> Result<String, BackendFailure> {
+        let IrType::Address(referent) = ty else {
+            return Ok(String::new());
+        };
+        // A synthesized function has no source signature, and a fact whose
+        // derivation is missing is simply not emitted.
+        if self
+            .function
+            .source_signature()
+            .and_then(|signature| signature.parameters().get(index).copied())
+            != Some(crate::IrSourceMode::Reference)
+        {
+            return Ok(String::new());
+        }
+        let mut facts = String::new();
+        if !aliasing_admitted_row(self.function.name()) {
+            facts.push_str(" noalias");
+        }
+        facts.push_str(" nonnull ");
+        facts.push_str(NO_CAPTURE_ATTRIBUTE);
+        // The referent's own selected-target extent. A shape whose block
+        // extends past its statically typed header states only the header it
+        // is sure of, which is the direction `dereferenceable` needs.
+        if let Ok(layout) = crate::backend::target::validate_static_storage(
+            self.target,
+            self.program,
+            &crate::backend::target::TargetStorageType::source(referent.ty()),
+        ) && layout.size() > 0
+        {
+            write!(facts, " dereferenceable({})", layout.size())
+                .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        Ok(facts)
     }
 
     fn is_overlap_join_site(&self, value: IrValueId) -> bool {
@@ -1282,8 +1305,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             }
             write!(
                 self.output,
-                "{} {}",
+                "{}{} {}",
                 llvm_type(self.program, parameter.ty())?,
+                self.reference_parameter_facts(index, parameter.ty())?,
                 self.value_name(*value)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
@@ -1487,19 +1511,24 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrInstruction::StoreBuffer {
                 buffer,
                 index,
-                value,
+                value: _,
             } => {
-                self.materialize_operands([*buffer, *index, *value])?;
+                self.materialize_operands([*buffer, *index])?;
             }
             IrInstruction::StoreSlice {
                 slice,
                 index,
-                value,
+                value: _,
             } => {
-                self.materialize_operands([*slice, *index, *value])?;
+                self.materialize_operands([*slice, *index])?;
             }
-            IrInstruction::Store { address, value, .. } => {
-                self.materialize_operands([*address, *value])?;
+            IrInstruction::Store { address, .. } => {
+                // A stored aggregate is transferred from its backing below.
+                // Loading it into SSA first lets SROA expand a large array
+                // into one load/store pair per element before the copy site
+                // can be recovered. Scalar and descriptor values have no
+                // backing slot and continue through their ordinary operand.
+                self.materialize_operands([*address])?;
             }
             IrInstruction::Drops(_) => {}
             IrInstruction::Define { .. } => {}
@@ -1570,7 +1599,20 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if self.emit_place_definition(result, ty, operation)? {
             return Ok(());
         }
-        self.materialize_operands(operation_operands(operation))?;
+        match operation {
+            // These operations transfer their payload from storage when its
+            // representation is stored. Materializing that payload as an SSA
+            // aggregate first lets SROA scalarize large arrays before the
+            // typed storage copy can be emitted.
+            IrOperation::BoxNew { .. } => {}
+            IrOperation::BufferFill { length, .. } => {
+                self.materialize_operands([*length])?;
+            }
+            IrOperation::RunInsert { run, index, .. } => {
+                self.materialize_operands([*run, *index])?;
+            }
+            _ => self.materialize_operands(operation_operands(operation))?,
+        }
         self.emit_value_definition(result, ty, operation)?;
         if !self.overlap_handed_out.contains(&result) {
             self.save_value_result(result)?;
@@ -1664,6 +1706,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 target_domain,
             } => self.emit_array_index(result, ty, *root, *offset, *target_domain),
             IrOperation::BufferFill {
+                nominal,
                 length,
                 value,
                 layout_ceiling,
@@ -1671,27 +1714,16 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } => self.emit_buffer_fill(
                 result,
                 ty,
+                *nominal,
                 *length,
                 *value,
-                *layout_ceiling,
-                *target_domains,
+                IrAllocationObligations {
+                    layout_ceiling: *layout_ceiling,
+                    target_domains: *target_domains,
+                },
             ),
-            IrOperation::BufferVacant {
-                length,
-                layout_ceiling,
-                target_domains,
-            } => self.emit_buffer_vacant(result, ty, *length, *layout_ceiling, *target_domains),
-            IrOperation::BufferFits {
-                length,
-                maximum_length,
-            } => self.emit_buffer_fits(result, ty, *length, *maximum_length),
             IrOperation::BufferMeasure { buffer } => self.emit_buffer_length(result, ty, *buffer),
-            IrOperation::FixedVector => self.emit_fixed_vector(result, ty),
-            IrOperation::ArenaFrame { bytes, align } => {
-                self.emit_arena_frame(result, ty, *bytes, *align)
-            }
-            IrOperation::StoreTake(take) => self.emit_store_take(result, ty, *take),
-            IrOperation::StoreBox(cell) => self.emit_store_box(result, ty, *cell),
+            IrOperation::Window => self.emit_fixed_vector(result, ty),
             IrOperation::ContainerMeasure { measure, container } => {
                 self.emit_container_measure(result, ty, *measure, *container)
             }
@@ -1704,6 +1736,31 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::RunBoundary { row, run, value } => {
                 self.emit_run_boundary(result, ty, *row, *run, *value)
             }
+            IrOperation::RunShift { run, index, open } => {
+                self.emit_run_shift(result, ty, *run, *index, *open)
+            }
+            IrOperation::RunInsert { run, index, value } => {
+                self.emit_run_insert(result, ty, *run, *index, *value)
+            }
+            IrOperation::RunTransfer {
+                destination,
+                source,
+                index,
+            } => self.emit_run_transfer(result, ty, *destination, *source, *index),
+            IrOperation::WindowBlockNew {
+                nominal,
+                capacity,
+                obligations,
+            } => self.emit_window_block_new(result, ty, *nominal, *capacity, *obligations),
+            IrOperation::WindowGrow {
+                nominal,
+                cell,
+                capacity,
+                obligations,
+            } => self.emit_window_grow(result, ty, *nominal, *cell, *capacity, *obligations),
+            IrOperation::CellFree { nominal, value } => {
+                self.emit_cell_free(result, ty, *nominal, *value)
+            }
             IrOperation::BufferIndex {
                 buffer,
                 offset,
@@ -1715,7 +1772,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 limit,
                 needles,
             } => self.emit_buffer_probe_skip(result, ty, *buffer, *index, *limit, needles),
-            IrOperation::SliceFromArray { array } => self.emit_slice_from_array(result, ty, *array),
             IrOperation::SliceFromBuffer { buffer } => {
                 self.emit_slice_from_buffer(result, ty, *buffer)
             }
@@ -1729,6 +1785,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 offset,
                 target_domain,
             } => self.emit_slice_index(result, ty, *slice, *offset, *target_domain),
+            IrOperation::SliceAddress {
+                slice,
+                offset,
+                target_domain,
+            } => self.emit_slice_address(result, ty, *slice, *offset, *target_domain),
             IrOperation::BoxNew { nominal, value } => {
                 self.emit_box_new(result, ty, *nominal, *value)
             }
@@ -1738,14 +1799,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::BoxDeref { nominal, value } => {
                 self.emit_box_deref(result, ty, *nominal, *value)
             }
-            IrOperation::ArenaListNew => self.emit_arena_list_new(result, ty),
-            IrOperation::ArenaNew {
-                nominal,
-                list,
-                value,
-            } => self.emit_arena_new(result, ty, *nominal, *list, *value),
-            IrOperation::ArenaDeref { nominal, value } => {
-                self.emit_arena_deref(result, ty, *nominal, *value)
+            IrOperation::RuntimeBoxPayload { nominal, owner } => {
+                self.emit_runtime_box_payload(result, ty, *nominal, *owner)
+            }
+            IrOperation::RuntimeBoxOwner { nominal, payload } => {
+                self.emit_runtime_box_owner(result, ty, *nominal, *payload)
             }
             IrOperation::ConstructStruct { nominal, fields } => {
                 self.emit_struct(result, ty, *nominal, fields)
@@ -1901,28 +1959,53 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 Ok((self.value_name(scrutinee), "i1".to_owned()))
             }
             IrEnumType::Nominal(nominal) => {
-                if self.value_type(scrutinee) != Some(IrType::Nominal(nominal)) {
-                    return Err(BackendFailure::InvalidIr);
-                }
+                // Matching through a reference leaves the scrutinee live
+                // [OWN-13], so the operand is the address of the enum's own
+                // storage rather than a copy of it, and the tag is read from
+                // that storage.
+                let addressed = match self.value_type(scrutinee) {
+                    Some(IrType::Nominal(actual)) if actual == nominal => false,
+                    Some(IrType::Address(IrAddressed::Nominal(actual))) if actual == nominal => {
+                        true
+                    }
+                    _ => return Err(BackendFailure::InvalidIr),
+                };
                 let data = self.nominal(nominal)?;
                 let IrNominalKind::Enum { .. } = data.kind() else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if data.is_tag_only_enum() {
-                    return Ok((
-                        self.value_name(scrutinee),
-                        llvm_type(self.program, IrType::Nominal(nominal))?,
-                    ));
+                let tag_only = data.is_tag_only_enum();
+                let enum_llvm = llvm_type(self.program, IrType::Nominal(nominal))?;
+                let tag_ty = if tag_only {
+                    enum_llvm.clone()
+                } else {
+                    "i32".to_owned()
+                };
+                if !addressed {
+                    if tag_only {
+                        return Ok((self.value_name(scrutinee), tag_ty));
+                    }
+                    let temporary = self.next_temporary()?;
+                    writeln!(
+                        self.output,
+                        "  %{temporary} = extractvalue {enum_llvm} {}, 0",
+                        self.value_name(scrutinee)
+                    )
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                    return Ok((format!("%{temporary}"), tag_ty));
                 }
+                let address = self.value_name(scrutinee);
                 let temporary = self.next_temporary()?;
-                writeln!(
-                    self.output,
-                    "  %{temporary} = extractvalue {} {}, 0",
-                    llvm_type(self.program, IrType::Nominal(nominal))?,
-                    self.value_name(scrutinee)
-                )
-                .map_err(|_| BackendFailure::TextEmission)?;
-                Ok((format!("%{temporary}"), "i32".to_owned()))
+                if tag_only {
+                    writeln!(self.output, "  %{temporary} = load {tag_ty}, ptr {address}")
+                        .map_err(|_| BackendFailure::TextEmission)?;
+                } else {
+                    let field =
+                        self.aggregate_field_pointer(IrType::Nominal(nominal), &address, 0)?;
+                    writeln!(self.output, "  %{temporary} = load i32, ptr {field}")
+                        .map_err(|_| BackendFailure::TextEmission)?;
+                }
+                Ok((format!("%{temporary}"), tag_ty))
             }
         }
     }
@@ -1952,18 +2035,16 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         let reads_content = match drop.ty() {
-            IrType::Slice { .. } => false,
-            IrType::Array { .. }
-            | IrType::FixedVector { .. }
-            | IrType::Vector { .. }
-            | IrType::Provider => type_requires_cleanup(self.program, drop.ty())?,
+            IrType::Range { .. } => false,
+            IrType::Array { .. } | IrType::Window { .. } => {
+                type_requires_cleanup(self.program, drop.ty())?
+            }
             IrType::Buffer { .. } => true,
             IrType::Nominal(nominal) if !self.nominal(nominal)?.is_tag_only_enum() => {
                 match self.nominal(nominal)?.kind() {
                     // The checker supplied separate component records. The
                     // struct node must not recursively release them again.
-                    IrNominalKind::Struct { .. } | IrNominalKind::Arena { .. } => false,
-                    IrNominalKind::ArenaStorage => true,
+                    IrNominalKind::Struct { .. } => false,
                     IrNominalKind::Opaque => false,
                     IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } => {
                         type_requires_cleanup(self.program, drop.ty())?
@@ -2094,7 +2175,6 @@ fn llvm_storage_type(
 ) -> Result<String, BackendFailure> {
     match ty {
         TargetStorageType::Source(ty) => llvm_type(program, *ty),
-        TargetStorageType::Pointer => Ok("ptr".to_owned()),
         TargetStorageType::Integer(width) if matches!(width, 1 | 8 | 16 | 32 | 64) => {
             Ok(format!("i{width}"))
         }
@@ -2129,29 +2209,57 @@ pub(crate) fn llvm_type(
                 program.element(element).ok_or(BackendFailure::InvalidIr)?
             )?
         )),
-        IrType::Buffer { .. } | IrType::Slice { .. } => Ok("{ ptr, i64 }".to_owned()),
-        // A `Vector` descriptor is `{ pointer, cap, len, head }`; a
-        // `FixedVector` is its slots followed by `len` and `head`; a provider
-        // is proof-only and carries at most its own base and cursor
-        // [BLK-1, PROV-1, OP-9].
-        IrType::Vector { .. } => Ok("{ ptr, i64, i64, i64 }".to_owned()),
-        IrType::FixedVector { element, length } => Ok(format!(
-            "{{ [{length} x {}], i64, i64 }}",
-            llvm_type(
-                program,
-                program.element(element).ok_or(BackendFailure::InvalidIr)?
-            )?
+        // A `&[T]` range reference is a pointer and one count [REF-4]; it is
+        // a reference kind, so no storage ever holds one.
+        IrType::Range { .. } => Ok("{ ptr, i64 }".to_owned()),
+        // compiler/storage-representation: a runtime-capacity `Array<T>` is
+        // one block `[len | elements]`, header first, exactly as a boxed
+        // window block is. An `Array`'s `len` equals its `cap` [WIN-1], so
+        // the one runtime number is stored once. The block is reached only
+        // through the `Box` that owns it [TYPE-9], so its own type never
+        // names its element count.
+        IrType::Buffer { element } => Ok(format!(
+            "{{ i64, [0 x {}] }}",
+            llvm_type(program, element.ty())?
         )),
-        IrType::Provider => Ok("{ ptr, i64 }".to_owned()),
-        IrType::Address(_) => Ok("ptr".to_owned()),
+        // compiler/storage-representation: header first, so the inline and
+        // the boxed placement of one shape share one address computation. A
+        // `Slots` carries `len` alone and a `Ring` carries `len` and `head`;
+        // a constant capacity is the type constant and is stored nowhere.
+        IrType::Window {
+            shape,
+            element,
+            capacity: Some(length),
+        } => {
+            let element = llvm_type(
+                program,
+                program.element(element).ok_or(BackendFailure::InvalidIr)?,
+            )?;
+            Ok(match shape {
+                IrWindowShape::Slots => format!("{{ i64, [{length} x {element}] }}"),
+                IrWindowShape::Ring => format!("{{ i64, i64, [{length} x {element}] }}"),
+            })
+        }
+        // A runtime-capacity block is reached only through the `Box` that
+        // owns it [TYPE-9], so its own type never names its element count.
+        IrType::Window {
+            shape,
+            element,
+            capacity: None,
+        } => {
+            let element = llvm_type(
+                program,
+                program.element(element).ok_or(BackendFailure::InvalidIr)?,
+            )?;
+            Ok(match shape {
+                IrWindowShape::Slots => format!("{{ i64, i64, [0 x {element}] }}"),
+                IrWindowShape::Ring => format!("{{ i64, i64, i64, [0 x {element}] }}"),
+            })
+        }
+        IrType::Address(_) | IrType::RuntimeBoxPayload { .. } => Ok("ptr".to_owned()),
         IrType::Nominal(id) => {
             let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
-            if matches!(
-                nominal.kind(),
-                IrNominalKind::Box { .. }
-                    | IrNominalKind::Arena { .. }
-                    | IrNominalKind::ArenaStorage
-            ) {
+            if matches!(nominal.kind(), IrNominalKind::Box { .. }) {
                 return Ok("ptr".to_owned());
             }
             if matches!(nominal.kind(), IrNominalKind::Opaque) {
@@ -2272,11 +2380,6 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock, overlaps: &[IrOverlap]
 
 /// The label one ordinary instruction's own emission leaves the block at, for
 /// the operations whose lowering opens a further LLVM block.
-/// The block one cell formation joins at S39.
-pub(super) fn store_box_join_label(result: IrValueId) -> String {
-    format!("box.join.v{}", result.ordinal())
-}
-
 fn definition_exit_label(
     _block_id: IrBlockId,
     _index: usize,
@@ -2304,18 +2407,6 @@ fn definition_exit_label(
             operation: IrOperation::BoxNew { .. },
             ..
         } => *label = box_new_ready_label(*result),
-        // S39 a cell formation branches on the store's answer and joins,
-        // so the block a successor's phi names is that join.
-        IrInstruction::Define {
-            result,
-            operation: IrOperation::StoreBox { .. },
-            ..
-        } => *label = store_box_join_label(*result),
-        IrInstruction::Define {
-            result,
-            operation: IrOperation::ArenaNew { .. },
-            ..
-        } => *label = arena_new_ready_label(*result),
         IrInstruction::Define {
             result,
             operation: IrOperation::BufferFill { .. },
@@ -2323,14 +2414,24 @@ fn definition_exit_label(
         } => *label = buffer_fill_done_label(*result),
         IrInstruction::Define {
             result,
-            operation: IrOperation::BufferVacant { .. },
-            ..
-        } => *label = buffer_vacant_done_label(*result),
-        IrInstruction::Define {
-            result,
             operation: IrOperation::BufferProbeSkip { .. },
             ..
         } => *label = buffer_probe_join_label(*result),
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::RunShift { .. },
+            ..
+        } => *label = runs::run_shift_done_label(*result),
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::RunTransfer { .. },
+            ..
+        } => *label = runs::run_transfer_done_label(*result),
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::WindowBlockNew { .. } | IrOperation::WindowGrow { .. },
+            ..
+        } => *label = runs::window_block_ready_label(*result),
         _ => {}
     }
 }
@@ -2369,10 +2470,6 @@ fn integer_continue_label(value: IrValueId) -> String {
 
 fn box_new_ready_label(value: IrValueId) -> String {
     format!("box.new.ready.v{}", value.ordinal())
-}
-
-fn arena_new_ready_label(value: IrValueId) -> String {
-    format!("arena.new.ready.v{}", value.ordinal())
 }
 
 fn array_fill_head_label(value: IrValueId) -> String {

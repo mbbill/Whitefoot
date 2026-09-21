@@ -13,7 +13,8 @@
 //! over-approximates it [ENT-5].
 
 use super::super::model::{CheckedMeasure, IntegerType};
-pub(crate) use super::super::places::{PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm};
+use super::super::places::CaptureId;
+pub(crate) use super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
 use super::state::WordHashMap;
 use crate::DeclarationId;
 
@@ -35,16 +36,13 @@ pub(crate) enum TermKind {
     Constant(i128),
     /// An in-scope integer-typed const-generic parameter, judged symbolically.
     ConstParameter(DeclarationId),
-    /// A tracked place whose final selected type is one fragment type.
-    Place(PlaceTerm, IntegerType),
-    /// The same [ENT-2] tracked-place class when field selections precede a
-    /// deref or more than one deref occurs in the canonical spelling.
-    ProjectedPlace(ProjectedPlaceTerm, IntegerType),
-    /// One measure term `len_of(P)`, `cap_of(P)`, `room_of(P)` or `head_of(P)` [MSR-1],
+    /// A tracked place [ENT-2] clause (a) whose final selected type is one
+    /// fragment type, carried as the one resolved path the checker has
+    /// [REF-1].
+    Place(ResolvedPlace, IntegerType),
+    /// One measure term `P.len`, `P.cap` or `P.head` [MSR-1, OP-15],
     /// of fragment type u64. Its support is P's descriptor storage [MSR-2].
-    Measure(CheckedMeasure, PlaceTerm),
-    /// A measure term whose place has interleaved field/deref projections.
-    ProjectedMeasure(CheckedMeasure, ProjectedPlaceTerm),
+    Measure(CheckedMeasure, ResolvedPlace),
     /// One immutable compiler-owned endpoint capture [ENT-2, S11]. The
     /// finalized `for_stmt` path plus the endpoint side is its complete
     /// function-local identity; source can neither name nor mutate it.
@@ -52,6 +50,8 @@ pub(crate) enum TermKind {
         range_path: Vec<u32>,
         side: CountedCaptureSide,
     },
+    /// The immutable value of one index evaluation at formation.
+    IndexCapture { capture: CaptureId },
     /// One immutable compiler-owned commit value [ENT-2]: the value the
     /// right-hand side of one `set` statement evaluated to at that
     /// occurrence, before its target kill. The statement's finalized
@@ -75,7 +75,7 @@ pub(crate) enum TermKind {
     CallDatum {
         call_path: Vec<u32>,
         formal: u32,
-        projections: Vec<CallDatumProjection>,
+        projections: Vec<PlaceStep>,
         measure: Option<CheckedMeasure>,
         ty: IntegerType,
     },
@@ -89,7 +89,7 @@ pub(crate) enum TermKind {
     /// is the same datum a caller substitutes as that call's call datum.
     EntryDatum {
         formal: u32,
-        projections: Vec<CallDatumProjection>,
+        projections: Vec<PlaceStep>,
         measure: CheckedMeasure,
     },
     /// One immutable compiler-owned measure datum [MSR-3]: the value one
@@ -98,21 +98,22 @@ pub(crate) enum TermKind {
     /// [LIV-2] `set` rebind, a construct's field operand, a destructuring
     /// binder, an element position, or an enum payload. The statement's
     /// finalized NodePath, the placement, the ordinal within that statement,
-    /// the field path from that ordinal's operand to the measured place, and
+    /// the projection path from that ordinal's operand to the measured place, and
     /// the measure are its complete function-local identity. No place occurs
     /// in it, so neither the consume the statement performs nor the write it
     /// commits can kill it, which is what carries a measured value's measures
     /// across the event.
     ///
     /// `path` is empty where the operand is itself measured, and names the
-    /// field selections that reach the measured place where the operand is a
-    /// struct holding one: a placement carries every measured place under its
-    /// operand, so one operand mints one datum set per such place [MSR-1].
+    /// field and payload selections that reach the measured place where the
+    /// operand is an aggregate holding one: a placement carries every
+    /// measured place under its operand, so one operand mints one datum set
+    /// per such place [MSR-1].
     MeasureDatum {
         statement: Vec<u32>,
         placement: MeasurePlacement,
         ordinal: u32,
-        path: Vec<u32>,
+        path: Vec<PlaceStep>,
         measure: CheckedMeasure,
     },
 }
@@ -142,24 +143,15 @@ pub(crate) enum MeasurePlacement {
     Payload,
 }
 
-/// Ordered projection identity inside one call datum's operand place.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum CallDatumProjection {
-    Deref,
-    Field(u32),
-    /// One [OP-4] subscript inside a datum's place [MSR-1, MSR-3].
-    Subscript(super::super::places::PlaceOffset),
-}
-
 /// Dense identity of one interned term.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub(crate) struct TermId(pub(crate) u32);
 
 /// One implicit [ENT-2] equality a measure term carries at every program
-/// point: the `array<T, N>` `len` and `cap` equality to N, with concrete N a
-/// constant and const-generic N a symbolic constant term, and [MSR-2]'s
-/// standing constant for a table cell whose value is fixed. Implicit facts
-/// hold at every program point and never die.
+/// point: the `Array<T, N>` `len` equality to N, with concrete N a constant
+/// and const-generic N a symbolic constant term, and [MSR-2]'s standing
+/// constant for a table cell whose value is fixed. Implicit facts hold at
+/// every program point and never die.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MeasureBound {
     Constant(i128),
@@ -220,9 +212,6 @@ impl TermTable {
     pub(crate) fn sibling_measure(&self, term: TermId, measure: CheckedMeasure) -> Option<TermId> {
         let sibling = match self.kind(term) {
             TermKind::Measure(_, place) => TermKind::Measure(measure, place.clone()),
-            TermKind::ProjectedMeasure(_, place) => {
-                TermKind::ProjectedMeasure(measure, place.clone())
-            }
             _ => return None,
         };
         self.interned(&sibling)
@@ -240,11 +229,7 @@ impl TermTable {
     /// unwritable. Z carries exactly the bounds the constant zero would
     /// have contributed, so the merge loses no fact.
     pub(crate) fn intern(&mut self, kind: TermKind) -> TermId {
-        let kind = if matches!(kind, TermKind::Constant(0)) {
-            TermKind::Zero
-        } else {
-            kind
-        };
+        let kind = Self::identity(kind);
         if let Some(id) = self.ids.get(&kind) {
             return *id;
         }
@@ -263,7 +248,24 @@ impl TermTable {
 
     /// The identity of one already interned term, without interning it.
     pub(crate) fn interned(&self, kind: &TermKind) -> Option<TermId> {
-        self.ids.get(kind).copied()
+        self.ids.get(&Self::identity(kind.clone())).copied()
+    }
+
+    /// The one canonical form of a term kind.
+    ///
+    /// The constant zero is the distinguished zero term, for the reason
+    /// above. A place-carrying kind takes its path's term identity, so a
+    /// place written twice with the same literal or const subscript is one
+    /// term at both occurrences: `rows[0_u64].len` and the bound
+    /// `i < rows[0_u64].len` owes are otherwise two unrelated quantities
+    /// [MSR-1, ENT-2].
+    fn identity(kind: TermKind) -> TermKind {
+        match kind {
+            TermKind::Constant(0) => TermKind::Zero,
+            TermKind::Place(place, fragment) => TermKind::Place(place.term_identity(), fragment),
+            TermKind::Measure(measure, place) => TermKind::Measure(measure, place.term_identity()),
+            other => other,
+        }
     }
 
     pub(crate) fn kind(&self, id: TermId) -> &TermKind {

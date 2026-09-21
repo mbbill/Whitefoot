@@ -1,8 +1,6 @@
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus pure {
-  doc "PRE-1: the invocation arrives as one ordinary Inputs struct and an ordinary separately branded Heap parameter. Its linear directory is explicitly closed; unused affine fields need no release operation.";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1: the invocation arrives as one ordinary Inputs struct. Whole destructuring exposes ordinary fields; cwd is explicitly consumed through close_directory. There is no heap value to hand in, no input-label order and no implicit native release.";
   let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
-  region {
-    close_directory(factory: &uniq factory, directory: move cwd);
-  }
+  close_directory(factory: &factory, directory: move cwd);
   return exit_status(code: 0_u8);
 }

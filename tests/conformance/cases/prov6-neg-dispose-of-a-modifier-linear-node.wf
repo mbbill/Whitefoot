@@ -1,33 +1,17 @@
-linear struct Tag {
+nodrop struct Tag {
   slot: u8;
 }
 
 struct Holder {
   mark: Tag;
-  page: FixedVector<u8, 4>;
+  page: Slots<u8, 4>;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "PROV-6: no node of the operand's release graph, the operand's own type included, may be linear by the modifier. A type containing a modifier-linear node is taken apart by a destructuring consume first, so the marked component reaches a written statement rather than a silent walk.";
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let r1 = move empty;
-  region {
-    place_back(vector: &uniq r1, value: 0_u8);
-  }
-  let r2 = move r1;
-  region {
-    place_back(vector: &uniq r2, value: 0_u8);
-  }
-  let r3 = move r2;
-  region {
-    place_back(vector: &uniq r3, value: 0_u8);
-  }
-  let run = move r3;
+  doc "PROV-6: a type owning a linear part at any depth is itself linear, the modifier's own node included, so the compiler-derived release never runs for it. Such a value is taken apart by a destructuring consume, which is how the marked component reaches a written statement rather than a silent walk.";
+  let values = array_filled::<u8, 4>(value: 0_u8);
+  let run = slots_from_array::<u8, 4>(values: values);
   let mark = Tag(slot: 1_u8);
   let holder = Holder(mark: move mark, page: move run);
-  dispose holder;
   return exit_status(code: 0_u8);
 }

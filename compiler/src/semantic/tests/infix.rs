@@ -294,16 +294,12 @@ fn a_disagreeing_operand_is_reported_at_that_operand_from_every_position() {
 /// The `return` position has two structural queries, reached under
 /// complementary conditions, and each broke on infix independently.
 ///
-/// [TYPE-7]'s implicit read runs only for an `own` result — the table's
-/// `return_stmt` entry covers it. [OWN-14]'s returned reborrow runs only for a
-/// borrow result, so it needs a borrow-returning function; an infix can never
-/// produce a borrow, which makes this an FN-1 rejection rather than an accepted
-/// program, and reporting it as a compiler failure was the defect. The control
-/// is the same function returning a plain non-borrow atom: it cites FN-1 too,
-/// so the infix path is held to the citation the position already produced.
+/// The declared result type disagrees with both the infix and a plain atom.
+/// Both paths must reach FN-1's ordinary return judgment rather than treating
+/// the infix expression as an internal structural failure.
 #[test]
-fn an_infix_returned_from_a_borrow_result_is_an_fn1_rejection() {
-    let infix = br#"fn pick['r](x: &'r u64, a: own u64) -> result: &'r u64 reads(x) {
+fn an_infix_returned_at_a_disagreeing_result_type_is_an_fn1_rejection() {
+    let infix = br#"fn pick(a: own u64) -> result: own i32 pure {
   let b = 7_u64;
   return a +wrap b;
 }
@@ -313,7 +309,7 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
     assert_rule(infix, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);
-    let plain = br#"fn pick['r](x: &'r u64, a: own u64) -> result: &'r u64 reads(x) {
+    let plain = br#"fn pick(a: own u64) -> result: own i32 pure {
   return a;
 }
 

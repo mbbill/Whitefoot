@@ -1,12 +1,11 @@
 fn needs_ref(p: &i32) -> function_result: own unit pure {
+  doc "Parameter p is a reference &i32; the body accesses nothing through it, so the declared row is the empty one.";
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Passing an own i32 value where a &'r i32 borrow parameter is declared [TYPE-5].";
+  doc "Passing an own i32 value where a reference parameter is declared is a TYPE-5 mismatch: a reference is formed by the & spelling and never by a bare value at that position. The other half of the mode pair, a bare reference at an own parameter, is instead the TYPE-7 missing dereference.";
   let a = 5_i32;
-  region {
-    let r = needs_ref(p: a);
-  }
+  let r = needs_ref(p: a);
   return exit_status(code: 0_u8);
 }

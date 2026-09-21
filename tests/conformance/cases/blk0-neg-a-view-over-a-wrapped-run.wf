@@ -1,36 +1,16 @@
 fn main() -> status: own ExitStatus pure {
-  doc "The formation row's declared requirement head_of(vector) <= room_of(vector) is the non-wrap premise, submitted at the formation and judged under MSR-4 exactly as every other row requirement is. This run has had a front removal and has been refilled, so its window wraps: the premise is unproved and the formation is refused citing BLK-0, naming the row and the position of the requirement in its own list. Without the refusal the view descriptor is one range over a window that is two, and the program below read a byte the run does not own.";
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 1_u8);
+  doc "A Ring's logical window is two extents, and a range reference has one len, so REF-4 refuses the range step over a Ring at the psuffix itself rather than submitting a non-wrap premise for proof. Without the refusal the range descriptor is one extent over a window that is two, and the read below would reach a byte the run does not own.";
+  let run = ring_new::<u8, 4>();
+  for (
+    i in 0_u64..4_u64,
+    invariant h: run.len == i
+  ) {
+    place_back(window: &run, value: 1_u8);
   }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 2_u8);
+  let window = &run[0_u64..4_u64];
+  let last = deref(window)[3_u64];
+  if last == 1_u8 {
+    return exit_status(code: 0_u8);
   }
-  let two = move one;
-  region {
-    place_back(vector: &uniq two, value: 3_u8);
-  }
-  let three = move two;
-  region {
-    place_back(vector: &uniq three, value: 4_u8);
-  }
-  let four = move three;
-  region {
-    let gone = take_front(vector: &uniq four);
-    let rest = move four;
-    region {
-      place_back(vector: &uniq rest, value: 5_u8);
-    }
-    let full = move rest;
-    region {
-      let window = slice_of(&full);
-      let last = window[3_u64];
-      if last == 5_u8 {
-        return exit_status(code: 0_u8);
-      }
-    }
-    return exit_status(code: 1_u8);
-  }
+  return exit_status(code: 1_u8);
 }

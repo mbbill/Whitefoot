@@ -12,6 +12,18 @@ use super::*;
 pub(super) struct PreparedTarget<'target> {
     ty: IrType,
     kind: TargetStorage<'target>,
+    /// [WIN-3] whether the value this commit overwrites is certainly still
+    /// live, so the commit owes it its compiler-derived release [STOR-3].
+    ///
+    /// A reference-rooted path and an element position are both always
+    /// initialized: a reference names a valid path [REF-1, REF-2], and an
+    /// element inside a window's filled prefix or an array's slots always
+    /// holds a value [WIN-1]. A directly named binding path is not: a
+    /// binding whose owner was moved out is re-initialized by a `set` that
+    /// displaces nothing. Which of the two a given commit is, is a liveness
+    /// judgment of the checker's, so the checked target carries its answer
+    /// [SET-1, LIV-1, DIAG-2].
+    displaces_live_value: bool,
 }
 
 enum TargetStorage<'target> {
@@ -37,7 +49,35 @@ impl IrBuilder<'_> {
         &mut self,
         target: &'target CheckedSetTarget,
     ) -> Result<PreparedTarget<'target>, LoweringFailure> {
-        let ty = lower_type(self.erasure, target.ty())?;
+        let ty = match target {
+            // [REF-1, REF-4] a reference variable carries its address or
+            // range descriptor as the binding's runtime value. Its written
+            // type names the referent/element, so read the already-lowered
+            // binding type rather than mistaking that logical type for the
+            // representation replaced by this rebinding.
+            CheckedSetTarget::Place(place) if place.mode.is_reference() => {
+                if place.declares || !place.fields.is_empty() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                let value = self
+                    .bindings
+                    .get(&place.binding)
+                    .copied()
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                self.value_type(value)?
+            }
+            _ => lower_type(self.erasure, target.ty())?,
+        };
+        // [WIN-3] every other target shape always holds a value at the
+        // commit: a referent, a field, and an element inside a window's
+        // filled prefix or an array's slots are storage that is there. A
+        // directly named binding is the one shape whose old value may
+        // already be gone, and the checker recorded which of the two this
+        // commit is [SET-1, LIV-1].
+        let displaces_live_value = match target {
+            CheckedSetTarget::Place(place) => place.displaces_live_value,
+            _ => true,
+        };
         let address_kind = |address, referent| TargetStorage::Address { address, referent };
         let kind = match target {
             CheckedSetTarget::Storage(root) => {
@@ -52,6 +92,8 @@ impl IrBuilder<'_> {
                     if !place.fields.is_empty() {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     }
+                    TargetStorage::Place(place)
+                } else if place.mode.is_reference() {
                     TargetStorage::Place(place)
                 } else {
                     let storage = self
@@ -88,7 +130,7 @@ impl IrBuilder<'_> {
                     IrType::Address(referent),
                     IrOperation::ProjectAddress {
                         address: array,
-                        projection: IrPlaceProjection::ArrayElement {
+                        projection: IrPlaceStep::ArrayElement {
                             offset,
                             target_domain: target.target_domain.into(),
                         },
@@ -107,19 +149,70 @@ impl IrBuilder<'_> {
                     target_domain,
                 }
             }
-            CheckedSetTarget::SliceIndex(target) => {
-                let slice = self.slice_root(&target.root)?;
-                let index = self.expression(&target.offset)?;
-                let target_domain = target.target_domain.into();
-                self.check_target_offset(index, target_domain)?;
-                TargetStorage::Slice {
-                    slice,
-                    index,
-                    target_domain,
+            // [REF-4, SET-1] one element position of the run a range names.
+            CheckedSetTarget::RangeIndex(target) => {
+                if !target.path.is_empty() {
+                    let address = self.lower_range_address(
+                        &target.root,
+                        &target.offset,
+                        &target.path,
+                        target.target_domain,
+                    )?;
+                    let IrType::Address(referent) = self.value_type(address)? else {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    };
+                    address_kind(address, referent)
+                } else {
+                    let slice = self.range_root(&target.root)?;
+                    let index = self.expression(&target.offset)?;
+                    let target_domain = target.target_domain.into();
+                    self.check_target_offset(index, target_domain)?;
+                    TargetStorage::Slice {
+                        slice,
+                        index,
+                        target_domain,
+                    }
                 }
             }
         };
-        Ok(PreparedTarget { ty, kind })
+        Ok(PreparedTarget {
+            ty,
+            kind,
+            displaces_live_value,
+        })
+    }
+
+    /// [WIN-3] "Assigning over any owned place releases the old value when it
+    /// is affine."
+    ///
+    /// The release is the commit's, so this reads the displaced value after
+    /// the right-hand side's effects and before the write, exactly where the
+    /// old owner stops being reachable. What it releases is the ordinary
+    /// [STOR-3] release of the target's own type: a cell frees its content
+    /// and then its heap object, a type with no release action owes nothing,
+    /// and a linear target never reaches lowering at all because [WIN-3]
+    /// makes that assignment a hard error.
+    ///
+    /// A directly named binding path is decided by the record the checker
+    /// carries on it [DIAG-2]: re-initializing a moved-out binding is an
+    /// accepted program and displaces nothing, so deriving the release from
+    /// the type alone would release a value that is already gone, while
+    /// deriving none at all leaked the cell a live binding still held.
+    pub(super) fn displaced_release(
+        &mut self,
+        target: &PreparedTarget<'_>,
+    ) -> Result<Option<IrDrop>, LoweringFailure> {
+        if !target.displaces_live_value
+            || !crate::lowering::type_derives_release(self.nominals, self.elements, target.ty)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?
+        {
+            return Ok(None);
+        }
+        let previous = self.read_target(target)?;
+        Ok(Some(IrDrop {
+            subject: IrDropSubject::Value(previous),
+            ty: target.ty,
+        }))
     }
 
     fn check_target_offset(
@@ -226,6 +319,14 @@ impl IrBuilder<'_> {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     }
                     return self.promote_binding_if_needed(place.binding);
+                }
+                if place.mode.is_reference() {
+                    if !place.fields.is_empty()
+                        || self.bindings.insert(place.binding, value).is_none()
+                    {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                    return Ok(());
                 }
                 let storage = self
                     .bindings

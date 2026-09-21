@@ -1,28 +1,10 @@
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  region {
-    let index = args_count(args: &args);
-    let empty = fixed_vector::<u8, 4>();
-    region {
-      place_back(vector: &uniq empty, value: 0_u8);
-    }
-    let one = move empty;
-    region {
-      place_back(vector: &uniq one, value: 0_u8);
-    }
-    let two = move one;
-    region {
-      place_back(vector: &uniq two, value: 0_u8);
-    }
-    let three = move two;
-    region {
-      place_back(vector: &uniq three, value: 0_u8);
-    }
-    let bytes = move three;
-    let value = bytes[index];
-    return exit_status(code: value);
-  }
+  doc "An ordinary function result is an ordinary symbolic runtime value, not a fact source. Using it directly as a window index leaves the bounds Goal unproved, so OP-4 rejects before lowering.";
+  let Inputs(args: arg_list, cwd: root, handles: entry_factory, ..) = move inputs;
+  close_directory(factory: &entry_factory, directory: move root);
+  let index = args_count(args: &arg_list);
+  let values = array_filled::<u8, 4>(value: 0_u8);
+  let bytes = slots_from_array::<u8, 4>(values: values);
+  let value = bytes[index];
+  return exit_status(code: value);
 }

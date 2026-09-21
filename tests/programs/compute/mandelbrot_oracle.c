@@ -12,11 +12,14 @@
 const char *const wf_oracle_name = "mandelbrot";
 const char *const wf_oracle_fixture = "points=98304 limit=256 shape=trailing seed=828219";
 
-extern void wf_bench_mandelbrot(const double *, const double *, uint64_t, uint64_t, uint64_t **, uint64_t *);
-extern void wf_bench_mandelbrot_release(uint64_t *, uint64_t);
+/* The owned result is a Box<Array<T>> cell; the adapter hands that cell back
+ * as the retained handle and the release row consumes exactly it. */
+extern void wf_bench_mandelbrot(const double *, const double *, uint64_t, uint64_t, uint64_t **, uint64_t *, void **);
+extern void wf_bench_mandelbrot_release(void *);
 typedef struct {
     double *x, *y, *held_x, *held_y;
     uint64_t *expected, *output;
+    void *held;
     size_t n;
     uint64_t limit;
 } Work;
@@ -85,12 +88,13 @@ static Work input(size_t n, uint64_t limit, const char *shape, uint32_t seed) {
 }
 
 static void release(Work *w) {
-    if (w->output) wf_bench_mandelbrot_release(w->output, w->n);
+    if (w->held) wf_bench_mandelbrot_release(w->held);
     w->output = NULL;
+    w->held = NULL;
 }
 static void run(Work *w) {
     uint64_t length = UINT64_MAX;
-    wf_bench_mandelbrot(w->x, w->y, w->n, w->limit, &w->output, &length);
+    wf_bench_mandelbrot(w->x, w->y, w->n, w->limit, &w->output, &length, &w->held);
     if (length != w->n) wf_oracle_fail("mandelbrot: output extent");
 }
 

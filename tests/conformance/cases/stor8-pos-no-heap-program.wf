@@ -1,0 +1,13 @@
+program no_heap;
+
+fn main() -> status: own ExitStatus pure {
+  doc "STOR-8: a compilation unit carrying the no-heap declaration names no Box and no runtime-capacity shape and calls no allocating prelude row; a constant-capacity shape is frame-resident and needs none.";
+  let r = slots_new::<u64, 4>();
+  place_back(window: &r, value: 3_u64);
+  let seen = r[0_u64];
+  if seen == 3_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

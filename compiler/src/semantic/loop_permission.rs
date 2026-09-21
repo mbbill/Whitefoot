@@ -1,123 +1,128 @@
-//! The loop permission judgment: whether the iterations of one counted `for`
-//! may be executed with overlapping execution, and whether the one value they
-//! carry may be recombined across them.
+//! The counted permission judgment [PAR-2]: whether the iterations of one
+//! counted `for` may be executed with overlapping execution, and whether the
+//! one value they carry may be recombined across them.
 //!
-//! The window judgment next door reads a pair of *statements*, so two
-//! executions of one statement are never a pair and a counted loop gets
-//! nothing however independent its iterations are. This judgment reads the
-//! loop itself. It refuses nothing, changes no acceptance, and grants no
-//! lowering by itself; it records, per counted loop, whether overlapping its
-//! iterations is permitted. A permitted loop is actualizable, full stop.
+//! The adjacency judgment next door reads two *statements*, so two executions
+//! of one statement are never a pair and a counted loop gets nothing however
+//! independent its iterations are. This judgment reads the loop itself. It
+//! refuses nothing, changes no acceptance, and grants no lowering by itself.
 //!
 //! # What is judged
 //!
-//! The unit is one `for_stmt` L with body B. Writing an *iteration-own* place
-//! for one rooted in a binding B itself introduces, permission holds exactly
-//! when all four conditions hold:
+//! The unit is one `for_stmt` L with body B, and every written, read, and
+//! operand-read footprint of a statement of B is formed exactly as [PAR-1]
+//! forms one. Writing an *iteration-own* place for one rooted in a binding B
+//! itself introduces, permission holds exactly when all four conditions hold:
 //!
-//! 1. **One accumulator, or none.** The only storage outliving an iteration
-//!    that B writes as a whole binding is a single accumulator `a`, every
-//!    write of which is `set a = a (+) e` or `set a = e (+) a` for one
-//!    exactly-associative operation, and `a` is read nowhere else in B.
-//! 2. **No shared writable footprint.** Every place B writes is iteration-own,
-//!    that accumulator, or one element selected by L's own counted binder at
-//!    an already-discharged [OP-4] site whose retained exact value is one
-//!    nonconstant affine map `a*i+b` of L's binder. Since `a != 0`, distinct
-//!    iterations select distinct elements. Every other element
-//!    write. A same-map element read of that root is also refined to the same
-//!    per-iteration cell; a different map or whole-root read still denies. A
-//!    field of enclosing storage, an arena append, and every write this
-//!    judgment cannot resolve all deny. A checked adjacent-range assignment
-//!    additionally admits view formation, descendant reads/writes, and callee
-//!    rows projected inside its tile. Its runtime stride and base come from
-//!    retained flow proofs; overlapping sources require the same partition.
-//!    The mapped root may be owned directly or reached through the
-//!    live usable `&uniq` holder that made the `set` target writable.
-//! 3. **Resolved ordinary footprints.** Each call's declared effects and
-//!    retained argument loans identify the places accessed. An unresolved
-//!    footprint denies permission, and each loan lasts through call return.
-//! 4. **No exit edge.** No `return`, `give`, `propagate` `Err` edge, or
-//!    `break` naming L or an enclosing loop leaves the loop, so every
-//!    iteration of the whole range runs.
+//! 1. **One accumulator, or none.** "Among whole-place writes of B, at most
+//!    one place is rooted in a binding declared outside L; that binding is
+//!    L's accumulator, and every occurrence of it in B is one operand of one
+//!    `set` statement whose target is that whole binding and whose right-hand
+//!    side is one operation applied to that operand and to a second operand
+//!    reaching the accumulator nowhere." The operation is one of ten fixed
+//!    for the accumulator across the whole of B.
+//! 2. **Every written place is admitted.** "Every place a footprint of B
+//!    writes is iteration-own storage, the accumulator's whole place, one
+//!    proved single-binder affine element write, or one proved range
+//!    reference." Nothing else is admitted, and no injectivity argument is
+//!    searched for.
+//! 3. **Resolved footprints.** "A footprint element whose caller place the
+//!    implementation does not resolve overlaps every place, so an unresolved
+//!    element denies permission rather than granting it."
+//! 4. **No exit edge.** "Every normal continuation of every statement of B
+//!    reaches L's compiler-owned binder update, so no statement of B is a
+//!    `return_stmt`, a `give_stmt`, a `break_stmt` resolved to L or a loop
+//!    enclosing L, or a `let_stmt` selecting `propagate_let_rhs`."
 //!
-//! Source proof statements do not add a fifth condition. Their predicates have
-//! already been checked against the facts at their source positions before
-//! this judgment runs. They are erased before lowering, so they have no
-//! runtime evaluation, footprint, exit edge, or scheduler-visible event. A
-//! failed proof rejects the program rather than introducing a runtime path.
+//! # The two element families
+//!
+//! A **proved single-binder affine element write** is a `set_stmt` whose
+//! target is one direct `Array` or `Slots` subscript rooted in an own binding
+//! declared outside L, or reached through `deref` of a reference parameter
+//! whose row declares the write, and whose discharged [OP-4] bounds
+//! obligation retains the offset's exact value `a*i + b` for L's binder with
+//! `a` nonzero. Distinct binder values therefore select distinct elements.
+//! The `deref` needs no rule of its own here: it is an ordinary step of the
+//! resolved path [REF-1, TYPE-7], so `deref(b)[a*i + c]` is recognized
+//! exactly as an inline subscript is, which is what keeps every
+//! runtime-capacity kernel in the family — [TYPE-9] admits a runtime-capacity
+//! shape only as `Box` content [checker-facts].
+//!
+//! A `Ring` in an element-map position denies, "because a `Ring` subscript
+//! selects the slot `(r.head + i) mod r.cap` [WIN-1], a wrapping map onto
+//! storage rather than a linear offset".
+//!
+//! One affine map is admitted per resolved root. Every write to that root
+//! must carry the same `a` and `b`, and every operand read through the same
+//! root must be a direct subscript whose own discharged bounds result retains
+//! the same `a` and `b`; a whole-root read, a different map, or an
+//! unavailable one denies. That admits a same-index read-modify-write and
+//! refuses a stencil, without any pairwise range search.
+//!
+//! A **proved range reference** is `&r[s*i+b..s*i+b+s]` [REF-4] passed as an
+//! ordinary argument, whose discharged endpoint domain retains the exact
+//! images `[s*i+b, s*i+b+s)` with `s` and `b` fixed throughout L and both
+//! proved nonnegative. For distinct indices `i < j`, discreteness gives
+//! `i+1 <= j` and nonnegative `s` gives `s*i+b+s <= s*j+b`, so the half-open
+//! ranges do not overlap under [OWN-7]. Proved range references reached by
+//! writes and whose origins overlap must name the same origin and carry
+//! identical images. Every element access overlapping a written origin must
+//! descend from a range with that partition. Read-only input origins may
+//! overlap across iterations; they require no write partition.
+//!
+//! Forming a range reference reads its endpoints, reads no element content,
+//! and authorizes no change to the origin's storage. There is no loan
+//! condition in this judgment: [CAP-1] makes `own`, `&`, path overlap
+//! [OWN-7] and the ordinary effect row the complete interference vocabulary,
+//! so what a callee does through a reference is its declared row projected
+//! onto the actual's path, which condition 2 already judges.
 //!
 //! # Why regrouping is admissible here and nowhere wider
 //!
-//! The window rule never regroups anything: the combination tree of a pair is
-//! written in the source, and permission only overlaps its two independent
+//! The adjacency rule never regroups anything: the combination tree of a pair
+//! is written in the source, and permission only overlaps its two independent
 //! halves. A loop rule is categorically stronger, because it lets the
 //! implementation choose the tree. Two facts carry it:
 //!
 //! - Each admitted operation is a *total* function on its type's complete
-//!   value set, carries no per-application obligation, and is associative
-//!   there: `+wrap` and `*wrap` are the ring operations of the integers modulo
-//!   two to the width, `iand`, `ior`, and `ixor` are the meet, join, and group
-//!   operations of the bit vector, `imin` and `imax` are the meet and join of
-//!   that type's total order, and `band`, `bor`, and `bxor` are the
-//!   two-element cases of the same three. Fixing the leaf order and the leaf
-//!   multiset therefore fixes the value of *every* binary tree over them.
-//!   **No float operation is admitted.** `fadd.strict` is the pointed example:
-//!   floating-point addition is not associative, so a schedule that regrouped
-//!   it would move a published byte. `+`, `+defined`, `+checked`, and `+sat`
-//!   are associative over the integers and are still absent, because each
-//!   application carries an obligation, a `Result` route, or a clamp that
-//!   regrouping moves.
-//! - No entailment fact established inside one counted iteration survives to a
-//!   later head or to the continuation, so a regrouped accumulator can falsify
-//!   no surviving proof.
+//!   value set, carries no per-application obligation, and is associative and
+//!   commutative there with a two-sided identity: `+wrap` and `*wrap` are the
+//!   ring operations of the integers modulo two to the width, `iand`, `ior`,
+//!   and `ixor` are the meet, join, and group operations of the bit vector,
+//!   `imin` and `imax` are the meet and join of that type's total order, and
+//!   `band`, `bor`, and `bxor` are the two-element cases of the same three.
+//!   Fixing the leaf multiset therefore fixes the value of *every* binary
+//!   tree over them. **No float operation is admitted.** `fadd.strict` is the
+//!   pointed example: floating-point addition is not associative, so a
+//!   schedule that regrouped it would move a published byte. `+`, `+defined`,
+//!   `+checked`, and `+sat` are absent because each application carries an
+//!   obligation, a `Result` route, or a clamp that regrouping moves.
+//! - No entailment fact established inside one counted iteration survives to
+//!   a later head or to the continuation, so a regrouped accumulator can
+//!   falsify no surviving proof.
 //!
-//! **Invariant.** Like the window judgment, this one consults typing, declared
-//! effect rows, resolved places [OWN-5, OWN-7], and the statement graph's exit
-//! edges. For the affine-map form it additionally consumes the successful
-//! [OP-4] disposition and exact affine value image already retained on the
-//! checked function; it never repeats the bounds proof or reconstructs a value
-//! from parser shape. Injectivity is a fixed check: [FN-1] gives every
-//! iteration a distinct compiler-owned binder, and multiplication by one
-//! retained nonzero integer coefficient preserves distinctness.
-//!
-//! # Why counting an accumulator's reads by binding is complete
-//!
-//! Condition 1 counts the read occurrences of the accumulator *binding*, and a
-//! read spelled `deref(h)` names the holder rather than the storage. Two facts
-//! close that gap without a second relation. A holder bound inside the body is
-//! refused before any count runs: a written borrow's loan strength is erased
-//! from the checked tree, so the body admits no borrow-forming statement at
-//! all and no in-body holder ever exists to read through. A holder bound
-//! outside the body leaves only two spellings: writing the accumulator by name
-//! while that borrow is live is an [OWN-5] borrow conflict and the program is
-//! rejected, and writing *through* the holder is either a proved element map
-//! under condition 2 or a non-accumulator shared write. Asking instead whether
-//! any holder in the function reaches the accumulator would be flow-insensitive
-//! and would refuse a sound reduction whose result is borrowed after the loop.
-//!
-//! # The one-sided reading
-//!
-//! Every form this judgment has not classified refuses, and the statement
-//! match is exhaustive for that reason: a missed statement would contribute an
-//! empty footprint and *widen* permission, which is the one direction it must
-//! never fail in. A form refusal is reported ahead of the numbered conditions,
-//! because a statement whose footprint is unknown has no condition-1 or
-//! condition-2 answer to give.
+//! **Invariant.** This judgment consults typing, declared effect rows,
+//! resolved places [REF-1, OWN-7], and the statement graph's exit edges. For
+//! the two element families it additionally consumes the successful [OP-4] and
+//! [REF-4] dispositions and the exact value images already retained on the
+//! checked function; it never repeats a bounds proof or reconstructs a value
+//! from parser shape. Every form it has not classified refuses, and the
+//! statement match is exhaustive for that reason: a missed statement would
+//! contribute an empty footprint and *widen* permission.
 
 use super::entailment::{
     ObligationFamily, ObligationOutcome, ProvedAffineIndexMap, ProvedRangePartition,
 };
 use super::model::{
     BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedExpression, CheckedFunction,
-    CheckedIntegerOperation, CheckedLoopId, CheckedSetTarget, CheckedSliceSource, CheckedStatement,
-    expression_children,
+    CheckedIntegerOperation, CheckedLoopId, CheckedPlaceStep, CheckedSetTarget, CheckedStatement,
+    CheckedType, WindowShape, expression_children,
 };
 use super::permission::{
-    Access, Footprint, LoanStrength, Program, call_projection, collect_consumed_places,
-    rooted_container_place, rooted_place, set_target_place, slice_source_place,
-    visit_read_bindings,
+    Footprint, Program, call_projection, collect_consumed_places, container_steps, field_steps,
+    set_target_place, visit_read_bindings,
 };
-use super::places::{PlaceMap, PlaceRoot, ResolvedPlace};
+use super::places::{PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations};
 use crate::NodePath;
 
 /// The judgment's outcome for one counted loop, and the advice that outlives
@@ -131,25 +136,19 @@ pub(crate) struct LoopPermission {
     /// and without repeats. A loop with no carried value has none.
     pub(crate) combines: Vec<&'static str>,
     /// Whether a recursive split of this loop's index range, hand-written by
-    /// the writer, would be eligible where the loop itself is refused. This is
-    /// the advice the ledger prints for a refused loop; it is never true for a
-    /// permitted one, which needs no rewrite.
+    /// the writer, would be eligible where the loop itself is refused. This
+    /// is the advice the ledger prints for a refused loop; it is never true
+    /// for a permitted one, which needs no rewrite.
     pub(crate) advises_split: bool,
-    /// What actualizing this permission needs from the judgment, present for a
-    /// permitted independent map or one-accumulator reduction.
+    /// What actualizing this permission needs from the judgment, present for
+    /// a permitted independent map or one-accumulator reduction.
     ///
     /// The judgment does not decide that anything is emitted: lowering reads
-    /// this, applies its own emission conditions, and may still decline. The
-    /// verdict above is the same either way.
+    /// this, applies its own emission conditions, and may still decline.
     pub(crate) actualization: Option<LoopActualization>,
 }
 
 /// The two disjoint actualization shapes produced by the counted judgment.
-///
-/// An independent map carries no invented accumulator or combine. A reduction
-/// names the one real source binding and the closed operation which recombines
-/// it. Everything else lowering needs — captures, frame cost, and body weight
-/// — is a property of the emitted shape rather than of the judgment.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum LoopActualization {
     IndependentMap,
@@ -160,13 +159,8 @@ pub(crate) enum LoopActualization {
 }
 
 /// The closed set of operations an accumulator may be combined under: exactly
-/// the exactly-associative ones, named once so the judgment, the ledger, and
-/// the emitted combination tree cannot hold three drifting copies of it.
-///
-/// This is its own enumeration rather than a checked operation carried around,
-/// because every consumer needs the set to be *closed*: a total spelling, a
-/// total identity element, and no arm that could be reached by an operation the
-/// rule does not admit.
+/// the ten [PAR-2] admits, named once so the judgment, the ledger, and the
+/// emitted combination tree cannot hold three drifting copies of it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum LoopCombine {
     AddWrap,
@@ -202,8 +196,7 @@ impl LoopCombine {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum LoopVerdict {
     /// Permission holds, so the loop's iterations may be overlapped and its
-    /// accumulator recombined. Source proof statements are already checked and
-    /// erase before this permission can be actualized.
+    /// accumulator recombined.
     PermittedEligible,
     Denied(LoopDenial),
 }
@@ -237,16 +230,11 @@ pub(crate) enum LoopDenial {
     /// Condition 1: the accumulator is read outside its own combine, so what
     /// a later iteration sees is the running total.
     AccumulatorRead { statement: NodePath, reads: usize },
-    /// Condition 2: a written place that is neither iteration-own storage nor
-    /// the accumulator.
+    /// Condition 2: a written or read place that is none of the four the rule
+    /// admits.
     SharedWrite { argument: NodePath },
-    /// Condition 2, the loans half: an iteration's argument borrow holds an
-    /// exclusive [OWN-5] loan on storage the iteration does not introduce, so
-    /// two overlapped iterations would hold two usable `&uniq` borrows of one
-    /// place, whatever the callee's row declares.
-    Loan { argument: NodePath },
-    /// Condition 2, fail closed: a written place this judgment cannot
-    /// resolve. An unresolved element overlaps every place, so it denies.
+    /// Condition 3, fail closed: a place this judgment cannot resolve. An
+    /// unresolved element overlaps every place, so it denies.
     UnresolvedWrite { argument: NodePath },
     /// Condition 2, fail closed: a body statement form whose footprint this
     /// judgment does not compute.
@@ -263,10 +251,8 @@ impl LoopDenial {
             Self::NotAReduction { .. }
             | Self::ManyAccumulators { .. }
             | Self::AccumulatorRead { .. } => 1,
-            Self::SharedWrite { .. }
-            | Self::Loan { .. }
-            | Self::UnresolvedWrite { .. }
-            | Self::BodyForm { .. } => 2,
+            Self::SharedWrite { .. } | Self::BodyForm { .. } => 2,
+            Self::UnresolvedWrite { .. } => 3,
             Self::Exit { .. } => 4,
         }
     }
@@ -274,11 +260,11 @@ impl LoopDenial {
 
 /// The verdict of every counted loop of one function, in source order.
 ///
-/// `eligible_pairs` are the statement paths of the pairs the window judgment
-/// already found eligible in this function. A loop containing one of them
-/// already has parallelism a writer can see, so it is never additionally told
-/// to become a recursion. The *verdict* does not read them: [PAR-2] judges the
-/// loop, not what a writer could put inside it.
+/// `eligible_pairs` are the statement paths of the adjacencies the [PAR-1]
+/// judgment already found eligible in this function. A loop containing one of
+/// them already has parallelism a writer can see, so it is never additionally
+/// told to become a recursion. The *verdict* does not read them: [PAR-2]
+/// judges the loop, not what a writer could put inside it.
 pub(crate) fn judge_loops<'check>(
     program: &Program<'check>,
     places: &PlaceMap,
@@ -357,20 +343,17 @@ fn judge<'check>(
         places,
         obligations,
         outer_loop: id,
+        cite: statement.clone(),
         introduced: vec![binder],
         inner_loops: Vec::new(),
         reads: Vec::new(),
         accumulates: Vec::new(),
         carried: None,
         shared: None,
-        loan: None,
-        call_loans: Vec::new(),
-        call_reads: Vec::new(),
         unresolved: None,
-        element_ranges: Vec::new(),
+        element_writes: Vec::new(),
         element_reads: Vec::new(),
-        view_ranges: Vec::new(),
-        view_writes: Vec::new(),
+        range_references: Vec::new(),
         form: None,
         exit: None,
     };
@@ -381,46 +364,48 @@ fn judge<'check>(
 
 /// One write whose already-checked subscript value is `a*i+b`, where `i` is
 /// the counted binder of the loop under judgment and `a != 0`. The successful
-/// OP-4 outcome establishes that the selected element is inside its
+/// [OP-4] outcome establishes that the selected element is inside its
 /// collection; the affine image establishes that two iterations select
 /// distinct elements.
-struct ProvenElementRange {
-    /// The binding written at the subscript root. Keeping source identity
-    /// beside resolved-place identity makes an alias read fail closed even
-    /// when it reaches the same collection.
-    binding: BindingId,
-    place: ResolvedPlace,
+struct ProvenElementWrite {
+    /// The resolved place above the index step: the mapped root.
+    root: ResolvedPlace,
     statement: NodePath,
     map: ProvedAffineIndexMap,
 }
 
-/// One already-proved element read whose exact offset is the counted loop's
-/// affine map. Unlike a published source fact this is only consumer evidence:
-/// permission uses it once to compare read and write ranges, then lowering
-/// forgets it.
+/// One already-proved element read whose exact offset is the same affine map.
+/// This is consumer evidence only: permission uses it once to compare read
+/// and write ranges, then lowering forgets it.
 struct ProvenElementRead {
-    binding: BindingId,
-    place: ResolvedPlace,
+    root: ResolvedPlace,
     map: ProvedAffineIndexMap,
 }
 
-/// One assigned tile on a loop-invariant storage origin. Descendant ranges
-/// inherit this assignment through the common resolved-place prefix rule.
-struct ProvenViewRange {
-    source: ResolvedPlace,
+/// One range reference `&r[s*i+b..s*i+b+s]` whose endpoint images the [REF-4]
+/// formation retained [PAR-2].
+struct ProvenRangeReference {
+    /// The resolved place above the range step: the origin.
+    origin: ResolvedPlace,
+    /// The complete resolved place including its range step, which is what a
+    /// descendant access must be contained in.
     place: ResolvedPlace,
+    argument: NodePath,
     map: ProvedRangePartition,
+    /// Formation alone grants no write authority or independent-map work.
+    /// The body's resolved write footprints select its actual partitions.
+    written: bool,
 }
 
-/// One source read occurrence and the place reached by that spelling.
+/// One source read occurrence and the places reached by that spelling.
 ///
-/// The binding remains the condition-1 accumulator identity. The resolved
-/// place is condition 2's collection identity: sibling fields of one struct
-/// are distinct, while a whole-parent or alias access overlaps the mapped
-/// collection and must be accounted for.
+/// The binding remains condition 1's accumulator identity. The resolved
+/// places are condition 2's collection identity: sibling fields of one struct
+/// are distinct, while a whole-parent or alias access overlaps a mapped root
+/// and must be accounted for.
 struct ReadOccurrence {
     binding: BindingId,
-    place: ResolvedPlace,
+    places: Vec<ResolvedPlace>,
 }
 
 /// One accepted accumulate statement: `set a = a (+) e` with `(+)` admitted.
@@ -433,40 +418,31 @@ struct Accumulate {
 struct Survey<'check, 'run> {
     program: &'run Program<'check>,
     places: &'run PlaceMap,
-    /// Successful source obligations already computed by ENT. Permission
+    /// Successful source obligations already computed by [ENT]. Permission
     /// consumes their disposition by source-node identity and never reruns
     /// the underlying proof.
     obligations: &'run [ObligationOutcome],
     /// The counted loop under judgment, so a `break` that closes it is told
     /// apart from one that closes a loop opened inside it.
     outer_loop: CheckedLoopId,
+    /// The node a denial found while walking the current statement cites.
+    /// It starts at L's own `for_stmt` and narrows to each statement that
+    /// carries a node of its own, so every citation resolves.
+    cite: NodePath,
     /// Bindings introduced anywhere inside the body, including the loop's own
     /// binder. Storage rooted in one of these is created fresh by every
     /// iteration and dies with it; everything else outlives the iteration.
     introduced: Vec<BindingId>,
     inner_loops: Vec<u32>,
-    /// Every read occurrence, with multiplicity and resolved place.
+    /// Every read occurrence, with multiplicity and resolved places.
     reads: Vec<ReadOccurrence>,
     accumulates: Vec<Accumulate>,
     carried: Option<NodePath>,
     shared: Option<NodePath>,
-    loan: Option<NodePath>,
-    /// Every loan formed by a body call or view formation. An enclosing
-    /// exclusive loan needs an adjacent-range assignment; element maps refuse
-    /// either strength when it overlaps their root.
-    call_loans: Vec<super::permission::Loan>,
-    call_reads: Vec<Access>,
     unresolved: Option<NodePath>,
-    /// Proven injective affine element writes admitted as disjoint ranges
-    /// rather than as whole-collection writes.
-    element_ranges: Vec<ProvenElementRange>,
-    /// Proven affine element reads. Every ordinary read occurrence of a
-    /// mapped write root must have one matching entry; this count makes a
-    /// same-index read-modify-write admissible while a stencil or whole-root
-    /// read still fails closed.
+    element_writes: Vec<ProvenElementWrite>,
     element_reads: Vec<ProvenElementRead>,
-    view_ranges: Vec<ProvenViewRange>,
-    view_writes: Vec<(ResolvedPlace, NodePath)>,
+    range_references: Vec<ProvenRangeReference>,
     form: Option<&'static str>,
     /// A control edge that leaves the counted loop's iteration sequence.
     exit: Option<&'static str>,
@@ -485,15 +461,17 @@ impl<'check> Survey<'check, '_> {
     ///
     /// A `give` delivers to the innermost value initializer enclosing it
     /// [GIVE-1]. When that initializer is written inside B the `give` reaches
-    /// a binding of this same iteration and leaves nothing, so it is an
-    /// ordinary delivery; when the loop is written inside the initializer
-    /// instead, the `give` leaves the loop *and* the initializer, and a
-    /// combination tree over the whole range has no representation for that
-    /// edge. The count tells the two apart, and it is reckoned from L's body
-    /// rather than from the function, which is why judging a nested loop
-    /// starts it again at zero.
+    /// a binding of this same iteration and leaves nothing; when the loop is
+    /// written inside the initializer instead, the `give` leaves the loop
+    /// *and* the initializer, and a combination tree over the whole range has
+    /// no representation for that edge. The count tells the two apart, and it
+    /// is reckoned from L's body, which is why judging a nested loop starts
+    /// it again at zero.
     fn walk(&mut self, statements: &'check [CheckedStatement], initializers: usize) {
         for statement in statements {
+            if let Some(node) = statement_node(statement) {
+                self.cite = node.clone();
+            }
             self.statement(statement, initializers);
             let inside = initializers
                 + usize::from(matches!(statement, CheckedStatement::ValueMatchLet { .. }));
@@ -508,69 +486,53 @@ impl<'check> Survey<'check, '_> {
     fn statement(&mut self, statement: &'check CheckedStatement, initializers: usize) {
         match statement {
             CheckedStatement::Let {
-                node_path, value, ..
+                node_path,
+                binding,
+                value,
+                ..
             } => {
-                // A call's argument borrows carry their loans through the
-                // parameter modes of the [EFF-2] projection below. Any other
-                // value may form a borrow only of iteration-own storage,
-                // where no loan is needed; `admits_borrow_forms` states why.
-                if !matches!(value, CheckedExpression::UserCall { .. })
-                    && !self.admits_borrow_forms(value)
-                {
-                    self.refuse_form("a statement that forms a borrow of storage the iteration does not introduce");
-                    return;
-                }
+                // A range reference bound inside B is the proved-range
+                // family's own formation [REF-4, PAR-2]; every other `let`
+                // binds iteration-own storage, which its binding being in
+                // `introduced` already states.
+                self.record_range_reference(*binding, value, node_path);
                 self.moved_places(value, node_path);
                 self.expression(value);
             }
-            // [CALL-4] a binder or target list writes more than one place in
-            // one statement. The iteration footprint below describes one
-            // written target per statement, so this form is refused rather
-            // than given a footprint that does not describe it.
-            CheckedStatement::DestructuringLet { .. } | CheckedStatement::SetList { .. } => {
+            // [CALL-4] a binder list writes more than one place in one
+            // statement. The iteration footprint below describes one written
+            // target per statement, so this form is refused rather than given
+            // a footprint that does not describe it.
+            CheckedStatement::DestructuringLet { .. } => {
                 self.refuse_form("a statement that binds an ordered result list");
-            }
-            // [PROV-6] the iteration footprint describes one written target
-            // per statement, and a release walk writes every capability-
-            // released leaf the value reaches, so this form is refused rather
-            // than given a footprint that does not describe it.
-            CheckedStatement::Dispose { .. } => {
-                self.refuse_form("a statement that runs a release walk");
             }
             CheckedStatement::Set {
                 node_path,
                 target,
                 value,
             } => {
+                // A reference rebinding writes no storage, but its current
+                // origin is flow-sensitive and may be carried from a prior
+                // iteration. This static permission survey must not resolve
+                // it through the binding's initial path and mistake that
+                // path for iteration-own storage. Refuse the loop rather
+                // than widen permission; ordinary sequential acceptance is
+                // unaffected.
+                if matches!(target, CheckedSetTarget::Place(place)
+                    if place.fields.is_empty() && self.places.is_reference(place.binding))
+                {
+                    self.shared.get_or_insert(node_path.clone());
+                    self.moved_places(value, node_path);
+                    self.expression(value);
+                    return;
+                }
                 let combine = match target {
                     CheckedSetTarget::Place(place) if place.fields.is_empty() => {
                         combine_of(place.binding, value)
                     }
                     _ => None,
                 };
-                if !self.admits_borrow_forms(value) {
-                    self.refuse_form("a statement that forms a borrow of storage the iteration does not introduce");
-                    return;
-                }
-                self.written_target(target, node_path, combine, true);
-                self.moved_places(value, node_path);
-                self.expression(value);
-            }
-            // [SET-2] reads the previous value out into the fresh binding,
-            // which is a read of whatever the target carries. On enclosing
-            // storage that read is the running value and no operation
-            // combines it, so the target is offered no combine.
-            CheckedStatement::Replace {
-                node_path,
-                target,
-                value,
-                ..
-            } => {
-                if !self.admits_borrow_forms(value) {
-                    self.refuse_form("a statement that forms a borrow of storage the iteration does not introduce");
-                    return;
-                }
-                self.written_target(target, node_path, None, false);
+                self.written_target(target, node_path, combine);
                 self.moved_places(value, node_path);
                 self.expression(value);
             }
@@ -603,11 +565,10 @@ impl<'check> Survey<'check, '_> {
                 self.expression(lower);
                 self.expression(upper);
             }
-            CheckedStatement::Loop { .. } | CheckedStatement::Region { .. } => {}
+            CheckedStatement::Loop { .. } => {}
             // An expression statement is a call [GRAM-4] whose reach no row
             // projects onto an actual, and a discarded one carries its own
-            // [STOR-3] release. Admitting these needs that release classified
-            // first, so today they deny, exactly as they do in a window.
+            // [STOR-3] release.
             CheckedStatement::Evaluate(_) => self.refuse_form("an expression statement"),
             CheckedStatement::DropExpression { .. } => {
                 self.refuse_form("a discarded expression statement");
@@ -615,60 +576,50 @@ impl<'check> Survey<'check, '_> {
         }
     }
 
-    /// The place one `set` or `replace` writes, against condition 2 and, when
-    /// the target is a whole binding of an enclosing scope, condition 1.
+    /// The place one `set` writes, against condition 2 and, when the target is
+    /// a whole binding of an enclosing scope, condition 1.
     fn written_target(
         &mut self,
         target: &'check CheckedSetTarget,
         node: &NodePath,
         combine: Option<LoopCombine>,
-        admits_element_map: bool,
     ) {
-        // The target's place is formed exactly as the window judgment forms
-        // one, so both judgments read one place relation and neither grows a
-        // private copy of it.
+        // The target's place is formed exactly as the adjacency judgment
+        // forms one, so both judgments read one place relation.
         let mut footprint = Footprint::default();
-        set_target_place(self.places, target, node, &mut footprint, false);
+        set_target_place(self.places, target, node, &mut footprint);
         if let Some(argument) = &footprint.unresolved {
             self.unresolved.get_or_insert(argument.clone());
         }
-        let affine_map = if admits_element_map {
-            self.proven_affine_map(target)
-        } else {
-            None
-        };
+        let affine_map = self.proven_affine_map(target);
         for write in &footprint.writes {
-            match write {
-                Access::Place { place, .. } if self.is_iteration_own(place) => {}
-                Access::Place { place, .. } => {
-                    if self.assigned_range(place).is_some() {
-                        self.view_writes.push((place.clone(), node.clone()));
-                    } else if let Some(map) = affine_map {
-                        if self
-                            .element_ranges
-                            .iter()
-                            .any(|range| range.place == *place && range.map != map)
-                        {
-                            // Distinct affine maps can cross between iterations
-                            // even when each one is injective by itself. This
-                            // deliberately fixed rule admits one map per root and
-                            // performs no pairwise range search.
-                            self.shared.get_or_insert(node.clone());
-                        }
-                        self.element_ranges.push(ProvenElementRange {
-                            binding: target.binding(),
-                            place: place.clone(),
-                            statement: node.clone(),
-                            map,
-                        });
-                    } else {
-                        self.enclosing_write(target, place, node, combine);
-                    }
-                }
-                Access::Arena { call, .. } => {
-                    self.shared.get_or_insert(call.clone());
-                }
+            if self.is_iteration_own(&write.place) {
+                continue;
             }
+            if self.record_range_write(&write.place) {
+                continue;
+            }
+            if let Some(map) = affine_map
+                && let Some(root) = element_root(&write.place)
+            {
+                // One affine map per resolved root: two different maps can
+                // cross between iterations even where each is injective by
+                // itself. This fixed rule performs no pairwise range search.
+                if self
+                    .element_writes
+                    .iter()
+                    .any(|written| same_element_root(&written.root, &root) && written.map != map)
+                {
+                    self.shared.get_or_insert(node.clone());
+                }
+                self.element_writes.push(ProvenElementWrite {
+                    root,
+                    statement: node.clone(),
+                    map,
+                });
+                continue;
+            }
+            self.enclosing_write(target, &write.place, node, combine);
         }
         // [GRAM-9] makes a subscript an atom, so the offset reads storage and
         // calls nothing; it is walked anyway, because a read of the running
@@ -677,48 +628,71 @@ impl<'check> Survey<'check, '_> {
             CheckedSetTarget::Place(_) => {}
             CheckedSetTarget::ArrayIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
+            CheckedSetTarget::RangeIndex(target) => {
+                for offset in target.offsets() {
+                    self.expression(offset);
+                }
+            }
             CheckedSetTarget::Storage(target) => {
                 for offset in target.offsets() {
                     self.expression(offset);
                 }
             }
-            CheckedSetTarget::SliceIndex(target) => self.expression(&target.offset),
         }
     }
 
-    /// Reads the exact single-binder affine image ENT retained beside this
-    /// subscript's successful OP-4 outcome. Permission neither evaluates the
-    /// source expression nor reruns proof: absence of this checked evidence
-    /// fails closed.
+    /// Reads the exact single-binder affine image [ENT] retained beside this
+    /// subscript's successful [OP-4] outcome, refusing a `Ring` base.
+    ///
+    /// Permission neither evaluates the source expression nor reruns proof:
+    /// absence of this checked evidence fails closed. Whether the subscript's
+    /// root is an own binding or a reference parameter whose row declares the
+    /// write was already decided when [SET-1] formed a writable target.
     fn proven_affine_map(&self, target: &CheckedSetTarget) -> Option<ProvedAffineIndexMap> {
-        let (root, obligation) = match target {
-            CheckedSetTarget::ArrayIndex(target) => (target.binding, &target.obligation),
-            CheckedSetTarget::BufferIndex(target) => (target.root.binding, &target.obligation),
+        let obligation = match target {
+            // A constant-capacity `Array` target and a runtime-capacity one
+            // [TYPE-9]. Neither base is a `Ring`: the two forms are separate
+            // checked types, and the `Ring` refusal below belongs to the
+            // general storage path, which is the only target shape whose
+            // subscript carries its own base type.
+            CheckedSetTarget::ArrayIndex(target) => &target.obligation,
+            CheckedSetTarget::BufferIndex(target) => &target.obligation,
+            // [REF-4] the outer position selects from a range. A suffix may
+            // select a nested Array or Slots element; PAR-2 consumes the
+            // innermost written element's retained affine map, as it does for
+            // an ordinary typed storage path.
+            CheckedSetTarget::RangeIndex(target) => {
+                if let Some(index) = target.path.iter().rev().find_map(|step| match step {
+                    CheckedPlaceStep::Subscript(index) => Some(index),
+                    CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+                }) {
+                    if checked_type_is_ring(index.base_type) {
+                        return None;
+                    }
+                    &index.obligation
+                } else {
+                    &target.obligation
+                }
+            }
             CheckedSetTarget::Storage(target) => {
                 let index = target.path.iter().rev().find_map(|step| match step {
-                    super::model::CheckedPlaceStep::Subscript(index) => Some(index),
-                    super::model::CheckedPlaceStep::Field(_)
-                    | super::model::CheckedPlaceStep::BoxReferent(_) => None,
+                    CheckedPlaceStep::Subscript(index) => Some(index),
+                    CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
                 })?;
-                (target.binding()?, &index.obligation)
+                if checked_type_is_ring(index.base_type) {
+                    return None;
+                }
+                &index.obligation
             }
-            // PAR-2's element family names direct storage, not a view's
-            // relative index frame. View writes use the independently proved
-            // adjacent-range assignment in `written_target` instead.
-            CheckedSetTarget::SliceIndex(_) | CheckedSetTarget::Place(_) => return None,
+            // A whole-place target is no element, and the view element store
+            // has no v0.60 subject.
+            CheckedSetTarget::Place(_) => return None,
         };
-        self.proven_affine_map_at(root, obligation)
+        self.proven_affine_map_at(obligation)
     }
 
-    /// Reads the retained OP-4 map for one subscript occurrence. Whether the
-    /// root is own storage or a live usable `&uniq` holder was already decided
-    /// when semantic checking formed a writable target; permission needs only
-    /// the proved range and exact affine image.
-    fn proven_affine_map_at(
-        &self,
-        _root: BindingId,
-        obligation: &NodePath,
-    ) -> Option<ProvedAffineIndexMap> {
+    /// Reads the retained [OP-4] map for one subscript occurrence.
+    fn proven_affine_map_at(&self, obligation: &NodePath) -> Option<ProvedAffineIndexMap> {
         self.obligations
             .iter()
             .find(|outcome| {
@@ -729,148 +703,94 @@ impl<'check> Survey<'check, '_> {
             .affine_index_maps
             .iter()
             .copied()
-            .find(|map| map.loop_id == self.outer_loop)
+            .find(|map| map.loop_id == self.outer_loop && map.coefficient != 0)
     }
 
-    /// Retains every ordinary source read and the proved-map detail of each
-    /// direct array/buffer element read. The two records are emitted by this
-    /// one recursive walk so a proved read can never exist without its
-    /// corresponding ordinary occurrence.
-    fn record_reads(&mut self, expression: &CheckedExpression) {
-        let occurrence = match expression {
-            CheckedExpression::Binding { binding, .. }
-            | CheckedExpression::BorrowBox { binding, .. }
-            | CheckedExpression::ReborrowAddressed { binding, .. }
-            | CheckedExpression::DerefAddressed { binding, .. } => {
-                Some((*binding, rooted_place(self.places, *binding, &[])))
-            }
-            CheckedExpression::Project {
-                binding, fields, ..
-            } => Some((*binding, rooted_place(self.places, *binding, fields))),
-            CheckedExpression::BorrowBuffer { root, .. }
-            | CheckedExpression::BufferMeasure { root, .. } => Some((
-                root.binding,
-                rooted_place(self.places, root.binding, &root.fields),
-            )),
-            // A run's or a bump extent's descriptor storage is the resolved
-            // place of the measured value itself [MSR-2].
-            CheckedExpression::ContainerMeasure { root, .. }
-            | CheckedExpression::BorrowAddressed { root, .. } => root
-                .binding()
-                .map(|binding| (binding, rooted_container_place(self.places, root))),
-            CheckedExpression::ReadStorage { root, .. } => {
-                let place = rooted_container_place(self.places, root);
-                let index = root.path.iter().rev().find_map(|step| match step {
-                    super::model::CheckedPlaceStep::Subscript(index) => Some(index),
-                    super::model::CheckedPlaceStep::Field(_)
-                    | super::model::CheckedPlaceStep::BoxReferent(_) => None,
-                });
-                if let Some(index) = index
-                    && let Some(binding) = root.binding()
-                    && let Some(map) = self.proven_affine_map_at(binding, &index.obligation)
-                {
-                    self.element_reads.push(ProvenElementRead {
-                        binding,
-                        place: place.clone(),
-                        map,
-                    });
-                }
-                root.binding().map(|binding| (binding, place))
-            }
-            CheckedExpression::BufferIndex {
-                root, obligation, ..
-            } => {
-                let place = rooted_place(self.places, root.binding, &root.fields);
-                if let Some(map) = self.proven_affine_map_at(root.binding, obligation) {
-                    self.element_reads.push(ProvenElementRead {
-                        binding: root.binding,
-                        place: place.clone(),
-                        map,
-                    });
-                }
-                Some((root.binding, place))
-            }
-            CheckedExpression::SliceMeasure { root, .. }
-            | CheckedExpression::SliceIndex { root, .. } => {
-                match self.places.view_origin(root.binding) {
-                    Some(place) => Some((root.binding, place)),
-                    None => {
-                        self.refuse_form("a read through a view with an unresolved origin");
-                        None
-                    }
-                }
-            }
-            CheckedExpression::ArrayMeasure {
-                root: CheckedArrayRoot::Binding { binding, fields },
-                ..
-            } => Some((*binding, rooted_place(self.places, *binding, fields))),
-            CheckedExpression::ArrayIndex {
-                root: CheckedArrayRoot::Binding { binding, fields },
-                obligation,
-                ..
-            } => {
-                let place = rooted_place(self.places, *binding, fields);
-                if let Some(map) = self.proven_affine_map_at(*binding, obligation) {
-                    self.element_reads.push(ProvenElementRead {
-                        binding: *binding,
-                        place: place.clone(),
-                        map,
-                    });
-                }
-                Some((*binding, place))
-            }
-            CheckedExpression::ArrayMeasure {
-                root: CheckedArrayRoot::Constant(_),
-                ..
-            }
-            | CheckedExpression::ArrayIndex {
-                root: CheckedArrayRoot::Constant(_),
-                ..
-            } => None,
-            CheckedExpression::SliceOf { .. } => {
-                self.record_view_formation(expression);
-                // Formation reads a descriptor and endpoints, not elements.
-                // Its element exclusion is the retained range loan below.
-                None
-            }
-            CheckedExpression::Constant(_)
-            | CheckedExpression::NamedConstant { .. }
-            | CheckedExpression::UserCall { .. }
-            | CheckedExpression::KernelCall { .. }
-            | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::IntegerOperation { .. }
-            | CheckedExpression::FloatOperation { .. }
-            | CheckedExpression::NumericConversion { .. }
-            | CheckedExpression::Reinterpret { .. }
-            | CheckedExpression::BooleanOperation { .. }
-            | CheckedExpression::EnumEquality { .. }
-            | CheckedExpression::ArrayFill { .. }
-            | CheckedExpression::BufferFill { .. }
-            | CheckedExpression::BufferVacant { .. }
-            | CheckedExpression::BufferFits { .. }
-            | CheckedExpression::BoxNew { .. }
-            | CheckedExpression::BoxDeref { .. }
-            | CheckedExpression::ArenaNew { .. }
-            | CheckedExpression::ArenaDeref { .. }
-            | CheckedExpression::ConstructStruct { .. }
-            | CheckedExpression::ConstructEnum { .. }
-            | CheckedExpression::ProjectValue { .. } => None,
+    /// One `let` that binds a range reference [REF-4], against [PAR-2]'s
+    /// proved-range family.
+    ///
+    /// The formation's endpoint images are retained beside its discharged
+    /// [REF-4] obligation, keyed by the capture the range step carries. Where
+    /// no such image exists the reference is an ordinary binding and denies
+    /// nothing by itself; what it is passed to is judged by that call's row.
+    fn record_range_reference(
+        &mut self,
+        binding: BindingId,
+        value: &CheckedExpression,
+        node: &NodePath,
+    ) {
+        let CheckedExpression::RangeOf {
+            obligation,
+            captured,
+            ..
+        } = value
+        else {
+            return;
         };
-        if let Some((binding, place)) = occurrence {
-            self.reads.push(ReadOccurrence { binding, place });
-        }
-        for child in expression_children(expression) {
-            self.record_reads(child);
-        }
+        let resolved = self.places.resolve(PlaceRoot::Binding(binding), &[]);
+        let [place] = resolved.as_slice() else {
+            self.shared.get_or_insert(node.clone());
+            return;
+        };
+        let Some(PlaceStep::Range(range)) = place.path.last() else {
+            return;
+        };
+        let origin = ResolvedPlace {
+            root: place.root,
+            path: place.path[..place.path.len() - 1].to_vec(),
+        };
+        let Some(map) = self
+            .obligations
+            .iter()
+            .filter(|outcome| {
+                outcome.discharged
+                    && outcome.family == ObligationFamily::RangeFormation
+                    && outcome.node_path == *obligation
+            })
+            .flat_map(|outcome| &outcome.range_partitions)
+            .find(|partition| {
+                partition.loop_id == self.outer_loop
+                    && partition.range == captured.start.capture
+                    && partition.range == range.start.capture
+            })
+            .cloned()
+        else {
+            return;
+        };
+        // Compare partitions only after the complete body's footprints have
+        // selected written origins. Overlapping read-only input ranges need
+        // no common map, and forming a range reads no element content.
+        self.range_references.push(ProvenRangeReference {
+            origin,
+            place: place.clone(),
+            argument: obligation.clone(),
+            map,
+            written: false,
+        });
+    }
+
+    /// The proved range reference whose extent contains this place, when one
+    /// does. A descendant of a proved range inherits its per-iteration
+    /// extent; nothing else does.
+    fn record_range_write(&mut self, place: &ResolvedPlace) -> bool {
+        let Some(reference) = self
+            .range_references
+            .iter_mut()
+            .find(|reference| reference.place.contains(place))
+        else {
+            return false;
+        };
+        reference.written = true;
+        true
     }
 
     /// One write into storage that outlives the iteration.
     ///
     /// An accumulator is a whole binding of an enclosing scope, named
-    /// directly: a target spelled through a borrow holder resolves to storage
-    /// whose reads name the holder instead, and this judgment counts reads by
-    /// binding, so such a target is refused rather than accumulated. That
-    /// refusal is deliberate and not an artifact of the combine test.
+    /// directly. A target spelled through a reference resolves to the storage
+    /// the reference names, and this judgment counts reads by binding, so
+    /// such a target is refused rather than accumulated. That refusal is
+    /// deliberate and not an artifact of the combine test.
     fn enclosing_write(
         &mut self,
         target: &CheckedSetTarget,
@@ -880,13 +800,13 @@ impl<'check> Survey<'check, '_> {
     ) {
         let named = match target {
             CheckedSetTarget::Place(target) if target.fields.is_empty() => Some(target.binding),
-            // Every element form not consumed as an affine-map range above,
-            // and every field of enclosing storage, remains one unresolved
-            // shared place and fails closed.
+            // Every element form not consumed as an affine map above, and
+            // every field of enclosing storage, remains one shared place and
+            // fails closed.
             _ => None,
         };
         let Some(binding) = named.filter(|binding| {
-            !self.places.is_holder(*binding) && *place == ResolvedPlace::binding(*binding)
+            !self.places.is_reference(*binding) && *place == ResolvedPlace::binding(*binding)
         }) else {
             self.shared.get_or_insert(node.clone());
             return;
@@ -906,14 +826,6 @@ impl<'check> Survey<'check, '_> {
     /// Whether a resolved place is storage this iteration introduced. Storage
     /// rooted in a binding the body opens is created and released inside the
     /// iteration, so no two iterations reach one of them.
-    /// Whether every borrow formed inside this expression is a borrow of
-    /// iteration-own storage, by the shared walk below.
-    fn admits_borrow_forms(&self, expression: &CheckedExpression) -> bool {
-        borrows_only_iteration_own(self.places, expression, &|place| {
-            self.is_iteration_own(place)
-        })
-    }
-
     fn is_iteration_own(&self, place: &ResolvedPlace) -> bool {
         match place.root {
             PlaceRoot::Binding(binding) => self.introduced.contains(&binding),
@@ -923,95 +835,203 @@ impl<'check> Survey<'check, '_> {
         }
     }
 
-    fn assigned_range(&self, place: &ResolvedPlace) -> Option<&ProvenViewRange> {
-        self.view_ranges
-            .iter()
-            .find(|range| range.place.contains_path(place))
-    }
-
-    fn record_view_formation(&mut self, expression: &CheckedExpression) {
-        let CheckedExpression::SliceOf {
-            carrier,
-            source,
-            strength,
-            ..
-        } = expression
-        else {
-            return;
-        };
-        let Some(place) = self.places.view_origin_of(expression) else {
-            self.unresolved.get_or_insert(carrier.clone());
-            return;
-        };
-        let source_binding = match source {
-            CheckedSliceSource::Array {
-                root: CheckedArrayRoot::Binding { binding, .. },
-                ..
+    /// Retains every ordinary source read occurrence and the proved-map
+    /// detail of each direct element read.
+    ///
+    /// One occurrence is recorded per expression node, because condition 1
+    /// counts the accumulator's read occurrences and a deduplicated or
+    /// per-statement count cannot tell one read from two. The two records are
+    /// emitted by this one recursive walk, so a proved element read can never
+    /// exist without its ordinary occurrence and the two counts
+    /// `element_map_coverage` compares stay in step.
+    ///
+    /// The match is exhaustive on purpose: an expression form that reads
+    /// caller storage and is not classified here would leave the read out of
+    /// condition 2 and *widen* permission.
+    fn record_reads(&mut self, expression: &CheckedExpression) {
+        let occurrence = match expression {
+            // Forming a reference reads no content, but naming an
+            // accumulator outside its one combine operand still violates
+            // PAR-2's occurrence restriction. Keep the occurrence without
+            // inventing an element-read footprint for address formation.
+            CheckedExpression::BorrowAddressed { root, .. } => {
+                if let Some(binding) = root.binding() {
+                    self.reads.push(ReadOccurrence {
+                        binding,
+                        places: Vec::new(),
+                    });
+                }
+                None
             }
-            | CheckedSliceSource::ArenaContent { binding, .. }
-            | CheckedSliceSource::ViewHolder { binding, .. } => Some(*binding),
-            CheckedSliceSource::Buffer(root) => Some(root.binding),
-            CheckedSliceSource::Run(root) => root.binding(),
-            CheckedSliceSource::Array {
+            CheckedExpression::BorrowRangeIndex { place, .. } => {
+                self.reads.push(ReadOccurrence {
+                    binding: place.root.binding,
+                    places: Vec::new(),
+                });
+                None
+            }
+            CheckedExpression::ContainerMeasure { root, .. } => root
+                .binding()
+                .map(|binding| (binding, self.places.resolve(root.root, &container_steps(root)))),
+            // A subscripted storage read: its own discharged [OP-4] image is
+            // what puts it in the element family, and a `Ring` base is
+            // refused that position [WIN-1].
+            CheckedExpression::ReadStorage { root, .. } => {
+                let places = self.places.resolve(root.root, &container_steps(root));
+                if let Some(index) = root.path.iter().rev().find_map(|step| match step {
+                    CheckedPlaceStep::Subscript(index) => Some(index),
+                    CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+                }) && !checked_type_is_ring(index.base_type)
+                    && let Some(map) = self.proven_affine_map_at(&index.obligation)
+                {
+                    for place in &places {
+                        if let Some(root) = element_root(place) {
+                            self.element_reads.push(ProvenElementRead { root, map });
+                        }
+                    }
+                }
+                root.binding().map(|binding| (binding, places))
+            }
+            CheckedExpression::Binding { binding, .. }
+            | CheckedExpression::DerefAddressed { binding, .. } => Some((
+                *binding,
+                self.places.resolve(PlaceRoot::Binding(*binding), &[]),
+            )),
+            // [REF-4, MSR-2] a read through a range reference reads the path
+            // the reference names; its own offset is this node's child.
+            CheckedExpression::RangeMeasure { root, .. } => Some((
+                root.binding,
+                self.places.resolve(PlaceRoot::Binding(root.binding), &[]),
+            )),
+            CheckedExpression::RangeElementMeasure { place, .. } => Some((
+                place.root.binding,
+                self.places.resolve(
+                    PlaceRoot::Binding(place.root.binding),
+                    &place.place_path(),
+                ),
+            )),
+            // A read through a range first selects its outer element and may
+            // then select a nested Array or Slots element. As for a storage
+            // read and range write, PAR-2 consumes the innermost selected
+            // element's retained map; with no nested subscript, the range's
+            // own admitted offset is that element map.
+            CheckedExpression::RangeIndex { place, .. } => {
+                let places = self.places.resolve(
+                    PlaceRoot::Binding(place.root.binding),
+                    &place.place_path(),
+                );
+                let obligation = match place.path.iter().rev().find_map(|step| match step {
+                    CheckedPlaceStep::Subscript(index) => Some(index),
+                    CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+                }) {
+                    Some(index) if checked_type_is_ring(index.base_type) => None,
+                    Some(index) => Some(&index.obligation),
+                    None => Some(&place.obligation),
+                };
+                if let Some(map) = obligation.and_then(|path| self.proven_affine_map_at(path)) {
+                    for resolved in &places {
+                        if let Some(root) = element_root(resolved) {
+                            self.element_reads.push(ProvenElementRead { root, map });
+                        }
+                    }
+                }
+                Some((place.root.binding, places))
+            }
+            CheckedExpression::Project {
+                binding, fields, ..
+            } => Some((
+                *binding,
+                self.places
+                    .resolve(PlaceRoot::Binding(*binding), &field_steps(fields)),
+            )),
+            // A direct subscript of a constant-capacity `Array` [TYPE-9]. Its
+            // base is an `Array` by construction, so no `Ring` reaches here.
+            CheckedExpression::ArrayIndex {
+                root: CheckedArrayRoot::Binding { binding, fields },
+                obligation,
+                ..
+            } => {
+                let places = self
+                    .places
+                    .resolve(PlaceRoot::Binding(*binding), &field_steps(fields));
+                if let Some(map) = self.proven_affine_map_at(obligation) {
+                    for root in places.iter().cloned() {
+                        self.element_reads.push(ProvenElementRead { root, map });
+                    }
+                }
+                Some((*binding, places))
+            }
+            // A direct subscript of a runtime-capacity `Array` [TYPE-9]. Its
+            // checked buffer root is the complete place above the selected
+            // element, so it participates in the same retained affine-map
+            // family as a constant-capacity `Array` subscript.
+            CheckedExpression::BufferIndex {
+                root, obligation, ..
+            } => {
+                let places = self
+                    .places
+                    .resolve(PlaceRoot::Binding(root.binding), &root.place_path());
+                if let Some(map) = self.proven_affine_map_at(obligation) {
+                    for root in places.iter().cloned() {
+                        self.element_reads.push(ProvenElementRead { root, map });
+                    }
+                }
+                Some((root.binding, places))
+            }
+            CheckedExpression::ArrayMeasure {
+                root: CheckedArrayRoot::Binding { binding, fields },
+                ..
+            } => Some((
+                *binding,
+                self.places
+                    .resolve(PlaceRoot::Binding(*binding), &field_steps(fields)),
+            )),
+            // A named const [CONST-2] is enclosing storage nothing writes,
+            // and these forms read no caller storage of their own.
+            CheckedExpression::ArrayMeasure {
                 root: CheckedArrayRoot::Constant(_),
                 ..
-            } => None,
-        };
-        // A partition is relative to its source. A descriptor formed inside
-        // the iteration can vary its origin; only descendants of an already
-        // assigned tile may inherit permission from such a descriptor.
-        if *strength == super::model::LoanStrength::Exclusive
-            && !self.is_iteration_own(&place)
-            && self.assigned_range(&place).is_none()
-            && source_binding.is_none_or(|binding| !self.introduced.contains(&binding))
-            && let Some(map) = self
-                .obligations
-                .iter()
-                .filter(|outcome| outcome.discharged && outcome.node_path == *carrier)
-                .flat_map(|outcome| &outcome.range_partitions)
-                .find(|map| map.loop_id == self.outer_loop)
-                .cloned()
-            && let Some(source) = slice_source_place(self.places, source)
-        {
-            if self.view_ranges.iter().any(|range| {
-                self.places.overlaps(&range.source, &source)
-                    && (range.source != source
-                        || range.map.stride != map.stride
-                        || range.map.base != map.base)
-            }) {
-                // Two individually injective partitions may cross between
-                // iterations. Same-iteration sibling separation cannot prove
-                // their cross-iteration independence.
-                self.shared.get_or_insert(carrier.clone());
             }
-            self.view_ranges.push(ProvenViewRange {
-                source,
-                place: place.clone(),
-                map,
-            });
+            | CheckedExpression::ArrayIndex {
+                root: CheckedArrayRoot::Constant(_),
+                ..
+            }
+            | CheckedExpression::Constant(_)
+            | CheckedExpression::NamedConstant { .. }
+            | CheckedExpression::UserCall { .. }
+            | CheckedExpression::IntegerOperation { .. }
+            | CheckedExpression::FloatOperation { .. }
+            | CheckedExpression::NumericConversion { .. }
+            | CheckedExpression::Reinterpret { .. }
+            | CheckedExpression::BooleanOperation { .. }
+            | CheckedExpression::EnumEquality { .. }
+            | CheckedExpression::ConstructStruct { .. }
+            | CheckedExpression::ConstructEnum { .. }
+            // Naming a path reads no element content [REF-1, REF-4]; the
+            // endpoints are this node's children.
+            | CheckedExpression::RangeOf { .. }
+            | CheckedExpression::ProjectValue { .. } => None,
+            CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::BoxDeref { .. }
+            | CheckedExpression::BoxTake { .. } => {
+                self.refuse_form("an expression form this version no longer writes");
+                None
+            }
+        };
+        if let Some((binding, places)) = occurrence {
+            if places.is_empty() {
+                self.unresolved.get_or_insert(self.cite.clone());
+            } else {
+                self.reads.push(ReadOccurrence { binding, places });
+            }
         }
-        self.record_loan(&super::permission::Loan {
-            strength: match strength {
-                super::model::LoanStrength::Shared => LoanStrength::Shared,
-                super::model::LoanStrength::Exclusive => LoanStrength::Exclusive,
-            },
-            place,
-            argument: carrier.clone(),
-        });
-    }
-
-    fn record_loan(&mut self, loan: &super::permission::Loan) {
-        self.call_loans.push(loan.clone());
-        if loan.strength == LoanStrength::Exclusive
-            && !self.is_iteration_own(&loan.place)
-            && self.assigned_range(&loan.place).is_none()
-        {
-            self.loan.get_or_insert(loan.argument.clone());
+        for child in expression_children(expression) {
+            self.record_reads(child);
         }
     }
 
     /// The caller places one expression transfers away by consuming an `own`
-    /// value. A move out of enclosing storage is a write of it.
+    /// value. A move out of enclosing storage is a write of it [PAR-1].
     fn moved_places(&mut self, value: &CheckedExpression, node: &NodePath) {
         let mut footprint = Footprint::default();
         collect_consumed_places(self.places, value, node, &mut footprint);
@@ -1020,35 +1040,23 @@ impl<'check> Survey<'check, '_> {
 
     /// One expression tree: every read it performs, and every call it makes.
     ///
-    /// The two walks are separate because [`visit_read_bindings`] descends the
-    /// whole tree itself. Calling it at every level as well would count one
-    /// read of an accumulator as several, and condition 1 reads that count.
+    /// The two walks are separate because the read walk descends the whole
+    /// tree itself. Calling it at every level as well would count one read of
+    /// an accumulator as several, and condition 1 reads that count.
     fn expression(&mut self, expression: &CheckedExpression) {
         self.record_reads(expression);
         self.calls(expression);
     }
 
-    /// Every call one expression tree makes, with its [EFF-2] projection.
+    /// Every call one expression tree makes, with its [EFF-5] projection.
     ///
     /// The walk reaches a call wherever it is written rather than only as the
     /// whole right-hand side of a `let`, so no call's row escapes the
     /// footprint by the shape of the statement that holds it.
     fn calls(&mut self, expression: &CheckedExpression) {
-        match expression {
-            CheckedExpression::UserCall { .. } => {
-                if let Some(projection) = call_projection(expression) {
-                    let footprint = self.program.footprint(self.places, &projection);
-                    self.record_writes(&footprint);
-                }
-            }
-            // A [BLK-0] row's effect row is declaration data this analysis
-            // does not project, so a loop body that calls one has no computed
-            // footprint and is refused rather than permitted on an
-            // incomplete one.
-            CheckedExpression::KernelCall { .. } => {
-                self.refuse_form("a statement that calls a kernel-domain row");
-            }
-            _ => {}
+        if let Some(projection) = call_projection(expression) {
+            let footprint = self.program.footprint(self.places, &projection);
+            self.record_writes(&footprint);
         }
         for child in expression_children(expression) {
             self.calls(child);
@@ -1057,43 +1065,36 @@ impl<'check> Survey<'check, '_> {
 
     /// Every write of one projected footprint, against condition 2.
     ///
-    /// The written half is judged directly. A call read that reaches a mapped
-    /// collection necessarily travels through a borrow actual and therefore
-    /// carries a loan checked below; an `own` consume is already a write. For
-    /// the only other enclosing write, the accumulator, condition 1 counts
-    /// source read occurrences by binding.
+    /// A call's reads are retained beside them: "the [EFF-2] projection of a
+    /// helper's declared row counts as an access on its actual range", so a
+    /// read reaching a mapped root or a proved origin is judged exactly as a
+    /// source read occurrence is.
     fn record_writes(&mut self, footprint: &Footprint) {
         if let Some(argument) = &footprint.unresolved {
             self.unresolved.get_or_insert(argument.clone());
         }
-        if let Some(argument) = &footprint.operand_unresolved {
-            self.unresolved.get_or_insert(argument.clone());
-        }
-        self.call_reads.extend(footprint.reads.iter().cloned());
-        // The loans half of condition 2 [OWN-5, OWN-12]. Two overlapped
-        // iterations may hold every loan their body forms simultaneously.
-        // An enclosing exclusive loan therefore needs a proved assignment;
-        // every loan is retained to check against all mapped write sources.
-        for loan in &footprint.loans {
-            self.record_loan(loan);
+        // The declared row's reads only: this statement's own operand
+        // expressions are walked by `record_reads`, and counting them again
+        // here would double every source read occurrence.
+        for read in &footprint.reads {
+            self.reads.push(ReadOccurrence {
+                binding: match read.place.root {
+                    PlaceRoot::Binding(binding) => binding,
+                    // A const root is never an accumulator; the place still
+                    // takes part in condition 2.
+                    PlaceRoot::Constant(_) => continue,
+                },
+                places: vec![read.place.clone()],
+            });
         }
         for write in &footprint.writes {
-            match write {
-                Access::Place { place, .. } if self.is_iteration_own(place) => {}
-                Access::Place { place, argument } if self.assigned_range(place).is_some() => {
-                    self.view_writes.push((place.clone(), argument.clone()));
-                }
-                Access::Place { argument, .. } => {
-                    self.shared.get_or_insert(argument.clone());
-                }
-                // Two iterations allocating into one enclosing region would
-                // both append to its allocation list, which is one place with
-                // no actual to project onto. A region the body opens is
-                // iteration-own and reaches the arm above.
-                Access::Arena { call, .. } => {
-                    self.shared.get_or_insert(call.clone());
-                }
+            if self.is_iteration_own(&write.place) {
+                continue;
             }
+            if self.record_range_write(&write.place) {
+                continue;
+            }
+            self.shared.get_or_insert(write.argument.clone());
         }
     }
 
@@ -1121,15 +1122,15 @@ impl<'check> Survey<'check, '_> {
         let combines = carried.iter().map(|combine| combine.spelling()).collect();
         let denial = self.denial();
         // The advice outlives exactly one refusal: a loop this version
-        // declines only because it carries several accumulators is still one a
-        // hand-written recursion returning an aggregate can split. Every other
-        // refusal is a reason the split would be refused too, or unsound.
+        // declines only because it carries several accumulators is still one
+        // a hand-written recursion returning an aggregate can split. Every
+        // other refusal is a reason the split would be refused too.
         let advises_split =
             matches!(denial, Some(LoopDenial::ManyAccumulators { .. })) && !carried.is_empty();
-        // A stateless loop is not a map merely because it is permitted. The
-        // exact range is the positive witness which selects IndependentMap;
-        // an accumulator selects Reduction, including a reduction whose body
-        // also contains independently proved element maps.
+        // A stateless loop is not a map merely because it is permitted. An
+        // admitted element family is the positive witness which selects
+        // IndependentMap; an accumulator selects Reduction, including a
+        // reduction whose body also contains independent element maps.
         let actualization = if denial.is_some() {
             None
         } else if let Some(accumulate) = self.accumulates.first() {
@@ -1137,7 +1138,9 @@ impl<'check> Survey<'check, '_> {
                 accumulator: accumulate.binding,
                 combine: accumulate.combine,
             })
-        } else if self.element_ranges.is_empty() && self.view_writes.is_empty() {
+        } else if self.element_writes.is_empty()
+            && !self.range_references.iter().any(|range| range.written)
+        {
             None
         } else {
             Some(LoopActualization::IndependentMap)
@@ -1162,95 +1165,16 @@ impl<'check> Survey<'check, '_> {
         if let Some(denial) = self.carried_state() {
             return Some(denial);
         }
-        if let Some(argument) = &self.loan {
-            return Some(LoopDenial::Loan {
-                argument: argument.clone(),
-            });
-        }
-        if let Some(loan) = self.call_loans.iter().find(|loan| {
-            self.element_ranges
-                .iter()
-                .any(|range| self.places.overlaps(&loan.place, &range.place))
-        }) {
-            // A mapped write is disjoint from another iteration's mapped
-            // write, not from a whole-root loan held by that iteration. Both
-            // shared and exclusive loans therefore deny the map explicitly.
-            return Some(LoopDenial::Loan {
-                argument: loan.argument.clone(),
-            });
-        }
         if let Some(argument) = &self.shared {
             return Some(LoopDenial::SharedWrite {
                 argument: argument.clone(),
             });
         }
-        for range in &self.view_ranges {
-            let in_assignment = |place: &ResolvedPlace| {
-                self.view_ranges.iter().any(|assigned| {
-                    assigned.source == range.source
-                        && assigned.map.stride == range.map.stride
-                        && assigned.map.base == range.map.base
-                        && assigned.place.contains_path(place)
-                })
-            };
-            if let Some(loan) = self.call_loans.iter().find(|loan| {
-                self.places.overlaps(&range.source, &loan.place) && !in_assignment(&loan.place)
-            }) {
-                return Some(LoopDenial::Loan {
-                    argument: loan.argument.clone(),
-                });
-            }
-            let uncovered_read = self.reads.iter().any(|read| {
-                self.places.overlaps(&range.source, &read.place) && !in_assignment(&read.place)
-            }) || self.call_reads.iter().any(|read| match read {
-                Access::Place { place, .. } => {
-                    self.places.overlaps(&range.source, place) && !in_assignment(place)
-                }
-                Access::Arena { .. } => true,
-            });
-            let mixed_element_map = self
-                .element_ranges
-                .iter()
-                .any(|element| self.places.overlaps(&range.source, &element.place));
-            if uncovered_read || mixed_element_map {
-                let argument = self
-                    .view_writes
-                    .iter()
-                    .find(|(place, _)| in_assignment(place))
-                    .map(|(_, node)| node.clone())
-                    .or_else(|| {
-                        self.call_loans
-                            .iter()
-                            .find(|loan| in_assignment(&loan.place))
-                            .map(|loan| loan.argument.clone())
-                    })
-                    .expect("an assigned range has a formation loan");
-                return Some(LoopDenial::SharedWrite { argument });
-            }
+        if let Some(denial) = self.range_reference_coverage() {
+            return Some(denial);
         }
-        if let Some(range) = self.element_ranges.iter().find(|range| {
-            let reads = self
-                .reads
-                .iter()
-                .filter(|read| self.places.overlaps(&read.place, &range.place))
-                .count();
-            let matching = self
-                .element_reads
-                .iter()
-                .filter(|read| {
-                    read.binding == range.binding
-                        && read.place == range.place
-                        && read.map == range.map
-                })
-                .count();
-            reads != matching
-        }) {
-            // A matching read and write affine image selects the same element
-            // in each iteration. Any whole-root read, different image, or
-            // unproved subscript leaves the counts unequal and fails closed.
-            return Some(LoopDenial::SharedWrite {
-                argument: range.statement.clone(),
-            });
+        if let Some(denial) = self.element_map_coverage() {
+            return Some(denial);
         }
         if let Some(argument) = &self.unresolved {
             return Some(LoopDenial::UnresolvedWrite {
@@ -1260,16 +1184,85 @@ impl<'check> Survey<'check, '_> {
         self.exit.map(|edge| LoopDenial::Exit { edge })
     }
 
+    /// Written origins must have one map, and every access to one of those
+    /// origins must stay in that map's current-iteration extent. Read-only
+    /// origins carry no cross-iteration write conflict.
+    fn range_reference_coverage(&self) -> Option<LoopDenial> {
+        let oracle = UnprovedSeparations;
+        for reference in self.range_references.iter().filter(|range| range.written) {
+            let incompatible_write = self.range_references.iter().any(|other| {
+                other.written
+                    && self
+                        .places
+                        .overlaps(&oracle, &reference.origin, &other.origin)
+                    && (reference.origin != other.origin
+                        || reference.map.stride != other.map.stride
+                        || reference.map.base != other.map.base)
+            });
+            let covered = |place: &ResolvedPlace| {
+                self.range_references.iter().any(|assigned| {
+                    assigned.origin == reference.origin
+                        && assigned.map.stride == reference.map.stride
+                        && assigned.map.base == reference.map.base
+                        && assigned.place.contains(place)
+                })
+            };
+            let uncovered_read = self.reads.iter().any(|read| {
+                read.places.iter().any(|place| {
+                    self.places.overlaps(&oracle, &reference.origin, place) && !covered(place)
+                })
+            });
+            let mixed_element_map = self.element_writes.iter().any(|written| {
+                self.places
+                    .overlaps(&oracle, &reference.origin, &written.root)
+            });
+            if incompatible_write || uncovered_read || mixed_element_map {
+                return Some(LoopDenial::SharedWrite {
+                    argument: reference.argument.clone(),
+                });
+            }
+        }
+        None
+    }
+
+    /// "Every operand read through that same root binding must be a direct
+    /// `Array` or `Slots` subscript whose own discharged [OP-4] result
+    /// retains exactly the same a and b." A matching read and write image
+    /// select the same element in each iteration; any whole-root read,
+    /// different image, or unproved subscript leaves the counts unequal.
+    fn element_map_coverage(&self) -> Option<LoopDenial> {
+        let oracle = UnprovedSeparations;
+        self.element_writes
+            .iter()
+            .find(|written| {
+                let reads = self
+                    .reads
+                    .iter()
+                    .flat_map(|read| &read.places)
+                    .filter(|place| self.places.overlaps(&oracle, place, &written.root))
+                    .count();
+                let matching = self
+                    .element_reads
+                    .iter()
+                    .filter(|read| {
+                        same_element_root(&read.root, &written.root) && read.map == written.map
+                    })
+                    .count();
+                reads != matching
+            })
+            .map(|written| LoopDenial::SharedWrite {
+                argument: written.statement.clone(),
+            })
+    }
+
     /// Condition 1: the body carries at most one value across iterations, and
     /// that value is a reduction.
     ///
     /// The read count is per body rather than per accumulate, so a loop that
     /// combines one accumulator under two branches is refused although its
-    /// combines are admitted. That is a conservatism, not an unsoundness —
-    /// and it is what makes a single accumulate statement, and therefore a
-    /// single fixed combine per accumulator, an invariant here. Widening the
-    /// count would require testing that every accumulate of one binding
-    /// carries the same operation, which today's shape makes vacuous.
+    /// combines are admitted. That is a conservatism, not an unsoundness, and
+    /// it is what makes a single accumulate statement, and therefore a single
+    /// fixed combine per accumulator, an invariant here.
     fn carried_state(&self) -> Option<LoopDenial> {
         if let Some(statement) = &self.carried {
             return Some(LoopDenial::NotAReduction {
@@ -1304,8 +1297,65 @@ impl<'check> Survey<'check, '_> {
     }
 }
 
-/// The combine of `set acc = <op>(acc, rest)`, when `op` is exactly
-/// associative and `rest` does not read `acc`.
+/// The node one body statement cites, where it carries one of its own.
+const fn statement_node(statement: &CheckedStatement) -> Option<&NodePath> {
+    match statement {
+        CheckedStatement::Let { node_path, .. }
+        | CheckedStatement::DestructuringLet { node_path, .. }
+        | CheckedStatement::PropagateLet { node_path, .. }
+        | CheckedStatement::Set { node_path, .. }
+        | CheckedStatement::Return { node_path, .. }
+        | CheckedStatement::ValueMatchLet { node_path, .. }
+        | CheckedStatement::Give { node_path, .. }
+        | CheckedStatement::CountedRange { node_path, .. } => Some(node_path),
+        CheckedStatement::Proof(proof) => Some(&proof.node_path),
+        CheckedStatement::Evaluate(_)
+        | CheckedStatement::DropExpression { .. }
+        | CheckedStatement::Match { .. }
+        | CheckedStatement::Loop { .. }
+        | CheckedStatement::Break { .. } => None,
+    }
+}
+
+/// The resolved place above a trailing index step: the root an affine element
+/// map is stated over.
+fn element_root(place: &ResolvedPlace) -> Option<ResolvedPlace> {
+    matches!(place.path.last(), Some(PlaceStep::Index(_))).then(|| ResolvedPlace {
+        root: place.root,
+        path: place.path[..place.path.len() - 1].to_vec(),
+    })
+}
+
+/// Whether two mapped roots positively name the same storage.
+///
+/// Raw captured-value equality includes the source occurrence even for
+/// literals and named constants. [OWN-7]'s positive identity deliberately
+/// ignores that occurrence for value-determined indices while retaining it
+/// for binding and opaque captures, which is the distinction `contains`
+/// already implements. Equal depth keeps this from treating a prefix as the
+/// same mapped collection.
+fn same_element_root(left: &ResolvedPlace, right: &ResolvedPlace) -> bool {
+    left.path.len() == right.path.len() && left.contains(right)
+}
+
+/// Whether a checked type is a `Ring` [TYPE-9].
+///
+/// A `Ring` subscript selects the slot `(r.head + i) mod r.cap` [WIN-1], a
+/// wrapping map onto storage rather than a linear offset, so [PAR-2] denies
+/// it an element-map position. The checked window shape retains that
+/// distinction for both constant and runtime capacities.
+const fn checked_type_is_ring(ty: CheckedType) -> bool {
+    matches!(
+        ty,
+        CheckedType::Window {
+            shape: WindowShape::Ring,
+            ..
+        }
+    )
+}
+
+/// The combine of `set acc = <op>(acc, rest)`, when `op` is one of the ten
+/// [PAR-2] admits and `rest` reaches `acc` nowhere.
 fn combine_of(accumulator: BindingId, value: &CheckedExpression) -> Option<LoopCombine> {
     let (combine, arguments) = match value {
         CheckedExpression::IntegerOperation {
@@ -1347,13 +1397,15 @@ fn reads_only(operand: &CheckedExpression, binding: BindingId) -> bool {
     matches!(operand, CheckedExpression::Binding { binding: read, .. } if *read == binding)
 }
 
-/// The exactly-associative integer operations.
+/// The seven integer operations [PAR-2] admits.
 ///
 /// The list is closed and every entry is here for the same stated reason:
-/// regrouping its applications produces the same bits. `+exact`, `+defined`,
-/// and `+checked` are associative in Z and are still absent, because each
-/// application carries its own obligation and regrouping moves which
-/// intermediate has to satisfy it. `+sat` fails associativity outright.
+/// each is total, associative, and commutative on the complete value set of
+/// its type and carries a two-sided identity, so regrouping its applications
+/// produces the same bits. `+`, `+defined`, and `+checked` are associative in
+/// Z and are still absent, because each application attaches a domain
+/// obligation or a `Result` route that regrouping moves. `+sat` fails
+/// associativity outright.
 const fn integer_combine(operation: CheckedIntegerOperation) -> Option<LoopCombine> {
     Some(match operation {
         CheckedIntegerOperation::AddWrap => LoopCombine::AddWrap,
@@ -1367,7 +1419,8 @@ const fn integer_combine(operation: CheckedIntegerOperation) -> Option<LoopCombi
     })
 }
 
-/// The exactly-associative boolean operations. `not` is unary and no combine.
+/// The three boolean operations [PAR-2] admits. `not` is unary and no
+/// combine.
 const fn boolean_combine(operation: CheckedBooleanOperation) -> Option<LoopCombine> {
     Some(match operation {
         CheckedBooleanOperation::And => LoopCombine::And,
@@ -1377,18 +1430,13 @@ const fn boolean_combine(operation: CheckedBooleanOperation) -> Option<LoopCombi
     })
 }
 
-/// Every binding one block and its nested blocks introduce, appended in source
-/// order.
-///
-/// Storage rooted in one of these is created fresh by every iteration of the
-/// loop that owns the block and dies with it; everything else outlives the
-/// iteration.
-pub(super) fn collect_introduced(statements: &[CheckedStatement], out: &mut Vec<BindingId>) {
+/// Every binding one block and its nested blocks introduce, appended in
+/// source order.
+fn collect_introduced(statements: &[CheckedStatement], out: &mut Vec<BindingId>) {
     for statement in statements {
         match statement {
             CheckedStatement::Let { binding, .. }
             | CheckedStatement::PropagateLet { binding, .. }
-            | CheckedStatement::Replace { binding, .. }
             | CheckedStatement::ValueMatchLet { binding, .. } => out.push(*binding),
             CheckedStatement::CountedRange { binder, .. } => out.push(*binder),
             _ => {}
@@ -1422,49 +1470,15 @@ fn collect_inner_loops(statements: &[CheckedStatement], out: &mut Vec<u32>) {
     }
 }
 
-/// Whether every borrow formed inside one expression is a borrow of storage the
-/// caller's predicate accepts as iteration-own.
-///
-/// A written borrow's shared-or-uniq mode is erased from the checked tree, so
-/// the [OWN-5] loan such a borrow would hold cannot be stated. A borrow of
-/// iteration-own storage needs none: each iteration borrows its own instance,
-/// and nothing that instance reaches outlives the iteration. Every other
-/// borrow — outer storage, or a place this walk cannot resolve — is
-/// inadmissible, and the caller refuses the body, which is the fail-closed
-/// direction. Both loop judgments ask exactly this, so both read this one
-/// implementation.
-pub(super) fn borrows_only_iteration_own(
-    places: &PlaceMap,
-    expression: &CheckedExpression,
-    is_iteration_own: &impl Fn(&ResolvedPlace) -> bool,
-) -> bool {
-    let is_borrow_form = matches!(
-        expression,
-        CheckedExpression::BorrowBuffer { .. }
-            | CheckedExpression::BorrowAddressed { .. }
-            | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::ReborrowAddressed { .. }
-    );
-    if is_borrow_form {
-        match places.argument_referent(expression) {
-            Some((place, _)) if is_iteration_own(&place) => {}
-            _ => return false,
-        }
-    }
-    expression_children(expression)
-        .into_iter()
-        .all(|child| borrows_only_iteration_own(places, child, is_iteration_own))
-}
-
 /// Every block a statement owns.
-pub(super) fn nested_bodies(statement: &CheckedStatement) -> Vec<&[CheckedStatement]> {
+fn nested_bodies(statement: &CheckedStatement) -> Vec<&[CheckedStatement]> {
     match statement {
         CheckedStatement::Match { arms, .. } | CheckedStatement::ValueMatchLet { arms, .. } => {
             arms.iter().map(|arm| arm.body.as_slice()).collect()
         }
-        CheckedStatement::Loop { body, .. }
-        | CheckedStatement::Region { body, .. }
-        | CheckedStatement::CountedRange { body, .. } => vec![body.as_slice()],
+        CheckedStatement::Loop { body, .. } | CheckedStatement::CountedRange { body, .. } => {
+            vec![body.as_slice()]
+        }
         _ => Vec::new(),
     }
 }

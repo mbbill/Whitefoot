@@ -1,10 +1,11 @@
-struct Rec {
+nocopy struct Rec {
   f: u64;
   g: u64;
 }
 
 fn main() -> return_value: own ExitStatus pure {
-  let b = fixed_vector::<u64, 8>();
+  doc "A dead binding's field used as an index atom is a use-after-move: index atoms are embedded reads and pass the same liveness discipline as any read.";
+  let b = array_filled::<u64, 8>(value: 0_u64);
   let r = Rec(f: 1_u64, g: 2_u64);
   let s = move r;
   let x = b[r.f];

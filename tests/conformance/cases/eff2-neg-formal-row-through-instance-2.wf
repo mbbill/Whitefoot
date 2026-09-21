@@ -3,30 +3,32 @@ struct Pair {
   right: u64;
 }
 
-formal Inspect<T: affine> {
+interface Inspect<T: drop> {
   fn read(value: &T) -> result: own u64 reads(value);
 }
 
 fn left(input: &Pair) -> result: own u64 reads(input.left) {
+  doc "Reads one field through its reference parameter and states exactly that path.";
   return deref(input).left;
 }
 
-actual Left : Inspect<Pair> {
+binding Left : Inspect<Pair> {
   read = left;
 }
 
-fn outer<Inspect<T>>(value: &T) -> result: own u64 reads(value) {
+fn outer<interface Inspect<T>>(value: &T) -> result: own u64 reads(value) {
+  doc "Calls the formal member, so the formal row is the authoritative boundary.";
   return Inspect::read(value: value);
 }
 
 fn wrapper(value: &Pair) -> result: own u64 reads(value.left) {
+  doc "Declares the narrower field path while the instantiated formal row exhibits the whole parameter, which EFF-2 rejects in both directions.";
   return outer::<Left>(value: value);
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "Builds the pair and calls the wrapper whose declared row is narrower than its exhibited one.";
   let pair = Pair(left: 3_u64, right: 5_u64);
-  region {
-    let observed = wrapper(value: &pair);
-  }
+  let observed = wrapper(value: &pair);
   return exit_status(code: 0_u8);
 }

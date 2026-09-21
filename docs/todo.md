@@ -3,16 +3,6 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
-- **A field projected after dereferencing a runtime-indexed composite element
-  stops as unsupported.** The specification admits ordinary chained element,
-  dereference, and field selection, but
-  `deref(owners.storage[index]).id` stops in semantic checking as
-  `Unsupported(CompositeValues)` with no rule or source diagnostic. The
-  growable-vector executable currently borrows `owners.storage[index]` into a
-  helper and performs `deref(deref(item)).id` there. Complete the general
-  checked-place and lowering path for a subscript followed by dereference and
-  field projection, add owning and copy-element tests, then remove that helper.
-
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
@@ -53,17 +43,86 @@ of them is a decision. Remove an item when its fix and test land.
   regression verdict, and a later pass does not explain an earlier failure.
   Attribute host/sample variability separately from emitted code, linked layout
   and runtime changes before changing a policy or declaring the suspect noise.
-  Close this item when the source of both observations and the resulting
-  measurement/detection tradeoff are established.
+  The [PR 70 comparison at `7044db24`](https://github.com/mbbill/Whitefoot/actions/runs/35539977014)
+  still fails for `records`: baseline/candidate wall-time ratios are 0.938915
+  at two workers and 0.882544 at four, adverse in all five pairs at both
+  widths; the other four kernels pass. Identical-image and intentional-slowdown
+  qualification steps pass. The subsequent
+  [bounded capture repair](../research/investigations/access-effects/parallel-array-captures.md)
+  passed the unchanged formal comparison at every width: `records` ratios were
+  1.087361, 1.004834 and 1.060012 at W1, W2 and W4, and all five kernels passed.
+  Its identical-image control nevertheless retained a `records` W4 suspect at
+  0.962815708 with four adverse pairs. The concrete PR 70 regression is repaired,
+  while its cause and the earlier and remaining control variation are not
+  attributed. Keep this item until those observations and the resulting
+  measurement/detection tradeoff are explained.
 
-- **A runtime-sized `buffer_new` fails with no rule and no location.** At an
-  unproved runtime capacity the driver stops four stages after semantic
-  checking with `TargetLayout(Unrepresentable(RuntimeSizedAllocation))` and no
-  rule id or source coordinate; the real defect is an undischarged size
-  obligation. The store surface already answers it (`heap_vector` hands back
-  an `Option` and [OP-9] refuses at the source with a rule and a line). The
-  item is removed with `buffer_new` and `buffer_vacant`, not repaired
-  separately.
+- **Recursive cleanup has no general bounded-stack lowering.** The current
+  emitter recursively calls release actions, so machine-stack use can grow
+  with owned value depth; its stack ledger reports the release cycle. The
+  [continuation models](../research/investigations/access-effects/cleanup-continuations/README.md)
+  demonstrate fixed-stack, nonallocating walks only for their selected layouts.
+  They establish neither an encoding for all WF types without extra object
+  fields nor its impossibility. Retain the existing lowering while researching
+  how every suspended aggregate, enum, array and window traversal records its
+  continuation. Preserve reverse binding order, declaration order within
+  aggregates, logical window order, and content-before-Box-free order. Close
+  this item when a general implementation and native regressions establish
+  those properties, or a different resource tradeoff is selected explicitly.
+- **Retired implicit empty-window release leaves unused proof scaffolding.**
+  No source operation constructs the checked `EmptyRun` release mode, but its
+  release-graph branch, obligation family and derivation plumbing remain.
+  This is maintenance debt, not a promise to restore implicit dropping of
+  linear windows. Remove the unused paths when next changing cleanup or its
+  proof inventory, retaining `free_empty` and its active OP-14 requirement
+  diagnostic; the similarly named diagnostic is not the retired mechanism.
+  The current semantic fixes take precedence over this deletion. Close the
+  item with the normal release and explicit-empty-release regressions intact.
+- **Box/window representation costs remain unqualified.** The current runtime-
+  capacity Box is one pointer to one header-first allocation; `grow` uses
+  allocation, memmove and free. A one-word owner, one allocation and header
+  placement are distinct choices: a fat descriptor can also own one element
+  allocation and make measure reads direct, while widening transport and
+  capture storage. Neither alternative is established as generally faster.
+  Keep the current implementation while separating owner width, measure loads,
+  allocation count, copying and linked layout in representative single-thread
+  and parallel comparisons. The successful bounded capture repair above is
+  evidence about the synthesized task ABI; it neither attributes the earlier
+  `records` failure nor proves that any one general layout choice caused it.
+  Keep the deferred general representation study separate, and close this item
+  only when the relevant costs and chosen tradeoffs have discriminating evidence.
+- **Loop reference abstraction needs practical precision and cost evidence.**
+  Current loop headers keep possible roots and static path shapes, give
+  potentially rebound endpoints finite opaque capture identities, and solve
+  owner-tagged validity dependencies over entry and executable backedges.
+  This prevents a current iteration's facts from authorizing a previous
+  iteration's reference. Its precision and checking cost on larger real loops,
+  nested loops and joined targets remain unqualified. Investigate useful facts
+  lost at headers and the evidence needed to recover them without merging
+  distinct evaluations, dropping possible targets or imposing an acceptance
+  budget. Close this item with representative positive and hostile cases,
+  cost measurements, and any required precision repair or explicit limitation.
+- **Runtime-capacity Array element suffixes retain a flat-buffer limitation.**
+  A valid field selection such as `values.inner[i].field` on a
+  `Box<Array<CopyStruct>>` can still reach `CompositeValues` instead of the
+  general storage-place path. The checker resolves the suffix before reporting
+  this capability gap; it is not a source-language rejection. Whole-element
+  reads into a copy local and whole-element replacements avoid this path,
+  while range-reference element suffixes already use the general path. Unify
+  the remaining flat-buffer projections with it and cover field reads, writes,
+  and borrows before removing this item.
+- **Pair-scoped parallel proofs need scaling and coverage work.** The current
+  PAR-1 planner constructs questions for every ordered source pair in a segment
+  and retains range separation only for that pair's first-statement state;
+  repeated visits meet with logical AND. A segment of n members has n(n-1)/2
+  pairs, but that logical requirement does not mandate quadratic repeated
+  proof work. General index mapping through the first member's `ensures` is
+  still unavailable; missing evidence keeps sequential lowering. Investigate
+  indexing and reuse without losing statement identity, captured endpoints,
+  flow context or all-pairs composition. Close this item when larger segments
+  have measured costs and the intended proof coverage, retaining guarded,
+  nonadjacent and stale-capture negative controls.
+
 - **Large entering proof contexts still have substantial checking cost.**
   In the [pinned row-summary comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#row-summary-selection-2026-09-15),
   256 independent inequality pairs with 256 uses still take a median 5.50 s;
@@ -75,16 +134,6 @@ of them is a decision. Remove an item when its fix and test land.
   unmeasured; these results establish neither linear total cost nor a
   universal cost for the full use ceiling.
   Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
-- **S12 holder kills are too broad at sibling-field writes.**
-  [The conformance case](../tests/conformance/cases/ent5-pos-postcondition-sibling-field-write.wf)
-  expects acceptance under ENT-5: `observed == deref(pair).left` has the same
-  support after a verified postcondition as after an ordinary read, and
-  writing `deref(pair).right` kills neither conclusion. Both `3f205ff6` and
-  the incremental-closure follow-up reject the postcondition route at FN-8
-  while accepting the ordinary twin. `s12_candidate_term_killed` checks each
-  holder's whole root against the write rather than its precise support.
-  The manifest retains the normative accept verdict as an `xfail`; repair
-  the holder-support classification and remove that status together.
 - **Ordinary-fallback views still copy a fact state per materialization.**
   After [incremental closure](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#selection),
   the [retained-proof follow-up](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#retained-proof-follow-up-results)
@@ -187,3 +236,142 @@ each is resolved by a discussion and a tree change.
   zero, one, and two premises and no more without a written certificate. Why
   the line sits at two, against one or three, is not remembered and needs a
   study before it is recorded.
+
+## Ownership redesign (candidate x1) follow-ups
+
+Items the owner asked to be kept on this list during the redesign recorded in
+`research/investigations/access-effects/CANDIDATE-X1.md` and adopted into
+`design/language` on 2026-09-19. None of them is a decision; each names the
+condition under which it is taken up.
+
+- **Iterative descent of owned links by reference (wildcard path).** A path
+  has a static shape, so `loop { set p = &deref(p).next.Some.value.inner; }`
+  over a Box-linked list is refused and the walk is a tail recursion or a
+  pool with an index. Owner's direction (2026-09-20): add the wildcard path
+  after PR 70 merges, because it is purely additive and costs the compiler
+  almost nothing. Design on record, needing no new syntax because a
+  reference's path is never written: when a loop-carried rebinding extends
+  the reference's loop-entry path through itself, the checker widens the
+  path to `R.**` ("somewhere under R") and rechecks the loop body once to
+  its fixed point. Rules: (1) `R.**` overlaps every path at or under R, one
+  prefix test; (2) while `p` is valid, a write, move or free of a place
+  under R that does not go through `p` invalidates `p`, except a write of a
+  primitive leaf field, which is a prefix of nothing; reads are free; (3) a
+  write through `p` of a non-leaf place invalidates every other reference
+  under R and leaves `p` valid. Runtime cost none (a reference stays a bare
+  pointer). Checked against: tree descent through either child, a cursor
+  reset to the root, node removal through a single cursor on the link slot.
+  Known price: two live cursors under one root invalidate each other on a
+  link write, and a live cursor is the whole subtree's footprint for the
+  parallel judgments.
+  INCOMPLETE as recorded (independent study, 2026-09-20, branch
+  `research/x1-wildcard-path`, `research/investigations/wildcard-path/`):
+  the basic loop is still refused, because the rebinding goes through the
+  payload step `.Some.value` and [ENT-3.S15] ends the refinement fact at the
+  arm's exit, which [REF-2] makes an invalidation, so the rebound reference
+  is invalid in the next iteration. The design needs a rule that a payload
+  place already selected keeps existing until the enum is written; a
+  widened path is a may-alias cover and never one term of the fact system;
+  ancestor moves and window removals must still invalidate; "recheck once"
+  must become a fixed point over a finite domain. Start from that study.
+- **`musttail` at the call.** Owner's ruling (2026-09-20): a call-site marker
+  named `musttail`, rejected with the failing condition named when the call
+  is not a guaranteed tail call. Conditions for a self call: it is the
+  operand of `return`; every reference argument's path is rooted at a
+  reference parameter and never at a local of the current activation; no
+  local with a non-empty release is live across the call (a local nothing
+  refers to may be released before the call, release order being
+  unobservable). Lower a self tail call in the compiler's own lowering as
+  parameter reassignment plus a branch to the entry, so it holds on every
+  target; mutual recursion needs LLVM `musttail` with a matching
+  convention and is a later step. Without the marker the stack bound rests
+  on an implementation obligation the writer cannot check, and a pending
+  release silently breaks tail position. Implement after PR 70 merges.
+- **Totality and recursion-depth proofs.** Domains that need determinism about
+  resource use will need proved totality (termination) and proved recursion
+  depth as obligation families; the atomic in-place update deliberately
+  requires only a function that returns the place's type with no failure exit.
+  The current recursive-cleanup stack cost is a separate compiler limitation
+  recorded above, and the call-site `musttail` mechanism remains a separate
+  follow-up. Neither is an implemented source-level recursion-depth proof.
+- **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
+  Three additive widenings, taken up together, each measured:
+  (1) Affine `ensures`. A `requires` may already be an affine relation and
+  enters the body as affine premises, but an `ensures` must fit the
+  difference-bound template, one datum a side, so `append` and `split_off`
+  cannot publish their exact sum. The affine layer [ENT-6] already holds
+  arbitrary affine inequalities over immutable value atoms and proves with
+  the fixed AUTO families, so publishing an `ensures` as affine premises in
+  the caller changes neither determinism nor termination. Costs to
+  measure first: AUTO tries every pair of premises, so checking time grows
+  with the square of the premises a body accumulates; and a proof chaining
+  more than two published facts needs written `use` steps. When it lands,
+  restore the exact-sum contracts of `append` and `split_off`.
+  (2) A `requires` stating a variant refinement (`p is Some`).
+  (3) An `ensures` naming a single indexed path
+  (`deref(p.slots)[h.idx].gen == h.gen`), which decides whether a guarded
+  pool access pays one load, compare and branch per call.
+- **Open-addressing tables with non-Copy payloads.** One null check per hit
+  versus hashbrown, because occupancy that is decided by data is stored as
+  data. Measure on a real table before deciding whether any mechanism is
+  worth it.
+- **Channel primitive.** An ownership-transfer queue in the trusted base for
+  producer/consumer pipelines and work stealing; lock-free rings are not
+  expressible without it and batched fork-join is the available form. Research
+  when the future concurrency primitives are designed.
+- **Header-plus-tail heap block.** One allocation holding a fixed header and a
+  runtime-length tail (LLVM `User` with its operand list, `sk_buff`). Today a
+  struct with a `Box<Slots<T>>` field costs a second allocation and one extra
+  dependent memory access per hop. Additive, after PR 70 merges. Two shapes
+  under discussion: (a) a struct whose last field is a runtime-capacity shape
+  becomes itself Box-only content, laid out `[header fields | len | cap |
+  elements]`, which needs a construction route that knows the capacity, a
+  `grow` that moves the whole block, and the no-move-out rule extended to
+  it; (b) one more prelude storage shape carrying a header value beside its
+  window, built by a construction function taking the header and the
+  capacity, which needs no new struct rule.
+  Undecided (owner, 2026-09-20: revisit later). Notes for that discussion:
+  the tail is always the last field and always one of the runtime-capacity
+  shapes; a `Slots` or `Ring` tail starts empty, an `Array` tail does not
+  (it needs a fill value and a count); a construction sketch is
+  `box_new_tail::<Message>(value: Message(kind: 1_u8, flags: 0_u8, body: _),
+  capacity: n)`, where the capacity is an argument of the boxing function,
+  the expression with the hole is admitted only as that argument because
+  such a struct is never a local value, and `_` would be a new token
+  (`..` exists already as the destructuring rest marker).
+- **Bitmask fact.** `x & (c - 1) < c` for a power-of-two `c`, which would
+  remove the per-probe bounds compare in hash tables.
+- **Handing checker facts to the backend.** Emitted since the v0.60 port:
+  `noalias` (not on `swap`), `nonnull`, `dereferenceable`,
+  `captures(none)` or `nocapture` by a build-time probe, `inbounds`, and
+  `nuw`/`nsw` on the exact family. Not emitted: `memory(argmem: ...)` (the
+  IR carries neither the declared row nor the allocation fact), scoped
+  alias metadata and `llvm.loop.parallel_accesses` (the emitter has no
+  metadata table). Build the metadata subsystem as its own step with a
+  before/after benchmark.
+- **Subscripted integer places as terms.** Today a place with subscripts is
+  a term only when its last step is a readonly field. The kill machinery
+  (offset support, overlapping element writes) already serves measure terms
+  and whole-expression goals, so generalizing to every integer place is
+  cheap in mechanism; measure its effect on closure size and checking time
+  first.
+- **Vocabulary no declaration can state.** The `len` of a range reference
+  (`&[T]` is a kind, not a type) and the four effect-row part names `next`,
+  `last`, `filled`, `free` remain specification vocabulary after the
+  measures became declared readonly fields. Find a better home for them.
+- **The storage shape declarations are inelegant.** `Array`, `Slots` and
+  `Ring` are prelude opaque structs with readonly fields, but the
+  omitted-capacity form, element storage and placement still live in the
+  type rules, and a constant-capacity `cap` is a field whose value is a
+  type constant.
+- **Retire the class names copy, affine and linear from the specification's
+  prose.** The keywords are the two capabilities `copy` and `drop` and the
+  modifiers `nocopy` and `nodrop`; the three class names survive only as
+  prose terms defined once in OWN-1 (copy: copyable; affine: droppable but
+  not copyable; linear: neither). Rewrite the several hundred prose uses in
+  capability words when a specification pass can afford the review.
+- **Performance floor after the port.** Re-measure the existing kernels and
+  the eight engineering tasks of the matrix rounds once the compiler
+  implements v0.60, so that the recorded costs (data-determined index
+  compare, refused scatter, re-descent on find-then-mutate, one element move
+  into the append slot) have numbers.

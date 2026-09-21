@@ -87,19 +87,15 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
+fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(cwd), writes(files) {
   doc "DirectoryRead and DirectorySource are ordinary linear opaque values. The program explicitly closes both acquired values through their ordinary factory parameter instead of relying on retired implicit native release.";
-  region {
-    match open_directory_source(factory: &uniq deref(files), directory: cwd) {
-      Ok(value: list) => {
-        close_directory_source(factory: &uniq deref(files), source: move list);
-      }
-      Err(error: problem) => {
-        region {
-          if factory_refusal(error: &problem) {
-            return exit_status(code: 1_u8);
-          }
-        }
+  match open_directory_source(factory: files, directory: cwd) {
+    Ok(value: list) => {
+      close_directory_source(factory: files, source: move list);
+    }
+    Err(error: problem) => {
+      if factory_refusal(error: &problem) {
+        return exit_status(code: 1_u8);
       }
     }
   }
@@ -109,9 +105,7 @@ fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own Exit
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
-  region {
-    let outcome = exercise(cwd: &cwd, files: &uniq files);
-    close_directory(factory: &uniq files, directory: move cwd);
-    return move outcome;
-  }
+  let outcome = exercise(cwd: &cwd, files: &files);
+  close_directory(factory: &files, directory: move cwd);
+  return move outcome;
 }

@@ -1,22 +1,13 @@
-fn release_empty<T: linear>['s](run: own Vector<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(store) contract {
-  requires len_of(run) <= 0_u64;
+fn release_at_exit<T: drop, const n: u64>(run: own Slots<T, n>) -> result: own unit pure contract {
+  requires run.len == 0_u64;
 } {
-  doc "PROV-6: the same proved-empty element-edge omission applies to a compiler-derived release. The run remains live until return, then its backing release spends store while no element instance exists to visit.";
+  doc "PROV-6: a window whose element type is affine is affine, so the compiler-derived release carries it off the return edge. The walk visits the window's elements before the backing, so the release needs no emptiness premise of its own; the written requirement records only that this instance is in fact empty.";
   return unit;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  region {
-    match heap_vector::<u64>(store: &uniq heap, count: 1_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: empty) => {
-        region {
-          let done = release_empty::<u64>(run: move empty, store: &uniq heap);
-        }
-      }
-    }
-  }
+fn main() -> status: own ExitStatus pure {
+  doc "A constant-capacity window starts empty, so the requirement holds at the call and the release is derived on the callee's return edge.";
+  let empty = slots_new::<u64, 4>();
+  release_at_exit::<u64, 4>(run: move empty);
   return exit_status(code: 0_u8);
 }

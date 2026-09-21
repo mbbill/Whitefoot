@@ -1,31 +1,31 @@
 enum Node {
   Leaf(w: u64);
-  Branch(left: box<Node>, right: box<Node>, w: u64);
+  Branch(left: Box<Node>, right: Box<Node>, w: u64);
 }
 
-fn leaf(w: own u64) -> result: own box<Node> pure {
+fn leaf(w: own u64) -> result: own Box<Node> pure {
   let node = Leaf(w: w);
-  return box_new(move node);
+  return box_new::<Node>(value: move node);
 }
 
-fn branch(left: own box<Node>, right: own box<Node>) -> result: own box<Node> pure {
+fn branch(left: own Box<Node>, right: own Box<Node>) -> result: own Box<Node> pure {
   let node = Branch(left: move left, right: move right, w: 0_u64);
-  return box_new(move node);
+  return box_new::<Node>(value: move node);
 }
 
-fn pair(a: own u64, b: own u64) -> result: own box<Node> pure {
+fn pair(a: own u64, b: own u64) -> result: own Box<Node> pure {
   let l = leaf(w: a);
   let r = leaf(w: b);
   return branch(left: move l, right: move r);
 }
 
-fn quad(a: own u64, b: own u64, c: own u64, d: own u64) -> result: own box<Node> pure {
+fn quad(a: own u64, b: own u64, c: own u64, d: own u64) -> result: own Box<Node> pure {
   let l = pair(a: a, b: b);
   let r = pair(a: c, b: d);
   return branch(left: move l, right: move r);
 }
 
-fn oct(a: own u64, b: own u64, c: own u64, d: own u64, e: own u64, f: own u64, g: own u64, h: own u64) -> result: own box<Node> pure {
+fn oct(a: own u64, b: own u64, c: own u64, d: own u64, e: own u64, f: own u64, g: own u64, h: own u64) -> result: own Box<Node> pure {
   let l = quad(a: a, b: b, c: c, d: d);
   let r = quad(a: e, b: f, c: g, d: h);
   return branch(left: move l, right: move r);
@@ -38,14 +38,15 @@ fn mix(a: own u64, b: own u64) -> result: own u64 pure {
   return ixor(blended, scattered);
 }
 
-fn fold(node: &uniq box<Node>) -> result: own u64 reads(node), writes(node) {
-  match deref(deref(node)) {
+fn fold(node: &Box<Node>) -> result: own u64 writes(node) {
+  doc "Folds the tree through the cell reference, recording each branch's mix in its own slot.";
+  match deref(node).inner {
     Leaf(w: leaf_w) => {
       return deref(leaf_w);
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = fold(node: move l);
-      let b = fold(node: move r);
+      let a = fold(node: l);
+      let b = fold(node: r);
       let mixed = mix(a: a, b: b);
       set deref(slot) = mixed;
       return mixed;
@@ -65,7 +66,8 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &[u8], at: own u64, value: own u64) -> result: own u64 writes(destination) {
+  doc "Writes the eight little-endian bytes of value at the given offset, skipping any slot the range does not have.";
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -74,7 +76,7 @@ fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result
     if done {
       break @octets;
     }
-    let spare = len_of(deref(destination));
+    let spare = deref(destination).len;
     let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
@@ -88,9 +90,7 @@ fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
   let t0 = oct(a: 1_u64, b: 2_u64, c: 3_u64, d: 4_u64, e: 5_u64, f: 6_u64, g: 7_u64, h: 8_u64);
   let t1 = oct(a: 9_u64, b: 10_u64, c: 11_u64, d: 12_u64, e: 13_u64, f: 14_u64, g: 15_u64, h: 16_u64);
   let t2 = oct(a: 17_u64, b: 18_u64, c: 19_u64, d: 20_u64, e: 21_u64, f: 22_u64, g: 23_u64, h: 24_u64);
@@ -98,29 +98,16 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let half0 = branch(left: move t0, right: move t1);
   let half1 = branch(left: move t2, right: move t3);
   let root = branch(left: move half0, right: move half1);
-  let report = buffer_new(8_u64, 0_u8);
-  region {
-    let value = fold(node: &uniq root);
-    region {
-      let window = mut_slice_of(&uniq report);
-      region {
-        let filled = spell(destination: &uniq window, at: 0_u64, value: value);
-      }
+  let report = box_array_filled::<u8>(count: 8_u64, value: 0_u8);
+  let value = fold(node: &root);
+  let window = &report.inner[0_u64..8_u64];
+  let filled = spell(destination: window, at: 0_u64, value: value);
+  match write_once(factory: &entry_factory, output: &out, source: window, start: 0_u64, end: 8_u64) {
+    Ok(value: next) => {
+      return exit_status(code: 0_u8);
     }
-  }
-  region {
-    region {
-      let ordinary_source_1 = slice_of(&report);
-      region {
-        match write_once(factory: &uniq entry_factory, output: &uniq out, source: &ordinary_source_1, start: 0_u64, end: 8_u64) {
-          Ok(value: next) => {
-            return exit_status(code: 0_u8);
-          }
-          Err(error: problem) => {
-            return exit_status(code: 1_u8);
-          }
-        }
-      }
+    Err(error: problem) => {
+      return exit_status(code: 1_u8);
     }
   }
 }

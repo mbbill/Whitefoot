@@ -12,7 +12,7 @@ use super::super::goal::{
 };
 use super::super::model::{
     BindingId, CheckedConst, CheckedExpression, CheckedFloatOperation, CheckedIntegerOperation,
-    CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue,
+    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue,
 };
 use super::super::postcondition::PostconditionConstantOrigin;
 use super::{CheckStop, Checker, ControlCounters, ControlScope, FunctionSignature, LocalBinding};
@@ -50,8 +50,18 @@ pub(super) enum ExpandedClauseDatum {
         origin: PostconditionConstantOrigin,
     },
     /// One [FN-9] clause result datum: the declared result ordinal it
-    /// names [CALL-4] and that datum's type.
-    Result { ordinal: u32, ty: CheckedType },
+    /// names [CALL-4], the member path written below it, and the type that
+    /// path reaches.
+    ///
+    /// [OP-15] reads a measure as a member of the measured place, so a
+    /// result datum carries the same projection path a parameter datum does:
+    /// `result.inner.len` measures the box content the written path reaches,
+    /// not the box.
+    Result {
+        ordinal: u32,
+        projections: Vec<GoalProjection>,
+        ty: CheckedType,
+    },
 }
 
 impl ExpandedClauseDatum {
@@ -75,12 +85,17 @@ impl ExpandedClauseDatum {
                 projections,
                 ty: datum_ty,
                 ..
+            }
+            | Self::Result {
+                projections,
+                ty: datum_ty,
+                ..
             } => {
                 projections.push(projection);
                 *datum_ty = ty;
                 Some(self)
             }
-            Self::Literal { .. } | Self::Result { .. } => None,
+            Self::Literal { .. } => None,
         }
     }
 }
@@ -206,7 +221,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(definition, Production::Expr)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             if !self.validate_clause_computation(ClauseKind::Requires, definition, expression)? {
-                return self.invalid_clause(ClauseKind::Requires, definition);
+                self.validate_clause_definition_datum(
+                    ClauseKind::Requires,
+                    definition,
+                    expression,
+                )?;
             }
             let checked = self
                 .check_statement(
@@ -314,6 +333,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             _ => {}
         }
+        // [FN-8] a definition's initializer is a clause expression, and such
+        // an expression may be one bare non-consuming datum with no
+        // operation at all, including a measure place form [OP-15], which the
+        // atom walk already expands whole. Reaching the operation walk below
+        // with such an expression would wrap the measure the atom produced in
+        // a second measure row.
+        if self
+            .tree
+            .first_child_with(source, Production::Call)?
+            .is_none()
+            && self
+                .tree
+                .first_child_with(source, Production::InfixTail)?
+                .is_none()
+            && let Some(atom) = self.tree.first_child_with(source, Production::Atom)?
+        {
+            return self.build_clause_atom(atom, Some(checked), bindings, expanded_bindings);
+        }
         let atoms = self.clause_operand_atoms(source)?;
         let operation = match checked {
             CheckedExpression::IntegerOperation {
@@ -411,21 +448,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Bool,
                 arguments.as_slice(),
             )),
-            CheckedExpression::BufferFits {
-                element,
-                layout_ceiling,
-                length,
-                ..
-            } => Some((
-                GoalOperation::BufferFits {
-                    element: *element,
-                    maximum_length: layout_ceiling.stride.allocation_limit(),
-                },
-                vec![*element],
-                Vec::new(),
-                CheckedType::Bool,
-                std::slice::from_ref(length.as_ref()),
-            )),
             _ => None,
         };
         if let Some((row, type_arguments, const_arguments, result, checked_arguments)) = operation {
@@ -448,49 +470,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             });
         }
 
-        // [CALL-4] a measure over a result place: the operand is the
-        // clause's own result datum, so there is no atom below it to expand.
-        if let CheckedExpression::PostconditionResultMeasure {
-            measure,
-            ordinal,
-            ty,
-        } = checked
-        {
-            let measured = super::expressions::flat_storage::measured_kind_of(*ty)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let (element, constant) = match *ty {
-                CheckedType::FixedVector { element, length } => (Some(element), Some(length)),
-                CheckedType::Vector { element, .. } => (Some(element), None),
-                CheckedType::Extent { bytes, .. } => (None, Some(bytes)),
-                CheckedType::Array { element, length } => (Some(element), Some(length)),
-                CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
-                    (Some(self.intern_element(element.ty())?), None)
-                }
-                _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
-            };
-            return Ok(ExpandedClauseExpression::Operation {
-                row: GoalOperation::ContainerMeasure {
-                    measure: *measure,
-                    measured,
-                    element,
-                    constant,
-                },
-                type_arguments: Vec::new(),
-                const_arguments: Vec::new(),
-                result: CheckedType::Integer(super::super::model::IntegerType::U64),
-                arguments: vec![ExpandedClauseExpression::Datum(
-                    ExpandedClauseDatum::Result {
-                        ordinal: *ordinal,
-                        ty: *ty,
-                    },
-                )],
-            });
-        }
         if matches!(
             checked,
             CheckedExpression::ArrayMeasure { .. }
                 | CheckedExpression::BufferMeasure { .. }
-                | CheckedExpression::SliceMeasure { .. }
                 | CheckedExpression::ContainerMeasure { .. }
         ) {
             if atoms.len() != 1 {
@@ -518,29 +501,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     measure: *measure,
                     element,
                 },
-                (
-                    CheckedExpression::SliceMeasure { measure, root },
-                    CheckedType::Slice {
-                        region,
-                        element,
-                        strength,
-                    },
-                ) if expanded_bindings.get(&root.binding).is_some_and(|source| {
-                    source.ty()
-                        == CheckedType::Slice {
-                            region,
-                            element,
-                            strength,
-                        }
-                }) =>
-                {
-                    GoalOperation::SliceMeasure {
-                        measure: *measure,
-                        region,
-                        element,
-                    }
-                }
-                // [MSR-1] a run's or a bump extent's measure. The measured
+                // [MSR-1] a storage shape's measure. The measured
                 // kind and the written constant are the row's identity, and
                 // the operand's own type is what fixes both.
                 (CheckedExpression::ContainerMeasure { measure, root }, argument_type)
@@ -829,20 +790,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get()
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?
                 .result_type;
-            return Ok(
-                if let Some((ordinal, datum_type)) =
-                    self.postcondition_selector_is_bare_atom(atom)?
-                {
-                    ExpandedClauseExpression::Datum(ExpandedClauseDatum::Result {
-                        ordinal,
-                        ty: datum_type,
-                    })
-                } else {
-                    ExpandedClauseExpression::InvalidSelectorUse {
-                        ty: checked.map_or(ty, CheckedExpression::ty),
-                    }
-                },
-            );
+            if let Some(expanded) =
+                self.build_clause_result_place(atom, bindings, expanded_bindings)?
+            {
+                return Ok(expanded);
+            }
+            return Ok(ExpandedClauseExpression::InvalidSelectorUse {
+                ty: checked.map_or(ty, CheckedExpression::ty),
+            });
         }
         if let Some(literal) = self
             .tree
@@ -902,6 +857,275 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(result)
     }
 
+    /// One clause operand written as a place over the clause's own result
+    /// datum [FN-9, CALL-4], if the atom is one.
+    ///
+    /// Two shapes are admitted and nothing else. A bare selector spelling is
+    /// the result datum itself. A place whose trailing member is one of
+    /// [MSR-1]'s measures is that measure over the result place the written
+    /// member path reaches, because [OP-15] reads a measure as a member of
+    /// the measured place and gives it no storage below itself; that is how
+    /// `ensures result.len == n` and `ensures result.inner.len == count` are
+    /// one relation term and not a second fact class. Every other member
+    /// path over a result datum stays outside the admitted operand set, and
+    /// the caller reports it as the ordinary invalid selector use.
+    fn build_clause_result_place(
+        &self,
+        atom: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
+    ) -> Result<Option<ExpandedClauseExpression>, CheckStop> {
+        let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
+            return Ok(None);
+        };
+        let Some((ordinal, datum_type)) = self.postcondition_selector_place_base(place)? else {
+            return Ok(None);
+        };
+        let suffixes = self.tree.children_with(place, Production::Psuffix)?;
+        if suffixes.is_empty() {
+            return Ok(Some(ExpandedClauseExpression::Datum(
+                ExpandedClauseDatum::Result {
+                    ordinal,
+                    projections: Vec::new(),
+                    ty: datum_type,
+                },
+            )));
+        }
+        let Some(measure) = self.trailing_measure_member(&suffixes)? else {
+            return Ok(None);
+        };
+        let (projections, measured_type) = self.clause_member_projections(
+            &suffixes[..suffixes.len() - 1],
+            datum_type,
+            bindings,
+            expanded_bindings,
+        )?;
+        let row = self.clause_measure_row(measure, measured_type, false)?;
+        Ok(Some(ExpandedClauseExpression::Operation {
+            row,
+            type_arguments: Vec::new(),
+            const_arguments: Vec::new(),
+            result: CheckedType::Integer(super::super::model::IntegerType::U64),
+            arguments: vec![ExpandedClauseExpression::Datum(
+                ExpandedClauseDatum::Result {
+                    ordinal,
+                    projections,
+                    ty: measured_type,
+                },
+            )],
+        }))
+    }
+
+    /// The projection path one written `psuffix` run selects below a clause
+    /// datum of this type.
+    ///
+    /// [TYPE-9] gives a `Box` exactly one member, `inner`, and that member
+    /// is the box content itself, so the goal place below it is the same
+    /// dereference a `deref` former used to write. Every other member is the
+    /// ordinary struct field step and is judged by the ordinary walk.
+    fn clause_member_projections(
+        &self,
+        suffixes: &[NodeId],
+        mut ty: CheckedType,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
+    ) -> Result<(Vec<GoalProjection>, CheckedType), CheckStop> {
+        let mut projections = Vec::with_capacity(suffixes.len());
+        for suffix in suffixes {
+            // [MSR-1] "An admitted measure place is a `place` formed with any
+            // number of field-selection and enum-payload `psuffix`es, `deref`
+            // wrappings, and subscripts. The subscript admission is what makes
+            // `table[i].len` a term." A clause reads that place exactly as the
+            // body does, so a subscript written here is one projection and not
+            // a composite value this version cannot represent.
+            if self.subscript_offset(*suffix)?.is_some() {
+                let (projection, element) =
+                    self.clause_subscript_projection(*suffix, ty, bindings, expanded_bindings)?;
+                projections.push(projection);
+                ty = element;
+                continue;
+            }
+            if let CheckedType::Nominal(nominal) = ty
+                && let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind
+            {
+                let name = self
+                    .deferred_use_at(*suffix, crate::DeferredUseRole::ProjectedField)?
+                    .spelling()
+                    .to_owned();
+                if name != "inner" {
+                    return self.issue_node(
+                        SemanticRule::Type9,
+                        *suffix,
+                        SemanticIssueKind::type_mismatch(
+                            "the Box content field `inner`",
+                            format!("the field name `{name}`, which a Box does not declare"),
+                        ),
+                    );
+                }
+                projections.push(GoalProjection::Deref);
+                ty = referent;
+                continue;
+            }
+            let (fields, reached) = self.resolve_struct_path(std::slice::from_ref(suffix), ty)?;
+            projections.extend(fields.into_iter().map(GoalProjection::Field));
+            ty = reached;
+        }
+        Ok((projections, ty))
+    }
+
+    /// One written subscript inside a clause measure place [MSR-1].
+    ///
+    /// [MSR-1] fixes what may stand there: "An offset occurring inside a
+    /// measure place is a written integer literal, a live `own`
+    /// fragment-integer place, or an in-scope const generic [MSR-6], because
+    /// the place's identity is decided over it." A clause is no evaluation,
+    /// so the offset carries no occurrence of its own: [ENT-2] makes two
+    /// places one term when "their canonical source spellings are
+    /// byte-identical", which is exactly what keys this projection, and
+    /// [MSR-2] puts the offset's own support into every enclosing measure
+    /// term so a write to it kills them all.
+    ///
+    /// A parameter offset is kept as the formal it names, because a caller
+    /// substitutes its own actual there [FN-8, CALL-6]; a literal and a const
+    /// are values and need no substitution. "An offset of any other form in a
+    /// measure place is not this rule's rejection: it is a place this version
+    /// does not represent, reported as the compiler capability it is."
+    fn clause_subscript_projection(
+        &self,
+        suffix: NodeId,
+        base: CheckedType,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
+    ) -> Result<(GoalProjection, CheckedType), CheckStop> {
+        let element = match base {
+            CheckedType::Buffer { element } => element.ty(),
+            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+                self.element_type(element)?
+            }
+            _ => {
+                return self
+                    .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+            }
+        };
+        let offset = self
+            .subscript_offset(suffix)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let capture = crate::semantic::places::CapturedValue::unknown().capture;
+        let value =
+            |term| crate::semantic::places::CapturedValue::new(capture, term).goal_identity();
+        if let Some(literal) = self
+            .tree
+            .direct_token_with(offset, crate::TerminalPredicate::Literal)?
+        {
+            let bytes = self.tree.token_bytes(literal)?;
+            let CheckedValue::Integer { bits, .. } = self.parse_literal(offset, bytes)? else {
+                return self
+                    .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+            };
+            return Ok((
+                GoalProjection::Subscript(value(crate::semantic::places::CapturedTerm::Literal(
+                    bits,
+                ))),
+                element,
+            ));
+        }
+        if let Some(declaration) = self.clause_const_generic_base(offset)? {
+            return Ok((
+                GoalProjection::Subscript(value(crate::semantic::places::CapturedTerm::Const(
+                    declaration,
+                ))),
+                element,
+            ));
+        }
+        let Some(place) = self.tree.first_child_with(offset, Production::Place)? else {
+            return self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+        };
+        if !self
+            .tree
+            .children_with(place, Production::Psuffix)?
+            .is_empty()
+        {
+            return self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+        }
+        let pbase = self
+            .tree
+            .first_child_with(place, Production::Pbase)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+        let ResolvedTarget::Source { declaration, class } = usage.target() else {
+            return self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+        };
+        if class == DeclarationClass::NamedConst {
+            let constant = self
+                .constants
+                .get(&declaration)
+                .copied()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let CheckedValue::Integer { bits, .. } = self.constant(constant)?.value else {
+                return self
+                    .unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+            };
+            return Ok((
+                GoalProjection::Subscript(value(crate::semantic::places::CapturedTerm::Literal(
+                    bits,
+                ))),
+                element,
+            ));
+        }
+        if class != DeclarationClass::Value {
+            return self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix);
+        }
+        let local = bindings
+            .get(&declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        match expanded_bindings.get(&local.binding) {
+            Some(ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
+                ordinal,
+                projections,
+                ..
+            })) if projections.is_empty() && local.mode == CheckedMode::Own => Ok((
+                GoalProjection::FormalSubscript { ordinal: *ordinal },
+                element,
+            )),
+            _ => self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, suffix),
+        }
+    }
+
+    /// The [MSR-1] row one written measure selects over a place of this type
+    /// [OP-15].
+    ///
+    /// A range referent carries its own row: [MSR-1] gives `&[T]` a row of
+    /// its own, and the referent type a `deref` of one selects is the
+    /// element type, so the row cannot be recovered from that type.
+    fn clause_measure_row(
+        &self,
+        measure: CheckedMeasure,
+        ty: CheckedType,
+        range_referent: bool,
+    ) -> Result<GoalOperation, CheckStop> {
+        let measured = if range_referent {
+            super::super::model::MeasuredKind::Range
+        } else {
+            super::expressions::flat_storage::measured_kind_of(ty)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+        };
+        let (element, constant) = match ty {
+            CheckedType::Window {
+                element, capacity, ..
+            } => (Some(element), capacity),
+            CheckedType::Array { element, length } => (Some(element), Some(length)),
+            CheckedType::Buffer { element } => (Some(self.intern_element(element.ty())?), None),
+            _ if range_referent => (Some(self.intern_element(ty)?), None),
+            _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+        };
+        Ok(GoalOperation::ContainerMeasure {
+            measure,
+            measured,
+            element,
+            constant,
+        })
+    }
+
     /// The const generic one clause `atom` names directly [MSR-6], if any.
     ///
     /// A const generic is one `pbase` with no `deref` wrapping and no
@@ -939,7 +1163,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
     ) -> Result<ExpandedClauseExpression, CheckStop> {
-        let (expression, holder_pending) =
+        let (expression, holder_pending, _) =
             self.build_clause_place_inner(place, bindings, expanded_bindings)?;
         if holder_pending {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
@@ -948,79 +1172,85 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// Mirrors the already-completed TYPE-7 dereference type walk while
-    /// retaining only predicate identity. A borrow-holder dereference leaves
-    /// the written referent type unchanged; an own box dereference selects the
-    /// box nominal's referent type.
+    /// retaining only predicate identity.
+    ///
+    /// [TYPE-7] `deref` denotes the referent of a reference and nothing else:
+    /// a `Box`'s content is its field `inner` and is reached by the ordinary
+    /// field step [TYPE-9], so the only nested place this step admits is a
+    /// reference. The written step is retained as one projection of the
+    /// declaration-boundary template because a caller substitutes the
+    /// actual's own path for the formal and consumes exactly that leading
+    /// projection [FN-8, CALL-6]; the callee body, where [REF-1] makes the
+    /// parameter name the path itself, drops it instead.
     fn build_clause_place_inner(
         &self,
         place: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
-    ) -> Result<(ExpandedClauseExpression, bool), CheckStop> {
+    ) -> Result<(ExpandedClauseExpression, bool, bool), CheckStop> {
         let pbase = self
             .tree
             .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let (mut expression, holder_pending) = if self.has_fixed(pbase, FixedTerminal::Deref)? {
-            let nested = self
-                .tree
-                .first_child_with(pbase, Production::Place)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let (nested, nested_holder_pending) =
-                self.build_clause_place_inner(nested, bindings, expanded_bindings)?;
-            let ty = if nested_holder_pending {
-                nested.ty()
+        let (mut expression, holder_pending, mut range_referent) =
+            if self.has_fixed(pbase, FixedTerminal::Deref)? {
+                let nested = self
+                    .tree
+                    .first_child_with(pbase, Production::Place)?
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                let (nested, nested_holder_pending, nested_range) =
+                    self.build_clause_place_inner(nested, bindings, expanded_bindings)?;
+                if !nested_holder_pending {
+                    // [TYPE-7] an owned place is named as itself; only a
+                    // reference has a referent this step can name.
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                let ty = nested.ty();
+                (
+                    nested
+                        .with_projection(GoalProjection::Deref, ty)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                    false,
+                    nested_range,
+                )
             } else {
-                let CheckedType::Nominal(nominal) = nested.ty() else {
+                let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+                let ResolvedTarget::Source { declaration, class } = usage.target() else {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 };
-                let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind else {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                };
-                referent
-            };
-            (
-                nested
-                    .with_projection(GoalProjection::Deref, ty)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                false,
-            )
-        } else {
-            let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
-            let ResolvedTarget::Source { declaration, class } = usage.target() else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
-            match class {
-                DeclarationClass::Value => {
-                    let local = bindings
-                        .get(&declaration)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    (
-                        expanded_bindings
-                            .get(&local.binding)
-                            .cloned()
-                            .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                        local.mode != CheckedMode::Own,
-                    )
+                match class {
+                    DeclarationClass::Value => {
+                        let local = bindings
+                            .get(&declaration)
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        (
+                            expanded_bindings
+                                .get(&local.binding)
+                                .cloned()
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                            local.mode != CheckedMode::Own,
+                            local.mode == CheckedMode::Range,
+                        )
+                    }
+                    DeclarationClass::NamedConst => {
+                        let constant = self
+                            .constants
+                            .get(&declaration)
+                            .copied()
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        (
+                            ExpandedClauseExpression::Datum(ExpandedClauseDatum::NamedConst {
+                                declaration,
+                                projections: Vec::new(),
+                                ty: self.constant(constant)?.ty,
+                            }),
+                            false,
+                            false,
+                        )
+                    }
+                    _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
                 }
-                DeclarationClass::NamedConst => {
-                    let constant = self
-                        .constants
-                        .get(&declaration)
-                        .copied()
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    (
-                        ExpandedClauseExpression::Datum(ExpandedClauseDatum::NamedConst {
-                            declaration,
-                            projections: Vec::new(),
-                            ty: self.constant(constant)?.ty,
-                        }),
-                        false,
-                    )
-                }
-                _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
-            }
-        };
+            };
         if self.has_fixed(pbase, FixedTerminal::Entry)? {
             let ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
                 exit_state, ..
@@ -1031,18 +1261,61 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             *exit_state = false;
         }
         let suffixes = self.tree.children_with(place, Production::Psuffix)?;
-        if holder_pending && !suffixes.is_empty() {
+        // [OP-15] a measure is read as a member of the measured place and
+        // [MSR-1] gives it no storage below itself, so it is the last written
+        // suffix and everything before it is the ordinary field path.
+        let measure = self.trailing_measure_member(&suffixes)?;
+        let fields_only = if measure.is_some() {
+            &suffixes[..suffixes.len() - 1]
+        } else {
+            suffixes.as_slice()
+        };
+        if holder_pending && !fields_only.is_empty() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        if !suffixes.is_empty() {
-            let (fields, final_ty) = self.resolve_struct_path(&suffixes, expression.ty())?;
-            for field in fields {
+        if !fields_only.is_empty() {
+            let (projections, final_ty) = self.clause_member_projections(
+                fields_only,
+                expression.ty(),
+                bindings,
+                expanded_bindings,
+            )?;
+            for projection in projections {
                 expression = expression
-                    .with_projection(GoalProjection::Field(field), final_ty)
+                    .with_projection(projection, final_ty)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             }
+            range_referent = false;
         }
-        Ok((expression, holder_pending))
+        // [OP-14, TYPE-9] `free_empty` writes one source contract for both
+        // direct windows and Boxes holding runtime-capacity windows. At the
+        // boxed instance its prelude-owned `window.len` measure place denotes
+        // `window.inner.len`, matching the ordinary expression judgment's
+        // prelude-only implicit content step. Retain that step in the
+        // GoalTemplate so CALL-6 substitutes the caller's content measure.
+        if measure.is_some()
+            && let Some(suffix) = suffixes.last()
+            && self.tree.is_prelude_node(*suffix)?
+            && let Some(referent) = self.box_content(expression.ty())?
+            && super::expressions::flat_storage::measured_kind_of(referent).is_some()
+        {
+            expression = expression
+                .with_projection(GoalProjection::Deref, referent)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            range_referent = false;
+        }
+        if let Some(measure) = measure {
+            let row = self.clause_measure_row(measure, expression.ty(), range_referent)?;
+            expression = ExpandedClauseExpression::Operation {
+                row,
+                type_arguments: Vec::new(),
+                const_arguments: Vec::new(),
+                result: CheckedType::Integer(super::super::model::IntegerType::U64),
+                arguments: vec![expression],
+            };
+            return Ok((expression, false, false));
+        }
+        Ok((expression, holder_pending, range_referent))
     }
 
     /// Holds a clause local to [FN-8]'s "own copy value", judged on the type
@@ -1265,7 +1538,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if matches!(
             spelling,
-            "ineg" | "iabs" | "ishl" | "ishr" | "buffer_new" | "box_new" | "arena_new"
+            "ineg" | "iabs" | "ishl" | "ishr" | "buffer_new" | "box_new"
         ) {
             return self.invalid_clause(clause, entry);
         }
@@ -1275,6 +1548,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         Ok(())
+    }
+
+    /// Validates a definition initializer that selected no operation row.
+    ///
+    /// [FN-8] admits a definition and clause expression built from
+    /// "non-consuming datums, measure place forms [OP-15], and
+    /// operation-table forms", so an initializer with no operation at all is
+    /// admitted exactly when it is one bare datum: `define spare = table.len`
+    /// reads a measure member and selects nothing. A construction reaching
+    /// here stays refused, because [FN-8] names construction inadmissible and
+    /// its operands are not the expression.
+    pub(super) fn validate_clause_definition_datum(
+        &self,
+        clause: ClauseKind<'_>,
+        entry: NodeId,
+        expression: NodeId,
+    ) -> Result<(), CheckStop> {
+        if self
+            .tree
+            .first_child_with(expression, Production::Call)?
+            .is_some()
+        {
+            return self.invalid_clause(clause, entry);
+        }
+        let Some(atom) = self.tree.first_child_with(expression, Production::Atom)? else {
+            return self.invalid_clause(clause, entry);
+        };
+        self.validate_clause_atom(clause, entry, atom)
     }
 
     fn validate_clause_atom(
@@ -1314,8 +1615,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        for suffix in self.tree.children_with(place, Production::Psuffix)? {
-            if self.subscript_offset(suffix)?.is_some() {
+        // x1 [ENT-2] clause (b), [MSR-1]: an admitted measure place is
+        // "formed with any number of field-selection and enum-payload
+        // `psuffix`es, `deref` wrappings, and subscripts", which is what
+        // makes `deref(rows)[i].len` a term of the clause language. A
+        // subscript below the measure is therefore admitted here; every
+        // other subscript in a clause is still this rule's refusal, because
+        // a clause names no element value.
+        let suffixes = self.tree.children_with(place, Production::Psuffix)?;
+        let measure_place = self.trailing_measure_member(&suffixes)?.is_some();
+        for (position, &suffix) in suffixes.iter().enumerate() {
+            if self.subscript_offset(suffix)?.is_some()
+                && !(measure_place && position + 1 < suffixes.len())
+            {
                 return self.invalid_clause(clause, entry);
             }
         }

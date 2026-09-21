@@ -8,8 +8,7 @@
 use crate::semantic::{
     CheckedBooleanOperation, CheckedElement, CheckedEnumType, CheckedFlatElement,
     CheckedFloatOperation, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
-    CheckedNumericType, CheckedProgram, CheckedRuntimeTargetObligations,
-    CheckedTargetDomainObligation, CheckedType,
+    CheckedNumericType, CheckedProgram, CheckedTargetDomainObligation, CheckedType,
 };
 
 mod physical_types;
@@ -145,76 +144,6 @@ impl IrElement {
     }
 }
 
-/// One [BLK-2] take from a store, in the shape its emission reads.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct IrStoreTake {
-    /// The address of the `&uniq` provider operand: the take reads the
-    /// store's state and writes it back through the same borrow.
-    pub store: IrValueId,
-    pub count: IrValueId,
-    /// The slot's own type, which the target stage lays out to check its
-    /// actual size, alignment and stride against the ceilings below [STOR-6].
-    pub element: IrType,
-    /// [OP-9]'s language ceilings for that element type.
-    pub layout_ceiling: IrLayoutCeiling,
-    /// The upper bound [OP-9]'s accepted judgment retained for `count`, which
-    /// target layout scales by the actual stride [STOR-6].
-    pub count_upper_bound: u64,
-    /// The stride one slot occupies [OP-9], which is the spacing a run's
-    /// window is laid out at [BLK-1].
-    pub stride: u64,
-    /// The bump extent's own byte extent and alignment. A general store has
-    /// neither and asks its host instead.
-    pub extent: Option<IrExtentConstants>,
-    /// The `Option` the row hands back when the store has nothing to give; a
-    /// row whose domain requirement is proved carries none.
-    pub refusal: Option<IrRefusal>,
-}
-
-/// The two type constants of one bump extent [BLK-2]: its byte extent and
-/// its alignment.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct IrExtentConstants {
-    pub bytes: u64,
-    pub align: u64,
-}
-
-/// S39 one cell formation: the store's own take, the value the cell takes,
-/// and the outcome that carries either.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct IrStoreBox {
-    /// The `&uniq` provider operand's address.
-    pub store: IrValueId,
-    /// The value the cell takes, consumed by this operation.
-    pub value: IrValueId,
-    /// The cell's referent type, laid out by the target stage to check its
-    /// actual size and alignment against the ceilings below and against the
-    /// store's own [STOR-6].
-    pub element: IrType,
-    /// [OP-9]'s language ceilings for that referent type.
-    pub layout_ceiling: IrLayoutCeiling,
-    /// The bytes one cell occupies, which is one stride rounded up to the
-    /// store's own alignment where it has one [OP-9].
-    pub bytes: u64,
-    /// `Some` for a bump extent, whose take is a cursor advance inside the
-    /// reservation; `None` for the general store, which is asked.
-    pub extent: Option<IrExtentConstants>,
-    /// The `Result<Box<'s, T>, T>` the row hands back: `made` is the `Ok`
-    /// tag and `refused` the `Err` tag.
-    pub outcome: IrRefusal,
-}
-
-/// The `Option` a refusing [BLK-2] row hands back, by the tags [PRE-1] gives
-/// its two variants.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct IrRefusal {
-    pub nominal: IrNominalId,
-    /// The tag of the variant carrying the run.
-    pub made: u32,
-    /// The tag of the empty variant.
-    pub refused: u32,
-}
-
 /// The content of an [`IrType::Address`]. A typed place may hold inline
 /// content, a descriptor, or a handle. Source borrows of descriptors and
 /// handles still use their value ABI; a place containing one is distinct
@@ -234,33 +163,19 @@ pub enum IrAddressed {
     Buffer {
         element: IrFlatElement,
     },
-    Slice {
-        element: IrFlatElement,
-    },
-    /// One `FixedVector<T, n>` [BLK-1]. A frame-resident run is inline
-    /// storage in its owner, exactly as a struct is, so a borrow of one is
-    /// the address of that storage rather than a copy of the run.
-    FixedVector {
-        element: IrElement,
-        length: u64,
-    },
     /// Dense inline array storage reached through a checked borrow or target.
     Array {
         element: IrElement,
         length: u64,
     },
-    /// One `Vector<'s, T>` [BLK-1]. Its descriptor is storage in its owner's
-    /// frame, and a borrow of the run is the address of that descriptor, so
-    /// both runs are borrowed through one path.
-    Vector {
+    /// One inline window [TYPE-9]. A constant-capacity `Slots` or `Ring` is
+    /// inline storage in its owner exactly as a struct is, so a reference to
+    /// one is the address of that storage rather than a copy of the window.
+    Window {
+        shape: IrWindowShape,
         element: IrElement,
-        release: IrReleaseClass,
+        capacity: Option<u64>,
     },
-    /// One provider value [PROV-1]. A provider is the one operand a [BLK-0]
-    /// acquiring row takes by `&uniq`, and a bump take advances its cursor
-    /// through that borrow, so its binding carries a stable address exactly
-    /// as a stored scalar's does.
-    Provider,
 }
 
 impl IrAddressed {
@@ -272,15 +187,20 @@ impl IrAddressed {
             Self::Float { width } => IrType::Float { width },
             Self::Nominal(id) => IrType::Nominal(id),
             Self::Buffer { element } => IrType::Buffer { element },
-            Self::Slice { element } => IrType::Slice { element },
-            Self::FixedVector { element, length } => IrType::FixedVector { element, length },
             Self::Array { element, length } => IrType::Array { element, length },
-            Self::Vector { element, release } => IrType::Vector { element, release },
-            Self::Provider => IrType::Provider,
+            Self::Window {
+                shape,
+                element,
+                capacity,
+            } => IrType::Window {
+                shape,
+                element,
+                capacity,
+            },
         }
     }
 
-    const fn of(ty: IrType) -> Option<Self> {
+    pub(crate) const fn of(ty: IrType) -> Option<Self> {
         Some(match ty {
             IrType::Unit => Self::Unit,
             IrType::Bool => Self::Bool,
@@ -288,11 +208,17 @@ impl IrAddressed {
             IrType::Float { width } => Self::Float { width },
             IrType::Nominal(id) => Self::Nominal(id),
             IrType::Buffer { element } => Self::Buffer { element },
-            IrType::Slice { element } => Self::Slice { element },
-            IrType::FixedVector { element, length } => Self::FixedVector { element, length },
+            IrType::Range { .. } | IrType::RuntimeBoxPayload { .. } => return None,
             IrType::Array { element, length } => Self::Array { element, length },
-            IrType::Vector { element, release } => Self::Vector { element, release },
-            IrType::Provider => Self::Provider,
+            IrType::Window {
+                shape,
+                element,
+                capacity,
+            } => Self::Window {
+                shape,
+                element,
+                capacity,
+            },
             IrType::Address(_) => return None,
         })
     }
@@ -308,8 +234,6 @@ impl IrAddressed {
 pub enum IrReleaseClass {
     /// A free to the general store the run was taken from.
     General,
-    /// Empty: the extent's reclamation is its region's own reset [BLK-2].
-    Extent,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -329,30 +253,67 @@ pub enum IrType {
         element: IrElement,
         length: u64,
     },
+    /// One runtime-capacity `Array<T>` block [TYPE-9].
+    ///
+    /// The block is `[len | elements]` in one allocation, exactly as a
+    /// runtime-capacity `Slots` block is `[len | cap | slots]`
+    /// (compiler/storage-representation): an `Array`'s `len` equals its `cap`
+    /// [WIN-1], so the one runtime number is stored once. [TYPE-9] admits the
+    /// shape only as `Box` content, so the block is reached only by pointer —
+    /// the `Box` value is that pointer — and no value of this type is ever
+    /// copied, passed, or stored.
     Buffer {
         element: IrFlatElement,
     },
-    Slice {
-        element: IrFlatElement,
-    },
-    /// One `FixedVector<T, n>` [BLK-1]: `n` inline slots followed by the two
-    /// descriptor words `len` and `head`. The capacity is the type constant
-    /// and is stored nowhere.
-    FixedVector {
+    /// One `&[T]` range reference [REF-4]: a pointer to the first element of
+    /// the range and the element count, which is its one measure [MSR-1].
+    /// It is a reference kind and not a type [TYPE-8], so no storage ever
+    /// holds one and nothing is ever released through one.
+    Range {
         element: IrElement,
-        length: u64,
     },
-    /// One `Vector<'s, T>` [BLK-1]: the descriptor `{ pointer, cap, len,
-    /// head }` over a run taken from the store `'s` names. The region is
-    /// erased here, and the release action it decided travels in its place.
-    Vector {
+    /// One compiler-synthesized task capture of the first element address of
+    /// a runtime-capacity `Array` block. The pointer may be one-past for an
+    /// empty array, so it is not an [`IrType::Address`] and cannot be loaded
+    /// or stored through directly. Its nominal identifies the ordinary Box
+    /// owner that [`IrOperation::RuntimeBoxOwner`] may reconstruct.
+    RuntimeBoxPayload {
+        nominal: IrNominalId,
+    },
+    /// One `Slots<T, N>`, `Slots<T>`, `Ring<T, N>` or `Ring<T>` [TYPE-9].
+    ///
+    /// The layout is header-first so that the inline and the boxed placement
+    /// of one shape share one address computation
+    /// (compiler/storage-representation): a `Slots` is `{ i64 len, slots }`
+    /// and a `Ring` is `{ i64 len, i64 head, slots }`, with a
+    /// runtime-capacity block carrying `cap` after `len` and a
+    /// constant-capacity one storing no capacity at all. The two shapes are
+    /// two emitted types so that neither carries a word no measure of it
+    /// needs.
+    Window {
+        shape: IrWindowShape,
         element: IrElement,
-        release: IrReleaseClass,
+        /// `Some` is the constant-capacity inline placement; `None` is the
+        /// runtime-capacity block, which [TYPE-9] admits only as `Box`
+        /// content and which is therefore only ever reached by pointer.
+        capacity: Option<u64>,
     },
-    /// One provider value [PROV-1]. It is proof-only: the general store's
-    /// provider carries no runtime state at all, and the bump extent's
-    /// carries exactly its cursor.
-    Provider,
+}
+
+/// Which of [TYPE-9]'s two window shapes an [`IrType::Window`] is.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IrWindowShape {
+    /// The window begins at slot zero and the block stores no `head`.
+    Slots,
+    /// The window begins at `head` and wraps modulo `cap` [WIN-1].
+    Ring,
+}
+
+pub(crate) const fn lower_window_shape(value: crate::semantic::WindowShape) -> IrWindowShape {
+    match value {
+        crate::semantic::WindowShape::Slots => IrWindowShape::Slots,
+        crate::semantic::WindowShape::Ring => IrWindowShape::Ring,
+    }
 }
 
 pub(crate) const fn lower_release_class(
@@ -360,7 +321,6 @@ pub(crate) const fn lower_release_class(
 ) -> IrReleaseClass {
     match value {
         crate::semantic::CheckedReleaseClass::General => IrReleaseClass::General,
-        crate::semantic::CheckedReleaseClass::Extent => IrReleaseClass::Extent,
     }
 }
 
@@ -436,24 +396,23 @@ pub(crate) fn type_derives_release(
             continue;
         }
         match current {
-            IrType::Buffer { .. } => return Some(true),
-            // A run's own backing action is its release class [PROV-6]: a
-            // general store's run spends that store's provider capability, and
-            // a bump extent's run is reclaimed by its own region reset, which
-            // is no action at all. A frame-resident run reclaims none of its
-            // own either. Every run still needs a walk when its window holds
-            // values that derive one, and [PROV-6] visits those elements
-            // before the backing is released [STOR-3, BLK-1].
-            IrType::Vector {
-                release: IrReleaseClass::General,
-                ..
+            // A runtime-capacity block is one heap object the owner frees
+            // [TYPE-9, STOR-3], so it always derives a release.
+            IrType::Buffer { .. }
+            | IrType::Window {
+                capacity: None, ..
             } => return Some(true),
+            // A constant-capacity window reclaims nothing of its own; it
+            // still needs a walk when its slots hold values that derive one,
+            // and [PROV-6] visits those before the block is released.
             IrType::Array { element, .. }
-            | IrType::Vector { element, .. }
-            | IrType::FixedVector { element, .. } => {
+            | IrType::Window {
+                element,
+                capacity: Some(_),
+                ..
+            } => {
                 pending.push(*elements.get(element.index())?);
             }
-            IrType::Provider => {}
             // S39 a cell needs a release exactly when its own storage or
             // its referent does: a bump extent's cell whose referent derives
             // nothing needs no walk at all.
@@ -488,15 +447,9 @@ pub(crate) fn type_derives_release(
                             .map(IrField::ty),
                     );
                 }
-                IrNominalKind::Box { .. }
-                // The allocation-list drop is the region's storage
-                // release [STOR-3]: walk and free.
-                | IrNominalKind::ArenaStorage => {
+                IrNominalKind::Box { .. } => {
                     return Some(true);
                 }
-                // An arena value's storage is released with its region,
-                // never by an owner-scope cleanup [STOR-3, STOR-4].
-                IrNominalKind::Arena { .. } => {}
                 // Ordinary opaque values have empty release [PRE-1].
                 IrNominalKind::Opaque => {}
             },
@@ -504,9 +457,12 @@ pub(crate) fn type_derives_release(
             | IrType::Bool
             | IrType::Integer { .. }
             | IrType::Float { .. }
-            // [VIEW-1, PROV-3] a view is loan-bearing: it owns no storage and
-            // no element, so nothing of it is ever released.
-            | IrType::Slice { .. }
+            // [REF-4, TYPE-8] a range reference is a name for elements it
+            // does not own, so nothing of it is ever released.
+            | IrType::Range { .. }
+            // A synthesized payload capture borrows the source Box allocation
+            // and never carries ownership or cleanup authority.
+            | IrType::RuntimeBoxPayload { .. }
             | IrType::Address(_) => {}
         }
     }
@@ -537,24 +493,21 @@ fn lower_type(erasure: TypeLowering<'_>, value: CheckedType) -> Result<IrType, L
         CheckedType::Buffer { element } => IrType::Buffer {
             element: lower_flat_element(erasure, element)?,
         },
-        CheckedType::Slice { element, .. } => IrType::Slice {
-            element: lower_flat_element(erasure, element)?,
-        },
-        CheckedType::FixedVector { element, length } => IrType::FixedVector {
-            element: lower_element(erasure, element)?,
-            length: length
-                .value()
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-        },
-        CheckedType::Vector {
+        CheckedType::Window {
+            shape,
             element,
-            release,
-            region,
-        } => IrType::Vector {
-            release: lower_release_class(erasure.release(region, release)),
+            capacity,
+        } => IrType::Window {
+            shape: lower_window_shape(shape),
             element: lower_element(erasure, element)?,
+            capacity: capacity
+                .map(|capacity| {
+                    capacity
+                        .value()
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)
+                })
+                .transpose()?,
         },
-        CheckedType::Heap { .. } | CheckedType::Extent { .. } => IrType::Provider,
     })
 }
 
@@ -608,20 +561,11 @@ pub enum IrNominalKind {
     Box {
         referent: IrType,
         /// [PROV-6, S39] which release action this cell's own reclamation is.
-        /// The ambient-heap `box<T>` [STOR-2] and a `Box<'s, T>` at a general
+        /// The ambient-heap `box<T>` [STOR-1] and a `Box<'s, T>` at a general
         /// store both free their cell; a `Box<'s, T>` at a bump extent is
         /// reclaimed by its region's own reset and has no action of its own.
         release: IrReleaseClass,
     },
-    /// One `arena<'r, T>` instance: a pointer-shaped handle to region-owned
-    /// heap content, released with its region rather than with an owner
-    /// scope [STOR-3, STOR-4].
-    Arena {
-        content: IrType,
-    },
-    /// One region block's compiler-owned arena allocation-list cell; its
-    /// drop walks and frees every registered allocation [STOR-3].
-    ArenaStorage,
     /// An ordinary opaque nominal supplied by PRE-1.
     Opaque,
 }
@@ -926,6 +870,17 @@ pub struct IrRuntimeTargetObligations {
     allocation: IrTargetDomainObligation,
     element_address: IrTargetDomainObligation,
     source_length_upper_bound: u64,
+    /// Whether `source_length_upper_bound` is the numeric bound the
+    /// allocation site's own [OP-9] discharge established, or [OP-9]'s
+    /// ceiling standing in for a bound the checked program does not retain.
+    ///
+    /// A compiler-owned [PRE-1] construction row is one body per instance,
+    /// reached from every call of that row, so no single call's proved bound
+    /// belongs to it (compiler/prelude-records). Each caller carries and is
+    /// qualified with its own bound in [`IrSourceCall`]; this flag keeps the
+    /// shared body's representation record from reusing the language maximum
+    /// as though it were one caller's target-domain bound.
+    call_site_bound: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -952,6 +907,15 @@ impl From<CheckedLayoutMagnitude> for IrLayoutMagnitude {
     }
 }
 
+/// The complete [OP-9] and [STOR-6] record one runtime-capacity allocation
+/// carries: the language layout ceiling its stored type must stay under, and
+/// the target-domain obligations with the retained source bound.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrAllocationObligations {
+    pub layout_ceiling: IrLayoutCeiling,
+    pub target_domains: IrRuntimeTargetObligations,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IrLayoutCeiling {
     pub size: IrLayoutMagnitude,
@@ -969,20 +933,6 @@ impl From<CheckedLayoutCeiling> for IrLayoutCeiling {
     }
 }
 
-impl TryFrom<CheckedRuntimeTargetObligations> for IrRuntimeTargetObligations {
-    type Error = LoweringFailure;
-
-    fn try_from(value: CheckedRuntimeTargetObligations) -> Result<Self, Self::Error> {
-        Ok(Self {
-            allocation: value.allocation().into(),
-            element_address: value.element_address().into(),
-            source_length_upper_bound: value
-                .source_length_upper_bound()
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-        })
-    }
-}
-
 impl IrRuntimeTargetObligations {
     pub(crate) const fn is_complete(self) -> bool {
         matches!(
@@ -997,12 +947,34 @@ impl IrRuntimeTargetObligations {
     pub(crate) const fn source_length_upper_bound(self) -> u64 {
         self.source_length_upper_bound
     }
+
+    /// Whether the retained bound came from the allocation site's own
+    /// [OP-9] discharge.
+    pub(crate) const fn has_call_site_bound(self) -> bool {
+        self.call_site_bound
+    }
+
+    /// The record one compiler-owned [PRE-1] allocation carries [OP-9].
+    ///
+    /// A construction row's body is built once per monomorphized instance.
+    /// This record retains [OP-9]'s language maximum for the body-level
+    /// representation check; each accepted caller separately retains its
+    /// tighter proved bound in [`IrSourceAllocation`] for target byte-domain
+    /// qualification. The language maximum is deliberately not used as a
+    /// selected-target allocation bound here.
+    pub(crate) const fn from_language_ceiling(source_length_upper_bound: u64) -> Self {
+        Self {
+            allocation: IrTargetDomainObligation::RuntimeSizedAllocation,
+            element_address: IrTargetDomainObligation::ElementAddress,
+            source_length_upper_bound,
+            call_site_bound: false,
+        }
+    }
 }
 
 impl From<CheckedTargetDomainObligation> for IrTargetDomainObligation {
     fn from(value: CheckedTargetDomainObligation) -> Self {
         match value {
-            CheckedTargetDomainObligation::RuntimeSizedAllocation => Self::RuntimeSizedAllocation,
             CheckedTargetDomainObligation::ElementAddress => Self::ElementAddress,
         }
     }
@@ -1013,7 +985,6 @@ impl From<CheckedTargetDomainObligation> for IrTargetDomainObligation {
 pub enum IrMeasure {
     Length,
     Capacity,
-    Room,
     Head,
 }
 
@@ -1042,7 +1013,7 @@ impl IrBoundary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IrPlaceProjection {
+pub enum IrPlaceStep {
     /// A field of directly stored nominal content.
     Field { nominal: IrNominalId, field: u32 },
     /// The allocation payload reached through a stored Box owner slot.
@@ -1133,59 +1104,43 @@ pub enum IrOperation {
         offset: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
+    /// [OP-13] `box_array_filled<T>(count, value)`: one runtime-capacity
+    /// `Array<T>` block and the cell that owns it.
+    ///
+    /// The block is `[len | elements]` in one allocation, so the defined
+    /// value is the cell's own `Box` pointer and the block pointer at once
+    /// (compiler/storage-representation). One `malloc` builds it, one `free`
+    /// reclaims it, and every element address is one `inbounds`
+    /// `getelementptr` into it.
     BufferFill {
+        nominal: IrNominalId,
         length: IrValueId,
         value: IrValueId,
         layout_ceiling: IrLayoutCeiling,
         target_domains: IrRuntimeTargetObligations,
     },
-    /// One `buffer_vacant::<T>(n)` allocation [OP-1, OP-9]: the defined value's
-    /// buffer type names the `Option<T>` element instance, and every element
-    /// is initialized to the compiler-minted `None()` of that instance.
-    BufferVacant {
-        length: IrValueId,
-        layout_ceiling: IrLayoutCeiling,
-        target_domains: IrRuntimeTargetObligations,
-    },
-    BufferFits {
-        length: IrValueId,
-        maximum_length: u64,
-    },
+    /// [MSR-1] the one measure a runtime-capacity `Array<T>` has, read from
+    /// the `len` word at the head of its block. `buffer` is the block's
+    /// address.
     BufferMeasure {
         buffer: IrValueId,
     },
     /// [BLK-2] `fixed_vector`: one frame-resident run of the defined type's own
     /// capacity, whose window is empty. Every slot is raw and the two
     /// descriptor words are zero.
-    FixedVector,
-    /// [BLK-2] `arena_frame`: one bump extent reserved in the reserving
-    /// activation's own frame. The provider value is that reservation's base
-    /// address and its cursor, and the reservation establishes the extent's
-    /// initial state — the cursor at zero — at every activation of the region
-    /// block naming its store region.
-    ArenaFrame {
-        bytes: u64,
-        align: u64,
-    },
-    /// [BLK-2] one take from a store: the run of `count` slots the store
-    /// hands out, and the store's own advanced state.
-    ///
-    /// `store` is the address of the `&uniq` provider operand, so the take
-    /// reads the store's state and writes it back through the same borrow.
-    /// A `refusal` names the `Option` the row hands back when the store has
-    /// nothing to give; a row whose domain requirement is proved carries
-    /// none and always succeeds.
-    StoreTake(IrStoreTake),
-    /// S39 one cell formation over a store.
-    StoreBox(IrStoreBox),
-    /// [MSR-1] one measure of a run or a bump extent, read as its [OP-1]
-    /// reader row loads it. A cell the measure table fixes as a constant
-    /// never reaches here.
+    /// [OP-13] `slots_new` and `ring_new`: the empty window over `N` raw
+    /// slots. The value is the zero aggregate, so `len` and, on a `Ring`,
+    /// `head` both start at zero, which is exactly what the two records'
+    /// `ensures` publish.
+    Window,
+    /// [MSR-1] one measure of a window, read as its [OP-15] member reader
+    /// loads it. A cell the measure table fixes as a constant never reaches
+    /// here.
     ContainerMeasure {
         measure: IrMeasure,
         container: IrValueId,
     },
-    /// One discharged source subscript read of a run [OP-4, BLK-1]: the
+    /// One discharged source subscript read of a run [OP-4, WIN-1]: the
     /// offset is a logical one and the storage read is slot
     /// `(head + i) mod cap`. See [`Self::ArrayIndex`] for the discharge.
     RunIndex {
@@ -1207,7 +1162,66 @@ pub enum IrOperation {
         row: IrBoundary,
         run: IrValueId,
     },
+    /// [OP-10] the one shift `insert_at` and `remove_at` each perform over
+    /// `window.filled`, followed by the boundary move that shift makes room
+    /// for or closes.
+    ///
+    /// `open` shifts every element at `index ..` up by one slot and raises
+    /// `len`; its complement shifts every element above `index` down by one
+    /// and lowers `len`. On a `Slots` the window is contiguous and the shift
+    /// is one memmove; on a `Ring` the window may wrap and the shift walks
+    /// the logical indices in the order that never overwrites an unread
+    /// slot [WIN-1].
+    RunShift {
+        run: IrValueId,
+        index: IrValueId,
+        open: bool,
+    },
+    /// [OP-10] `insert_at`'s placement into the slot [`Self::RunShift`] just
+    /// opened. The boundary has already moved, so the slot is inside the
+    /// window and the store is an ordinary element write.
+    RunInsert {
+        run: IrValueId,
+        index: IrValueId,
+        value: IrValueId,
+    },
+    /// [OP-10] the run of elements `append` and `split_off` each move between
+    /// two windows: `source[index ..]` moves to `destination.free`,
+    /// `source.len` becomes `index`, and `destination.len` grows by the
+    /// moved count. `append` is this row at index zero.
+    RunTransfer {
+        destination: IrValueId,
+        source: IrValueId,
+        index: IrValueId,
+    },
+    /// [OP-13] one runtime-capacity window block and the cell that owns it:
+    /// `[len | cap | head? | slots]` with an empty window
+    /// (compiler/storage-representation). The value is the cell pointer.
+    WindowBlockNew {
+        nominal: IrNominalId,
+        capacity: IrValueId,
+        obligations: IrAllocationObligations,
+    },
+    /// [OP-10] `grow`: the cell's content is remade whole at the new
+    /// capacity. One allocation, one copy of the header and the filled
+    /// slots, one free, and the cell's pointer slot takes the new block
+    /// (compiler/storage-representation).
+    WindowGrow {
+        nominal: IrNominalId,
+        cell: IrValueId,
+        capacity: IrValueId,
+        obligations: IrAllocationObligations,
+    },
+    /// Release only one cell's own storage. [OP-14] uses this after proving a
+    /// boxed window empty; an owned-path take uses it after the checked cleanup
+    /// plan has accounted for the cell's split content [WIN-3, STOR-3].
+    CellFree {
+        nominal: IrNominalId,
+        value: IrValueId,
+    },
     /// One discharged source subscript read [OP-4]; see [`Self::ArrayIndex`].
+    /// `buffer` is the block's address, and the element address is one
+    /// `inbounds` step into it.
     BufferIndex {
         buffer: IrValueId,
         offset: IrValueId,
@@ -1228,17 +1242,15 @@ pub enum IrOperation {
         limit: IrValueId,
         needles: Vec<IrValueId>,
     },
-    SliceFromArray {
-        array: IrArrayRoot,
-    },
     SliceFromBuffer {
         buffer: IrValueId,
     },
-    /// [VIEW-2] one view over typed owner storage: a run's initialized window
-    /// [BLK-1] or a complete array with its type's length and zero head.
+    /// [REF-4] one range reference over typed owner storage: a run's
+    /// initialized window [WIN-1] or a complete array with its type's length
+    /// and zero head.
     ///
     /// The window is `len` slots beginning at `head`, and the row's own
-    /// requirement `head_of(vector) <= room_of(vector)` was discharged before
+    /// requirement `vector.head <= vector.cap` was discharged before
     /// this operation exists, so the window is one contiguous range and the
     /// descriptor is the slot at `head` together with `len`.
     SliceFromRun {
@@ -1259,6 +1271,13 @@ pub enum IrOperation {
         offset: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
+    /// The address of one discharged range element, retained for a source
+    /// reference instead of loaded as an owned value.
+    SliceAddress {
+        slice: IrValueId,
+        offset: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    },
     BoxNew {
         nominal: IrNominalId,
         value: IrValueId,
@@ -1274,22 +1293,20 @@ pub enum IrOperation {
         nominal: IrNominalId,
         value: IrValueId,
     },
-    /// One region block's arena allocation-list cell, materialized at region
-    /// entry: a stack cell reset to empty, whose address is the operation's
-    /// value [STOR-2, STOR-3].
-    ArenaListNew,
-    /// One `arena_new` allocation: heap storage for the content, registered
-    /// on the owning region's allocation list so the region's exit release
-    /// frees it [STOR-2, STOR-3, STOR-4]. The value is the content address.
-    ArenaNew {
+    /// The first-element pointer used only by a synthesized split capture of
+    /// a `Box<Array<T>>`. The source Box value remains the allocation-base
+    /// pointer and retains sole cleanup authority.
+    RuntimeBoxPayload {
         nominal: IrNominalId,
-        list: IrValueId,
-        value: IrValueId,
+        owner: IrValueId,
     },
-    /// Arena content read through explicit `deref` [STOR-2].
-    ArenaDeref {
+    /// Recovers the ordinary allocation-base Box pointer from a synthesized
+    /// payload capture before rebuilding borrowed local owner storage in a
+    /// chunk. The inverse uses the same target-layout field offset as the
+    /// forward projection.
+    RuntimeBoxOwner {
         nominal: IrNominalId,
-        value: IrValueId,
+        payload: IrValueId,
     },
     ConstructStruct {
         nominal: IrNominalId,
@@ -1331,7 +1348,7 @@ pub enum IrOperation {
     /// the same backing and lifetime; it does not read or copy its content.
     ProjectAddress {
         address: IrValueId,
-        projection: IrPlaceProjection,
+        projection: IrPlaceStep,
     },
     Load {
         address: IrValueId,
@@ -1629,19 +1646,21 @@ pub enum IrSynthesis {
     Chunk,
 }
 
-/// A checked source signature's mode, independent of its lowered value type.
+/// A checked source signature's kind [GRAM-3, REF-1, REF-4], independent of
+/// its lowered value type.
 ///
-/// Descriptor and opaque-handle types can have the same representation in all
-/// three modes. This record does not carry a loan origin or its lifetime, and
-/// cannot by itself authorize aliasing an input and a result destination.
+/// A reference is a local name for a path, with no permission marker and no
+/// region [REF-1], so this record names only which of the three kinds the
+/// signature wrote. It carries no origin and no validity interval, and cannot
+/// by itself authorize aliasing an input and a result destination.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IrSourceMode {
     /// The source signature passes an owned value.
     Own,
-    /// The source signature passes shared access to an existing value.
-    Shared,
-    /// The source signature passes exclusive access to an existing value.
-    Unique,
+    /// `&T`: the signature names one path the caller already holds [REF-1].
+    Reference,
+    /// `&[T]`: the signature names a range of elements [REF-4].
+    Range,
 }
 
 /// Checked source roles retained independently of representation and erased regions.
@@ -1687,6 +1706,38 @@ pub enum IrSourceArgument {
     Value,
 }
 
+/// The accepted source-level allocation judgment attached to one ordinary
+/// call of a compiler-owned construction or growth row [OP-9, STOR-6].
+///
+/// The row body remains one out-of-line monomorphized function. Target
+/// qualification reads this per-call record to qualify the exact proved
+/// count bound against the selected target's element stride and block header.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct IrSourceAllocation {
+    cell: IrNominalId,
+    count_argument: usize,
+    layout_ceiling: IrLayoutCeiling,
+    source_length_upper_bound: u64,
+}
+
+impl IrSourceAllocation {
+    pub(crate) const fn cell(self) -> IrNominalId {
+        self.cell
+    }
+
+    pub(crate) const fn count_argument(self) -> usize {
+        self.count_argument
+    }
+
+    pub(crate) const fn layout_ceiling(self) -> IrLayoutCeiling {
+        self.layout_ceiling
+    }
+
+    pub(crate) const fn source_length_upper_bound(self) -> u64 {
+        self.source_length_upper_bound
+    }
+}
+
 /// Source-call use and direct borrow-result relations tied to one IR call.
 ///
 /// The actual arguments and their typed address/projection operations remain
@@ -1700,6 +1751,9 @@ pub struct IrSourceCall {
     /// A direct borrow result's checked candidate. Absence says nothing about
     /// loans carried inside owned view results or other aggregates.
     returned_borrow_argument: Option<usize>,
+    /// The call's accepted allocation bound, only for the runtime-capacity
+    /// construction and growth rows that carry OP-9.
+    allocation: Option<IrSourceAllocation>,
 }
 
 impl IrSourceCall {
@@ -1709,6 +1763,10 @@ impl IrSourceCall {
 
     pub(crate) fn arguments(&self) -> &[IrSourceArgument] {
         &self.arguments
+    }
+
+    pub(crate) const fn allocation(&self) -> Option<IrSourceAllocation> {
+        self.allocation
     }
 }
 
@@ -1854,7 +1912,7 @@ impl IrProgram<'_, '_, '_> {
     /// with or without `--par`. These state what *this* lowering did with a
     /// permission, which is a different fact and exists only where actualization
     /// was asked for. Both are developer output on the caller's channel; neither
-    /// participates in acceptance or in any mandatory [DIAG-3] record.
+    /// participates in acceptance or in any mandatory [DIAG-2] record.
     pub fn actualization_ledger(&self) -> &[String] {
         &self.actualization
     }
@@ -1864,7 +1922,59 @@ impl IrProgram<'_, '_, '_> {
 pub enum LoweringFailure {
     InvalidCheckedProgram,
     CounterOverflow,
+    /// Capability stop: one [PRE-1] record the compiler itself owns -- a
+    /// window operation [OP-10], `swap` [OP-11], a construction function
+    /// [OP-13] or `free_empty` [OP-14] -- whose body this version does not
+    /// build.
+    ///
+    /// Every row of [`COMPILER_OWNED_PRELUDE_ROWS`] is built today, so no
+    /// program reaches this. It remains the stop a row added to that list
+    /// ahead of its body would take.
+    ///
+    /// These records are declared body-less like the host rows, but unlike a
+    /// host row no trusted-base object defines them: the compiler is supposed
+    /// to emit their bodies. Reaching here means a program called one, and
+    /// stopping is what keeps an unimplemented capability from becoming a
+    /// module that names a symbol nothing defines. It is never a source
+    /// verdict, so the driver reports it as the unsupported capability it is.
+    UnimplementedPreludeRow(&'static str),
 }
+
+/// The [PRE-1] records whose bodies the compiler itself emits: the nine
+/// construction functions [OP-13], the nine window operations [OP-10],
+/// `swap` [OP-11] and `free_empty` [OP-14].
+///
+/// The host rows are deliberately absent: those are body-less because the
+/// trusted base defines them, and calling one emits an ordinary external
+/// call. A name that is on this list but that `lower_prelude_row` does not
+/// build reaches [`LoweringFailure::UnimplementedPreludeRow`], so a row this
+/// version has not built can never become a module that names a symbol
+/// nothing defines.
+pub(crate) const COMPILER_OWNED_PRELUDE_ROWS: [&str; 20] = [
+    // [OP-13] the nine construction functions.
+    "box_new",
+    "array_filled",
+    "slots_new",
+    "ring_new",
+    "box_array_filled",
+    "box_slots_new",
+    "box_ring_new",
+    "slots_from_array",
+    "slots_into_array",
+    // [OP-10] the nine window operations.
+    "place_back",
+    "take_back",
+    "insert_at",
+    "remove_at",
+    "append",
+    "split_off",
+    "grow",
+    "place_front",
+    "take_front",
+    // [OP-11] `swap` and [OP-14] `free_empty`.
+    "swap",
+    "free_empty",
+];
 
 mod builder;
 

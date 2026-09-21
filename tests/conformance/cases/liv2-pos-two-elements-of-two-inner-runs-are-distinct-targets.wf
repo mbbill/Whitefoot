@@ -1,74 +1,24 @@
+fn stamp(left: &Array<u8, 4>, right: &Array<u8, 4>, value: own u8) -> result: own unit writes(left), writes(right) {
+  doc "One element write through each reference parameter.";
+  set deref(left)[1_u64] = value;
+  set deref(right)[1_u64] = value;
+  return unit;
+}
+
 fn main() -> status: own ExitStatus pure {
-  doc "LIV-2 condition 2 over two subscripted places of a run of runs. The two targets agree in their last offset and differ in their first, so the complete path is what decides them: `grid[0][1]` and `grid[1][1]` are two storages and the one commit writes both.";
-  region 'a {
-    let workspace = arena_frame::<8192, 16, 'a>();
-    region {
-      match arena_vector::<u8>(store: &uniq workspace, count: 8_u64) {
-        None() => {
-          return exit_status(code: 1_u8);
-        }
-        Some(value: first) => {
-          match arena_vector::<u8>(store: &uniq workspace, count: 8_u64) {
-            None() => {
-              return exit_status(code: 6_u8);
-            }
-            Some(value: second) => {
-              let left_room = room_of(first);
-              let right_room = room_of(second);
-              if left_room >= 2_u64 {
-                if right_room >= 2_u64 {
-                  region {
-                    place_back(vector: &uniq first, value: 1_u8);
-                  }
-                  let a0 = move first;
-                  region {
-                    place_back(vector: &uniq a0, value: 2_u8);
-                  }
-                  let a1 = move a0;
-                  region {
-                    place_back(vector: &uniq second, value: 3_u8);
-                  }
-                  let b0 = move second;
-                  region {
-                    place_back(vector: &uniq b0, value: 4_u8);
-                  }
-                  let b1 = move b0;
-                  let table = fixed_vector::<Vector<'a, u8>, 2>();
-                  region {
-                    place_back(vector: &uniq table, value: move a1);
-                  }
-                  let row0 = move table;
-                  region {
-                    place_back(vector: &uniq row0, value: move b1);
-                  }
-                  let grid = move row0;
-                  let rows = len_of(grid);
-                  if rows == 2_u64 {
-                    let left = len_of(grid[0_u64]);
-                    let right = len_of(grid[1_u64]);
-                    if left == 2_u64 {
-                      if right == 2_u64 {
-                        set (grid[0_u64][1_u64], grid[1_u64][1_u64]) = 9_u8, 8_u8;
-                        let seen_left = grid[0_u64][1_u64];
-                        let seen_right = grid[1_u64][1_u64];
-                        if seen_left == 9_u8 {
-                          if seen_right == 8_u8 {
-                            return exit_status(code: 0_u8);
-                          }
-                        }
-                        return exit_status(code: 4_u8);
-                      }
-                    }
-                    return exit_status(code: 2_u8);
-                  }
-                  return exit_status(code: 3_u8);
-                }
-              }
-              return exit_status(code: 5_u8);
-            }
-          }
-        }
-      }
+  doc "OWN-7, EFF-5: the overlap relation is over the complete path and not over one offset. The two reference arguments name grid[0] and grid[1], whose index steps are literals with different values, so the call's two substituted write paths are proved disjoint and the pair is admitted; every step below them is relative to its own containing element, and both stamped bytes are read back.";
+  let inner_left = array_filled::<u8, 4>(value: 1_u8);
+  let inner_right = array_filled::<u8, 4>(value: 3_u8);
+  let grid = slots_new::<Array<u8, 4>, 2>();
+  place_back(window: &grid, value: inner_left);
+  place_back(window: &grid, value: inner_right);
+  stamp(left: &grid[0_u64], right: &grid[1_u64], value: 9_u8);
+  let seen_left = grid[0_u64][1_u64];
+  let seen_right = grid[1_u64][1_u64];
+  if seen_left == 9_u8 {
+    if seen_right == 9_u8 {
+      return exit_status(code: 0_u8);
     }
   }
+  return exit_status(code: 4_u8);
 }

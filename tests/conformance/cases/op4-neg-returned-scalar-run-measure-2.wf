@@ -3,32 +3,16 @@ struct Row {
   right: u64;
 }
 
-fn identity['r](value: &'r Row) -> result: &'r Row pure {
-  return value;
-}
-
-fn exclusive['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {
-  return &uniq 'r deref(value);
-}
-
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<Row, 4>();
+  doc "A write of one element field leaves the window length intact, but a SET-1 commit of the whole run kills every measure fact established over it, so the following subscript has nothing left to discharge it.";
+  let rows = slots_new::<Row, 4>();
   let first = Row(left: 3_u64, right: 4_u64);
-  region {
-    place_back(vector: &uniq empty, value: move first);
-  }
-  let prefix = move empty;
+  place_back(window: &rows, value: first);
   let second = Row(left: 5_u64, right: 6_u64);
-  region {
-    place_back(vector: &uniq prefix, value: move second);
-  }
-  let rows = move prefix;
-  region {
-    let changed = exclusive(value: &uniq rows[1_u64].right);
-    set deref(changed) = 9_u64;
-  }
-  let replacement = fixed_vector::<Row, 4>();
-  let removed = replace rows = move replacement;
+  place_back(window: &rows, value: second);
+  set rows[1_u64].right = 9_u64;
+  let replacement = slots_new::<Row, 4>();
+  set rows = move replacement;
   let observed = rows[0_u64].left;
   return exit_status(code: 0_u8);
 }

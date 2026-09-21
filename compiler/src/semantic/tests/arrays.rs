@@ -1,49 +1,74 @@
+//! The two inline storage shapes a source program writes without a cell
+//! [TYPE-9]: the const-eligible `Array<T, N>`, whose `len` and `cap` are both
+//! the type constant, and the window `Slots<T, N>`, whose `len` is a runtime
+//! number its block stores [WIN-1, MSR-1].
+//!
+//! v0.60 renamed both: `array<T, n>` is `Array<T, N>` and `FixedVector<T, n>`
+//! is `Slots<T, N>`, the constructions are the [OP-13] records
+//! `array_filled`, `slots_new` and `slots_from_array`, a measure is the place
+//! form `p.len` [OP-15] rather than the retired `len_of(p)` former, and a
+//! window's boundary moves only through the [OP-10] operations.
+
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::super::model::{
     CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedPlaceStep, CheckedSetTarget,
     CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue, IntegerType,
+    WindowShape,
 };
 use super::{assert_rule, assert_rule_kind, with_semantics};
 
+/// [CONST-2] a const is pure static rodata: `enum`, `Box`, `Slots` and `Ring`
+/// are not const-eligible, and neither is a runtime-capacity `Array<T>`,
+/// whose capacity is fixed at a construction a const never performs.
+///
+/// v0.59 answered a nested `FixedVector` const with a capability stop, because
+/// the run form was eligible and its element was not implemented. The rule now
+/// decides it: a window is refused at the written type, whatever its element.
 #[test]
-fn nested_fixed_vector_constants_keep_an_explicit_capability_boundary() {
-    super::assert_unsupported(
-        br#"const rows: array<FixedVector<u64, 2>, 1> =[[7_u64, 9_u64]];
+fn nested_window_constants_are_a_const2_eligibility_rejection() {
+    assert_rule(
+        br#"const rows: Array<Slots<u64, 2>, 1> =[[7_u64, 9_u64]];
 
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        crate::UnsupportedSemanticFeature::CompositeValues,
+        SemanticRule::Const2,
+        SemanticIssueKind::InvalidConstValue,
     );
 }
 
+/// A named const is immutable and is read by subscript, measure member, field
+/// suffix, or `&` reference [CONST-2].
+///
+/// Two v0.59 cases retire with their subjects. `let old = replace rows[..] =
+/// 5_u64;` was [SET-2]'s statement, which is gone: [SET-1] writes the place
+/// and [WIN-3] owns the old value's disposition. `&uniq rows` and
+/// `&uniq rows[0_u64]` were the permission marker, which is gone: there is no
+/// marker on a reference [REF-1], and [CONST-2] admits reading a const
+/// through `&` so that a const table may be passed to a consumer.
+/// `set deref(target)[..] = 5_u64;` through a reference to a const cited
+/// [OWN-5], whose successors are [REF-1], [REF-2] and [EFF-5]; none of the
+/// three states a const-target rule of its own, so the case retires here and
+/// the writability of a const root stays [CONST-2]'s, asserted directly
+/// above.
 #[test]
 fn constant_typed_places_remain_immutable_and_proof_checked() {
-    let prefix = "const rows: array<array<u64, 2>, 1> =[[7_u64, 9_u64]];\n\n";
-    for action in [
-        "set rows[0_u64][1_u64] = 5_u64;",
-        "let old = replace rows[0_u64][1_u64] = 5_u64;",
-        "region {\n    let target = &uniq rows;\n  }",
-        "region {\n    let target = &uniq rows[0_u64];\n  }",
-    ] {
-        let source = format!(
-            "{prefix}fn main() -> status: own ExitStatus pure {{\n  {action}\n  return exit_status(code: 0_u8);\n}}\n"
-        );
-        assert_rule_kind(source.as_bytes(), SemanticRule::Const2, |kind| {
-            matches!(kind, SemanticIssueKind::ImmutableSetTarget)
-        });
-    }
+    let prefix = "const rows: Array<Array<u64, 2>, 1> =[[7_u64, 9_u64]];\n\n";
+    let source = format!(
+        "{prefix}fn main() -> status: own ExitStatus pure {{\n  set rows[0_u64][1_u64] = 5_u64;\n  return exit_status(code: 0_u8);\n}}\n"
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Const2, |kind| {
+        matches!(kind, SemanticIssueKind::ImmutableSetTarget)
+    });
     for (action, rule) in [
         ("let taken = move rows;", SemanticRule::Own1),
-        ("let taken = move rows[0_u64];", SemanticRule::Type2),
+        // Structural copy makes this array element a copy place, so [OWN-1]
+        // refuses the unnecessary `move` before [WIN-3] is relevant.
+        ("let taken = move rows[0_u64];", SemanticRule::Own1),
         ("let taken = move rows[0_u64][0_u64];", SemanticRule::Own1),
         ("let value = rows[1_u64][0_u64];", SemanticRule::Op4),
-        (
-            "region {\n    let target = &rows;\n    set deref(target)[0_u64][0_u64] = 5_u64;\n  }",
-            SemanticRule::Own5,
-        ),
     ] {
         let source = format!(
             "{prefix}fn main() -> status: own ExitStatus pure {{\n  {action}\n  return exit_status(code: 0_u8);\n}}\n"
@@ -57,62 +82,61 @@ fn constant_typed_places_remain_immutable_and_proof_checked() {
     }
 }
 
+/// [CONST-2] a const is read through a `&` reference, so a const table may be
+/// passed to a consumer, and the reference's referent is the const's own
+/// storage [REF-1].
+///
+/// This replaces `normalized_constant_run_storage_is_not_an_array_borrow`,
+/// whose subject was the v0.59 `FixedVector` const form's dense array backing
+/// and whose assertion was the retired
+/// `UnsupportedSemanticFeature::RegionsAndBorrows`. A window is not
+/// const-eligible in v0.60 [CONST-2], so there is no normalization left to
+/// distinguish and the surviving question is that the const is readable
+/// through the reference at all.
 #[test]
-fn normalized_constant_run_storage_is_not_an_array_borrow() {
-    // This legal source use needs an ordinary FixedVector borrow descriptor;
-    // its current capability stop is independent of any callee type mismatch.
-    super::assert_unsupported(
-        br#"const table: FixedVector<u64, 2> =[7_u64, 9_u64];
+fn a_const_array_is_read_through_a_reference() {
+    with_semantics(
+        br#"const table: Array<u64, 2> =[7_u64, 9_u64];
 
-fn main() -> status: own ExitStatus pure {
-  region {
-    let shared = &table;
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        crate::UnsupportedSemanticFeature::RegionsAndBorrows,
-    );
-    // The dense physical backing must also never create an array-typed
-    // source borrow. The same operand capability stops before the call's
-    // otherwise incompatible parameter type is checked.
-    super::assert_unsupported(
-        br#"const table: FixedVector<u64, 2> =[7_u64, 9_u64];
-
-fn read(values: &array<u64, 2>) -> result: own u64 reads(values) {
+fn read(values: &Array<u64, 2>) -> result: own u64 reads(values) {
   return deref(values)[1_u64];
 }
 
 fn main() -> status: own ExitStatus pure {
-  region {
-    let value = read(values: &table);
-  }
+  let value = read(values: &table);
   return exit_status(code: 0_u8);
 }
 "#,
-        crate::UnsupportedSemanticFeature::RegionsAndBorrows,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "a const table is passed to a consumer by reference: {outcome:?}"
+            );
+        },
     );
 }
 
 #[test]
 fn constant_array_entries_follow_the_type_directed_value_shapes() {
-    for (inner, element) in [
-        ("array<u64, 2>", "array<u64, 2>"),
-        ("FixedVector<u64, 2>", "array<u64, 2>"),
-        ("array<u64, 2>", "FixedVector<u64, 2>"),
-        ("FixedVector<u64, 2>", "FixedVector<u64, 2>"),
-    ] {
-        let source = format!(
-            "const inner: {inner} =[7_u64, 9_u64];\n\nconst rows: array<{element}, 1> =[inner];\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
-        );
-        assert_rule_kind(source.as_bytes(), SemanticRule::Const2, |kind| {
-            matches!(kind, SemanticIssueKind::InvalidConstValue)
-        });
-    }
+    // An `Array<T, N>`-typed const takes `[cvalue, ..., cvalue]` with exactly
+    // N entries, each of type T [CONST-2]; an IDENT naming an earlier
+    // composite const is not one of those entry shapes.
+    assert_rule_kind(
+        br#"const inner: Array<u64, 2> =[7_u64, 9_u64];
+
+const rows: Array<Array<u64, 2>, 1> =[inner];
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Const2,
+        |kind| matches!(kind, SemanticIssueKind::InvalidConstValue),
+    );
     with_semantics(
         br#"const scalar: u64 = 7_u64;
 
-const rows: array<u64, 1> =[scalar];
+const rows: Array<u64, 1> =[scalar];
 
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
@@ -130,7 +154,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn constant_array_eligibility_closes_recursive_types_before_checking_the_value() {
     let source = br#"struct Recursive {
-  children: array<Recursive, 0>;
+  children: Array<Recursive, 0>;
 }
 
 const invalid: Recursive = Recursive(children:[unit]);
@@ -154,7 +178,7 @@ fn main() -> status: own ExitStatus pure {
             "the initializer has one entry for a zero-extent field"
         );
     });
-    let forbidden = br#"const forbidden: array<array<box<u64>, 0>, 1> =[unit];
+    let forbidden = br#"const forbidden: Array<Array<Box<u64>, 0>, 1> =[unit];
 
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
@@ -169,32 +193,33 @@ fn main() -> status: own ExitStatus pure {
         let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
-        assert_eq!(&forbidden[start..end], b"box<u64>");
+        assert_eq!(&forbidden[start..end], b"Box<u64>");
     });
 }
 
+/// [OP-13] `slots_into_array` consumes a window whose `len` equals its `cap`,
+/// and that `requires` is an ordinary [FN-8] call requirement rather than the
+/// retired [BLK-0] kernel-row requirement. The linear obligation travels with
+/// the value across the conversion in both directions [PROV-6].
 #[test]
 fn full_array_conversion_requires_fullness_and_preserves_linear_obligations() {
     assert_rule_kind(
         br#"fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u64, 2>();
-  region {
-    place_back(vector: &uniq empty, value: 7_u64);
-  }
-  let partial = move empty;
-  let invalid = array_from_fixed(vector: move partial);
+  let partial = slots_new::<u64, 2>();
+  place_back(window: &partial, value: 7_u64);
+  let invalid = slots_into_array::<u64, 2>(values: move partial);
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Blk0,
-        |kind| matches!(kind, SemanticIssueKind::UndischargedKernelRequirement(_)),
+        SemanticRule::Fn8,
+        |kind| matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_)),
     );
     assert_rule_kind(
-        br#"linear struct Token {
+        br#"nodrop struct Token {
   value: u64;
 }
 
-fn abandon(values: own array<Token, 0>) -> result: own unit pure {
+fn abandon(values: own Array<Token, 0>) -> result: own unit pure {
   return unit;
 }
 
@@ -206,12 +231,12 @@ fn main() -> status: own ExitStatus pure {
         |kind| matches!(kind, SemanticIssueKind::LinearValueNotConsumed { .. }),
     );
     with_semantics(
-        br#"linear struct Token {
+        br#"nodrop struct Token {
   value: u64;
 }
 
-fn convert(values: own array<Token, 0>) -> result: own FixedVector<Token, 0> pure {
-  return fixed_from_array(values: move values);
+fn convert(values: own Array<Token, 0>) -> result: own Slots<Token, 0> pure {
+  return slots_from_array::<Token, 0>(values: move values);
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -227,70 +252,87 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
-#[test]
-fn general_array_views_remain_an_explicit_capability_gap() {
-    super::assert_unsupported(
-        br#"fn main() -> status: own ExitStatus pure {
-  let inner = array_new::<u64, 2>(7_u64);
-  let empty = fixed_vector::<array<u64, 2>, 1>();
-  region {
-    place_back(vector: &uniq empty, value: move inner);
-  }
-  let full = move empty;
-  let values = array_from_fixed(vector: move full);
-  region {
-    let view = slice_of(&values);
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        crate::UnsupportedSemanticFeature::CompositeValues,
-    );
-}
+// Retired with its subject: `general_array_views_remain_an_explicit_capability_gap`
+// formed a view with `slice_of(&values)` over an array of arrays and asserted
+// the capability stop that answered it. Views are retired: [VIEW-1], [VIEW-2],
+// [VIEW-4] and [VIEW-6] become [REF-4]'s range references and [CALL-3], a
+// range is formed by `&x[lo..hi]`, and its own formation obligations and
+// placement restrictions belong to the range-reference suite rather than to
+// the array shapes this module owns.
 
+/// [EFF-1] a by-value parameter has no effect entry at all: the call site
+/// records the consumption of a `move` argument or the read of a copy one
+/// [EFF-5], so an element read through an own parameter exhibits nothing and
+/// the declaration writes `pure`. A reference parameter's read is attributed
+/// to the path the reference names [EFF-2].
+///
+/// v0.59 required `reads(values)` on the own parameter and asserted the
+/// [EFF-2] mismatch that omitting it produced. The same spelling is now an
+/// [EFF-1] row rejection, so both directions moved.
 #[test]
 fn incoming_array_element_reads_exhibit_the_resolved_formal_effect() {
-    let source = br#"fn read(values: own array<u64, 2>) -> result: own u64 pure {
+    with_semantics(
+        br#"fn read(values: own Array<u64, 2>) -> result: own u64 pure {
   return values[0_u64];
 }
 
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
-"#;
-    // The old array-only read path omitted EFF-2 attribution. The complete
-    // typed storage path applies the same incoming-state rule as other owners.
-    assert_rule_kind(source, SemanticRule::Eff2, |kind| {
-        matches!(kind,
-        SemanticIssueKind::EffectMismatch { missing, .. } if missing == &["reads(values)".to_owned()])
-    });
-    let admitted = String::from_utf8(source.to_vec())
-        .expect("ASCII fixture")
-        .replacen("own u64 pure", "own u64 reads(values)", 1);
-    with_semantics(admitted.as_bytes(), |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "exact incoming read row: {outcome:?}"
-        )
-    });
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "an own parameter's element read exhibits nothing: {outcome:?}"
+            )
+        },
+    );
+    assert_rule_kind(
+        br#"fn read(values: own Array<u64, 2>) -> result: own u64 reads(values) {
+  return values[0_u64];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Eff1,
+        |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
+    );
+    with_semantics(
+        br#"fn read(values: &Array<u64, 2>) -> result: own u64 reads(values) {
+  return deref(values)[0_u64];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "exact incoming read row through a reference: {outcome:?}"
+            )
+        },
+    );
 }
 
 #[test]
-fn full_array_elements_preserve_brands_through_generic_replay_and_borrowed_reads() {
+fn full_array_elements_preserve_cells_through_generic_replay_and_reference_reads() {
     let source = br#"struct Record {
   value: u64;
-  owner: box<u64>;
+  owner: Box<u64>;
 }
 
-fn pass<T: linear>(value: own T) -> result: own T pure {
+fn pass<T>(value: own T) -> result: own T pure {
   return move value;
 }
 
-fn relay['s](values: own array<Box<'s, u64>, 2>) -> result: own array<Box<'s, u64>, 2> pure {
-  return pass::<array<Box<'s, u64>, 2>>(value: move values);
+fn relay(values: own Array<Box<u64>, 2>) -> result: own Array<Box<u64>, 2> pure {
+  return pass::<Array<Box<u64>, 2>>(value: move values);
 }
 
-fn read(values: &array<Record, 2>) -> result: own u64 reads(values) {
+fn read(values: &Array<Record, 2>) -> result: own u64 reads(values) {
   return deref(values)[0_u64].value;
 }
 
@@ -321,10 +363,7 @@ fn main() -> status: own ExitStatus pure {
         };
         assert!(matches!(
             checked.data.nominals[owner.0 as usize].kind,
-            super::super::model::CheckedNominalKind::Box {
-                region: Some(_),
-                ..
-            }
+            super::super::model::CheckedNominalKind::Box { .. }
         ));
         let pass = checked
             .data
@@ -335,26 +374,27 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(pass.parameters[0].ty, relay.result);
         assert_eq!(pass.result, relay.result);
         crate::lower_checked(*checked, crate::lowering::OverlapLowering::Off)
-            .expect("full array borrowed read and relay lower");
+            .expect("full array reference read and relay lower");
     });
 }
 
+/// An array's slots are inline in its owner [STOR-1], so an element type of
+/// unknown extent has no layout and a zero-extent one has no layout edge.
+///
+/// v0.59 also swept `Slice<'r, u8>`, `Heap<'r>` and `Arena<'r, 64, 8>` as
+/// array content and asserted [STOR-5]'s `RegionBearingStorage`. Views,
+/// providers and arenas are retired with regions, and [STOR-5]'s surviving
+/// half — storage is reference-free — is closed by [TYPE-8] in the grammar,
+/// which admits no reference kind in an element or type-argument position at
+/// all, so no source program reaches that judgment.
 #[test]
-fn full_arrays_preserve_storage_exclusions_and_inline_layout_boundaries() {
-    for content in ["Slice<'r, u8>", "Heap<'r>", "Arena<'r, 64, 8>"] {
-        let source = format!(
-            "struct Forbidden['r] {{\n  values: array<{content}, 0>;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
-        );
-        assert_rule_kind(source.as_bytes(), SemanticRule::Stor5, |kind| {
-            matches!(kind, SemanticIssueKind::RegionBearingStorage { .. })
-        });
-    }
+fn full_arrays_keep_their_inline_layout_boundaries() {
     super::assert_unsupported(
-        b"struct Recursive {\n  values: array<Recursive, 1>;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Recursive {\n  values: Array<Recursive, 1>;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         crate::UnsupportedSemanticFeature::RecursiveNominalLayout,
     );
     with_semantics(
-        b"struct Empty {\n  values: array<Empty, 0>;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Empty {\n  values: Array<Empty, 0>;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(checked) = outcome else { panic!("zero extent has no recursive layout edge: {outcome:?}"); };
             crate::lower_checked(*checked, crate::lowering::OverlapLowering::Off).expect("zero extent recursive type lowers");
@@ -362,53 +402,32 @@ fn full_arrays_preserve_storage_exclusions_and_inline_layout_boundaries() {
     );
 }
 
-/// [TYPE-7, MSR-1] an explicit dereference of an own Box is a measured place,
-/// not the implicit read of a borrow holder. The checked path retains the Box
-/// step so lowering follows the allocation rather than measuring the pointer
-/// slot or a copied run value.
+/// [TYPE-9, MSR-1] a cell's content is the field `inner`, and a measure over
+/// it is `b.inner.len`. The checked path retains the `Box` step so lowering
+/// follows the allocation rather than measuring the pointer slot or a copied
+/// window value.
+///
+/// v0.59 wrote the same place as `len_of(deref(block))`. Both the former and
+/// the `deref` route to a cell are retired [OP-15, TYPE-7].
 #[test]
-fn an_owned_box_referent_is_an_admitted_measured_place() {
+fn a_cell_content_is_an_admitted_measured_place() {
     let source = br#"fn main() -> status: own ExitStatus pure {
-  region 'a {
-    let store = arena_frame::<64, 8, 'a>();
-    region {
-      let empty = fixed_vector::<u8, 4>();
-      region {
-        place_back(vector: &uniq empty, value: 1_u8);
-      }
-      let one = move empty;
-      match arena_box(store: &uniq store, value: move one) {
-        Err(error: back) => {
-          return exit_status(code: 1_u8);
-        }
-        Ok(value: block) => {
-          let capacity = cap_of(deref(block));
-          let length = len_of(deref(block));
-          return exit_status(code: 0_u8);
-        }
-      }
-    }
-  }
+  let one = slots_new::<u8, 4>();
+  let block = box_new::<Slots<u8, 4>>(value: move one);
+  let capacity = block.inner.cap;
+  let length = block.inner.len;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("an own Box referent is a measure place: {outcome:?}");
+            panic!("a cell's content is a measure place: {outcome:?}");
         };
-        let arm = &checked.data.functions[0].body.as_deref().expect("WF body")[0];
-        let CheckedStatement::Region { body, .. } = arm else {
-            panic!("outer store region must remain checked");
-        };
-        let CheckedStatement::Region { body, .. } = &body[1] else {
-            panic!("inner borrow region must remain checked");
-        };
-        let CheckedStatement::Match { arms, .. } = &body[3] else {
-            panic!("arena_box result must remain a checked match");
-        };
+        let body = checked.data.functions[0].body.as_deref().expect("WF body");
         let CheckedStatement::Let {
             value: CheckedExpression::ContainerMeasure { root, .. },
             ..
-        } = &arms[1].body[0]
+        } = &body[2]
         else {
             panic!("capacity must lower as a container measure");
         };
@@ -419,62 +438,37 @@ fn an_owned_box_referent_is_an_admitted_measured_place() {
     });
 }
 
-#[test]
-fn a_bare_owned_box_still_requires_explicit_dereference_to_measure_its_referent() {
-    assert_rule_kind(
-        br#"fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 4>();
-  let block = box_new(move empty);
-  let capacity = cap_of(block);
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Type7,
-        |kind| matches!(kind, SemanticIssueKind::MissingDereference { .. }),
-    );
-}
+// Retired with its subject: `a_bare_owned_box_still_requires_explicit_dereference_to_measure_its_referent`
+// asserted [TYPE-7]'s implicit read through a cell holder, `cap_of(block)`
+// against `cap_of(deref(block))`. v0.60 retires the `deref` route to a cell
+// outright — a cell's content is its field `inner` [TYPE-9] and `deref` of a
+// `Box` is itself a TYPE-7 rejection — so the successor case is
+// `cells::deref_of_a_cell_is_a_type7_rejection_naming_the_field_inner`, and
+// the positive `block.inner.cap` is asserted directly above.
 
-/// A fact about the old referent must die when the whole Box owner is
-/// replaced. Otherwise its old nonempty length could authorize an element
-/// read from the new empty run.
+/// A fact about the old content must die when the whole cell owner is
+/// assigned over. Otherwise its old nonempty length could authorize an
+/// element read from the new empty window.
+///
+/// v0.59 wrote the whole-owner write as `let previous = replace block = move
+/// fresh;`. [SET-2] is retired: [SET-1] writes the place and [WIN-3] releases
+/// the displaced affine value.
 #[test]
-fn replacing_an_owned_box_kills_its_referents_old_measure() {
+fn assigning_an_owned_cell_kills_its_contents_old_measure() {
     let source = br#"fn main() -> status: own ExitStatus pure {
-  region 'a {
-    let store = arena_frame::<128, 8, 'a>();
-    region {
-      let old_empty = fixed_vector::<u8, 1>();
-      region {
-        place_back(vector: &uniq old_empty, value: 7_u8);
-      }
-      let old_run = move old_empty;
-      match arena_box(store: &uniq store, value: move old_run) {
-        Err(error: back) => {
-          return exit_status(code: 1_u8);
-        }
-        Ok(value: block) => {
-          region {
-            let fresh_run = fixed_vector::<u8, 1>();
-            match arena_box(store: &uniq store, value: move fresh_run) {
-              Err(error: back) => {
-                return exit_status(code: 2_u8);
-              }
-              Ok(value: fresh) => {
-                let old_length = len_of(deref(block));
-                let in_old = 0_u64 < old_length;
-                if in_old {
-                  let previous = replace block = move fresh;
-                  let invalid = deref(block)[0_u64];
-                  return exit_status(code: invalid);
-                } else {
-                  return exit_status(code: 3_u8);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+  let old_run = slots_new::<u8, 1>();
+  place_back(window: &old_run, value: 7_u8);
+  let block = box_new::<Slots<u8, 1>>(value: move old_run);
+  let fresh_run = slots_new::<u8, 1>();
+  let fresh = box_new::<Slots<u8, 1>>(value: move fresh_run);
+  let old_length = block.inner.len;
+  let in_old = 0_u64 < old_length;
+  if in_old {
+    set block = move fresh;
+    let invalid = block.inner[0_u64];
+    return exit_status(code: invalid);
+  } else {
+    return exit_status(code: 3_u8);
   }
 }
 "#;
@@ -483,32 +477,24 @@ fn replacing_an_owned_box_kills_its_referents_old_measure() {
     });
 }
 
-/// B7c4b moved this module off `array<T, n>` and `array_new`. The [S34] const
-/// run keeps the array place as its storage type — four exact constants over a
-/// run of `n` slots, materialized from the type — so a const's checked type is
-/// still `CheckedType::Array` and its subscript uses `ReadStorage` rooted at
-/// the constant. This fixture's constructed runs are `FixedVector`s, whose
-/// capacity is standing and whose `len_of`, `room_of` and `head_of` are
-/// descriptor words, so a built run's measure is `ContainerMeasure`, its
-/// subscript is `ReadStorage`, and its indexed commit is `CheckedSetTarget::
-/// Storage`, each retaining the complete typed projection.
+/// A const keeps the array place as its storage type — N exact constants over
+/// N slots, materialized from the type [CONST-2, MSR-1] — so a const's checked
+/// type is `CheckedType::Array` and its subscript uses `ReadStorage` rooted at
+/// the constant. A constructed `Slots<T, N>` is a window whose capacity is
+/// standing and whose `len`, `room` and `head` are runtime numbers its block
+/// stores, so a built window's measure is `ContainerMeasure`, its subscript is
+/// `ReadStorage`, and its indexed commit is `CheckedSetTarget::Storage`, each
+/// retaining the complete typed projection.
 #[test]
 fn constants_fill_length_and_index_share_exact_run_types() {
     let source = br#"const count: u64 = 4_u64;
 
-const table: FixedVector<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
+const table: Array<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<i32, count>();
-  region {
-    place_back(vector: &uniq empty, value: 7_i32);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 7_i32);
-  }
-  let values = move one;
-  let length = len_of(values);
+  let base = array_filled::<i32, count>(value: 7_i32);
+  let values = slots_from_array::<i32, count>(values: base);
+  let length = values.len;
   let local = values[1_u64];
   let stored = table[2_u64];
   return exit_status(code: 0_u8);
@@ -516,7 +502,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("fixed-run family must check: {outcome:?}");
+            panic!("window family must check: {outcome:?}");
         };
         assert_eq!(checked.data.constants.len(), 2);
         assert!(matches!(
@@ -533,13 +519,14 @@ fn main() -> status: own ExitStatus pure {
 
         let body = &checked.data.functions[0].body.as_deref().expect("WF body");
         assert!(matches!(
-            &body[5],
+            &body[2],
             CheckedStatement::Let {
                 value: CheckedExpression::ContainerMeasure {
                     root: CheckedContainerRoot {
-                        ty: CheckedType::FixedVector {
+                        ty: CheckedType::Window {
+                            shape: WindowShape::Slots,
                             element,
-                            length: CheckedConst::Value(4),
+                            capacity: Some(CheckedConst::Value(4)),
                         },
                         ..
                     },
@@ -549,7 +536,7 @@ fn main() -> status: own ExitStatus pure {
             } if checked.element_type(*element) == Some(CheckedType::Integer(IntegerType::I32))
         ));
         assert!(matches!(
-            &body[6],
+            &body[3],
             CheckedStatement::Let {
                 value: CheckedExpression::ReadStorage {
                     root: CheckedContainerRoot {
@@ -561,12 +548,12 @@ fn main() -> status: own ExitStatus pure {
                 },
                 ..
             } if matches!(path.as_slice(), [CheckedPlaceStep::Subscript(index)]
-                if matches!(index.base_type, CheckedType::FixedVector { length: CheckedConst::Value(4), .. })
+                if matches!(index.base_type, CheckedType::Window { capacity: Some(CheckedConst::Value(4)), .. })
                 && index.target_domain == CheckedTargetDomainObligation::ElementAddress
                 && !index.obligation.components().is_empty())
         ));
         assert!(matches!(
-            &body[7],
+            &body[4],
             CheckedStatement::Let {
                 value: CheckedExpression::ReadStorage {
                     root: CheckedContainerRoot {
@@ -593,7 +580,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::InvalidConstValue,
     );
     assert_rule(
-        b"const table: FixedVector<u8, 2> =[1_u8];\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"const table: Array<u8, 2> =[1_u8];\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Const2,
         SemanticIssueKind::InvalidConstValue,
     );
@@ -613,7 +600,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::ImmutableSetTarget,
     );
     assert_rule_kind(
-        b"fn main() -> status: own ExitStatus pure {\n  let items = fixed_vector::<u8, 2>();\n  let value = items[0_u32];\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let items = slots_new::<u8, 2>();\n  let value = items[0_u32];\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -629,7 +616,7 @@ enum Flag {
 }
 
 struct Holder {
-  flags: FixedVector<Flag, count>;
+  flags: Slots<Flag, count>;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -639,7 +626,7 @@ fn main() -> status: own ExitStatus pure {
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!(
-                "nominal run fields must use earlier lengths and completed enum layouts: {outcome:?}"
+                "nominal window fields must use earlier lengths and completed enum layouts: {outcome:?}"
             );
         };
         let super::super::model::CheckedNominalKind::Struct { fields } =
@@ -647,20 +634,25 @@ fn main() -> status: own ExitStatus pure {
         else {
             panic!("Holder must remain a struct");
         };
-        let CheckedType::FixedVector { element, length } = fields[0].ty else {
-            panic!("field must be a fixed run");
+        let CheckedType::Window {
+            shape: WindowShape::Slots,
+            element,
+            capacity,
+        } = fields[0].ty
+        else {
+            panic!("field must be a constant-capacity window");
         };
-        assert_eq!(length, CheckedConst::Value(2));
+        assert_eq!(capacity, Some(CheckedConst::Value(2)));
         assert_eq!(
             checked.element_type(element),
             Some(CheckedType::Nominal(checked.data.nominals[0].id))
         );
     });
 
-    // TYPE-2 now admits complete owning elements in full arrays too; the
-    // former flat-only rejection is superseded by that explicit amendment.
+    // TYPE-2 admits complete owning elements in full arrays too; the former
+    // flat-only rejection is superseded by that explicit amendment.
     with_semantics(
-        b"enum Payload {\n  Item(value: i32);\n}\n\nstruct Holder {\n  values: array<Payload, 2>;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Payload {\n  Item(value: i32);\n}\n\nstruct Holder {\n  values: Array<Payload, 2>;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_)), "owning array member: {outcome:?}"),
     );
 }
@@ -668,15 +660,8 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
     let source = br#"fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0_u8);
-  }
-  let values = move one;
+  let base = array_filled::<u8, 2>(value: 0_u8);
+  let values = slots_from_array::<u8, 2>(values: base);
   set values[1_u64] = 9_u8;
   let stored = values[1_u64];
   return exit_status(code: 0_u8);
@@ -684,23 +669,28 @@ fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("indexed fixed-run set must check: {outcome:?}");
+            panic!("indexed window set must check: {outcome:?}");
         };
         let CheckedStatement::Set { target, .. } =
-            &checked.data.functions[0].body.as_deref().expect("WF body")[5]
+            &checked.data.functions[0].body.as_deref().expect("WF body")[2]
         else {
-            panic!("sixth statement must be the indexed set");
+            panic!("third statement must be the indexed set");
         };
         let CheckedSetTarget::Storage(target) = target else {
-            panic!("indexed set must retain a run-index target");
+            panic!("indexed set must retain a window-index target");
         };
         let [CheckedPlaceStep::Subscript(index)] = target.path.as_slice() else {
             panic!("the complete target must retain its subscript");
         };
-        let CheckedType::FixedVector { element, length } = index.base_type else {
-            panic!("index base must be a fixed run");
+        let CheckedType::Window {
+            shape: WindowShape::Slots,
+            element,
+            capacity,
+        } = index.base_type
+        else {
+            panic!("index base must be a constant-capacity window");
         };
-        assert_eq!(length, CheckedConst::Value(2));
+        assert_eq!(capacity, Some(CheckedConst::Value(2)));
         assert_eq!(
             checked.element_type(element),
             Some(CheckedType::Integer(IntegerType::U8))
@@ -720,7 +710,7 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
     // A discharged subscript adds no runtime effect: the indexed set with a
     // constant in-range offset is accepted in a `pure` function.
     with_semantics(
-        b"fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  region {\n    place_back(vector: &uniq empty, value: 0_u8);\n  }\n  let values = move empty;\n  set values[0_u64] = 1_u8;\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let base = array_filled::<u8, 2>(value: 0_u8);\n  let values = slots_from_array::<u8, 2>(values: base);\n  set values[0_u64] = 1_u8;\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             assert!(
                 matches!(outcome, SemanticOutcome::Complete(_)),
@@ -729,12 +719,12 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
         },
     );
     assert_rule_kind(
-        b"fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  region {\n    place_back(vector: &uniq empty, value: 0_u8);\n  }\n  let values = move empty;\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let base = array_filled::<u8, 2>(value: 0_u8);\n  let values = slots_from_array::<u8, 2>(values: base);\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
-        b"fn consume(values: own FixedVector<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  region {\n    place_back(vector: &uniq empty, value: 0_u8);\n  }\n  let values = move empty;\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn consume(values: own Slots<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let base = array_filled::<u8, 2>(value: 0_u8);\n  let values = slots_from_array::<u8, 2>(values: base);\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own1,
         SemanticIssueKind::UseAfterMove {
             mechanical_fix: "introduce a new `let` binding before reuse",
@@ -742,10 +732,19 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
     );
 }
 
+/// A window reached through struct fields keeps its complete path in the
+/// checked target and the checked read.
+///
+/// The third v0.59 case held a shared borrow of the whole owner across an
+/// indexed write and asserted [OWN-5]'s `BorrowConflict`. That rule is
+/// retired: [REF-1] gives a reference a path and nothing else, and the only
+/// reference-use rejection left is the use of an invalid one [REF-2]. A write
+/// below the referenced whole owner is a content write and does not invalidate
+/// that reference, so the case retains a use after the indexed write.
 #[test]
 fn nested_struct_run_places_retain_their_complete_paths() {
     let source = br#"struct Inner {
-  values: FixedVector<u8, 2>;
+  values: Slots<u8, 2>;
 }
 
 struct Outer {
@@ -753,18 +752,11 @@ struct Outer {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0_u8);
-  }
-  let values = move one;
+  let base = array_filled::<u8, 2>(value: 0_u8);
+  let values = slots_from_array::<u8, 2>(values: base);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
-  let length = len_of(outer.inner.values);
+  let length = outer.inner.values.len;
   set outer.inner.values[1_u64] = 9_u8;
   let stored = outer.inner.values[1_u64];
   return exit_status(code: 0_u8);
@@ -772,14 +764,14 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("nested struct run places must check: {outcome:?}");
+            panic!("nested struct window places must check: {outcome:?}");
         };
         let body = &checked.data.functions[0].body.as_deref().expect("WF body");
-        let CheckedStatement::Set { target, .. } = &body[8] else {
-            panic!("ninth statement must be the projected indexed set");
+        let CheckedStatement::Set { target, .. } = &body[5] else {
+            panic!("sixth statement must be the projected indexed set");
         };
         let CheckedSetTarget::Storage(target) = target else {
-            panic!("set must retain one checked run-index target");
+            panic!("set must retain one checked window-index target");
         };
         assert!(matches!(
             target.path.as_slice(),
@@ -790,7 +782,7 @@ fn main() -> status: own ExitStatus pure {
             ]
         ));
         assert!(matches!(
-            &body[9],
+            &body[6],
             CheckedStatement::Let {
                 value: CheckedExpression::ReadStorage {
                     root: CheckedContainerRoot { path, .. },
@@ -803,7 +795,7 @@ fn main() -> status: own ExitStatus pure {
 
     assert_rule(
         br#"struct Inner {
-  values: FixedVector<u8, 2>;
+  values: Slots<u8, 2>;
 }
 
 struct Outer {
@@ -815,15 +807,8 @@ fn replacement(value: own Outer) -> result: own u8 pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0_u8);
-  }
-  let values = move one;
+  let base = array_filled::<u8, 2>(value: 0_u8);
+  let values = slots_from_array::<u8, 2>(values: base);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
   set outer.inner.values[1_u64] = replacement(value: move outer);
@@ -836,104 +821,65 @@ fn main() -> status: own ExitStatus pure {
         },
     );
 
-    assert_rule(
+    with_semantics(
         br#"struct Inner {
-  values: FixedVector<u8, 2>;
+  values: Slots<u8, 2>;
 }
 
 struct Outer {
   inner: Inner;
+  marker: u8;
+}
+
+fn observe(value: &Outer) -> result: own u8 reads(value.marker) {
+  return deref(value).marker;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0_u8);
-  }
-  let values = move one;
+  let base = array_filled::<u8, 2>(value: 0_u8);
+  let values = slots_from_array::<u8, 2>(values: base);
   let inner = Inner(values: move values);
-  let outer = Outer(inner: move inner);
-  region {
-    let held = &outer;
-    set outer.inner.values[1_u64] = 9_u8;
-  }
+  let outer = Outer(inner: move inner, marker: 7_u8);
+  let held = &outer;
+  set outer.inner.values[1_u64] = 9_u8;
+  let seen = observe(value: held);
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Own5,
-        SemanticIssueKind::BorrowConflict,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "a descendant content write must preserve the whole-owner reference: {outcome:?}"
+            );
+        },
     );
 }
 
-/// B7c4b left this case on the retiring surface. [STOR-5]'s refusal of
-/// region-bearing content *inside an array* has no run twin: a run parameter
-/// whose element is a view stops earlier as an unsupported composite value,
-/// and `fixed_vector::<Slice<u8>, 1>()` is refused at [OP-1] rather than
-/// [STOR-5], so neither program reaches this rule. It retires with
-/// `array<T, n>`.
-#[test]
-fn region_bearing_array_content_rejects_under_stor5() {
-    let expected = SemanticIssueKind::RegionBearingStorage {
-        mechanical_fix: "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
-    };
-    assert_rule(
-        br#"fn invalid(value: own array<Slice<u8>, 1>) -> result: own unit pure {
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Stor5,
-        expected.clone(),
-    );
-    assert_rule(
-        br#"fn invalid(value: own Slice<u8>) -> result: own unit pure {
-  array_new::<Slice<u8>, 1>(move value);
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Stor5,
-        expected,
-    );
-}
+// Retired with its subject: `region_bearing_array_content_rejects_under_stor5`
+// and `general_elements_reject_deep_stored_views_and_providers` both asserted
+// [STOR-5]'s `RegionBearingStorage` over array and window content whose
+// element was a view, a provider or an arena. Views, providers, arenas and
+// regions are retired; [TYPE-8] closes the one surviving case — a reference
+// kind in an element or type-argument position — in the grammar, so no source
+// program reaches the semantic judgment.
 
 #[test]
 fn general_elements_allow_an_array_value_inside_a_run_slot() {
     let source = br#"fn main() -> status: own ExitStatus pure {
-  let row = array_new::<u64, 2>(7_u64);
-  let empty = fixed_vector::<array<u64, 2>, 2>();
-  region {
-    place_back(vector: &uniq empty, value: move row);
-  }
-  let rows = move empty;
+  let row = array_filled::<u64, 2>(value: 7_u64);
+  let rows = slots_new::<Array<u64, 2>, 2>();
+  place_back(window: &rows, value: row);
   set rows[0_u64][1_u64] = 9_u64;
   let value = rows[0_u64][1_u64];
-  let width = len_of(rows[0_u64]);
-  let capacity = cap_of(rows[0_u64]);
-  let head = head_of(rows[0_u64]);
-  let room = room_of(rows[0_u64]);
+  let width = rows[0_u64].len;
   invariant width_lower: width >= 2_u64;
   invariant width_upper: width <= 2_u64;
-  invariant capacity_lower: capacity >= 2_u64;
-  invariant capacity_upper: capacity <= 2_u64;
-  invariant head_zero: head <= 0_u64;
-  invariant room_zero: room <= 0_u64;
   return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("an array is a complete nameable run element: {outcome:?}");
+            panic!("an array is a complete nameable window element: {outcome:?}");
         };
         let main = checked
             .data
@@ -944,7 +890,7 @@ fn general_elements_allow_an_array_value_inside_a_run_slot() {
         let CheckedStatement::Set {
             target: CheckedSetTarget::Storage(target),
             ..
-        } = &main.body.as_deref().expect("WF body")[4]
+        } = &main.body.as_deref().expect("WF body")[3]
         else {
             panic!("nested array mutation must use the ordinary typed storage path");
         };
@@ -954,25 +900,4 @@ fn general_elements_allow_an_array_value_inside_a_run_slot() {
             if matches!(index.base_type, CheckedType::Array { length: CheckedConst::Value(2), .. }))
         );
     });
-}
-
-#[test]
-fn general_elements_reject_deep_stored_views_and_providers() {
-    for source in [
-        br#"fn invalid(value: own FixedVector<FixedVector<FixedVector<Slice<u8>, 1>, 1>, 1>) -> result: own unit pure {
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#.as_slice(),
-        br#"fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus pure {
-  let invalid = fixed_vector::<FixedVector<FixedVector<Heap<'heap>, 1>, 1>, 1>();
-  return exit_status(code: 0_u8);
-}
-"#.as_slice(),
-    ] {
-        assert_rule_kind(source, SemanticRule::Stor5, |kind| matches!(kind, SemanticIssueKind::RegionBearingStorage { .. }));
-    }
 }

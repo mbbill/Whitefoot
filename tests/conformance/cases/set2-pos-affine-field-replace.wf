@@ -1,4 +1,4 @@
-struct Item {
+nocopy struct Item {
   value: u64;
 }
 
@@ -7,12 +7,12 @@ struct Slot {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "SET-2: `let x = replace p = e;` exchanges the affine value at a writable place and binds the previous value as a fresh own binding. The target root stays live and is read again after the commit, and the moved-out value's sole owner is the new binding.";
+  doc "swap exchanges the affine values at two writable places and consumes neither root: both bindings stay live and each root becomes the sole owner of the value the other held. The previous field value is read back from the second place after the commit, and the field is read again through its live root.";
   let first = Item(value: 1_u64);
   let slot = Slot(item: move first);
   let second = Item(value: 2_u64);
-  let previous = replace slot.item = move second;
-  let old = previous.value;
+  swap(first: &slot.item, second: &second);
+  let old = second.value;
   if old == 1_u64 {
   } else {
     return exit_status(code: 1_u8);

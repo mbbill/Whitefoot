@@ -1,23 +1,25 @@
+nocopy enum Cell<T> {
+  EmptyCell();
+  Filled(value: T);
+}
+
 struct OptVec {
-  buf: FixedVector<Option<u32>, 4>;
+  buf: Slots<Cell<u32>, 4>;
   fill: u64;
 }
 
-fn vacant<T: affine, const n: u64>() -> result: own FixedVector<Option<T>, n> pure contract {
-  ensures len_of(result) >= n;
-  ensures room_of(result) <= 0_u64;
-  ensures head_of(result) <= 0_u64;
+fn vacant<T: drop, const n: u64>() -> result: own Slots<Cell<T>, n> pure contract {
+  ensures result.len >= n;
+  ensures result.cap <= result.len;
 } {
-  doc "Builds a run of n slots, every one holding None.";
-  let built = fixed_vector::<Option<T>, n>();
+  doc "Builds a window of n slots, every one holding None.";
+  let built = slots_new::<Cell<T>, n>();
   for @fill (
     at in 0_u64..n,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= n,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len == at
   ) {
-    let empty = None<T>();
-    place_back(vector: &uniq built, value: move empty);
+    let empty = EmptyCell<T>();
+    place_back(window: &built, value: move empty);
   }
   return move built;
 }
@@ -27,21 +29,21 @@ fn optvec_new() -> result: own OptVec pure {
   return OptVec(buf: move empty, fill: 0_u64);
 }
 
-fn optvec_push(v: own OptVec, x: own u32) -> result: own OptVec reads(v.buf, v.fill), writes(v.buf, v.fill) {
-  doc "A run may not be lent uniquely [BLK-4], so the container is taken by value and handed back.";
+fn optvec_push(v: own OptVec, x: own u32) -> result: own OptVec pure {
+  doc "A by-value parameter carries no effect entry [EFF-1], so the container is taken by value and handed back. The element exchange is the built-in swap, which needs no hole [OP-11, WIN-3].";
   let count = v.fill;
-  let limit = len_of(v.buf);
+  let limit = v.buf.len;
   let has_room = count < limit;
   if has_room {
   } else {
     return move v;
   }
-  let filled = Some<u32>(value: x);
-  let displaced = replace v.buf[count] = move filled;
-  match displaced {
-    None() => {
+  let filled = Filled<u32>(value: x);
+  swap(first: &v.buf[count], second: &filled);
+  match filled {
+    EmptyCell() => {
     }
-    Some(value: stray) => {
+    Filled(value: stray) => {
       return move v;
     }
   }
@@ -50,7 +52,7 @@ fn optvec_push(v: own OptVec, x: own u32) -> result: own OptVec reads(v.buf, v.f
   return move v;
 }
 
-fn optvec_pop(v: own OptVec) -> (rest: own OptVec, taken: own u32) reads(v.buf, v.fill), writes(v.buf, v.fill) {
+fn optvec_pop(v: own OptVec) -> (rest: own OptVec, taken: own u32) pure {
   doc "The same hand-back, with the removed element beside the container.";
   let count = v.fill;
   let nonempty = count > 0_u64;
@@ -59,72 +61,37 @@ fn optvec_pop(v: own OptVec) -> (rest: own OptVec, taken: own u32) reads(v.buf, 
     return move v, 0_u32;
   }
   let last = count - 1_u64;
-  let limit = len_of(v.buf);
+  let limit = v.buf.len;
   let in_range = last < limit;
   if in_range {
   } else {
     return move v, 0_u32;
   }
-  let removed = replace v.buf[last] = None<u32>();
+  let hole = EmptyCell<u32>();
+  swap(first: &v.buf[last], second: &hole);
   set v.fill = last;
-  match removed {
-    None() => {
+  match hole {
+    EmptyCell() => {
       return move v, 0_u32;
     }
-    Some(value: w) => {
+    Filled(value: w) => {
       return move v, w;
     }
   }
 }
 
-struct Entry['s] {
+struct Entry {
   key: u64;
-  payload: Box<'s, u64>;
+  payload: Box<u64>;
 }
 
-enum FourBoxes['s] {
-  Ready(first: Box<'s, u64>, second: Box<'s, u64>, replacement: Box<'s, u64>, inserted: Box<'s, u64>);
-  Refused();
-}
-
-fn allocate_four['s](store: &uniq Heap<'s>) -> result: own FourBoxes<'s> reads(store), writes(store), allocates(store) {
-  region {
-    match heap_box(store: &uniq deref(store), value: 10_u64) {
-      Err(error: first_back) => {
-        return Refused<'s>();
-      }
-      Ok(value: first) => {
-        region {
-          match heap_box(store: &uniq deref(store), value: 20_u64) {
-            Err(error: second_back) => {
-              return Refused<'s>();
-            }
-            Ok(value: second) => {
-              region {
-                match heap_box(store: &uniq deref(store), value: 11_u64) {
-                  Err(error: replacement_back) => {
-                    return Refused<'s>();
-                  }
-                  Ok(value: replacement) => {
-                    region {
-                      match heap_box(store: &uniq deref(store), value: 30_u64) {
-                        Err(error: inserted_back) => {
-                          return Refused<'s>();
-                        }
-                        Ok(value: inserted) => {
-                          return Ready(first: move first, second: move second, replacement: move replacement, inserted: move inserted);
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+fn allocate_four() -> (first: own Box<u64>, second: own Box<u64>, replacement: own Box<u64>, inserted: own Box<u64>) pure {
+  doc "Four heap cells. There is one heap and allocation is total, so none of the four has a refusal arm [STOR-8].";
+  let one = box_new::<u64>(value: 10_u64);
+  let two = box_new::<u64>(value: 20_u64);
+  let three = box_new::<u64>(value: 11_u64);
+  let four = box_new::<u64>(value: 30_u64);
+  return move one, move two, move three, move four;
 }
 
 enum BoxSlotView {
@@ -132,10 +99,11 @@ enum BoxSlotView {
   Empty();
 }
 
-fn view_box_entry['s](stored_entry: &Option<Entry<'s>>, same: &Option<Entry<'s>>) -> result: own BoxSlotView reads(stored_entry) {
+fn view_box_entry(stored_entry: &Option<Entry>, same: &Option<Entry>) -> result: own BoxSlotView reads(stored_entry) {
+  doc "Two reference arguments may name one place when both only read it: the call site admits read/read overlap [EFF-5].";
   match deref(stored_entry) {
     Some(value: present) => {
-      return Occupied(key: deref(present).key, value: deref(deref(present).payload));
+      return Occupied(key: deref(present).key, value: deref(present).payload.inner);
     }
     None() => {
       return Empty();
@@ -143,44 +111,29 @@ fn view_box_entry['s](stored_entry: &Option<Entry<'s>>, same: &Option<Entry<'s>>
   }
 }
 
-fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box<'s, u64>, replacement: own Box<'s, u64>, inserted: own Box<'s, u64>) -> code: own u8 writes(store) {
-  let empty0 = None<Entry<'s>>();
+fn run_boxes(first: own Box<u64>, second: own Box<u64>, replacement: own Box<u64>, inserted: own Box<u64>) -> code: own u8 pure {
+  doc "A pool is a Slots window plus indices used as handles [OP-13]. Every exchange is the built-in swap, and every cell content is reached by the field step inner [OP-11, TYPE-9].";
+  let empty0 = None<Entry>();
   let first_entry = Entry(key: 1_u64, payload: move first);
-  let first_slot = Some<Entry<'s>>(value: move first_entry);
+  let first_slot = Some<Entry>(value: move first_entry);
   let second_entry = Entry(key: 5_u64, payload: move second);
-  let second_slot = Some<Entry<'s>>(value: move second_entry);
+  let second_slot = Some<Entry>(value: move second_entry);
   let inserted_entry = Entry(key: 9_u64, payload: move inserted);
-  let inserted_slot = Some<Entry<'s>>(value: move inserted_entry);
-  let entries = fixed_vector::<Option<Entry<'s>>, 4>();
-  region {
-    place_back(vector: &uniq entries, value: move empty0);
-  }
-  region {
-    place_back(vector: &uniq entries, value: move first_slot);
-  }
-  region {
-    place_back(vector: &uniq entries, value: move second_slot);
-  }
-  region {
-    place_back(vector: &uniq entries, value: move inserted_slot);
-  }
-  let states = fixed_vector::<u64, 4>();
-  region {
-    place_back(vector: &uniq states, value: 0_u64);
-  }
-  region {
-    place_back(vector: &uniq states, value: 1_u64);
-  }
-  region {
-    place_back(vector: &uniq states, value: 1_u64);
-  }
-  region {
-    place_back(vector: &uniq states, value: 1_u64);
-  }
+  let inserted_slot = Some<Entry>(value: move inserted_entry);
+  let entries = slots_new::<Option<Entry>, 4>();
+  place_back(window: &entries, value: move empty0);
+  place_back(window: &entries, value: move first_slot);
+  place_back(window: &entries, value: move second_slot);
+  place_back(window: &entries, value: move inserted_slot);
+  let states = slots_new::<u64, 4>();
+  place_back(window: &states, value: 0_u64);
+  place_back(window: &states, value: 1_u64);
+  place_back(window: &states, value: 1_u64);
+  place_back(window: &states, value: 1_u64);
   let replacement_entry = Entry(key: 5_u64, payload: move replacement);
-  let replacement_slot = Some<Entry<'s>>(value: move replacement_entry);
-  let previous = replace entries[2_u64] = move replacement_slot;
-  match previous {
+  let replacement_slot = Some<Entry>(value: move replacement_entry);
+  swap(first: &entries[2_u64], second: &replacement_slot);
+  match replacement_slot {
     None() => {
       return 10_u8;
     }
@@ -190,17 +143,17 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
       } else {
         return 11_u8;
       }
-      if deref(previous_payload) == 20_u64 {
+      if previous_payload.inner == 20_u64 {
       } else {
         return 12_u8;
       }
     }
   }
-  let delete_empty = None<Entry<'s>>();
-  let removed = replace entries[1_u64] = move delete_empty;
+  let delete_empty = None<Entry>();
+  swap(first: &entries[1_u64], second: &delete_empty);
   let old_state = states[1_u64];
   set states[1_u64] = 2_u64;
-  let recycled = match removed {
+  let recycled = match delete_empty {
     None() => {
       return 20_u8;
     }
@@ -210,7 +163,7 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
       } else {
         return 21_u8;
       }
-      if deref(removed_payload) == 10_u64 {
+      if removed_payload.inner == 10_u64 {
         give move removed_payload;
       }
       return 22_u8;
@@ -220,121 +173,74 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
   } else {
     return 30_u8;
   }
-  region {
-    let through_first_collision = view_box_entry(stored_entry: &entries[2_u64], same: &entries[2_u64]);
-    match through_first_collision {
-      Empty() => {
-        return 31_u8;
+  let through_first_collision = view_box_entry(stored_entry: &entries[2_u64], same: &entries[2_u64]);
+  match through_first_collision {
+    Empty() => {
+      return 31_u8;
+    }
+    Occupied(key: found_five_key, value: found_five_value) => {
+      if found_five_key == 5_u64 {
+      } else {
+        return 32_u8;
       }
-      Occupied(key: found_five_key, value: found_five_value) => {
-        if found_five_key == 5_u64 {
-        } else {
-          return 32_u8;
-        }
-        if found_five_value == 11_u64 {
-        } else {
-          return 33_u8;
-        }
+      if found_five_value == 11_u64 {
+      } else {
+        return 33_u8;
       }
     }
   }
-  region {
-    let through_second_collision = view_box_entry(stored_entry: &entries[3_u64], same: &entries[3_u64]);
-    match through_second_collision {
-      Empty() => {
-        return 34_u8;
+  let through_second_collision = view_box_entry(stored_entry: &entries[3_u64], same: &entries[3_u64]);
+  match through_second_collision {
+    Empty() => {
+      return 34_u8;
+    }
+    Occupied(key: found_nine_key, value: found_nine_value) => {
+      if found_nine_key == 9_u64 {
+      } else {
+        return 35_u8;
       }
-      Occupied(key: found_nine_key, value: found_nine_value) => {
-        if found_nine_key == 9_u64 {
-        } else {
-          return 35_u8;
-        }
-        if found_nine_value == 30_u64 {
-        } else {
-          return 36_u8;
-        }
+      if found_nine_value == 30_u64 {
+      } else {
+        return 36_u8;
       }
     }
   }
   let reused_entry = Entry(key: 13_u64, payload: move recycled);
-  let reused_slot = Some<Entry<'s>>(value: move reused_entry);
-  let tombstone_contents = replace entries[1_u64] = move reused_slot;
+  let reused_slot = Some<Entry>(value: move reused_entry);
+  swap(first: &entries[1_u64], second: &reused_slot);
   let tombstone_state = states[1_u64];
   set states[1_u64] = 1_u64;
-  match tombstone_contents {
+  match reused_slot {
     Some(value: unexpected_tombstone_entry) => {
       return 40_u8;
     }
     None() => {
     }
   }
-  let target_empty0 = None<Entry<'s>>();
-  let target_empty1 = None<Entry<'s>>();
-  let target_empty2 = None<Entry<'s>>();
-  let target_empty3 = None<Entry<'s>>();
-  let target_empty4 = None<Entry<'s>>();
-  let target_empty5 = None<Entry<'s>>();
-  let target_empty6 = None<Entry<'s>>();
-  let target_empty7 = None<Entry<'s>>();
-  let target = fixed_vector::<Option<Entry<'s>>, 8>();
-  region {
-    place_back(vector: &uniq target, value: move target_empty0);
+  let target = slots_new::<Option<Entry>, 8>();
+  for @fill_target (
+    at in 0_u64..8_u64,
+    invariant grown_target: target.len == at
+  ) {
+    let target_empty = None<Entry>();
+    place_back(window: &target, value: move target_empty);
   }
-  region {
-    place_back(vector: &uniq target, value: move target_empty1);
-  }
-  region {
-    place_back(vector: &uniq target, value: move target_empty2);
-  }
-  region {
-    place_back(vector: &uniq target, value: move target_empty3);
-  }
-  region {
-    place_back(vector: &uniq target, value: move target_empty4);
-  }
-  region {
-    place_back(vector: &uniq target, value: move target_empty5);
-  }
-  region {
-    place_back(vector: &uniq target, value: move target_empty6);
-  }
-  region {
-    place_back(vector: &uniq target, value: move target_empty7);
-  }
-  let target_states = fixed_vector::<u64, 8>();
-  region {
-    place_back(vector: &uniq target_states, value: 0_u64);
-  }
-  region {
-    place_back(vector: &uniq target_states, value: 0_u64);
-  }
-  region {
-    place_back(vector: &uniq target_states, value: 0_u64);
-  }
-  region {
-    place_back(vector: &uniq target_states, value: 0_u64);
-  }
-  region {
-    place_back(vector: &uniq target_states, value: 0_u64);
-  }
-  region {
-    place_back(vector: &uniq target_states, value: 0_u64);
-  }
-  region {
-    place_back(vector: &uniq target_states, value: 0_u64);
-  }
-  region {
-    place_back(vector: &uniq target_states, value: 0_u64);
+  let target_states = slots_new::<u64, 8>();
+  for @fill_target_states (
+    at in 0_u64..8_u64,
+    invariant grown_target_states: target_states.len == at
+  ) {
+    place_back(window: &target_states, value: 0_u64);
   }
   let observe_after = 2_u64;
   let visited = 0_u64;
   let observed_prefix = False();
   for (
     at in 0_u64..4_u64,
-    invariant source_full: len_of(entries) >= 4_u64,
-    invariant source_states_full: len_of(states) >= 4_u64,
-    invariant target_full: len_of(target) >= 8_u64,
-    invariant target_states_full: len_of(target_states) >= 8_u64
+    invariant source_full: entries.len >= 4_u64,
+    invariant source_states_full: states.len >= 4_u64,
+    invariant target_full: target.len >= 8_u64,
+    invariant target_states_full: target_states.len >= 8_u64
   ) {
     if visited == observe_after {
       if states[2_u64] == 1_u64 {
@@ -380,33 +286,32 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
       set observed_prefix = True();
     }
     if states[at] == 1_u64 {
-      let source_empty = None<Entry<'s>>();
-      let extracted = replace entries[at] = move source_empty;
-      match extracted {
+      let source_empty = None<Entry>();
+      swap(first: &entries[at], second: &source_empty);
+      match source_empty {
         None() => {
           set states[at] = 0_u64;
         }
         Some(value: moved_entry) => {
           let key = moved_entry.key;
-          let pending = Some<Entry<'s>>(value: move moved_entry);
+          let pending = Some<Entry>(value: move moved_entry);
           for (
             step in 0_u64..8_u64,
-            invariant target_inner_full: len_of(target) >= 8_u64,
-            invariant target_states_inner_full: len_of(target_states) >= 8_u64
+            invariant target_inner_full: target.len >= 8_u64,
+            invariant target_states_inner_full: target_states.len >= 8_u64
           ) {
             let advanced = key +wrap step;
             let destination = advanced % 8_u64;
             if target_states[destination] == 0_u64 {
-              let previous_target = replace target[destination] = move pending;
-              set pending = move previous_target;
+              swap(first: &target[destination], second: &pending);
               set target_states[destination] = 1_u64;
               break;
             }
           }
           match pending {
             Some(value: unplaced_entry) => {
-              let unplaced = Some<Entry<'s>>(value: move unplaced_entry);
-              let source_previous = replace entries[at] = move unplaced;
+              let unplaced = Some<Entry>(value: move unplaced_entry);
+              swap(first: &entries[at], second: &unplaced);
               return 90_u8;
             }
             None() => {
@@ -446,9 +351,9 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
   } else {
     return 65_u8;
   }
-  let final_empty1 = None<Entry<'s>>();
-  let final_option9 = replace target[1_u64] = move final_empty1;
-  match final_option9 {
+  let final_empty1 = None<Entry>();
+  swap(first: &target[1_u64], second: &final_empty1);
+  match final_empty1 {
     None() => {
       return 70_u8;
     }
@@ -458,15 +363,15 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
       } else {
         return 71_u8;
       }
-      if deref(final_payload9) == 30_u64 {
+      if final_payload9.inner == 30_u64 {
       } else {
         return 72_u8;
       }
     }
   }
-  let final_empty5 = None<Entry<'s>>();
-  let final_option13 = replace target[5_u64] = move final_empty5;
-  match final_option13 {
+  let final_empty5 = None<Entry>();
+  swap(first: &target[5_u64], second: &final_empty5);
+  match final_empty5 {
     None() => {
       return 73_u8;
     }
@@ -476,15 +381,15 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
       } else {
         return 74_u8;
       }
-      if deref(final_payload13) == 10_u64 {
+      if final_payload13.inner == 10_u64 {
       } else {
         return 75_u8;
       }
     }
   }
-  let final_empty6 = None<Entry<'s>>();
-  let final_option5 = replace target[6_u64] = move final_empty6;
-  match final_option5 {
+  let final_empty6 = None<Entry>();
+  swap(first: &target[6_u64], second: &final_empty6);
+  match final_empty6 {
     None() => {
       return 76_u8;
     }
@@ -494,7 +399,7 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
       } else {
         return 77_u8;
       }
-      if deref(final_payload5) == 11_u64 {
+      if final_payload5.inner == 11_u64 {
         return 0_u8;
       }
       return 78_u8;
@@ -502,21 +407,13 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
   }
 }
 
-fn boxed_migration['heap](heap: &uniq Heap<'heap>) -> code: own u8 reads(heap), writes(heap), allocates(heap) {
-  region {
-    match allocate_four(store: &uniq deref(heap)) {
-      Refused() => {
-        return 70_u8;
-      }
-      Ready(first: box_first, second: box_second, replacement: box_replacement, inserted: box_inserted) => {
-        let code = run_boxes(store: &uniq deref(heap), first: move box_first, second: move box_second, replacement: move box_replacement, inserted: move box_inserted);
-        return code;
-      }
-    }
-  }
+fn boxed_migration() -> code: own u8 pure {
+  let (box_first, box_second, box_replacement, box_inserted) = allocate_four();
+  let code = run_boxes(first: move box_first, second: move box_second, replacement: move box_replacement, inserted: move box_inserted);
+  return code;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main() -> status: own ExitStatus pure {
   let v = optvec_new();
   set v = optvec_push(v: move v, x: 10_u32);
   set v = optvec_push(v: move v, x: 20_u32);
@@ -531,11 +428,9 @@ fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), wri
   } else {
     return exit_status(code: 1_u8);
   }
-  region {
-    let code = boxed_migration(heap: &uniq heap);
-    if code != 0_u8 {
-      return exit_status(code: code);
-    }
+  let code = boxed_migration();
+  if code != 0_u8 {
+    return exit_status(code: code);
   }
   return exit_status(code: 0_u8);
 }

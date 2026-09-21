@@ -87,35 +87,28 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn pump(receive: &uniq TcpReceive, send: &uniq TcpSend, scratch: &uniq MutSlice<u8>) -> result: own u8 reads(receive, send, scratch), writes(receive, send, scratch) contract {
-  define room = len_of(deref(scratch));
+fn pump(receive: &TcpReceive, send: &TcpSend, scratch: &[u8]) -> result: own u8 writes(receive), writes(send), writes(scratch) contract {
+  define room = deref(scratch).len;
   requires 64_u64 <= room;
 } {
   doc "Reads one chunk from the receiving direction and sends it back through the sending direction, holding both directions at once.";
   let outcome = 0_u8;
-  region {
-    match receive_next(receive: &uniq deref(receive), destination: &uniq deref(scratch), start: 0_u64, end: 64_u64) {
-      Ok(value: endpoint) => {
-        region {
-          let sent = slice_of(&deref(scratch));
-          region {
-            match send_once(send: &uniq deref(send), source: &sent, start: 0_u64, end: endpoint) {
-              Ok(value: accepted) => {
-              }
-              Err(error: problem) => {
-                set outcome = 2_u8;
-              }
-            }
-          }
+  match receive_next(receive: receive, destination: scratch, start: 0_u64, end: 64_u64) {
+    Ok(value: endpoint) => {
+      match send_once(send: send, source: scratch, start: 0_u64, end: endpoint) {
+        Ok(value: accepted) => {
+        }
+        Err(error: problem) => {
+          set outcome = 2_u8;
         }
       }
-      Err(error: read_stop_3) => {
-        match read_stop_3 {
-          ReadEnd() => {
-          }
-          ReadFailed(error: problem) => {
-            set outcome = 3_u8;
-          }
+    }
+    Err(error: read_stop_3) => {
+      match read_stop_3 {
+        ReadEnd() => {
+        }
+        ReadFailed(error: problem) => {
+          set outcome = 3_u8;
         }
       }
     }
@@ -123,56 +116,34 @@ fn pump(receive: &uniq TcpReceive, send: &uniq TcpSend, scratch: &uniq MutSlice<
   return outcome;
 }
 
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "The ordinary TcpConnection receive and send fields are disjoint places. Two exclusive loans coexist under OWN-5/OWN-7 and the directional calls use normal effects and loans through return; no target classification authorizes overlap.";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "The ordinary TcpConnection receive and send fields are disjoint places. The call substitutes one write path per field and the pairwise check proves them distinct by their different field steps; no target classification authorizes overlap.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  close_directory(factory: &handles, directory: move unused_cwd);
+  let scratch = slots_new::<u8, 64>();
+  for @fill (
+    at in 0_u64..64_u64,
+    invariant grown: scratch.len >= at,
+    invariant vacancy: scratch.cap - scratch.len + at >= 64_u64
+  ) {
+    place_back(window: &scratch, value: 0_u8);
   }
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 64_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
+  let window = &scratch[0_u64..64_u64];
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9101_u16);
+  match tcp_connect(factory: &handles, address: &address) {
+    Ok(value: link) => {
+      let outcome = 0_u8;
+      set outcome = pump(receive: &link.receive, send: &link.send, scratch: window);
+      let TcpConnection(receive: close_receive_4, send: close_send_4) = move link;
+      close_receive(factory: &handles, receive: move close_receive_4);
+      close_send(factory: &handles, send: move close_send_4);
+      return exit_status(code: outcome);
+    }
+    Err(error: problem) => {
+      if factory_refusal(error: &problem) {
+        return exit_status(code: 5_u8);
       }
-      Some(value: fresh) => {
-        let scratch = move fresh;
-        for @fill (
-          at in 0_u64..64_u64,
-          invariant grown: len_of(scratch) >= at,
-          invariant spare: room_of(scratch) + at >= 64_u64,
-          invariant flat: head_of(scratch) <= 0_u64
-        ) {
-          place_back(vector: &uniq scratch, value: 0_u8);
-        }
-        region {
-          let window = mut_slice_of(&uniq scratch);
-          let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9101_u16);
-          region {
-            region {
-              match tcp_connect(factory: &uniq handles, address: &address) {
-                Ok(value: link) => {
-                  let outcome = 0_u8;
-                  region {
-                    set outcome = pump(receive: &uniq link.receive, send: &uniq link.send, scratch: &uniq window);
-                  }
-                  let TcpConnection(receive: close_receive_4, send: close_send_4) = move link;
-                  close_receive(factory: &uniq handles, receive: move close_receive_4);
-                  close_send(factory: &uniq handles, send: move close_send_4);
-                  return exit_status(code: outcome);
-                }
-                Err(error: problem) => {
-                  region {
-                    if factory_refusal(error: &problem) {
-                      return exit_status(code: 5_u8);
-                    }
-                  }
-                  return exit_status(code: 4_u8);
-                }
-              }
-            }
-          }
-        }
-      }
+      return exit_status(code: 4_u8);
     }
   }
 }

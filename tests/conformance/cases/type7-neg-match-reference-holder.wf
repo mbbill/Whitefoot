@@ -4,15 +4,13 @@ enum State {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "TYPE-7 applies to match scrutinees: a reference holder requires explicit deref(.) before matching its referent.";
+  doc "Matching through a reference is the canonical borrowed match [OWN-13], but a reference variable denotes the reference [REF-1] and its referent is reached only through deref, so the bare reference scrutinee is the missing dereference [TYPE-7]; the fix is match deref(holder).";
   let state = Ready();
-  region {
-    let holder = &state;
-    match holder {
-      Ready() => {
-      }
-      Done() => {
-      }
+  let holder = &state;
+  match holder {
+    Ready() => {
+    }
+    Done() => {
     }
   }
   return exit_status(code: 0_u8);

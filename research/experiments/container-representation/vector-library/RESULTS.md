@@ -1,9 +1,14 @@
 # Growable vector library results
 
-This experiment bundles [`lib/containers/vector.wf`](../../../../lib/containers/vector.wf)
-with `vector-library.wf`. It checks the reusable source implementation rather
-than a second benchmark-only vector. `measurements.csv` contains the retained
-samples for the delivered revision. Measurements ran on 2026-09-14 on arm64 macOS 26.6.2 with
+This dated experiment bundled the reusable vector source with
+`vector-library.wf`, rather than using a second benchmark-only vector.
+Reproduce the v0.58 program and allocation-refusal contract at revision
+`5fcf1ce2`; the sources here retain that historical language and are not a
+current-spec benchmark. The maintained successor is
+[`grow-vector.wf`](../../../../tests/programs/containers/grow-vector.wf),
+executed with its caller and release observer by the ordinary program corpus.
+`measurements.csv` contains the retained samples for the measured revision.
+Measurements ran on 2026-09-14 on arm64 macOS 26.6.2 with
 Apple Clang 21.0.0 and Rust 1.98.1.
 
 ## Executed contract

@@ -1,5 +1,6 @@
-fn get(b: own Slice<u8>, i: own u64, pick: own Bool) -> result: own u8 reads(b) {
-  let spare = len_of(b);
+fn get(b: &[u8], i: own u64, pick: own Bool) -> result: own u8 reads(b) {
+  doc "One predecessor bounds i +wrap 1, whose wrapped image is not the mathematical i + 1; the other bounds i directly.";
+  let spare = deref(b).len;
   if pick {
     let stepped = i +wrap 1_u64;
     let inside = spare >= stepped;
@@ -14,7 +15,7 @@ fn get(b: own Slice<u8>, i: own u64, pick: own Bool) -> result: own u8 reads(b) 
       return 0_u8;
     }
   }
-  return b[i];
+  return deref(b)[i];
 }
 
 fn main() -> status: own ExitStatus pure {

@@ -1,0 +1,13 @@
+fn main() -> status: own ExitStatus pure {
+  doc "REF-4: a range reference over a Ring is a hard error, because a wrapped window is two extents and the range-reference kind has one len.";
+  let r = ring_new::<u64, 4>();
+  place_back(window: &r, value: 1_u64);
+  place_back(window: &r, value: 2_u64);
+  let part = &r[0_u64..2_u64];
+  let n = deref(part).len;
+  if n == 2_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

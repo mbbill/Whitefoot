@@ -1,5 +1,5 @@
 enum Packet {
-  Data(bytes: buffer<u8>);
+  Data(bytes: Box<Slots<u8>>);
   Empty();
 }
 
@@ -8,9 +8,10 @@ struct Envelope {
 }
 
 fn inspect(envelope: &Envelope) -> result: own u64 reads(envelope.packet) {
+  doc "Matching through a struct projection binds the cell payload as a reference, and the window length behind that cell is read through it.";
   match deref(envelope).packet {
     Data(bytes: payload) => {
-      return len_of(deref(payload));
+      return deref(payload).inner.len;
     }
     Empty() => {
       return 0_u64;
@@ -19,14 +20,15 @@ fn inspect(envelope: &Envelope) -> result: own u64 reads(envelope.packet) {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let bytes = buffer_new(3_u64, 7_u8);
+  let bytes = box_slots_new::<u8>(capacity: 3_u64);
+  place_back(window: &bytes.inner, value: 7_u8);
+  place_back(window: &bytes.inner, value: 7_u8);
+  place_back(window: &bytes.inner, value: 7_u8);
   let packet = Data(bytes: move bytes);
   let envelope = Envelope(packet: move packet);
-  region {
-    let observed = inspect(envelope: &envelope);
-    if observed != 3_u64 {
-      return exit_status(code: 1_u8);
-    }
+  let observed = inspect(envelope: &envelope);
+  if observed != 3_u64 {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

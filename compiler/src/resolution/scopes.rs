@@ -73,22 +73,19 @@ impl ScopeBuild {
                 }
                 Production::StructDecl
                 | Production::EnumDecl
-                | Production::FormalDecl
-                | Production::ActualDecl => {
-                    // [S20] a nominal declares its own region parameters, and
-                    // they are its own: [OWN-3] scopes a region identifier to
-                    // the declaration that introduces it, so two nominals may
-                    // each write `'s`. Without this the parameters landed in
-                    // the compilation unit's scope and the second nominal was
-                    // a [TYPE-6] redeclaration of the first's region.
-                    if node.production == Production::FormalDecl
+                | Production::InterfaceDecl
+                | Production::BindingDecl => {
+                    // [TYPE-6] a nominal's generic parameters are its own: a
+                    // generic TYPEID "may not redeclare another parameter in
+                    // the same generic list or shadow a live nominal type or
+                    // enclosing generic", so two nominals may each write `T`.
+                    // An interface group always opens the scope because FN-3 gives
+                    // it member signatures even when it writes no `generics`.
+                    if node.production == Production::InterfaceDecl
                         || children.iter().any(|child| {
-                            topology.node(*child).is_some_and(|record| {
-                                matches!(
-                                    record.production,
-                                    Production::Generics | Production::RegionParams
-                                )
-                            })
+                            topology
+                                .node(*child)
+                                .is_some_and(|record| record.production == Production::Generics)
                         })
                     {
                         let generic = build.push_scope(
@@ -189,17 +186,6 @@ impl ScopeBuild {
                         range,
                         body,
                     )?;
-                }
-                Production::RegionStmt => {
-                    let region = build.push_scope(
-                        Some(current_scope),
-                        ScopeKind::LocalRegion,
-                        path.clone(),
-                    )?;
-                    let body =
-                        build.push_scope(Some(region), ScopeKind::NestedBody, path.clone())?;
-                    build.declaration_scopes[node_id.index()] = Some(region);
-                    assign_nested_body_scopes(topology, children, &mut child_scopes, region, body)?;
                 }
                 Production::Arm => {
                     let arm =

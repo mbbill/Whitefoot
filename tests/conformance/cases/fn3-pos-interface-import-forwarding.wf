@@ -1,0 +1,29 @@
+interface Identity<T> {
+  fn same(value: own T) -> result: own T pure;
+}
+
+fn same_u8(value: own u8) -> result: own u8 pure {
+  return value;
+}
+
+binding ByteIdentity : Identity<u8> {
+  same = same_u8;
+}
+
+fn apply<interface Identity<T>>(value: own T) -> result: own T pure {
+  return Identity<T>::same(value: move value);
+}
+
+fn forward<interface Identity<T>>(value: own T) -> result: own T pure {
+  return apply::<Identity<T>>(value: move value);
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "A nonempty interface import declares its captured binder once. Forwarding keeps the unmarked Identity<T> application, a concrete call keeps the binding name, and the qualified member call keeps its complete application.";
+  let result = forward::<ByteIdentity>(value: 9_u8);
+  if result == 9_u8 {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
+}

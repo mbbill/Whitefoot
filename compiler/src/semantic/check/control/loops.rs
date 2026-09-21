@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::semantic::tree::ConditionalAlternative;
 use crate::syntax::NodeId;
 use crate::{
     DeclarationClass, DeclarationId, DeclarationRole, LexicalUseRole, Production, ResolvedTarget,
@@ -7,9 +8,12 @@ use crate::{
 };
 
 use super::super::super::model::{
-    CheckedLoopId, CheckedLoopInvariant, CheckedMode, CheckedStatement, CheckedType, IntegerType,
+    BindingId, CheckedLoopCarriedReference, CheckedLoopId, CheckedLoopInvariant, CheckedMode,
+    CheckedStatement, CheckedType, IntegerType,
 };
-use super::super::borrows::RequiredReferent;
+use super::super::references::{
+    InvalidationEvent, LoopReferenceToken, ReferenceValidity, RequiredReferent,
+};
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
 };
@@ -28,13 +32,418 @@ pub(in crate::semantic::check) struct BreakState {
     bindings: HashMap<DeclarationId, LocalBinding>,
 }
 
+#[derive(Clone)]
+struct LoopReferenceEquation {
+    declaration: DeclarationId,
+    token: LoopReferenceToken,
+    entry_validity: ReferenceValidity,
+    entry_dependencies: Vec<LoopReferenceToken>,
+}
+
+#[derive(Clone)]
+struct LoopReferenceResolution {
+    invalid: Option<InvalidationEvent>,
+    dependencies: Vec<LoopReferenceToken>,
+}
+
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     fn loop_binding_agrees(
         &self,
         entry: Option<&LocalBinding>,
         backedge: Option<&LocalBinding>,
     ) -> bool {
-        entry == backedge
+        match (entry, backedge) {
+            (Some(entry), Some(backedge)) => entry.loop_agrees_with(backedge),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    /// Forms the one finite abstract header used to check every iteration.
+    /// Every outer reference gets an owner-tagged validity variable. Only a
+    /// holder a continuing source `set` may rebind loses capture precision;
+    /// its roots and static steps remain unchanged [REF-1].
+    fn enter_loop_reference_header(
+        &self,
+        id: CheckedLoopId,
+        rebound: &HashSet<DeclarationId>,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<(Vec<LoopReferenceEquation>, Vec<CheckedLoopCarriedReference>), CheckStop> {
+        let mut declarations = bindings.keys().copied().collect::<Vec<_>>();
+        declarations.sort_by_key(|declaration| declaration.index());
+        let mut equations = Vec::new();
+        let mut carried = Vec::new();
+        for declaration in declarations {
+            let local = bindings
+                .get_mut(&declaration)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let Some(reference) = local.reference.as_mut() else {
+                continue;
+            };
+            let token = LoopReferenceToken {
+                loop_id: id,
+                owner: local.binding,
+            };
+            equations.push(LoopReferenceEquation {
+                declaration,
+                token,
+                entry_validity: reference.validity.clone(),
+                entry_dependencies: reference.loop_dependencies().to_vec(),
+            });
+            if let Some(paths) =
+                reference.enter_loop_header(token, rebound.contains(&declaration))?
+            {
+                carried.push(CheckedLoopCarriedReference {
+                    binding: local.binding,
+                    paths,
+                });
+            }
+        }
+        Ok((equations, carried))
+    }
+
+    fn record_reference_rebinding_target(
+        &self,
+        set: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        rebound: &mut HashSet<DeclarationId>,
+    ) -> Result<(), CheckStop> {
+        let [target] = self.tree.children_with(set, Production::Place)?[..] else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        if !self
+            .tree
+            .children_with(target, Production::Psuffix)?
+            .is_empty()
+        {
+            return Ok(());
+        }
+        let Some(declaration) = self.complete_binding_target(target)? else {
+            return Ok(());
+        };
+        if bindings
+            .get(&declaration)
+            .is_some_and(|binding| binding.reference.is_some())
+        {
+            rebound.insert(declaration);
+        }
+        Ok(())
+    }
+
+    /// Finds the outer reference holders a source path reaching this loop's
+    /// normal backedge may rebind. This is a structural control scan only: it
+    /// allocates no binding, emits no diagnostic, and evaluates no expression.
+    fn continuing_reference_rebindings(
+        &self,
+        statements: &[NodeId],
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<HashSet<DeclarationId>, CheckStop> {
+        let mut rebound = HashSet::new();
+        let _ =
+            self.collect_continuing_reference_rebindings(statements, true, bindings, &mut rebound)?;
+        Ok(rebound)
+    }
+
+    fn collect_continuing_reference_rebindings(
+        &self,
+        statements: &[NodeId],
+        normal_reaches: bool,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        rebound: &mut HashSet<DeclarationId>,
+    ) -> Result<bool, CheckStop> {
+        let mut reaches = normal_reaches;
+        for wrapper in statements.iter().rev() {
+            let statement = self.tree.only_child(*wrapper)?;
+            reaches = self.collect_continuing_reference_rebinding_statement(
+                statement, reaches, bindings, rebound,
+            )?;
+        }
+        Ok(reaches)
+    }
+
+    fn collect_continuing_reference_rebinding_statement(
+        &self,
+        statement: NodeId,
+        normal_reaches: bool,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        rebound: &mut HashSet<DeclarationId>,
+    ) -> Result<bool, CheckStop> {
+        match self.tree.production(statement)? {
+            Production::SetStmt => {
+                if normal_reaches {
+                    self.record_reference_rebinding_target(statement, bindings, rebound)?;
+                }
+                Ok(normal_reaches)
+            }
+            Production::ReturnStmt | Production::GiveStmt | Production::BreakStmt => Ok(false),
+            Production::IfStmt => {
+                let blocks = self.tree.conditional_blocks(statement)?;
+                let then_reaches = self.collect_continuing_reference_rebindings(
+                    &blocks.then_statements,
+                    normal_reaches,
+                    bindings,
+                    rebound,
+                )?;
+                let else_reaches = match &blocks.alternative {
+                    ConditionalAlternative::Absent => normal_reaches,
+                    ConditionalAlternative::Block(statements) => self
+                        .collect_continuing_reference_rebindings(
+                            statements,
+                            normal_reaches,
+                            bindings,
+                            rebound,
+                        )?,
+                    ConditionalAlternative::Chain(nested) => self
+                        .collect_continuing_reference_rebinding_statement(
+                            *nested,
+                            normal_reaches,
+                            bindings,
+                            rebound,
+                        )?,
+                };
+                Ok(then_reaches || else_reaches)
+            }
+            Production::MatchStmt => {
+                let mut reaches = false;
+                for arm in self.tree.children_with(statement, Production::Arm)? {
+                    reaches |= self.collect_continuing_reference_rebindings(
+                        &self.tree.children_with(arm, Production::Stmt)?,
+                        normal_reaches,
+                        bindings,
+                        rebound,
+                    )?;
+                }
+                Ok(reaches)
+            }
+            Production::LoopStmt | Production::ForStmt => {
+                // FN-1 retains a conservative successor for a nested loop.
+                // Any nested rebinding may consequently reach this outer
+                // backedge; filtering its internal exits would require the
+                // checked loop ids this side-effect-free inventory precedes.
+                if normal_reaches {
+                    for set in self.tree.descendants_with(statement, Production::SetStmt)? {
+                        self.record_reference_rebinding_target(set, bindings, rebound)?;
+                    }
+                }
+                Ok(normal_reaches)
+            }
+            _ => {
+                // A value initializer can contain statement blocks below a
+                // `let`. Its successful `give` continues this statement, so
+                // conservatively retain each reference rebind in that
+                // expression without inventing a control edge elsewhere.
+                if normal_reaches {
+                    for set in self.tree.descendants_with(statement, Production::SetStmt)? {
+                        self.record_reference_rebinding_target(set, bindings, rebound)?;
+                    }
+                }
+                Ok(normal_reaches)
+            }
+        }
+    }
+
+    /// Solves the positive, conjunction-only validity equations for one loop
+    /// simultaneously. Invalidity propagates through every local dependency;
+    /// a valid local SCC collapses to the finite set of still-open outer-loop
+    /// dependencies it reaches. There is no iteration budget: each pass
+    /// removes a local possibility or adds one finite dependency.
+    fn loop_reference_resolutions(
+        &self,
+        equations: &[LoopReferenceEquation],
+        backedge: &HashMap<DeclarationId, LocalBinding>,
+        has_backedge: bool,
+    ) -> Result<HashMap<LoopReferenceToken, LoopReferenceResolution>, CheckStop> {
+        let local = equations
+            .iter()
+            .map(|equation| equation.token)
+            .collect::<HashSet<_>>();
+        let mut results = HashMap::new();
+        let mut local_dependencies: HashMap<LoopReferenceToken, Vec<LoopReferenceToken>> =
+            HashMap::new();
+        for equation in equations {
+            let mut invalid = match &equation.entry_validity {
+                ReferenceValidity::Valid => None,
+                ReferenceValidity::Invalid(event) => Some(event.clone()),
+            };
+            let mut dependencies = equation.entry_dependencies.clone();
+            if has_backedge {
+                let reference = backedge
+                    .get(&equation.declaration)
+                    .and_then(|binding| binding.reference.as_ref())
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                if invalid.is_none()
+                    && let ReferenceValidity::Invalid(event) = &reference.validity
+                {
+                    invalid = Some(event.clone());
+                }
+                for dependency in reference.loop_dependencies() {
+                    if !dependencies.contains(dependency) {
+                        dependencies.push(*dependency);
+                    }
+                }
+            }
+            let (inside, outside): (Vec<_>, Vec<_>) = dependencies
+                .into_iter()
+                .partition(|dependency| local.contains(dependency));
+            local_dependencies.insert(equation.token, inside);
+            results.insert(
+                equation.token,
+                LoopReferenceResolution {
+                    invalid,
+                    dependencies: outside,
+                },
+            );
+        }
+
+        loop {
+            let mut changed = false;
+            for equation in equations {
+                if results
+                    .get(&equation.token)
+                    .is_some_and(|result| result.invalid.is_some())
+                {
+                    continue;
+                }
+                let invalid = local_dependencies
+                    .get(&equation.token)
+                    .into_iter()
+                    .flatten()
+                    .find_map(|dependency| {
+                        results
+                            .get(dependency)
+                            .and_then(|result| result.invalid.clone())
+                    });
+                if let Some(event) = invalid {
+                    results
+                        .get_mut(&equation.token)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                        .invalid = Some(event);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        loop {
+            let mut changed = false;
+            for equation in equations {
+                if results
+                    .get(&equation.token)
+                    .is_some_and(|result| result.invalid.is_some())
+                {
+                    continue;
+                }
+                let inherited = local_dependencies
+                    .get(&equation.token)
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|dependency| {
+                        results
+                            .get(dependency)
+                            .into_iter()
+                            .flat_map(|result| result.dependencies.iter().copied())
+                    })
+                    .collect::<Vec<_>>();
+                let result = results
+                    .get_mut(&equation.token)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                for dependency in inherited {
+                    if !result.dependencies.contains(&dependency) {
+                        result.dependencies.push(dependency);
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        Ok(results)
+    }
+
+    fn resolve_reference_info(
+        reference: &mut super::super::references::ReferenceInfo,
+        resolutions: &HashMap<LoopReferenceToken, LoopReferenceResolution>,
+    ) {
+        let mut tokens = resolutions.keys().copied().collect::<Vec<_>>();
+        tokens.sort_unstable();
+        for token in tokens {
+            let Some(resolution) = resolutions.get(&token) else {
+                continue;
+            };
+            match &resolution.invalid {
+                Some(event) => reference.resolve_loop_dependency(token, Err(event)),
+                None => reference.resolve_loop_dependency(token, Ok(&resolution.dependencies)),
+            }
+        }
+    }
+
+    fn resolve_loop_binding_state(
+        state: &mut HashMap<DeclarationId, LocalBinding>,
+        resolutions: &HashMap<LoopReferenceToken, LoopReferenceResolution>,
+    ) {
+        for binding in state.values_mut() {
+            if let Some(reference) = &mut binding.reference {
+                Self::resolve_reference_info(reference, resolutions);
+            }
+        }
+    }
+
+    /// Eliminates this loop's header variables from every validity use made
+    /// while checking its body. A use whose equation is invalid becomes the
+    /// ordinary [REF-2] rejection; a use that still depends on an enclosing
+    /// loop remains deferred to that loop. The complete resolution is
+    /// installed before any checked function can be published.
+    fn resolve_deferred_loop_reference_uses(
+        &self,
+        resolutions: &HashMap<LoopReferenceToken, LoopReferenceResolution>,
+    ) -> Result<(), CheckStop> {
+        let pending = std::mem::take(&mut *self.deferred_loop_reference_uses.borrow_mut());
+        let mut remaining = Vec::with_capacity(pending.len());
+        let mut first_invalid = None;
+        for mut deferred in pending {
+            let mut dependencies = Vec::new();
+            let mut invalid = None;
+            for dependency in deferred.dependencies {
+                let Some(resolution) = resolutions.get(&dependency) else {
+                    if !dependencies.contains(&dependency) {
+                        dependencies.push(dependency);
+                    }
+                    continue;
+                };
+                if let Some(event) = &resolution.invalid {
+                    invalid.get_or_insert_with(|| event.clone());
+                } else {
+                    for inherited in &resolution.dependencies {
+                        if !dependencies.contains(inherited) {
+                            dependencies.push(*inherited);
+                        }
+                    }
+                }
+            }
+            dependencies.sort_unstable();
+            if let Some(event) = invalid {
+                first_invalid.get_or_insert((deferred.node, deferred.declaration, event));
+            } else if !dependencies.is_empty() {
+                deferred.dependencies = dependencies;
+                remaining.push(deferred);
+            }
+        }
+        *self.deferred_loop_reference_uses.borrow_mut() = remaining;
+        let Some((node, declaration, event)) = first_invalid else {
+            return Ok(());
+        };
+        self.issue_node(
+            SemanticRule::Ref2,
+            node,
+            SemanticIssueKind::InvalidReferenceUse {
+                binder: self.declaration_spelling(declaration)?,
+                event: event.phrase(),
+                mechanical_fix: super::super::references::REF2_FORM_AGAIN,
+            },
+        )
     }
 
     fn form_loop_invariants(
@@ -100,13 +509,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .binding_names
             .push(binder_declaration.spelling().to_owned());
 
-        // Exhaustion can follow any iteration, so it carries the stable
-        // header image, including entry and every possible backedge origin.
         let base_bindings = bindings.clone();
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
         let preserved = base_keys.iter().copied().collect::<HashSet<_>>();
-        let mut body_bindings = base_bindings.clone();
-        if body_bindings
+        let invariant_nodes = self.tree.children_with(node, Production::HeaderInvariant)?;
+        let executable_statements = self.tree.children_with(node, Production::Stmt)?;
+        let rebound =
+            self.continuing_reference_rebindings(&executable_statements, &base_bindings)?;
+        let mut header_bindings = base_bindings.clone();
+        let (reference_equations, carried_references) =
+            self.enter_loop_reference_header(id, &rebound, &mut header_bindings)?;
+        if header_bindings
             .insert(
                 binder_declaration_id,
                 LocalBinding {
@@ -117,18 +530,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     live: true,
                     loop_depth: scope.loops.len() + 1,
                     compiler_updated: true,
-                    borrow: None,
-                    slice: None,
-                    slice_loans: Vec::new(),
-                    suspended: false,
+                    reference: None,
+                    refinement_witnesses: Vec::new(),
                 },
             )
             .is_some()
         {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        let header_bindings = body_bindings.clone();
-        let header_keys = body_bindings.keys().copied().collect::<Vec<_>>();
+        let mut body_bindings = header_bindings.clone();
+        let header_keys = header_bindings.keys().copied().collect::<Vec<_>>();
         let header_preserved = header_keys.iter().copied().collect::<HashSet<_>>();
         let mut nested_loops = scope.loops.to_vec();
         nested_loops.push(LoopContext {
@@ -137,8 +548,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             preserved: preserved.clone(),
         });
 
-        let invariant_nodes = self.tree.children_with(node, Production::HeaderInvariant)?;
-        let executable_statements = self.tree.children_with(node, Production::Stmt)?;
         let allowed_invariant_values = header_keys.iter().copied().collect::<HashSet<_>>();
         let invariants = self.form_loop_invariants(
             invariant_nodes,
@@ -158,20 +567,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 give_context: scope.give_context,
             },
         )?;
-        // [OWN-11] the body is its own region block, so every loan it opened
-        // in that region ends with the iteration: on the backedge before the
-        // carried-state comparison, and on every edge leaving the body.
-        let body_region = self.region_declared_at(node)?;
-        for local in body_bindings.values_mut() {
-            local.end_slice_region(body_region);
-        }
+        // [OWN-11, REF-2] the body is an ordinary block whose own bindings
+        // begin and end with one iteration, so a reference whose path starts
+        // at one of them is invalid on the backedge, before the carried-state
+        // comparison, and on every edge leaving the body.
+        let leaving = Self::bindings_leaving_scope(&body_bindings, &header_keys);
+        Self::invalidate_references_leaving_scope(&mut body_bindings, &leaving);
         for state in &mut checked.give_states {
-            for local in state.values_mut() {
-                local.end_slice_region(body_region);
-            }
+            Self::invalidate_references_leaving_scope(state, &leaving);
         }
         for state in &mut checked.break_states {
-            state.end_slice_region(body_region);
+            state.invalidate_references_leaving_scope(&leaving);
+        }
+        if let Some(context) = scope.give_context
+            && !checked.give_states.is_empty()
+        {
+            context.invalidate_reference_roots_leaving_scope(&leaving);
+            context.invalidate_reference_refinements(&checked.give_states, &leaving);
         }
         self.judge_backedge_liveness(node, &header_keys, &header_bindings, &body_bindings)?;
         if checked.can_continue
@@ -182,6 +594,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
         }
 
+        let resolutions = self.loop_reference_resolutions(
+            &reference_equations,
+            &body_bindings,
+            checked.can_continue,
+        )?;
+        Self::resolve_loop_binding_state(&mut body_bindings, &resolutions);
+        for state in &mut checked.give_states {
+            Self::resolve_loop_binding_state(state, &resolutions);
+        }
+        for state in &mut checked.break_states {
+            Self::resolve_loop_binding_state(&mut state.bindings, &resolutions);
+        }
+        if let Some(context) = scope.give_context
+            && let Some(reference) = context.delivered_reference.borrow_mut().as_mut()
+        {
+            Self::resolve_reference_info(reference, &resolutions);
+        }
+        self.resolve_deferred_loop_reference_uses(&resolutions)?;
+
         let backedge_drops = if checked.can_continue {
             self.live_affine_drops(&body_bindings, &header_preserved, node)?
         } else {
@@ -191,7 +622,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // Unlike an ordinary loop, exhaustion is an executable continuation
         // input even when no local break is written. Local breaks join it;
         // breaks targeting an enclosing loop keep escaping normally.
-        let mut continuation_states = vec![base_bindings];
+        let mut exhaustion_bindings = header_bindings;
+        Self::resolve_loop_binding_state(&mut exhaustion_bindings, &resolutions);
+        let mut continuation_states = vec![exhaustion_bindings];
         let mut continuation_labels = vec!["the loop's exhausted edge".to_owned()];
         let mut escaping_break_states = Vec::new();
         for state in checked.break_states {
@@ -213,10 +646,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(StatementResult {
             statement: CheckedStatement::CountedRange {
                 id,
+                carried_references,
                 node_path: self.tree.path(node)?.clone(),
                 binder,
                 lower: lower.expression,
-                upper: upper.expression,
+                upper: Box::new(upper.expression),
                 invariants,
                 body: checked.statements,
                 backedge_drops,
@@ -353,7 +787,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         // TYPE-7 precedes the endpoint's TYPE-5 exact-value judgment. Use the
-        // consuming-position atom path so a box/arena or borrow holder reaches
+        // consuming-position atom path so a box or borrow holder reaches
         // that exclusive judgment instead of stopping first at OWN-1's bare
         // affine spelling rule.
         let endpoint = self.check_consuming_atom(function, node, bindings, loop_depth)?;
@@ -487,9 +921,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             preserved: preserved.clone(),
         });
 
-        let mut body_bindings = base_bindings.clone();
         let invariant_nodes = self.tree.children_with(node, Production::HeaderInvariant)?;
         let executable_statements = self.tree.children_with(node, Production::Stmt)?;
+        let rebound =
+            self.continuing_reference_rebindings(&executable_statements, &base_bindings)?;
+        let mut header_bindings = base_bindings.clone();
+        let (reference_equations, carried_references) =
+            self.enter_loop_reference_header(id, &rebound, &mut header_bindings)?;
+        let mut body_bindings = header_bindings.clone();
         let allowed_invariant_values = base_keys.iter().copied().collect::<HashSet<_>>();
         let invariants = self.form_loop_invariants(
             invariant_nodes,
@@ -509,29 +948,51 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 give_context: scope.give_context,
             },
         )?;
-        // [OWN-11] the body is its own region block, so every loan it opened
-        // in that region ends with the iteration: on the backedge before the
-        // carried-state comparison, and on every edge leaving the body.
-        let body_region = self.region_declared_at(node)?;
-        for local in body_bindings.values_mut() {
-            local.end_slice_region(body_region);
-        }
+        // [OWN-11, REF-2] the body is an ordinary block whose own bindings
+        // begin and end with one iteration, so a reference whose path starts
+        // at one of them is invalid on the backedge, before the carried-state
+        // comparison, and on every edge leaving the body.
+        let leaving = Self::bindings_leaving_scope(&body_bindings, &base_keys);
+        Self::invalidate_references_leaving_scope(&mut body_bindings, &leaving);
         for state in &mut checked.give_states {
-            for local in state.values_mut() {
-                local.end_slice_region(body_region);
-            }
+            Self::invalidate_references_leaving_scope(state, &leaving);
         }
         for state in &mut checked.break_states {
-            state.end_slice_region(body_region);
+            state.invalidate_references_leaving_scope(&leaving);
         }
-        self.judge_backedge_liveness(node, &base_keys, &base_bindings, &body_bindings)?;
+        if let Some(context) = scope.give_context
+            && !checked.give_states.is_empty()
+        {
+            context.invalidate_reference_roots_leaving_scope(&leaving);
+            context.invalidate_reference_refinements(&checked.give_states, &leaving);
+        }
+        self.judge_backedge_liveness(node, &base_keys, &header_bindings, &body_bindings)?;
         if checked.can_continue
             && base_keys.iter().any(|key| {
-                !self.loop_binding_agrees(base_bindings.get(key), body_bindings.get(key))
+                !self.loop_binding_agrees(header_bindings.get(key), body_bindings.get(key))
             })
         {
             return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
         }
+
+        let resolutions = self.loop_reference_resolutions(
+            &reference_equations,
+            &body_bindings,
+            checked.can_continue,
+        )?;
+        Self::resolve_loop_binding_state(&mut body_bindings, &resolutions);
+        for state in &mut checked.give_states {
+            Self::resolve_loop_binding_state(state, &resolutions);
+        }
+        for state in &mut checked.break_states {
+            Self::resolve_loop_binding_state(&mut state.bindings, &resolutions);
+        }
+        if let Some(context) = scope.give_context
+            && let Some(reference) = context.delivered_reference.borrow_mut().as_mut()
+        {
+            Self::resolve_reference_info(reference, &resolutions);
+        }
+        self.resolve_deferred_loop_reference_uses(&resolutions)?;
 
         let mut own_break_states = Vec::new();
         let mut own_break_labels: Vec<String> = Vec::new();
@@ -565,6 +1026,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(StatementResult {
             statement: CheckedStatement::Loop {
                 id,
+                carried_references,
                 invariants,
                 body: checked.statements,
                 backedge_drops,
@@ -644,14 +1106,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 }
 
 impl BreakState {
-    pub(super) fn retain_bindings(&mut self, preserved: &HashSet<DeclarationId>) {
-        self.bindings
-            .retain(|declaration, _| preserved.contains(declaration));
+    /// [REF-2] the scope of the local variables a break edge leaves ends
+    /// there, so a reference whose path starts at one of them is invalid on
+    /// this edge.
+    pub(super) fn invalidate_references_leaving_scope(&mut self, leaving: &[BindingId]) {
+        Checker::invalidate_references_leaving_scope(&mut self.bindings, leaving);
     }
 
-    pub(super) fn end_slice_region(&mut self, region: DeclarationId) {
-        for local in self.bindings.values_mut() {
-            local.end_slice_region(region);
-        }
+    /// [REF-2, ENT-3.S15] a break edge also meets reference validity with the
+    /// refinement witnesses that survive the crossed scope.
+    pub(super) fn invalidate_references_without_refinement_witness(
+        &mut self,
+        leaving: &[BindingId],
+    ) {
+        Checker::invalidate_references_without_refinement_witness(&mut self.bindings, leaving);
     }
 }

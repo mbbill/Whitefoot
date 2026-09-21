@@ -3,17 +3,41 @@ use crate::{BuiltinPreludeId, DeclarationId, NodePath};
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct FunctionId(pub(crate) u32);
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct BindingId(pub(crate) u32);
 
+/// Checked-program-private identity of one exact instantiated FN-4
+/// implication query. It names the retained query record, never a dense term,
+/// goal, or derivation identity inside that query's isolated proof arena.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ContractQueryId(pub(crate) u32);
+
+/// The three kinds a parameter, a binder, or a result may have [GRAM-3].
+///
+/// `mode := "own" | "&"`, plus the `&[T]` range-reference kind, which
+/// `param` writes without a `mode` node at all [GRAM-2, REF-4]. There is no
+/// permission marker and no region on a reference [REF-1], so the three
+/// kinds carry nothing: a reference is a local name for a path and the path
+/// is carried beside the binding, not inside its kind.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedMode {
     Own,
-    Shared(DeclarationId),
-    Unique(DeclarationId),
+    /// `&T`: a name for one path [REF-1].
+    Reference,
+    /// `&[T]`: a name for a range of elements, whose one measure is `len`
+    /// [REF-4]. It is a reference kind and not a type [TYPE-8], so it is
+    /// never a stored value, never a result, and never a generic argument.
+    Range,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+impl CheckedMode {
+    /// Whether this kind names a path rather than owning storage [REF-1].
+    pub(crate) const fn is_reference(self) -> bool {
+        matches!(self, Self::Reference | Self::Range)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct CheckedLoopId(pub(crate) u32);
 
 /// One proof-only mathematical integer expression. Each leaf retains
@@ -178,6 +202,11 @@ pub(crate) struct CheckedAffineRelation {
     pub(crate) left: CheckedAffineExpression,
     pub(crate) right: CheckedAffineExpression,
     pub(crate) bound: i128,
+    /// [INV-1] the written relation was `a == b`, which normalizes to the
+    /// bound *pair* `a-b <= 0` and `b-a <= 0`, each proved as one batch
+    /// member. The record carries `a-b <= 0`; this flag says the second
+    /// member exists and is the same two sides reversed.
+    pub(crate) equality: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -441,7 +470,7 @@ pub(crate) enum CheckedFlatElement {
     /// formation only; slices keep the flat copy domain, so
     /// their element constructors never produce this variant.
     Nominal(NominalId),
-    /// One unbounded type parameter in a run's element position [BLK-1].
+    /// One unbounded type parameter in a run's element position [TYPE-9].
     ///
     /// [FN-2] makes generics monomorphization-only, so this variant belongs
     /// to the symbolic pass alone: every concrete instance re-parses the
@@ -467,26 +496,18 @@ impl CheckedFlatElement {
     }
 }
 
-/// [PROV-6, STOR-1, STOR-3] which release action a store-backed run's own
-/// reclamation is, decided from its store region's declaration alone.
+/// [STOR-1, STOR-3] which release action a compiler-owned cell performs.
 ///
-/// A general store's run is released by spending that store's provider
-/// capability; a bump extent's is reclaimed by its region's own reset and has
-/// no action of its own [BLK-2]. Nothing else decides it: the class is read
-/// off the region declaration and travels in the type, which is what lets a
-/// region-erased lowering still select the right action.
+/// The active language has one heap and therefore one represented action:
+/// free the cell after releasing its content. The checked class travels into
+/// the IR so lowering preserves that decision rather than rederiving it.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedReleaseClass {
-    /// An unbounded region parameter or a `linear`-bounded one: the release is a free to that store, and an unbounded parameter is
-    /// this class fail-closed [PROV-6].
+    /// Release the cell to the language's one heap.
     General,
-    /// An `affine`-bounded region parameter or a `region_stmt` region: the
-    /// extent's reclamation is its own region reset, so the run's release
-    /// action is empty [BLK-2, STOR-3].
-    Extent,
 }
 
-/// [TYPE-2, BLK-1] the complete type of one array or run element, interned in
+/// [TYPE-2, TYPE-9] the complete type of one array or run element, interned in
 /// the checked program.
 /// Structural children precede parents; recursive ownership graphs pass through
 /// nominal identities. The handle keeps every checked type compact and Copy.
@@ -496,43 +517,6 @@ pub(crate) struct CheckedElement(pub(crate) u32);
 impl CheckedElement {
     pub(crate) const fn index(self) -> usize {
         self.0 as usize
-    }
-}
-
-/// The strength of the loan one view value holds on its origin ranges
-/// [VIEW-1, PROV-3].
-///
-/// [PROV-3] use 1 judges every access through a view at this strength: a
-/// shared-strength view is one shared access to the range of every resolved
-/// origin, an exclusive-strength one is one exclusive access to the same.
-/// [SET-1] admits a target path through a view exactly at `Exclusive`, and
-/// [OWN-1] classifies `Shared` copy and `Exclusive` affine [S27].
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum LoanStrength {
-    /// `Slice<'r, T>`: reads only, copy, and [OWN-5] admits any number.
-    Shared,
-    /// `MutSlice<'r, T>`: element writes, affine, and [OWN-5] refuses a
-    /// second one on one range.
-    Exclusive,
-}
-
-impl LoanStrength {
-    /// The nominal spelling of the view holding a loan of this strength
-    /// [S35], for a diagnostic that renders the type.
-    pub(crate) const fn spelling(self) -> &'static str {
-        match self {
-            Self::Shared => "Slice",
-            Self::Exclusive => "MutSlice",
-        }
-    }
-
-    /// The formation row that hands back a view of this strength [VIEW-2,
-    /// S38], for a diagnostic that names the operation the writer wrote.
-    pub(crate) const fn former(self) -> &'static str {
-        match self {
-            Self::Shared => "slice_of",
-            Self::Exclusive => "mut_slice_of",
-        }
     }
 }
 
@@ -546,89 +530,111 @@ pub(crate) enum CheckedType {
     GenericInt(DeclarationId),
     GenericFloat(DeclarationId),
     Nominal(NominalId),
+    /// One constant-capacity `Array<T, N>` [TYPE-9]: `N` slots, every one of
+    /// them always holding a value. Its `len` is the type constant and is
+    /// stored nowhere; the type has no `cap` measure [WIN-1, MSR-1].
     Array {
         element: CheckedElement,
         length: CheckedConst,
     },
-    /// One view [VIEW-1]: `Slice<'r, T>` at shared strength and
-    /// `MutSlice<'r, T>` at exclusive strength.
-    ///
-    /// The strength is a component of the type's identity, so the two views
-    /// are two types under the exact identity [TYPE-5] performs, and every
-    /// rule that reads the view as a view — its loan-bearing predicate
-    /// [PROV-3], its measure row [MSR-1], the storage positions it may not
-    /// occupy [STOR-5] — reads one variant.
-    Slice {
-        region: DeclarationId,
-        element: CheckedFlatElement,
-        strength: LoanStrength,
-    },
+    /// One runtime-capacity `Array<T>` [TYPE-9]. Its `len` is the allocated
+    /// slot count, the one runtime number its block stores [WIN-1, MSR-1].
     Buffer {
         element: CheckedFlatElement,
     },
-    /// One `FixedVector<T, n>` [BLK-1]: a frame-resident run of `n` slots
-    /// whose initialized storage is the window `len` slots wide beginning at
-    /// `head`. `n` is the type constant; `len` and `head` are descriptor
-    /// words [OP-9].
-    FixedVector {
+    /// One `Slots<T, N>`, `Slots<T>`, `Ring<T, N>` or `Ring<T>` [TYPE-9]: a
+    /// run of `cap` slots whose initialized storage is the window of `len`
+    /// slots beginning at `head` modulo `cap` [WIN-1].
+    Window {
+        shape: WindowShape,
         element: CheckedElement,
-        length: CheckedConst,
+        /// `Some` is the constant-capacity placement, whose capacity is the
+        /// type constant and is stored nowhere; `None` is the
+        /// runtime-capacity placement, whose capacity is a measure fixed at
+        /// construction and stored with the block [TYPE-9, MSR-1].
+        capacity: Option<CheckedConst>,
     },
-    /// One `Vector<'s, T>` [BLK-1]: a store-resident run taken from the store
-    /// the region `'s` names [PROV-1]. The region is part of the type's
-    /// identity, so two stores give two types.
-    Vector {
-        region: DeclarationId,
-        element: CheckedElement,
-        /// [PROV-6, STOR-3] which release action this run's own reclamation
-        /// is. It is a function of `region` alone, so it never separates two
-        /// types one region names, and it is carried because lowering erases
-        /// the region and must still select between the two actions.
-        release: CheckedReleaseClass,
-    },
-    /// One `Heap<'s>` [PROV-1]: the proof-only provider value of the general
-    /// store `'s` names. Ordinary calls transport this provider through
-    /// their declared store region.
-    Heap {
-        region: DeclarationId,
-    },
-    /// One `Arena<'s, bytes, align>` [PROV-1]: the proof-only provider value
-    /// of the bump extent `'s` names, reserved by `arena_frame` [BLK-2].
-    Extent {
-        region: DeclarationId,
-        bytes: CheckedConst,
-        align: CheckedConst,
-    },
+}
+
+/// Which of [TYPE-9]'s two window shapes a [`CheckedType::Window`] is.
+///
+/// The shapes are two types and never one: [WIN-1] gives `head` to a `Ring`
+/// alone, [MSR-1] makes that one cell the only *bounded* cell in the whole
+/// table, and compiler/storage-representation gives the two shapes two
+/// emitted types so that neither carries a word no measure of it needs.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum WindowShape {
+    /// `Slots`: the window begins at slot zero and there is no `head`.
+    Slots,
+    /// `Ring`: the window begins at `head` and wraps modulo `cap`.
+    Ring,
+}
+
+impl WindowShape {
+    /// The [TYPE-9] spelling, for a diagnostic that renders the type.
+    pub(crate) const fn spelling(self) -> &'static str {
+        match self {
+            Self::Slots => "Slots",
+            Self::Ring => "Ring",
+        }
+    }
 }
 
 impl CheckedType {
     pub(crate) fn is_concrete(self, elements: &[CheckedType]) -> bool {
         match self {
             Self::Generic(_) | Self::GenericInt(_) | Self::GenericFloat(_) => false,
-            Self::Array { element, length } | Self::FixedVector { element, length } => {
+            Self::Array { element, length } => {
                 elements
                     .get(element.0 as usize)
                     .is_some_and(|ty| ty.is_concrete(elements))
                     && length.is_concrete()
             }
-            Self::Vector { element, .. } => elements
-                .get(element.0 as usize)
-                .is_some_and(|ty| ty.is_concrete(elements)),
-            Self::Slice { element, .. } | Self::Buffer { element } => {
-                element.ty().is_concrete(elements)
+            Self::Window {
+                element, capacity, ..
+            } => {
+                elements
+                    .get(element.0 as usize)
+                    .is_some_and(|ty| ty.is_concrete(elements))
+                    && capacity.is_none_or(|capacity| capacity.is_concrete())
             }
-            Self::Extent { bytes, align, .. } => bytes.is_concrete() && align.is_concrete(),
-            Self::Unit
-            | Self::Bool
-            | Self::Integer(_)
-            | Self::Float(_)
-            | Self::Nominal(_)
-            | Self::Heap { .. } => true,
+            Self::Buffer { element } => element.ty().is_concrete(elements),
+            Self::Unit | Self::Bool | Self::Integer(_) | Self::Float(_) | Self::Nominal(_) => true,
+        }
+    }
+
+    /// The [MSR-1] row this type selects, or `None` when the table gives it
+    /// none.
+    pub(crate) const fn measured(self) -> Option<MeasuredKind> {
+        match self {
+            Self::Array { .. } => Some(MeasuredKind::ConstantArray),
+            Self::Buffer { .. } => Some(MeasuredKind::RuntimeArray),
+            Self::Window {
+                shape: WindowShape::Slots,
+                capacity: Some(_),
+                ..
+            } => Some(MeasuredKind::ConstantSlots),
+            Self::Window {
+                shape: WindowShape::Slots,
+                capacity: None,
+                ..
+            } => Some(MeasuredKind::RuntimeSlots),
+            Self::Window {
+                shape: WindowShape::Ring,
+                capacity: Some(_),
+                ..
+            } => Some(MeasuredKind::ConstantRing),
+            Self::Window {
+                shape: WindowShape::Ring,
+                capacity: None,
+                ..
+            } => Some(MeasuredKind::RuntimeRing),
+            _ => None,
         }
     }
 }
 
-/// One of [MSR-1]'s four measures of a measured value.
+/// One of [MSR-1]'s three measures of a measured value.
 ///
 /// The spelling and the [ENT-2] term are the same quantity read two ways, so
 /// one enum keys both the [OP-1] reader row and the measure term.
@@ -636,19 +642,14 @@ impl CheckedType {
 pub(crate) enum CheckedMeasure {
     Length,
     Capacity,
-    Room,
     Head,
 }
 
 /// One cell of [MSR-1]'s measure table.
 ///
-/// This version's table gives every cell of every measured type an exact
-/// value, so `Bounded` has no row yet; the enum states the three cell classes
-/// the rule requires so a later row cannot smuggle in a fourth.
-// [MSR-1] requires every cell of the table to be one of exact, bounded or
-// absent. No row of this version.s table selects bounded or absent, and the
-// two classes stay named here because the rule is what fixes the closed set:
-// a later row that needs one adds the row, not a fourth class.
+/// Exact cells distinguish their value source; `Ring.head` is bounded, and
+/// an undeclared measure is absent. All three classifications come from the
+/// specification's table, independently of a familiar member spelling.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MeasureCell {
@@ -657,15 +658,15 @@ pub(crate) enum MeasureCell {
     ExactExtent,
     /// The measure is exactly this compile-time constant.
     ExactConstant(u64),
-    /// The measure is exactly the type's own written constant: an `array`'s
-    /// or a `FixedVector`'s capacity, or an `Arena`'s byte extent.
+    /// The measure is exactly the type's own written constant: an `Array`'s
+    /// length or a constant-capacity window's capacity.
     ExactTypeConstant,
     /// The measure is exact and is an independent runtime quantity of the
-    /// value's own descriptor: a run's `len`, a `Vector`'s `cap`, and the
-    /// `room` [MSR-2]'s identity relates to the other two [BLK-1].
+    /// value's own descriptor: a run's `len` and a runtime-capacity window's
+    /// `cap` [WIN-1].
     ExactRuntime,
     /// The measure is exact but only two-sidedly published by some writing
-    /// operation. A run's `head` is the one cell of this class [BLK-3].
+    /// operation. A Ring's `head` is the one measure of this class [MSR-1].
     Bounded,
     /// The type has no such measure.
     Absent,
@@ -688,63 +689,96 @@ impl MeasureCell {
 }
 
 impl CheckedMeasure {
-    /// The [OP-1] spelling of this measure, which is also its [MSR-5] former.
+    /// The [MSR-1] member spelling of this measure: a measure is read as a
+    /// member of the measured place, `p.len`, and the v0.59 `len_of(p)`
+    /// former is not a v0.60 spelling [OP-15, TYPE-10].
     pub(crate) const fn spelling(self) -> &'static str {
         match self {
-            Self::Length => "len_of",
-            Self::Capacity => "cap_of",
-            Self::Room => "room_of",
-            Self::Head => "head_of",
+            Self::Length => "len",
+            Self::Capacity => "cap",
+            Self::Head => "head",
         }
     }
 
-    /// [MSR-1]'s measure table, for the three measured types this version
-    /// has. Each is completely initialized over its whole capacity at its
-    /// formation, so it has no spare room and no window origin but zero.
+    /// [MSR-1]'s measure table, read row by row out of the rule's own fence.
     ///
-    /// The table is data, not a rule: a later version adds a row per measured
-    /// type it adds, and only such a row can introduce a bounded or absent
-    /// cell.
+    /// Each row determines the admitted members and their publication class;
+    /// a member's spelling alone cannot establish either.
     pub(crate) const fn cell(self, measured: MeasuredKind) -> MeasureCell {
         match (measured, self) {
-            (MeasuredKind::Array | MeasuredKind::Buffer | MeasuredKind::Slice, Self::Length)
-            | (MeasuredKind::Array | MeasuredKind::Buffer | MeasuredKind::Slice, Self::Capacity) => {
-                MeasureCell::ExactExtent
-            }
+            // `Array<T, N>`: `len` is the type constant and every slot always
+            // holds a value [WIN-1]. x1 gives the two `Array` rows no `cap`
+            // cell at all: an array is its own extent and states no second
+            // capacity quantity, so the row that used to answer `cap` with
+            // the same number is absent rather than duplicated.
+            (MeasuredKind::ConstantArray, Self::Length) => MeasureCell::ExactTypeConstant,
+            // `Array<T>`: the one runtime number the block stores is its
+            // allocated slot count.
+            (MeasuredKind::RuntimeArray, Self::Length) => MeasureCell::ExactRuntime,
+            // The four window rows: `len` is a stored runtime number, while
+            // `cap` is the type constant in the constant-capacity placement
+            // and the slot count taken at construction in the runtime one.
             (
-                MeasuredKind::Array | MeasuredKind::Buffer | MeasuredKind::Slice,
-                Self::Room | Self::Head,
-            ) => MeasureCell::ExactConstant(0),
-            // The two runs and the bump extent [BLK-1, PROV-1]. A run's
-            // window is `len` slots beginning at `head` modulo `cap`, so
-            // `len` and `head` are descriptor words, `room` is the
-            // complement [MSR-2] already relates, and only a `Vector`'s
-            // capacity is a runtime quantity rather than a type constant.
-            (MeasuredKind::FixedVector | MeasuredKind::Vector, Self::Length)
-            | (MeasuredKind::FixedVector | MeasuredKind::Vector, Self::Room)
-            | (MeasuredKind::Vector, Self::Capacity)
-            | (MeasuredKind::Extent, Self::Length | Self::Room) => MeasureCell::ExactRuntime,
-            (MeasuredKind::FixedVector | MeasuredKind::Extent, Self::Capacity) => {
+                MeasuredKind::ConstantSlots
+                | MeasuredKind::RuntimeSlots
+                | MeasuredKind::ConstantRing
+                | MeasuredKind::RuntimeRing,
+                Self::Length,
+            )
+            | (MeasuredKind::RuntimeSlots | MeasuredKind::RuntimeRing, Self::Capacity) => {
+                MeasureCell::ExactRuntime
+            }
+            (MeasuredKind::ConstantSlots | MeasuredKind::ConstantRing, Self::Capacity) => {
                 MeasureCell::ExactTypeConstant
             }
-            (MeasuredKind::FixedVector | MeasuredKind::Vector, Self::Head) => MeasureCell::Bounded,
-            // A bump extent has no window; a general store has no row at
-            // all, and both are absences of table data rather than an
-            // exception clause (L6).
-            (MeasuredKind::Extent, Self::Head) => MeasureCell::Absent,
+            // `&[T]`: the range's element count, and nothing else [MSR-1].
+            (MeasuredKind::Range, Self::Length) => MeasureCell::ExactRuntime,
+            // The one *bounded* cell of the whole table: the two front-moving
+            // operations publish a `Ring`'s window origin two-sidedly and no
+            // operation re-establishes it exactly [MSR-1, OP-10].
+            (MeasuredKind::ConstantRing | MeasuredKind::RuntimeRing, Self::Head) => {
+                MeasureCell::Bounded
+            }
+            // `head` is absent on every row but the two `Ring` rows, and
+            // neither an `Array` row nor a range has `cap` or `head`.
+            (
+                MeasuredKind::ConstantArray
+                | MeasuredKind::RuntimeArray
+                | MeasuredKind::ConstantSlots
+                | MeasuredKind::RuntimeSlots,
+                Self::Head,
+            )
+            | (
+                MeasuredKind::ConstantArray | MeasuredKind::RuntimeArray | MeasuredKind::Range,
+                Self::Capacity,
+            )
+            | (MeasuredKind::Range, Self::Head) => MeasureCell::Absent,
         }
     }
 }
 
 /// One measured type [MSR-1]: exactly a type the measure table gives a row.
+///
+/// The table's seven rows are seven identities because the two placements of
+/// one shape answer `cap` differently: a constant-capacity row reads the
+/// type constant and stores nothing, a runtime-capacity one reads a word its
+/// block stores.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum MeasuredKind {
-    Array,
-    Buffer,
-    Slice,
-    FixedVector,
-    Vector,
-    Extent,
+    /// `Array<T, N>`
+    ConstantArray,
+    /// `Array<T>`
+    RuntimeArray,
+    /// `Slots<T, N>`
+    ConstantSlots,
+    /// `Slots<T>`
+    RuntimeSlots,
+    /// `Ring<T, N>`
+    ConstantRing,
+    /// `Ring<T>`
+    RuntimeRing,
+    /// `&[T]` [REF-4], whose one measure is `len`.
+    Range,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -816,6 +850,16 @@ pub(crate) struct CheckedConstant {
 pub(crate) struct CheckedField {
     pub(crate) name: String,
     pub(crate) ty: CheckedType,
+    /// [TYPE-2] whether the declaration wrote `readonly` before the name.
+    ///
+    /// A path that ends at or passes through such a field is never a write
+    /// target: construction gives it its value like any other field and a
+    /// whole-value assignment replaces it together with its owner, but a
+    /// `set` on it and an argument naming it at a written reference parameter
+    /// are refused. It states that the field is not assignable, not that its
+    /// value is constant: a compiler-owned [PRE-1] operation whose row
+    /// declares `writes` of it still changes it.
+    pub(crate) readonly: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -853,19 +897,6 @@ pub(crate) enum CheckedNominalKind {
         /// extent's cell is reclaimed by its region's own reset.
         release: CheckedReleaseClass,
     },
-    /// One `arena<'r, T>` instance [STOR-1, STOR-2]. The region is part of
-    /// the type's identity, so `arena<'r, T>` and `arena<'s, T>` are two
-    /// nominals. Its storage is released with its region rather than with an
-    /// owner scope [STOR-3, STOR-4], so the value itself derives no drop.
-    Arena {
-        region: DeclarationId,
-        content: CheckedType,
-    },
-    /// The compiler-owned allocation list one region block carries when it
-    /// has arena allocations: a pointer-shaped cell whose compiler-derived
-    /// drop walks and frees every registered allocation, which is exactly
-    /// the region's [STOR-3] storage release.
-    ArenaStorage,
     /// An ordinary opaque nominal has no fields or constructor.
     Opaque,
 }
@@ -875,20 +906,98 @@ pub(crate) struct CheckedNominal {
     pub(crate) id: NominalId,
     pub(crate) name: String,
     pub(crate) kind: CheckedNominalKind,
-    /// [PROV-6] whether this nominal's source declaration carries the
-    /// `linear` modifier. Only a source `struct_decl` or `enum_decl` can, so
-    /// every compiler-owned nominal is false.
+    /// [PROV-6] whether this nominal's declaration carries the `nodrop`
+    /// modifier, which removes the drop capability and copy with it [OWN-1].
+    /// The field keeps the name of the class it produces: a marked nominal is
+    /// linear.
     pub(crate) linear: bool,
+    /// [OWN-1, GRAM-2] whether this nominal's declaration removes the copy
+    /// capability alone: the written `nocopy` modifier and the cell nominals
+    /// this compiler interns for declarations [PRE-1] writes `nocopy`.
+    pub(crate) nocopy: bool,
 }
 
 impl CheckedNominal {
-    pub(crate) fn is_copy(&self) -> bool {
+    /// Whether this is an enum whose every variant is nullary. This is a
+    /// fact about the value's shape, which selects its flat-element and tag
+    /// representation; its copy capability is [`type_has_copy_capability`].
+    pub(crate) fn is_tag_only_enum(&self) -> bool {
         matches!(
             &self.kind,
             CheckedNominalKind::Enum { variants }
                 if variants.iter().all(|variant| variant.fields.is_empty())
         )
     }
+}
+
+/// [OWN-1] whether a type has the copy capability.
+///
+/// Primitives have it. Every other type has it exactly when every part it
+/// owns has it and its declaration does not remove it: a struct's fields and
+/// an enum's variant payload fields are its parts, an `Array<T, N>` has the
+/// capabilities of its element, and `Slots`, `Ring`, `Box` and the host
+/// handles are declared `nocopy` or `nodrop` [PRE-1]. `parameter` answers for
+/// a type parameter standing for itself, whose capabilities are the ones its
+/// written bound grants [PROV-6]. `None` reports a nominal or element handle
+/// the tables do not hold.
+///
+/// A runtime-capacity `Array<T>` is never a value outside its `Box` [TYPE-9],
+/// so no bare read of one exists to be a copy and it answers false. An opaque
+/// nominal retains no fields, so its answer is its modifier's alone.
+pub(crate) fn type_has_copy_capability(
+    ty: CheckedType,
+    nominals: &[CheckedNominal],
+    elements: &[CheckedType],
+    parameter: &dyn Fn(DeclarationId) -> Option<bool>,
+) -> Option<bool> {
+    let mut visited = Vec::new();
+    let mut pending = vec![ty];
+    while let Some(current) = pending.pop() {
+        match current {
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_) => {}
+            CheckedType::Generic(declaration) => {
+                if !parameter(declaration)? {
+                    return Some(false);
+                }
+            }
+            CheckedType::Array { element, .. } => {
+                pending.push(*elements.get(element.index())?);
+            }
+            CheckedType::Buffer { .. } | CheckedType::Window { .. } => return Some(false),
+            CheckedType::Nominal(id) => {
+                // A nominal met again is already being judged on this walk,
+                // so it adds no part the walk has not queued.
+                if visited.contains(&id) {
+                    continue;
+                }
+                visited.push(id);
+                let nominal = nominals.get(id.0 as usize)?;
+                if nominal.linear || nominal.nocopy {
+                    return Some(false);
+                }
+                match &nominal.kind {
+                    CheckedNominalKind::Struct { fields } => {
+                        pending.extend(fields.iter().map(|field| field.ty));
+                    }
+                    CheckedNominalKind::Enum { variants } => pending.extend(
+                        variants
+                            .iter()
+                            .flat_map(|variant| variant.fields.iter().map(|field| field.ty)),
+                    ),
+                    CheckedNominalKind::Opaque => {}
+                    CheckedNominalKind::Box { .. } => {
+                        return Some(false);
+                    }
+                }
+            }
+        }
+    }
+    Some(true)
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -1325,18 +1434,7 @@ impl CheckedIntegerOperation {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedTargetDomainObligation {
-    RuntimeSizedAllocation,
     ElementAddress,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedRuntimeTargetObligations {
-    allocation: CheckedTargetDomainObligation,
-    element_address: CheckedTargetDomainObligation,
-    /// Tightest target-independent length ceiling retained at this source
-    /// allocation site. Entailment installs it after proving OP-9; lowering
-    /// must not proceed while it is absent.
-    source_length_upper_bound: Option<u64>,
 }
 
 /// Target-independent upper bounds for one stored value's representation.
@@ -1370,32 +1468,38 @@ pub(crate) struct CheckedLayoutCeiling {
     pub(crate) stride: CheckedLayoutMagnitude,
 }
 
-impl CheckedRuntimeTargetObligations {
-    pub(crate) const fn new() -> Self {
-        Self {
-            allocation: CheckedTargetDomainObligation::RuntimeSizedAllocation,
-            element_address: CheckedTargetDomainObligation::ElementAddress,
-            source_length_upper_bound: None,
-        }
-    }
+/// The static allocation-size obligation one call carries [OP-9].
+///
+/// [OP-13] attaches it to every runtime-capacity construction and [OP-10] to
+/// `grow`, each "over that operation's own stored type and count". The
+/// predicate is `n <= floor((2^64 - 1) / stride_ceiling(T))`, so the record
+/// names the stored type, the language ceiling its stride fixes, and which
+/// declared argument supplies the count `n`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedAllocationFit {
+    /// The allocating cell whose runtime-capacity content fixes the emitted
+    /// block shape and header. Construction returns this cell; `grow`
+    /// receives it as its first parameter.
+    pub(crate) cell: CheckedType,
+    /// The stored type T, after [FN-2] instantiation.
+    pub(crate) element: CheckedType,
+    /// [OP-9]'s language layout ceilings for that stored type.
+    pub(crate) layout_ceiling: CheckedLayoutCeiling,
+    /// The declared-order ordinal of the count argument.
+    pub(crate) count: usize,
+    /// Tightest numeric upper bound retained by this call's accepted OP-9
+    /// derivation. Entailment installs it after proving the obligation;
+    /// lowering must not proceed while it is absent.
+    pub(crate) source_length_upper_bound: Option<u64>,
+}
 
-    pub(crate) const fn allocation(self) -> CheckedTargetDomainObligation {
-        self.allocation
-    }
-
-    pub(crate) const fn element_address(self) -> CheckedTargetDomainObligation {
-        self.element_address
+impl CheckedAllocationFit {
+    pub(crate) fn install_source_length_upper_bound(&mut self, upper: u64) {
+        self.source_length_upper_bound = Some(upper);
     }
 
     pub(crate) const fn source_length_upper_bound(self) -> Option<u64> {
         self.source_length_upper_bound
-    }
-
-    /// Installs the conclusion of the source allocation proof on the checked
-    /// allocation node. This copies an already-derived fact; it performs no
-    /// second proof or replay.
-    pub(crate) fn install_source_length_upper_bound(&mut self, upper_bound: u64) {
-        self.source_length_upper_bound = Some(upper_bound);
     }
 }
 
@@ -1411,17 +1515,122 @@ pub(crate) enum CheckedArrayRoot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedBufferRoot {
     pub(crate) binding: BindingId,
-    pub(crate) fields: Vec<u32>,
+    /// The complete checked path from the binding to the run [REF-1]. A
+    /// runtime-capacity `Array<T>` exists only as the content of a `Box`
+    /// [TYPE-9], so the path of one reached from an owner carries that
+    /// content step and [OWN-7] and [ENT-5] compare it like any other.
+    pub(crate) path: Vec<CheckedPlaceStep>,
     pub(crate) element: CheckedFlatElement,
 }
 
+impl CheckedBufferRoot {
+    /// The [REF-1] resolved steps of this root.
+    pub(crate) fn place_path(&self) -> Vec<super::places::PlaceStep> {
+        self.path.iter().map(CheckedPlaceStep::place_step).collect()
+    }
+}
+
+/// One range reference's own root [REF-4].
+///
+/// A range reference is the pointer-and-count pair the binding itself holds:
+/// [TYPE-8] makes `&[T]` a reference kind and not a type, so no storage ever
+/// holds one and no field path reaches one, and the root is that binding
+/// alone. The element type travels beside it because [TYPE-7] makes the
+/// referent a `deref` selects the element type, so [MSR-1]'s one `len` row
+/// cannot be recovered from the selected type.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedSliceRoot {
+pub(crate) struct CheckedRangeRoot {
     pub(crate) binding: BindingId,
-    pub(crate) element: CheckedFlatElement,
-    /// [VIEW-1] the strength of the loan the viewed value holds, which is
-    /// what [SET-1] reads to admit or refuse a target path through it.
-    pub(crate) strength: LoanStrength,
+    /// The complete stored element type, interned in this checked program.
+    pub(crate) element: CheckedElement,
+    /// The same type carried directly for expression typing, which is
+    /// context-free and cannot dereference the program-owned element table.
+    pub(crate) element_type: CheckedType,
+}
+
+/// The storage one range reference is formed over [REF-4].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedRangeSource {
+    /// One indexable owner place [OP-4]: a complete `Array` [TYPE-9] or a
+    /// run's initialized window [WIN-1], addressed where it is stored.
+    Storage(CheckedContainerRoot),
+    /// Re-slicing another range reference, `&deref(part)[a..b]` [REF-4].
+    Range(CheckedRangeRoot),
+}
+
+/// One typed element place in the run a range reference names [REF-4, OP-4].
+///
+/// Reads, borrows, measures and `set` targets share the evaluated outer offset
+/// and the typed suffix below that element. Keeping that complete path here
+/// gives every storage judgment one place identity without choosing one of a
+/// joined reference's possible origins [REF-1, ENT-5].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedRangeElementPlace {
+    pub(crate) root: CheckedRangeRoot,
+    pub(crate) offset: CheckedExpression,
+    /// The immutable image of `offset` at this occurrence [REF-1, OWN-7].
+    pub(crate) captured: super::places::CapturedValue,
+    /// The typed storage path below the selected element.
+    pub(crate) path: Vec<CheckedPlaceStep>,
+    /// The type selected by `path`, or the element type when it is empty.
+    pub(crate) ty: CheckedType,
+    pub(crate) obligation: NodePath,
+    pub(crate) target_domain: CheckedTargetDomainObligation,
+}
+
+impl CheckedRangeElementPlace {
+    /// The outer range offset followed by every nested subscript offset, in
+    /// source evaluation order [SET-1, OP-4].
+    pub(crate) fn offsets(&self) -> impl Iterator<Item = &CheckedExpression> {
+        std::iter::once(&self.offset).chain(self.path.iter().filter_map(|step| match step {
+            CheckedPlaceStep::Subscript(index) => Some(&index.offset),
+            CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+        }))
+    }
+
+    pub(crate) fn offsets_mut(&mut self) -> impl Iterator<Item = &mut CheckedExpression> {
+        std::iter::once(&mut self.offset).chain(self.path.iter_mut().filter_map(
+            |step| match step {
+                CheckedPlaceStep::Subscript(index) => Some(&mut index.offset),
+                CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+            },
+        ))
+    }
+
+    pub(crate) fn place_path(&self) -> Vec<super::places::PlaceStep> {
+        std::iter::once(super::places::PlaceStep::Index(self.captured))
+            .chain(self.path.iter().map(CheckedPlaceStep::place_step))
+            .collect()
+    }
+
+    pub(crate) fn goal_projections(&self) -> Vec<super::goal::GoalProjection> {
+        std::iter::once(super::goal::GoalProjection::Subscript(
+            self.captured.goal_identity(),
+        ))
+        .chain(self.path.iter().map(CheckedPlaceStep::goal_projection))
+        .collect()
+    }
+
+    pub(crate) const fn measured(&self) -> Option<MeasuredKind> {
+        self.ty.measured()
+    }
+
+    pub(crate) const fn element(&self) -> Option<CheckedElement> {
+        match self.ty {
+            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+                Some(element)
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn type_constant(&self) -> Option<CheckedConst> {
+        match self.ty {
+            CheckedType::Array { length, .. } => Some(length),
+            CheckedType::Window { capacity, .. } => capacity,
+            _ => None,
+        }
+    }
 }
 
 /// A typed storage place used by a borrow or a compiler-owned measure.
@@ -1442,37 +1651,37 @@ pub(crate) struct CheckedContainerRoot {
     pub(crate) ty: CheckedType,
 }
 
-/// One step below a storage place's root [MSR-1]: a field selection, or one
-/// [OP-4] subscript together with the obligation that subscript owes.
+/// One step below a storage place's root [REF-1]: a field selection, one
+/// `deref` of `Box` content [TYPE-7], or one [OP-4] subscript together with
+/// the obligation that subscript owes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedPlaceStep {
     Field(u32),
-    /// One explicit dereference of an owning Box. Borrow-holder dereferences
-    /// begin from an already-addressed binding and therefore need no step in
-    /// this lowering path.
+    /// One explicit dereference of `Box` content [TYPE-7]. It is an ordinary
+    /// path step of the resolved place, so `deref(h).value` and
+    /// `deref(h.value)` are two places [REF-1].
     BoxReferent(NominalId),
     Subscript(Box<CheckedPlaceSubscript>),
 }
 
 /// One subscript occurring inside a storage place [MSR-1, OP-4].
 ///
-/// The offset is a logical one and its obligation is against `len_of` of the
-/// base it indexes; the storage it selects is slot `(head_of + i) mod cap_of`,
-/// which the lowering computes and no source rule mentions [BLK-1].
+/// The offset is a logical one and its obligation is against the base's `len`
+/// [WIN-1]; the storage it selects is slot `(r.head + i) mod r.cap`, which the
+/// lowering computes and no rule of the overlap relation mentions.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedPlaceSubscript {
     /// The base this subscript indexes. Its measure-table row is what the
-    /// [OP-4] obligation `i < len_of(base)` is stated against [MSR-1].
+    /// [OP-4] obligation `i < r.len` is stated against [MSR-1, WIN-1].
     pub(crate) base_type: CheckedType,
-    /// The [BLK-1] element type the subscript selects.
+    /// The [TYPE-9] element type the subscript selects.
     pub(crate) element_type: CheckedType,
     pub(crate) offset: CheckedExpression,
     pub(crate) obligation: crate::NodePath,
     pub(crate) target_domain: CheckedTargetDomainObligation,
-    /// [OWN-7, LIV-2, ENT-5] the offset as the place relations read it: two
-    /// literals decide distinctness, a binding contributes its own support,
-    /// and everything else is opaque.
-    pub(crate) place_offset: super::places::PlaceOffset,
+    /// [REF-1] the immutable value this index expression produced when the
+    /// place was formed, which is what [OWN-7] and [ENT-5] read.
+    pub(crate) captured: super::places::CapturedValue,
 }
 
 impl CheckedContainerRoot {
@@ -1485,10 +1694,7 @@ impl CheckedContainerRoot {
 
     /// The exact storage projection consumed by [OWN-7] and [ENT-5].
     pub(crate) fn place_path(&self) -> Vec<super::places::PlaceStep> {
-        self.path
-            .iter()
-            .filter_map(CheckedPlaceStep::place_step)
-            .collect()
+        self.path.iter().map(CheckedPlaceStep::place_step).collect()
     }
 
     /// Offset evaluations are children of the place, including when its
@@ -1515,7 +1721,7 @@ impl CheckedContainerRoot {
                 CheckedPlaceStep::Field(field) => super::goal::GoalProjection::Field(*field),
                 CheckedPlaceStep::BoxReferent(_) => super::goal::GoalProjection::Deref,
                 CheckedPlaceStep::Subscript(subscript) => {
-                    super::goal::GoalProjection::Subscript(subscript.place_offset)
+                    super::goal::GoalProjection::Subscript(subscript.captured.goal_identity())
                 }
             })
             .collect()
@@ -1523,173 +1729,55 @@ impl CheckedContainerRoot {
 
     /// The measure-table row this place selects [MSR-1].
     pub(crate) const fn measured(&self) -> Option<MeasuredKind> {
-        match self.ty {
-            CheckedType::Array { .. } => Some(MeasuredKind::Array),
-            CheckedType::FixedVector { .. } => Some(MeasuredKind::FixedVector),
-            CheckedType::Vector { .. } => Some(MeasuredKind::Vector),
-            CheckedType::Extent { .. } => Some(MeasuredKind::Extent),
-            _ => None,
-        }
+        self.ty.measured()
     }
 
-    /// The element type of a full array or run; a bump extent has none.
+    /// The element type of a storage shape.
     pub(crate) const fn element(&self) -> Option<CheckedElement> {
         match self.ty {
-            CheckedType::Array { element, .. }
-            | CheckedType::FixedVector { element, .. }
-            | CheckedType::Vector { element, .. } => Some(element),
+            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+                Some(element)
+            }
             _ => None,
         }
     }
 
-    /// The written constant a `FixedVector`'s capacity and an `Arena`'s byte
-    /// extent are [MSR-2]; a `Vector`'s capacity is a descriptor word and has
-    /// none.
+    /// The written capacity constant of a constant-capacity shape [TYPE-9];
+    /// a runtime-capacity one stores its capacity and has none.
     pub(crate) const fn type_constant(&self) -> Option<CheckedConst> {
         match self.ty {
-            CheckedType::Array { length, .. } | CheckedType::FixedVector { length, .. } => {
-                Some(length)
-            }
-            CheckedType::Extent { bytes, .. } => Some(bytes),
+            CheckedType::Array { length, .. } => Some(length),
+            CheckedType::Window { capacity, .. } => capacity,
             _ => None,
         }
     }
 }
 
 impl CheckedPlaceStep {
-    pub(crate) fn place_step(&self) -> Option<super::places::PlaceStep> {
+    /// The [REF-1] path step this selection is.
+    ///
+    /// `deref` is a step of its own here, where v0.59 erased it: [REF-1]
+    /// continues a path through `Box` content, and [OWN-7] reads the complete
+    /// resolved path, so erasing the step would make `deref(h).value` and
+    /// `h.value` one place.
+    /// The [FN-9] clause-side projection this step is, for a goal place.
+    pub(crate) fn goal_projection(&self) -> super::goal::GoalProjection {
         match self {
-            Self::Field(field) => Some(super::places::PlaceStep::Field(*field)),
-            // The allocated referent remains within the owning Box root for
-            // overlap. Source-term identity retains this as Deref above.
-            Self::BoxReferent(_) => None,
-            Self::Subscript(index) => Some(super::places::PlaceStep::Subscript(index.place_offset)),
+            Self::Field(field) => super::goal::GoalProjection::Field(*field),
+            Self::BoxReferent(_) => super::goal::GoalProjection::Deref,
+            Self::Subscript(index) => {
+                super::goal::GoalProjection::Subscript(index.captured.goal_identity())
+            }
         }
     }
-}
 
-/// The resolved type, const and region arguments of one [BLK-0] kernel-domain
-/// call.
-///
-/// A row's own parameters are owner-local and never enter source lookup
-/// [BLK-0], so this is what one call fixes for them: the element type, the run
-/// type the `vector` operand supplies [BLK-3], the const arguments the call
-/// wrote or an operand supplied, and the store region.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedKernelInstance {
-    /// The element type `T`.
-    pub(crate) element: CheckedType,
-    /// The run type `V` [BLK-3], where the row declares one.
-    pub(crate) run: Option<CheckedType>,
-    /// `n`, the `FixedVector` capacity.
-    pub(crate) capacity: Option<CheckedConst>,
-    /// `bytes` and `align`, the two `Arena` constants.
-    pub(crate) bytes: Option<CheckedConst>,
-    pub(crate) align: Option<CheckedConst>,
-    /// The store region `'s` [PROV-1].
-    pub(crate) region: Option<DeclarationId>,
-    /// The layout ceiling of `T` [OP-9]: `size_ceiling(T)` and
-    /// `align_ceiling(T)` are the two compile-time constants the bump rows
-    /// name.
-    pub(crate) element_ceiling: CheckedLayoutCeiling,
-    /// The numeric upper bound [OP-9]'s accepted allocation-fit judgment
-    /// retained for this call's `count`, which [STOR-6] multiplies by the
-    /// actual target stride before the take is lowered.
-    ///
-    /// `None` on a row carrying no `fits::<T>(count)` obligation — the two
-    /// cell rows, the reservation and the boundary rows — and on an
-    /// acceptance-dark test hook whose obligation was deliberately left
-    /// undischarged; neither reaches lowering with a count to scale.
-    pub(crate) count_upper_bound: Option<u64>,
-}
-
-/// One member of the finite static origin set carried by a direct slice value.
-///
-/// The set is a conservative summary: one runtime slice descriptor points at
-/// exactly one source, which must be represented by one member after complete
-/// call substitution.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum CheckedSliceOrigin {
-    SourcePlace {
-        root: DeclarationId,
-        path: Vec<super::places::PlaceStep>,
-        origin_region: Option<DeclarationId>,
-    },
-    ImmutableConst,
-    FormalSlice {
-        parameter: DeclarationId,
-        region: DeclarationId,
-        path: Vec<super::places::PlaceStep>,
-    },
-}
-
-impl CheckedSliceOrigin {
-    pub(crate) fn within_ceiling(&self, ceiling: &Self) -> bool {
-        match (self, ceiling) {
-            (
-                Self::FormalSlice {
-                    parameter,
-                    region,
-                    path,
-                },
-                Self::FormalSlice {
-                    parameter: other,
-                    region: other_region,
-                    path: prefix,
-                },
-            ) => parameter == other && region == other_region && path.starts_with(prefix),
-            _ => self == ceiling,
+    pub(crate) fn place_step(&self) -> super::places::PlaceStep {
+        match self {
+            Self::Field(field) => super::places::PlaceStep::Field(*field),
+            Self::BoxReferent(_) => super::places::PlaceStep::Deref,
+            Self::Subscript(index) => super::places::PlaceStep::Index(index.captured),
         }
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum CheckedSliceSource {
-    Array {
-        root: CheckedArrayRoot,
-        length: CheckedConst,
-    },
-    Buffer(CheckedBufferRoot),
-    /// An array reached in `arena<'r, T>` content through `deref` [OWN-5,
-    /// OWN-10]. Semantic checking admits it; the arena runtime lowering is
-    /// not implemented yet, and the temporary arena-parameter implementation
-    /// stop keeps it from reaching lowering.
-    ArenaContent {
-        binding: BindingId,
-        fields: Vec<u32>,
-        length: CheckedConst,
-    },
-    /// The shared child reborrow of the view a **view holder** reaches
-    /// [VIEW-2, OWN-6]: the parent's own descriptor, read once more under the
-    /// narrower loan. There is no second storage and no second range, which
-    /// is why the source carries only the holder binding.
-    ViewHolder {
-        binding: BindingId,
-        element: CheckedFlatElement,
-    },
-    /// Typed owner storage: a run [BLK-1] or a complete array [TYPE-2].
-    ///
-    /// The window is `len_of` slots beginning at `head_of`, and the row's own
-    /// requirement is what makes that one contiguous range: `head_of(vector)
-    /// <= room_of(vector)` [VIEW-2], so the view is the slots from `head_of`
-    /// onward and never wraps. A complete array has its type's length and a
-    /// zero head, and the view addresses its original storage in both modes.
-    Run(CheckedContainerRoot),
-}
-
-/// The once-evaluated relative endpoints of a view formation [VIEW-2].
-/// Their domain is a mandatory source obligation before lowering.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedSliceRange {
-    pub(crate) start: Box<CheckedExpression>,
-    pub(crate) end: Box<CheckedExpression>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedRangeConflict {
-    pub(crate) site: NodePath,
-    pub(crate) left: super::places::RangeId,
-    pub(crate) right: super::places::RangeId,
 }
 
 /// Source category retained only for integer-operation operands whose exact
@@ -1736,7 +1824,6 @@ pub(crate) enum CheckedExpression {
         carrier: NodePath,
         binding: BindingId,
         ty: CheckedType,
-        slice_origins: Vec<CheckedSliceOrigin>,
         /// The owning checker admitted this occurrence as an affine consume.
         /// ENT keeps it beside the checked binding because holder mode is not
         /// recoverable from the value type and must not be re-read from syntax.
@@ -1748,10 +1835,19 @@ pub(crate) enum CheckedExpression {
         /// the selected concrete callee's parameter declarations. It is
         /// proof-only: lowering still calls `function` directly.
         formal_effects: Option<Box<CheckedEffects>>,
+        /// [FN-4, FN-5] the exact instantiated formal contract and the
+        /// retained implication queries authorizing execution/publication
+        /// through the selected actual. The actual remains `function` for
+        /// execution. Direct calls carry `None` and use that function's own
+        /// contract and verified summaries.
+        formal_contract: Option<Box<CheckedCallContract>>,
         /// Exact source call occurrence and declared-order argument atoms.
         call: NodePath,
         argument_nodes: Vec<NodePath>,
         arguments: Vec<CheckedExpression>,
+        /// Immutable occurrence identities of the scalar actual values used
+        /// to substitute indexed effect-row positions [EFF-5].
+        actual_captures: Vec<super::places::CapturedValue>,
         /// Pre-transfer caller images retained for exact GoalTemplate
         /// substitution after the complete concrete function inventory exists.
         goal_arguments: Vec<super::goal::GoalExpression>,
@@ -1762,7 +1858,6 @@ pub(crate) enum CheckedExpression {
         /// in callee `requires_clause` source order.
         requirements: Vec<super::goal::CheckedCallRequirement>,
         result: CheckedType,
-        slice_origins: Vec<CheckedSliceOrigin>,
         /// For a borrow-mode result admitted under the reborrow extension:
         /// the caller-side storage the result borrow is conservatively rooted
         /// at — the resolved place of the callee signature's single
@@ -1771,33 +1866,10 @@ pub(crate) enum CheckedExpression {
         /// [ENT-5]; it is `None` for every own-mode result and whenever the
         /// extension is off.
         result_borrow: Option<CheckedResultBorrow>,
-    },
-    /// One call to a [BLK-0] kernel-domain row.
-    ///
-    /// The row is a compiler-owned declaration record and not a source
-    /// `fn_decl`, so its identity here is the `container_declaration_ordinal`
-    /// [BLK-0] rather than a [`FunctionId`], and the diagnostics that arise
-    /// in this domain name the row instead of citing a source node.
-    KernelCall {
-        /// The row's zero-based `container_declaration_ordinal` [BLK-0].
-        operation: u8,
-        row: crate::KernelRow,
-        /// Exact source call occurrence and declared-order argument atoms.
-        call: NodePath,
-        /// This call's resolution of the row's own type, const and region
-        /// parameters.
-        instance: Box<CheckedKernelInstance>,
-        argument_nodes: Vec<NodePath>,
-        arguments: Vec<CheckedExpression>,
-        /// Pre-transfer caller images, exactly as an ordinary call retains
-        /// them, so [ENT-3.S13] can mint this call's call datums.
-        goal_arguments: Vec<super::goal::GoalExpression>,
-        /// The row's declared requirement list instantiated at this call, in
-        /// declared order [BLK-0]. Each is submitted under [MSR-4].
-        requirements: Vec<super::goal::ConcreteGoal>,
-        /// The declared result type: one value, or the compiler-owned
-        /// result-list nominal that carries an ordered result list [CALL-4].
-        result: CheckedType,
+        /// [OP-9, OP-13, OP-10] the static allocation-size obligation this
+        /// call carries, where it is a runtime-capacity construction or
+        /// `grow`. Every other call carries none.
+        allocation: Option<CheckedAllocationFit>,
     },
     IntegerOperation {
         carrier: NodePath,
@@ -1837,12 +1909,6 @@ pub(crate) enum CheckedExpression {
         operand_type: CheckedType,
         arguments: Vec<CheckedExpression>,
     },
-    ArrayFill {
-        carrier: NodePath,
-        ty: CheckedType,
-        value: Box<CheckedExpression>,
-        target_domain: CheckedTargetDomainObligation,
-    },
     ArrayMeasure {
         measure: CheckedMeasure,
         root: CheckedArrayRoot,
@@ -1857,57 +1923,77 @@ pub(crate) enum CheckedExpression {
         obligation: NodePath,
         target_domain: CheckedTargetDomainObligation,
     },
-    BufferFill {
+    /// [TYPE-9, WIN-3] move an owned path through Box content. The whole root
+    /// is consumed; the selected value survives while the ordered cleanup
+    /// releases its residual parts and enclosing cells.
+    BoxTake {
         carrier: NodePath,
-        element: CheckedFlatElement,
-        length: Box<CheckedExpression>,
-        value: Box<CheckedExpression>,
-        layout_ceiling: CheckedLayoutCeiling,
-        target_domains: CheckedRuntimeTargetObligations,
-    },
-    /// One `buffer_vacant::<T>(n)` allocation [OP-1, OP-9]: a flat buffer of
-    /// the u64 length whose every element is the compiler-minted `None()`
-    /// of the named `Option<T>` instance; no source value is duplicated.
-    BufferVacant {
-        carrier: NodePath,
-        /// The interned `Option<T>` element instance.
-        element: NominalId,
-        length: Box<CheckedExpression>,
-        layout_ceiling: CheckedLayoutCeiling,
-        target_domains: CheckedRuntimeTargetObligations,
-    },
-    /// The canonical total OP-9 allocation-domain predicate. Its Boolean
-    /// value is `n <= floor(u64::MAX / stride_ceiling(T))`; it never
-    /// allocates and has no partial runtime outcome.
-    BufferFits {
-        carrier: NodePath,
-        element: CheckedType,
-        layout_ceiling: CheckedLayoutCeiling,
-        length: Box<CheckedExpression>,
+        referent: CheckedType,
+        binding: BindingId,
+        path: Vec<CheckedPlaceStep>,
+        cleanup: Vec<CheckedOwnedTakeCleanup>,
     },
     BufferMeasure {
         measure: CheckedMeasure,
         root: CheckedBufferRoot,
     },
-    /// One [MSR-1] measure of one declared result place [CALL-4].
+    /// [REF-4] `&x[lo..hi]`: one range reference over an indexable place or
+    /// over another range reference, under the obligations `lo <= hi` and
+    /// `hi <= x.len` submitted at `obligation`.
     ///
-    /// A result binder is the clause's own datum and not a place, so a
-    /// measure over it is read here rather than through the ordinary indexed
-    /// place. It exists only inside an [FN-9] clause, is discarded with the
-    /// clause's typing, and never reaches lowering.
-    PostconditionResultMeasure {
-        measure: CheckedMeasure,
-        ordinal: u32,
-        ty: CheckedType,
+    /// The expression's own type is the element type, exactly as a `&[T]`
+    /// parameter's is: [TYPE-8] makes the range kind a mode and not a type,
+    /// so the value's kind travels in [`CheckedMode::Range`] beside it.
+    RangeOf {
+        carrier: NodePath,
+        source: CheckedRangeSource,
+        element: CheckedElement,
+        element_type: CheckedType,
+        start: Box<CheckedExpression>,
+        end: Box<CheckedExpression>,
+        obligation: NodePath,
+        /// [REF-1, OWN-7] the two immutable endpoint values this formation
+        /// captured.
+        ///
+        /// The range step a formed reference's path carries holds exactly
+        /// this pair, so the separation a call submits over two such steps
+        /// finds each formation's endpoints by the occurrence that evaluated
+        /// them and never by the spelling written at the argument.
+        captured: super::places::CapturedRange,
     },
-    /// One [MSR-1] measure of a run [BLK-1] or a bump extent [PROV-1], read
-    /// as its [OP-1] reader row. One quantity, one name, term and reader
-    /// alike.
+    /// [MSR-1] the one measure a range reference has, its element count.
+    RangeMeasure {
+        measure: CheckedMeasure,
+        root: CheckedRangeRoot,
+    },
+    /// [MSR-1] one measure of a typed element place selected through a range
+    /// reference. Lowering addresses the element and reads the ordinary
+    /// descriptor cell; the range holder remains the proof-term root so a
+    /// joined reference never selects an arbitrary possible origin [ENT-5].
+    RangeElementMeasure {
+        carrier: NodePath,
+        measure: CheckedMeasure,
+        place: Box<CheckedRangeElementPlace>,
+    },
+    /// [OP-4] one discharged subscript read of the run a range names.
+    RangeIndex {
+        carrier: NodePath,
+        place: Box<CheckedRangeElementPlace>,
+    },
+    /// [REF-1, REF-4] a reference to one discharged element place in the run
+    /// a range reference names. Unlike `RangeIndex`, this preserves the
+    /// selected address instead of reading the stored value.
+    BorrowRangeIndex {
+        carrier: NodePath,
+        place: Box<CheckedRangeElementPlace>,
+    },
+    /// One [MSR-1] measure of a storage shape [TYPE-9], read as its [OP-1]
+    /// reader row. One quantity, one name, term and reader alike.
     ContainerMeasure {
         measure: CheckedMeasure,
         root: CheckedContainerRoot,
     },
-    /// One discharged source subscript read of a run [OP-4, BLK-1].
+    /// One discharged source subscript read of a run [OP-4, WIN-1].
     ///
     /// The offset is a logical one and its obligation is against `len`; the
     /// storage it selects is slot `(head + i) mod cap`, which the lowering
@@ -1923,78 +2009,17 @@ pub(crate) enum CheckedExpression {
         obligation: NodePath,
         target_domain: CheckedTargetDomainObligation,
     },
-    SliceOf {
-        carrier: NodePath,
-        loan: super::places::RangeId,
-        source: CheckedSliceSource,
-        range: Option<CheckedSliceRange>,
-        region: DeclarationId,
-        element: CheckedFlatElement,
-        /// [VIEW-2] which of the two formation rows this is: `slice_of`
-        /// hands back a shared loan and `mut_slice_of` an exclusive one.
-        strength: LoanStrength,
-        origins: Vec<CheckedSliceOrigin>,
-    },
-    SliceMeasure {
-        measure: CheckedMeasure,
-        root: CheckedSliceRoot,
-    },
-    SliceIndex {
-        carrier: NodePath,
-        root: CheckedSliceRoot,
-        offset: Box<CheckedExpression>,
-        obligation: NodePath,
-        target_domain: CheckedTargetDomainObligation,
-    },
-    BoxNew {
-        carrier: NodePath,
-        nominal: NominalId,
-        value: Box<CheckedExpression>,
-    },
     BoxDeref {
         carrier: NodePath,
         nominal: NominalId,
         referent: CheckedType,
         value: Box<CheckedExpression>,
     },
-    /// One `arena_new::<'r, T>(v)` allocation [STOR-2]: the content moves into
-    /// region-owned storage registered on the region's allocation list, and
-    /// the whole list is released with the region [STOR-3, STOR-4].
-    ArenaNew {
-        carrier: NodePath,
-        nominal: NominalId,
-        /// The owning region's hidden allocation-list binding.
-        list: BindingId,
-        value: Box<CheckedExpression>,
-    },
-    /// Arena content read through explicit `deref` [STOR-2, TYPE-7].
-    ArenaDeref {
-        carrier: NodePath,
-        nominal: NominalId,
-        content: CheckedType,
-        value: Box<CheckedExpression>,
-    },
-    BorrowBuffer {
-        carrier: NodePath,
-        root: CheckedBufferRoot,
-    },
     /// A borrow of directly stored content, addressed by its complete typed
     /// field/subscript path [OWN-2, OWN-5, OP-4].
     BorrowAddressed {
         carrier: NodePath,
         root: CheckedContainerRoot,
-    },
-    BorrowBox {
-        carrier: NodePath,
-        binding: BindingId,
-        nominal: NominalId,
-    },
-    /// The same address, taken from a binding that already holds one: a borrow
-    /// whose place is rooted at another borrow holder [OWN-6, OWN-10].
-    ReborrowAddressed {
-        carrier: NodePath,
-        binding: BindingId,
-        ty: CheckedType,
     },
     /// The referent value read through such a holder [TYPE-7]. The holder
     /// itself stays a distinct expression, so lowering never has to guess
@@ -2041,9 +2066,8 @@ impl CheckedExpression {
             | Self::ArrayMeasure { .. }
             | Self::BufferMeasure { .. }
             | Self::ContainerMeasure { .. }
-            | Self::PostconditionResultMeasure { .. }
-            | Self::SliceMeasure { .. } => None,
-            Self::UserCall { call, .. } | Self::KernelCall { call, .. } => Some(call),
+            | Self::RangeMeasure { .. } => None,
+            Self::UserCall { call, .. } => Some(call),
             Self::Binding { carrier, .. }
             | Self::IntegerOperation { carrier, .. }
             | Self::FloatOperation { carrier, .. }
@@ -2051,23 +2075,16 @@ impl CheckedExpression {
             | Self::Reinterpret { carrier, .. }
             | Self::BooleanOperation { carrier, .. }
             | Self::EnumEquality { carrier, .. }
-            | Self::ArrayFill { carrier, .. }
             | Self::ArrayIndex { carrier, .. }
-            | Self::BufferFill { carrier, .. }
-            | Self::BufferVacant { carrier, .. }
-            | Self::BufferFits { carrier, .. }
             | Self::BufferIndex { carrier, .. }
+            | Self::RangeOf { carrier, .. }
+            | Self::RangeElementMeasure { carrier, .. }
+            | Self::RangeIndex { carrier, .. }
+            | Self::BorrowRangeIndex { carrier, .. }
             | Self::ReadStorage { carrier, .. }
-            | Self::SliceOf { carrier, .. }
-            | Self::SliceIndex { carrier, .. }
-            | Self::BoxNew { carrier, .. }
             | Self::BoxDeref { carrier, .. }
-            | Self::ArenaNew { carrier, .. }
-            | Self::ArenaDeref { carrier, .. }
-            | Self::BorrowBuffer { carrier, .. }
+            | Self::BoxTake { carrier, .. }
             | Self::BorrowAddressed { carrier, .. }
-            | Self::BorrowBox { carrier, .. }
-            | Self::ReborrowAddressed { carrier, .. }
             | Self::DerefAddressed { carrier, .. }
             | Self::ConstructStruct { carrier, .. }
             | Self::ConstructEnum { carrier, .. }
@@ -2080,9 +2097,7 @@ impl CheckedExpression {
         match self {
             Self::Constant(value) => value.ty(),
             Self::NamedConstant { value, .. } => value.ty(),
-            Self::Binding { ty, .. }
-            | Self::UserCall { result: ty, .. }
-            | Self::KernelCall { result: ty, .. } => *ty,
+            Self::Binding { ty, .. } | Self::UserCall { result: ty, .. } => *ty,
             Self::IntegerOperation { result, .. } | Self::NumericConversion { result, .. } => {
                 *result
             }
@@ -2093,42 +2108,22 @@ impl CheckedExpression {
                 ..
             } => operation.result_type(*operand_type),
             Self::BooleanOperation { .. } | Self::EnumEquality { .. } => CheckedType::Bool,
-            Self::ArrayFill { ty, .. } => *ty,
             Self::ArrayMeasure { .. } => CheckedType::Integer(IntegerType::U64),
             Self::ArrayIndex { element_type, .. } => *element_type,
-            Self::BufferFill { element, .. } => CheckedType::Buffer { element: *element },
-            Self::BufferVacant { element, .. } => CheckedType::Buffer {
-                element: CheckedFlatElement::Nominal(*element),
-            },
-            Self::BufferFits { .. } => CheckedType::Bool,
             Self::BufferMeasure { .. }
             | Self::ContainerMeasure { .. }
-            | Self::PostconditionResultMeasure { .. } => CheckedType::Integer(IntegerType::U64),
+            | Self::RangeMeasure { .. }
+            | Self::RangeElementMeasure { .. } => CheckedType::Integer(IntegerType::U64),
             Self::BufferIndex { root, .. } => root.element.ty(),
+            // [TYPE-8] `&[T]` is a reference kind, not a type: the value's
+            // own type is the element type and its kind is its mode, exactly
+            // as a `&[T]` parameter carries them [GRAM-2, REF-4].
+            Self::RangeOf { element_type, .. } => *element_type,
+            Self::RangeIndex { place, .. } | Self::BorrowRangeIndex { place, .. } => place.ty,
             Self::ReadStorage { root, .. } => root.ty,
-            Self::SliceOf {
-                region,
-                element,
-                strength,
-                ..
-            } => CheckedType::Slice {
-                region: *region,
-                element: *element,
-                strength: *strength,
-            },
-            Self::SliceMeasure { .. } => CheckedType::Integer(IntegerType::U64),
-            Self::SliceIndex { root, .. } => root.element.ty(),
-            Self::BoxNew { nominal, .. } | Self::ArenaNew { nominal, .. } => {
-                CheckedType::Nominal(*nominal)
-            }
-            Self::BoxDeref { referent, .. } => *referent,
-            Self::ArenaDeref { content, .. } => *content,
-            Self::BorrowBuffer { root, .. } => CheckedType::Buffer {
-                element: root.element,
-            },
+            Self::BoxDeref { referent, .. } | Self::BoxTake { referent, .. } => *referent,
             Self::BorrowAddressed { root, .. } => root.ty,
-            Self::ReborrowAddressed { ty, .. } | Self::DerefAddressed { ty, .. } => *ty,
-            Self::BorrowBox { nominal, .. } => CheckedType::Nominal(*nominal),
+            Self::DerefAddressed { ty, .. } => *ty,
             Self::ConstructStruct { nominal, .. } | Self::ConstructEnum { nominal, .. } => {
                 CheckedType::Nominal(*nominal)
             }
@@ -2185,6 +2180,22 @@ pub(crate) struct CheckedProjectedDrop {
     pub(crate) release: CheckedReleaseMode,
 }
 
+/// One action that remains after an owned sub-place has been taken [WIN-3].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedOwnedTakeCleanup {
+    Drop {
+        path: Vec<CheckedPlaceStep>,
+        ty: CheckedType,
+    },
+    /// Release only the traversed cell. Its content has already been split
+    /// between the selected value and the preceding residual actions.
+    BoxShell {
+        path: Vec<CheckedPlaceStep>,
+        nominal: NominalId,
+        referent: CheckedType,
+    },
+}
+
 /// Which release graph one release occurrence walks for static admission.
 /// Lowering emits the same ordinary run release in both cases: a zero-length
 /// run naturally executes no element drop, so this distinction is proof-only.
@@ -2200,11 +2211,25 @@ pub(crate) enum CheckedReleaseMode {
 pub(crate) struct CheckedWritablePlace {
     pub(crate) binding: BindingId,
     pub(crate) fields: Vec<u32>,
+    /// The binding's source mode. Reference rebinding replaces the runtime
+    /// address or range descriptor carried by the name; it does not write the
+    /// storage that address names.
+    pub(crate) mode: CheckedMode,
     pub(crate) ty: CheckedType,
-    /// [LIV-2] this commit declares the binding it writes, exactly as a `let`
+    /// [SET-1] this commit declares the binding it writes, exactly as a `let`
     /// does: the target identifier resolved to none, so the statement is the
     /// binding's own initialization and nothing before it holds its storage.
     pub(crate) declares: bool,
+    /// [WIN-3, STOR-3] whether the binding this commit names still holds a
+    /// value at the commit, so the write displaces an owner that owes its
+    /// compiler-derived release there.
+    ///
+    /// Only the checker can answer it: a binding is revived from dead by a
+    /// [SET-1] commit whose target is that complete binding, and a
+    /// right-hand side that reads the target's own value out leaves nothing
+    /// for the write to displace. Both are accepted programs, and neither is
+    /// readable from the target's type or path [SET-1, LIV-1].
+    pub(crate) displaces_live_value: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2227,31 +2252,15 @@ pub(crate) struct CheckedBufferSetTarget {
     pub(crate) target_domain: CheckedTargetDomainObligation,
 }
 
-/// One element-position store through a view [SET-1, VIEW-1].
-///
-/// The root's own loan strength is what admitted this target: [SET-1] admits
-/// a target path through a view exactly when that view's loan on its origin
-/// set is exclusive, so a `MutSlice` root reaches here and a `Slice` root is
-/// refused where the place is formed. The storage written is the origin's,
-/// which is why the statement's effect row and its [MSR-2] kill are stated
-/// over the view's origins and not over the descriptor.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedSliceSetTarget {
-    pub(crate) root: CheckedSliceRoot,
-    pub(crate) offset: CheckedExpression,
-    pub(crate) obligation: NodePath,
-    pub(crate) target_domain: CheckedTargetDomainObligation,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedSetTarget {
     Place(CheckedWritablePlace),
     ArrayIndex(Box<CheckedArraySetTarget>),
     BufferIndex(Box<CheckedBufferSetTarget>),
+    /// One element position of the run a range reference names [REF-4].
+    RangeIndex(Box<CheckedRangeElementPlace>),
     /// A typed storage path including all subscripts and terminal fields.
     Storage(CheckedContainerRoot),
-    /// [SET-1, VIEW-1] one element-position store through an exclusive view.
-    SliceIndex(Box<CheckedSliceSetTarget>),
 }
 
 impl CheckedSetTarget {
@@ -2260,10 +2269,10 @@ impl CheckedSetTarget {
             Self::Place(target) => target.binding,
             Self::ArrayIndex(target) => target.binding,
             Self::BufferIndex(target) => target.root.binding,
+            Self::RangeIndex(target) => target.root.binding,
             Self::Storage(target) => target
                 .binding()
                 .expect("checked mutation targets have local roots"),
-            Self::SliceIndex(target) => target.root.binding,
         }
     }
 
@@ -2272,63 +2281,8 @@ impl CheckedSetTarget {
             Self::Place(target) => target.ty,
             Self::ArrayIndex(target) => target.element_type,
             Self::BufferIndex(target) => target.root.element.ty(),
+            Self::RangeIndex(target) => target.ty,
             Self::Storage(target) => target.ty,
-            Self::SliceIndex(target) => target.root.element.ty(),
-        }
-    }
-}
-
-/// [LIV-2] the ordinal values one `set` target list commits.
-///
-/// The two shapes are the two right-hand sides the rule admits, and nothing
-/// below this point asks which spelling produced them: a result list projects
-/// ordinal i out of one call's value, and a written value list holds ordinal i
-/// as its own expression.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum CheckedCommitValues {
-    /// One call whose callee declares an ordered result list [CALL-4]; target
-    /// i takes result ordinal i, which is field i of that value.
-    ///
-    /// The call is boxed because a checked expression is the largest value in
-    /// this tree and the other shape holds its own in a `Vec`.
-    ResultList {
-        /// The callee's result-list nominal [CALL-4].
-        nominal: NominalId,
-        value: Box<CheckedExpression>,
-    },
-    /// A written value list: expression i is ordinal i, evaluated left to
-    /// right and committed after the last one is evaluated.
-    Written(Vec<CheckedExpression>),
-}
-
-/// One [LIV-2] target pair whose structural paths can be separated only by
-/// proving that at least one corresponding pair of subscript values differs.
-/// The expressions are the values evaluated while targets are formed, before
-/// any right-hand-side effect of the commit.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedCommitConflict {
-    pub(crate) site: NodePath,
-    pub(crate) first: String,
-    pub(crate) second: String,
-    pub(crate) alternatives: Vec<(CheckedExpression, CheckedExpression)>,
-}
-
-impl CheckedCommitValues {
-    /// Every ordinal value, in written order. A result list holds its one
-    /// call value; a value list holds one expression per target.
-    pub(crate) fn expressions(&self) -> &[CheckedExpression] {
-        match self {
-            Self::ResultList { value, .. } => std::slice::from_ref(value.as_ref()),
-            Self::Written(values) => values,
-        }
-    }
-
-    /// Every ordinal value, mutably, for the passes that rewrite expressions
-    /// in place.
-    pub(crate) fn expressions_mut(&mut self) -> &mut [CheckedExpression] {
-        match self {
-            Self::ResultList { value, .. } => std::slice::from_mut(value.as_mut()),
-            Self::Written(values) => values,
         }
     }
 }
@@ -2337,6 +2291,19 @@ impl CheckedCommitValues {
 pub(crate) struct PropagationContext {
     pub(crate) function: String,
     pub(crate) node_path: NodePath,
+}
+
+/// One outer reference whose value may cross this loop's normal backedge.
+///
+/// `paths` are the finite static-shape header alternatives [REF-1]. Every
+/// index and range capture that a continuing rebinding may replace carries a
+/// compiler-owned loop generation rather than the source occurrence in the
+/// body. This is proof metadata for place resolution and permission only;
+/// lowering carries the binding's ordinary runtime reference value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedLoopCarriedReference {
+    pub(crate) binding: BindingId,
+    pub(crate) paths: Vec<super::places::ResolvedPlace>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2352,20 +2319,18 @@ pub(crate) enum CheckedStatement {
     /// sole binder receives its referent.
     DestructuringLet {
         node_path: NodePath,
-        /// Each binder and its selected value type, in written order.
-        bindings: Vec<(BindingId, CheckedType)>,
+        /// Each binder, its selected value type, and the field or result
+        /// ordinal it receives, in written order. [GRAM-4]'s rest marker
+        /// leaves the ordinals it covers unbound, so the binders are not
+        /// always the leading ordinals.
+        bindings: Vec<(BindingId, CheckedType, u32)>,
+        /// [WIN-3, STOR-3] the compiler-derived release of every field a
+        /// final `..` covers, in declaration order, rooted at the consumed
+        /// value. A result list covers nothing and carries none.
+        covered: Vec<CheckedProjectedDrop>,
         /// The consumed product or cell nominal [CALL-4, TYPE-6, S39].
         nominal: NominalId,
         value: CheckedExpression,
-    },
-    /// [GRAM-4, CALL-4, LIV-2] `set (x, y) = rhs;`. The right-hand side is
-    /// evaluated once and completely, then ordinal i is committed to target i
-    /// at one commit, in written order.
-    SetList {
-        node_path: NodePath,
-        targets: Vec<CheckedSetTarget>,
-        values: CheckedCommitValues,
-        index_conflicts: Vec<CheckedCommitConflict>,
     },
     PropagateLet {
         /// Complete owning `let_stmt`, shared by Ok delivery and Err return.
@@ -2381,16 +2346,6 @@ pub(crate) enum CheckedStatement {
     },
     Set {
         node_path: NodePath,
-        target: CheckedSetTarget,
-        value: CheckedExpression,
-    },
-    /// A [SET-2] affine-place replacement: one read of the previous value
-    /// into the fresh binding and one write of the replacement into the
-    /// target, with no writer-observable point between them. The target
-    /// root stays live; the commit is not a consuming use.
-    Replace {
-        node_path: NodePath,
-        binding: BindingId,
         target: CheckedSetTarget,
         value: CheckedExpression,
     },
@@ -2420,6 +2375,17 @@ pub(crate) enum CheckedStatement {
         kind: ValueInitializerKind,
         binding: BindingId,
         result_type: CheckedType,
+        /// [REF-1, GIVE-1] the binder's derived mode. A binder every arm of
+        /// which delivers a reference *is* a reference variable, so what the
+        /// join carries is the address its arms delivered and not a value of
+        /// the referent type; that distinction is not recoverable from
+        /// `result_type`, which is the referent's [TYPE-8].
+        result_mode: CheckedMode,
+        /// A range result's complete element handle. [TYPE-8] keeps the
+        /// written element type in `result_type`, but the pointer-and-count
+        /// lowering needs the interned element identity just as a range
+        /// parameter does; no other result mode carries one.
+        result_range_element: Option<CheckedElement>,
         scrutinee: CheckedExpression,
         enum_type: CheckedEnumType,
         arms: Vec<CheckedMatchArm>,
@@ -2432,6 +2398,7 @@ pub(crate) enum CheckedStatement {
     },
     Loop {
         id: CheckedLoopId,
+        carried_references: Vec<CheckedLoopCarriedReference>,
         /// Formed source invariants awaiting the normal semantic proof
         /// checker. Their presence alone grants no authority.
         invariants: Vec<CheckedLoopInvariant>,
@@ -2440,10 +2407,11 @@ pub(crate) enum CheckedStatement {
     },
     CountedRange {
         id: CheckedLoopId,
+        carried_references: Vec<CheckedLoopCarriedReference>,
         node_path: NodePath,
         binder: BindingId,
         lower: CheckedExpression,
-        upper: CheckedExpression,
+        upper: Box<CheckedExpression>,
         /// Formed source invariants awaiting the normal semantic proof
         /// checker. Their presence alone grants no authority.
         invariants: Vec<CheckedLoopInvariant>,
@@ -2453,24 +2421,6 @@ pub(crate) enum CheckedStatement {
     Break {
         target: CheckedLoopId,
         drops: Vec<CheckedDrop>,
-    },
-    /// [PROV-6] `dispose p;`. The consumed operand's release graph is walked
-    /// here instead of at the scope exit; the drop list is exactly the list
-    /// that exit would have carried for this value.
-    Dispose {
-        node_path: NodePath,
-        value: CheckedExpression,
-        drops: Vec<CheckedProjectedDrop>,
-    },
-    Region {
-        /// The region's hidden arena allocation-list binding, present exactly
-        /// when the block allocates into this region [STOR-2]. Lowering
-        /// materializes it at region entry; its compiler-derived drop on
-        /// every normal exit edge is the region's storage release
-        /// [STOR-3, STOR-4].
-        arena_list: Option<BindingId>,
-        body: Vec<CheckedStatement>,
-        fallthrough_drops: Vec<CheckedDrop>,
     },
 }
 
@@ -2483,17 +2433,60 @@ pub(crate) struct CheckedParameter {
     pub(crate) binding: BindingId,
     pub(crate) mode: CheckedMode,
     pub(crate) ty: CheckedType,
-    pub(crate) slice_origins: Vec<CheckedSliceOrigin>,
+    /// The complete element handle of a range parameter; absent for every
+    /// ordinary owned or reference parameter.
+    pub(crate) range_element: Option<CheckedElement>,
 }
 
-/// One callable-boundary state identity.
+/// One callable-boundary state identity: the formal path one `reads(...)` or
+/// `writes(...)` entry names [FN-1, EFF-1].
 ///
-/// `root` is a formal value-parameter declaration and `fields` are source
-/// struct ordinals.  Lifetimes deliberately do not participate in identity.
+/// `root` is the reference value-parameter declaration the path is rooted at.
+/// Every `effect_path` is rooted at one reference parameter of the same
+/// callable; a root resolving to a local, a result binder, a by-value
+/// parameter, or a non-parameter declaration is an EFF-1 rejection, and a
+/// by-value parameter has no effect entry at all.
+///
+/// `steps` is the complete `epsuffix*` below that root, and it is complete on
+/// purpose: [EFF-5] substitutes this path and [OWN-7] then compares the
+/// result, so a step list that dropped what it could not represent would
+/// under-approximate a write and let EFF-5 admit an overlapping pair it has
+/// to refuse.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct CheckedStatePath {
     pub(crate) root: DeclarationId,
-    pub(crate) fields: Vec<u32>,
+    pub(crate) steps: Vec<CheckedEffectStep>,
+}
+
+/// One `epsuffix`, or one `deref`, of a declared effect path [EFF-1].
+///
+/// This is the formal twin of [`super::places::PlaceStep`]: the same five
+/// storage selectors plus the two name families [TYPE-10] admits in a row,
+/// with the index and endpoint positions still unsubstituted. A signature
+/// never contains an index expression — an index enters an effect only
+/// through an IDENT that resolves to a value parameter of the same callable
+/// — so an index position here is that parameter, and [EFF-5] replaces it
+/// with the value its own argument supplies, evaluated once at the call.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum CheckedEffectStep {
+    /// `.IDENT` selecting a struct field, by source ordinal.
+    Field(u32),
+    /// `deref(path)`: `Box` content [TYPE-7].
+    Deref,
+    /// `.TYPEID.IDENT`: one enum payload step, by variant and field ordinal.
+    Payload { variant: u32, field: u32 },
+    /// `[IDENT]`: one whole-index position naming a value parameter.
+    Index(DeclarationId),
+    /// `[IDENT..IDENT]`: one range position [REF-4], both endpoints naming
+    /// value parameters.
+    Range {
+        start: DeclarationId,
+        end: DeclarationId,
+    },
+    /// `.next`, `.last`, `.filled`, or `.free` [WIN-2, TYPE-10].
+    Part(super::places::WindowPart),
+    /// `.len`, `.cap`, or `.head` [MSR-1, OP-15, TYPE-2].
+    Measure(CheckedMeasure),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2512,11 +2505,6 @@ pub(crate) struct CheckedFunction {
     pub(crate) parameters: Vec<CheckedParameter>,
     pub(crate) result_mode: CheckedMode,
     pub(crate) result: CheckedType,
-    /// Ordinary loan-origin ceiling of this function's view result.
-    pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
-    /// Structural ownership conflicts whose range relation must be proved
-    /// by the ordinary flow before this function can be accepted.
-    pub(crate) range_conflicts: Vec<CheckedRangeConflict>,
     /// Formal state paths named by `writes(...)`.
     pub(crate) declared_state_writes: Vec<CheckedStatePath>,
     /// Callable-boundary predicates in `requires_clause` source order.
@@ -2529,10 +2517,45 @@ pub(crate) struct CheckedFunction {
     /// Whether the independently established body-entry requirements close to
     /// a contradiction. The contradiction is retained proof metadata.
     pub(crate) body_disposition: CheckedBodyDisposition,
+    /// [EFF-3] whether this function allocates, which is the fact the
+    /// deduplication and reordering licence reads. See [`CheckedEffects`].
+    pub(crate) allocates: bool,
+    /// [EFF-5] the pairs of substituted paths at this function's calls that
+    /// the pairwise comparison could not separate by syntax alone, each
+    /// submitted to the entailment fragment where the call is walked.
+    pub(crate) call_separations: Vec<CheckedCallSeparation>,
+    /// Finite optional [PAR-1] range questions planned from the complete
+    /// structural footprints before entailment walks their first statements.
+    pub(crate) permission_separation_queries: Vec<super::permission::PermissionSeparationQuery>,
     /// Retained [ENT] analysis summary [DIAG-2]. Semantic acceptance and
     /// diagnostics read it; lowering deliberately does not.
     #[allow(dead_code)]
     pub(crate) entailment: super::entailment::FunctionEntailment,
+}
+
+/// One [EFF-5] pairwise comparison the checker could not settle by syntax.
+///
+/// Two substituted effect paths overlap [OWN-7] and at least one of them is a
+/// write, so the call is admitted only where the two positions are proved
+/// distinct. The checker holds the actual argument spellings and the live
+/// reference state, so it owns the comparison; what it cannot do is discharge
+/// the index or range goal, which is the fixed [ENT-6] families' work under
+/// [MSR-4]'s disposition. This record is that handover, and the diagnostic it
+/// carries cites EFF-5 at the complete `call`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedCallSeparation {
+    /// The complete `call` the diagnostic is reported at.
+    pub(crate) site: NodePath,
+    pub(crate) positions: Vec<CheckedCallSeparationPositions>,
+    /// The two substituted paths as the diagnostic renders them.
+    pub(crate) left_spelling: String,
+    pub(crate) right_spelling: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedCallSeparationPositions {
+    Indices(super::places::CapturedValue, super::places::CapturedValue),
+    Ranges(super::places::CapturedRange, super::places::CapturedRange),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -2560,10 +2583,16 @@ pub(crate) struct CheckedGenericRequirement {
 pub(crate) struct CheckedEffects {
     pub(crate) reads: Vec<CheckedStatePath>,
     pub(crate) writes: Vec<CheckedStatePath>,
-    /// [S23] the declared `allocates` paths.
-    pub(crate) allocates: Vec<CheckedStatePath>,
-    /// Transitional ordinary region allocation [STOR-2, EFF-1].
-    pub(crate) allocates_arenas: Vec<DeclarationId>,
+    /// [EFF-3] whether this boundary allocates.
+    ///
+    /// [STOR-8] gives allocation no effect entry, so [EFF-1]'s row cannot
+    /// carry it, while [EFF-3] still excepts an allocating call from
+    /// deduplication and reordering: the heap a call takes from is finite and
+    /// a duplicated take is a different program. The fact is therefore
+    /// checked-program metadata rather than a row category, which is also
+    /// what [DIAG-2] requires — lowering acts on what the checked program
+    /// states and never rederives a program property of its own.
+    pub(crate) allocates: bool,
 }
 
 #[derive(Debug)]
@@ -2598,7 +2627,6 @@ pub(crate) struct CheckedProgramData {
     /// Declaration-selected storage release classes for post-acceptance
     /// physical function specialization. Loan regions do not become
     /// specialization axes merely by occurring in this table.
-    pub(crate) region_release_defaults: Vec<(DeclarationId, CheckedReleaseClass)>,
     pub(crate) constants: Vec<CheckedConstant>,
     /// Immutable structural table for every symbolic const expression named
     /// by retained schema metadata. `DerivedConstId` is meaningful only
@@ -2606,6 +2634,11 @@ pub(crate) struct CheckedProgramData {
     #[allow(dead_code)]
     pub(crate) derived_consts: Vec<DerivedConst>,
     pub(crate) functions: Vec<CheckedFunction>,
+    /// Each successful FN-4 implication, in its own declaration-only proof
+    /// namespace. Lowering reads no contract query; this is retained DIAG-2
+    /// evidence for the binding decision.
+    #[allow(dead_code)]
+    pub(crate) contract_queries: Vec<CheckedContractQuery>,
     /// Concrete ordinary-call SCCs in deterministic callee-before-caller
     /// order, with component-atomic verified FN-9 summary publication.
     #[allow(dead_code)]
@@ -2629,6 +2662,41 @@ pub(crate) struct CheckedProgramData {
     pub(crate) permission_ledger: Vec<super::permission_ledger::LedgerLine>,
 }
 
+/// One accepted function-kind contract implication. Clause paths are source
+/// identities; the proof carries its own dense term, goal and DAG namespace.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedContractQuery {
+    /// Concrete containing function instance whose bound call uses this
+    /// implication. Declaration-only FN-4 validation carries `None`; only
+    /// `Some` identities are referenced by checked calls.
+    pub(crate) instance: Option<FunctionId>,
+    pub(crate) site: NodePath,
+    pub(crate) premises: Vec<NodePath>,
+    pub(crate) goal: NodePath,
+    pub(crate) proof: super::entailment::FunctionEntailment,
+}
+
+/// The authoritative contract surface of one bound call [FN-5].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedCallContract {
+    pub(crate) requirements: Vec<super::goal::CheckedRequirement>,
+    /// One accepted formal-requires => actual-requires implication for every
+    /// actual requirement, in that declaration's source order.
+    pub(crate) requirement_queries: Vec<ContractQueryId>,
+    /// Formal relations callers may observe, in formal source order.
+    pub(crate) postconditions: Vec<CheckedBoundPostcondition>,
+}
+
+/// One formal relation plus the exact accepted implication and actual premise
+/// ordinals that authorize publishing it at a bound call.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedBoundPostcondition {
+    pub(crate) selector: super::postcondition::CheckedPostconditionSelector,
+    pub(crate) relation: super::postcondition::RelationTemplate,
+    pub(crate) query: ContractQueryId,
+    pub(crate) actual_premises: Vec<u32>,
+}
+
 /// Every direct subexpression, for uniform recursion.
 pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&CheckedExpression> {
     match expression {
@@ -2637,48 +2705,46 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::Binding { .. }
         | CheckedExpression::ArrayMeasure { .. }
         | CheckedExpression::BufferMeasure { .. }
-        | CheckedExpression::PostconditionResultMeasure { .. }
-        | CheckedExpression::SliceMeasure { .. }
-        | CheckedExpression::BorrowBuffer { .. }
-        | CheckedExpression::BorrowBox { .. }
-        | CheckedExpression::ReborrowAddressed { .. }
         | CheckedExpression::DerefAddressed { .. }
+        | CheckedExpression::RangeMeasure { .. }
         | CheckedExpression::Project { .. } => Vec::new(),
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ContainerMeasure { root, .. }
         | CheckedExpression::ReadStorage { root, .. } => root.offsets().collect(),
-        CheckedExpression::SliceOf { source, range, .. } => {
-            let mut children: Vec<_> = match source {
-                CheckedSliceSource::Run(root) => root.offsets().collect(),
-                _ => Vec::new(),
-            };
-            if let Some(range) = range {
-                children.extend([range.start.as_ref(), range.end.as_ref()]);
-            }
-            children
-        }
         CheckedExpression::UserCall { arguments, .. }
-        | CheckedExpression::KernelCall { arguments, .. }
         | CheckedExpression::IntegerOperation { arguments, .. }
         | CheckedExpression::FloatOperation { arguments, .. }
         | CheckedExpression::BooleanOperation { arguments, .. }
         | CheckedExpression::EnumEquality { arguments, .. } => arguments.iter().collect(),
         CheckedExpression::NumericConversion { value, .. }
         | CheckedExpression::Reinterpret { value, .. }
-        | CheckedExpression::ArrayFill { value, .. }
-        | CheckedExpression::BoxNew { value, .. }
         | CheckedExpression::BoxDeref { value, .. }
-        | CheckedExpression::ArenaNew { value, .. }
-        | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => vec![value.as_ref()],
+        CheckedExpression::BoxTake { .. } => Vec::new(),
         CheckedExpression::ArrayIndex { offset, .. } => vec![offset.as_ref()],
-        CheckedExpression::BufferFill { length, value, .. } => {
-            vec![length.as_ref(), value.as_ref()]
+        CheckedExpression::BufferIndex { offset, .. } => vec![offset.as_ref()],
+        CheckedExpression::RangeElementMeasure { place, .. } => {
+            let mut children = vec![&place.offset];
+            children.extend(place.path.iter().filter_map(|step| match step {
+                CheckedPlaceStep::Subscript(index) => Some(&index.offset),
+                CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+            }));
+            children
         }
-        CheckedExpression::BufferVacant { length, .. }
-        | CheckedExpression::BufferFits { length, .. } => vec![length.as_ref()],
-        CheckedExpression::BufferIndex { offset, .. }
-        | CheckedExpression::SliceIndex { offset, .. } => vec![offset.as_ref()],
+        CheckedExpression::RangeIndex { place, .. }
+        | CheckedExpression::BorrowRangeIndex { place, .. } => place.offsets().collect(),
+        // [REF-4] both endpoints are evaluated once where the range is
+        // formed, in written order, and the source place's own offsets are
+        // read with them.
+        CheckedExpression::RangeOf {
+            source, start, end, ..
+        } => match source {
+            CheckedRangeSource::Storage(root) => root
+                .offsets()
+                .chain([start.as_ref(), end.as_ref()])
+                .collect(),
+            CheckedRangeSource::Range(_) => vec![start.as_ref(), end.as_ref()],
+        },
         CheckedExpression::ConstructStruct { fields, .. }
         | CheckedExpression::ConstructEnum { fields, .. } => fields.iter().collect(),
     }

@@ -1,13 +1,10 @@
-fn main['heap](heap: own Heap<'heap>) -> return_value: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "heap_vector takes a runtime-length run from the general store after its statically discharged allocation-fit obligation [OP-9].";
-  region {
-    match heap_vector::<i32>(store: &uniq heap, count: 4_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: b) => {
-        return exit_status(code: 0_u8);
-      }
-    }
+fn main() -> return_value: own ExitStatus pure {
+  doc "A runtime-capacity window is taken from the one heap only after its static allocation-size obligation is discharged [OP-9, OP-13]. Allocation is total, so the construction carries no failure arm and the accepted formation has no runtime size-overflow fallback.";
+  let taken = box_slots_new::<i32>(capacity: 4_u64);
+  let room = taken.inner.cap;
+  if room == 4_u64 {
+  } else {
+    return exit_status(code: 70_u8);
   }
+  return exit_status(code: 0_u8);
 }

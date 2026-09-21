@@ -29,7 +29,6 @@ mod state;
 mod term;
 
 pub(crate) use state::DerivationId;
-pub(crate) use state::DerivationRootKind;
 #[cfg(test)]
 pub(crate) use state::GoalId;
 pub(crate) use state::SourceAffineFactRef;
@@ -39,14 +38,13 @@ use term::TermId;
 
 #[cfg(test)]
 pub(crate) use state::{
-    CountedRootAtom, DerivationNode, FlowEvent, FlowEventId, FlowEventKind, GoalSign,
-    ImplicitBoundKind, JoinParent, PostconditionCallDetail, PostconditionDeliveryJoinDetail,
-    Relation,
+    CountedRootAtom, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind,
+    GoalSign, ImplicitBoundKind, JoinParent, PostconditionCallDetail,
+    PostconditionDeliveryJoinDetail, RangeSeparationOrdering, Relation,
 };
 #[cfg(test)]
 pub(crate) use term::{
-    CountedCaptureSide, MeasureBound, PlaceProjection, PlaceRoot, TermId, TermKind, ZERO,
-    type_range,
+    CountedCaptureSide, MeasureBound, PlaceRoot, TermId, TermKind, ZERO, type_range,
 };
 
 use std::collections::{BTreeSet, HashMap};
@@ -70,22 +68,22 @@ use crate::{DeclarationId, NodePath};
 /// declared parameter and is the same at every call site of it.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum CallTransport {
-    /// [CALL-1] A shared borrow. [OWN-5] admits no write through a shared
-    /// holder, so [EFF-2] can project no `writes` occurrence onto the
-    /// actual's place and the call is a kill event for no fact supported by
-    /// it.
-    SharedBorrow,
+    /// [CALL-1] A reference parameter whose declared row carries no `writes`
+    /// of any path rooted at it. [EFF-2]'s both-ways check then lets no
+    /// `writes` occurrence project onto the actual's place, so the call is a
+    /// kill event for no fact supported by it.
+    ReadOnlyReference,
     /// [CALL-2] A value delivered at an `own` parameter. An affine or linear
     /// actual is a consuming use, which kills every fact whose support
     /// contains that actual's root [ENT-5](c); a copy actual is a duplicate
     /// and kills nothing. Either way the result carries exactly the callee's
     /// declared relations.
     Value,
-    /// [CALL-3] A parameter of loan-bearing type, own or behind a borrow: a
-    /// projected write reaches the viewed range's element storage, which for
-    /// an element type with descriptor storage of its own includes that
-    /// element's measures, and reaches no measure of the origin place itself
-    /// nor of the view.
+    /// [CALL-3] A range reference parameter `&[T]` [REF-4]: a projected
+    /// write reaches the range's storage, which for an element type with
+    /// descriptor storage of its own includes that element's measures, and
+    /// reaches no measure of the origin place itself nor of the range
+    /// reference.
     ViewedRange,
     /// [CALL-5] No transport is selected, so a projected write kills
     /// conservatively: an ordinary descriptor-storage-overlapping [ENT-5]
@@ -96,39 +94,20 @@ pub(crate) enum CallTransport {
 
 impl CallTransport {
     /// The transport a declared parameter selects, read from its declared
-    /// mode and type alone [CALL-5].
+    /// reference kind and from whether its own declared row writes any path
+    /// rooted at it [CALL-5].
     ///
-    /// The loan-bearing type is tested before the mode because [CALL-3]
-    /// classifies a view "own or behind a borrow": an owned view descriptor
-    /// is still a window onto storage the caller keeps.
-    pub(crate) const fn of_declaration(mode: CheckedMode, ty: CheckedType) -> Self {
-        match ty {
-            CheckedType::Slice { .. } => Self::ViewedRange,
-            _ => match mode {
-                CheckedMode::Shared(_) => Self::SharedBorrow,
-                CheckedMode::Own => Self::Value,
-                CheckedMode::Unique(_) => Self::Conservative,
-            },
-        }
-    }
-
-    /// The transport one declared kernel-domain parameter selects [BLK-0].
-    ///
-    /// A row has no body either, so the same reading applies: the declared
-    /// shape and mode are the whole selector [CALL-5]. A row that takes a
-    /// view takes it as a viewed range [CALL-3]; a row's `&uniq` state
-    /// operand is a run or a provider whose descriptor the row changes, so
-    /// it selects no transport and kills conservatively.
-    pub(crate) const fn of_kernel_parameter(parameter: &super::kernel::KernelParameter) -> Self {
-        match parameter.shape {
-            super::kernel::KernelShape::Slice | super::kernel::KernelShape::MutSlice => {
-                Self::ViewedRange
-            }
-            _ => match parameter.mode {
-                super::kernel::KernelMode::Shared => Self::SharedBorrow,
-                super::kernel::KernelMode::Own => Self::Value,
-                super::kernel::KernelMode::Unique => Self::Conservative,
-            },
+    /// [CALL-1] is keyed on the row rather than on a mode, because v0.60 has
+    /// one reference kind and no shared/unique spelling: a reference the row
+    /// only reads keeps every fact, and a reference the row writes kills
+    /// conservatively. `&[T]` is [CALL-3]'s range reference whatever its row
+    /// carries, its own rule classifying how far such a write reaches.
+    pub(crate) const fn of_declaration(mode: CheckedMode, row_writes_here: bool) -> Self {
+        match mode {
+            CheckedMode::Range => Self::ViewedRange,
+            CheckedMode::Own => Self::Value,
+            CheckedMode::Reference if !row_writes_here => Self::ReadOnlyReference,
+            CheckedMode::Reference => Self::Conservative,
         }
     }
 
@@ -150,7 +129,11 @@ impl CallTransport {
 pub(crate) struct EntailmentCallee {
     pub(crate) parameter_declarations: Vec<crate::DeclarationId>,
     pub(crate) parameter_modes: Vec<CheckedMode>,
-    pub(crate) parameter_writes: Vec<Vec<Vec<u32>>>,
+    /// Per parameter, the `epsuffix*` of every declared `writes` entry
+    /// rooted at it [EFF-1]. The steps are complete: [EFF-5] substitutes the
+    /// path and [OWN-7] compares the result, so a truncated step list would
+    /// under-approximate the write.
+    pub(crate) parameter_writes: Vec<Vec<Vec<super::model::CheckedEffectStep>>>,
     pub(crate) parameter_transports: Vec<CallTransport>,
 }
 
@@ -177,13 +160,16 @@ impl EntailmentCallee {
                     writes
                         .iter()
                         .filter(|path| path.root == *declaration)
-                        .map(|path| path.fields.clone())
+                        .map(|path| path.steps.clone())
                         .collect()
                 })
                 .collect(),
             parameter_transports: parameters
                 .iter()
-                .map(|(_, mode, ty)| CallTransport::of_declaration(*mode, *ty))
+                .map(|(declaration, mode, _)| {
+                    let writes_here = writes.iter().any(|path| path.root == *declaration);
+                    CallTransport::of_declaration(*mode, writes_here)
+                })
                 .collect(),
             parameter_modes: parameters.into_iter().map(|(_, mode, _)| mode).collect(),
         }
@@ -201,6 +187,10 @@ pub(crate) struct EntailmentContext<'check> {
     pub(crate) constant_ids: &'check HashMap<DeclarationId, CheckedConstantId>,
     pub(crate) nominals: &'check [CheckedNominal],
     pub(crate) elements: &'check [CheckedType],
+    /// Accepted instantiated FN-4 implications. Bound-call evidence refers
+    /// to these records by checked-program-private index and never imports a
+    /// query-local term, goal, or derivation identity.
+    pub(crate) contract_queries: &'check [super::model::CheckedContractQuery],
     /// Published earlier-component FN-9 declarations and proofs, indexed by
     /// concrete [`FunctionId`]. Same-component entries remain absent until
     /// the component's atomic publication boundary.
@@ -219,6 +209,13 @@ impl EntailmentContext<'_> {
     pub(crate) fn constant(&self, declaration: DeclarationId) -> Option<&CheckedConstant> {
         let id = self.constant_ids.get(&declaration)?;
         self.constants.get(id.0 as usize)
+    }
+
+    pub(crate) fn contract_query(
+        &self,
+        query: super::model::ContractQueryId,
+    ) -> Option<&super::model::CheckedContractQuery> {
+        self.contract_queries.get(query.0 as usize)
     }
 
     pub(crate) fn constant_declaration(
@@ -254,12 +251,26 @@ impl EntailmentContext<'_> {
             })
             .collect()
     }
+
+    pub(crate) fn verified_postcondition(
+        &self,
+        function: FunctionId,
+        relation_ordinal: u32,
+    ) -> Option<(&CheckedPostcondition, &FunctionPostconditionProof)> {
+        self.verified_postconditions(function)?
+            .into_iter()
+            .find(|(_, proof)| {
+                proof.summary.as_ref().is_some_and(|summary| {
+                    summary.function == function && summary.relation_ordinal == relation_ordinal
+                })
+            })
+    }
 }
 
 /// The [ENT-6] obligation family one outcome belongs to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ObligationFamily {
-    /// A subscript bounds obligation `i < len_of(P)` [OP-4].
+    /// A subscript bounds obligation `i < P.len` [OP-4, WIN-1].
     Bounds,
     /// [PROV-6] a release using the pruned run graph must prove that the
     /// released run has no live elements at that exact edge.
@@ -269,17 +280,13 @@ pub(crate) enum ObligationFamily {
     IntegerDomain,
     /// A runtime-sized buffer allocation's canonical fit predicate [OP-9].
     AllocationFit,
-    /// One independent half-open view formation goal [VIEW-2].
-    ViewRange,
-    /// Two incompatible live range loans must be disjoint [OWN-5, OWN-7].
-    RangeSeparation,
-    /// Two [LIV-2] commit targets require a proved unequal pair of
-    /// corresponding subscript values [OWN-7].
-    IndexSeparation,
-    /// One declared requirement of a [BLK-0] kernel-domain row, submitted at
-    /// a call to that row and judged under [MSR-4] exactly as every other
-    /// consumer's obligation is.
-    KernelRequirement,
+    /// One range-reference formation goal `lo <= hi` or `hi <= x.len`,
+    /// submitted under [MSR-4] exactly as every other consumer's obligation
+    /// is [REF-4].
+    RangeFormation,
+    /// Two range steps of a compared pair of paths must be disjoint, by the
+    /// four non-strict orderings [OWN-7] submits under [ENT-6] [EFF-5].
+    CallSeparation,
 }
 
 /// One exact single-binder affine image retained at a discharged OP-4 site.
@@ -304,7 +311,7 @@ pub(crate) struct ProvedAffineIndexMap {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProvedRangePartition {
     pub(crate) loop_id: CheckedLoopId,
-    pub(crate) range: super::places::RangeId,
+    pub(crate) range: super::places::CaptureId,
     pub(crate) stride: affine::AffineForm,
     pub(crate) base: affine::AffineForm,
     pub(crate) stride_nonnegative: DerivationId,
@@ -341,8 +348,8 @@ pub(crate) struct ObligationOutcome {
     /// offset atom's canonical source bytes, ` < len_of(`, the base place's
     /// canonical source bytes, `)`.
     pub(crate) residual: Option<String>,
-    /// The two rendered targets of an IndexSeparation obligation. Every
-    /// other family carries none.
+    /// The two rendered substituted paths of a [EFF-5] range-separation
+    /// obligation. Every other family carries none.
     pub(crate) overlap_targets: Option<(String, String)>,
     /// Exact ENT-4 derivation for an accepted obligation. Failed judgments
     /// deliberately carry no positive root.
@@ -360,15 +367,6 @@ pub(crate) struct ObligationOutcome {
     /// discharged Bounds occurrence. Every other family, and every unproved
     /// bounds occurrence, retains an empty list.
     pub(crate) affine_index_maps: Vec<ProvedAffineIndexMap>,
-    /// For a `KernelRequirement` occurrence, the row's zero-based
-    /// `container_declaration_ordinal` [BLK-0]. A record has no source node,
-    /// so the row's own identity is what the diagnostic names. Every other
-    /// family retains `None`.
-    pub(crate) kernel_row: Option<u8>,
-    /// Separation proved when one of these ranges was formed. Unlike a
-    /// later guarded access proof, this holds whenever both formations'
-    /// values coexist and may be reused by ordinary overlap consumers.
-    pub(crate) formed_range_separation: Option<(super::places::RangeId, super::places::RangeId)>,
     /// Adjacent-range images retained only at a discharged VIEW-2 formation.
     pub(crate) range_partitions: Vec<ProvedRangePartition>,
 }
@@ -950,37 +948,55 @@ pub(crate) struct VerifiedPostconditionSummary {
 
 /// Where one published relation comes from [CALL-6].
 ///
-/// [ENT-3.S13]'s population is every callee whose declared relation list is
-/// published data: a source `fn_decl` with a verified [FN-9] summary, and
-/// every kernel-domain row [BLK-0], whose relations are declaration data
-/// rather than a body's proved consequence. A record has no source node, so
-/// its provenance names the row and the relation's position in that row's own
-/// declared list, exactly as an [OP-1] diagnostic names its family.
+/// [ENT-3.S13]'s population is every source `fn_decl` whose declared relation
+/// list has a verified [FN-9] summary.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum RelationProvenance {
     Verified(VerifiedPostconditionSummary),
-    Kernel {
-        operation: u8,
-        relation_ordinal: u32,
+    /// One formal relation exported through a bound call. The isolated FN-4
+    /// query proves the implication; every non-hypothetical premise is named
+    /// by its independently verified actual FN-9 summary. No query-local DAG
+    /// identity crosses into the caller.
+    FormalBoundary {
+        query: super::model::ContractQueryId,
+        actual: FunctionId,
+        premises: Vec<VerifiedPostconditionSummary>,
     },
 }
 
 impl RelationProvenance {
-    /// The stable identity pair this provenance contributes to a derivation
-    /// node's structural key.
-    pub(crate) const fn identity(&self) -> [u32; 2] {
+    /// Stable checked-program identities this provenance contributes to
+    /// deterministic proof-choice ordering. The complete provenance remains
+    /// part of the derivation node's equality and hash identity. These are
+    /// external record identities, never caller- or query-local derivation IDs.
+    pub(crate) fn identity(&self) -> Vec<u32> {
         match self {
-            Self::Verified(summary) => [summary.function.0, summary.component],
-            Self::Kernel {
-                operation,
-                relation_ordinal,
-            } => [*operation as u32, *relation_ordinal],
+            Self::Verified(summary) => vec![0, summary.function.0, summary.component],
+            Self::FormalBoundary {
+                query,
+                actual,
+                premises,
+            } => {
+                let premise_count = u32::try_from(premises.len())
+                    .expect("formal-boundary premise count exceeds the u32 identity space");
+                let mut identity = vec![1, query.0, actual.0, premise_count];
+                for premise in premises {
+                    identity.extend([
+                        premise.function.0,
+                        premise.relation_ordinal,
+                        premise.component,
+                    ]);
+                }
+                identity
+            }
         }
     }
 }
 
-/// Caller-local reference to an earlier-component verified
-/// summary. It intentionally carries no callee-local [`DerivationId`].
+/// Caller-local reference to one authorized S12 publication. Direct
+/// provenance names an earlier-component verified summary; formal-boundary
+/// provenance additionally names the retained FN-4 query and its verified
+/// actual premises. It carries no callee- or query-local [`DerivationId`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct VerifiedPostconditionSummaryRef {
     pub(crate) summary: RelationProvenance,
@@ -1049,7 +1065,9 @@ pub(crate) struct CallGoalOutcome {
     /// Exact source `call` occurrence.
     pub(crate) node_path: NodePath,
     pub(crate) callee: FunctionId,
-    /// Exact `requires_clause` occurrence in the concrete callee.
+    /// Exact authoritative `requires_clause` occurrence: the concrete
+    /// callee for a direct call and the instantiated formal for a bound call
+    /// [FN-5].
     pub(crate) requires_clause: NodePath,
     pub(crate) goal: ConcreteGoal,
     /// The same goal in the terms the source wrote it in, rendered here
@@ -1069,6 +1087,17 @@ pub(crate) struct CallGoalOutcome {
     pub(crate) evidence: Vec<CallGoalEvidence>,
     /// One exact positive or contradiction root for a discharged call.
     /// Refuted and unproved calls carry none.
+    pub(crate) derivation: Option<DerivationId>,
+}
+
+/// One retained declaration-only [FN-4] implication result. Its enclosing
+/// [`FunctionEntailment`] is an isolated proof namespace, not a source
+/// function summary and not a premise published to either callable body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ContractGoalOutcome {
+    pub(crate) goal: ConcreteGoal,
+    pub(crate) disposition: CallGoalDisposition,
+    pub(crate) evidence: Vec<CallGoalEvidence>,
     pub(crate) derivation: Option<DerivationId>,
 }
 
@@ -1092,6 +1121,10 @@ pub(crate) struct FunctionEntailment {
     pub(crate) obligations: Vec<ObligationOutcome>,
     /// Ordinary call-goal judgments in deterministic checked-tree walk order.
     pub(crate) call_goals: Vec<CallGoalOutcome>,
+    /// Declaration-only FN-4 queries. Ordinary function summaries leave this
+    /// empty; each retained contract query owns one isolated summary with one
+    /// entry here.
+    pub(crate) contract_goals: Vec<ContractGoalOutcome>,
     /// One complete five-relation/eight-atomic S11 group per counted
     /// statement, in deterministic statement-walk order.
     pub(crate) counted_derivations: Vec<CountedDerivationSet>,
@@ -1110,6 +1143,10 @@ pub(crate) struct FunctionEntailment {
     /// O11 candidate decomposition sets recorded at the signed-goal
     /// establishments; never an acceptance input in this version.
     pub(crate) boolean_decompositions: Vec<BooleanGoalDecomposition>,
+    /// Optional [PAR-1] range-separation proofs, keyed by the exact ordered
+    /// statement pair and captured ranges whose first-point state proved
+    /// them. Absence or an undischarged entry retains sequential lowering.
+    pub(crate) permission_separations: Vec<super::permission::PermissionSeparationProof>,
     /// Function-local, lifetime-bound derivations for mandatory DIAG-2 roots.
     pub(crate) derivations: DerivationLedger,
     /// Canonical term and goal identities moved from the analyzer so every
@@ -1136,6 +1173,19 @@ pub(crate) fn analyze_function_candidate(
     context: &EntailmentContext<'_>,
 ) -> FunctionEntailment {
     flow::analyze_candidate(function, context)
+}
+
+/// Checks one [FN-4] contract implication in a declaration-only proof
+/// context. The supplied function carries only alpha-renamed contract
+/// variables and the hypothetical premise set; [`flow`] submits both the
+/// premises and goal through the ordinary S4/AUTO path. The caller finalizes
+/// the returned ledger only after the query discharges.
+pub(crate) fn contract_implies(
+    function: &CheckedFunction,
+    context: &EntailmentContext<'_>,
+    goal: &super::goal::GoalExpression,
+) -> FunctionEntailment {
+    flow::contract_implies(function, context, goal)
 }
 
 /// Performs the sole root retention and dense-ID remap for one accepted
@@ -1315,7 +1365,6 @@ pub(super) fn collect_statement_calls(
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
-            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. } => {
@@ -1324,34 +1373,7 @@ pub(super) fn collect_statement_calls(
             CheckedStatement::PropagateLet { scrutinee, .. } => {
                 collect_expression_calls(caller, scrutinee, calls);
             }
-            CheckedStatement::SetList {
-                targets, values, ..
-            } => {
-                for target in targets {
-                    match target {
-                        CheckedSetTarget::Place(_) => {}
-                        CheckedSetTarget::ArrayIndex(target) => {
-                            collect_expression_calls(caller, &target.offset, calls);
-                        }
-                        CheckedSetTarget::BufferIndex(target) => {
-                            collect_expression_calls(caller, &target.offset, calls);
-                        }
-                        CheckedSetTarget::Storage(target) => {
-                            for offset in target.offsets() {
-                                collect_expression_calls(caller, offset, calls);
-                            }
-                        }
-                        CheckedSetTarget::SliceIndex(target) => {
-                            collect_expression_calls(caller, &target.offset, calls);
-                        }
-                    }
-                }
-                for value in values.expressions() {
-                    collect_expression_calls(caller, value, calls);
-                }
-            }
-            CheckedStatement::Set { target, value, .. }
-            | CheckedStatement::Replace { target, value, .. } => {
+            CheckedStatement::Set { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
                     CheckedSetTarget::ArrayIndex(target) => {
@@ -1360,13 +1382,15 @@ pub(super) fn collect_statement_calls(
                     CheckedSetTarget::BufferIndex(target) => {
                         collect_expression_calls(caller, &target.offset, calls);
                     }
-                    CheckedSetTarget::Storage(target) => {
+                    CheckedSetTarget::RangeIndex(target) => {
                         for offset in target.offsets() {
                             collect_expression_calls(caller, offset, calls);
                         }
                     }
-                    CheckedSetTarget::SliceIndex(target) => {
-                        collect_expression_calls(caller, &target.offset, calls);
+                    CheckedSetTarget::Storage(target) => {
+                        for offset in target.offsets() {
+                            collect_expression_calls(caller, offset, calls);
+                        }
                     }
                 }
                 collect_expression_calls(caller, value, calls);
@@ -1382,7 +1406,7 @@ pub(super) fn collect_statement_calls(
                     collect_statement_calls(caller, &arm.body, calls);
                 }
             }
-            CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+            CheckedStatement::Loop { body, .. } => {
                 collect_statement_calls(caller, body, calls);
             }
             CheckedStatement::CountedRange {

@@ -1,78 +1,39 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
-  ensures len_of(result) >= n;
-  ensures room_of(result) <= 0_u64;
-  ensures head_of(result) <= 0_u64;
-} {
-  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
-  let built = fixed_vector::<T, n>();
+fn main() -> status: own ExitStatus pure {
+  doc "MSR-1, OP-15: a measure read is a place form and not a call, and the table gives each measured type exactly the cells it has. A Slots has len and cap, a Ring adds head, and a range reference has len alone; free slots is the ordinary expression cap - len. The program reads every measure the table gives, computes free slots, and observes those values over constant-capacity and boxed runtime-capacity windows, a ring and a range reference.";
+  let values = array_filled::<u8, 4>(value: 0_u8);
+  let fixed = slots_from_array::<u8, 4>(values: values);
+  let fixed_length = fixed.len;
+  let fixed_capacity = fixed.cap;
+  let fixed_room = fixed.cap - fixed.len;
+  let cell = box_slots_new::<u8>(capacity: 8_u64);
   for @fill (
-    at in 0_u64..n,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= n,
-    invariant flat: head_of(built) <= 0_u64
+    at in 0_u64..8_u64,
+    invariant grown: cell.inner.len >= at,
+    invariant spare: cell.inner.cap - cell.inner.len + at >= 8_u64
   ) {
-    place_back(vector: &uniq built, value: value);
+    place_back(window: &cell.inner, value: 0_u8);
   }
-  return move built;
-}
-
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "[MSR-1] the four measures are one quantity read two ways, a term and an [OP-1] reader. A run's cap is the capacity it was formed with - the type constant for a fixed run, the count for a store run - and its len, room and head describe the window inside that capacity, so a run filled to its capacity reads room and head at zero. The program reads all four over a fixed run, over a store run and over a slice, and observes those values.";
-  let fixed = filled::<u8, 4>(value: 0_u8);
-  let fixed_length = len_of(fixed);
-  let fixed_capacity = cap_of(fixed);
-  let fixed_room = room_of(fixed);
-  let fixed_head = head_of(fixed);
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
-      None() => {
-        return exit_status(code: 6_u8);
-      }
-      Some(value: fresh) => {
-        let built = move fresh;
-        for @fill (
-          at in 0_u64..8_u64,
-          invariant grown: len_of(built) >= at,
-          invariant spare: room_of(built) + at >= 8_u64,
-          invariant flat: head_of(built) <= 0_u64
-        ) {
-          place_back(vector: &uniq built, value: 0_u8);
-        }
-        let run_length = len_of(built);
-        let run_capacity = cap_of(built);
-        let run_room = room_of(built);
-        let run_head = head_of(built);
-        region {
-          let view = slice_of(&built);
-          let view_length = len_of(view);
-          let view_capacity = cap_of(view);
-          let view_room = room_of(view);
-          let view_head = head_of(view);
-          if view_length == 8_u64 {
-            if view_capacity == 8_u64 {
-              if view_room == 0_u64 {
-                if view_head == 0_u64 {
-                } else {
-                  return exit_status(code: 4_u8);
-                }
-              } else {
-                return exit_status(code: 3_u8);
-              }
-            } else {
-              return exit_status(code: 2_u8);
-            }
-          } else {
-            return exit_status(code: 1_u8);
-          }
-        }
-        if run_length == 8_u64 {
-          if run_capacity == 8_u64 {
-            if run_room == 0_u64 {
-              if run_head == 0_u64 {
-                if fixed_length == 4_u64 {
-                  if fixed_capacity == 4_u64 {
-                    if fixed_room == 0_u64 {
-                      if fixed_head == 0_u64 {
+  let run_length = cell.inner.len;
+  let run_capacity = cell.inner.cap;
+  let run_room = cell.inner.cap - cell.inner.len;
+  let cycle = ring_new::<u8, 2>();
+  let ring_length = cycle.len;
+  let ring_capacity = cycle.cap;
+  let ring_room = cycle.cap - cycle.len;
+  let ring_head = cycle.head;
+  let view = &fixed[0_u64..4_u64];
+  let view_length = deref(view).len;
+  if view_length == 4_u64 {
+    if ring_head == 0_u64 {
+      if ring_length == 0_u64 {
+        if ring_capacity == 2_u64 {
+          if ring_room == 2_u64 {
+            if run_length == 8_u64 {
+              if run_capacity == 8_u64 {
+                if run_room == 0_u64 {
+                  if fixed_length == 4_u64 {
+                    if fixed_capacity == 4_u64 {
+                      if fixed_room == 0_u64 {
                         return exit_status(code: 0_u8);
                       }
                     }
@@ -82,8 +43,8 @@ fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), wri
             }
           }
         }
-        return exit_status(code: 5_u8);
       }
     }
   }
+  return exit_status(code: 5_u8);
 }

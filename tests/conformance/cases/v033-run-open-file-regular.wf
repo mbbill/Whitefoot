@@ -87,37 +87,32 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
-  let name = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq name, value: 105_u8);
-  }
-  region {
-    place_back(vector: &uniq name, value: 116_u8);
-  }
-  region {
-    place_back(vector: &uniq name, value: 101_u8);
-  }
-  region {
-    place_back(vector: &uniq name, value: 109_u8);
-  }
-  region {
-    let component = slice_of(&name);
-    region {
-      match open_file(factory: &uniq deref(files), root: cwd, name: &component, start: 0_u64, end: 4_u64) {
-        Ok(value: file) => {
-          close_read(factory: &uniq deref(files), file: move file);
-          return exit_status(code: 0_u8);
+fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(cwd), writes(files) {
+  doc "Builds the selected name in an inline array, hands its range reference to open_file, reads the opened entry through an ordinary range destination, and closes the handle on the successful path.";
+  let name = array_filled::<u8, 4>(value: 0_u8);
+  set name[0_u64] = 105_u8;
+  set name[1_u64] = 116_u8;
+  set name[2_u64] = 101_u8;
+  set name[3_u64] = 109_u8;
+  let component = &name[0_u64..4_u64];
+  match open_file(factory: files, root: cwd, name: component, start: 0_u64, end: 4_u64) {
+    Ok(value: file) => {
+      let buffer = array_filled::<u8, 1>(value: 0_u8);
+      let destination = &buffer[0_u64..1_u64];
+      match read_at(factory: files, file: &file, destination: destination, file_offset: 0_u64, start: 0_u64, end: 1_u64) {
+        Ok(value: produced) => {
         }
-        Err(error: problem) => {
-          region {
-            if factory_refusal(error: &problem) {
-              return exit_status(code: 2_u8);
-            }
-          }
-          return exit_status(code: 1_u8);
+        Err(error: stop) => {
         }
       }
+      close_read(factory: files, file: move file);
+      return exit_status(code: 0_u8);
+    }
+    Err(error: problem) => {
+      if factory_refusal(error: &problem) {
+        return exit_status(code: 2_u8);
+      }
+      return exit_status(code: 1_u8);
     }
   }
 }
@@ -125,9 +120,7 @@ fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own Exit
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
-  region {
-    let outcome = exercise(cwd: &cwd, files: &uniq files);
-    close_directory(factory: &uniq files, directory: move cwd);
-    return move outcome;
-  }
+  let outcome = exercise(cwd: &cwd, files: &files);
+  close_directory(factory: &files, directory: move cwd);
+  return move outcome;
 }

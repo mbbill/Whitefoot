@@ -1,7 +1,9 @@
-formal BorrowedSliceResult {
-  fn borrowed['descriptor, 'data](value: &uniq 'descriptor Slice<'data, u8>) -> result: &uniq 'descriptor Slice<'data, u8> pure;
+interface BorrowedRangeResult {
+  doc "The same reference-result refusal applies to a formal member's signature formation before any actual can bind it [FN-3].";
+  fn borrowed(value: &[u8]) -> result: &[u8] pure;
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "No construction is needed to exercise the result shape.";
   return exit_status(code: 0_u8);
 }

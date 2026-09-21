@@ -15,7 +15,7 @@ use super::json::{self, Value};
 /// `accept | reject(rule) | run(exit) | unsupported`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Verdict {
-    /// The unit is a complete accepted program.
+    /// The unit reached complete target-independent source acceptance.
     Accept,
     /// The unit violates the named numbered rule, or an unnamed one.
     Reject(Option<String>),
@@ -64,19 +64,6 @@ impl Expectation {
     }
 }
 
-/// The toolchain-readiness axis, separate from the expectation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Status {
-    /// Must match the expectation.
-    Runnable,
-    /// This toolchain cannot reach the case yet; skipped.
-    Pending,
-    /// The expectation is the correct spec behaviour and this toolchain does
-    /// not yet produce it; reported, non-failing, and flagged if it starts
-    /// matching.
-    Xfail,
-}
-
 /// One fixture object placed under the invocation's initial directory.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Fixture {
@@ -106,9 +93,8 @@ pub struct Case {
     pub id: String,
     /// The verdict the specification requires.
     pub expect: Expectation,
-    /// The toolchain-readiness axis.
-    pub status: Status,
-    /// The reason a `pending` or `xfail` case carries.
+    /// The prose the manifest line carries, when it carries any. It is
+    /// context for a report and never selects a path.
     pub reason: Option<String>,
     /// The invocation arrangement, present only on an executed case.
     pub arrange: Option<Arrangement>,
@@ -174,12 +160,15 @@ fn case(value: &Value) -> Result<Case, String> {
         .ok_or("id must be a string")?
         .to_owned();
     let expect = expectation(value.get("expect").ok_or("missing expect")?)?;
-    let status = match value.get("status").and_then(Value::string) {
-        None | Some("runnable") => Status::Runnable,
-        Some("pending") => Status::Pending,
-        Some("xfail") => Status::Xfail,
+    // `runnable` is the only status a manifest line may carry, and it is the
+    // default when the line omits the key. The readiness axis is gone: a case
+    // whose declared verdict the toolchain does not reach is a defect, not a
+    // status. Any other value is a manifest error, exactly as
+    // `tests/conformance/runner.py` reports it.
+    match value.get("status").and_then(Value::string) {
+        None | Some("runnable") => {}
         Some(other) => return Err(format!("{id}: invalid status {other:?}")),
-    };
+    }
     let reason = value
         .get("reason")
         .and_then(Value::string)
@@ -188,7 +177,6 @@ fn case(value: &Value) -> Result<Case, String> {
     Ok(Case {
         id,
         expect,
-        status,
         reason,
         arrange,
     })

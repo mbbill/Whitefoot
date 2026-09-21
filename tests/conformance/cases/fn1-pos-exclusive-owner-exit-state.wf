@@ -3,45 +3,30 @@ struct Observed {
   current: u64;
 }
 
-fn exchange['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: own Box<'s, u64> reads(slot), writes(slot) {
-  let previous = replace deref(slot) = move incoming;
-  return move previous;
+fn exchange(slot: &Box<u64>, spare: &Box<u64>) -> result: own unit writes(slot), writes(spare) {
+  doc "The exchange is `swap`: it moves the two stored owners past each other, consumes neither root, and leaves no program point at which a place holds no owner [OP-11].";
+  swap(first: slot, second: spare);
+  return unit;
 }
 
-fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq Heap<'s>) -> result: own Observed reads(owner), writes(owner, store) {
-  let previous_value = 0_u64;
-  region {
-    let previous = exchange(slot: &uniq owner, incoming: move incoming);
-    set previous_value = deref(previous);
-  }
-  let current_value = deref(owner);
-  return Observed(previous: previous_value, current: current_value);
+fn observe(owner: &Box<u64>, spare: &Box<u64>) -> result: own Observed writes(owner), writes(spare) {
+  doc "Reads the owner's content through the Box field `inner` across the reference, deref(owner).inner, before and after the exchange [TYPE-7, TYPE-9].";
+  let started = deref(owner).inner;
+  exchange(slot: owner, spare: spare);
+  let current = deref(owner).inner;
+  return Observed(previous: started, current: current);
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "FN-1, EFF-2, SET-2: a helper returns the old ordinary Box and installs the incoming Box in the exclusive actual. A second helper reads both values using ordinary storage-place effects and releases each through its ordinary Heap capability.";
-  region {
-    match heap_box(store: &uniq heap, value: 11_u64) {
-      Err(error: first_failure) => {
-        return exit_status(code: 70_u8);
-      }
-      Ok(value: owner) => {
-        match heap_box(store: &uniq heap, value: 22_u64) {
-          Err(error: second_failure) => {
-            return exit_status(code: 71_u8);
-          }
-          Ok(value: incoming) => {
-            let seen = observe(owner: move owner, incoming: move incoming, store: &uniq heap);
-            if seen.previous != 11_u64 {
-              return exit_status(code: 1_u8);
-            }
-            if seen.current != 22_u64 {
-              return exit_status(code: 2_u8);
-            }
-            return exit_status(code: 0_u8);
-          }
-        }
-      }
-    }
+fn main() -> status: own ExitStatus pure {
+  doc "FN-1, EFF-2, OP-11: a helper exchanges the contents of two cells through references and the caller observes both values. Each cell is released by the compiler-derived scope exit [STOR-3]; there is one heap and no store value to name [STOR-8].";
+  let owner = box_new::<u64>(value: 11_u64);
+  let incoming = box_new::<u64>(value: 22_u64);
+  let seen = observe(owner: &owner, spare: &incoming);
+  if seen.previous != 11_u64 {
+    return exit_status(code: 1_u8);
   }
+  if seen.current != 22_u64 {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
 }

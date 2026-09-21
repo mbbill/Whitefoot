@@ -1,0 +1,12 @@
+nodrop enum Ticket {
+  Open();
+  Closed();
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "Nodrop removes copy together with drop. The first move consumes the ticket binding, so a second move cannot duplicate it and is rejected as a use after move.";
+  let ticket = Open();
+  let first = move ticket;
+  let second = move ticket;
+  return exit_status(code: 0_u8);
+}

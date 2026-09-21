@@ -28,15 +28,16 @@ pub(super) fn is_stored_aggregate(
     ty: IrType,
 ) -> Result<bool, BackendFailure> {
     Ok(match ty {
-        IrType::Array { .. } | IrType::FixedVector { .. } => true,
+        IrType::Array { .. }
+        | IrType::Window {
+            capacity: Some(_), ..
+        } => true,
         IrType::Nominal(nominal) => {
             let nominal = program.nominal(nominal).ok_or(BackendFailure::InvalidIr)?;
             match nominal.kind() {
                 IrNominalKind::Struct { .. } | IrNominalKind::Opaque => true,
                 IrNominalKind::Enum { .. } => !nominal.is_tag_only_enum(),
-                IrNominalKind::Box { .. }
-                | IrNominalKind::Arena { .. }
-                | IrNominalKind::ArenaStorage => false,
+                IrNominalKind::Box { .. } => false,
             }
         }
         IrType::Unit
@@ -44,9 +45,9 @@ pub(super) fn is_stored_aggregate(
         | IrType::Integer { .. }
         | IrType::Float { .. }
         | IrType::Buffer { .. }
-        | IrType::Vector { .. }
-        | IrType::Provider
-        | IrType::Slice { .. }
+        | IrType::Window { capacity: None, .. }
+        | IrType::Range { .. }
+        | IrType::RuntimeBoxPayload { .. }
         | IrType::Address(_) => false,
     })
 }
@@ -833,9 +834,6 @@ impl FlowInstruction {
                 let exposed = match operation {
                     IrOperation::AddressOf { value, .. } => Some(index(*value)),
                     IrOperation::SliceFromRun { run } => Some(index(*run)),
-                    IrOperation::SliceFromArray {
-                        array: IrArrayRoot::Value(value),
-                    } => Some(index(*value)),
                     _ => None,
                 };
                 (Some(index(*result)), reuse, exposed)
@@ -901,11 +899,9 @@ fn terminator_operands(terminator: &IrTerminator) -> Vec<IrValueId> {
 /// a deliberate liveness decision before this module compiles.
 pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
     match operation {
-        IrOperation::Constant(_)
-        | IrOperation::ConstantAddress { .. }
-        | IrOperation::FixedVector
-        | IrOperation::ArenaFrame { .. }
-        | IrOperation::ArenaListNew => Vec::new(),
+        IrOperation::Constant(_) | IrOperation::ConstantAddress { .. } | IrOperation::Window => {
+            Vec::new()
+        }
         IrOperation::Call { arguments, .. }
         | IrOperation::Integer { arguments, .. }
         | IrOperation::Float { arguments, .. }
@@ -918,27 +914,33 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
         | IrOperation::BoxNew { value, .. }
         | IrOperation::BoxTake { value, .. }
         | IrOperation::BoxDeref { value, .. }
-        | IrOperation::ArenaDeref { value, .. }
+        | IrOperation::RuntimeBoxPayload { owner: value, .. }
+        | IrOperation::RuntimeBoxOwner { payload: value, .. }
         | IrOperation::AddressOf { value, .. } => vec![*value],
         IrOperation::ArrayIndex { root, offset, .. } => array_root_operand(*root)
             .into_iter()
             .chain([*offset])
             .collect(),
         IrOperation::BufferFill { length, value, .. } => vec![*length, *value],
-        IrOperation::BufferVacant { length, .. } | IrOperation::BufferFits { length, .. } => {
-            vec![*length]
-        }
         IrOperation::BufferMeasure { buffer } | IrOperation::SliceFromBuffer { buffer } => {
             vec![*buffer]
         }
-        IrOperation::StoreTake(take) => vec![take.store, take.count],
-        IrOperation::StoreBox(cell) => vec![cell.store, cell.value],
         IrOperation::ContainerMeasure { container, .. } => vec![*container],
         IrOperation::RunIndex { run, offset, .. } => vec![*run, *offset],
         IrOperation::RunBoundary { run, value, .. } => {
             std::iter::once(*run).chain(value.iter().copied()).collect()
         }
         IrOperation::RunTaken { run, .. } | IrOperation::SliceFromRun { run } => vec![*run],
+        IrOperation::RunShift { run, index, .. } => vec![*run, *index],
+        IrOperation::RunInsert { run, index, value } => vec![*run, *index, *value],
+        IrOperation::RunTransfer {
+            destination,
+            source,
+            index,
+        } => vec![*destination, *source, *index],
+        IrOperation::WindowBlockNew { capacity, .. } => vec![*capacity],
+        IrOperation::WindowGrow { cell, capacity, .. } => vec![*cell, *capacity],
+        IrOperation::CellFree { value, .. } => vec![*value],
         IrOperation::SliceRange { slice, start, end } => vec![*slice, *start, *end],
         IrOperation::BufferIndex { buffer, offset, .. } => vec![*buffer, *offset],
         IrOperation::BufferProbeSkip {
@@ -950,10 +952,9 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
             .into_iter()
             .chain(needles.iter().copied())
             .collect(),
-        IrOperation::SliceFromArray { array } => array_root_operand(*array).into_iter().collect(),
         IrOperation::SliceMeasure { slice } => vec![*slice],
         IrOperation::SliceIndex { slice, offset, .. } => vec![*slice, *offset],
-        IrOperation::ArenaNew { list, value, .. } => vec![*list, *value],
+        IrOperation::SliceAddress { slice, offset, .. } => vec![*slice, *offset],
         IrOperation::ConstructStruct { fields, .. } | IrOperation::ConstructEnum { fields, .. } => {
             fields.clone()
         }
@@ -967,11 +968,11 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
             address,
             projection,
         } => match projection {
-            crate::IrPlaceProjection::Field { .. }
-            | crate::IrPlaceProjection::BoxReferent { .. }
-            | crate::IrPlaceProjection::EnumVariant { .. } => vec![*address],
-            crate::IrPlaceProjection::RunElement { offset, .. }
-            | crate::IrPlaceProjection::ArrayElement { offset, .. } => vec![*address, *offset],
+            crate::IrPlaceStep::Field { .. }
+            | crate::IrPlaceStep::BoxReferent { .. }
+            | crate::IrPlaceStep::EnumVariant { .. } => vec![*address],
+            crate::IrPlaceStep::RunElement { offset, .. }
+            | crate::IrPlaceStep::ArrayElement { offset, .. } => vec![*address, *offset],
         },
         IrOperation::LoopSplit {
             seed,
@@ -1090,17 +1091,17 @@ mod tests {
     #[test]
     fn a_nonzero_result_field_can_back_an_owned_parameter_and_returned_child() {
         with_program(
-            br#"struct Row {
+            br#"nocopy struct Row {
   left: u64;
   right: u64;
 }
 
-fn split(value: own Row) -> (observed: own u64, updated: own Row) reads(value.left) {
+fn split(value: own Row) -> (observed: own u64, updated: own Row) pure {
   let observed = value.left;
   return observed, move value;
 }
 
-fn relay(value: own Row) -> result: own Row reads(value.left) {
+fn relay(value: own Row) -> result: own Row pure {
   let (observed, updated) = split(value: move value);
   return move updated;
 }
@@ -1526,34 +1527,31 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn fresh_binding_destinations_keep_call_inputs_and_snapshots_separate() {
         with_program(
-            br#"struct Row {
+            br#"nocopy struct Row {
   left: u64;
   right: u64;
 }
 
 fn build(seed: own u64) -> result: own Row pure {
-  let next = seed +wrap 1_u64;
-  return Row(left: seed, right: next);
+  let after = seed +wrap 1_u64;
+  return Row(left: seed, right: after);
 }
 
-fn exchange(old: &uniq Row) -> result: own Row reads(old), writes(old, old.left) {
-  let fresh = build(seed: 37_u64);
-  let previous = replace deref(old) = move fresh;
+fn exchange(old: &Row) -> result: own Row writes(old) {
+  let previous = build(seed: 11_u64);
+  swap(first: old, second: &previous);
   set deref(old).left = 99_u64;
   return move previous;
 }
 
 fn main() -> status: own ExitStatus pure {
   let first = build(seed: 11_u64);
-  region {
-    let previous = exchange(old: &uniq first);
-    set previous.right = 23_u64;
-    if first.left != 99_u64 {
-      return exit_status(code: 1_u8);
-    }
-    if previous.left != 11_u64 {
-      return exit_status(code: 2_u8);
-    }
+  let previous = exchange(old: &first);
+  if first.left != 99_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if previous.left != 11_u64 {
+    return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
 }
@@ -1602,8 +1600,8 @@ fn main() -> status: own ExitStatus pure {
                     }
                 }
                 assert_eq!(
-                    direct_calls, 1,
-                    "the borrowed owner receives its helper result directly"
+                    direct_calls, 2,
+                    "each fresh owner receives its helper result directly"
                 );
             },
         );
@@ -1631,7 +1629,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn a_synchronous_whole_result_reuses_one_consumed_owned_binding() {
         with_program(
-            br#"struct Row {
+            br#"nocopy struct Row {
   left: u64;
   right: u64;
 }
@@ -1681,7 +1679,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn several_same_typed_owned_inputs_do_not_choose_an_alias_candidate() {
         with_program(
-            br#"struct Row {
+            br#"nocopy struct Row {
   left: u64;
   right: u64;
 }
@@ -1736,17 +1734,17 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn a_multi_result_retains_its_complete_parent_allocation() {
         with_program(
-            br#"struct Row {
+            br#"nocopy struct Row {
   left: u64;
   right: u64;
 }
 
-fn split(value: own Row) -> (updated: own Row, observed: own u64) reads(value.left) {
+fn split(value: own Row) -> (updated: own Row, observed: own u64) pure {
   let observed = value.left;
   return move value, observed;
 }
 
-fn relay(value: own Row) -> result: own Row reads(value.left) {
+fn relay(value: own Row) -> result: own Row pure {
   let (updated, observed) = split(value: move value);
   return move updated;
 }
@@ -1797,14 +1795,13 @@ fn main() -> status: own ExitStatus pure {
     fn checked_dense_ir_coalesces_without_changing_ownership() {
         with_program(
             br#"fn main() -> status: own ExitStatus pure {
-  let built = fixed_vector::<u64, 8>();
+  let built = slots_new::<u64, 8>();
   for @fill (
     at in 0_u64..8_u64,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= 8_u64,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len >= at,
+    invariant spare: built.cap + at >= built.len + 8_u64
   ) {
-    place_back(vector: &uniq built, value: 1_u64);
+    place_back(window: &built, value: 1_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -1816,18 +1813,24 @@ fn main() -> status: own ExitStatus pure {
                     .find(|function| function.name() == "main")
                     .expect("fixture main");
                 let plan = FunctionStoragePlan::build(program, function).expect("plan");
+                // The construction row and the boundary row are ordinary
+                // [PRE-1] calls (compiler/prelude-records), so what this
+                // fixture shows is that the window the construction returns
+                // and the window each `place_back` addresses are one frame
+                // slot: the construction's result, every value of window type,
+                // and every address taken of one all share that backing.
                 let slots: BTreeSet<_> = function
-                    .blocks()
+                    .value_types()
                     .iter()
-                    .flat_map(|block| block.instructions())
-                    .filter_map(|instruction| match instruction {
-                        IrInstruction::Define {
-                            result,
-                            operation: IrOperation::FixedVector | IrOperation::RunBoundary { .. },
-                            ..
-                        } => plan.slot(*result),
-                        _ => None,
+                    .enumerate()
+                    .filter(|(_, ty)| {
+                        matches!(
+                            ty,
+                            IrType::Window { .. }
+                                | IrType::Address(crate::IrAddressed::Window { .. })
+                        )
                     })
+                    .filter_map(|(index, _)| plan.values.get(index).copied().flatten())
                     .collect();
                 assert_eq!(slots.len(), 1, "construction and append use one backing");
                 // PRE-1's ExitStatus is an ordinary opaque nominal, so its

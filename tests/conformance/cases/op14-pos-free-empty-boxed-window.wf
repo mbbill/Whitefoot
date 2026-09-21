@@ -1,0 +1,15 @@
+nodrop struct Token {
+  value: u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "OP-14: free_empty's shape parameter admits a boxed runtime-capacity window and frees its cell with it; at a boxed argument the row's measure place instantiates as window.inner and the clause reads window.inner.len == 0_u64.";
+  let b = box_slots_new::<Token>(capacity: 2_u64);
+  let n = b.inner.len;
+  free_empty(window: move b);
+  if n == 0_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

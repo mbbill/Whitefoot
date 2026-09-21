@@ -5,7 +5,7 @@ enum Sign {
 }
 
 fn twice(s: &Sign) -> return_value: own i32 reads(s) {
-  doc "OWN-13: matching through &'r leaves the scrutinee live; s is matched again after.";
+  doc "OWN-13: matching through a reference leaves the scrutinee live; s is matched again after the first match.";
   match deref(s) {
     Neg() => {
     }

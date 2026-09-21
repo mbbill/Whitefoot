@@ -1,12 +1,13 @@
-const b64: FixedVector<u8, 64> =[65_u8, 66_u8, 67_u8, 68_u8, 69_u8, 70_u8, 71_u8, 72_u8, 73_u8, 74_u8, 75_u8, 76_u8, 77_u8, 78_u8, 79_u8, 80_u8, 81_u8, 82_u8, 83_u8, 84_u8, 85_u8, 86_u8, 87_u8, 88_u8, 89_u8, 90_u8, 97_u8, 98_u8, 99_u8, 100_u8, 101_u8, 102_u8, 103_u8, 104_u8, 105_u8, 106_u8, 107_u8, 108_u8, 109_u8, 110_u8, 111_u8, 112_u8, 113_u8, 114_u8, 115_u8, 116_u8, 117_u8, 118_u8, 119_u8, 120_u8, 121_u8, 122_u8, 48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8, 43_u8, 47_u8];
+const b64: Array<u8, 64> =[65_u8, 66_u8, 67_u8, 68_u8, 69_u8, 70_u8, 71_u8, 72_u8, 73_u8, 74_u8, 75_u8, 76_u8, 77_u8, 78_u8, 79_u8, 80_u8, 81_u8, 82_u8, 83_u8, 84_u8, 85_u8, 86_u8, 87_u8, 88_u8, 89_u8, 90_u8, 97_u8, 98_u8, 99_u8, 100_u8, 101_u8, 102_u8, 103_u8, 104_u8, 105_u8, 106_u8, 107_u8, 108_u8, 109_u8, 110_u8, 111_u8, 112_u8, 113_u8, 114_u8, 115_u8, 116_u8, 117_u8, 118_u8, 119_u8, 120_u8, 121_u8, 122_u8, 48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8, 43_u8, 47_u8];
 
 enum IndexError {
   OutOfRange();
 }
 
 fn require_index(index: own u64, limit: own u64) -> result: own Result<u64, IndexError> pure contract {
-  ensures when Ok(value: result): result < limit;
+  ensures when Ok(value: admitted): admitted < limit;
 } {
+  doc "Publishes the deterministic unsigned-remainder bound for an admitted index.";
   let nonzero = limit != 0_u64;
   if nonzero {
     let bounded = index % limit;
@@ -19,11 +20,12 @@ fn require_index(index: own u64, limit: own u64) -> result: own Result<u64, Inde
   return Err<u64, IndexError>(error: error);
 }
 
-fn read_index(values: own Slice<u8>, index: own u64) -> result: own Result<u8, IndexError> reads(values) {
-  let spare = len_of(values);
+fn read_index(values: &[u8], index: own u64) -> result: own Result<u8, IndexError> reads(values) {
+  doc "Reads one element of a range reference after the bound is published.";
+  let spare = deref(values).len;
   match require_index(index: index, limit: spare) {
     Ok(value: admitted) => {
-      let value = values[admitted];
+      let value = deref(values)[admitted];
       return Ok<u8, IndexError>(value: value);
     }
     Err(error: problem) => {
@@ -32,8 +34,9 @@ fn read_index(values: own Slice<u8>, index: own u64) -> result: own Result<u8, I
   }
 }
 
-fn write_index(values: &uniq MutSlice<u8>, index: own u64, value: own u8) -> result: own Result<unit, IndexError> reads(values), writes(values) {
-  let spare = len_of(deref(values));
+fn write_index(values: &[u8], index: own u64, value: own u8) -> result: own Result<unit, IndexError> writes(values) {
+  doc "Writes one element of a range reference after the bound is published; writes subsumes reads for one path [EFF-1].";
+  let spare = deref(values).len;
   match require_index(index: index, limit: spare) {
     Ok(value: admitted) => {
       set deref(values)[admitted] = value;
@@ -45,15 +48,16 @@ fn write_index(values: &uniq MutSlice<u8>, index: own u64, value: own u8) -> res
   }
 }
 
-fn encode(out: own MutSlice<u8>, input: own Slice<u8>) -> function_result: own Result<u64, IndexError> reads(out, input), writes(out) contract {
-  define required_out_length = len_of(out);
-  define required_input_length = len_of(input);
+fn encode(out: &[u8], input: &[u8]) -> function_result: own Result<u64, IndexError> reads(input), writes(out) contract {
+  define required_out_length = deref(out).len;
+  define required_input_length = deref(input).len;
   define required_out_groups = ishr.wrap(required_out_length, 2_u32);
   define required_covered_input = required_out_groups *wrap 3_u64;
   requires required_input_length <= required_covered_input;
 } {
-  let out_room = len_of(out);
-  let input_length = len_of(input);
+  doc "The complete scalar base64 encoder over two range references with different roots.";
+  let out_room = deref(out).len;
+  let input_length = deref(input).len;
   let input_offset = 0_u64;
   let output_offset = 0_u64;
   loop @full_groups {
@@ -67,17 +71,9 @@ fn encode(out: own MutSlice<u8>, input: own Slice<u8>) -> function_result: own R
       let output_one = output_offset +wrap 1_u64;
       let output_two = output_offset +wrap 2_u64;
       let output_three = output_offset +wrap 3_u64;
-      let byte_zero = 0_u8;
-      let byte_one = 0_u8;
-      let byte_two = 0_u8;
-      region {
-        let loaded_zero = propagate read_index(values: input, index: input_offset);
-        let loaded_one = propagate read_index(values: input, index: input_one);
-        let loaded_two = propagate read_index(values: input, index: input_two);
-        set byte_zero = loaded_zero;
-        set byte_one = loaded_one;
-        set byte_two = loaded_two;
-      }
+      let byte_zero = propagate read_index(values: input, index: input_offset);
+      let byte_one = propagate read_index(values: input, index: input_one);
+      let byte_two = propagate read_index(values: input, index: input_two);
       let word_zero = cvt::<u8, u32>(byte_zero);
       let word_one = cvt::<u8, u32>(byte_one);
       let word_two = cvt::<u8, u32>(byte_two);
@@ -100,18 +96,10 @@ fn encode(out: own MutSlice<u8>, input: own Slice<u8>) -> function_result: own R
       let encoded_one = b64[alphabet_one];
       let encoded_two = b64[alphabet_two];
       let encoded_three = b64[alphabet_three];
-      region {
-        let wrote_zero = propagate write_index(values: &uniq out, index: output_offset, value: encoded_zero);
-      }
-      region {
-        let wrote_one = propagate write_index(values: &uniq out, index: output_one, value: encoded_one);
-      }
-      region {
-        let wrote_two = propagate write_index(values: &uniq out, index: output_two, value: encoded_two);
-      }
-      region {
-        let wrote_three = propagate write_index(values: &uniq out, index: output_three, value: encoded_three);
-      }
+      let wrote_zero = propagate write_index(values: out, index: output_offset, value: encoded_zero);
+      let wrote_one = propagate write_index(values: out, index: output_one, value: encoded_one);
+      let wrote_two = propagate write_index(values: out, index: output_two, value: encoded_two);
+      let wrote_three = propagate write_index(values: out, index: output_three, value: encoded_three);
       set input_offset = input_offset +wrap 3_u64;
       set output_offset = output_offset +wrap 4_u64;
     }
@@ -122,11 +110,7 @@ fn encode(out: own MutSlice<u8>, input: own Slice<u8>) -> function_result: own R
     let tail_one_output_one = output_offset +wrap 1_u64;
     let tail_one_output_two = output_offset +wrap 2_u64;
     let tail_one_output_three = output_offset +wrap 3_u64;
-    let tail_one_byte = 0_u8;
-    region {
-      let loaded = propagate read_index(values: input, index: input_offset);
-      set tail_one_byte = loaded;
-    }
+    let tail_one_byte = propagate read_index(values: input, index: input_offset);
     let tail_one_word = cvt::<u8, u32>(tail_one_byte);
     let tail_one_first_shifted = ishr.wrap(tail_one_word, 2_u32);
     let tail_one_first_sextet = iand(tail_one_first_shifted, 63_u32);
@@ -136,18 +120,10 @@ fn encode(out: own MutSlice<u8>, input: own Slice<u8>) -> function_result: own R
     let tail_one_second_index = cvt::<u32, u64>(tail_one_second_sextet);
     let tail_one_first = b64[tail_one_first_index];
     let tail_one_second = b64[tail_one_second_index];
-    region {
-      let wrote = propagate write_index(values: &uniq out, index: output_offset, value: tail_one_first);
-    }
-    region {
-      let wrote = propagate write_index(values: &uniq out, index: tail_one_output_one, value: tail_one_second);
-    }
-    region {
-      let wrote = propagate write_index(values: &uniq out, index: tail_one_output_two, value: 61_u8);
-    }
-    region {
-      let wrote = propagate write_index(values: &uniq out, index: tail_one_output_three, value: 61_u8);
-    }
+    let tail_one_wrote_zero = propagate write_index(values: out, index: output_offset, value: tail_one_first);
+    let tail_one_wrote_one = propagate write_index(values: out, index: tail_one_output_one, value: tail_one_second);
+    let tail_one_wrote_two = propagate write_index(values: out, index: tail_one_output_two, value: 61_u8);
+    let tail_one_wrote_three = propagate write_index(values: out, index: tail_one_output_three, value: 61_u8);
     set output_offset = output_offset +wrap 4_u64;
   }
   let two_byte_tail = tail_length == 2_u64;
@@ -156,14 +132,8 @@ fn encode(out: own MutSlice<u8>, input: own Slice<u8>) -> function_result: own R
     let tail_two_output_one = output_offset +wrap 1_u64;
     let tail_two_output_two = output_offset +wrap 2_u64;
     let tail_two_output_three = output_offset +wrap 3_u64;
-    let tail_two_byte_zero = 0_u8;
-    let tail_two_byte_one = 0_u8;
-    region {
-      let loaded_zero = propagate read_index(values: input, index: input_offset);
-      let loaded_one = propagate read_index(values: input, index: tail_two_input_one);
-      set tail_two_byte_zero = loaded_zero;
-      set tail_two_byte_one = loaded_one;
-    }
+    let tail_two_byte_zero = propagate read_index(values: input, index: input_offset);
+    let tail_two_byte_one = propagate read_index(values: input, index: tail_two_input_one);
     let tail_two_word_zero = cvt::<u8, u32>(tail_two_byte_zero);
     let tail_two_word_one = cvt::<u8, u32>(tail_two_byte_one);
     let tail_two_shifted_zero = ishl.wrap(tail_two_word_zero, 8_u32);
@@ -180,227 +150,171 @@ fn encode(out: own MutSlice<u8>, input: own Slice<u8>) -> function_result: own R
     let tail_two_first = b64[tail_two_first_index];
     let tail_two_second = b64[tail_two_second_index];
     let tail_two_third = b64[tail_two_third_index];
-    region {
-      let wrote = propagate write_index(values: &uniq out, index: output_offset, value: tail_two_first);
-    }
-    region {
-      let wrote = propagate write_index(values: &uniq out, index: tail_two_output_one, value: tail_two_second);
-    }
-    region {
-      let wrote = propagate write_index(values: &uniq out, index: tail_two_output_two, value: tail_two_third);
-    }
-    region {
-      let wrote = propagate write_index(values: &uniq out, index: tail_two_output_three, value: 61_u8);
-    }
+    let tail_two_wrote_zero = propagate write_index(values: out, index: output_offset, value: tail_two_first);
+    let tail_two_wrote_one = propagate write_index(values: out, index: tail_two_output_one, value: tail_two_second);
+    let tail_two_wrote_two = propagate write_index(values: out, index: tail_two_output_two, value: tail_two_third);
+    let tail_two_wrote_three = propagate write_index(values: out, index: tail_two_output_three, value: 61_u8);
     set output_offset = output_offset +wrap 4_u64;
   }
   return Ok<u64, IndexError>(value: output_offset);
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "The three RFC 4648 vectors, with each input built as an inline run and each output taken from one bump extent so an exclusive view of it is admissible.";
-  region 'w {
-    let workspace = arena_frame::<12, 1, 'w>();
-    region {
-      let man_input = fixed_vector::<u8, 3>();
-      region {
-        place_back(vector: &uniq man_input, value: 77_u8);
-      }
-      region {
-        place_back(vector: &uniq man_input, value: 97_u8);
-      }
-      region {
-        place_back(vector: &uniq man_input, value: 110_u8);
-      }
-      let man_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
-      for @fill_man (
-        at in 0_u64..4_u64,
-        invariant grown_man: len_of(man_output) >= at,
-        invariant spare_man: room_of(man_output) + at >= 4_u64,
-        invariant flat_man: head_of(man_output) <= 0_u64
-      ) {
-        place_back(vector: &uniq man_output, value: 0_u8);
-      }
-      let man_length_ok = False();
-      region {
-        let man_source = slice_of(&man_input);
-        let man_window = mut_slice_of(&uniq man_output);
-        let man_required_out_length = len_of(man_window);
-        let man_required_input_length = len_of(man_source);
-        let man_required_out_groups = ishr.wrap(man_required_out_length, 2_u32);
-        let man_required_covered_input = man_required_out_groups *wrap 3_u64;
-        let man_capacity = man_required_input_length <= man_required_covered_input;
-        if man_capacity {
-        } else {
-          return exit_status(code: 216_u8);
-        }
-        match encode(out: move man_window, input: man_source) {
-          Ok(value: man_length) => {
-            set man_length_ok = man_length == 4_u64;
-          }
-          Err(error: man_index_error) => {
-            return exit_status(code: 219_u8);
-          }
-        }
-      }
-      let man_zero = man_output[0_u64];
-      let man_one = man_output[1_u64];
-      let man_two = man_output[2_u64];
-      let man_three = man_output[3_u64];
-      let man_zero_ok = man_zero == 84_u8;
-      let man_one_ok = man_one == 87_u8;
-      let man_two_ok = man_two == 70_u8;
-      let man_three_ok = man_three == 117_u8;
-      let m_input = fixed_vector::<u8, 1>();
-      region {
-        place_back(vector: &uniq m_input, value: 77_u8);
-      }
-      let m_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
-      for @fill_m (
-        at in 0_u64..4_u64,
-        invariant grown_m: len_of(m_output) >= at,
-        invariant spare_m: room_of(m_output) + at >= 4_u64,
-        invariant flat_m: head_of(m_output) <= 0_u64
-      ) {
-        place_back(vector: &uniq m_output, value: 0_u8);
-      }
-      let m_length_ok = False();
-      region {
-        let m_source = slice_of(&m_input);
-        let m_window = mut_slice_of(&uniq m_output);
-        let m_required_out_length = len_of(m_window);
-        let m_required_input_length = len_of(m_source);
-        let m_required_out_groups = ishr.wrap(m_required_out_length, 2_u32);
-        let m_required_covered_input = m_required_out_groups *wrap 3_u64;
-        let m_capacity = m_required_input_length <= m_required_covered_input;
-        if m_capacity {
-        } else {
-          return exit_status(code: 217_u8);
-        }
-        match encode(out: move m_window, input: m_source) {
-          Ok(value: m_length) => {
-            set m_length_ok = m_length == 4_u64;
-          }
-          Err(error: m_index_error) => {
-            return exit_status(code: 220_u8);
-          }
-        }
-      }
-      let m_zero = m_output[0_u64];
-      let m_one = m_output[1_u64];
-      let m_two = m_output[2_u64];
-      let m_three = m_output[3_u64];
-      let m_zero_ok = m_zero == 84_u8;
-      let m_one_ok = m_one == 81_u8;
-      let m_two_ok = m_two == 61_u8;
-      let m_three_ok = m_three == 61_u8;
-      let ma_input = fixed_vector::<u8, 2>();
-      region {
-        place_back(vector: &uniq ma_input, value: 77_u8);
-      }
-      region {
-        place_back(vector: &uniq ma_input, value: 97_u8);
-      }
-      let ma_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
-      for @fill_ma (
-        at in 0_u64..4_u64,
-        invariant grown_ma: len_of(ma_output) >= at,
-        invariant spare_ma: room_of(ma_output) + at >= 4_u64,
-        invariant flat_ma: head_of(ma_output) <= 0_u64
-      ) {
-        place_back(vector: &uniq ma_output, value: 0_u8);
-      }
-      let ma_length_ok = False();
-      region {
-        let ma_source = slice_of(&ma_input);
-        let ma_window = mut_slice_of(&uniq ma_output);
-        let ma_required_out_length = len_of(ma_window);
-        let ma_required_input_length = len_of(ma_source);
-        let ma_required_out_groups = ishr.wrap(ma_required_out_length, 2_u32);
-        let ma_required_covered_input = ma_required_out_groups *wrap 3_u64;
-        let ma_capacity = ma_required_input_length <= ma_required_covered_input;
-        if ma_capacity {
-        } else {
-          return exit_status(code: 218_u8);
-        }
-        match encode(out: move ma_window, input: ma_source) {
-          Ok(value: ma_length) => {
-            set ma_length_ok = ma_length == 4_u64;
-          }
-          Err(error: ma_index_error) => {
-            return exit_status(code: 221_u8);
-          }
-        }
-      }
-      let ma_zero = ma_output[0_u64];
-      let ma_one = ma_output[1_u64];
-      let ma_two = ma_output[2_u64];
-      let ma_three = ma_output[3_u64];
-      let ma_zero_ok = ma_zero == 84_u8;
-      let ma_one_ok = ma_one == 87_u8;
-      let ma_two_ok = ma_two == 69_u8;
-      let ma_three_ok = ma_three == 61_u8;
-      if man_length_ok {
-      } else {
-        return exit_status(code: 201_u8);
-      }
-      if m_length_ok {
-      } else {
-        return exit_status(code: 202_u8);
-      }
-      if ma_length_ok {
-      } else {
-        return exit_status(code: 203_u8);
-      }
-      if man_zero_ok {
-      } else {
-        return exit_status(code: 204_u8);
-      }
-      if man_one_ok {
-      } else {
-        return exit_status(code: 205_u8);
-      }
-      if man_two_ok {
-      } else {
-        return exit_status(code: 206_u8);
-      }
-      if man_three_ok {
-      } else {
-        return exit_status(code: 207_u8);
-      }
-      if m_zero_ok {
-      } else {
-        return exit_status(code: 208_u8);
-      }
-      if m_one_ok {
-      } else {
-        return exit_status(code: 209_u8);
-      }
-      if m_two_ok {
-      } else {
-        return exit_status(code: 210_u8);
-      }
-      if m_three_ok {
-      } else {
-        return exit_status(code: 211_u8);
-      }
-      if ma_zero_ok {
-      } else {
-        return exit_status(code: 212_u8);
-      }
-      if ma_one_ok {
-      } else {
-        return exit_status(code: 213_u8);
-      }
-      if ma_two_ok {
-      } else {
-        return exit_status(code: 214_u8);
-      }
-      if ma_three_ok {
-      } else {
-        return exit_status(code: 215_u8);
-      }
+  doc "The three RFC 4648 vectors, with each input and each output built as an inline array and reached through a range reference; the two ranges have different roots, so every call is admitted [EFF-5].";
+  let man_input = array_filled::<u8, 3>(value: 0_u8);
+  set man_input[0_u64] = 77_u8;
+  set man_input[1_u64] = 97_u8;
+  set man_input[2_u64] = 110_u8;
+  let man_output = array_filled::<u8, 4>(value: 0_u8);
+  let man_source = &man_input[0_u64..3_u64];
+  let man_window = &man_output[0_u64..4_u64];
+  let man_required_out_length = deref(man_window).len;
+  let man_required_input_length = deref(man_source).len;
+  let man_required_out_groups = ishr.wrap(man_required_out_length, 2_u32);
+  let man_required_covered_input = man_required_out_groups *wrap 3_u64;
+  let man_capacity = man_required_input_length <= man_required_covered_input;
+  if man_capacity {
+  } else {
+    return exit_status(code: 216_u8);
+  }
+  let man_length_ok = False();
+  match encode(out: man_window, input: man_source) {
+    Ok(value: man_length) => {
+      set man_length_ok = man_length == 4_u64;
     }
+    Err(error: man_index_error) => {
+      return exit_status(code: 219_u8);
+    }
+  }
+  let man_zero = man_output[0_u64];
+  let man_one = man_output[1_u64];
+  let man_two = man_output[2_u64];
+  let man_three = man_output[3_u64];
+  let man_zero_ok = man_zero == 84_u8;
+  let man_one_ok = man_one == 87_u8;
+  let man_two_ok = man_two == 70_u8;
+  let man_three_ok = man_three == 117_u8;
+  let m_input = array_filled::<u8, 1>(value: 77_u8);
+  let m_output = array_filled::<u8, 4>(value: 0_u8);
+  let m_source = &m_input[0_u64..1_u64];
+  let m_window = &m_output[0_u64..4_u64];
+  let m_required_out_length = deref(m_window).len;
+  let m_required_input_length = deref(m_source).len;
+  let m_required_out_groups = ishr.wrap(m_required_out_length, 2_u32);
+  let m_required_covered_input = m_required_out_groups *wrap 3_u64;
+  let m_capacity = m_required_input_length <= m_required_covered_input;
+  if m_capacity {
+  } else {
+    return exit_status(code: 217_u8);
+  }
+  let m_length_ok = False();
+  match encode(out: m_window, input: m_source) {
+    Ok(value: m_length) => {
+      set m_length_ok = m_length == 4_u64;
+    }
+    Err(error: m_index_error) => {
+      return exit_status(code: 220_u8);
+    }
+  }
+  let m_zero = m_output[0_u64];
+  let m_one = m_output[1_u64];
+  let m_two = m_output[2_u64];
+  let m_three = m_output[3_u64];
+  let m_zero_ok = m_zero == 84_u8;
+  let m_one_ok = m_one == 81_u8;
+  let m_two_ok = m_two == 61_u8;
+  let m_three_ok = m_three == 61_u8;
+  let ma_input = array_filled::<u8, 2>(value: 0_u8);
+  set ma_input[0_u64] = 77_u8;
+  set ma_input[1_u64] = 97_u8;
+  let ma_output = array_filled::<u8, 4>(value: 0_u8);
+  let ma_source = &ma_input[0_u64..2_u64];
+  let ma_window = &ma_output[0_u64..4_u64];
+  let ma_required_out_length = deref(ma_window).len;
+  let ma_required_input_length = deref(ma_source).len;
+  let ma_required_out_groups = ishr.wrap(ma_required_out_length, 2_u32);
+  let ma_required_covered_input = ma_required_out_groups *wrap 3_u64;
+  let ma_capacity = ma_required_input_length <= ma_required_covered_input;
+  if ma_capacity {
+  } else {
+    return exit_status(code: 218_u8);
+  }
+  let ma_length_ok = False();
+  match encode(out: ma_window, input: ma_source) {
+    Ok(value: ma_length) => {
+      set ma_length_ok = ma_length == 4_u64;
+    }
+    Err(error: ma_index_error) => {
+      return exit_status(code: 221_u8);
+    }
+  }
+  let ma_zero = ma_output[0_u64];
+  let ma_one = ma_output[1_u64];
+  let ma_two = ma_output[2_u64];
+  let ma_three = ma_output[3_u64];
+  let ma_zero_ok = ma_zero == 84_u8;
+  let ma_one_ok = ma_one == 87_u8;
+  let ma_two_ok = ma_two == 69_u8;
+  let ma_three_ok = ma_three == 61_u8;
+  if man_length_ok {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  if m_length_ok {
+  } else {
+    return exit_status(code: 202_u8);
+  }
+  if ma_length_ok {
+  } else {
+    return exit_status(code: 203_u8);
+  }
+  if man_zero_ok {
+  } else {
+    return exit_status(code: 204_u8);
+  }
+  if man_one_ok {
+  } else {
+    return exit_status(code: 205_u8);
+  }
+  if man_two_ok {
+  } else {
+    return exit_status(code: 206_u8);
+  }
+  if man_three_ok {
+  } else {
+    return exit_status(code: 207_u8);
+  }
+  if m_zero_ok {
+  } else {
+    return exit_status(code: 208_u8);
+  }
+  if m_one_ok {
+  } else {
+    return exit_status(code: 209_u8);
+  }
+  if m_two_ok {
+  } else {
+    return exit_status(code: 210_u8);
+  }
+  if m_three_ok {
+  } else {
+    return exit_status(code: 211_u8);
+  }
+  if ma_zero_ok {
+  } else {
+    return exit_status(code: 212_u8);
+  }
+  if ma_one_ok {
+  } else {
+    return exit_status(code: 213_u8);
+  }
+  if ma_two_ok {
+  } else {
+    return exit_status(code: 214_u8);
+  }
+  if ma_three_ok {
+  } else {
+    return exit_status(code: 215_u8);
   }
   return exit_status(code: 0_u8);
 }

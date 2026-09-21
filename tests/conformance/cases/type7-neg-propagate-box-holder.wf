@@ -2,8 +2,8 @@ enum StepError {
   Failed();
 }
 
-fn forward['heap](holder: own Box<'heap, Result<i32, StepError>>) -> function_result: own Result<i32, StepError> pure {
-  doc "TYPE-7: propagate cannot implicitly read a Result from a box holder; write deref(holder).";
+fn forward(holder: own Box<Result<i32, StepError>>) -> function_result: own Result<i32, StepError> pure {
+  doc "ERR-3: propagate requires an operand of own Result type, and a Box holder is not one; the enclosed Result is the field inner, so the operand is written holder.inner [TYPE-9].";
   let value = propagate holder;
   return Ok<i32, StepError>(value: value);
 }

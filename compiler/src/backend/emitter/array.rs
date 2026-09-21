@@ -1,9 +1,17 @@
 use super::*;
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
-    /// Transfer all owners in logical order. Array and fixed-run storage have
-    /// different types and cannot share a storage-plan group; retaining the
-    /// source operand keeps its storage live through both split copies.
+    /// [OP-13] `slots_from_array` and `slots_into_array`: the consuming
+    /// conversion between a full fixed window and its dense array.
+    ///
+    /// Both rows are declared on `Slots` alone, whose window begins at slot
+    /// zero [WIN-1], and both sides are full, so the elements are one
+    /// contiguous extent on each side and the transfer is one copy of the
+    /// slots plus, in the array-to-window direction, the one descriptor word
+    /// the block carries. The header is first and the slots follow it
+    /// (compiler/storage-representation), so the slot extent is reached
+    /// through the window's own slots field rather than from the block's
+    /// base.
     pub(super) fn emit_full_array_conversion(
         &mut self,
         result: IrValueId,
@@ -11,40 +19,54 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         value: IrValueId,
     ) -> Result<(), BackendFailure> {
         let source_type = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
-        let (element, length, to_array) = match (source_type, ty) {
+        let (element, length, window_type, to_array) = match (source_type, ty) {
             (
-                IrType::FixedVector {
+                IrType::Window {
+                    shape: crate::IrWindowShape::Slots,
                     element: source,
-                    length: source_length,
+                    capacity: Some(source_length),
                 },
                 IrType::Array { element, length },
-            ) if source == element && source_length == length => (element, length, true),
+            ) if source == element && source_length == length => {
+                (element, length, source_type, true)
+            }
             (
                 IrType::Array {
                     element: source,
                     length: source_length,
                 },
-                IrType::FixedVector { element, length },
-            ) if source == element && source_length == length => (element, length, false),
+                IrType::Window {
+                    shape: crate::IrWindowShape::Slots,
+                    element,
+                    capacity: Some(length),
+                },
+            ) if source == element && source_length == length => (element, length, ty, false),
             _ => return Err(BackendFailure::InvalidIr),
         };
         let source = self.value_place(value)?;
         let destination = self.value_place(result)?;
-        let fixed_type = if to_array { source_type } else { ty };
-        let fixed_llvm = llvm_type(self.program, fixed_type)?;
+        let window_llvm = llvm_type(self.program, window_type)?;
+        // A `Slots<T, N>` is `{ i64 len, [N x T] }`, so the slots are field
+        // one and the length is field zero.
+        let (window_place, slots) = if to_array {
+            (source.clone(), self.next_temporary()?)
+        } else {
+            (destination.clone(), self.next_temporary()?)
+        };
+        writeln!(
+            self.output,
+            "  %{slots} = getelementptr inbounds {window_llvm}, ptr {window_place}, i64 0, i32 1"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
         if !to_array {
-            if length != 0 {
-                // The fixed run's first field is the dense element storage.
-                self.copy_storage(source_type, &source, &destination)?;
-            }
-            for (field, contents) in [(1, length), (2, 0)] {
-                let pointer = self.next_temporary()?;
-                writeln!(self.output, "  %{pointer} = getelementptr inbounds {fixed_llvm}, ptr {destination}, i64 0, i32 {field}\n  store i64 {contents}, ptr %{pointer}")
-                    .map_err(|_| BackendFailure::TextEmission)?;
-            }
-            return Ok(());
+            let filled = self.next_temporary()?;
+            writeln!(
+                self.output,
+                "  %{filled} = getelementptr inbounds {window_llvm}, ptr {destination}, i64 0, i32 0\n  store i64 {length}, ptr %{filled}"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
         }
-        // No element access or head arithmetic is needed for the empty case.
+        // No element access is needed for the empty case.
         if length == 0 {
             return Ok(());
         }
@@ -53,26 +75,22 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .element(element)
             .ok_or(BackendFailure::InvalidIr)?;
         let element_llvm = llvm_type(self.program, element_type)?;
-        let head_pointer = self.next_temporary()?;
-        let head = self.next_temporary()?;
-        let tail = self.next_temporary()?;
-        let tail_source = self.next_temporary()?;
-        let prefix_destination = self.next_temporary()?;
-        writeln!(self.output,
-            "  %{head_pointer} = getelementptr inbounds {fixed_llvm}, ptr {source}, i64 0, i32 2\n  %{head} = load i64, ptr %{head_pointer}\n  %{tail} = sub i64 {length}, %{head}\n  %{tail_source} = getelementptr inbounds {element_llvm}, ptr {source}, i64 %{head}\n  %{prefix_destination} = getelementptr inbounds {element_llvm}, ptr {destination}, i64 %{tail}")
-            .map_err(|_| BackendFailure::TextEmission)?;
-        self.copy_element_range(
-            &element_llvm,
-            &format!("%{tail_source}"),
-            &destination,
-            &format!("%{tail}"),
-        )?;
-        self.copy_element_range(
-            &element_llvm,
-            &source,
-            &format!("%{prefix_destination}"),
-            &format!("%{head}"),
-        )
+        self.intrinsics.insert(IntrinsicDeclaration::MemoryMove);
+        if to_array {
+            self.copy_element_range(
+                &element_llvm,
+                &format!("%{slots}"),
+                &destination,
+                &length.to_string(),
+            )
+        } else {
+            self.copy_element_range(
+                &element_llvm,
+                &source,
+                &format!("%{slots}"),
+                &length.to_string(),
+            )
+        }
     }
 
     /// A bounded count of complete stride-spaced representations. Target
@@ -113,23 +131,26 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
 
         let array_type = llvm_type(self.program, ty)?;
-        let llvm_element_type = llvm_type(self.program, element_type)?;
         let array_slot = self.value_place(result)?;
         let index_slot = self.entry_slot(FunctionSlot::ArrayFillIndex(result))?;
         let index = self.next_temporary()?;
         let in_range = self.next_temporary()?;
         let element_pointer = self.next_temporary()?;
         let next_index = self.next_temporary()?;
-        let operand = self.value_operand(value)?;
-
         writeln!(
             self.output,
-            "  store i64 0, ptr {index_slot}\n  br label %{}\n{}:\n  %{index} = load i64, ptr {index_slot}\n  %{in_range} = icmp ult i64 %{index}, {length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {array_type}, ptr {array_slot}, i64 0, i64 %{index}\n  store {llvm_element_type} {operand}, ptr %{element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  store i64 %{next_index}, ptr {index_slot}\n  br label %{}\n{}:",
+            "  store i64 0, ptr {index_slot}\n  br label %{}\n{}:\n  %{index} = load i64, ptr {index_slot}\n  %{in_range} = icmp ult i64 %{index}, {length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {array_type}, ptr {array_slot}, i64 0, i64 %{index}",
             array_fill_head_label(result),
             array_fill_head_label(result),
             array_fill_body_label(result),
             array_fill_done_label(result),
             array_fill_body_label(result),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.store_value_at(value, &format!("%{element_pointer}"))?;
+        writeln!(
+            self.output,
+            "  %{next_index} = add i64 %{index}, 1\n  store i64 %{next_index}, ptr {index_slot}\n  br label %{}\n{}:",
             array_fill_head_label(result),
             array_fill_done_label(result),
         )

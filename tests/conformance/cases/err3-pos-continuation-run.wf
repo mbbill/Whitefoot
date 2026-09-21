@@ -3,6 +3,7 @@ enum StepError {
 }
 
 fn step(x: own i32) -> result: own Result<i32, StepError> pure {
+  doc "Reports a negative input as an ordinary error value [ERR-1].";
   if x < 0_i32 {
     let negative_atom_0001 = Negative();
     return Err<i32, StepError>(error: negative_atom_0001);
@@ -19,8 +20,9 @@ fn forward(x: own i32) -> result: own Result<i32, StepError> pure {
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "The continuation transforms 41 to 42, while an Err payload returns unchanged without executing that continuation.";
   let accepted = forward(x: 41_i32);
-  match move accepted {
+  match accepted {
     Ok(value: accepted_value) => {
       if accepted_value != 42_i32 {
         return exit_status(code: 1_u8);
@@ -31,7 +33,7 @@ fn main() -> status: own ExitStatus pure {
     }
   }
   let rejected = forward(x: -1_i32);
-  match move rejected {
+  match rejected {
     Ok(value: rejected_value) => {
       return exit_status(code: 3_u8);
     }

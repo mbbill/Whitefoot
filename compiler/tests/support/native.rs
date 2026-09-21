@@ -12,8 +12,8 @@ fn spine(depth: own u64, v: own f64) -> result: own f64 pure {{
   if done {{
     return v;
   }}
-  let next = depth -wrap 1_u64;
-  let a = spine(depth: next, v: v);
+  let below = depth -wrap 1_u64;
+  let a = spine(depth: below, v: v);
   let b = leafval(v: v);
   return fadd.strict(a, b);
 }}
@@ -39,16 +39,15 @@ fn main() -> status: own ExitStatus pure {{
 pub(crate) fn wide_frame_source(depth: u64, slots: u64) -> Vec<u8> {
     format!(
         r#"fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {{
-  let pad = fixed_vector::<u64, {slots}>();
+  let pad = slots_new::<u64, {slots}>();
   for @fill (
     at in 0_u64..{slots}_u64,
-    invariant grown: len_of(pad) >= at,
-    invariant spare: room_of(pad) + at >= {slots}_u64,
-    invariant flat: head_of(pad) <= 0_u64
+    invariant grown: pad.len >= at,
+    invariant spare: pad.cap + at >= pad.len + {slots}_u64
   ) {{
     let seed = v +wrap at;
     let square = seed *wrap seed;
-    place_back(vector: &uniq pad, value: square);
+    place_back(window: &pad, value: square);
   }}
   let wide = cvt::<u8, u64>(i);
   set pad[wide] = depth;
@@ -56,8 +55,8 @@ pub(crate) fn wide_frame_source(depth: u64, slots: u64) -> Vec<u8> {
   if done {{
     return pad[wide];
   }}
-  let next = depth -wrap 1_u64;
-  let a = spine(depth: next, v: v, i: i);
+  let below = depth -wrap 1_u64;
+  let a = spine(depth: below, v: v, i: i);
   let after = a % {slots}_u64;
   let b = pad[after];
   return a +wrap b;
@@ -65,13 +64,9 @@ pub(crate) fn wide_frame_source(depth: u64, slots: u64) -> Vec<u8> {
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {{
   let Inputs(args: args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;
-  region {{
-    close_directory(factory: &uniq factory, directory: move cwd);
-  }}
+  close_directory(factory: &factory, directory: move cwd);
   let count = 0_u64;
-  region {{
-    set count = args_count(args: &args);
-  }}
+  set count = args_count(args: &args);
   match cvt::<u64, u8>(count) {{
     Ok(value: idx) => {{
       let depth = count *wrap {depth}_u64;

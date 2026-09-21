@@ -1,7 +1,7 @@
 const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> result: own i32 reads(values) {
-  doc "Closure runs before lexical support is forgotten, so an arm-local proof term may establish a surviving relation that does not name it.";
+fn read(values: own Array<i32, count>, i: own u64) -> result: own i32 pure {
+  doc "Closure runs before lexical support is forgotten, so an arm-local proof term may establish a surviving relation that does not name it. The true branch derives out = next = i + 1 and i < 3; ENT-4 closure materializes out < 4 before next leaves scope, ENT-5 then kills every conclusion still naming next, and the survivor-only bound discharges the continuation subscript [OP-4].";
   let out = 0_u64;
   if i < 3_u64 {
     let next = i +wrap 1_u64;
@@ -13,5 +13,6 @@ fn read(values: own array<i32, count>, i: own u64) -> result: own i32 reads(valu
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "No construction is needed to exercise the pre-kill closure.";
   return exit_status(code: 0_u8);
 }

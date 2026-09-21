@@ -1,58 +1,31 @@
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "Three single-byte publications through one range reference over one frame-resident array; the declared writes of the output stream are what keep them in source order.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  let bytes = buffer_new(3_u64, 65_u8);
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let bytes = array_filled::<u8, 3>(value: 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
-  region {
-    region {
-      region {
-        let native_window_14 = slice_of(&bytes);
-        region {
-          match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_14, start: 0_u64, end: 1_u64) {
-            Ok(value: written) => {
-            }
-            Err(error: problem) => {
-              return exit_status(code: 210_u8);
-            }
-          }
-        }
-      }
+  let window = &bytes[0_u64..3_u64];
+  match write_once(factory: &entry_factory, output: &out, source: window, start: 0_u64, end: 1_u64) {
+    Ok(value: first) => {
+    }
+    Err(error: problem) => {
+      return exit_status(code: 210_u8);
     }
   }
-  region {
-    region {
-      region {
-        let native_window_15 = slice_of(&bytes);
-        region {
-          match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_15, start: 1_u64, end: 2_u64) {
-            Ok(value: written) => {
-            }
-            Err(error: problem) => {
-              return exit_status(code: 211_u8);
-            }
-          }
-        }
-      }
+  match write_once(factory: &entry_factory, output: &out, source: window, start: 1_u64, end: 2_u64) {
+    Ok(value: second) => {
+    }
+    Err(error: problem) => {
+      return exit_status(code: 211_u8);
     }
   }
-  region {
-    region {
-      region {
-        let native_window_16 = slice_of(&bytes);
-        region {
-          match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_16, start: 2_u64, end: 3_u64) {
-            Ok(value: written) => {
-              return exit_status(code: 0_u8);
-            }
-            Err(error: problem) => {
-              return exit_status(code: 212_u8);
-            }
-          }
-        }
-      }
+  match write_once(factory: &entry_factory, output: &out, source: window, start: 2_u64, end: 3_u64) {
+    Ok(value: third) => {
+      return exit_status(code: 0_u8);
+    }
+    Err(error: problem) => {
+      return exit_status(code: 212_u8);
     }
   }
 }

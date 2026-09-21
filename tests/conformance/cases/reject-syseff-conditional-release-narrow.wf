@@ -1,10 +1,8 @@
-fn dispose_open_outcome(factory: &uniq HandleFactory, outcome: own Result<ReadFile, IoError>) -> result: own unit pure {
-  doc "EFF-2: an explicit conditional close accesses factory, so omitting that ordinary call effect is rejected.";
+fn close_open_outcome(factory: &HandleFactory, outcome: own Result<ReadFile, IoError>) -> result: own unit pure {
+  doc "EFF-2: an explicit conditional close accesses the factory through this reference parameter, so omitting that ordinary call effect is rejected. Every source occurrence contributes, whether or not its branch is taken.";
   match outcome {
     Ok(value: file) => {
-      region {
-        let closed = close_read(factory: &uniq deref(factory), file: move file);
-      }
+      close_read(factory: factory, file: move file);
       return unit;
     }
     Err(error: problem) => {
@@ -14,5 +12,6 @@ fn dispose_open_outcome(factory: &uniq HandleFactory, outcome: own Result<ReadFi
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "The rejection is in the helper above; this entry point does nothing.";
   return exit_status(code: 0_u8);
 }

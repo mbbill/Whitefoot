@@ -1,31 +1,16 @@
 fn main() -> status: own ExitStatus pure {
-  doc "BLK-0, CALL-6: a row's published relations may narrow what its caller derives and may never make everything derivable. The take below writes the store, so the store's own pre-call measures die at the call boundary and what the caller holds afterwards is exactly what the row published; the run read is judged against its own length and is refused.";
-  region 'a {
-    let workspace = arena_frame::<8192, 16, 'a>();
-    let empty = fixed_vector::<u8, 4>();
-    region {
-      place_back(vector: &uniq empty, value: 0_u8);
-    }
-    let t1 = move empty;
-    region {
-      place_back(vector: &uniq t1, value: 0_u8);
-    }
-    let t2 = move t1;
-    region {
-      place_back(vector: &uniq t2, value: 0_u8);
-    }
-    let t3 = move t2;
-    region {
-      place_back(vector: &uniq t3, value: 0_u8);
-    }
-    let table = move t3;
-    region {
-      let first = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
-      let seen = table[9_u64];
-      if seen == 0_u8 {
-        return exit_status(code: 0_u8);
-      }
-      return exit_status(code: 2_u8);
-    }
+  doc "A PRE-1 record's published relations may narrow what its caller derives and may never make everything derivable. The construction below publishes the new run's own measures and nothing about the table beside it, so the table read is judged against the table's own length and is refused.";
+  let table = slots_new::<u8, 4>();
+  for (
+    i in 0_u64..4_u64,
+    invariant h: table.len == i
+  ) {
+    place_back(window: &table, value: 0_u8);
   }
+  let scratch = slots_new::<u8, 8>();
+  let seen = table[9_u64];
+  if seen == 0_u8 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 2_u8);
 }

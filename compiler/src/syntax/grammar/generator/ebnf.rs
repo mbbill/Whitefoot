@@ -145,7 +145,16 @@ pub fn productions(spec: &str) -> Vec<RawProduction> {
 
 #[derive(Clone, Debug)]
 pub enum Ast {
-    /// One source terminal occurrence; `"&uniq"` expands to two raw tokens.
+    /// One source terminal occurrence, as its sequence of raw token spellings.
+    ///
+    /// v0.60 has no compound fixed atom, so every occurrence is a one-element
+    /// vector today; `"&uniq"`, the only atom that ever expanded to two raw
+    /// tokens, retired with the permission marker [GRAM-1]. The sequence shape
+    /// is retained rather than collapsed to a single `String`: collapsing it
+    /// would also have to change `Kind::Terminal`, `GrammarNodeKind::
+    /// TerminalSequence`, `GrammarNode::terminals()` and the generated
+    /// `GRAMMAR_TERMINALS` arena, which is a refactor with no specification
+    /// pressure behind it.
     Terminal(Vec<String>),
     /// A reference to another production, by name.
     Reference(String),
@@ -264,13 +273,12 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// One written terminal may cover two raw tokens; `&uniq` is the only such form.
+/// The raw formed tokens one written terminal covers [GRAM-1].
+///
+/// Every v0.60 fixed atom is exactly one raw token, so this is the identity
+/// today; see [`Ast::Terminal`] for why the sequence shape is kept.
 fn split_spelling(spelling: &str) -> Vec<String> {
-    if spelling == "&uniq" {
-        vec!["&".to_string(), "uniq".to_string()]
-    } else {
-        vec![spelling.to_string()]
-    }
+    vec![spelling.to_string()]
 }
 
 pub fn parse_body(body: &str) -> Ast {

@@ -2,7 +2,7 @@ struct Held {
   v: i32;
 }
 
-fn pick<T: affine>(value: own T) -> result: own T pure {
+fn pick<T: drop>(value: own T) -> result: own T pure {
   doc "A generic fn declaring one type parameter [FN-2].";
   return move value;
 }
@@ -10,6 +10,6 @@ fn pick<T: affine>(value: own T) -> result: own T pure {
 fn main() -> status: own ExitStatus pure {
   doc "The call states no instantiation argument; instantiation arguments are always explicit [FN-2].";
   let a = Held(v: 1_i32);
-  let b = pick(value: move a);
+  let b = pick(value: a);
   return exit_status(code: 0_u8);
 }

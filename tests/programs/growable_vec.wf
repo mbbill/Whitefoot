@@ -1,56 +1,36 @@
-const appended_bytes: FixedVector<u8, 5> =[33_u8, 33_u8, 33_u8, 33_u8, 33_u8];
+const appended_bytes: Array<u8, 5> =[33_u8, 33_u8, 33_u8, 33_u8, 33_u8];
 
-enum Grown['heap] {
-  Grew(value: Vector<'heap, u8>);
-  Refused(value: Vector<'heap, u8>);
+fn release_run(run: own Box<Slots<u8>>) -> result: own unit pure {
+  doc "There is no release operation: an affine value is released early by moving it into a function that consumes it and ends, which frees this cell here rather than at the caller's scope exit [PROV-6, STOR-3].";
+  return unit;
 }
 
-fn bs_new['heap](heap: &uniq Heap<'heap>) -> made: own Option<Vector<'heap, u8>> reads(heap), writes(heap), allocates(heap) {
-  doc "Builds one empty byte string over a zero-length backing run.";
-  region {
-    return heap_vector::<u8>(store: &uniq deref(heap), count: 0_u64);
-  }
-}
-
-fn bs_reserve['heap](s: own Vector<'heap, u8>, heap: &uniq Heap<'heap>, total: own u64) -> grown: own Grown<'heap> reads(s, heap), writes(s, heap), allocates(heap) contract {
-  requires total >= len_of(s);
+fn bs_new() -> made: own Box<Slots<u8>> pure contract {
+  ensures made.inner.len == 0_u64;
+  ensures made.inner.cap == 0_u64;
 } {
-  doc "Grows the backing run to total slots, preserving element order, or reports that the store refused. Growth is the drain-front, append-back walk the growth policy fixes, and the superseded run is disposed before the new one is handed back, which is the difference between a peak of count + total slots and a peak of total. The four measures the policy publishes on the Grew arm are not written here: a variant-routed measure clause is a deferred contract route, so the caller reads them back instead.";
-  let count = len_of(s);
-  region {
-    match heap_vector::<u8>(store: &uniq deref(heap), count: total) {
-      None() => {
-        return Refused(value: move s);
-      }
-      Some(value: fresh) => {
-        let built = move fresh;
-        for @move (
-          at in 0_u64..count,
-          invariant left: len_of(s) + at >= count,
-          invariant gone: len_of(s) + at <= count,
-          invariant made_lo: len_of(built) >= at,
-          invariant made_hi: len_of(built) <= at,
-          invariant spare_lo: room_of(built) + at >= total,
-          invariant spare_hi: room_of(built) + at <= total,
-          invariant flat: head_of(built) <= 0_u64
-        ) {
-          set byte = take_front(vector: &uniq s);
-          place_back(vector: &uniq built, value: byte);
-        }
-        dispose s;
-        return Grew(value: move built);
-      }
-    }
-  }
+  doc "One empty byte string over a zero-capacity backing window; a runtime-capacity shape exists only as the content of a cell [TYPE-9].";
+  let made = box_slots_new::<u8>(capacity: 0_u64);
+  return move made;
 }
 
-fn digest['heap](run: &Vector<'heap, u8>, status: own u64) -> result: own u64 reads(run) contract {
-  requires head_of(deref(run)) <= 0_u64;
+fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(s) contract {
+  requires total >= deref(s).inner.cap;
+  requires total <= 9223372036854775791_u64;
+  ensures deref(s).inner.cap == total;
+  ensures deref(s).inner.len == deref(entry(s)).inner.len;
 } {
+  doc "Grows the backing window to total slots, preserving element order. The native fixture's total bound leaves 16 descriptor bytes in the signed 64-bit allocation/address domain [STOR-6]. grow is defined on Box<Slots<T>> alone, remakes the cell's content whole, may reallocate in place, and carries the static allocation-size obligation, so there is no superseded run to release and no refusal arm [OP-10, STOR-8].";
+  grow(cell: s, capacity: total);
+  return unit;
+}
+
+fn digest(run: &Box<Slots<u8>>, status: own u64) -> result: own u64 reads(run) {
+  doc "Folds the window into one word, most significant byte first.";
   let result = status;
-  let length = len_of(deref(run));
+  let length = deref(run).inner.len;
   for (index in 0_u64..length) {
-    let byte = deref(run)[index];
+    let byte = deref(run).inner[index];
     let word = cvt::<u8, u64>(byte);
     let prefix = result *wrap 131_u64;
     set result = prefix +wrap word;
@@ -58,263 +38,182 @@ fn digest['heap](run: &Vector<'heap, u8>, status: own u64) -> result: own u64 re
   return result;
 }
 
-fn growth_trace['heap](store: &uniq Heap<'heap>, seed: own u8, initial: own u64, count: own u64, limit: own u64) -> result: own u64 reads(store), writes(store), allocates(store) contract {
+fn growth_trace(seed: own u8, initial: own u64, count: own u64, limit: own u64) -> result: own u64 pure contract {
   requires initial >= 1_u64;
   requires initial <= count;
   requires count <= 1048576_u64;
   requires limit <= 1048576_u64;
 } {
-  region {
-    match heap_vector::<u8>(store: &uniq deref(store), count: initial) {
-      None() => {
-        return 0_u64;
-      }
-      Some(value: original) => {
-        let state = seed;
-        for (
-          index in 0_u64..initial,
-          invariant filled: len_of(original) >= index,
-          invariant bound: len_of(original) <= index,
-          invariant spare: room_of(original) + index >= initial,
-          invariant flat: head_of(original) <= 0_u64
-        ) {
-          let product = state *wrap 73_u8;
-          set state = product +wrap 41_u8;
-          place_back(vector: &uniq original, value: state);
-        }
-        if count == initial {
-          region {
-            return digest(run: &original, status: 1_u64);
-          }
-        }
-        if count > limit {
-          region {
-            return digest(run: &original, status: 2_u64);
-          }
-        }
-        region {
-          match heap_vector::<u8>(store: &uniq deref(store), count: count) {
-            None() => {
-              region {
-                return digest(run: &original, status: 3_u64);
-              }
-            }
-            Some(value: grown) => {
-              for (
-                index in 0_u64..initial,
-                invariant filled: len_of(grown) >= index,
-                invariant bound: len_of(grown) <= index,
-                invariant spare: room_of(grown) + index >= count,
-                invariant flat: head_of(grown) <= 0_u64
-              ) {
-                let byte = original[index];
-                place_back(vector: &uniq grown, value: byte);
-              }
-              dispose original;
-              for (
-                index in initial..count,
-                invariant filled: len_of(grown) >= index,
-                invariant bound: len_of(grown) <= index,
-                invariant spare: room_of(grown) + index >= count,
-                invariant flat: head_of(grown) <= 0_u64
-              ) {
-                let product = state *wrap 73_u8;
-                set state = product +wrap 41_u8;
-                place_back(vector: &uniq grown, value: state);
-              }
-              region {
-                return digest(run: &grown, status: 1_u64);
-              }
-            }
-          }
-        }
-      }
-    }
+  doc "Fills one window from a byte recurrence, then either reports it as it stands or moves it into a wider one and continues the recurrence. The written count bounds are what discharge the static allocation-size obligation at each construction [OP-9].";
+  let original = box_slots_new::<u8>(capacity: initial);
+  let state = seed;
+  for (
+    index in 0_u64..initial,
+    invariant filled: original.inner.len >= index,
+    invariant bound: original.inner.len <= index,
+    invariant spare: original.inner.cap - original.inner.len + index >= initial
+  ) {
+    let product = state *wrap 73_u8;
+    set state = product +wrap 41_u8;
+    place_back(window: &original.inner, value: state);
   }
+  if count == initial {
+    return digest(run: &original, status: 1_u64);
+  }
+  if count > limit {
+    return digest(run: &original, status: 2_u64);
+  }
+  let grown = box_slots_new::<u8>(capacity: count);
+  for (
+    index in 0_u64..initial,
+    invariant filled: grown.inner.len >= index,
+    invariant bound: grown.inner.len <= index,
+    invariant spare: grown.inner.cap - grown.inner.len + index >= count
+  ) {
+    let byte = original.inner[index];
+    place_back(window: &grown.inner, value: byte);
+  }
+  release_run(run: move original);
+  for (
+    index in initial..count,
+    invariant filled: grown.inner.len >= index,
+    invariant bound: grown.inner.len <= index,
+    invariant spare: grown.inner.cap - grown.inner.len + index >= count
+  ) {
+    let product = state *wrap 73_u8;
+    set state = product +wrap 41_u8;
+    place_back(window: &grown.inner, value: state);
+  }
+  return digest(run: &grown, status: 1_u64);
 }
 
-fn growth_cases['heap](heap: &uniq Heap<'heap>) -> code: own u8 reads(heap), writes(heap), allocates(heap) {
-  region {
-    let result = growth_trace(store: &uniq deref(heap), seed: 19_u8, initial: 16_u64, count: 32_u64, limit: 64_u64);
-    if result == 0_u64 {
-      return 70_u8;
-    }
-    if result == 8731451624484636299_u64 {
-      return 70_u8;
-    }
-    if result != 15918187348717743889_u64 {
-      return 1_u8;
-    }
-    let refused = growth_trace(store: &uniq deref(heap), seed: 19_u8, initial: 16_u64, count: 32_u64, limit: 16_u64);
-    if refused == 0_u64 {
-      return 70_u8;
-    }
-    if refused != 9302688228678555466_u64 {
-      return 2_u8;
-    }
-    let retained = growth_trace(store: &uniq deref(heap), seed: 19_u8, initial: 16_u64, count: 16_u64, limit: 16_u64);
-    if retained == 0_u64 {
-      return 70_u8;
-    }
-    if retained != 9873924832872474633_u64 {
-      return 3_u8;
-    }
-    return 0_u8;
+fn growth_cases() -> code: own u8 pure {
+  doc "Three traces: one that grows, one the limit refuses to grow, and one already at its target.";
+  let result = growth_trace(seed: 19_u8, initial: 16_u64, count: 32_u64, limit: 64_u64);
+  if result == 0_u64 {
+    return 70_u8;
   }
+  if result == 8731451624484636299_u64 {
+    return 70_u8;
+  }
+  if result != 15918187348717743889_u64 {
+    return 1_u8;
+  }
+  let refused = growth_trace(seed: 19_u8, initial: 16_u64, count: 32_u64, limit: 16_u64);
+  if refused == 0_u64 {
+    return 70_u8;
+  }
+  if refused != 9302688228678555466_u64 {
+    return 2_u8;
+  }
+  let retained = growth_trace(seed: 19_u8, initial: 16_u64, count: 16_u64, limit: 16_u64);
+  if retained == 0_u64 {
+    return 70_u8;
+  }
+  if retained != 9873924832872474633_u64 {
+    return 3_u8;
+  }
+  return 0_u8;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "The growth policy exercised twice: one string grown to twenty-four slots and filled with twenty bytes, and one grown to eight and filled from a const run.";
-  region {
-    let growth_code = growth_cases(heap: &uniq heap);
-    if growth_code != 0_u8 {
-      return exit_status(code: growth_code);
-    }
+fn main() -> status: own ExitStatus pure {
+  doc "The growth policy exercised twice: one string grown to twenty-four slots and filled with twenty bytes, and one grown to eight and filled from a const run through a range reference.";
+  let growth_code = growth_cases();
+  if growth_code != 0_u8 {
+    return exit_status(code: growth_code);
   }
-  region {
-    match bs_new(heap: &uniq heap) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh) => {
-        let s = move fresh;
-        let start_length = len_of(s);
-        if 24_u64 >= start_length {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-        region {
-          match bs_reserve(s: move s, heap: &uniq heap, total: 24_u64) {
-            Refused(value: refused) => {
-              return exit_status(code: 71_u8);
-            }
-            Grew(value: ready) => {
-              let grown = move ready;
-              let opening = len_of(grown);
-              let spare = room_of(grown);
-              let flat = head_of(grown);
-              if opening == 0_u64 {
-              } else {
-                return exit_status(code: 1_u8);
-              }
-              if spare >= 24_u64 {
-              } else {
-                return exit_status(code: 1_u8);
-              }
-              if flat == 0_u64 {
-              } else {
-                return exit_status(code: 1_u8);
-              }
-              let b = 7_u8;
-              for @seed (
-                at in 0_u64..20_u64,
-                invariant grown_lo: len_of(grown) >= at,
-                invariant grown_hi: len_of(grown) <= at,
-                invariant spare_left: room_of(grown) + at >= 24_u64,
-                invariant flat_run: head_of(grown) <= 0_u64
-              ) {
-                place_back(vector: &uniq grown, value: b);
-                set b = b +wrap 7_u8;
-              }
-              let total = len_of(grown);
-              if total == 20_u64 {
-              } else {
-                return exit_status(code: 1_u8);
-              }
-              let cap_now = cap_of(grown);
-              if cap_now == 24_u64 {
-              } else {
-                return exit_status(code: 1_u8);
-              }
-              if 3_u64 < total {
-                let third = grown[3_u64];
-                if third == 28_u8 {
-                } else {
-                  return exit_status(code: 1_u8);
-                }
-              } else {
-                return exit_status(code: 1_u8);
-              }
-            }
-          }
-        }
-      }
-    }
+  let s = bs_new();
+  let start_length = s.inner.len;
+  if 24_u64 >= start_length {
+  } else {
+    return exit_status(code: 1_u8);
   }
-  region {
-    match bs_new(heap: &uniq heap) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: second_fresh) => {
-        let s = move second_fresh;
-        let second_start_length = len_of(s);
-        if 8_u64 >= second_start_length {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-        region {
-          match bs_reserve(s: move s, heap: &uniq heap, total: 8_u64) {
-            Refused(value: second_refused) => {
-              return exit_status(code: 71_u8);
-            }
-            Grew(value: second_ready) => {
-              let held = move second_ready;
-              let opening = len_of(held);
-              let spare = room_of(held);
-              let flat = head_of(held);
-              if opening == 0_u64 {
-              } else {
-                return exit_status(code: 1_u8);
-              }
-              if spare >= 8_u64 {
-              } else {
-                return exit_status(code: 1_u8);
-              }
-              if flat == 0_u64 {
-              } else {
-                return exit_status(code: 1_u8);
-              }
-              region {
-                place_back(vector: &uniq held, value: 65_u8);
-              }
-              region {
-                let source = slice_of(&appended_bytes);
-                for @append (
-                  at in 0_u64..5_u64,
-                  invariant held_lo: len_of(held) >= at + 1_u64,
-                  invariant held_hi: len_of(held) <= at + 1_u64,
-                  invariant spare_left: room_of(held) + at + 1_u64 >= 8_u64,
-                  invariant flat_run: head_of(held) <= 0_u64
-                ) {
-                  let byte = source[at];
-                  place_back(vector: &uniq held, value: byte);
-                }
-              }
-              let stored = len_of(held);
-              if stored == 6_u64 {
-              } else {
-                return exit_status(code: 1_u8);
-              }
-              if 5_u64 < stored {
-                let last = held[5_u64];
-                if last == 33_u8 {
-                } else {
-                  return exit_status(code: 1_u8);
-                }
-                let front = held[0_u64];
-                if front == 65_u8 {
-                } else {
-                  return exit_status(code: 1_u8);
-                }
-              } else {
-                return exit_status(code: 1_u8);
-              }
-            }
-          }
-        }
-      }
+  bs_reserve(s: &s, total: 24_u64);
+  let opening = s.inner.len;
+  let spare = s.inner.cap - s.inner.len;
+  if opening == 0_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if spare >= 24_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let b = 7_u8;
+  for @seed (
+    at in 0_u64..20_u64,
+    invariant grown_lo: s.inner.len >= at,
+    invariant grown_hi: s.inner.len <= at,
+    invariant spare_left: s.inner.cap - s.inner.len + at >= 24_u64
+  ) {
+    place_back(window: &s.inner, value: b);
+    set b = b +wrap 7_u8;
+  }
+  let total = s.inner.len;
+  if total == 20_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let cap_now = s.inner.cap;
+  if cap_now == 24_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if 3_u64 < total {
+    let third = s.inner[3_u64];
+    if third == 28_u8 {
+    } else {
+      return exit_status(code: 1_u8);
     }
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let held = bs_new();
+  let second_start_length = held.inner.len;
+  if 8_u64 >= second_start_length {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  bs_reserve(s: &held, total: 8_u64);
+  let second_opening = held.inner.len;
+  let second_spare = held.inner.cap - held.inner.len;
+  if second_opening == 0_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if second_spare >= 8_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  place_back(window: &held.inner, value: 65_u8);
+  let source = &appended_bytes[0_u64..5_u64];
+  for @append (
+    at in 0_u64..5_u64,
+    invariant held_lo: held.inner.len >= at + 1_u64,
+    invariant held_hi: held.inner.len <= at + 1_u64,
+    invariant spare_left: held.inner.cap - held.inner.len + at + 1_u64 >= 8_u64
+  ) {
+    let byte = deref(source)[at];
+    place_back(window: &held.inner, value: byte);
+  }
+  let stored = held.inner.len;
+  if stored == 6_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if 5_u64 < stored {
+    let last = held.inner[5_u64];
+    if last == 33_u8 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+    let front = held.inner[0_u64];
+    if front == 65_u8 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  } else {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

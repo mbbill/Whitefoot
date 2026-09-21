@@ -1,33 +1,23 @@
-struct Lease['s] {
-  run: Vector<'s, u8>;
+struct Lease {
+  run: Slots<u8, 8>;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "MSR-3: the construct and destructuring placements, with no branch on a measure anywhere. The field operand carries its measures into lease.run, the placement into the field survives the consume the construct performs, and the destructuring consume carries them back out to the binder that names the field.";
-  region 'a {
-    let workspace = arena_frame::<4096, 16, 'a>();
-    region {
-      let block = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
-      let ticket = Lease(run: move block);
-      region {
-        place_back(vector: &uniq ticket.run, value: 6_u8);
-      }
-      let Lease(run: back) = move ticket;
-      region {
-        place_back(vector: &uniq back, value: 7_u8);
-      }
-      let more = move back;
-      let first = more[0_u64];
-      let second = more[1_u64];
-      if first == 6_u8 {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      if second == 7_u8 {
-      } else {
-        return exit_status(code: 2_u8);
-      }
-    }
+  doc "MSR-3: the construct and destructuring placements, with no branch on a measure anywhere. The field operand carries its measures into ticket.run, the placement into the field survives the consume the construct performs, and the destructuring consume carries them back out to the binder that names the field.";
+  let block = slots_new::<u8, 8>();
+  let ticket = Lease(run: move block);
+  place_back(window: &ticket.run, value: 6_u8);
+  let Lease(run: back) = move ticket;
+  place_back(window: &back, value: 7_u8);
+  let first = back[0_u64];
+  let second = back[1_u64];
+  if first == 6_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if second == 7_u8 {
+  } else {
+    return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
 }

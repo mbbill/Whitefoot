@@ -1,21 +1,11 @@
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "A zero-capacity heap window reports zero length and exits normally. Exact release accounting belongs to runtime ledger tests.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 0_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh) => {
-        let values = move fresh;
-        let length = len_of(values);
-        if length != 0_u64 {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let values = box_slots_new::<u8>(capacity: 0_u64);
+  let length = values.inner.len;
+  if length != 0_u64 {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

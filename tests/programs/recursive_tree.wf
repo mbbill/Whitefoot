@@ -1,41 +1,25 @@
-enum Tree['s] {
+enum Tree {
   Leaf();
-  Branch(left: Box<'s, Tree<'s>>, right: Box<'s, Tree<'s>>);
+  Branch(left: Box<Tree>, right: Box<Tree>);
 }
 
-fn boxed_leaf['s](store: &uniq Heap<'s>) -> made: own Option<Box<'s, Tree<'s>>> reads(store), writes(store), allocates(store) {
-  doc "S39: one leaf in a cell of the store the caller's provider names.";
-  let leaf = Leaf<'s>();
-  region {
-    match heap_box(store: &uniq deref(store), value: move leaf) {
-      Ok(value: cell) => {
-        return Some<Box<'s, Tree<'s>>>(value: move cell);
-      }
-      Err(error: back) => {
-        return None<Box<'s, Tree<'s>>>();
-      }
-    }
-  }
+fn boxed_leaf() -> made: own Box<Tree> pure {
+  doc "One leaf in its own heap cell. There is one heap, allocation is total, and the cell carries no brand, so the construction has no failure arm [STOR-8, TYPE-9].";
+  let leaf = Leaf();
+  let cell = box_new::<Tree>(value: move leaf);
+  return move cell;
 }
 
-fn boxed_branch['s](store: &uniq Heap<'s>, left: own Box<'s, Tree<'s>>, right: own Box<'s, Tree<'s>>) -> made: own Option<Box<'s, Tree<'s>>> reads(store), writes(store), allocates(store) {
-  doc "The refusal arm hands the branch back, and dropping it releases both children: the release walk visits a cell's referent before the cell itself.";
+fn boxed_branch(left: own Box<Tree>, right: own Box<Tree>) -> made: own Box<Tree> pure {
+  doc "A branch owning two children. Dropping it releases both: the release walk visits a cell's content before the cell itself [PROV-6, STOR-3].";
   let branch = Branch(left: move left, right: move right);
-  region {
-    match heap_box(store: &uniq deref(store), value: move branch) {
-      Ok(value: cell) => {
-        return Some<Box<'s, Tree<'s>>>(value: move cell);
-      }
-      Err(error: back) => {
-        return None<Box<'s, Tree<'s>>>();
-      }
-    }
-  }
+  let cell = box_new::<Tree>(value: move branch);
+  return move cell;
 }
 
-fn count['s](tree: &Box<'s, Tree<'s>>) -> result: own Result<u64, Overflow> reads(tree) {
-  doc "The recursive walk over a cell-linked tree. PROV-6 admits a release graph with a cycle, and this is the type whose release is one action per node entering itself.";
-  match deref(deref(tree)) {
+fn count(tree: &Box<Tree>) -> result: own Result<u64, Overflow> reads(tree) {
+  doc "The recursive walk over a cell-linked tree. A Box's content is its field inner, and matching through a reference binds each payload as a reference naming the scrutinee path [TYPE-9, OWN-13]. PROV-6 admits a release graph with a cycle, and this is the type whose release is one action per node entering itself.";
+  match deref(tree).inner {
     Leaf() => {
       return Ok<u64, Overflow>(value: 1_u64);
     }
@@ -48,41 +32,20 @@ fn count['s](tree: &Box<'s, Tree<'s>>) -> result: own Result<u64, Overflow> read
   }
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  region {
-    match boxed_leaf(store: &uniq heap) {
-      None() => {
-        return exit_status(code: 2_u8);
+fn main() -> status: own ExitStatus pure {
+  doc "Two leaves under one branch, counted by the recursive walk; the root's release reclaims the whole tree.";
+  let leaf0 = boxed_leaf();
+  let leaf1 = boxed_leaf();
+  let root = boxed_branch(left: move leaf0, right: move leaf1);
+  match count(tree: &root) {
+    Ok(value: nodes) => {
+      if nodes == 3_u64 {
+        return exit_status(code: 0_u8);
       }
-      Some(value: leaf0) => {
-        match boxed_leaf(store: &uniq heap) {
-          None() => {
-            return exit_status(code: 2_u8);
-          }
-          Some(value: leaf1) => {
-            match boxed_branch(store: &uniq heap, left: move leaf0, right: move leaf1) {
-              None() => {
-                return exit_status(code: 2_u8);
-              }
-              Some(value: root) => {
-                region {
-                  match count(tree: &root) {
-                    Ok(value: nodes) => {
-                      if nodes == 3_u64 {
-                        return exit_status(code: 0_u8);
-                      }
-                      return exit_status(code: 1_u8);
-                    }
-                    Err(error: overflow) => {
-                      return exit_status(code: 1_u8);
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+      return exit_status(code: 1_u8);
+    }
+    Err(error: overflow) => {
+      return exit_status(code: 1_u8);
     }
   }
 }

@@ -1,0 +1,11 @@
+fn inline_run_overflow(count: own u64) -> made: own Box<Slots<Slots<u64, 2>>> pure contract {
+  requires count <= 768614336404564651_u64;
+} {
+  doc "Two u64 slots plus the inline window's length word have stride ceiling twenty-four. The permitted count includes the first count above its OP-9 limit.";
+  let taken = box_slots_new::<Slots<u64, 2>>(capacity: count);
+  return move taken;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

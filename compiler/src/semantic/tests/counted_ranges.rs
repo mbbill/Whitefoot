@@ -8,11 +8,30 @@ use super::{assert_rule, assert_rule_kind, with_semantics};
 const ENDPOINT_TERM_FIX: &str =
     "bind the computed u64 value with one preceding ordinary let and use that term as the endpoint";
 
+/// [SET-1]'s closed writability relation, as the diagnostic names it. There is
+/// no permission marker on a reference any more, so the required classes are a
+/// live own-mode binding and a path below `deref` of a reference whose row
+/// declares that write [REF-1, EFF-1].
+const SET1_WRITABLE_ROOTS: &str = "a live own-mode value binding, or a path below deref of a \
+                                   reference whose row declares that write";
+
 fn assert_checks(source: &[u8]) {
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {
             panic!("counted range must check: {outcome:?}");
         };
+    });
+}
+
+/// Asserts the rule one source establishes without pinning a payload the call
+/// site does not state, for the judgments whose v0.59 issue kind was deleted
+/// with its subject and whose v0.60 successor carries no payload of its own.
+fn assert_only_rule(source: &[u8], rule: SemanticRule) {
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("expected {rule:?}, got {outcome:?}");
+        };
+        assert_eq!(issue.rule(), rule, "{issue:?}");
     });
 }
 
@@ -50,7 +69,7 @@ fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
             })
         ));
         assert!(matches!(
-            upper,
+            upper.as_ref(),
             CheckedExpression::Constant(CheckedValue::Integer {
                 ty: IntegerType::U64,
                 bits: 1
@@ -100,23 +119,17 @@ fn main() -> status: own ExitStatus pure {
         },
     );
 
-    // The holder is a store cell [S39] rather than the retiring `box<T>`: the
-    // endpoint is still a value that holds a `u64` instead of being one, so
-    // [TYPE-7] cites the same missing `deref` at the same operand.
+    // The holder is a reference formed in the body rather than the retired
+    // store cell. [TYPE-7] owns the same exclusive judgment there: the
+    // endpoint names a reference where its referent `own u64` is required, so
+    // the missing `deref` is cited at the same operand. A `Box` is no longer
+    // a candidate here — its content is the field `inner` [TYPE-9] and
+    // `deref` of a cell is itself a TYPE-7 rejection.
     assert_rule(
         br#"fn main() -> status: own ExitStatus pure {
-  region 'a {
-    let workspace = arena_frame::<64, 8, 'a>();
-    region {
-      match arena_box(store: &uniq workspace, value: 0_u64) {
-        Ok(value: start) => {
-          for @items (i in start..1_u64) {
-          }
-        }
-        Err(error: back) => {
-        }
-      }
-    }
+  let origin = 0_u64;
+  let start = &origin;
+  for @items (i in start..1_u64) {
   }
   return exit_status(code: 0_u8);
 }
@@ -129,21 +142,12 @@ fn main() -> status: own ExitStatus pure {
 
     assert_rule(
         br#"fn main() -> status: own ExitStatus pure {
-  region 'a {
-    let workspace = arena_frame::<64, 8, 'a>();
-    region {
-      match arena_box(store: &uniq workspace, value: 0_u64) {
-        Ok(value: start) => {
-          loop @outer {
-            for @items (i in start..1_u64) {
-            }
-            break @outer;
-          }
-        }
-        Err(error: back) => {
-        }
-      }
+  let origin = 0_u64;
+  let start = &origin;
+  loop @outer {
+    for @items (i in start..1_u64) {
     }
+    break @outer;
   }
   return exit_status(code: 0_u8);
 }
@@ -155,7 +159,7 @@ fn main() -> status: own ExitStatus pure {
     );
 
     assert_checks(
-        br#"fn walk(lower: &u64, upper: &u64) -> result: own unit reads(lower, upper) {
+        br#"fn walk(lower: &u64, upper: &u64) -> result: own unit reads(lower), reads(upper) {
   for @items (i in deref(lower)..deref(upper)) {
   }
   return unit;
@@ -170,7 +174,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_endpoints_require_a_preceding_term_or_constant() {
-    let subscript = br#"const bounds: FixedVector<u64, 2> =[0_u64, 0_u64];
+    let subscript = br#"const bounds: Array<u64, 2> =[0_u64, 0_u64];
 
 fn probe() -> result: own unit pure {
   for @items (i in bounds[0_u64]..bounds[1_u64]) {
@@ -191,12 +195,16 @@ fn main() -> status: own ExitStatus pure {
     );
     super::assert_rule_at(subscript, SemanticRule::Ent2, "bounds[0_u64]");
 
+    // [EFF-1] a by-value parameter has no effect entry at all, so the row
+    // names only the reference endpoint. The v0.59 spelling declared
+    // `reads(bounds.lower, upper)`: one entry names exactly one path, and an
+    // own root is an EFF-1 rejection.
     assert_checks(
         br#"struct Bounds {
   lower: u64;
 }
 
-fn probe(bounds: own Bounds, upper: &u64) -> result: own unit reads(bounds.lower, upper) {
+fn probe(bounds: own Bounds, upper: &u64) -> result: own unit reads(upper) {
   for @items (i in bounds.lower..deref(upper)) {
   }
   return unit;
@@ -209,8 +217,15 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
+/// [OWN-11] a counted binder may be copied and may have a reference formed to
+/// it, but it is compiler-updated state: source may not write it [SET-1] and
+/// may not pass it to a callee whose row declares a write of it [EFF-1].
+///
+/// v0.59's middle case refused `&uniq i` outright. The permission marker is
+/// retired [REF-1], so forming a reference to the binder is admitted and the
+/// rule's remaining restriction is the callee's declared write.
 #[test]
-fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
+fn counted_binder_is_not_source_writable_and_is_not_written_through() {
     assert_rule(
         br#"fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
@@ -222,44 +237,88 @@ fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
         SemanticRule::Set1,
         SemanticIssueKind::InvalidSetTarget {
             root_class: "compiler-updated counted binder".to_owned(),
-            required_classes: "source-writable live own storage or a live usable &uniq referent",
+            required_classes: SET1_WRITABLE_ROOTS,
         },
     );
 
-    assert_rule(
-        br#"fn main() -> status: own ExitStatus pure {
+    assert_checks(
+        br#"fn observe(value: &u64) -> result: own unit reads(value) {
+  let seen = deref(value);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
-    let exclusive = &uniq i;
+    let copied = i;
+    let shared = &i;
+    observe(value: shared);
   }
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Own11,
-        SemanticIssueKind::BorrowConflict,
     );
 
-    assert_rule(
-        br#"fn overwrite(target: &uniq u64) -> result: own unit writes(target) {
+    assert_only_rule(
+        br#"fn overwrite(target: &u64) -> result: own unit writes(target) {
   set deref(target) = 9_u64;
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
-    overwrite(target: &uniq i);
+    overwrite(target: &i);
   }
   return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own11,
-        SemanticIssueKind::BorrowConflict,
+    );
+}
+
+#[test]
+fn a_counted_binders_reference_does_not_make_it_writable() {
+    assert_only_rule(
+        br#"fn main() -> status: own ExitStatus pure {
+  for (i in 0_u64..2_u64) {
+    let held = &i;
+    let alias = held;
+    set deref(alias) = 9_u64;
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Set1,
+    );
+
+    // The first possible target is writable. The second is the counted
+    // binder; checking only the first member must not authorize this call.
+    assert_only_rule(
+        br#"fn overwrite(target: &u64) -> result: own unit writes(target) {
+  set deref(target) = 9_u64;
+  return unit;
+}
+
+fn examine(flag: own Bool) -> result: own unit pure {
+  for (i in 0_u64..2_u64) {
+    let spare = 0_u64;
+    let held = if flag {
+      give &spare;
+    } else {
+      give &i;
+    }
+    overwrite(target: held);
+  }
+  return unit;
+}
+"#,
+        SemanticRule::Own11,
     );
 }
 
 #[test]
 fn counted_body_inherits_own11_and_accepts_body_local_ownership() {
     assert_rule(
-        br#"struct Token {
+        br#"nocopy struct Token {
   value: u64;
 }
 
@@ -280,35 +339,20 @@ fn main() -> status: own ExitStatus pure {
         },
     );
 
-    // [OWN-11] the loop body's own region is the one an elided borrow takes,
-    // so naming an outer region is now the only way to write this fault.
-    assert_rule(
-        br#"fn main() -> status: own ExitStatus pure {
-  let value = 0_u64;
-  region 'r {
-    for @items (i in 0_u64..1_u64) {
-      let shared = &'r value;
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Own11,
-        SemanticIssueKind::BorrowRegionOutsideLoop {
-            mechanical_fix: "introduce the borrow region inside the enclosing loop body",
-        },
-    );
+    // Retired with its subject: the second case asserted [OWN-11]'s
+    // `BorrowRegionOutsideLoop`, a borrow created inside a loop naming a
+    // region introduced outside it. Regions retire with no successor, and a
+    // reference now dies with the scope of the local its path starts at
+    // [REF-2], which is not a rule of its own about loops.
 
     assert_checks(
-        br#"struct Token {
+        br#"nocopy struct Token {
   value: u64;
 }
 
 fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
-    region {
-      let shared = &i;
-    }
+    let shared = &i;
     let token = Token(value: i);
     let consumed = move token;
   }
@@ -322,7 +366,7 @@ fn main() -> status: own ExitStatus pure {
 fn counted_cleanup_is_attached_only_to_taken_body_exits() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
-    let values = fixed_vector::<u8, 1>();
+    let values = box_new::<u64>(value: 1_u64);
     break @items;
   }
   return exit_status(code: 0_u8);
@@ -345,7 +389,7 @@ fn counted_cleanup_is_attached_only_to_taken_body_exits() {
             panic!("expected local counted break");
         };
         assert_eq!(drops.len(), 1);
-        assert!(matches!(drops[0].ty, CheckedType::FixedVector { .. }));
+        assert!(matches!(drops[0].ty, CheckedType::Nominal(_)));
     });
 }
 
@@ -361,7 +405,7 @@ fn source() -> result: own Result<u64, Fail> pure {
 
 fn leave() -> result: own unit pure {
   for @items (i in 0_u64..1_u64) {
-    let values = fixed_vector::<u8, 1>();
+    let values = box_new::<u64>(value: 1_u64);
     return unit;
   }
   return unit;
@@ -369,7 +413,7 @@ fn leave() -> result: own unit pure {
 
 fn forward() -> result: own Result<unit, Fail> pure {
   for @items (i in 0_u64..1_u64) {
-    let values = fixed_vector::<u8, 1>();
+    let values = box_new::<u64>(value: 1_u64);
     let value = propagate source();
   }
   return Ok<unit, Fail>(value: unit);
@@ -402,7 +446,7 @@ fn main() -> status: own ExitStatus pure {
             panic!("leave must retain its return edge");
         };
         assert_eq!(drops.len(), 1);
-        assert!(matches!(drops[0].ty, CheckedType::FixedVector { .. }));
+        assert!(matches!(drops[0].ty, CheckedType::Nominal(_)));
 
         let forward = checked
             .data
@@ -419,15 +463,12 @@ fn main() -> status: own ExitStatus pure {
             panic!("forward must retain its counted range");
         };
         assert_eq!(backedge_drops.len(), 1);
-        assert!(matches!(
-            backedge_drops[0].ty,
-            CheckedType::FixedVector { .. }
-        ));
+        assert!(matches!(backedge_drops[0].ty, CheckedType::Nominal(_)));
         let CheckedStatement::PropagateLet { error_drops, .. } = &body[1] else {
             panic!("forward must retain its propagation edge");
         };
         assert_eq!(error_drops.len(), 1);
-        assert!(matches!(error_drops[0].ty, CheckedType::FixedVector { .. }));
+        assert!(matches!(error_drops[0].ty, CheckedType::Nominal(_)));
         assert_eq!(error_drops[0].binding, backedge_drops[0].binding);
     });
 }

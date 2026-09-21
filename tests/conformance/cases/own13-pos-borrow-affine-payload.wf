@@ -1,4 +1,4 @@
-struct Pair {
+nocopy struct Pair {
   left: i32;
   right: i32;
 }
@@ -9,7 +9,7 @@ enum Packet {
 }
 
 fn inspect(packet: &Packet) -> return_value: own i32 reads(packet) {
-  doc "OWN-13: matching deref(packet) derives a shared Pair binder; deref(payload).left reads through that provenance.";
+  doc "OWN-13: matching through a reference derives a Pair payload binder naming that path, and a field of it is read without transferring ownership.";
   match deref(packet) {
     Data(item: payload) => {
       return deref(payload).left;

@@ -15,8 +15,8 @@ use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedConst, CheckedEnumType, CheckedExpression,
     CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMatchArm, CheckedMeasure,
-    CheckedNominalKind, CheckedPlaceStep, CheckedSetTarget, CheckedSliceSource, CheckedType,
-    CheckedValue, IntegerType, MeasuredKind,
+    CheckedNominalKind, CheckedPlaceStep, CheckedSetTarget, CheckedType, CheckedValue, IntegerType,
+    MeasuredKind,
 };
 use super::super::fragment_type;
 use super::super::state::{
@@ -24,15 +24,15 @@ use super::super::state::{
     OutcomeRelation, Relation, close,
 };
 use super::super::term::{
-    CountedCaptureSide, MeasurePlacement, PlaceProjection, PlaceRoot, PlaceTerm,
-    ProjectedPlaceTerm, TermId, TermKind, ZERO, integer_value, type_range,
+    CountedCaptureSide, MeasurePlacement, PlaceRoot, PlaceStep, ResolvedPlace, TermId, TermKind,
+    ZERO, integer_value, type_range,
 };
 use super::super::{
     CountedAtomicDerivation, CountedBoundDerivation, CountedDerivationSet,
     CountedEqualityDerivation, CountedProofPoint, RemainderEndpoint, S7Derivation,
     S7DerivationKind, S7Subject, ShiftOneIdentity,
 };
-use super::{Analyzer, ArmFacts, ProofFlowState, projected_place};
+use super::{Analyzer, ArmFacts, ProofFlowState};
 /// Which term one evaluated value's [ENT-3] image is established on: the
 /// place a `let` binder introduces, or the compiler-owned commit value of one
 /// `set` occurrence, named by that statement's NodePath [ENT-2].
@@ -103,11 +103,7 @@ impl Analyzer<'_, '_> {
             side: CountedCaptureSide::Upper,
         });
         let binder = self.terms.intern(TermKind::Place(
-            PlaceTerm {
-                root: PlaceRoot::Binding(binder),
-                deref: false,
-                fields: Vec::new(),
-            },
+            ResolvedPlace::spelled(PlaceRoot::Binding(binder), false, Vec::new()),
             IntegerType::U64,
         ));
         state.establish(
@@ -345,9 +341,7 @@ impl Analyzer<'_, '_> {
         id
     }
 
-    /// The exact term named by one writable fragment place. A borrow holder
-    /// keeps its canonical deref projection so the post-write destination is
-    /// identical to a later read of that same place [ENT-2].
+    /// The exact term named by one writable fragment place [ENT-2].
     fn writable_place_term(
         &mut self,
         binding: BindingId,
@@ -355,27 +349,36 @@ impl Analyzer<'_, '_> {
         ty: CheckedType,
     ) -> Option<TermId> {
         let fragment = fragment_type(ty)?;
-        let kind = if self.needs_implicit_deref(binding) {
-            TermKind::ProjectedPlace(
-                ProjectedPlaceTerm {
-                    root: PlaceRoot::Binding(binding),
-                    projections: std::iter::once(PlaceProjection::Deref)
-                        .chain(fields.iter().copied().map(PlaceProjection::Field))
-                        .collect(),
-                },
-                fragment,
-            )
-        } else {
-            TermKind::Place(
-                PlaceTerm {
-                    root: PlaceRoot::Binding(binding),
-                    deref: false,
-                    fields: fields.to_vec(),
-                },
-                fragment,
-            )
-        };
+        // [REF-1] a reference root is resolved to the path it names rather
+        // than spelled with a synthesized `deref`, so the term carries the
+        // written path and nothing else.
+        let kind = TermKind::Place(
+            ResolvedPlace::spelled(PlaceRoot::Binding(binding), false, fields.to_vec()),
+            fragment,
+        );
         Some(self.terms.intern(kind))
+    }
+
+    /// [ENT-3.S5] admits direct scalar places, including fields and Box
+    /// content reached through a reference. A subscript anywhere in the
+    /// path excludes a commit image, even if its offset is a literal.
+    pub(super) fn commit_target_term(&mut self, target: &CheckedSetTarget) -> Option<TermId> {
+        match target {
+            CheckedSetTarget::Place(target) => {
+                self.writable_place_term(target.binding, &target.fields, target.ty)
+            }
+            CheckedSetTarget::Storage(target)
+                if !target
+                    .path
+                    .iter()
+                    .any(|step| matches!(step, CheckedPlaceStep::Subscript(_))) =>
+            {
+                let fragment = fragment_type(target.ty)?;
+                let place = self.container_root_path(target);
+                Some(self.terms.intern(TermKind::Place(place, fragment)))
+            }
+            _ => None,
+        }
     }
 
     /// The term one evaluated value's image is established on, when its type
@@ -476,12 +479,8 @@ impl Analyzer<'_, '_> {
 
     /// The place term a binding names directly, for length facts over an
     /// allocated or borrowed collection.
-    pub(super) fn bound_place(&self, binding: BindingId) -> PlaceTerm {
-        PlaceTerm {
-            root: PlaceRoot::Binding(binding),
-            deref: false,
-            fields: Vec::new(),
-        }
+    pub(super) fn bound_place(&self, binding: BindingId) -> ResolvedPlace {
+        ResolvedPlace::binding(binding)
     }
 
     /// [ENT-3] S5: `let x: own T = lit;` establishes x = value(lit);
@@ -508,11 +507,11 @@ impl Analyzer<'_, '_> {
         let CheckedExpression::Binding { binding, ty, .. } = value else {
             return None;
         };
-        let source = projected_place(PlaceTerm {
-            root: PlaceRoot::Binding(*binding),
-            deref: self.is_holder(*binding),
-            fields: Vec::new(),
-        });
+        let source = ResolvedPlace::spelled(
+            PlaceRoot::Binding(*binding),
+            self.is_holder(*binding),
+            Vec::new(),
+        );
         self.mint_measure_datums(
             node_path,
             ordinal,
@@ -543,7 +542,7 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         ordinal: u32,
         placement: MeasurePlacement,
-        source: ProjectedPlaceTerm,
+        source: ResolvedPlace,
         ty: CheckedType,
         state: &mut ProofFlowState,
     ) -> Option<MeasureCarry> {
@@ -554,9 +553,7 @@ impl Analyzer<'_, '_> {
             };
             let constant = super::type_constant(measured_type);
             let mut place = source.clone();
-            place
-                .projections
-                .extend(path.iter().map(|field| PlaceProjection::Field(*field)));
+            place.path.extend(path.iter().copied());
             let event = self.proof_event(FlowEventKind::S5, Some(node_path));
             let mut datums = Vec::with_capacity(4);
             for measure in MEASURES {
@@ -591,29 +588,26 @@ impl Analyzer<'_, '_> {
     }
 
     /// [MSR-1, MSR-3] every measured place one placement's operand reaches by
-    /// field selection, as its field path from the operand and the type
-    /// selected there.
+    /// field or enum-payload selection, as its projection path from the
+    /// operand and the type selected there.
     ///
     /// A placement is per placement, not per depth. [MSR-1] admits a measure
-    /// place formed with any number of field-selection `psuffix`es, so a
-    /// struct operand one of whose fields is itself a struct holding a run
-    /// names a measured place two levels down; the naming event renames that
-    /// place along with the operand, and without a datum for it the run
-    /// arrives at its new path with no measures at all — which is exactly
-    /// what every placement exists to prevent.
+    /// place formed with any number of field and payload `psuffix`es, so an
+    /// aggregate operand holding a run two levels down names that measured
+    /// place; the naming event renames the aggregate, and without a datum for
+    /// the complete projection the run arrives at its new path with no
+    /// measures at all. Payload steps remain distinct by variant [REF-1].
     ///
-    /// The walk descends through source `struct` fields only. A cell, a run
-    /// element and an enum payload are reached by a step this walk does not
-    /// take — a `deref`, a subscript, and a variant selection respectively —
-    /// so none of them is a field path from the operand.
-    fn measured_paths(&self, ty: CheckedType) -> Vec<(Vec<u32>, CheckedType)> {
+    /// The walk does not cross a cell or run element: those require `deref`
+    /// and subscript steps rather than aggregate ownership projections.
+    fn measured_paths(&self, ty: CheckedType) -> Vec<(Vec<PlaceStep>, CheckedType)> {
         if super::measured_kind(ty).is_some() {
             return vec![(Vec::new(), ty)];
         }
         let CheckedType::Nominal(nominal) = ty else {
             return Vec::new();
         };
-        let Some(CheckedNominalKind::Struct { fields }) = self
+        let Some(kind) = self
             .context
             .nominals
             .get(nominal.0 as usize)
@@ -621,16 +615,41 @@ impl Analyzer<'_, '_> {
         else {
             return Vec::new();
         };
-        let fields = fields.clone();
         let mut found = Vec::new();
-        for (ordinal, field) in fields.iter().enumerate() {
-            let Ok(ordinal) = u32::try_from(ordinal) else {
-                continue;
-            };
-            for (mut path, selected) in self.measured_paths(field.ty) {
-                path.insert(0, ordinal);
-                found.push((path, selected));
+        match kind {
+            CheckedNominalKind::Struct { fields } => {
+                let fields = fields.clone();
+                for (ordinal, field) in fields.iter().enumerate() {
+                    let Ok(ordinal) = u32::try_from(ordinal) else {
+                        continue;
+                    };
+                    for (mut path, selected) in self.measured_paths(field.ty) {
+                        path.insert(0, PlaceStep::Field(ordinal));
+                        found.push((path, selected));
+                    }
+                }
             }
+            CheckedNominalKind::Enum { variants } => {
+                let variants = variants.clone();
+                for variant in variants {
+                    for (ordinal, field) in variant.fields.iter().enumerate() {
+                        let Ok(field_ordinal) = u32::try_from(ordinal) else {
+                            continue;
+                        };
+                        for (mut path, selected) in self.measured_paths(field.ty) {
+                            path.insert(
+                                0,
+                                PlaceStep::Payload {
+                                    variant: variant.tag,
+                                    field: field_ordinal,
+                                },
+                            );
+                            found.push((path, selected));
+                        }
+                    }
+                }
+            }
+            CheckedNominalKind::Box { .. } | CheckedNominalKind::Opaque => {}
         }
         found
     }
@@ -644,7 +663,7 @@ impl Analyzer<'_, '_> {
         rebind: &MeasureCarry,
         state: &mut FactState,
     ) {
-        let target = projected_place(self.bound_place(binding));
+        let target = self.bound_place(binding);
         self.establish_measure_datums(node_path, target, rebind, state);
     }
 
@@ -654,19 +673,14 @@ impl Analyzer<'_, '_> {
     pub(super) fn establish_measure_datums(
         &mut self,
         node_path: &crate::NodePath,
-        destination: ProjectedPlaceTerm,
+        destination: ResolvedPlace,
         carry: &MeasureCarry,
         state: &mut FactState,
     ) {
         let event = self.proof_event(FlowEventKind::S5, Some(node_path));
         for carried in &carry.carried {
             let mut place = destination.clone();
-            place.projections.extend(
-                carried
-                    .path
-                    .iter()
-                    .map(|field| PlaceProjection::Field(*field)),
-            );
+            place.path.extend(carried.path.iter().copied());
             for (measure, datum) in MEASURES.into_iter().zip(&carried.datums) {
                 let left = self.place_measure_term(
                     measure,
@@ -719,18 +733,13 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) {
-        let CheckedSetTarget::Place(target) = target else {
-            return;
-        };
-        let Some(destination) = self.writable_place_term(target.binding, &target.fields, target.ty)
-        else {
+        let Some(destination) = self.commit_target_term(target) else {
             return;
         };
         self.establish_copy_equality(node_path, destination, commit, state, event);
     }
 
-    /// [ENT-3] S6: `buffer_new::<T>(n, v)` establishes len_of(b) = n;
-    /// `len::<T>(P)` for a tracked P establishes m = len_of(P); and
+    /// [ENT-3] S6: `len::<T>(P)` for a tracked P establishes m = len_of(P); and
     /// `slice_of…(&'r P)` for a tracked P establishes len_of(s) = len_of(P).
     ///
     /// An `array<T, N>` allocation needs no clause here: its length equality
@@ -744,200 +753,23 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
-        // A length equality is stated over the destination place. One commit
-        // value is no place, so an allocation or slice-formation right-hand
-        // side has no commit image; the length operand row below is an
-        // ordinary fragment value and applies to both destinations.
-        match value {
-            CheckedExpression::BufferFill { length, .. }
-            | CheckedExpression::BufferVacant { length, .. } => {
-                let ValueImage::Binding(binding) = destination else {
-                    return true;
-                };
-                let Some(allocated) = self.read_operand(length) else {
-                    return true;
-                };
-                let place = self.bound_place(binding);
-                let length_term = self.place_measure_term(
-                    CheckedMeasure::Length,
-                    projected_place(place),
-                    MeasuredKind::Buffer,
-                    None,
-                );
-                let event = self.binding_event(event, FlowEventKind::S6, node_path);
-                state.establish(
-                    &Relation::Equal {
-                        left: length_term,
-                        right: allocated,
-                        difference: 0,
-                    },
-                    &mut self.derivations,
-                    event,
-                );
-                true
-            }
-            CheckedExpression::SliceOf { range: Some(_), .. } => {
-                // The relative extent end - start has three terms and is
-                // installed as an exact affine value image by the parent
-                // walk, after both formation obligations have discharged.
-                true
-            }
-            CheckedExpression::SliceOf { source, .. } => {
-                let ValueImage::Binding(binding) = destination else {
-                    return true;
-                };
-                // [BLK-0] the row's own published relation `len_of(result)
-                // == len_of(vector)`, established here over the viewed
-                // place. The row's other three relations are the constant
-                // cells [MSR-1] gives every view — `cap_of` equals `len_of`,
-                // and `room_of` and `head_of` are zero — which the term layer
-                // already answers from the measure table, so this is the one
-                // clause of the record that needs a source.
-                if let CheckedSliceSource::Run(root) = source {
-                    let Some(measured) = super::measured_kind(root.ty) else {
-                        return true;
-                    };
-                    let source_length = self.place_measure_term(
-                        CheckedMeasure::Length,
-                        self.container_root_path(root),
-                        measured,
-                        super::type_constant(root.ty),
-                    );
-                    let slice_place = self.bound_place(binding);
-                    let slice_length = self.place_measure_term(
-                        CheckedMeasure::Length,
-                        projected_place(slice_place),
-                        MeasuredKind::Slice,
-                        None,
-                    );
+        match self.measure_operand(value) {
+            Some(source_length) => {
+                if let Some(bound) = self.bound_term(destination, value) {
                     let event = self.binding_event(event, FlowEventKind::S6, node_path);
                     state.establish(
                         &Relation::Equal {
-                            left: slice_length,
+                            left: bound,
                             right: source_length,
                             difference: 0,
                         },
                         &mut self.derivations,
                         event,
                     );
-                    return true;
                 }
-                // [VIEW-2] the child carries the parent's range, so the one
-                // relation the formation publishes is the parent view's own
-                // length read through its holder.
-                if let CheckedSliceSource::ViewHolder {
-                    binding: parent, ..
-                } = source
-                {
-                    let source_length = self.place_measure_term(
-                        CheckedMeasure::Length,
-                        projected_place(PlaceTerm {
-                            root: PlaceRoot::Binding(*parent),
-                            deref: self.is_holder(*parent),
-                            fields: Vec::new(),
-                        }),
-                        MeasuredKind::Slice,
-                        None,
-                    );
-                    let slice_place = self.bound_place(binding);
-                    let slice_length = self.place_measure_term(
-                        CheckedMeasure::Length,
-                        projected_place(slice_place),
-                        MeasuredKind::Slice,
-                        None,
-                    );
-                    let event = self.binding_event(event, FlowEventKind::S6, node_path);
-                    state.establish(
-                        &Relation::Equal {
-                            left: slice_length,
-                            right: source_length,
-                            difference: 0,
-                        },
-                        &mut self.derivations,
-                        event,
-                    );
-                    return true;
-                }
-                let (place, array_length) = match source {
-                    // Answered above; a run's viewed place is a projection
-                    // path and not a field list.
-                    CheckedSliceSource::Run(_) | CheckedSliceSource::ViewHolder { .. } => {
-                        return true;
-                    }
-                    CheckedSliceSource::Array { root, length } => {
-                        (self.array_root_place(root), Some(*length))
-                    }
-                    CheckedSliceSource::Buffer(root) => (
-                        PlaceTerm {
-                            root: PlaceRoot::Binding(root.binding),
-                            deref: self.is_holder(root.binding),
-                            fields: root.fields.clone(),
-                        },
-                        None,
-                    ),
-                    // Content reached in an arena through one explicit deref
-                    // [OWN-5]; the viewed array's constant length still
-                    // equates to the formed slice's length.
-                    CheckedSliceSource::ArenaContent {
-                        binding,
-                        fields,
-                        length,
-                    } => (
-                        PlaceTerm {
-                            root: PlaceRoot::Binding(*binding),
-                            deref: true,
-                            fields: fields.clone(),
-                        },
-                        Some(*length),
-                    ),
-                };
-                let source_length = self.place_measure_term(
-                    CheckedMeasure::Length,
-                    projected_place(place),
-                    if array_length.is_some() {
-                        MeasuredKind::Array
-                    } else {
-                        MeasuredKind::Buffer
-                    },
-                    array_length,
-                );
-                let slice_place = self.bound_place(binding);
-                let slice_length = self.place_measure_term(
-                    CheckedMeasure::Length,
-                    projected_place(slice_place),
-                    MeasuredKind::Slice,
-                    None,
-                );
-                let event = self.binding_event(event, FlowEventKind::S6, node_path);
-                state.establish(
-                    &Relation::Equal {
-                        left: slice_length,
-                        right: source_length,
-                        difference: 0,
-                    },
-                    &mut self.derivations,
-                    event,
-                );
                 true
             }
-            _ => match self.measure_operand(value) {
-                Some(source_length) => {
-                    if let Some(bound) = self.bound_term(destination, value) {
-                        let event = self.binding_event(event, FlowEventKind::S6, node_path);
-                        state.establish(
-                            &Relation::Equal {
-                                left: bound,
-                                right: source_length,
-                                difference: 0,
-                            },
-                            &mut self.derivations,
-                            event,
-                        );
-                    }
-                    true
-                }
-                None => false,
-            },
+            None => false,
         }
     }
 
@@ -953,30 +785,28 @@ impl Analyzer<'_, '_> {
             } => (
                 *measure,
                 self.array_root_place(root),
-                MeasuredKind::Array,
+                MeasuredKind::ConstantArray,
                 Some(*length),
             ),
             CheckedExpression::BufferMeasure { measure, root } => (
                 *measure,
-                PlaceTerm {
-                    root: PlaceRoot::Binding(root.binding),
-                    deref: self.is_holder(root.binding),
-                    fields: root.fields.clone(),
-                },
-                MeasuredKind::Buffer,
+                ResolvedPlace::from_path(root.binding, root.place_path()),
+                MeasuredKind::RuntimeArray,
                 None,
             ),
-            CheckedExpression::SliceMeasure { measure, root } => (
+            // [MSR-1, REF-4] a range reference's one measure, over the place
+            // the reference names [REF-1].
+            CheckedExpression::RangeMeasure { measure, root } => (
                 *measure,
-                PlaceTerm {
-                    root: PlaceRoot::Binding(root.binding),
-                    deref: self.is_holder(root.binding),
-                    fields: Vec::new(),
-                },
-                MeasuredKind::Slice,
+                ResolvedPlace::spelled(
+                    PlaceRoot::Binding(root.binding),
+                    self.is_holder(root.binding),
+                    Vec::new(),
+                ),
+                MeasuredKind::Range,
                 None,
             ),
-            // [MSR-1] a run's or a bump extent's measure reader names the
+            // [MSR-1] a storage shape's measure reader names the
             // same [ENT-2] term the clause and the invariant name, so a `let`
             // over one is the ordinary [ENT-3.S6] equality a buffer's is.
             CheckedExpression::ContainerMeasure { measure, root } => {
@@ -987,9 +817,17 @@ impl Analyzer<'_, '_> {
                     root.type_constant(),
                 ));
             }
+            CheckedExpression::RangeElementMeasure { measure, place, .. } => {
+                return Some(self.place_measure_term(
+                    *measure,
+                    ResolvedPlace::from_path(place.root.binding, place.place_path()),
+                    place.measured()?,
+                    place.type_constant(),
+                ));
+            }
             _ => return None,
         };
-        Some(self.place_measure_term(measure, projected_place(place), measured, array_length))
+        Some(self.place_measure_term(measure, place, measured, array_length))
     }
 
     /// [ENT-3] S7 constant-offset arithmetic at a `let` binding.
@@ -1631,11 +1469,7 @@ impl Analyzer<'_, '_> {
         let Some(fragment) = fragment_type(binder.ty) else {
             return;
         };
-        let place = PlaceTerm {
-            root: PlaceRoot::Binding(binder.binding),
-            deref: false,
-            fields: Vec::new(),
-        };
+        let place = ResolvedPlace::spelled(PlaceRoot::Binding(binder.binding), false, Vec::new());
         let bound = self.terms.intern(TermKind::Place(place, fragment));
         match outcome.relation {
             OutcomeRelation::Shifted(delta) => {
@@ -1729,11 +1563,10 @@ pub(super) fn comparison_relation(
     })
 }
 
-/// The four [MSR-1] measures, in the order every former reads them.
-const MEASURES: [CheckedMeasure; 4] = [
+/// The three [MSR-1] measures, in the order every former reads them.
+const MEASURES: [CheckedMeasure; 3] = [
     CheckedMeasure::Length,
     CheckedMeasure::Capacity,
-    CheckedMeasure::Room,
     CheckedMeasure::Head,
 ];
 
@@ -1741,16 +1574,16 @@ const MEASURES: [CheckedMeasure; 4] = [
 /// statement's kills and the establishment after them.
 ///
 /// One placement carries one entry per measured place its operand reaches by
-/// field selection, so a struct operand carries the measures of every run
-/// beneath it and not only its own.
+/// field or payload selection, so an aggregate operand carries the measures
+/// of every run beneath it and not only its own.
 pub(super) struct MeasureCarry {
     carried: Vec<CarriedMeasures>,
 }
 
-/// The four datums of one measured place under one placement, with the field
-/// path that reaches it from the placement's source and destination.
+/// The datums of one measured place under one placement, with the aggregate
+/// projection path that reaches it from the placement's source and destination.
 struct CarriedMeasures {
-    path: Vec<u32>,
+    path: Vec<PlaceStep>,
     measured: MeasuredKind,
     constant: Option<CheckedConst>,
     datums: Vec<TermId>,

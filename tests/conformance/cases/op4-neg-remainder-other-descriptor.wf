@@ -1,9 +1,9 @@
-fn cross_index<const n_small: u64, const n_big: u64>(small: own FixedVector<u8, n_small>, big: own FixedVector<u8, n_big>, n: own u64) -> found: own u8 reads(small, big) contract {
-  define big_room = len_of(big);
+fn cross_index<const n_small: u64, const n_big: u64>(small: own Slots<u8, n_small>, big: own Slots<u8, n_big>, n: own u64) -> found: own u8 pure contract {
+  define big_room = big.len;
   requires big_room > 0_u64;
 } {
-  let big_room = len_of(big);
-  let bounded = n % big_room;
+  let modulus = big.len;
+  let bounded = n % modulus;
   let byte = small[bounded];
   return byte;
 }

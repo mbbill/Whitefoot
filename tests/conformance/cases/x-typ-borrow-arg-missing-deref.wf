@@ -1,14 +1,16 @@
-fn takes_i32(x: own i32) -> function_result: own unit pure {
+struct Point {
+  x: i32;
+  y: i32;
+}
+
+fn takes_i32(value: own i32) -> function_result: own unit pure {
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Passing a borrow where an own i32 argument is declared needs deref [TYPE-7].";
-  let a = 7_i32;
-  region {
-    let p = &a;
-    let r = takes_i32(x: p);
-    return exit_status(code: 0_u8);
-  }
+  doc "A reference formed over a field names that field's path [REF-1], but the reference variable denotes the reference and the field is reached only through deref, so the bare reference at a call argument whose parameter is own i32 is the missing dereference [TYPE-7]; the mechanical fix is deref(r).";
+  let p = Point(x: 7_i32, y: 9_i32);
+  let r = &p.x;
+  let a = takes_i32(value: r);
   return exit_status(code: 0_u8);
 }

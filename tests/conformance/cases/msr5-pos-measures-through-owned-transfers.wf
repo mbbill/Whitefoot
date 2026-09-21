@@ -1,49 +1,34 @@
-struct Block['s] {
-  bytes: Vector<'s, u8>;
+struct Block {
+  bytes: Slots<u8, 4>;
 }
 
-fn pass_bytes['s: affine](bytes: own Vector<'s, u8>) -> result: own Vector<'s, u8> pure contract {
-  ensures cap_of(result) == cap_of(bytes);
-  ensures len_of(result) == len_of(bytes);
+fn pass_bytes(bytes: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure contract {
+  ensures result.cap == bytes.cap;
+  ensures result.len == bytes.len;
 } {
+  doc "Hands the window straight back, republishing its two measures.";
   return move bytes;
 }
 
 fn main() -> status: own ExitStatus pure {
-  region 'a {
-    let store = arena_frame::<64, 8, 'a>();
-    region {
-      let first = arena_vector_proved::<u8>(store: &uniq store, count: 4_u64);
-      let second = arena_vector_proved::<u8>(store: &uniq store, count: 4_u64);
-      let replacement = arena_vector_proved::<u8>(store: &uniq store, count: 4_u64);
-      let free = fixed_vector::<Vector<'a, u8>, 2>();
-      region {
-        place_back(vector: &uniq free, value: move first);
-      }
-      let one = move free;
-      let spare = replace one[0_u64] = move second;
-      let known = replace one[0_u64] = move replacement;
-      let passed = pass_bytes(bytes: move known);
-      let record = Block(bytes: move passed);
-      let Block(bytes: bytes) = move record;
-      let outcome = Some<Vector<'a, u8>>(value: move bytes);
-      match outcome {
-        None() => {
-          return exit_status(code: 1_u8);
-        }
-        Some(value: returned) => {
-          invariant capacity_min: cap_of(returned) >= 4_u64;
-          invariant capacity_max: cap_of(returned) <= 4_u64;
-          invariant empty: len_of(returned) <= 0_u64;
-          region {
-            place_back(vector: &uniq returned, value: 23_u8);
-          }
-          let written = move returned;
-          let seen = written[0_u64];
-          let result = seen -wrap 23_u8;
-          return exit_status(code: result);
-        }
-      }
+  doc "MSR-5: measures survive a chain of owned transfers. A captured capacity and a zero length cross a verified whole-value result relation, nominal construction, a destructuring consume and a Some payload; each step is one of MSR-3's placements, and the invariants at the end read what the first step published. The checks are source obligations; existing container programs own actual append and read behavior.";
+  let known = slots_new::<u8, 4>();
+  let passed = pass_bytes(bytes: move known);
+  let record = Block(bytes: move passed);
+  let Block(bytes: held) = move record;
+  let outcome = Some<Slots<u8, 4>>(value: move held);
+  match outcome {
+    None() => {
+      return exit_status(code: 1_u8);
+    }
+    Some(value: returned) => {
+      invariant capacity_min: returned.cap >= 4_u64;
+      invariant capacity_max: returned.cap <= 4_u64;
+      invariant empty: returned.len <= 0_u64;
+      place_back(window: &returned, value: 23_u8);
+      let seen = returned[0_u64];
+      let result = seen -wrap 23_u8;
+      return exit_status(code: result);
     }
   }
 }

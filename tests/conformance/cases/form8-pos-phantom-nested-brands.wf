@@ -1,27 +1,22 @@
-struct Phantom['a, 'b] {
+struct Phantom<A, B> {
   tag: u64;
 }
 
-struct Wrapped['a, 'b] {
-  value: Phantom<'a, 'b>;
+struct Wrapped<A, B> {
+  value: Phantom<A, B>;
 }
 
-fn read['a, 'b](value: &Wrapped<'a, 'b>) -> result: own u64 reads(value.value.tag) {
+fn read(value: &Wrapped<Slots<u8, 1>, Slots<u8, 2>>) -> result: own u64 reads(value.value.tag) {
+  doc "Type parameters no field mentions still take part in the ordinary explicit substitution [FN-2].";
   return deref(value).value.tag;
 }
 
 fn main() -> status: own ExitStatus pure {
-  region 'outer {
-    region 'inner {
-      let value = Phantom<'inner, 'outer>(tag: 17_u64);
-      let wrapped = Wrapped(value: move value);
-      region {
-        let observed = read(value: &wrapped);
-        if observed == 17_u64 {
-          return exit_status(code: 0_u8);
-        }
-      }
-    }
+  let value = Phantom<Slots<u8, 1>, Slots<u8, 2>>(tag: 17_u64);
+  let wrapped = Wrapped<Slots<u8, 1>, Slots<u8, 2>>(value: value);
+  let observed = read(value: &wrapped);
+  if observed == 17_u64 {
+    return exit_status(code: 0_u8);
   }
   return exit_status(code: 1_u8);
 }

@@ -17,16 +17,7 @@
 //! the closure derives a negative self-bound or forces two terms that one
 //! declared disequality separates to be equal.
 //!
-//! A kernel-domain row's declared list is the same kind of set and is judged
-//! by the same closure [BLK-0]. What differs is only how an operand is keyed:
-//! a source clause names a formal, a result, a named const or a measure of a
-//! place, and a row names one of the closed operand shapes its record
-//! notation writes.
 
-#[cfg(test)]
-use super::super::kernel::{
-    KernelOffset, KernelOperand, KernelPlace, KernelRelation, KernelRoute, KernelSignature,
-};
 use super::super::postcondition::{
     NormalizedRelation, PostconditionPlaceRoot, RelationDatum, RelationTemplate, RelationTerm,
 };
@@ -294,121 +285,14 @@ pub(super) fn relations_are_contradictory(templates: &[&RelationTemplate]) -> bo
     declared.system.is_contradictory()
 }
 
-// The [BLK-0] row form of the same judgment. A row's declared set is fixed by
-// this specification rather than by a program, so what judges it is this
-// repository's own evidence: the unit test over the record data, and not a
-// compilation.
-
-/// One abstract term of a [BLK-0] row's own operand language.
-///
-/// A row names one of five closed operand shapes and nothing else, so the
-/// key is that shape itself: two clauses name one term exactly when they
-/// write the same measure of the same place, the same value parameter, the
-/// same const parameter, or the same layout ceiling.
-#[cfg(test)]
-#[derive(Eq, PartialEq)]
-enum KernelOperandKey {
-    Measure(CheckedMeasure, KernelPlaceKey),
-    Value(u32),
-    Const(super::super::kernel::KernelConst),
-    AlignCeiling,
-}
-
-/// The place one row operand names, keyed so that a `&uniq` state operand's
-/// post-state and that call's call datum for the same place are two terms
-/// [BLK-0, MSR-3].
-#[cfg(test)]
-#[derive(Eq, PartialEq)]
-enum KernelPlaceKey {
-    Parameter(u32),
-    ParameterEntry(u32),
-    Result(u32),
-    Payload,
-}
-
-#[cfg(test)]
-const fn kernel_place_key(place: KernelPlace) -> KernelPlaceKey {
-    match place {
-        KernelPlace::Parameter(ordinal) => KernelPlaceKey::Parameter(ordinal),
-        KernelPlace::ParameterEntry(ordinal) => KernelPlaceKey::ParameterEntry(ordinal),
-        KernelPlace::Result(ordinal) => KernelPlaceKey::Result(ordinal),
-        KernelPlace::Payload => KernelPlaceKey::Payload,
-    }
-}
-
-/// Whether one [BLK-0] row's declared requirement and relation lists are
-/// contradictory on one of its declared exits, at one resolution of
-/// `advance<T>(count)` [CALL-6].
-///
-/// The set judged is every requirement — which a caller has discharged
-/// before a relation of the row is established — together with every
-/// relation the exit carries: an unrouted clause is a member of every exit's
-/// set and a routed one of its own [CALL-6].
-///
-/// `advance` is the one operand of the record notation that is not a
-/// constant of the declaration: it is an opaque `u64` term whose value the
-/// call's own instance fixes [BLK-0], and a difference-bound closure carries
-/// a constant displacement and not a symbolic one. The judgment is therefore
-/// made at a resolution of it, and the caller supplies the resolutions it
-/// wants covered.
-#[cfg(test)]
-pub(crate) fn kernel_row_is_contradictory(
-    signature: &KernelSignature,
-    exit: Option<KernelRoute>,
-    advance: i128,
-) -> bool {
-    let mut keys: Vec<KernelOperandKey> = Vec::new();
-    let mut system = DifferenceSystem::default();
-    let term = |keys: &mut Vec<KernelOperandKey>, operand: KernelOperand| -> Operand {
-        let key = match operand {
-            // The zero term carries every constant displacement [ENT-2].
-            KernelOperand::Zero => {
-                return Operand { term: 0, offset: 0 };
-            }
-            KernelOperand::Measure(measure, place) => {
-                KernelOperandKey::Measure(measure, kernel_place_key(place))
-            }
-            KernelOperand::Value(ordinal) => KernelOperandKey::Value(ordinal),
-            KernelOperand::Const(which) => KernelOperandKey::Const(which),
-            KernelOperand::AlignCeiling => KernelOperandKey::AlignCeiling,
-        };
-        let index = keys
-            .iter()
-            .position(|existing| *existing == key)
-            .map_or_else(
-                || {
-                    keys.push(key);
-                    keys.len()
-                },
-                |position| position + 1,
-            );
-        Operand {
-            term: index,
-            offset: 0,
-        }
-    };
-    let displacement = |offset: KernelOffset| match offset {
-        KernelOffset::Constant(value) => Some(i128::from(value)),
-        KernelOffset::Advance(_) | KernelOffset::AdvanceCell => Some(advance),
-    };
-    let carried = |relation: &&KernelRelation| relation.route.is_none() || relation.route == exit;
-    for relation in signature
-        .requires
-        .iter()
-        .chain(signature.ensures)
-        .filter(carried)
-    {
-        let Some(bounds) = relation.bounds(displacement) else {
-            continue;
-        };
-        for bound in bounds {
-            let left = term(&mut keys, bound.left);
-            let right = term(&mut keys, bound.right);
-            system.bound(left, right, bound.bound);
-        }
-    }
-    system.is_contradictory()
-}
+// v0.59's [BLK-0] row form of the same judgment is retired with the rule.
+// Its kernel-row operand language, the abstract-term keys over it, and the
+// `kernel_row_is_contradictory` test entry it served all keyed on
+// `semantic/kernel.rs`, which the rule-table package deleted when [BLK-0]
+// left the specification: v0.60 has no kernel-domain row, its window and
+// construction operations being ordinary [PRE-1] records whose contracts are
+// judged as every other declaration's are. The source-clause closure above,
+// which is the half [FN-8] still states, is unchanged.
 
 /// The mathematical value of one checked integer constant, whose `bits` hold
 /// the type-width two's-complement pattern [ENT-2].

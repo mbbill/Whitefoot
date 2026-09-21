@@ -1,10 +1,11 @@
-fn f(x: own i32) -> function_result: own i32 reads(x), reads(x) {
-  doc "Two separate reads effects duplicate the reads kind [EFF-1]; canonical is one reads(x).";
-  return x;
+fn f(x: &i32) -> function_result: own i32 reads(x), reads(x) {
+  doc "Two entries naming one path duplicate that entry rather than being the one canonical reads(x); each entry is the one spelling of one path [EFF-1, FORM-1].";
+  return deref(x);
 }
 
 fn main() -> status: own ExitStatus pure {
   doc "Driver.";
-  let a = f(x: 7_i32);
+  let v = 7_i32;
+  let a = f(x: &v);
   return exit_status(code: 0_u8);
 }

@@ -262,53 +262,42 @@ fn scripted_facility_defines() -> Vec<String> {
 ///
 /// The program is ordinary source: it names no target record and reads only
 /// the portable form under the ordinary directory library contract fixes.
-const PUBLISH_ONE_BATCH: &[u8] = br#"fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(out, files) {
-  let entries = buffer_new(4096_u64, 0_u8);
+const PUBLISH_ONE_BATCH: &[u8] = br#"fn exercise(cwd: &DirectoryRead, out: &OutputStream, files: &HandleFactory) -> status: own ExitStatus reads(cwd), writes(out), writes(files) {
+  let entries = array_filled::<u8, 4096>(value: 0_u8);
   let available = 0_u64;
-  region {
-    match open_directory_source(factory: &uniq deref(files), directory: cwd) {
-      Ok(value: list) => {
-        region {
-          let destination = mut_slice_of(&uniq entries);
-          region {
-            let (copied, endpoint, reported) = directory_next(source: &uniq list, destination: &uniq destination, start: 0_u64, end: 4096_u64);
-            match move copied {
-              Ok(value: done) => {
-                set available = endpoint;
-              }
-              Err(error: stop) => {
-                match stop {
-                  ListEnd() => {
-                    close_directory_source(factory: &uniq deref(files), source: move list);
-                    return exit_status(code: 3_u8);
-                  }
-                  ListFailed(error: problem) => {
-                    close_directory_source(factory: &uniq deref(files), source: move list);
-                    return exit_status(code: 4_u8);
-                  }
-                }
-              }
+  match open_directory_source(factory: files, directory: cwd) {
+    Ok(value: list) => {
+      let window = &entries[0_u64..4096_u64];
+      let (copied, endpoint, reported) = directory_next(source: &list, destination: window, start: 0_u64, end: 4096_u64);
+      match copied {
+        Ok(value: done) => {
+          set available = endpoint;
+        }
+        Err(error: stop) => {
+          match stop {
+            ListEnd() => {
+              close_directory_source(factory: files, source: move list);
+              return exit_status(code: 3_u8);
+            }
+            ListFailed(error: problem) => {
+              close_directory_source(factory: files, source: move list);
+              return exit_status(code: 4_u8);
             }
           }
         }
-        region {
-          let source = slice_of(&entries);
-          region {
-            match write_once(factory: &uniq deref(files), output: &uniq deref(out), source: &source, start: 0_u64, end: available) {
-              Ok(value: written) => {
-              }
-              Err(error: problem) => {
-                close_directory_source(factory: &uniq deref(files), source: move list);
-                return exit_status(code: 2_u8);
-              }
-            }
-          }
+      }
+      match write_once(factory: files, output: out, source: window, start: 0_u64, end: available) {
+        Ok(value: written) => {
         }
-        close_directory_source(factory: &uniq deref(files), source: move list);
+        Err(error: problem) => {
+          close_directory_source(factory: files, source: move list);
+          return exit_status(code: 2_u8);
+        }
       }
-      Err(error: problem) => {
-        return exit_status(code: 5_u8);
-      }
+      close_directory_source(factory: files, source: move list);
+    }
+    Err(error: problem) => {
+      return exit_status(code: 5_u8);
     }
   }
   return exit_status(code: 0_u8);
@@ -316,11 +305,9 @@ const PUBLISH_ONE_BATCH: &[u8] = br#"fn exercise(cwd: &DirectoryRead, out: &uniq
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
-  region {
-    let outcome = exercise(cwd: &cwd, out: &uniq out, files: &uniq files);
-    close_directory(factory: &uniq files, directory: move cwd);
-    return move outcome;
-  }
+  let outcome = exercise(cwd: &cwd, out: &out, files: &files);
+  close_directory(factory: &files, directory: move cwd);
+  return move outcome;
 }
 "#;
 

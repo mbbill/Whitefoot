@@ -1,5 +1,11 @@
+use super::support::{
+    build_program, build_program_with_driver_arguments, compile_programs,
+    compile_programs_with_cli_parallel_defaults,
+};
+#[cfg(unix)]
 use super::support::{build_program_with_driver, compile_program};
 
+#[cfg(unix)]
 fn dense_expected(words: usize, seed: u64, rounds: u64) -> u64 {
     let mut state = seed;
     let mut values = (0..words)
@@ -24,6 +30,7 @@ fn dense_expected(words: usize, seed: u64, rounds: u64) -> u64 {
     })
 }
 
+#[cfg(unix)]
 #[test]
 fn dense_scalar_and_record_updates_match_the_complete_sequence_digest() {
     let mut llvm = compile_program("containers/dense.wf");
@@ -79,6 +86,7 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
     assert_eq!(output.stdout, expected.as_bytes());
 }
 
+#[cfg(unix)]
 #[test]
 fn maps_leaf_splits_pages_and_compact_owner_regressions_execute() {
     for name in [
@@ -95,5 +103,56 @@ fn maps_leaf_splits_pages_and_compact_owner_regressions_execute() {
         assert_eq!(output.status.code(), Some(0), "{name}: {output:?}");
         assert!(output.stdout.is_empty(), "{name}: {output:?}");
         assert!(output.stderr.is_empty(), "{name}: {output:?}");
+    }
+}
+
+#[test]
+fn grow_vector_executes_and_releases_every_allocation_in_both_lowering_modes() {
+    let sources = [
+        "containers/grow-vector.wf",
+        "containers/grow-vector-program.wf",
+    ];
+    let modes = [
+        ("sequential", compile_programs(&sources)),
+        (
+            "parallel",
+            compile_programs_with_cli_parallel_defaults(&sources),
+        ),
+    ];
+
+    for (mode, llvm) in modes {
+        let output = build_program(&llvm).run_with_workers(None);
+        assert_eq!(output.status.code(), Some(0), "{mode}: {output:?}");
+        assert!(output.stdout.is_empty(), "{mode}: {output:?}");
+        assert!(output.stderr.is_empty(), "{mode}: {output:?}");
+
+        assert!(llvm.contains("@malloc("), "{mode}: missing allocator calls");
+        assert!(llvm.contains("@free("), "{mode}: missing release calls");
+        assert_eq!(llvm.matches("define i32 @main(").count(), 1, "{mode}");
+        let observed = llvm
+            .replace("@malloc(", "@wf_observe_allocate(")
+            .replace("@free(", "@wf_observe_release(")
+            .replace("@main(", "@wf_fixture_main(");
+        let observer =
+            include_str!("../../../tests/programs/containers/grow-vector-allocation-observer.c");
+        let output = build_program_with_driver_arguments(
+            &observed,
+            Some(observer),
+            &[
+                "-std=c11",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                "-Wno-override-module",
+            ],
+        )
+        .run_with_workers(None);
+        assert_eq!(output.status.code(), Some(0), "{mode}: {output:?}");
+        assert!(output.stderr.is_empty(), "{mode}: {output:?}");
+        assert_eq!(
+            output.stdout,
+            b"vector allocation observer: 12 allocations, each released exactly once\n",
+            "{mode}: {output:?}"
+        );
     }
 }

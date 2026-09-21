@@ -1,62 +1,39 @@
-//! Store-cell tests [S39]: `heap_box` and `arena_box` take one value into a
-//! cell of a named store, `deref` reads the referent, and the cell's release
-//! is the store's own.
+//! The cell [TYPE-9]: `Box<T>` is the prelude's opaque struct
+//! `opaque struct Box<T> { inner: T; }`, whose one field `inner` is its
+//! content, stored in exactly one heap object the `Box` value owns [STOR-1].
 //!
-//! B7c4b moved this module off the retiring ambient `box<T>` and `box_new`.
-//! The checked model is shared: a cell is `CheckedNominalKind::Box`, whose
-//! `region` is `Some(store)` for a store-branded cell where it was `None` for
-//! the ambient one, and a referent read is the same `BoxDeref`. What changes
-//! in every program is the allocation itself, which is now a fallible kernel
-//! row over a provider the scope holds, so each case names a store and matches
-//! the outcome that hands the value back.
+//! v0.60 retired the store apparatus this module was written against. There
+//! is one heap [STOR-8], so a cell carries no store brand and no region, its
+//! allocation is total and returns no `Result`, and there is no `allocates`
+//! row to declare. `box_new::<T>(value: v)` is the [OP-13] construction
+//! record, the content is read as `b.inner` and never through `deref`
+//! [TYPE-7], it is written with `set b.inner = v` [SET-1], and
+//! `let n = move b.inner;` consumes the cell, yields its content and frees it
+//! [WIN-3].
 
-use crate::{
-    KernelRow, SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature,
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
+
+use super::super::model::{
+    CheckedExpression, CheckedNominalKind, CheckedOwnedTakeCleanup, CheckedPlaceStep,
+    CheckedStatement, CheckedType,
 };
-
-use super::super::model::{CheckedExpression, CheckedNominalKind, CheckedStatement, CheckedType};
-use super::{assert_rule, assert_unsupported, with_semantics};
+use super::{assert_rule, assert_rule_kind, with_semantics};
 
 #[test]
-fn cell_creation_dereference_and_cleanup_are_explicit() {
-    let source = br#"fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn cell_creation_content_read_and_cleanup_are_explicit() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let value = 41_u64;
-  region {
-    match heap_box(store: &uniq heap, value: value) {
-      Ok(value: owner) => {
-        let loaded = deref(owner);
-        return exit_status(code: 0_u8);
-      }
-      Err(error: back) => {
-        return exit_status(code: 1_u8);
-      }
-    }
-  }
+  let owner = box_new::<u64>(value: value);
+  let loaded = owner.inner;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("cell creation and copy read must check: {outcome:?}");
+            panic!("cell creation and copy content read must check: {outcome:?}");
         };
         let main = &checked.data.functions[0];
-        let CheckedStatement::Region { body, .. } = &main.body.as_deref().expect("WF body")[1]
-        else {
-            panic!("the allocation's region must remain explicit");
-        };
-        let CheckedStatement::Match {
-            scrutinee, arms, ..
-        } = &body[0]
-        else {
-            panic!("the fallible allocation must remain a match");
-        };
-        assert!(matches!(
-            scrutinee,
-            CheckedExpression::KernelCall {
-                row: KernelRow::HeapBox,
-                ..
-            }
-        ));
-        let taken = &arms[0].body;
+        let body = main.body.as_deref().expect("WF body");
         let CheckedStatement::Let {
             value:
                 CheckedExpression::BoxDeref {
@@ -65,59 +42,49 @@ fn cell_creation_dereference_and_cleanup_are_explicit() {
                     ..
                 },
             ..
-        } = &taken[0]
+        } = &body[2]
         else {
-            panic!("the referent read must remain an explicit deref");
+            panic!("the content read must remain the field step `inner`");
         };
+        // [STOR-8] there is one heap, so a cell carries no brand: the checked
+        // nominal's region is `None` for every cell a v0.60 program forms.
         assert!(matches!(
             checked.data.nominals[nominal.0 as usize].kind,
             CheckedNominalKind::Box {
                 referent: CheckedType::Integer(_),
-                region: Some(_),
+                region: None,
                 ..
             }
         ));
-        let CheckedStatement::Return { drops, .. } = &taken[1] else {
-            panic!("the taken arm must end in return");
+        let CheckedStatement::Return { drops, .. } = &body[3] else {
+            panic!("main must end in return");
         };
         assert_eq!(drops.len(), 1);
         assert_eq!(drops[0].ty, CheckedType::Nominal(*nominal));
     });
 }
 
-/// Replacing one whole cell owner transfers the second allocation into the
-/// first binding without changing the first binding's cell type. This used to
-/// be hidden inside a retired assertion-locality fixture; it is an ordinary
-/// ownership and checked-model property.
+/// Assigning one whole cell owner over another transfers the second
+/// allocation into the first binding without changing the first binding's
+/// cell type, and releases the displaced affine value [WIN-3].
+///
+/// This was `let old = replace first = move second;` while [SET-2] existed.
+/// The `replace` statement is retired: [SET-1] writes the place and [WIN-3]
+/// owns the old value's disposition, which is the release of an affine one.
 #[test]
-fn whole_cell_replacement_preserves_the_owner_shape() {
+fn whole_cell_assignment_preserves_the_owner_shape() {
     let source = br#"struct Pair {
   value: u64;
 }
 
-fn replace_owner['heap](store: &uniq Heap<'heap>) -> result: own Option<u64> reads(store), writes(store), allocates(store) {
+fn assign_owner() -> result: own u64 pure {
   let first_value = Pair(value: 0_u64);
   let second_value = Pair(value: 1_u64);
-  region {
-    match heap_box(store: &uniq deref(store), value: move first_value) {
-      Ok(value: first) => {
-        region {
-          match heap_box(store: &uniq deref(store), value: move second_value) {
-            Ok(value: second) => {
-              let old = replace first = move second;
-              return Some<u64>(value: deref(first).value);
-            }
-            Err(error: back) => {
-              return None<u64>();
-            }
-          }
-        }
-      }
-      Err(error: back) => {
-        return None<u64>();
-      }
-    }
-  }
+  let first = box_new::<Pair>(value: first_value);
+  let second = box_new::<Pair>(value: second_value);
+  set first = move second;
+  let seen = first.inner.value;
+  return seen;
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -126,110 +93,273 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("whole-cell replacement must preserve the owner type: {outcome:?}");
+            panic!("whole-cell assignment must preserve the owner type: {outcome:?}");
         };
-        let replace_owner = checked
+        let assign_owner = checked
             .data
             .functions
             .iter()
-            .find(|function| function.name == "replace_owner")
-            .expect("replace_owner function");
-        assert!(
-            statements_contain_replace(replace_owner.body.as_deref().expect("WF body")),
-            "the whole-owner replacement must remain a checked Replace"
-        );
+            .find(|function| function.name == "assign_owner")
+            .expect("assign_owner function");
+        let CheckedStatement::Set { target, value, .. } =
+            &assign_owner.body.as_deref().expect("WF body")[4]
+        else {
+            panic!("the whole-owner write must remain a checked Set");
+        };
+        let CheckedType::Nominal(nominal) = target.ty() else {
+            panic!("the target must remain the cell nominal");
+        };
+        assert!(matches!(
+            checked.data.nominals[nominal.0 as usize].kind,
+            CheckedNominalKind::Box { .. }
+        ));
+        assert_eq!(value.ty(), target.ty());
     });
 }
 
-/// Whether any statement of this body, or of a nested block below it, is a
-/// `replace`. The migrated program nests the second allocation inside the
-/// first one's taken arm, so the statement is no longer a direct child.
-fn statements_contain_replace(body: &[CheckedStatement]) -> bool {
-    body.iter().any(|statement| match statement {
-        CheckedStatement::Replace { .. } => true,
-        CheckedStatement::Region { body, .. } => statements_contain_replace(body),
-        CheckedStatement::Match { arms, .. } => {
-            arms.iter().any(|arm| statements_contain_replace(&arm.body))
-        }
-        _ => false,
-    })
+/// [TYPE-9, WIN-3] `let n = move b.inner;` consumes the cell, yields its
+/// content and frees the cell.
+///
+/// This replaces the retired `move deref(owner)` capability stop: the v0.59
+/// checker answered an affine referent move with
+/// `UnsupportedSemanticFeature::BoxReferentMove`, and v0.60 states the
+/// unboxing outright. The one remaining refusal — a move of a
+/// runtime-capacity content, which has no constant-capacity twin — is owned
+/// by the conformance case `type9-neg-move-runtime-capacity-content`.
+#[test]
+fn unboxing_consumes_the_cell_and_yields_its_content() {
+    let source = br#"nocopy struct Pair {
+  value: u64;
 }
 
-#[test]
-fn affine_cell_referent_move_stays_an_explicit_capability_boundary() {
-    let source = br#"fn hold['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
-  let bytes = fixed_vector::<u8, 1>();
-  region {
-    match heap_box(store: &uniq deref(store), value: move bytes) {
-      Ok(value: owner) => {
-        let extracted = move deref(owner);
-        return unit;
-      }
-      Err(error: back) => {
-        return unit;
-      }
-    }
-  }
+fn unbox() -> result: own u64 pure {
+  let content = Pair(value: 7_u64);
+  let cell = box_new::<Pair>(value: move content);
+  let taken = move cell.inner;
+  return taken.value;
 }
 
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_unsupported(source, UnsupportedSemanticFeature::BoxReferentMove);
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("unboxing an affine content must check: {outcome:?}");
+        };
+        let unbox = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "unbox")
+            .expect("unbox function");
+        // [TYPE-9, WIN-3] the consume of the content through the field step
+        // `inner` is not the ordinary content read: the cell ceases to exist
+        // here and is freed with the value it hands back, so the checked node
+        // is the unboxing one and not `BoxDeref`.
+        let CheckedStatement::Let {
+            value: CheckedExpression::BoxTake { referent, .. },
+            ..
+        } = &unbox.body.as_deref().expect("WF body")[2]
+        else {
+            panic!("the consumed content must remain the field step `inner`");
+        };
+        assert!(
+            matches!(referent, CheckedType::Nominal(_)),
+            "the yielded content is the struct the cell held: {referent:?}"
+        );
+    });
 }
 
-/// The ordinary own-rooted judgments the routed target now reaches still
-/// reject before the capability stop: [STOR-1] for an affine final selected
-/// type, which `set` never writes, and [OWN-1] for a dead root, which SET-1
-/// never revives.
 #[test]
-fn cell_content_set_targets_keep_their_source_rejections() {
-    assert_rule(
-        br#"fn hold['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
-  let bytes = fixed_vector::<u8, 1>();
-  let other = fixed_vector::<u8, 1>();
-  region {
-    match heap_box(store: &uniq deref(store), value: move bytes) {
-      Ok(value: owner) => {
-        set deref(owner) = move other;
-        return unit;
-      }
-      Err(error: back) => {
-        return unit;
-      }
-    }
-  }
+fn nested_owned_box_take_carries_an_ordered_cleanup_plan() {
+    let source = br#"nocopy struct Payload {
+  value: u8;
+}
+
+nocopy struct Inner {
+  selected: Box<Payload>;
+  tail: Box<u8>;
+}
+
+struct Outer {
+  before: Box<u8>;
+  head: Box<Inner>;
+  other: Box<u8>;
+}
+
+fn take() -> result: own u8 pure {
+  let payload = Payload(value: 1_u8);
+  let selected = box_new::<Payload>(value: move payload);
+  let tail = box_new::<u8>(value: 2_u8);
+  let inner = Inner(selected: move selected, tail: move tail);
+  let head = box_new::<Inner>(value: move inner);
+  let before = box_new::<u8>(value: 0_u8);
+  let other = box_new::<u8>(value: 3_u8);
+  let outer = Outer(before: move before, head: move head, other: move other);
+  let taken = move outer.head.inner.selected.inner;
+  return taken.value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("nested take must check: {outcome:?}");
+        };
+        let take = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "take")
+            .expect("take function");
+        let CheckedStatement::Let {
+            value: CheckedExpression::BoxTake { cleanup, .. },
+            ..
+        } = &take.body.as_deref().expect("WF body")[8]
+        else {
+            panic!("nested move must remain one checked owner take");
+        };
+        let [
+            CheckedOwnedTakeCleanup::Drop { path: before, .. },
+            CheckedOwnedTakeCleanup::BoxShell {
+                path: selected,
+                nominal: selected_box,
+                ..
+            },
+            CheckedOwnedTakeCleanup::Drop { path: tail, .. },
+            CheckedOwnedTakeCleanup::BoxShell {
+                path: head,
+                nominal: head_box,
+                ..
+            },
+            CheckedOwnedTakeCleanup::Drop { path: other, .. },
+        ] = cleanup.as_slice()
+        else {
+            panic!("complete ordered cleanup plan: {cleanup:?}");
+        };
+        assert_eq!(before, &[CheckedPlaceStep::Field(0)]);
+        assert_eq!(head, &[CheckedPlaceStep::Field(1)]);
+        assert_eq!(other, &[CheckedPlaceStep::Field(2)]);
+        assert_eq!(
+            selected,
+            &[
+                CheckedPlaceStep::Field(1),
+                CheckedPlaceStep::BoxReferent(*head_box),
+                CheckedPlaceStep::Field(0),
+            ]
+        );
+        assert_eq!(
+            tail,
+            &[
+                CheckedPlaceStep::Field(1),
+                CheckedPlaceStep::BoxReferent(*head_box),
+                CheckedPlaceStep::Field(1),
+            ]
+        );
+        assert_ne!(selected_box, head_box);
+    });
+}
+
+#[test]
+fn nested_owned_box_take_rejects_a_linear_residual() {
+    assert_rule_kind(
+        br#"nocopy struct Payload {
+  value: u8;
+}
+
+nodrop struct Token {
+  value: u8;
+}
+
+nocopy struct Inner {
+  selected: Box<Payload>;
+  tail: Token;
+}
+
+fn take(token: own Token) -> result: own u8 pure {
+  let payload = Payload(value: 1_u8);
+  let selected = box_new::<Payload>(value: move payload);
+  let inner = Inner(selected: move selected, tail: move token);
+  let owner = box_new::<Inner>(value: move inner);
+  let taken = move owner.inner.selected.inner;
+  return taken.value;
 }
 
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Stor1,
-        SemanticIssueKind::AffineSetTarget {
-            target_type: "FixedVector<u8, 1>".to_owned(),
-            mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
-        },
+        SemanticRule::Win3,
+        |kind| matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. }),
     );
+}
+
+#[test]
+fn indexed_box_content_move_remains_a_win3_source_rejection() {
+    assert_rule_kind(
+        br#"nocopy struct Payload {
+  value: u8;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let slots = slots_new::<Box<Payload>, 1>();
+  let payload = Payload(value: 1_u8);
+  let cell = box_new::<Payload>(value: move payload);
+  place_back(window: &slots, value: move cell);
+  let taken = move slots[0_u64].inner;
+  return exit_status(code: taken.value);
+}
+"#,
+        SemanticRule::Win3,
+        |kind| matches!(kind, SemanticIssueKind::MoveOutOfSlot { .. }),
+    );
+}
+
+/// The ordinary own-rooted judgments a cell-content target reaches: [WIN-3]
+/// for a linear old value, which has no release, and [OWN-1] for a dead root,
+/// which [SET-1] never revives.
+///
+/// v0.59's first half asserted [STOR-1]'s `AffineSetTarget`, which refused an
+/// affine final selected type outright and pointed at `replace`. [WIN-3]
+/// supersedes it: assigning over an owned place releases the old value when
+/// it is affine and is refused only when it is linear.
+#[test]
+fn cell_content_set_targets_keep_their_source_rejections() {
     assert_rule(
-        br#"fn eat['s](b: own Box<'s, i32>, store: &uniq Heap<'s>) -> result: own unit writes(store) {
+        br#"nodrop struct Token {
+  value: u64;
+}
+
+fn hold(first: own Token, second: own Token) -> result: own unit pure {
+  let cell = box_new::<Token>(value: move first);
+  set cell.inner = move second;
+  let Token(value: seen) = move cell.inner;
   return unit;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  region {
-    match heap_box(store: &uniq heap, value: 4_i32) {
-      Ok(value: b) => {
-        eat(b: move b, store: &uniq heap);
-        set deref(b) = 7_i32;
-        return exit_status(code: 0_u8);
-      }
-      Err(error: back) => {
-        return exit_status(code: 1_u8);
-      }
-    }
-  }
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Win3,
+        SemanticIssueKind::LinearAssignmentTarget {
+            target_type: "Token".to_owned(),
+            mechanical_fix: "take the linear value out and consume it before writing this place",
+        },
+    );
+    assert_rule(
+        br#"fn eat(b: own Box<i32>) -> result: own unit pure {
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let b = box_new::<i32>(value: 4_i32);
+  eat(b: move b);
+  set b.inner = 7_i32;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own1,
@@ -239,168 +369,98 @@ fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), wri
     );
 }
 
-#[test]
-fn region_bearing_cell_content_rejects_under_stor5_at_both_stores() {
-    let expected = SemanticIssueKind::RegionBearingStorage {
-        mechanical_fix: "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
-    };
-    assert_rule(
-        br#"fn invalid['heap](value: own Box<'heap, Slice<u8>>) -> result: own unit pure {
-  return unit;
-}
+// Retired with its subject: `region_bearing_cell_content_rejects_under_stor5_at_both_stores`
+// asserted [STOR-5]'s refusal of region-bearing cell content at the general
+// store and at the bump extent. Regions, arenas, providers and views are
+// retired with no successor, and [STOR-5]'s surviving half — storage is
+// reference-free — is closed by [TYPE-8] in the grammar, which admits no
+// reference kind in a `Box` content or type-argument position at all, so no
+// source program reaches the judgment.
 
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Stor5,
-        expected.clone(),
-    );
-    assert_rule(
-        br#"fn invalid['heap](store: &uniq Heap<'heap>, value: own Slice<u8>) -> result: own unit reads(store), writes(store), allocates(store) {
-  region {
-    heap_box(store: &uniq deref(store), value: value);
-  }
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Stor5,
-        expected.clone(),
-    );
-    // The same relation over the other store: a bump extent's cell carries the
-    // referent judgment its region-bearing operand supplies, exactly as the
-    // general store's does.
-    assert_rule(
-        br#"fn invalid(value: own Slice<u8>) -> result: own unit pure {
-  region 'a {
-    let workspace = arena_frame::<64, 8, 'a>();
-    region {
-      arena_box(store: &uniq workspace, value: value);
-    }
-  }
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Stor5,
-        expected.clone(),
-    );
-    // A cell derives its content type from the operand [S39], and a store
-    // provider bears a region exactly as a view does, so the derived judgment
-    // is STOR-5's relation over that type rather than a view-shaped operand
-    // test.
-    assert_rule(
-        br#"fn hold['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
-  region 'a {
-    let workspace = arena_frame::<64, 8, 'a>();
-    region {
-      heap_box(store: &uniq deref(store), value: move workspace);
-    }
-  }
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Stor5,
-        expected,
-    );
-}
-
-/// [S39] the cell nominal is derived from the operand, so a purely local cell
-/// names `Box<'s, T>` nowhere for the written-type interning pass to find.
+/// [TYPE-9] the cell nominal is derived from the written referent, so a
+/// purely local cell names `Box<T>` nowhere for the written-type interning
+/// pass to find.
 ///
 /// The control pair differs only in whether some *other* declaration spells
-/// `Box<'s, u64>`. Before the checker could intern a derived referent, the
-/// first program failed with a compiler failure while the second compiled — an
+/// `Box<u64>`. Before the checker could intern a derived referent, the first
+/// program failed with a compiler failure while the second compiled — an
 /// implementation limitation deciding what source was acceptable.
 ///
-/// The counts are re-derived for the store-branded cell rather than kept: a
-/// cell's store region is a component of its type [PROV-1, S39], so the
-/// helper's written `Box<'s, u64>` is its own region's instance and is
-/// interned beside the entry store's derived one. What the case pins is
-/// unchanged — the derived nominal is interned once, sits in the executable
-/// prefix, and no two instances share a region.
+/// v0.59 expected two nominals from the second program, because a cell's
+/// store region was a component of its type and the helper's written
+/// `Box<'s, u64>` was its own region's instance. There is one heap [STOR-8]
+/// and a cell carries no brand, so both programs now intern exactly one
+/// `Box<u64>` and the two spellings name the same type.
 #[test]
 fn a_derived_cell_nominal_is_interned_whether_or_not_the_type_is_spelled_elsewhere() {
-    let named_nowhere = br#"fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  region {
-    match heap_box(store: &uniq heap, value: 41_u64) {
-      Ok(value: owner) => {
-        let loaded = deref(owner);
-        return exit_status(code: 0_u8);
-      }
-      Err(error: back) => {
-        return exit_status(code: 1_u8);
-      }
-    }
-  }
+    let named_nowhere = br#"fn main() -> status: own ExitStatus pure {
+  let owner = box_new::<u64>(value: 41_u64);
+  let loaded = owner.inner;
+  return exit_status(code: 0_u8);
 }
 "#;
-    let named_in_a_signature = br#"fn take['s](b: own Box<'s, u64>, store: &uniq Heap<'s>) -> result: own unit writes(store) {
+    let named_in_a_signature = br#"fn take(b: own Box<u64>) -> result: own unit pure {
   return unit;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  region {
-    match heap_box(store: &uniq heap, value: 41_u64) {
-      Ok(value: owner) => {
-        take(b: move owner, store: &uniq heap);
-        return exit_status(code: 0_u8);
-      }
-      Err(error: back) => {
-        return exit_status(code: 1_u8);
-      }
-    }
-  }
+fn main() -> status: own ExitStatus pure {
+  let owner = box_new::<u64>(value: 41_u64);
+  take(b: move owner);
+  return exit_status(code: 0_u8);
 }
 "#;
-    for (source, expected) in [
-        (named_nowhere.as_slice(), 1),
-        (named_in_a_signature.as_slice(), 2),
-    ] {
+    for source in [named_nowhere.as_slice(), named_in_a_signature.as_slice()] {
         with_semantics(source, |outcome| {
             let SemanticOutcome::Complete(checked) = outcome else {
                 panic!("a derived cell nominal must check: {outcome:?}");
             };
             // The derived nominal sits inside the executable prefix, because
-            // executable code allocates and drops it.
-            let regions: Vec<_> = checked
+            // executable code allocates and frees it.
+            let cells = checked
                 .data
                 .nominals
                 .iter()
                 .take(checked.data.executable_nominal_count)
-                .filter_map(|nominal| match nominal.kind {
-                    CheckedNominalKind::Box {
-                        referent: CheckedType::Integer(_),
-                        region,
-                        ..
-                    } => Some(region),
-                    _ => None,
+                .filter(|nominal| {
+                    matches!(
+                        nominal.kind,
+                        CheckedNominalKind::Box {
+                            referent: CheckedType::Integer(_),
+                            ..
+                        }
+                    )
                 })
-                .collect();
+                .count();
             assert_eq!(
-                regions.len(),
-                expected,
-                "one executable cell nominal per named store"
-            );
-            let mut distinct = regions.clone();
-            distinct.sort();
-            distinct.dedup();
-            assert_eq!(
-                distinct.len(),
-                regions.len(),
-                "a store region is interned once, not twice"
+                cells, 1,
+                "one heap, one `Box<u64>`, however many declarations spell it"
             );
         });
     }
+}
+
+/// [TYPE-7] `deref(place)` where `place` is not a reference, a `Box`
+/// included, is a hard error at the complete `place`, and its restructuring
+/// names the field step that reaches a cell's content.
+///
+/// This case is new in the v0.60 port: v0.59 reached a cell's referent
+/// through `deref` and so had no such refusal to state.
+#[test]
+fn deref_of_a_cell_is_a_type7_rejection_naming_the_field_inner() {
+    assert_rule_kind(
+        br#"fn main() -> status: own ExitStatus pure {
+  let owner = box_new::<u64>(value: 41_u64);
+  let loaded = deref(owner);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Type7,
+        |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::MissingDereference { mechanical_fix }
+                    if mechanical_fix.contains("a Box's content is its field inner")
+            )
+        },
+    );
 }

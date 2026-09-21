@@ -1,41 +1,38 @@
 fn main() -> status: own ExitStatus pure {
-  doc "BLK-3: places at the back and takes at the front, so the run is a queue and no Option is written anywhere.";
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 1_u8);
+  doc "place_back moves the back boundary and take_front moves the front one, so a ring is a queue with no Option anywhere; the exit code observes the order the three elements come back in. Each front removal replaces the whole window state, so the next requirement is discharged from a reread length.";
+  let run = ring_new::<u8, 4>();
+  place_back(window: &run, value: 1_u8);
+  place_back(window: &run, value: 2_u8);
+  place_back(window: &run, value: 3_u8);
+  let first = take_front(window: &run);
+  if first == 1_u8 {
+  } else {
+    return exit_status(code: 1_u8);
   }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 2_u8);
+  let after_one = run.len;
+  if after_one == 2_u64 {
+  } else {
+    return exit_status(code: 5_u8);
   }
-  let two = move one;
-  region {
-    place_back(vector: &uniq two, value: 3_u8);
+  let second = take_front(window: &run);
+  if second == 2_u8 {
+  } else {
+    return exit_status(code: 2_u8);
   }
-  let three = move two;
-  region {
-    let first = take_front(vector: &uniq three);
-    let rest0 = move three;
-    if first == 1_u8 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-    region {
-      let second = take_front(vector: &uniq rest0);
-      let rest1 = move rest0;
-      if second == 2_u8 {
-      } else {
-        return exit_status(code: 2_u8);
-      }
-      region {
-        let third = take_front(vector: &uniq rest1);
-        let rest2 = move rest1;
-        if third == 3_u8 {
-        } else {
-          return exit_status(code: 3_u8);
-        }
-        return exit_status(code: 0_u8);
-      }
-    }
+  let after_two = run.len;
+  if after_two == 1_u64 {
+  } else {
+    return exit_status(code: 6_u8);
   }
+  let third = take_front(window: &run);
+  if third == 3_u8 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let left = run.len;
+  if left == 0_u64 {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
 }

@@ -4,7 +4,14 @@ WHITEFOOTC ?= $(ROOT)/compiler/target/gate/whitefootc$(EXE)
 CLANG ?= clang
 EXE := $(if $(filter Windows_NT,$(OS)),.exe,)
 BUILD := .build
+# Dated v0.58 experiment; reproduce in a checkout of 5fcf1ce2, not with the
+# current-spec successor in the program corpus. See RESULTS.md.
 SOURCES := $(ROOT)/lib/containers/vector.wf vector-library.wf
+ifneq ($(MAKECMDGOALS),clean)
+ifeq ($(wildcard $(ROOT)/lib/containers/vector.wf),)
+$(error This dated experiment requires a separate checkout of 5fcf1ce2; see RESULTS.md)
+endif
+endif
 .DELETE_ON_ERROR:
 
 include ../../../../compiler/runtime.mk

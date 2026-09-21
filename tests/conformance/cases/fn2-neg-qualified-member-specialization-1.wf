@@ -1,8 +1,8 @@
-formal Work {
+interface Work {
   fn run() -> result: own unit pure;
 }
 
-fn recurse<Work>() -> result: own unit pure {
+fn recurse<interface Work>() -> result: own unit pure {
   return recurse::<fn Work::run::<u64>>();
 }
 

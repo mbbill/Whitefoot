@@ -3,7 +3,7 @@
 //! This crate contains no parser and grants no syntax or semantic authority.
 //! Cargo derives its arrays from the active specification's normative EBNF.
 
-use crate::syntax::terminal::TerminalPredicate;
+use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::{ACTIVE_KERNEL_SPEC_HASH, SpecHash};
 
 mod generated {
@@ -34,15 +34,13 @@ pub enum RuleOwner {
     Eff1,
 }
 
-/// One of the five name predicates used by DIAG-1 name-slot attribution.
+/// One of the four name predicates used by DIAG-1 name-slot attribution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NamePredicate {
     /// IDENT.
     Identifier,
     /// TYPEID.
     TypeIdentifier,
-    /// REGIONID.
-    RegionIdentifier,
     /// LABEL.
     Label,
     /// OPNAME.
@@ -56,7 +54,6 @@ impl NamePredicate {
         match self {
             Self::Identifier => TerminalPredicate::Identifier,
             Self::TypeIdentifier => TerminalPredicate::TypeIdentifier,
-            Self::RegionIdentifier => TerminalPredicate::RegionIdentifier,
             Self::Label => TerminalPredicate::Label,
             Self::OperationName => TerminalPredicate::OperationName,
         }
@@ -398,6 +395,65 @@ pub fn grammar_node(node: GrammarNodeId) -> Option<GrammarNode> {
 #[must_use]
 pub const fn diagnostic_terminal_order() -> &'static [LookaheadPredicate] {
     &generated::DIAGNOSTIC_ORDER
+}
+
+/// The child sequence of one [PRE-1] declaration head: `fn_sig`'s generated
+/// sequence with `fn_decl`'s generated `generics?` node spliced in after the
+/// leading `"fn" IDENT`, exactly as [PRE-1] defines the record.
+///
+/// The record has no source body, and its semicolon is table punctuation.
+/// Reusing these generated nodes introduces no grammar datum or source item
+/// production. Only the prelude reader uses this sequence; an interface
+/// member's ordinary `fn_sig` still admits no generic header.
+pub(crate) fn prelude_signature_children() -> Option<Vec<GrammarNodeId>> {
+    let signature = grammar_node(Production::FnSig.root())?;
+    if !matches!(signature.kind(), GrammarNodeKind::Sequence) {
+        return None;
+    }
+    let [name, identifier, rest @ ..] = signature.children() else {
+        return None;
+    };
+    if !is_terminal(*name, TerminalPredicate::Fixed(FixedTerminal::Fn))
+        || !is_terminal(*identifier, TerminalPredicate::Identifier)
+    {
+        return None;
+    }
+    let header = optional_generics_node()?;
+    let mut children = vec![*name, *identifier, header];
+    children.extend_from_slice(rest);
+    Some(children)
+}
+
+/// Whether this node is exactly the one generated occurrence of `predicate`.
+fn is_terminal(node: GrammarNodeId, predicate: TerminalPredicate) -> bool {
+    grammar_node(node).is_some_and(|node| {
+        matches!(node.kind(), GrammarNodeKind::TerminalSequence)
+            && node.terminals() == [LookaheadPredicate::Terminal(predicate)]
+    })
+}
+
+/// `fn_decl`'s own `generics?` node, found in the generated tables rather
+/// than written down, so a grammar amendment moves it without editing this.
+fn optional_generics_node() -> Option<GrammarNodeId> {
+    grammar_node(Production::FnDecl.root())?
+        .children()
+        .iter()
+        .copied()
+        .find(|child| {
+            grammar_node(*child).is_some_and(|node| {
+                matches!(node.kind(), GrammarNodeKind::Optional)
+                    && node
+                        .children()
+                        .first()
+                        .and_then(|inner| grammar_node(*inner))
+                        .is_some_and(|inner| {
+                            matches!(
+                                inner.kind(),
+                                GrammarNodeKind::Production(Production::Generics)
+                            )
+                        })
+            })
+        })
 }
 
 #[cfg(test)]

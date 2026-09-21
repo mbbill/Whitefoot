@@ -1,271 +1,191 @@
-linear struct Lease['s] {
-  run: Vector<'s, u8>;
+struct Block {
+  bytes: Slots<u8, 256>;
 }
 
-struct BlockPool['s] {
-  free: FixedVector<Vector<'s, u8>, 8>;
+nodrop struct Lease {
+  run: Block;
 }
 
-fn pool_new['s: affine](store: &uniq Arena<'s, 65536, 16>) -> made: own Option<BlockPool<'s>> reads(store), writes(store), allocates(store) {
-  doc "Carves eight 256-byte runs out of the store and holds them as a free list.";
-  let free = fixed_vector::<Vector<'s, u8>, 8>();
+struct BlockPool {
+  free: Slots<Block, 8>;
+}
+
+fn block_new() -> made: own Block pure {
+  doc "One run of 256 slots, frame-resident inside the block that owns it [STOR-1].";
+  let bytes = slots_new::<u8, 256>();
+  let made = Block(bytes: move bytes);
+  return move made;
+}
+
+fn pool_new() -> made: own BlockPool pure {
+  doc "A pool is a Slots plus the blocks it holds [OP-13]: eight runs are carved into one run of runs and kept as a free list.";
+  let free = slots_new::<Block, 8>();
   for @carve (
     at in 0_u64..8_u64,
-    invariant grown: len_of(free) >= at,
-    invariant spare: room_of(free) + at >= 8_u64,
-    invariant flat: head_of(free) <= 0_u64
+    invariant grown: free.len >= at,
+    invariant bounded: free.len <= at,
+    invariant spare: free.cap - free.len + at >= 8_u64
   ) {
-    match arena_vector::<u8>(store: &uniq deref(store), count: 256_u64) {
-      None() => {
-        return None<BlockPool<'s>>();
-      }
-      Some(value: run) => {
-        place_back(vector: &uniq free, value: move run);
-      }
-    }
+    let run = block_new();
+    place_back(window: &free, value: move run);
   }
   let pool = BlockPool(free: move free);
-  return Some<BlockPool<'s>>(value: move pool);
+  return move pool;
 }
 
-fn take_free['s: affine](free: &uniq FixedVector<Vector<'s, u8>, 8>) -> block: own Vector<'s, u8> reads(free), writes(free) contract {
-  requires len_of(deref(free)) > 0_u64;
-  ensures len_of(deref(free)) + 1_u64 == len_of(deref(entry(free)));
-  ensures room_of(deref(free)) == room_of(deref(entry(free))) + 1_u64;
+fn take_free(free: &Slots<Block, 8>) -> block: own Block writes(free.last), writes(free.len) contract {
+  requires deref(free).len > 0_u64;
+  ensures deref(free).len + 1_u64 == deref(entry(free)).len;
 } {
-  region {
-    let block = take_back(vector: &uniq deref(free));
-    return move block;
-  }
+  doc "One block off the back boundary; the row names exactly the last filled slot and the length take_back moves [OP-10].";
+  let block = take_back(window: free);
+  return move block;
 }
 
-fn return_free['s: affine](free: &uniq FixedVector<Vector<'s, u8>, 8>, block: own Vector<'s, u8>) -> result: own unit reads(free), writes(free) contract {
-  requires room_of(deref(free)) > 0_u64;
-  ensures len_of(deref(free)) == len_of(deref(entry(free))) + 1_u64;
+fn return_free(free: &Slots<Block, 8>, block: own Block) -> result: own unit writes(free.next), writes(free.len) contract {
+  requires deref(free).len < deref(free).cap;
+  ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
-  region {
-    place_back(vector: &uniq deref(free), value: move block);
-  }
+  doc "One block back onto the append slot, under the caller's proof that the free list has room.";
+  place_back(window: free, value: move block);
   return unit;
 }
 
-fn pool_take['s: affine](pool: own BlockPool<'s>) -> (rest: own BlockPool<'s>, leased: own Option<Lease<'s>>) reads(pool.free), writes(pool.free) {
-  doc "Leases one run, or reports that the free list is empty.";
-  let spare = len_of(pool.free);
+fn pool_take(pool: own BlockPool) -> (rest: own BlockPool, leased: own Option<Lease>) pure {
+  doc "Leases one run, or reports that the free list is empty. The pool arrives by value, so the row is empty and the reference the body forms is rooted in local storage [EFF-1, EFF-2].";
+  let spare = pool.free.len;
   let any = spare > 0_u64;
   if any {
-    region {
-      let one = take_free(free: &uniq pool.free);
-      invariant removed_one_upper: len_of(pool.free) + 1_u64 <= spare;
-      invariant removed_one_lower: len_of(pool.free) + 1_u64 >= spare;
-      let ticket = Lease(run: move one);
-      return move pool, Some<Lease<'s>>(value: move ticket);
-    }
+    let one = take_free(free: &pool.free);
+    invariant removed_one_upper: pool.free.len + 1_u64 <= spare;
+    invariant removed_one_lower: pool.free.len + 1_u64 >= spare;
+    let ticket = Lease(run: move one);
+    return move pool, Some<Lease>(value: move ticket);
   }
-  return move pool, None<Lease<'s>>();
+  return move pool, None<Lease>();
 }
 
-fn pool_release['s: affine](pool: own BlockPool<'s>, lease: own Lease<'s>) -> rest: own BlockPool<'s> reads(pool.free), writes(pool.free) contract {
-  requires room_of(pool.free) > 0_u64;
+fn pool_release(pool: own BlockPool, lease: own Lease) -> rest: own BlockPool pure contract {
+  requires pool.free.len < pool.free.cap;
 } {
-  doc "Returns one lease to the free list; the caller has proved there is room.";
+  doc "Returns one lease to the free list; the caller has proved there is room. The linear lease leaves this scope only by being taken apart, which is what makes the return unavoidable [PROV-6].";
   let Lease(run: back) = move lease;
-  region {
-    return_free(free: &uniq pool.free, block: move back);
-  }
+  return_free(free: &pool.free, block: move back);
   return move pool;
 }
 
 struct StaticBlock {
-  bytes: FixedVector<u8, 4>;
+  bytes: Slots<u8, 4>;
 }
 
-fn take_static(free: &uniq FixedVector<StaticBlock, 2>) -> block: own StaticBlock reads(free), writes(free) contract {
-  requires len_of(deref(free)) > 0_u64;
-  ensures len_of(deref(free)) + 1_u64 == len_of(deref(entry(free)));
-  ensures room_of(deref(free)) == room_of(deref(entry(free))) + 1_u64;
+fn take_static(free: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(free.last), writes(free.len) contract {
+  requires deref(free).len > 0_u64;
+  ensures deref(free).len + 1_u64 == deref(entry(free)).len;
 } {
-  region {
-    let block = take_back(vector: &uniq deref(free));
-    return move block;
-  }
+  doc "The same boundary take over a frame-resident element type.";
+  let block = take_back(window: free);
+  return move block;
 }
 
-fn return_static(free: &uniq FixedVector<StaticBlock, 2>, block: own StaticBlock) -> result: own unit reads(free), writes(free) contract {
-  requires room_of(deref(free)) > 0_u64;
-  ensures len_of(deref(free)) == len_of(deref(entry(free))) + 1_u64;
+fn return_static(free: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(free.next), writes(free.len) contract {
+  requires deref(free).len < deref(free).cap;
+  ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
-  region {
-    place_back(vector: &uniq deref(free), value: move block);
-  }
+  doc "The same boundary place over a frame-resident element type.";
+  place_back(window: free, value: move block);
   return unit;
 }
 
 fn static_block_round_trip() -> code: own u8 pure {
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 1_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 2_u8);
-  }
-  let two = move one;
-  region {
-    place_back(vector: &uniq two, value: 3_u8);
-  }
-  let three = move two;
-  region {
-    place_back(vector: &uniq three, value: 4_u8);
-  }
-  let payload = move three;
+  doc "One block leaves the free list, every byte of its run is incremented, and the block goes back; a second round trip reads the incremented bytes back out.";
+  let payload = slots_new::<u8, 4>();
+  place_back(window: &payload, value: 1_u8);
+  place_back(window: &payload, value: 2_u8);
+  place_back(window: &payload, value: 3_u8);
+  place_back(window: &payload, value: 4_u8);
   let record = StaticBlock(bytes: move payload);
-  let free = fixed_vector::<StaticBlock, 2>();
-  region {
-    place_back(vector: &uniq free, value: move record);
+  let full = slots_new::<StaticBlock, 2>();
+  place_back(window: &full, value: move record);
+  let block = take_static(free: &full);
+  invariant capacity: block.bytes.cap >= 4_u64;
+  let length = block.bytes.len;
+  for (at in 0_u64..length) {
+    let byte = block.bytes[at];
+    let next = byte +wrap 1_u8;
+    set block.bytes[at] = next;
   }
-  let full = move free;
-  region {
-    let block = take_static(free: &uniq full);
-    let rest = move full;
-    invariant capacity: cap_of(block.bytes) >= 4_u64;
-    let length = len_of(block.bytes);
-    for (at in 0_u64..length) {
-      let byte = block.bytes[at];
-      let next = byte +wrap 1_u8;
-      set block.bytes[at] = next;
-    }
-    region {
-      return_static(free: &uniq rest, block: move block);
-      let returned = move rest;
-      region {
-        let recovered = take_static(free: &uniq returned);
-        let restored = move returned;
-        let recovered_length = len_of(recovered.bytes);
-        let sum = 0_u8;
-        for (at in 0_u64..recovered_length) {
-          let byte = recovered.bytes[at];
-          set sum = sum +wrap byte;
-        }
-        region {
-          return_static(free: &uniq restored, block: move recovered);
-          let complete = move restored;
-          invariant conserved: len_of(complete) >= 1_u64;
-          let result = sum -wrap 14_u8;
-          return result;
-        }
-      }
-    }
+  return_static(free: &full, block: move block);
+  let recovered = take_static(free: &full);
+  let recovered_length = recovered.bytes.len;
+  let sum = 0_u8;
+  for (at in 0_u64..recovered_length) {
+    let byte = recovered.bytes[at];
+    set sum = sum +wrap byte;
   }
+  return_static(free: &full, block: move recovered);
+  invariant conserved: full.len >= 1_u64;
+  let result = sum -wrap 14_u8;
+  return result;
 }
 
 fn boxed_block_round_trip() -> code: own u8 pure {
-  region 'a {
-    let store = arena_frame::<64, 8, 'a>();
-    region {
-      let empty = fixed_vector::<u8, 4>();
-      region {
-        place_back(vector: &uniq empty, value: 1_u8);
-      }
-      let one = move empty;
-      region {
-        place_back(vector: &uniq one, value: 2_u8);
-      }
-      let two = move one;
-      region {
-        place_back(vector: &uniq two, value: 3_u8);
-      }
-      let three = move two;
-      region {
-        place_back(vector: &uniq three, value: 4_u8);
-      }
-      let payload = move three;
-      match arena_box(store: &uniq store, value: move payload) {
-        Err(error: back) => {
-          return 1_u8;
-        }
-        Ok(value: cell) => {
-          let free = fixed_vector::<Box<'a, FixedVector<u8, 4>>, 2>();
-          region {
-            place_back(vector: &uniq free, value: move cell);
-          }
-          let full = move free;
-          region {
-            let block = take_back(vector: &uniq full);
-            let rest = move full;
-            let block_capacity = cap_of(deref(block));
-            invariant capacity: block_capacity >= 4_u64;
-            let length = len_of(deref(block));
-            for (at in 0_u64..length) {
-              let byte = deref(block)[at];
-              let next = byte +wrap 1_u8;
-              set deref(block)[at] = next;
-            }
-            region {
-              place_back(vector: &uniq rest, value: move block);
-            }
-            let returned = move rest;
-            region {
-              let recovered = take_back(vector: &uniq returned);
-              let restored = move returned;
-              let recovered_length = len_of(deref(recovered));
-              let sum = 0_u8;
-              for (at in 0_u64..recovered_length) {
-                let byte = deref(recovered)[at];
-                set sum = sum +wrap byte;
-              }
-              region {
-                place_back(vector: &uniq restored, value: move recovered);
-              }
-              let complete = move restored;
-              invariant conserved: len_of(complete) >= 1_u64;
-              let result = sum -wrap 14_u8;
-              return result;
-            }
-          }
-        }
-      }
-    }
+  doc "The same round trip where the free list holds heap cells: a Box owns one heap object, its content is the field inner, and the cell is released when its owner's scope ends [TYPE-9, STOR-3].";
+  let payload = slots_new::<u8, 4>();
+  place_back(window: &payload, value: 1_u8);
+  place_back(window: &payload, value: 2_u8);
+  place_back(window: &payload, value: 3_u8);
+  place_back(window: &payload, value: 4_u8);
+  let cell = box_new::<Slots<u8, 4>>(value: move payload);
+  let free = slots_new::<Box<Slots<u8, 4>>, 2>();
+  place_back(window: &free, value: move cell);
+  let block = take_back(window: &free);
+  invariant capacity: block.inner.cap >= 4_u64;
+  let length = block.inner.len;
+  for (at in 0_u64..length) {
+    let byte = block.inner[at];
+    let next = byte +wrap 1_u8;
+    set block.inner[at] = next;
   }
+  place_back(window: &free, value: move block);
+  let recovered = take_back(window: &free);
+  let recovered_length = recovered.inner.len;
+  let sum = 0_u8;
+  for (at in 0_u64..recovered_length) {
+    let byte = recovered.inner[at];
+    set sum = sum +wrap byte;
+  }
+  place_back(window: &free, value: move recovered);
+  invariant conserved: free.len >= 1_u64;
+  let result = sum -wrap 14_u8;
+  return result;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Runs 3.L.4's block pool over a bump extent.";
-  region 'a {
-    let workspace = arena_frame::<65536, 16, 'a>();
-    region {
-      match pool_new(store: &uniq workspace) {
-        None() => {
-          return exit_status(code: 1_u8);
+  doc "Runs the block pool: eight runs carved into one run of runs, a lease taken off the back boundary and returned to a free list the caller proved had room, then the two round trips over a frame-resident and a heap-cell element type.";
+  let pool = pool_new();
+  let held = pool.free.len;
+  if held == 8_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let (rest, leased) = pool_take(pool: move pool);
+  match leased {
+    None() => {
+      return exit_status(code: 3_u8);
+    }
+    Some(value: ticket) => {
+      let spare = rest.free.len;
+      let fits = spare < 8_u64;
+      if fits {
+        let back = pool_release(pool: move rest, lease: move ticket);
+        let full = back.free.len;
+        if full == 8_u64 {
+        } else {
+          return exit_status(code: 4_u8);
         }
-        Some(value: pool) => {
-          let held = len_of(pool.free);
-          if held == 8_u64 {
-          } else {
-            return exit_status(code: 2_u8);
-          }
-          let (rest, leased) = pool_take(pool: move pool);
-          match leased {
-            None() => {
-              return exit_status(code: 3_u8);
-            }
-            Some(value: ticket) => {
-              let spare = room_of(rest.free);
-              let fits = spare > 0_u64;
-              if fits {
-                let back = pool_release(pool: move rest, lease: move ticket);
-                let full = len_of(back.free);
-                if full == 8_u64 {
-                } else {
-                  return exit_status(code: 4_u8);
-                }
-              } else {
-                let Lease(run: orphan) = move ticket;
-                return exit_status(code: 5_u8);
-              }
-            }
-          }
-        }
+      } else {
+        let Lease(run: orphan) = move ticket;
+        return exit_status(code: 5_u8);
       }
     }
   }

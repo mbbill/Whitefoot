@@ -1,11 +1,9 @@
 fn main() -> status: own ExitStatus pure {
-  doc "Writing through a &uniq borrow via set deref(p) and reading the value back [TYPE-7].";
-  let a = 40_i32;
-  region {
-    let p = &uniq a;
-    set deref(p) = 42_i32;
-  }
-  if a == 42_i32 {
+  doc "Writing Box content with set cell.inner and reading the content back exercises the Box content field step [TYPE-9] together with SET-1's writable-target relation through a live own cell binding; a positive combination that runs to exit 0.";
+  let cell = box_new::<i32>(value: 40_i32);
+  set cell.inner = 42_i32;
+  let seen = cell.inner;
+  if seen == 42_i32 {
   } else {
     return exit_status(code: 1_u8);
   }

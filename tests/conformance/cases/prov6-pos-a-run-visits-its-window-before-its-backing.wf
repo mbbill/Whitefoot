@@ -1,83 +1,44 @@
-struct Holder['s] {
-  data: Vector<'s, u8>;
+struct Holder {
+  data: Box<Slots<u8>>;
 }
 
-fn hold['s](store: &uniq Heap<'s>, value: own u8) -> made: own Option<Holder<'s>> reads(store), writes(store), allocates(store) {
-  doc "Takes one run of two slots from the store the caller's provider names, fills it, and wraps it in the nominal that carries that store's region.";
-  region {
-    match heap_vector::<u8>(store: &uniq deref(store), count: 2_u64) {
-      None() => {
-        return None<Holder<'s>>();
-      }
-      Some(value: fresh) => {
-        region {
-          place_back(vector: &uniq fresh, value: value);
-        }
-        let one = move fresh;
-        region {
-          place_back(vector: &uniq one, value: value);
-        }
-        let two = move one;
-        let wrapped = Holder(data: move two);
-        return Some<Holder<'s>>(value: move wrapped);
-      }
-    }
-  }
+fn hold(value: own u8) -> made: own Holder pure {
+  doc "Takes one two-slot window from the one heap, fills it, and wraps it in the nominal that owns it.";
+  let fresh = box_slots_new::<u8>(capacity: 2_u64);
+  place_back(window: &fresh.inner, value: value);
+  place_back(window: &fresh.inner, value: value);
+  let wrapped = Holder(data: move fresh);
+  return move wrapped;
 }
 
-fn walk['s](store: &uniq Heap<'s>, first: own Holder<'s>) -> code: own u8 reads(store), writes(store), allocates(store) {
-  doc "PROV-6: a container's elements are visited before its backing is released. The fixed run's own backing is this activation's frame and reclaims nothing, and its window holds elements that each own one run of the general store, so the derived release is exactly the window walk in ascending logical order and the storage every element owns is freed once.";
-  let empty = fixed_vector::<Holder<'s>, 4>();
-  region {
-    place_back(vector: &uniq empty, value: move first);
+fn walk(first: own Holder) -> code: own u8 pure {
+  doc "PROV-6: a container's elements are visited before its backing is released. The constant-capacity window is frame-resident and reclaims nothing of its own, and its slots hold values that each own one heap cell, so the derived release is the window walk in ascending logical order and each cell is freed after its content.";
+  let run = slots_new::<Holder, 4>();
+  place_back(window: &run, value: move first);
+  let second = hold(value: 5_u8);
+  place_back(window: &run, value: move second);
+  let held = run.len;
+  if held == 2_u64 {
+  } else {
+    return 1_u8;
   }
-  let one = move empty;
-  region {
-    match hold(store: &uniq deref(store), value: 5_u8) {
-      None() => {
-        return 70_u8;
-      }
-      Some(value: second) => {
-        place_back(vector: &uniq one, value: move second);
-        let two = move one;
-        let held = len_of(two);
-        if held == 2_u64 {
-        } else {
-          return 1_u8;
-        }
-        region {
-          let back = take_front(vector: &uniq two);
-          let rest = move two;
-          let width = len_of(back.data);
-          if width == 2_u64 {
-          } else {
-            return 2_u8;
-          }
-          let left = len_of(rest);
-          if left == 1_u64 {
-          } else {
-            return 3_u8;
-          }
-          return 0_u8;
-        }
-      }
-    }
+  let back = take_back(window: &run);
+  let width = back.data.inner.len;
+  if width == 2_u64 {
+  } else {
+    return 2_u8;
   }
+  let left = run.len;
+  if left == 1_u64 {
+  } else {
+    return 3_u8;
+  }
+  return 0_u8;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "The entry hands the general store's provider to the walk, whose own region parameter names the store the run's elements live in.";
-  region {
-    match hold(store: &uniq heap, value: 3_u8) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: first) => {
-        region {
-          let code = walk(store: &uniq heap, first: move first);
-          return exit_status(code: code);
-        }
-      }
-    }
-  }
+fn main() -> status: own ExitStatus pure {
+  doc "The entry builds the first holder and hands it to the walk, whose own window then owns both.";
+  let first = hold(value: 3_u8);
+  let code = walk(first: move first);
+  return exit_status(code: code);
 }

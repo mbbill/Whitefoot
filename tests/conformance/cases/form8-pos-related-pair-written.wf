@@ -1,19 +1,20 @@
-fn pass['r](value: &'r i32) -> result: &'r i32 pure {
-  doc "The result borrows the parameter, so the same region is meant at two positions of this declaration and [FORM-8] writes it at both [FN-1].";
-  return value;
+struct Cell {
+  value: i32;
+}
+
+fn pass(source: &Cell, other: &Cell) -> result: own i32 reads(source.value) {
+  doc "The relation this case once wrote as a shared region name - the result borrows one parameter - has no form here: a function returns owned values only [FN-1, REF-3], so the referent is read out by value and only the read is stated, by the row [EFF-1].";
+  return deref(source).value;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "The relation is the callee's; the caller writes no region argument because the parameter position determines it.";
-  let a = 40_i32;
-  region {
-    let p = &a;
-    let held = pass(value: p);
-    let observed = deref(held);
-    if observed == 40_i32 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
+  doc "The caller forms both references, passes them, and reads the owned result; no region argument and no type application is written at the call because there is none to write.";
+  let a = Cell(value: 40_i32);
+  let b = Cell(value: 2_i32);
+  let held = pass(source: &a, other: &b);
+  if held == 40_i32 {
+  } else {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

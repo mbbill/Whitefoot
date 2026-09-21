@@ -1,30 +1,18 @@
-fn measure(taken: own FixedVector<u8, 4>) -> measured: own u64 reads(taken) contract {
-  ensures measured <= len_of(taken);
-  ensures len_of(taken) < measured;
+fn measure(taken: own Slots<u8, 4>) -> measured: own u64 pure contract {
+  ensures measured <= taken.len;
+  ensures taken.len < measured;
 } {
   doc "The two published relations cannot hold together, so every caller goal would discharge from the contradiction alone.";
   return 0_u64;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "CALL-6: a contract whose published relations instantiate to a contradiction is refused at the declaration.";
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0_u8);
-  }
-  let two = move one;
-  region {
-    place_back(vector: &uniq two, value: 0_u8);
-  }
-  let three = move two;
-  region {
-    place_back(vector: &uniq three, value: 0_u8);
-  }
-  let run = move three;
+  doc "Two ensures clauses publish relations that cannot hold together. At a contradictory point every relation and both signs of every goal are derivable, so an inconsistent contract is not one wrong fact at one caller but every fact at every caller; the set is fixed at the declaration and refused there.";
+  let run = slots_new::<u8, 4>();
+  place_back(window: &run, value: 0_u8);
+  place_back(window: &run, value: 0_u8);
+  place_back(window: &run, value: 0_u8);
+  place_back(window: &run, value: 0_u8);
   let measured = measure(taken: move run);
   return exit_status(code: 0_u8);
 }

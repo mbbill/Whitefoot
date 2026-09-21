@@ -182,11 +182,57 @@ pub(crate) enum EvaluatedValueOccurrence {
 pub(crate) enum GoalProjection {
     Deref,
     Field(u32),
+    /// One refined enum payload, preserving both the variant and field
+    /// identity when a reference actual is substituted [REF-1, ENT-2].
+    Payload {
+        variant: u32,
+        field: u32,
+    },
     /// One [OP-4] subscript of the base reached so far, which [MSR-1] admits
-    /// in a measure place so that `len_of(table[i])` is a term. The offset is
-    /// a logical one and the obligation it owes is discharged where the place
-    /// is formed [MSR-4].
-    Subscript(super::places::PlaceOffset),
+    /// in a measure place so that `table[i].len` is a term. The offset is a
+    /// logical one, its captured value is immutable once the place is formed
+    /// [REF-1], and the obligation it owes is discharged there [MSR-4].
+    Subscript(super::places::CapturedValue),
+    /// One [REF-4] range step of the base reached so far, both endpoints
+    /// captured where the range was formed [REF-1].
+    ///
+    /// It occurs in exactly one position: the image of a `&[T]` actual that
+    /// formed its range at the call and therefore names no binding. A range
+    /// reference a binding names carries no step of its own, that binding
+    /// being the [ENT-2] measure place `deref(view)`; this projection is what
+    /// keeps an anonymous range distinct from the storage it was formed over,
+    /// whose `len` is a different quantity [MSR-1].
+    Range(super::places::CapturedRange),
+    /// One [OP-4] subscript of a measure place inside a `contract_block`,
+    /// whose written offset is a value parameter of the same callable.
+    ///
+    /// [MSR-1] admits an offset that is "a written integer literal, a live
+    /// `own` fragment-integer place, or an in-scope const generic", and in a
+    /// declaration-boundary template a parameter is named by its ordinal and
+    /// not by any binding: the caller substitutes its own actual for it, as
+    /// [EFF-5] already substitutes a row's index positions. It occurs only
+    /// under [`GoalDatum::Parameter`], and both readers -- the caller's
+    /// instantiation and the callee body's own reading -- replace it with an
+    /// ordinary [`GoalProjection::Subscript`] before any term is interned.
+    FormalSubscript {
+        ordinal: u32,
+    },
+}
+
+impl GoalProjection {
+    /// The complete storage projection used by ENT-2 terms and ENT-5 kills.
+    /// A formal subscript must be instantiated before it can prove separation.
+    pub(crate) fn place_step(self) -> super::places::PlaceStep {
+        use super::places::{CapturedValue, PlaceStep};
+        match self {
+            Self::Deref => PlaceStep::Deref,
+            Self::Field(field) => PlaceStep::Field(field),
+            Self::Payload { variant, field } => PlaceStep::Payload { variant, field },
+            Self::Subscript(offset) => PlaceStep::Index(offset),
+            Self::Range(range) => PlaceStep::Range(range),
+            Self::FormalSubscript { .. } => PlaceStep::Index(CapturedValue::unknown()),
+        }
+    }
 }
 
 /// One structural goal row and its exact selected type/domain identity.
@@ -212,12 +258,6 @@ pub(crate) enum GoalOperation {
     EnumEquality {
         equal: bool,
         operand_type: CheckedType,
-    },
-    /// Pure, total `array_new`. FN-8's copy-only clause-local rule keeps this
-    /// out of GoalTemplates, but ENT-3 body-origin expansion may retain it.
-    ArrayFill {
-        element: CheckedElement,
-        length: CheckedConst,
     },
     ArrayMeasure {
         measure: CheckedMeasure,
@@ -246,22 +286,17 @@ pub(crate) enum GoalOperation {
         element: CheckedType,
         maximum_length: u64,
     },
-    SliceMeasure {
-        measure: CheckedMeasure,
-        region: DeclarationId,
-        element: CheckedFlatElement,
-    },
-    /// One [MSR-1] measure of a run [BLK-1] or a bump extent [PROV-1]. The
-    /// measured kind is part of the row identity because the measure table
-    /// gives each its own row, and the written constant is what a
-    /// `FixedVector`'s capacity and an `Arena`'s byte extent are [MSR-2].
+    /// One [MSR-1] measure of a storage shape [TYPE-9]. The measured kind is
+    /// part of the row identity because the measure table gives each its own
+    /// row, and the written constant is what a fixed-capacity row carries
+    /// [MSR-2].
     ContainerMeasure {
         measure: CheckedMeasure,
         measured: MeasuredKind,
-        /// The element type of a run; a bump extent has none.
+        /// The element type of the measured storage shape.
         element: Option<CheckedElement>,
-        /// A `FixedVector`'s capacity or an `Arena`'s byte extent; a
-        /// `Vector`'s capacity is a descriptor word and has none.
+        /// An `Array` length or constant window capacity; a runtime-capacity
+        /// shape stores the corresponding measure and has none here.
         constant: Option<CheckedConst>,
     },
     /// One run element value whose own [OP-4] obligation has already been
@@ -270,12 +305,6 @@ pub(crate) enum GoalOperation {
         measured: MeasuredKind,
         element: CheckedElement,
         constant: Option<CheckedConst>,
-    },
-    /// One slice element value whose own OP-4 obligation has already been
-    /// discharged before this expression is used as a proof operand.
-    SliceIndex {
-        region: DeclarationId,
-        element: CheckedFlatElement,
     },
 }
 

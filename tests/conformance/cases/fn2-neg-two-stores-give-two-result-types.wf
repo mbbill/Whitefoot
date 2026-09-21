@@ -1,48 +1,21 @@
-struct Holder['s] {
-  run: Vector<'s, u8>;
+struct Holder<T: drop> {
+  run: T;
 }
 
-fn hold['s: affine](store: &uniq Arena<'s, 4096, 16>) -> made: own Option<Holder<'s>> reads(store), writes(store), allocates(store) {
-  doc "Takes one run out of the store and wraps it in a nominal generic over that store.";
-  region {
-    match arena_vector::<u8>(store: &uniq deref(store), count: 16_u64) {
-      None() => {
-        return None<Holder<'s>>();
-      }
-      Some(value: run) => {
-        let held = Holder(run: move run);
-        return Some<Holder<'s>>(value: move held);
-      }
-    }
-  }
+fn hold<T: drop>(value: own T) -> made: own Holder<T> pure {
+  doc "Wraps one owned run in a nominal generic over its element type.";
+  let held = Holder<T>(run: move value);
+  return move held;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "FN-2: a call's region arguments are substituted into every position of the callee's signature, results included, so two calls of one declaration at two extents hand back two types. The set below would put a Holder<'b> into a binding of Holder<'a>, whose run lives in an extent that is not the binding's, and is the ordinary TYPE-5 mismatch.";
-  region 'a {
-    let first = arena_frame::<4096, 16, 'a>();
-    region 'b {
-      let second = arena_frame::<4096, 16, 'b>();
-      region {
-        match hold(store: &uniq first) {
-          None() => {
-            return exit_status(code: 1_u8);
-          }
-          Some(value: one) => {
-            let kept = move one;
-            let Holder(run: gone) = move kept;
-            match hold(store: &uniq second) {
-              None() => {
-                return exit_status(code: 2_u8);
-              }
-              Some(value: two) => {
-                set kept = move two;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+  doc "FN-2: a call's type arguments are substituted into every position of the callee's signature, results included, so two calls of one declaration at two arguments hand back two types. Setting a `Holder<Slots<u16, 4>>` into a dead binding of `Holder<Slots<u8, 4>>` is TYPE-5's exact-identity mismatch and not an accepted transfer.";
+  let first = slots_new::<u8, 4>();
+  let second = slots_new::<u16, 4>();
+  let one = hold::<Slots<u8, 4>>(value: move first);
+  let kept = move one;
+  let Holder(run: gone) = move kept;
+  let two = hold::<Slots<u16, 4>>(value: move second);
+  set kept = move two;
   return exit_status(code: 0_u8);
 }

@@ -24,7 +24,7 @@ fn executes_every_negation_mode_for_every_signed_width() {
     return exit_status(code: 4_u8);
   }
   let safe_result = ineg.checked(-42_$TYPE);
-  match move safe_result {
+  match safe_result {
     Ok(value: safe_value) => {
       if safe_value == 42_$TYPE {
       } else {
@@ -36,7 +36,7 @@ fn executes_every_negation_mode_for_every_signed_width() {
     }
   }
   let overflow_result = ineg.checked($MIN_$TYPE);
-  match move overflow_result {
+  match overflow_result {
     Ok(value: overflow_value) => {
       return exit_status(code: 7_u8);
     }
@@ -57,14 +57,38 @@ fn executes_every_negation_mode_for_every_signed_width() {
         let intrinsic = format!("@llvm.ssub.with.overflow.i{width}");
         assert!(
             llvm.contains(&format!("sub i{width} 0,")),
-            "wrapping and proved-exact negation must be plain subtraction for {ty}"
+            "wrapping negation must be plain subtraction for {ty}"
         );
         assert!(
             llvm.matches(&format!("{intrinsic}(i{width}")).count() == 3,
             "only the declaration and two checked {ty} negations need the overflow intrinsic"
         );
         assert!(llvm.contains(&format!("icmp ne i{width}")));
-        assert!(!llvm.contains(" nsw "));
+        // [DIAG-2]: "every fact the checker has proved may be supplied to the
+        // backend, as target attributes, instruction flags, metadata, or
+        // assumptions: ... and a discharged integer-domain obligation [OP-2],
+        // the last being what licenses a no-wrap flag on an exact operation."
+        // The same sentence bounds it: "only a fact the checker has actually
+        // discharged may be supplied". The `wrap` family carries no [OP-2]
+        // obligation and is defined at every operand, including the minimum
+        // this program hands it, so nothing has been discharged there and no
+        // flag may be supplied. Both directions are read below.
+        assert_eq!(
+            llvm.matches(&format!("sub nsw i{width} 0,")).count(),
+            1,
+            "exactly the exact-mode {ty} negation carries nsw"
+        );
+        assert_eq!(
+            llvm.matches(&format!("sub i{width} 0,")).count(),
+            1,
+            "and the wrap-mode {ty} negation carries no flag at all"
+        );
+        assert_eq!(
+            llvm.matches(" nsw ").count(),
+            1,
+            "no other {ty} row in the module carries it"
+        );
+        // No negation is unsigned, so no row of this module states `nuw`.
         assert!(!llvm.contains(" nuw "));
         let output = compile_and_run(&llvm);
         assert!(

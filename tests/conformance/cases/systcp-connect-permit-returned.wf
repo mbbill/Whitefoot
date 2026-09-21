@@ -90,39 +90,29 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "Ordinary tcp_connect borrows a factory and returns an ordinary success or failure enum. Refusal preserves that factory for another attempt; success requires explicit close of both linear halves.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq handles, directory: move unused_cwd);
-  }
+  close_directory(factory: &handles, directory: move unused_cwd);
   let first = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9107_u16);
   let second = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9108_u16);
-  region {
-    region {
-      match tcp_connect(factory: &uniq handles, address: &first) {
-        Ok(value: link) => {
-          let TcpConnection(receive: close_receive_13, send: close_send_13) = move link;
-          close_receive(factory: &uniq handles, receive: move close_receive_13);
-          close_send(factory: &uniq handles, send: move close_send_13);
+  match tcp_connect(factory: &handles, address: &first) {
+    Ok(value: link) => {
+      let TcpConnection(receive: close_receive_13, send: close_send_13) = move link;
+      close_receive(factory: &handles, receive: move close_receive_13);
+      close_send(factory: &handles, send: move close_send_13);
+      return exit_status(code: 0_u8);
+    }
+    Err(error: problem) => {
+      if factory_refusal(error: &problem) {
+        return exit_status(code: 4_u8);
+      }
+      match tcp_connect(factory: &handles, address: &second) {
+        Ok(value: retry) => {
+          let TcpConnection(receive: close_receive_14, send: close_send_14) = move retry;
+          close_receive(factory: &handles, receive: move close_receive_14);
+          close_send(factory: &handles, send: move close_send_14);
           return exit_status(code: 0_u8);
         }
-        Err(error: problem) => {
-          region {
-            if factory_refusal(error: &problem) {
-              return exit_status(code: 4_u8);
-            }
-          }
-          region {
-            match tcp_connect(factory: &uniq handles, address: &second) {
-              Ok(value: retry) => {
-                let TcpConnection(receive: close_receive_14, send: close_send_14) = move retry;
-                close_receive(factory: &uniq handles, receive: move close_receive_14);
-                close_send(factory: &uniq handles, send: move close_send_14);
-                return exit_status(code: 0_u8);
-              }
-              Err(error: second_problem) => {
-                return exit_status(code: 3_u8);
-              }
-            }
-          }
+        Err(error: second_problem) => {
+          return exit_status(code: 3_u8);
         }
       }
     }

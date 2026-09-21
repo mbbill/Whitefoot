@@ -1,12 +1,11 @@
-fn f ['heap](heap: &uniq Heap<'heap>, x: own i32) -> function_result: own i32 allocates(heap), {
-  doc "A trailing comma after allocates(heap) is rejected because EFF-1 permits commas only between effects.";
+fn f(cell: &Box<i32>, x: own i32) -> function_result: own i32 reads(cell), {
+  doc "A trailing comma after an effect entry is rejected because EFF-1 permits commas only between effects.";
   return x;
 }
 
-fn main ['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main() -> status: own ExitStatus pure {
   doc "Driver.";
-  region {
-    let a: own i32 = f(heap: &uniq heap, x: 7_i32);
-  }
+  let cell = box_new::<i32>(value: 0_i32);
+  let a = f(cell: &cell, x: 7_i32);
   return exit_status(code: 0_u8);
 }

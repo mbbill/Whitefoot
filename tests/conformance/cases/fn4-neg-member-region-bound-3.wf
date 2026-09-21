@@ -1,12 +1,13 @@
-formal Inspect {
-  fn length['s: linear](values: &Vector<'s, u64>) -> result: own u64 reads(values);
+interface Inspect<T> {
+  fn length(values: &T) -> result: own u64 reads(values);
 }
 
-fn shorter['t](values: &Vector<'t, u64>) -> result: own u64 reads(values) {
-  return len_of(deref(values));
+fn shorter(values: own Array<u64, 4>) -> result: own u64 pure {
+  doc "The instantiated member takes its input by reference; this actual takes it by value, and a by-value parameter carries no effect entry at all [EFF-1].";
+  return values[0_u64];
 }
 
-actual Narrow : Inspect {
+binding Narrow : Inspect<Array<u64, 4>> {
   length = shorter;
 }
 

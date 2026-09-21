@@ -1,15 +1,19 @@
+nocopy struct Item {
+  weight: u64;
+}
+
 fn main() -> return_value: own ExitStatus pure {
-  doc "OWN-11: a borrow naming a region introduced inside the loop body is allowed.";
-  let a = 0_i32;
+  doc "A body that consumes a binding declared outside it and reinitializes that complete binding before the backedge agrees with the entering edge at the loop head and is admitted.";
+  let item = Item(weight: 1_u64);
   loop @l {
-    region {
-      let p = &a;
-      if deref(p) == 0_i32 {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-    }
+    let taken = move item;
+    let fresh = Item(weight: 2_u64);
+    set item = move fresh;
     break @l;
+  }
+  if item.weight == 2_u64 {
+  } else {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

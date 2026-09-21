@@ -1,0 +1,16 @@
+nodrop struct Token {
+  value: u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "WIN-3: assigning over an owned place is a hard error at the target place when the old value is linear.";
+  let first = Token(value: 1_u64);
+  let second = Token(value: 2_u64);
+  set first = move second;
+  let Token(value: v) = move first;
+  if v == 2_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

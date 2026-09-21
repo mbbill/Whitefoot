@@ -303,7 +303,7 @@ fn the_fanout_loop_has_only_ordinary_counted_permission() {
     assert!(
         ledger.iter().any(|line| line.starts_with("PAR loop")
             && line.contains("denied")
-            && line.contains("condition 2: the body contains a discarded expression statement")),
+            && line.contains("condition 2: the body contains an expression statement")),
         "{ledger:?}"
     );
     assert!(
@@ -403,6 +403,14 @@ fn the_fanout_loop_keeps_denied_calls_on_the_current_stack() {
 
 // Reconstruct two ordinary structs from unrelated halves, then close each
 // in a different order. The surviving cross must still exchange its bytes.
+//
+// Ported to v0.60: the unique-reference marker `&uniq` went with [OWN-2], the
+// `region` blocks with [OWN-3] and [FORM-8], and `fixed_vector`, `slice_of`
+// and `mut_slice_of` with [OP-1]'s retired rows. The one-byte scratch is now
+// an inline `Slots<u8, 1>` reached through a range reference [TYPE-9, REF-4],
+// a reference parameter is handed on as itself, and each effect occurrence is
+// its own `writes` entry [EFF-1]. The exchange, the four close orders and
+// every status code the test reads are unchanged.
 #[cfg(unix)]
 const CROSSED_CONNECTIONS: &str = r#"fn cross(first: own TcpConnection, second: own TcpConnection) -> (a: own TcpConnection, b: own TcpConnection) pure {
   let TcpConnection(receive: first_receive, send: first_send) = move first;
@@ -412,137 +420,117 @@ const CROSSED_CONNECTIONS: &str = r#"fn cross(first: own TcpConnection, second: 
   return move a, move b;
 }
 
-fn close_pair(factory: &uniq HandleFactory, connection: own TcpConnection, receive_first: own Bool) -> result: own u8 reads(factory), writes(factory) {
+fn close_pair(factory: &HandleFactory, connection: own TcpConnection, receive_first: own Bool) -> result: own u8 writes(factory) {
   let TcpConnection(receive: receive, send: send) = move connection;
   let failed = 0_u8;
-  region {
-    if receive_first {
-      match close_receive(factory: &uniq deref(factory), receive: move receive) {
-        Ok(value: done) => {
-        }
-        Err(error: problem) => {
-          set failed = 1_u8;
-        }
+  if receive_first {
+    match close_receive(factory: factory, receive: move receive) {
+      Ok(value: done) => {
       }
-      match close_send(factory: &uniq deref(factory), send: move send) {
-        Ok(value: done) => {
-        }
-        Err(error: problem) => {
-          set failed = 2_u8;
-        }
+      Err(error: problem) => {
+        set failed = 1_u8;
       }
-    } else {
-      match close_send(factory: &uniq deref(factory), send: move send) {
-        Ok(value: done) => {
-        }
-        Err(error: problem) => {
-          set failed = 3_u8;
-        }
+    }
+    match close_send(factory: factory, send: move send) {
+      Ok(value: done) => {
       }
-      match close_receive(factory: &uniq deref(factory), receive: move receive) {
-        Ok(value: done) => {
-        }
-        Err(error: problem) => {
-          set failed = 4_u8;
-        }
+      Err(error: problem) => {
+        set failed = 2_u8;
+      }
+    }
+  } else {
+    match close_send(factory: factory, send: move send) {
+      Ok(value: done) => {
+      }
+      Err(error: problem) => {
+        set failed = 3_u8;
+      }
+    }
+    match close_receive(factory: factory, receive: move receive) {
+      Ok(value: done) => {
+      }
+      Err(error: problem) => {
+        set failed = 4_u8;
       }
     }
   }
   return failed;
 }
 
-fn remaining(connection: &uniq TcpConnection) -> result: own u8 reads(connection.receive, connection.send), writes(connection.receive, connection.send) {
-  let bytes = fixed_vector::<u8, 1>();
-  region {
-    place_back(vector: &uniq bytes, value: 0_u8);
-  }
-  region {
-    let destination = mut_slice_of(&uniq bytes);
-    region {
-      match receive_next(receive: &uniq deref(connection).receive, destination: &uniq destination, start: 0_u64, end: 1_u64) {
-        Ok(value: next) => {
-          if next != 1_u64 {
-            return 11_u8;
-          }
-        }
-        Err(error: problem) => {
-          return 12_u8;
-        }
+fn remaining(connection: &TcpConnection) -> result: own u8 writes(connection.receive), writes(connection.send) {
+  let bytes = slots_new::<u8, 1>();
+  place_back(window: &bytes, value: 0_u8);
+  let destination = &bytes[0_u64..1_u64];
+  match receive_next(receive: &deref(connection).receive, destination: destination, start: 0_u64, end: 1_u64) {
+    Ok(value: received) => {
+      if received != 1_u64 {
+        return 11_u8;
       }
+    }
+    Err(error: problem) => {
+      return 12_u8;
     }
   }
   if bytes[0_u64] != 66_u8 {
     return 13_u8;
   }
   set bytes[0_u64] = 65_u8;
-  region {
-    let source = slice_of(&bytes);
-    region {
-      match send_once(send: &uniq deref(connection).send, source: &source, start: 0_u64, end: 1_u64) {
-        Ok(value: next) => {
-          if next != 1_u64 {
-            return 14_u8;
-          }
-        }
-        Err(error: problem) => {
-          return 15_u8;
-        }
+  let source = &bytes[0_u64..1_u64];
+  match send_once(send: &deref(connection).send, source: source, start: 0_u64, end: 1_u64) {
+    Ok(value: sent) => {
+      if sent != 1_u64 {
+        return 14_u8;
       }
+    }
+    Err(error: problem) => {
+      return 15_u8;
     }
   }
   return 0_u8;
 }
 
-fn exercise(factory: &uniq HandleFactory, address: &SocketAddress) -> result: own u8 reads(factory, address), writes(factory) {
+fn exercise(factory: &HandleFactory, address: &SocketAddress) -> result: own u8 reads(address), writes(factory) {
   let receive_first = True();
   let send_first = False();
-  region {
-    match tcp_connect(factory: &uniq deref(factory), address: address) {
-      Ok(value: first) => {
-        match tcp_connect(factory: &uniq deref(factory), address: address) {
-          Ok(value: second) => {
-            let (a, b) = cross(first: move first, second: move second);
-            let first_status = close_pair(factory: &uniq deref(factory), connection: move a, receive_first: receive_first);
-            let exchange_status = 0_u8;
-            region {
-              set exchange_status = remaining(connection: &uniq b);
-            }
-            let second_status = close_pair(factory: &uniq deref(factory), connection: move b, receive_first: send_first);
-            if first_status != 0_u8 {
-              return 21_u8;
-            }
-            if second_status != 0_u8 {
-              return 22_u8;
-            }
-            if exchange_status != 0_u8 {
-              return exchange_status;
-            }
-            match tcp_connect(factory: &uniq deref(factory), address: address) {
-              Ok(value: checkpoint) => {
-                let checkpoint_status = 0_u8;
-                region {
-                  set checkpoint_status = remaining(connection: &uniq checkpoint);
-                }
-                let closed = close_pair(factory: &uniq deref(factory), connection: move checkpoint, receive_first: receive_first);
-                if closed != 0_u8 {
-                  return 25_u8;
-                }
-                return checkpoint_status;
-              }
-              Err(error: problem) => {
-                return 26_u8;
-              }
-            }
+  match tcp_connect(factory: factory, address: address) {
+    Ok(value: first) => {
+      match tcp_connect(factory: factory, address: address) {
+        Ok(value: second) => {
+          let (a, b) = cross(first: move first, second: move second);
+          let first_status = close_pair(factory: factory, connection: move a, receive_first: receive_first);
+          let exchange_status = remaining(connection: &b);
+          let second_status = close_pair(factory: factory, connection: move b, receive_first: send_first);
+          if first_status != 0_u8 {
+            return 21_u8;
           }
-          Err(error: problem) => {
-            close_pair(factory: &uniq deref(factory), connection: move first, receive_first: receive_first);
-            return 23_u8;
+          if second_status != 0_u8 {
+            return 22_u8;
+          }
+          if exchange_status != 0_u8 {
+            return exchange_status;
+          }
+          match tcp_connect(factory: factory, address: address) {
+            Ok(value: checkpoint) => {
+              let checkpoint_status = remaining(connection: &checkpoint);
+              let closed = close_pair(factory: factory, connection: move checkpoint, receive_first: receive_first);
+              if closed != 0_u8 {
+                return 25_u8;
+              }
+              return checkpoint_status;
+            }
+            Err(error: problem) => {
+              return 26_u8;
+            }
           }
         }
+        Err(error: problem) => {
+          close_pair(factory: factory, connection: move first, receive_first: receive_first);
+          return 23_u8;
+        }
       }
-      Err(error: problem) => {
-        return 24_u8;
-      }
+    }
+    Err(error: problem) => {
+      return 24_u8;
     }
   }
 }
@@ -550,11 +538,9 @@ fn exercise(factory: &uniq HandleFactory, address: &SocketAddress) -> result: ow
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: handles, stdin: input) = move inputs;
   let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 49151_u16);
-  region {
-    close_directory(factory: &uniq handles, directory: move cwd);
-    let outcome = exercise(factory: &uniq handles, address: &address);
-    return exit_status(code: outcome);
-  }
+  close_directory(factory: &handles, directory: move cwd);
+  let outcome = exercise(factory: &handles, address: &address);
+  return exit_status(code: outcome);
 }
 "#;
 

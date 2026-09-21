@@ -1,12 +1,10 @@
-fn empty<T: affine>() -> result: own FixedVector<T, 0> pure {
-  let result = fixed_vector::<T, 0>();
+fn empty<T>() -> result: own Slots<T, 0> pure {
+  let result = slots_new::<T, 0>();
   return move result;
 }
 
 fn main() -> status: own ExitStatus pure {
-  region 'a {
-    let store = arena_frame::<256, 16, 'a>();
-    let empty_run = empty::<Vector<'a, u64>>();
-    return exit_status(code: 0_u8);
-  }
+  doc "FN-2: a zero-capacity run retains its explicitly written element type even though no element ever exists. The element type is itself a boxed runtime-capacity run, so the instantiation is checked with no payload at all [TYPE-9].";
+  let empty_run = empty::<Box<Slots<u64>>>();
+  return exit_status(code: 0_u8);
 }

@@ -4,32 +4,30 @@ enum Coin {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Match a coin twice through shared borrows in a region and give a score each time; borrow-mode matching leaves the coin live for the second read [OWN-13, GIVE-1, OP-1, SCOPE-3].";
+  doc "One coin is matched twice through two references, each match giving a score, proving that reference-mode matching leaves the scrutinee live for the second read while the scores accumulate to a checked total [OWN-13, GIVE-1, OP-1, SCOPE-3].";
   let c = Heads();
-  region {
-    let p = &c;
-    let first = match deref(p) {
-      Heads() => {
-        give 3_i32;
-      }
-      Tails() => {
-        give 1_i32;
-      }
+  let p = &c;
+  let first = match deref(p) {
+    Heads() => {
+      give 3_i32;
     }
-    let q = &c;
-    let second = match deref(q) {
-      Heads() => {
-        give 10_i32;
-      }
-      Tails() => {
-        give 20_i32;
-      }
+    Tails() => {
+      give 1_i32;
     }
-    let total = first +wrap second;
-    if total == 13_i32 {
-    } else {
-      return exit_status(code: 201_u8);
+  }
+  let q = &c;
+  let second = match deref(q) {
+    Heads() => {
+      give 10_i32;
     }
+    Tails() => {
+      give 20_i32;
+    }
+  }
+  let total = first +wrap second;
+  if total == 13_i32 {
+  } else {
+    return exit_status(code: 201_u8);
   }
   return exit_status(code: 0_u8);
 }

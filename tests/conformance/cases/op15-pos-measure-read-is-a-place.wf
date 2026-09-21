@@ -1,0 +1,31 @@
+fn measures(window: &Ring<u64, 4>) -> (length: own u64, capacity: own u64, spare: own u64, origin: own u64) reads(window.len), reads(window.cap), reads(window.head) {
+  doc "OP-15: reading a measure performs no operation, allocates nothing, and reads only descriptor storage; through a reference parameter the three measure paths are len, cap and head, while spare is the ordinary expression cap - len and needs no fourth row member.";
+  let l = deref(window).len;
+  let c = deref(window).cap;
+  let s = deref(window).cap - deref(window).len;
+  let h = deref(window).head;
+  return l, c, s, h;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "OP-15: r.len, r.cap and r.head are field selections on a measured place and are not calls, and r.cap - r.len is the same free-slots quantity composed from them; one quantity, one spelling, with no reader operation beside the place form. A measure read rooted in a local exhibits nothing, so main stays pure.";
+  let r = ring_new::<u64, 4>();
+  let (length, capacity, spare, origin) = measures(window: &r);
+  if length == 0_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if capacity == 4_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  if spare == 4_u64 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  if origin == 0_u64 {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}

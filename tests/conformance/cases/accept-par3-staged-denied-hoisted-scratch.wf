@@ -87,27 +87,25 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn component() -> made: own FixedVector<u8, 16> pure contract {
-  ensures len_of(made) >= 16_u64;
-  ensures room_of(made) <= 0_u64;
-  ensures head_of(made) <= 0_u64;
+fn component() -> made: own Slots<u8, 16> pure contract {
+  ensures made.len >= 16_u64;
+  ensures made.cap <= made.len;
 } {
-  doc "C2 deletes PAR-3 outright: this case retains its ordinary source acceptance and source-order control flow after explicit factory and linear-close migration. Its former staged grant or numbered denial is retired, not reproduced by a native classification. Ordinary loans, field effects, loop ownership and exits still apply.";
-  let built = fixed_vector::<u8, 16>();
+  doc "One name run, built by the ordinary counted fill.";
+  let built = slots_new::<u8, 16>();
   for @fill (
     at in 0_u64..16_u64,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= 16_u64,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len >= at,
+    invariant spare: built.cap - built.len + at >= 16_u64
   ) {
-    place_back(vector: &uniq built, value: 97_u8);
+    place_back(window: &built, value: 97_u8);
   }
   return move built;
 }
 
-fn fold_prefix(source: own Slice<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
+fn fold_prefix(source: &[u8], produced: own u64, seed: own u64) -> result: own u64 reads(source) {
   doc "Folds one read prefix into a running order-sensitive checksum.";
-  let spare = len_of(source);
+  let spare = deref(source).len;
   let sum = seed;
   let at = 0_u64;
   loop @fold {
@@ -120,7 +118,7 @@ fn fold_prefix(source: own Slice<u8>, produced: own u64, seed: own u64) -> resul
     } else {
       break @fold;
     }
-    let byte = source[at];
+    let byte = deref(source)[at];
     let widened = cvt::<u8, u64>(byte);
     set sum = sum *wrap 31_u64;
     set sum = sum +wrap widened;
@@ -129,62 +127,43 @@ fn fold_prefix(source: own Slice<u8>, produced: own u64, seed: own u64) -> resul
   return sum;
 }
 
-fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
-  doc "C2 deletes PAR-3 outright: this case retains its ordinary source acceptance and source-order control flow after explicit factory and linear-close migration. Its former staged grant or numbered denial is retired, not reproduced by a native classification. Ordinary loans, field effects, loop ownership and exits still apply.";
-  region 'w {
-    let workspace = arena_frame::<64, 1, 'w>();
-    region {
-      let data = arena_vector_proved::<u8>(store: &uniq workspace, count: 64_u64);
-      for @prime (
-        at in 0_u64..64_u64,
-        invariant grown: len_of(data) >= at,
-        invariant spare: room_of(data) + at >= 64_u64,
-        invariant flat: head_of(data) <= 0_u64
-      ) {
-        place_back(vector: &uniq data, value: 0_u8);
-      }
-      let name = component();
-      let total = 0_u64;
-      for @scan (index in 0_u64..4_u64) {
-        let window = slice_of(&name);
-        region {
-          match open_file(factory: &uniq deref(files), root: cwd, name: &window, start: 0_u64, end: 4_u64) {
-            Ok(value: handle) => {
-              region {
-                region {
-                  let destination = mut_slice_of(&uniq data);
-                  region {
-                    match read_at(factory: &uniq deref(files), file: &uniq handle, destination: &uniq destination, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                      Ok(value: produced) => {
-                      }
-                      Err(error: read_stop_27) => {
-                        match read_stop_27 {
-                          ReadEnd() => {
-                          }
-                          ReadFailed(error: problem) => {
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-                let digest = 0_u64;
-                region {
-                  let source = slice_of(&data);
-                  set digest = fold_prefix(source: source, produced: 64_u64, seed: 0_u64);
-                }
-                set total = total +wrap digest;
+fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(cwd), writes(files) {
+  doc "One scratch run is hoisted out of the scan: each iteration writes it through a range reference handed to read_at and then reads it through a second range reference.";
+  let data = slots_new::<u8, 64>();
+  for @prime (
+    at in 0_u64..64_u64,
+    invariant grown: data.len >= at,
+    invariant spare: data.cap - data.len + at >= 64_u64
+  ) {
+    place_back(window: &data, value: 0_u8);
+  }
+  let name = component();
+  let total = 0_u64;
+  for @scan (index in 0_u64..4_u64) {
+    let window = &name[0_u64..4_u64];
+    match open_file(factory: files, root: cwd, name: window, start: 0_u64, end: 4_u64) {
+      Ok(value: handle) => {
+        let destination = &data[0_u64..64_u64];
+        match read_at(factory: files, file: &handle, destination: destination, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+          Ok(value: produced) => {
+          }
+          Err(error: read_stop_27) => {
+            match read_stop_27 {
+              ReadEnd() => {
               }
-              close_read(factory: &uniq deref(files), file: move handle);
-            }
-            Err(error: problem) => {
-              region {
-                if factory_refusal(error: &problem) {
-                  return exit_status(code: 1_u8);
-                }
+              ReadFailed(error: trouble) => {
               }
             }
           }
+        }
+        let source = &data[0_u64..64_u64];
+        let digest = fold_prefix(source: source, produced: 64_u64, seed: 0_u64);
+        set total = total +wrap digest;
+        close_read(factory: files, file: move handle);
+      }
+      Err(error: problem) => {
+        if factory_refusal(error: &problem) {
+          return exit_status(code: 1_u8);
         }
       }
     }
@@ -195,9 +174,7 @@ fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own Exit
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
-  region {
-    let outcome = exercise(cwd: &cwd, files: &uniq files);
-    close_directory(factory: &uniq files, directory: move cwd);
-    return move outcome;
-  }
+  let outcome = exercise(cwd: &cwd, files: &files);
+  close_directory(factory: &files, directory: move cwd);
+  return move outcome;
 }

@@ -20,7 +20,7 @@ mod lookup;
 mod prelude;
 mod roles;
 
-use admission::check_clause_blocks;
+use admission::{check_clause_blocks, check_heap_declaration};
 use inventory::check_declaration_inventory;
 use lookup::resolve_uses_deferred;
 use roles::classify_roles;
@@ -111,9 +111,16 @@ struct DeclarationMeta {
     record_index: usize,
     scope: ScopeId,
     owner: Option<NodeId>,
-    region_owner: Option<NodeId>,
     visibility: Visibility,
     entries: Vec<DeclarationClass>,
+    /// Which compiler-owned container this declaration is, when it is one of
+    /// [PRE-1]'s four opaque storage records [TYPE-2, TYPE-9]. A use that
+    /// selects it resolves to that identity rather than to the declaration,
+    /// because a written `Array`, `Slots`, `Ring` or `Box` names one
+    /// compiler-owned shape and not a source struct: only the identity
+    /// carries the element storage, the omitted-capacity form and the measure
+    /// rows no struct body can state.
+    container: Option<crate::ContainerNominalId>,
 }
 
 struct DeclarationIndex {
@@ -202,19 +209,22 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
     if let Some(issue) = check_clause_blocks(topology, &scopes)? {
         return Err(BuildStop::Issue(Box::new(issue)));
     }
-    let mut roles = classify_roles(syntax, &scopes)?;
+    // [GRAM-2]'s whole-unit heap-declaration position rule. The parser is
+    // table-driven and has no unit-level position judgment, so this is the
+    // first stage that can make it.
+    if let Some(issue) = check_heap_declaration(topology, &scopes)? {
+        return Err(BuildStop::Issue(Box::new(issue)));
+    }
+    let roles = classify_roles(syntax, &scopes)?;
     let prelude = prelude::PreludeInventory::build(syntax, &roles)?;
-    // [LIV-2] a `set` target identifier that resolves to no binding declares
-    // one exactly as a `let` does. Which targets those are is not a syntactic
-    // property — it is the outcome of the ordinary lookup — so the candidates
-    // are collected here by shape and the build below promotes exactly the
-    // ones lookup could not resolve, one per pass, until every use resolves.
-    // Each pass is the ordinary declaration inventory and the ordinary
-    // lookup, so a promoted target is judged by the same rules a `let` binder
-    // is, and nothing else in this file is special-cased for it.
-    let declaring_candidates = declaring_set_target_candidates(topology, &roles)?;
-    let mut promoted = std::collections::HashSet::new();
-    loop {
+    // [SET-1] "A `set` whose target name resolves to nothing declares nothing
+    // and is a hard error citing SET-1 at that `place`." The v0.59 promotion
+    // loop that turned such a target into a `let` declaration is gone with
+    // [LIV-2], and with it resolution's only re-entrant path; the shape
+    // predicate survives only to re-attribute the ordinary unresolved-name
+    // rejection to the rule and location SET-1 states.
+    let bare_set_targets = bare_set_target_roles(topology, &roles)?;
+    {
         let mut declarations = Vec::new();
         let mut dependent_declarations = Vec::new();
         let mut deferred_uses = Vec::new();
@@ -228,22 +238,33 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                 RawRoleKind::Declaration(declaration_role) => {
                     let id = DeclarationId::from_index(declarations.len())
                         .ok_or(ResolutionCompilerFailure::CounterOverflow)?;
-                    // A named formal's members have stable function-parameter
+                    // A named interface's members have stable function-parameter
                     // identities, but FN-3 introduces no unqualified lexical
                     // names. Only a raw function binder enters that domain.
-                    // Member distinctness is the formal table's FN-3 judgment.
+                    // Member distinctness is the interface table's FN-3 judgment.
                     let grouped_member = declaration_role == DeclarationRole::FunctionParameter
                         && role
                             .owner_chain
                             .get(1)
                             .and_then(|owner| topology.node(*owner))
-                            .is_some_and(|record| record.production == Production::FormalDecl);
-                    let mut entries = if grouped_member {
+                            .is_some_and(|record| record.production == Production::InterfaceDecl);
+                    // [TYPE-2] an opaque struct's constructor entry "exists to
+                    // be refused", so it is an ordinary entry of the
+                    // constructor TYPEID domain like any other struct's. The
+                    // refusal is the checker's hard error at the complete
+                    // `call`, which is a judgment over a resolved declaration
+                    // and needs the entry to reach.
+                    let entries = if grouped_member {
                         Vec::new()
                     } else {
                         declaration_classes(declaration_role)
                     };
-                    if declaration_role == DeclarationRole::Struct
+                    // [TYPE-2, PRE-1] the prelude's four storage records keep
+                    // the compiler-owned identities every later stage reads a
+                    // written `Array`, `Slots`, `Ring` or `Box` through, even
+                    // though each declaration is now an ordinary prelude
+                    // record [TYPE-9].
+                    let container = if declaration_role == DeclarationRole::Struct
                         && syntax
                             .finalized
                             .parsed
@@ -252,10 +273,11 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                             .file(role.origin.coordinate.source())
                             .is_some_and(|file| {
                                 file.prelude() == Some(crate::source::PreludeSource::Opaque)
-                            })
-                    {
-                        entries.retain(|class| *class != DeclarationClass::StructConstructor);
-                    }
+                            }) {
+                        crate::container_nominal_id(&role.spelling)
+                    } else {
+                        None
+                    };
                     let record_index = declarations.len();
                     declarations.push(DeclarationRecord {
                         id,
@@ -284,7 +306,6 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                         } else {
                             role.owner_chain.first().copied()
                         },
-                        region_owner: region_scope_owner(topology, role.owner),
                         visibility: if matches!(
                             declaration_role,
                             DeclarationRole::Function
@@ -304,6 +325,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                             declaration_visibility(topology, role, declaration_role)?
                         },
                         entries,
+                        container,
                     });
                 }
                 RawRoleKind::DependentDeclaration(dependent_role) => {
@@ -363,17 +385,13 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
             &uses,
         )?;
         if let Some(issue) = unresolved {
-            // [LIV-2] exactly one candidate is promoted per pass, and only the one
-            // this pass could not resolve, so the promotion order is the source
-            // order of the failures and never a search.
-            if let Some(index) =
-                promotable_candidate(&issue, &roles, &declaring_candidates, &promoted)
-            {
-                promoted.insert(index);
-                roles[index].kind = RawRoleKind::Declaration(DeclarationRole::Let);
-                continue;
-            }
-            return Err(BuildStop::Issue(Box::new(issue)));
+            return Err(BuildStop::Issue(Box::new(set_target_attribution(
+                topology,
+                &scopes,
+                &roles,
+                &bare_set_targets,
+                issue,
+            )?)));
         }
         let postconditions = build_postcondition_records(
             topology,
@@ -385,30 +403,29 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
             &postcondition_entry_uses,
             &lexical_uses,
         )?;
-        return Ok(Tables {
+        Ok(Tables {
             scopes: scopes.records,
             prelude: prelude.records,
-
             declarations,
             dependent_declarations,
             lexical_uses,
             deferred_uses,
             postconditions,
-        });
+        })
     }
 }
 
-/// [LIV-2, GRAM-4, GRAM-5] every `pbase` role that a `set` target could
-/// declare: the base of a bare target `place` of a `set_stmt`, written with no
-/// `psuffix` and no `deref`.
+/// [SET-1, GRAM-4, GRAM-5] every `pbase` role that is a bare `set` target: the
+/// base of a target `place` of a `set_stmt`, written with no `psuffix` and no
+/// `deref`.
 ///
-/// Shape alone decides candidacy; whether a candidate declares anything is
-/// decided by lookup, which is what the build loop reads.
-fn declaring_set_target_candidates(
+/// Each such role index maps to its `place` node, which is the location
+/// [SET-1] states for the rejection when the target name resolves to nothing.
+fn bare_set_target_roles(
     topology: &FinalizedTopology,
     roles: &[ClassifiedRole],
-) -> Result<std::collections::HashSet<usize>, ResolutionCompilerFailure> {
-    let mut candidates = std::collections::HashSet::new();
+) -> Result<HashMap<usize, NodeId>, ResolutionCompilerFailure> {
+    let mut candidates = HashMap::new();
     for (index, role) in roles.iter().enumerate() {
         if !matches!(
             role.kind,
@@ -460,31 +477,52 @@ fn declaring_set_target_candidates(
             .node(statement)
             .is_some_and(|record| record.production == Production::SetStmt)
         {
-            candidates.insert(index);
+            candidates.insert(index, place);
         }
     }
     Ok(candidates)
 }
 
-/// The candidate one unresolved-use rejection names, when it names one.
+/// [SET-1] re-attributes an unresolved bare `set` target.
 ///
-/// The rejection carries the use's own origin, and a role owns exactly one
-/// origin, so the match is exact. An already-promoted candidate is never
-/// matched again: its role is a declaration and produces no use at all.
-fn promotable_candidate(
-    issue: &ResolutionIssue,
+/// [DIAG-1]'s role table sends an unresolved `pbase` IDENT to [TYPE-5] at that
+/// IDENT. [SET-1] states its own rule and its own location for the one case it
+/// owns — a `set` target name that resolves to nothing — and a rule's own
+/// stated location wins, so the issue is rebuilt at the complete `place`.
+/// Every other unresolved use passes through unchanged.
+fn set_target_attribution(
+    topology: &FinalizedTopology,
+    scopes: &ScopeBuild,
     roles: &[ClassifiedRole],
-    candidates: &std::collections::HashSet<usize>,
-    promoted: &std::collections::HashSet<usize>,
-) -> Option<usize> {
+    bare_set_targets: &HashMap<usize, NodeId>,
+    issue: ResolutionIssue,
+) -> Result<ResolutionIssue, ResolutionCompilerFailure> {
     if !matches!(issue.kind, ResolutionIssueKind::UnresolvedUse { .. }) {
-        return None;
+        return Ok(issue);
     }
-    candidates.iter().copied().find(|index| {
-        !promoted.contains(index)
-            && roles
-                .get(*index)
-                .is_some_and(|role| role.origin == *issue.origin())
+    let Some(place) = bare_set_targets.iter().find_map(|(index, place)| {
+        roles
+            .get(*index)
+            .is_some_and(|role| role.origin == issue.origin)
+            .then_some(*place)
+    }) else {
+        return Ok(issue);
+    };
+    let record = topology
+        .node(place)
+        .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+    let FinalizedExtent::Source { source, start, end } = record.extent else {
+        return Err(ResolutionCompilerFailure::InvalidCanonicalTree);
+    };
+    Ok(ResolutionIssue {
+        rule: super::ResolutionRule::Set1,
+        origin: SourceOrigin {
+            node: scopes.path(place)?.clone(),
+            coordinate: crate::SyntaxCoordinate::new(source, start, end),
+            role_ordinal: 0,
+            subtoken_ordinal: 0,
+        },
+        kind: issue.kind,
     })
 }
 
@@ -815,8 +853,8 @@ fn owner_chain(
                 | Production::FnDecl
                 | Production::StructDecl
                 | Production::EnumDecl
-                | Production::FormalDecl
-                | Production::ActualDecl
+                | Production::InterfaceDecl
+                | Production::BindingDecl
         ) {
             owners.push(node);
         }
@@ -838,34 +876,6 @@ fn function_owner(topology: &FinalizedTopology, mut node: NodeId) -> Option<Node
     }
 }
 
-/// The declaration one region identifier's uniqueness is judged within
-/// [OWN-3].
-///
-/// [OWN-3] states the scope as "unique within a function (parameters
-/// included)", and [S20] gave a nominal its own `region_params`, which are not
-/// inside any function. Reaching no owner made every nominal's region
-/// parameter share one unit-wide scope, so a unit declaring `Lease['s]` and
-/// `BlockPool['s]` — 3.L.4's own two nominals — was refused for a repetition
-/// [OWN-3] does not state. A nominal is a declaration with its own region
-/// parameters, so it is its own region scope exactly as a function is.
-fn region_scope_owner(topology: &FinalizedTopology, mut node: NodeId) -> Option<NodeId> {
-    loop {
-        let record = topology.node(node)?;
-        if matches!(
-            record.production,
-            Production::FnDecl
-                | Production::FnSig
-                | Production::StructDecl
-                | Production::EnumDecl
-                | Production::FormalDecl
-                | Production::ActualDecl
-        ) {
-            return Some(node);
-        }
-        node = record.parent?;
-    }
-}
-
 fn declaration_classes(role: DeclarationRole) -> Vec<DeclarationClass> {
     match role {
         DeclarationRole::Function => vec![DeclarationClass::Function],
@@ -876,14 +886,11 @@ fn declaration_classes(role: DeclarationRole) -> Vec<DeclarationClass> {
         ],
         DeclarationRole::Enum => vec![DeclarationClass::NominalType],
         DeclarationRole::Variant => vec![DeclarationClass::EnumVariant],
-        DeclarationRole::Formal => vec![DeclarationClass::Formal],
-        DeclarationRole::Actual => vec![DeclarationClass::Actual],
+        DeclarationRole::Interface => vec![DeclarationClass::Interface],
+        DeclarationRole::Binding => vec![DeclarationClass::Binding],
         DeclarationRole::NamedConst => vec![DeclarationClass::NamedConst],
         DeclarationRole::GenericType => vec![DeclarationClass::GenericType],
         DeclarationRole::ConstGeneric => vec![DeclarationClass::ConstGeneric],
-        DeclarationRole::RegionParameter | DeclarationRole::LocalRegion => {
-            vec![DeclarationClass::Region]
-        }
         DeclarationRole::Parameter
         | DeclarationRole::Let
         | DeclarationRole::MatchBinder
@@ -907,9 +914,7 @@ fn declaration_scope(
                 .first()
                 .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?,
         ),
-        DeclarationRole::LoopLabel | DeclarationRole::LocalRegion => {
-            scopes.declaration_scope(role.owner)
-        }
+        DeclarationRole::LoopLabel => scopes.declaration_scope(role.owner),
         _ => Ok(role.scope),
     }
 }
@@ -932,13 +937,11 @@ fn declaration_visibility(
         | DeclarationRole::Invariant => node_end(topology, role.owner)?.value(),
         // [PROV-6, GRAM-4] a destructuring consume's binder is owned by its
         // `fieldbind`, and the whole statement is where it becomes visible,
-        // exactly as an ordinary `let` binder's own statement is.
-        // [LIV-2] a declaring `set` target becomes visible where a `let`
-        // binder does: after its own complete statement, so the right-hand
-        // side of the statement that declares it cannot name it.
+        // exactly as an ordinary `let` binder's own statement is. A `set`
+        // target declares nothing any more [SET-1], so `let_stmt` is the only
+        // statement a `Let` declaration can be owned by.
         DeclarationRole::Let => {
             let owner = ancestor_with_production(topology, role.owner, Production::LetStmt)
-                .or_else(|| ancestor_with_production(topology, role.owner, Production::SetStmt))
                 .unwrap_or(role.owner);
             node_end(topology, owner)?.value()
         }
@@ -1009,13 +1012,12 @@ fn declaration_domain(class: DeclarationClass) -> Option<DeclarationDomain> {
         | DeclarationClass::Value => Some(DeclarationDomain::LexicalIdentifier),
         DeclarationClass::GenericType
         | DeclarationClass::NominalType
-        | DeclarationClass::Formal
-        | DeclarationClass::Actual => Some(DeclarationDomain::NominalType),
+        | DeclarationClass::Interface
+        | DeclarationClass::Binding => Some(DeclarationDomain::NominalType),
         DeclarationClass::StructConstructor | DeclarationClass::EnumVariant => {
             Some(DeclarationDomain::Constructor)
         }
         DeclarationClass::NumericBound => Some(DeclarationDomain::NumericBound),
-        DeclarationClass::Region => Some(DeclarationDomain::Region),
         DeclarationClass::Label => Some(DeclarationDomain::Label),
         DeclarationClass::Invariant => Some(DeclarationDomain::Invariant),
         DeclarationClass::OperationFamily => None,

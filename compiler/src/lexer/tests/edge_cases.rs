@@ -82,10 +82,24 @@ fn active_spec_pre_tree_defects_use_the_exact_specified_spans() {
 
 #[test]
 fn malformed_prefixed_names_report_the_marker() {
-    assert_eq!(issue(b"'"), (SourceIssueKind::MissingRegionName, 0, 1));
-    assert_eq!(issue(b"'Upper"), (SourceIssueKind::MissingRegionName, 0, 1));
     assert_eq!(issue(b"@"), (SourceIssueKind::MissingLabelName, 0, 1));
     assert_eq!(issue(b"@9"), (SourceIssueKind::MissingLabelName, 0, 1));
+}
+
+/// v0.60 has no apostrophe-prefixed form, so `'` begins no specified token.
+///
+/// [GRAM-1]'s list of maximal forms names only `@` as a sigil, and [DIAG-1]'s
+/// raw-lexical clauses keep an apostrophe clause no longer: it falls to the
+/// residual "any other ASCII byte that cannot begin a specified token cites
+/// FORM-1 and spans that byte". The v0.59 cases asserting a FORM-3
+/// `MissingRegionName` at the same two inputs are rewritten here rather than
+/// deleted, because the inputs still have a defined verdict — a different one.
+#[test]
+fn an_apostrophe_is_an_unexpected_byte() {
+    assert_eq!(issue(b"'"), (SourceIssueKind::UnexpectedByte, 0, 1));
+    assert_eq!(issue(b"'region"), (SourceIssueKind::UnexpectedByte, 0, 1));
+    assert_eq!(issue(b"'Upper"), (SourceIssueKind::UnexpectedByte, 0, 1));
+    assert_eq!(SourceIssueKind::UnexpectedByte.rule_id(), "FORM-1");
 }
 
 #[test]
@@ -143,7 +157,7 @@ fn every_complete_source_is_reconstructible_byte_for_byte() {
         ("empty.wf", b"".as_slice()),
         (
             "forms.wf",
-            b"fn  x('r: &uniq 'r T) -> result: own unit\n".as_slice(),
+            b"fn  x(p: &[T], q: &T) -> result: own unit\n".as_slice(),
         ),
         ("strings.wf", br#"doc "a\\b\n";"#.as_slice()),
     ];

@@ -15,20 +15,18 @@ fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn ordinary(pair: &uniq Pair) -> result: own unit reads(pair.left), writes(pair.right) {
+fn ordinary(pair: &Pair) -> result: own unit reads(pair.left), writes(pair.right) {
   let observed = deref(pair).left;
   set deref(pair).right = 1_i32;
   guard(left: observed, right: deref(pair).left);
   return unit;
 }
 
-fn from_call(pair: &uniq Pair) -> result: own unit reads(pair.left), writes(pair.right) {
-  region {
-    let observed = observe(pair: &deref(pair));
-    set deref(pair).right = 1_i32;
-    guard(left: observed, right: deref(pair).left);
-    return unit;
-  }
+fn from_call(pair: &Pair) -> result: own unit reads(pair.left), writes(pair.right) {
+  let observed = observe(pair: &deref(pair));
+  set deref(pair).right = 1_i32;
+  guard(left: observed, right: deref(pair).left);
+  return unit;
 }
 
 fn main() -> status: own ExitStatus pure {

@@ -183,9 +183,8 @@ fn ordered_invariant_roots_have_exact_integer_normalization() {
 }
 
 #[test]
-fn equality_and_disequality_are_not_invariant_roots() {
-    for source in [
-        br#"fn main() -> status: own ExitStatus pure {
+fn equality_is_an_invariant_root() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant same: i == i
@@ -193,9 +192,18 @@ fn equality_and_disequality_are_not_invariant_roots() {
   }
   return exit_status(code: 0_u8);
 }
-"#
-        .as_slice(),
-        br#"fn main() -> status: own ExitStatus pure {
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "equality must normalize to one invariant bound pair: {outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn disequality_is_not_an_invariant_root() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant different: i != 2_u64
@@ -203,23 +211,20 @@ fn equality_and_disequality_are_not_invariant_roots() {
   }
   return exit_status(code: 0_u8);
 }
-"#
-        .as_slice(),
-    ] {
-        with_semantics(source, |outcome| {
-            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-                panic!("a non-ordered invariant root must be rejected: {outcome:?}");
-            };
-            assert_eq!(issue.rule(), SemanticRule::Inv1);
-            assert_eq!(
-                issue.kind(),
-                &SemanticIssueKind::InvalidInvariant {
-                    reason: "the invariant relation is not an admitted ordered integer relation",
-                    mechanical_fix: "write `<=`, `<`, `>=`, or `>` between the two affine expressions; equality and disequality are not invariant relations",
-                }
-            );
-        });
-    }
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("disequality must be rejected as an invariant root: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Inv1);
+        assert_eq!(
+            issue.kind(),
+            &SemanticIssueKind::InvalidInvariant {
+                reason: "the invariant relation is not an admitted ordered integer relation",
+                mechanical_fix: "write `<=`, `<`, `>=`, `>`, or `==` between the two affine expressions; disequality is not an invariant relation",
+            }
+        );
+    });
 }
 
 #[test]
@@ -798,8 +803,9 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn source_invariant_discharges_the_weigh_addition_domain() {
-    let source = br#"fn weigh(weights: &buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
-  define capacity = len_of(deref(weights));
+    let source =
+        br#"fn weigh(weights: &[u8], count: own u64) -> total: own u32 reads(weights) contract {
+  define capacity = deref(weights).len;
   requires count <= capacity;
   requires count <= 1000_u64;
   ensures total <= 255000_u32;
@@ -816,8 +822,8 @@ fn source_invariant_discharges_the_weigh_addition_domain() {
   return sum;
 }
 
-fn add_one(weights: &buffer<u8>, count: own u64) -> result: own u32 reads(weights) contract {
-  define capacity = len_of(deref(weights));
+fn add_one(weights: &[u8], count: own u64) -> result: own u32 reads(weights) contract {
+  define capacity = deref(weights).len;
   requires count <= capacity;
   requires count <= 1000_u64;
 } {
@@ -1225,7 +1231,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn active_invariant_proves_a_real_array_index_obligation() {
-    let source = br#"const values: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+    let source = br#"const values: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
 fn main() -> status: own ExitStatus pure {
   let at = 0_u64;
@@ -1429,9 +1435,9 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn active_invariant_proves_a_dynamic_buffer_index_obligation() {
-    let source = br#"fn read_prefix(values: &buffer<u8>, count: own u64) -> result: own unit reads(values) contract {
-  define capacity = len_of(deref(values));
+fn active_invariant_proves_a_dynamic_range_reference_index_obligation() {
+    let source = br#"fn read_prefix(values: &[u8], count: own u64) -> result: own unit reads(values) contract {
+  define capacity = deref(values).len;
   requires count <= capacity;
 } {
   let index = 0_u64;
@@ -1451,7 +1457,9 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the active invariant must prove the dynamic buffer index: {outcome:?}");
+            panic!(
+                "the active invariant must prove the dynamic range-reference index: {outcome:?}"
+            );
         };
         let function = checked
             .data
@@ -1465,7 +1473,7 @@ fn main() -> status: own ExitStatus pure {
             .obligations
             .iter()
             .find(|outcome| outcome.family == ObligationFamily::Bounds)
-            .expect("the buffer read retains one OP-4 obligation");
+            .expect("the range-reference read retains one OP-4 obligation");
         assert!(index.discharged);
 
         let root = index
@@ -1497,8 +1505,13 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [OP-13] each runtime-capacity construction carries [OP-9]'s static
+/// allocation-size obligation over its own stored type and count, so the
+/// filled and the empty construction each own one AllocationFit occurrence.
+/// The retiring `buffer_new` and `buffer_vacant` are spelled `box_array_filled`
+/// and `box_slots_new`, whose counts are the same loop-exhausted `length`.
 #[test]
-fn exhaustion_fact_proves_filled_and_vacant_buffer_allocation_fit() {
+fn exhaustion_fact_proves_filled_and_vacant_allocation_fit() {
     let source = br#"fn allocate_prefix(count: own u64) -> result: own unit pure contract {
   requires count <= 1000_u64;
 } {
@@ -1509,8 +1522,8 @@ fn exhaustion_fact_proves_filled_and_vacant_buffer_allocation_fit() {
   ) {
     set length = length + 1_u64;
   }
-  let filled = buffer_new(length, 0_u16);
-  let vacant = buffer_vacant::<u8>(length);
+  let filled = box_array_filled::<u16>(count: length, value: 0_u16);
+  let vacant = box_slots_new::<u8>(capacity: length);
   return unit;
 }
 
@@ -1535,8 +1548,10 @@ fn main() -> status: own ExitStatus pure {
             .iter()
             .filter(|outcome| outcome.family == ObligationFamily::AllocationFit)
             .collect::<Vec<_>>();
-        assert_eq!(allocations.len(), 2, "both allocation forms retain OP-9");
-        for allocation in allocations {
+        let [filled, vacant] = allocations.as_slice() else {
+            panic!("both allocation forms retain OP-9");
+        };
+        let proof_routes = |allocation: &&super::super::entailment::ObligationOutcome| {
             assert!(allocation.discharged);
 
             let root = allocation
@@ -1552,6 +1567,7 @@ fn main() -> status: own ExitStatus pure {
             let mut seen = vec![false; function.entailment.derivations.nodes.len()];
             let mut stack = vec![root];
             let mut used_exhaustion = false;
+            let mut used_direct_interval = false;
             while let Some(node) = stack.pop() {
                 let position = node.0 as usize;
                 if seen[position] {
@@ -1566,20 +1582,40 @@ fn main() -> status: own ExitStatus pure {
                         ..
                     } if !premises.is_empty()
                 );
+                // OP-9 for u8 is exactly count <= u64::MAX. Its direct
+                // L0 derivation retains the type maximum itself; an empty
+                // affine-premise wrapper is not required by DIAG-2 and is
+                // not the evidence that establishes this bound.
+                used_direct_interval |= matches!(
+                    retained,
+                    DerivationNode::ImplicitBound {
+                        kind: super::super::entailment::ImplicitBoundKind::TypeMaximum,
+                        bound,
+                        ..
+                    } if *bound == i128::from(u64::MAX)
+                );
                 stack.extend(retained.parent_ids());
             }
-            assert!(
-                used_exhaustion,
-                "each OP-9 proof must descend from the exported source invariant"
-            );
-        }
+            (used_exhaustion, used_direct_interval)
+        };
+        let (filled_exhaustion, _) = proof_routes(filled);
+        assert!(
+            filled_exhaustion,
+            "u16 allocation fit must descend from the exported source invariant"
+        );
+        let (vacant_exhaustion, vacant_direct) = proof_routes(vacant);
+        assert!(
+            !vacant_exhaustion && vacant_direct,
+            "u8 allocation fit is direct from the u64 count's type interval: exhaustion={vacant_exhaustion}, direct={vacant_direct}, derivations={:?}",
+            function.entailment.derivations.nodes
+        );
     });
 }
 
 #[test]
 fn exhaustion_facts_prove_both_ordinary_range_requirements() {
-    let source = br#"fn publish_prefix(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>, limit: own u64) -> result: own unit reads(factory, output, source), writes(factory, output) contract {
-  define capacity = len_of(deref(source));
+    let source = br#"fn publish_prefix(factory: &HandleFactory, output: &OutputStream, source: &[u8], limit: own u64) -> result: own unit reads(source), writes(factory), writes(output) contract {
+  define capacity = deref(source).len;
   requires limit <= capacity;
 } {
   let start = 0_u64;
@@ -1592,9 +1628,7 @@ fn exhaustion_facts_prove_both_ordinary_range_requirements() {
     set start = end;
     set end = end + 1_u64;
   }
-  region {
-    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: start, end: end);
-  }
+  let outcome = write_once(factory: factory, output: output, source: source, start: start, end: end);
   return unit;
 }
 
@@ -2677,12 +2711,14 @@ fn main() -> status: own ExitStatus pure {
 fn a_write_that_kills_a_measure_retargets_the_invariant_image() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   doc "The measure the header names is replaced inside the body.";
-  let data = buffer_new(4_u64, 0_u8);
+  let seed = array_filled::<u8, 4>(value: 0_u8);
+  let data = slots_from_array::<u8, 4>(values: seed);
   for (
     i in 0_u64..1_u64,
-    invariant wide: 4_u64 <= len_of(data)
+    invariant wide: 4_u64 <= data.len
   ) {
-    let old = replace data = buffer_new(1_u64, 0_u8);
+    let fresh = slots_new::<u8, 4>();
+    set data = move fresh;
     let byte = data[3_u64];
   }
   return exit_status(code: 0_u8);
@@ -2690,7 +2726,7 @@ fn a_write_that_kills_a_measure_retargets_the_invariant_image() {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the replaced run's subscript must be refused: {outcome:?}");
+            panic!("the overwritten window's subscript must be refused: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op4);
     });

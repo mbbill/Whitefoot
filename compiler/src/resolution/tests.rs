@@ -16,7 +16,7 @@ use super::{
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
-    max_sources: 64,
+    max_sources: 1_024,
     max_logical_path_bytes: 128,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
@@ -24,7 +24,7 @@ const SOURCE_LIMITS: SourceLimits = SourceLimits {
 };
 
 const LEX_LIMITS: LexLimits = LexLimits {
-    max_sources: 64,
+    max_sources: 1_024,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
     max_token_bytes: 16_384,
@@ -46,7 +46,7 @@ const FINALIZE_LIMITS: FinalizeLimits = FinalizeLimits {
     max_nodes: 131_072,
     max_child_edges: 131_072,
     max_terminals: 131_072,
-    max_sources: 64,
+    max_sources: 1_024,
 };
 
 const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
@@ -178,20 +178,28 @@ fn named_constants_remain_lexically_declaration_before_use() {
 
 #[test]
 fn decimal_array_sizes_need_no_lexical_target() {
-    let source = br#"const values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+    let source = br#"const values: Array<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn probe() -> result: own unit pure {
   return unit;
 }
 "#;
-    with_one_resolution(source, |outcome| {
+    // x1 [TYPE-2, PRE-1]: `Array` is a prelude declaration now, so a unit
+    // resolved without the prelude has no such nominal to name. The subject
+    // here is the const expression's own lexical roles, so the prelude is
+    // included and the fixture is otherwise unchanged.
+    with_resolution_sources(&[SourceInput::new("test.wf", source)], true, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("a decimal const expression must resolve without a name role: {outcome:?}");
         };
+        // The prelude's own declarations name their capacity parameters,
+        // so the claim is read over this unit's source file alone, which is
+        // the file the subject is written in.
         assert!(
             resolved
                 .lexical_uses()
                 .iter()
+                .filter(|usage| usage.origin().coordinate().source().ordinal() == 0)
                 .all(|usage| usage.role() != LexicalUseRole::Const)
         );
     });
@@ -819,28 +827,103 @@ fn a_dotless_operation_name_is_reserved_from_body_invariant_declarations() {
     });
 }
 
+// Retired with v0.60: `region_names_are_unique_across_the_complete_function`
+// asserted [OWN-3]'s per-function region-name uniqueness through
+// `ResolutionRule::Own3` and `ResolutionIssueKind::RepeatedRegion`. v0.60
+// deletes [OWN-3] and the `region_stmt`, `region_params` and REGIONID
+// productions with it, so the rejection it exercised has no subject, no rule
+// to cite and no spelling to write. The obligation it guarded — that a
+// declaration's own names do not silently share one unit-wide scope — is now
+// carried by the generic-parameter half of [TYPE-6], covered by
+// `sibling_member_signatures_do_not_share_parameter_names` below. No
+// successor rule inherits region uniqueness, so nothing replaces this case.
+
+/// x1 deletes the eight-name reservation. [FORM-3] no longer takes `len`,
+/// `cap`, `head`, `next`, `last`, `filled` or `free` away from a declaration:
+/// the first three are the readonly fields [PRE-1] declares on the storage
+/// shapes and the last four are effect-row vocabulary selected by the window
+/// type of the place they follow [TYPE-10], so a writer may spell a
+/// parameter, a field or a binding any of them.
+///
+/// Retires `measure_and_window_part_names_are_reserved_from_source_declarations`,
+/// whose successor is this acceptance over the same three declaration roles.
 #[test]
-fn region_names_are_unique_across_the_complete_function() {
-    // Both blocks write `'r`, which [FORM-8] would separately reject because
-    // neither body references it. Resolution runs first and owns the repeated
-    // region name, which is the judgment under test.
-    let source = br#"fn nested() -> result: own unit pure {
-  region 'r {
-    give unit;
-  }
-  region 'r {
-    give unit;
-  }
+fn measure_and_window_part_names_are_ordinary_source_declarations() {
+    for source in [
+        &b"fn probe(len: own u64) -> result: own unit pure {\n  return unit;\n}\n"[..],
+        &b"struct Holder {\n  cap: u64;\n  next: u64;\n}\n"[..],
+        &b"fn probe() -> result: own unit pure {\n  let filled = 0_u64;\n  return unit;\n}\n"[..],
+    ] {
+        with_one_resolution(source, |outcome| {
+            assert!(
+                matches!(outcome, ResolutionOutcome::Complete(_)),
+                "a measure or part spelling is an ordinary declaration: {outcome:?}"
+            );
+        });
+    }
+}
+
+/// [GRAM-2] admits a `heap_decl` "at most once in a compilation unit and only
+/// as the first `item` of the first source record". The grammar itself admits
+/// one at every item position, so resolution owns the unit-level judgment.
+#[test]
+fn a_heap_declaration_is_admitted_only_as_the_leading_item() {
+    with_one_resolution(
+        b"program no_heap;\n\nfn probe() -> result: own unit pure {\n  return unit;\n}\n",
+        |outcome| {
+            assert!(
+                matches!(outcome, ResolutionOutcome::Complete(_)),
+                "a leading heap declaration is admitted: {outcome:?}"
+            );
+        },
+    );
+    with_one_resolution(
+        b"fn probe() -> result: own unit pure {\n  return unit;\n}\n\nprogram no_heap;\n",
+        |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("a later heap declaration must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Gram2);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::MisplacedHeapDeclaration { admitted: None }
+            ));
+        },
+    );
+    with_one_resolution(b"program no_heap;\n\nprogram no_heap;\n", |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a second heap declaration must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Gram2);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::MisplacedHeapDeclaration { admitted: Some(_) }
+        ));
+    });
+}
+
+/// [SET-1] "A `set` whose target name resolves to nothing declares nothing and
+/// is a hard error citing SET-1 at that `place`." v0.59's [LIV-2] promoted
+/// exactly this target into a `let` declaration instead.
+#[test]
+fn an_unresolved_bare_set_target_declares_nothing_and_cites_set1() {
+    let source = br#"fn probe() -> result: own unit pure {
+  set missing = 0_u64;
+  return unit;
 }
 "#;
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("repeated function region must reject: {outcome:?}");
+            panic!("an unresolvable set target must reject: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRule::Own3);
+        assert_eq!(issue.rule(), ResolutionRule::Set1);
         assert!(matches!(
             issue.kind(),
-            ResolutionIssueKind::RepeatedRegion { spelling, .. } if spelling == "'r"
+            ResolutionIssueKind::UnresolvedUse {
+                spelling,
+                role: LexicalUseRole::PlaceBase,
+                ..
+            } if spelling == "missing"
         ));
     });
 }
@@ -1600,35 +1683,43 @@ fn probe() -> result: own unit pure {
     });
 }
 
-/// Three roles moved position under v0.23 and the fixture follows them rather
-/// than the assertions moving. `TypeRegion` came only from a `let` annotation
-/// that A3 deletes, so it now rides a signature-borne `Slice<'v, i32>`, which
-/// [TYPE-5] keeps written. `OperationCallee` is the OPNAME form specifically
-/// (`roles.rs` keys it on `TerminalPredicate::OperationName`), and the
-/// fixture's only operation call was `iadd.wrap`, one of the rows [OP-7]
-/// respelled — an operator token is never a callee, so a respelled row
-/// produces no lexical use at all. It now rides `iabs.checked`, a dotted row
-/// that keeps its operation-name route.
+/// The fixture follows the language rather than the assertions moving.
+/// `OperationCallee` is the OPNAME form specifically (`roles.rs` keys it on
+/// `TerminalPredicate::OperationName`), so it rides `iabs.checked`, a dotted
+/// [OP-1] row that keeps its operation-name route; an operator token is never
+/// a callee and produces no lexical use at all.
+///
+/// v0.60 deletes the five region use roles and the two region declaration
+/// roles with [OWN-3], [OWN-2] and [FORM-8], and adds two: `EffectIndex` for
+/// the index and range endpoints [EFF-1] now admits inside an effect path, and
+/// `PayloadVariant` for the variant TYPEID of the enum-payload `psuffix`
+/// [GRAM-5] adds. Both are materialized below.
+///
+/// The effect path's two endpoint parameters are spelled `lower` and `upper`
+/// because [FORM-3] reserves the eight measure and part names from every
+/// declaration role and `last` is one of them. The role under test is the
+/// endpoint position, which any ordinary IDENT occupies, so the rename
+/// changes nothing the fixture exists to materialize.
 #[test]
-fn complete_role_fixture_materializes_every_d_u_and_x_family() {
-    // B7c4b left `viewer` on the retiring surface: the fixture has to
-    // materialize `LexicalUseRole::EffectAllocationRegion`, and the only
-    // spelling that produces it is the region-keyed `allocates(arena 'r)`
-    // entry, which has no path form on the container surface and retires with
-    // `arena<'r, T>` itself.
-    let source = br#"formal Bound {
+fn complete_role_fixture_materializes_every_declaration_use_and_deferred_family() {
+    let source = br#"interface Bound {
   fn member(value: &i32) -> result: own i32 reads(value);
 }
 
-formal Numeric<T: Int> {
+interface Numeric<T: Int> {
   fn zero() -> result: own T pure;
 }
 
-struct Package<T: affine, const n: i32> {
-  items: FixedVector<T, n>;
+struct Package<T: drop, const n: i32> {
+  items: Array<T, n>;
 }
 
-enum Choice<T: affine> {
+struct Holder {
+  output: i32;
+  table: Array<i32, 4>;
+}
+
+enum Choice<T: drop> {
   Absent();
   Present(value: T);
 }
@@ -1641,21 +1732,20 @@ fn implementation(value: own i32) -> result: own i32 pure {
   return value;
 }
 
-actual Implementation : Bound {
+binding Implementation : Bound {
   member = implementation;
 }
 
-fn user<T: affine, const n: i32>['call](arg: &'call T) -> result: &'call T reads(arg) {
+fn user<T: drop, const n: i32>(arg: &T) -> result: own T reads(arg) {
   return arg;
 }
 
-fn grouped<Bound>() -> result: own i32 pure {
+fn grouped<interface Bound>() -> result: own i32 pure {
   let called = Bound::member(value: 1_i32);
   return called;
 }
 
-fn viewer['v](values: own Slice<'v, i32>, capability: own i32) -> result: own unit reads(values, capability), allocates(arena 'v) {
-  let held = arena_new::<'v, i32>(1_i32);
+fn adjust(holder: &Holder, lower: own u64, upper: own u64) -> result: own unit reads(holder.table[lower..upper]), writes(holder.output) {
   return unit;
 }
 
@@ -1667,16 +1757,13 @@ fn probe() -> result: own unit pure {
   let ordinary = 1_i32 +wrap two;
   let smaller = iabs.checked(ordinary);
   let made = Package<i32, one>(items: ordinary);
-  set deref(made).items = ordinary;
-  region 'outer {
-    let borrowed = &ordinary;
-    let called = user::<i32, one>(arg: borrowed);
-    let view = move called;
-    let comparison = ordinary == two;
-    region {
-      let outward = &'outer ordinary;
-    }
-  }
+  set made.items = ordinary;
+  let borrowed = &ordinary;
+  let called = user::<i32, one>(arg: borrowed);
+  let taken = move called;
+  let comparison = ordinary == two;
+  let chosen = Present(value: ordinary);
+  let payload = chosen.Present.value;
   loop @done {
     break @done;
   }
@@ -1685,8 +1772,8 @@ fn probe() -> result: own unit pure {
     break @counted;
   }
   match ordinary {
-    Present(value: payload) => {
-      give payload;
+    Present(value: held) => {
+      give held;
     }
     Absent() => {
       return unit;
@@ -1694,7 +1781,11 @@ fn probe() -> result: own unit pure {
   }
 }
 "#;
-    with_one_resolution(source, |outcome| {
+    // x1 [TYPE-2, PRE-1]: the fixture names `Array`, which is a prelude
+    // declaration now rather than a compiler-owned table row, so the unit is
+    // resolved with the prelude. Every role the fixture exercises is a source
+    // role and none of them is the prelude's.
+    with_resolution_sources(&[SourceInput::new("test.wf", source)], true, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("complete role fixture must resolve: {outcome:?}");
         };
@@ -1709,17 +1800,15 @@ fn probe() -> result: own unit pure {
             DeclarationRole::Struct,
             DeclarationRole::Enum,
             DeclarationRole::Variant,
-            DeclarationRole::Formal,
-            DeclarationRole::Actual,
+            DeclarationRole::Interface,
+            DeclarationRole::Binding,
             DeclarationRole::FunctionParameter,
             DeclarationRole::NamedConst,
             DeclarationRole::GenericType,
             DeclarationRole::ConstGeneric,
-            DeclarationRole::RegionParameter,
             DeclarationRole::Parameter,
             DeclarationRole::Let,
             DeclarationRole::LoopLabel,
-            DeclarationRole::LocalRegion,
             DeclarationRole::MatchBinder,
             DeclarationRole::CountedBinder,
         ] {
@@ -1753,14 +1842,11 @@ fn probe() -> result: own unit pure {
             LexicalUseRole::Type,
             LexicalUseRole::GenericBound,
             LexicalUseRole::FormalGroup,
+            LexicalUseRole::TypeArgument,
             LexicalUseRole::Construct,
             LexicalUseRole::ArmVariant,
-            LexicalUseRole::TypeRegion,
-            LexicalUseRole::ModeRegion,
-            LexicalUseRole::TypeArgumentRegion,
-            LexicalUseRole::EffectAllocationRegion,
             LexicalUseRole::EffectRoot,
-            LexicalUseRole::BorrowRegion,
+            LexicalUseRole::EffectIndex,
             LexicalUseRole::BreakLabel,
             LexicalUseRole::Const,
             LexicalUseRole::ConstValue,
@@ -1785,8 +1871,10 @@ fn probe() -> result: own unit pure {
             DeferredUseRole::FieldInitializer,
             DeferredUseRole::MatchField,
             DeferredUseRole::ProjectedField,
+            DeferredUseRole::PayloadVariant,
             DeferredUseRole::FunctionBinding,
             DeferredUseRole::FunctionMember,
+            DeferredUseRole::EffectField,
         ] {
             assert!(
                 deferred_roles.contains(&role),
@@ -1794,23 +1882,36 @@ fn probe() -> result: own unit pure {
             );
         }
 
-        // D7 retires law arguments; numeric literals retain their own
-        // suffix use, and qualified calls add the deferred member use above.
+        // Numeric literals retain their own suffix use, and qualified calls
+        // add the deferred member use above.
         let suffix = resolved
             .lexical_uses()
             .iter()
             .find(|usage| usage.role() == LexicalUseRole::GenericNumericSuffix)
             .expect("generic literal suffix must resolve");
         assert_eq!(suffix.origin().subtoken_ordinal(), 1);
+
+        // [EFF-1] `reads(holder.table[lower..upper])` roots at the reference
+        // parameter, selects one field below it, and supplies both endpoints
+        // as value parameters of the same callable.
+        let indices: Vec<_> = resolved
+            .lexical_uses()
+            .iter()
+            .filter(|usage| usage.role() == LexicalUseRole::EffectIndex)
+            .map(|usage| usage.spelling().to_owned())
+            .collect();
+        assert_eq!(indices, vec!["lower".to_owned(), "upper".to_owned()]);
     });
 }
 
 #[test]
 fn effect_paths_resolve_the_exact_formal_parameter_and_retain_fields() {
-    let source = b"struct Holder {\n  output: i32;\n}\n\nfn publish(holder: own Holder) -> result: own unit writes(holder.output) {\n  return unit;\n}\n";
+    // [EFF-1] every `effect_path` is rooted at a reference parameter, so the
+    // fixture's root is `&Holder` and not the v0.59 `own Holder`.
+    let source = b"struct Holder {\n  output: i32;\n}\n\nfn publish(holder: &Holder) -> result: own unit writes(holder.output) {\n  return unit;\n}\n";
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("a parameter-rooted state path must resolve: {outcome:?}");
+            panic!("a reference-parameter-rooted state path must resolve: {outcome:?}");
         };
         let parameter = resolved
             .declarations()
@@ -1910,6 +2011,9 @@ fn prelude_collision_payload_keeps_both_ordered_struct_domains() {
         assert_eq!(conflicts.len(), 2);
         assert_eq!(conflicts[0].domain(), DeclarationDomain::NominalType);
         assert_eq!(conflicts[1].domain(), DeclarationDomain::Constructor);
+        // This unit is resolved without the parsed prelude, so the inventory
+        // is the built-in catalog alone and `Overflow`'s two records keep the
+        // ordinals that catalog gives them [PRE-1, DIAG-1].
         assert!(
             matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 15)
         );
@@ -1957,21 +2061,95 @@ fn future() -> result: own unit pure {
     });
 }
 
+/// [TYPE-6] a `fn_sig` parameter "is not visible in a sibling member or the
+/// receiving function's body". v0.59 exercised this with a region parameter of
+/// a sibling member; regions are gone, so the same judgment is read off the
+/// parameter itself, which is the only owner-local name a member signature
+/// still declares.
 #[test]
-fn sibling_formal_signatures_do_not_share_region_parameters() {
-    let source = br#"formal Separate {
-  fn first(value: &i32) -> result: own unit pure;
-  fn second() -> result: own Slice<'r, i32> pure;
+fn sibling_member_signatures_do_not_share_parameter_names() {
+    let source = br#"interface Separate {
+  fn first(value: &i32) -> result: own unit reads(value);
+  fn second() -> result: own unit reads(value);
 }
 "#;
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("sibling member region must not participate: {outcome:?}");
+            panic!("sibling member parameter must not participate: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRule::Own3);
+        assert_eq!(issue.rule(), ResolutionRule::Eff1);
         assert!(matches!(
             issue.kind(),
-            ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "'r"
+            ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "value"
+        ));
+    });
+}
+
+#[test]
+fn interface_import_and_unbounded_type_parameter_have_distinct_roles() {
+    let source = br#"interface Source {
+}
+
+fn grouped<interface Source, T>(value: own T) -> result: own T pure {
+  return move value;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("explicit interface import must resolve: {outcome:?}");
+        };
+        assert!(resolved.declarations().iter().any(|declaration| {
+            declaration.spelling() == "T" && declaration.role() == DeclarationRole::GenericType
+        }));
+        assert!(!resolved.declarations().iter().any(|declaration| {
+            declaration.spelling() == "Source" && declaration.role() == DeclarationRole::GenericType
+        }));
+        assert!(resolved.lexical_uses().iter().any(|usage| {
+            usage.spelling() == "Source"
+                && usage.role() == LexicalUseRole::FormalGroup
+                && matches!(
+                    usage.target(),
+                    ResolvedTarget::Source {
+                        class: DeclarationClass::Interface,
+                        ..
+                    }
+                )
+        }));
+    });
+}
+
+#[test]
+fn bare_type_parameter_never_becomes_an_interface_import_by_lookup() {
+    let source = br#"interface Source {
+}
+
+fn grouped<Source>() -> result: own unit pure {
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("bare Source must declare a colliding type binder: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::DeclarationCollision { spelling, .. } if spelling == "Source"
+        ));
+    });
+}
+
+#[test]
+fn explicit_interface_import_requires_a_declared_interface() {
+    let source = br#"fn grouped<interface Missing>() -> result: own unit pure {
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an explicit import must not declare a type binder: {outcome:?}");
+        };
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "Missing"
         ));
     });
 }
@@ -2316,8 +2494,14 @@ fn parsed_prelude_declarations_are_ordinary_visible_targets() {
     );
 }
 
+/// Renamed from `..._and_opaque_types_have_no_constructor`: an opaque struct
+/// does have a constructor entry, and this test asserts that it resolves.
+/// [TYPE-2]: "Its constructor entry [TYPE-6] exists to be refused: a
+/// constructor `call` whose leading TYPEID names an opaque struct is a hard
+/// error citing TYPE-2 at the complete `call`" -- the refusal is the checker's,
+/// over a name resolution supplied here.
 #[test]
-fn ordinary_prelude_names_cannot_be_shadowed_and_opaque_types_have_no_constructor() {
+fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_resolves() {
     for source in [
         "struct HostString {\n}\n",
         "enum Collision {\n  NotFound();\n}\n",
@@ -2339,20 +2523,48 @@ fn ordinary_prelude_names_cannot_be_shadowed_and_opaque_types_have_no_constructo
             },
         );
     }
+    // [TYPE-2] an opaque struct's constructor entry "exists to be refused", so
+    // resolution supplies it and the refusal is the checker's hard error at
+    // the complete `call`. What is checked here is that the entry resolves:
+    // the rejection that used to happen at this stage, as an unresolved name,
+    // would have made [TYPE-2]'s judgment over a resolved declaration
+    // unreachable.
     let source = b"fn fabricate() -> result: own HostString pure {\n  return HostString();\n}\n";
     with_resolution_sources(&[SourceInput::new("opaque.wf", source)], true, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("an ordinary opaque nominal has no constructor: {outcome:?}");
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("an opaque nominal's constructor entry resolves: {outcome:?}");
         };
-        assert!(
-            matches!(issue.kind(), ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "HostString")
-        );
+        assert!(resolved.lexical_uses().iter().any(|usage| {
+            usage.spelling() == "HostString"
+                && matches!(
+                    usage.target(),
+                    ResolvedTarget::Source {
+                        class: DeclarationClass::StructConstructor,
+                        ..
+                    }
+                )
+        }));
+    });
+    // The cell keeps the one compiler-owned identity every later stage reads
+    // a written `Box` through [TYPE-2, TYPE-9, PRE-1], in the constructor
+    // domain as in the nominal one.
+    let source =
+        b"fn hold(cell: own Box<u64>) -> result: own Box<u64> pure {\n  return move cell;\n}\n";
+    with_resolution_sources(&[SourceInput::new("cell.wf", source)], true, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("the cell resolves as a nominal type: {outcome:?}");
+        };
+        assert!(resolved.lexical_uses().iter().any(|usage| {
+            usage.origin().coordinate().source().ordinal() == 0
+                && usage.spelling() == "Box"
+                && usage.target() == ResolvedTarget::Container(crate::CELL_NOMINAL_ID)
+        }));
     });
 }
 
 #[test]
 fn an_ordinary_prelude_signature_is_eligible_for_an_actual_member() {
-    let source = b"formal Counter {\n  fn count(args: &Args) -> result: own u64 reads(args);\n}\n\nactual Selected : Counter {\n  count = args_count;\n}\n";
+    let source = b"interface Counter {\n  fn count(args: &Args) -> result: own u64 reads(args);\n}\n\nbinding Selected : Counter {\n  count = args_count;\n}\n";
     with_resolution_sources(&[SourceInput::new("actual.wf", source)], true, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("FN-4 admits ordinary declarations: {outcome:?}");
@@ -2391,13 +2603,17 @@ fn supplied_signature_locals_do_not_capture_writer_global_names() {
 
 #[test]
 fn ordinary_prelude_diagnostic_origins_follow_the_complete_record_preorder() {
-    // Opaque table first; Bool and its variants follow; the ordinary struct
-    // contributes distinct nominal and constructor records before its fields.
+    // The opaque structs first, each with the nominal and the refused
+    // constructor [TYPE-2] its collision names in both domains; `Bool` and
+    // its variants follow; the ordinary struct contributes distinct nominal
+    // and constructor records before its fields. `Bool` collides on its
+    // nominal alone, because an enum contributes its variants' spellings to
+    // the constructor domain and not its own.
     for (name, origins) in [
-        ("HostString", vec![1]),
-        ("Bool", vec![14]),
-        ("Overflow", vec![29, 30]),
-        ("TcpConnection", vec![36, 37]),
+        ("HostString", vec![24, 25]),
+        ("Bool", vec![50]),
+        ("Overflow", vec![65, 66]),
+        ("TcpConnection", vec![72, 73]),
     ] {
         let source = format!("struct {name} {{\n}}\n");
         with_resolution_sources(
@@ -2455,18 +2671,60 @@ fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_cou
     let first = read_inventory(b"fn helper() -> result: own unit pure {\n  return unit;\n}\n");
     let second = read_inventory(b"struct Extra {\n  field: u64;\n}\n\nfn helper() -> result: own unit pure {\n  let local = 0_u64;\n  return unit;\n}\n");
     assert_eq!(first, second);
-    assert_eq!(first[0].1, "Args");
-    assert_eq!(first[14].1, "Bool");
-    assert_eq!(first[36].1, "TcpConnection");
-    assert_eq!(first[40].1, "AcceptedConnection");
-    // PRE-1 removes 31 records for six outcome enums and adds four for the
-    // ordinary AcceptedConnection struct, constructor and two fields.
-    assert_eq!(first[158].1, "Int");
-    assert_eq!(first[159].1, "Float");
-    assert_eq!(first[160].1, "args_count");
-    assert_eq!(first[276].1, "close_send");
-    assert_eq!(first.len(), 279);
-    assert_eq!(first.last().map(|record| record.1.as_str()), Some("send"));
+    // [PRE-1]'s preorder: "each opaque struct above in written order with its
+    // refused constructor and its fields in declaration order". x1 puts the
+    // three storage shapes first, each with its nominal, the constructor
+    // [TYPE-2] exists to refuse, its element and capacity parameters and its
+    // readonly measure fields; the cell follows with four records of its own,
+    // and each of the fourteen host handles then contributes a nominal and a
+    // refused constructor and no field at all.
+    assert_eq!(first[0].1, "Array");
+    assert_eq!(first[0].2, Some(DeclarationClass::NominalType));
+    assert_eq!(first[1].1, "Array");
+    assert_eq!(first[1].2, Some(DeclarationClass::StructConstructor));
+    assert_eq!(first[2].1, "T");
+    assert_eq!(first[3].1, "n");
+    assert_eq!(first[4].1, "len");
+    assert_eq!(first[5].1, "Slots");
+    assert_eq!(first[9].1, "len");
+    assert_eq!(first[10].1, "cap");
+    assert_eq!(first[11].1, "Ring");
+    assert_eq!(first[15].1, "len");
+    assert_eq!(first[16].1, "cap");
+    assert_eq!(first[17].1, "head");
+    assert_eq!(first[18].1, "Box");
+    assert_eq!(first[18].2, Some(DeclarationClass::NominalType));
+    assert_eq!(first[19].1, "Box");
+    assert_eq!(first[19].2, Some(DeclarationClass::StructConstructor));
+    assert_eq!(first[20].1, "T");
+    assert_eq!(first[21].1, "inner");
+    assert_eq!(first[22].1, "Args");
+    assert_eq!(first[23].2, Some(DeclarationClass::StructConstructor));
+    assert_eq!(first[48].1, "TcpSend");
+    // Then each ordinary struct or enum with its constructor or variants and
+    // their fields, then `Int` and `Float`, then the host functions, then the
+    // construction functions [OP-13], then the window operations [OP-10],
+    // then `swap` [OP-11] and `free_empty` [OP-14], each with its type, const
+    // and value parameters in declared order.
+    assert_eq!(first[50].1, "Bool");
+    assert_eq!(first[72].1, "TcpConnection");
+    assert_eq!(first[76].1, "AcceptedConnection");
+    assert_eq!(first[194].1, "Int");
+    assert_eq!(first[195].1, "Float");
+    assert_eq!(first[196].1, "args_count");
+    assert_eq!(first[312].1, "close_send");
+    assert_eq!(first[315].1, "box_new");
+    assert_eq!(first[346].1, "place_back");
+    assert_eq!(first[390].1, "swap");
+    assert_eq!(first[394].1, "free_empty");
+    // x1 adds the three storage shapes to the opaque phase, which grows from
+    // 32 records to 50: `Array` contributes five, `Slots` six and `Ring`
+    // seven — a nominal, a refused constructor, two generic parameters and
+    // one readonly field per measure — so the whole inventory grew by 18
+    // again and every ordinal from `Box` on moved by that much.
+    assert_eq!(first.len(), 397);
+    // `free_empty`'s own value parameter is the last record of the preorder.
+    assert_eq!(first.last().map(|record| record.1.as_str()), Some("window"));
     assert!(
         first.len() > 256,
         "the full ordinary inventory must not truncate at u8: {}",
@@ -2495,7 +2753,7 @@ fn a_late_prelude_function_collision_preserves_an_ordinal_above_u8() {
             };
             assert_eq!(conflicts.len(), 1);
             assert!(
-                matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 276)
+                matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 312)
             );
         },
     );

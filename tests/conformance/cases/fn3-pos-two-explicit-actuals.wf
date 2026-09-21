@@ -1,12 +1,12 @@
-formal Zeroed {
+interface Zeroed {
   fn zero() -> result: own i32 pure;
 }
 
-actual First : Zeroed {
+binding First : Zeroed {
   zero = i32_zero_a;
 }
 
-actual Second : Zeroed {
+binding Second : Zeroed {
   zero = i32_zero_b;
 }
 

@@ -3,26 +3,20 @@ struct Row {
   right: u64;
 }
 
-fn identity['r](value: &'r Row) -> result: &'r Row pure {
-  return value;
-}
-
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<Row, 4>();
-  let first = Row(left: 3_u64, right: 4_u64);
-  region {
-    place_back(vector: &uniq empty, value: move first);
-  }
-  let prefix = move empty;
-  let second = Row(left: 5_u64, right: 6_u64);
-  region {
-    place_back(vector: &uniq prefix, value: move second);
-  }
-  let rows = move prefix;
-  region {
-    let saved = &rows[0_u64].left;
-    set rows[0_u64].right = 9_u64;
-    let observed = deref(saved);
-  }
+  doc "A write of one field invalidates no reference to its disjoint sibling: the two field selections never overlap, so the live reference is still valid at its later read.";
+  let row0 = Row(left: 3_u64, right: 4_u64);
+  let row1 = Row(left: 3_u64, right: 4_u64);
+  let row2 = Row(left: 3_u64, right: 4_u64);
+  let row3 = Row(left: 3_u64, right: 4_u64);
+  let slots = slots_new::<Row, 4>();
+  place_back(window: &slots, value: row0);
+  place_back(window: &slots, value: row1);
+  place_back(window: &slots, value: row2);
+  place_back(window: &slots, value: row3);
+  let rows = slots_into_array::<Row, 4>(values: move slots);
+  let saved = &rows[0_u64].left;
+  set rows[0_u64].right = 9_u64;
+  let observed = deref(saved);
   return exit_status(code: 0_u8);
 }

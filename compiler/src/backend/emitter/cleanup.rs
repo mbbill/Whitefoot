@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write;
 
-use crate::{IrFlatElement, IrReleaseClass, IrVariant};
+use crate::{IrFlatElement, IrReleaseClass, IrVariant, IrWindowShape};
 
 use super::super::target::TargetLayout;
 use super::{
@@ -46,14 +46,23 @@ pub(super) fn emit_resource_drop_helpers(
     }
     for element in cleanup_buffer_element_nominals(program)? {
         // The [STOR-3] affine-element buffer drop: each element's
-        // compiler-derived drop in ascending index order, then the one
-        // heap free the copy-element buffer already has.
+        // compiler-derived drop in ascending index order. The block's own
+        // free stays with its caller, because the header and the elements
+        // are one allocation the cell owns
+        // (compiler/storage-representation), exactly as a boxed window's
+        // walk leaves the cell's free to the [PROV-6] traversal.
         let element_ty = IrType::Nominal(element);
         let symbol = buffer_drop_helper_symbol(element);
         let aggregate_ty = llvm_type(program, element_ty)?;
+        let block_ty = llvm_type(
+            program,
+            IrType::Buffer {
+                element: IrFlatElement::Nominal(element),
+            },
+        )?;
         writeln!(
             output,
-            "define private void @{symbol}({{ ptr, i64 }} %value) {{\nentry:\n  %pointer = extractvalue {{ ptr, i64 }} %value, 0\n  %length = extractvalue {{ ptr, i64 }} %value, 1\n  br label %head\nhead:\n  %index = phi i64 [ 0, %entry ], [ %next, %body ]\n  %continue = icmp ult i64 %index, %length\n  br i1 %continue, label %body, label %done\nbody:\n  %element.pointer = getelementptr inbounds {aggregate_ty}, ptr %pointer, i64 %index\n  %element = load {aggregate_ty}, ptr %element.pointer"
+            "define private void @{symbol}(ptr %value) {{\nentry:\n  %length.pointer = getelementptr inbounds {block_ty}, ptr %value, i32 0, i32 0\n  %length = load i64, ptr %length.pointer\n  br label %head\nhead:\n  %index = phi i64 [ 0, %entry ], [ %next, %body ]\n  %continue = icmp ult i64 %index, %length\n  br i1 %continue, label %body, label %done\nbody:\n  %element.pointer = getelementptr inbounds {block_ty}, ptr %value, i64 0, i32 1, i64 %index\n  %element = load {aggregate_ty}, ptr %element.pointer"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         let mut temporary = 0_u32;
@@ -64,9 +73,7 @@ pub(super) fn emit_resource_drop_helpers(
             element_ty,
             "%element".to_owned(),
         )?;
-        output.push_str(
-            "  %next = add i64 %index, 1\n  br label %head\ndone:\n  call void @free(ptr %pointer)\n  ret void\n}\n\n",
-        );
+        output.push_str("  %next = add i64 %index, 1\n  br label %head\ndone:\n  ret void\n}\n\n");
     }
     for (index, ty) in cleanup_run_types(program)?.into_iter().enumerate() {
         emit_run_drop_helper(program, &mut output, index, ty)?;
@@ -74,11 +81,11 @@ pub(super) fn emit_resource_drop_helpers(
     Ok(output)
 }
 
-/// [PROV-6, BLK-1] one run's release: its window is visited, in ascending
+/// [PROV-6, WIN-1] one run's release: its window is visited, in ascending
 /// logical order, and only then is its own backing released.
 ///
 /// The walk is over the window and not over the capacity, because a slot
-/// outside the window is raw [BLK-1] and reading it would be an uninitialized
+/// outside the window is raw [WIN-1] and reading it would be an uninitialized
 /// read. The physical slot of logical offset `i` is `(head + i) mod cap`,
 /// which is the one conditional subtract a subscript already emits.
 ///
@@ -93,9 +100,17 @@ fn emit_run_drop_helper(
 ) -> Result<(), BackendFailure> {
     let run_llvm = llvm_type(program, ty)?;
     let symbol = run_drop_helper_symbol(index);
+    // A runtime-capacity block is reached only through the `Box` that owns
+    // it [TYPE-9], so its helper takes the block pointer; every other run is
+    // a value and its helper takes that value.
+    let parameter = if matches!(ty, IrType::Window { capacity: None, .. }) {
+        "ptr".to_owned()
+    } else {
+        run_llvm.clone()
+    };
     writeln!(
         output,
-        "define private void @{symbol}({run_llvm} %value) {{\nentry:"
+        "define private void @{symbol}({parameter} %value) {{\nentry:"
     )
     .map_err(|_| BackendFailure::TextEmission)?;
     let element = match ty {
@@ -111,19 +126,47 @@ fn emit_run_drop_helper(
         }
         // A frame-resident run's slots are inside its own value, so the walk
         // needs an address for it; its capacity is the type constant.
-        IrType::FixedVector { element, length } => {
+        // compiler/storage-representation: the header is first and the
+        // slots follow it in the same block, so one address computation
+        // serves the inline window; a `Slots` window begins at slot zero.
+        IrType::Window {
+            shape,
+            element,
+            capacity: Some(length),
+        } => {
+            let slots = if shape == IrWindowShape::Ring { 2 } else { 1 };
+            let origin = if shape == IrWindowShape::Ring {
+                format!("extractvalue {run_llvm} %value, 1")
+            } else {
+                "add i64 0, 0".to_owned()
+            };
             writeln!(
                 output,
-                "  %storage = alloca {run_llvm}\n  store {run_llvm} %value, ptr %storage\n  %pointer = getelementptr inbounds {run_llvm}, ptr %storage, i64 0, i32 0, i64 0\n  %capacity = add i64 {length}, 0\n  %length = extractvalue {run_llvm} %value, 1\n  %origin = extractvalue {run_llvm} %value, 2"
+                "  %storage = alloca {run_llvm}\n  store {run_llvm} %value, ptr %storage\n  %pointer = getelementptr inbounds {run_llvm}, ptr %storage, i64 0, i32 {slots}, i64 0\n  %capacity = add i64 {length}, 0\n  %length = extractvalue {run_llvm} %value, 0\n  %origin = {origin}"
             )
             .map_err(|_| BackendFailure::TextEmission)?;
             element
         }
-        // A store-resident run's slots are behind its descriptor pointer.
-        IrType::Vector { element, .. } => {
+        // A runtime-capacity block is `[len | cap | head? | slots]` in one
+        // allocation (compiler/storage-representation): every measure the
+        // walk needs is a header word of the block the parameter points at,
+        // and the slots follow that header.
+        IrType::Window {
+            shape,
+            element,
+            capacity: None,
+        } => {
+            let slots = if shape == IrWindowShape::Ring { 3 } else { 2 };
+            let origin = if shape == IrWindowShape::Ring {
+                format!(
+                    "  %origin.pointer = getelementptr inbounds {run_llvm}, ptr %value, i64 0, i32 2\n  %origin = load i64, ptr %origin.pointer"
+                )
+            } else {
+                "  %origin = add i64 0, 0".to_owned()
+            };
             writeln!(
                 output,
-                "  %pointer = extractvalue {run_llvm} %value, 0\n  %capacity = extractvalue {run_llvm} %value, 1\n  %length = extractvalue {run_llvm} %value, 2\n  %origin = extractvalue {run_llvm} %value, 3"
+                "  %pointer = getelementptr inbounds {run_llvm}, ptr %value, i64 0, i32 {slots}, i64 0\n  %length = load i64, ptr %value\n  %capacity.pointer = getelementptr inbounds {run_llvm}, ptr %value, i64 0, i32 1\n  %capacity = load i64, ptr %capacity.pointer\n{origin}"
             )
             .map_err(|_| BackendFailure::TextEmission)?;
             element
@@ -155,10 +198,7 @@ fn emit_run_drop_helper(
 fn cleanup_run_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, BackendFailure> {
     let mut needed = Vec::new();
     for ty in program_types(program)? {
-        let (IrType::Array { element, .. }
-        | IrType::FixedVector { element, .. }
-        | IrType::Vector { element, .. }) = ty
-        else {
+        let (IrType::Array { element, .. } | IrType::Window { element, .. }) = ty else {
             continue;
         };
         let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
@@ -230,12 +270,14 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
         }
         types.push(ty);
         match ty {
-            IrType::Array { element, .. }
-            | IrType::FixedVector { element, .. }
-            | IrType::Vector { element, .. } => {
+            IrType::Array { element, .. } | IrType::Window { element, .. } => {
                 pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?);
             }
-            IrType::Buffer { element } | IrType::Slice { element } => pending.push(element.ty()),
+            IrType::Buffer { element } => pending.push(element.ty()),
+            IrType::Range { element } => {
+                pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?);
+            }
+            IrType::RuntimeBoxPayload { .. } => {}
             IrType::Address(referent) => pending.push(referent.ty()),
             IrType::Nominal(id) => {
                 let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
@@ -252,15 +294,10 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
                         );
                     }
                     IrNominalKind::Box { referent, .. } => pending.push(*referent),
-                    IrNominalKind::Arena { content } => pending.push(*content),
-                    IrNominalKind::ArenaStorage | IrNominalKind::Opaque => {}
+                    IrNominalKind::Opaque => {}
                 }
             }
-            IrType::Unit
-            | IrType::Bool
-            | IrType::Integer { .. }
-            | IrType::Float { .. }
-            | IrType::Provider => {}
+            IrType::Unit | IrType::Bool | IrType::Integer { .. } | IrType::Float { .. } => {}
         }
     }
     Ok(types)
@@ -279,10 +316,7 @@ pub(super) fn program_has_general_run(
     Ok(program_types(program)?.into_iter().any(|ty| {
         matches!(
             ty,
-            IrType::Vector {
-                release: IrReleaseClass::General,
-                ..
-            }
+            IrType::Buffer { .. } | IrType::Window { capacity: None, .. }
         )
     }))
 }
@@ -360,31 +394,12 @@ fn emit_cleanup_jobs(
                 });
             }
             CleanupJob::Value { ty, operand } => match ty {
-                IrType::Buffer { element } => {
-                    // An element type whose own drop derives an action makes
-                    // the buffer drop the per-element loop plus the free
-                    // [STOR-3]; every other element leaves exactly the free.
-                    if type_requires_cleanup(program, element.ty())? {
-                        let IrFlatElement::Nominal(id) = element else {
-                            return Err(BackendFailure::InvalidIr);
-                        };
-                        writeln!(
-                            output,
-                            "  call void @{}({} {operand})",
-                            buffer_drop_helper_symbol(id),
-                            llvm_type(program, ty)?
-                        )
-                        .map_err(|_| BackendFailure::TextEmission)?;
-                    } else {
-                        let pointer = next_temporary(temporary)?;
-                        writeln!(
-                            output,
-                            "  %{pointer} = extractvalue {} {operand}, 0\n  call void @free(ptr %{pointer})",
-                            llvm_type(program, ty)?
-                        )
-                        .map_err(|_| BackendFailure::TextEmission)?;
-                    }
-                }
+                // A runtime-capacity `Array<T>` exists only as `Box` content
+                // [TYPE-9] and is never an owned value of its own, so the
+                // cell arm below is the one route to its release, exactly as
+                // it is for a runtime-capacity window. Reaching here would
+                // mean a value of a type no storage can hold.
+                IrType::Buffer { .. } => return Err(BackendFailure::InvalidIr),
                 IrType::Nominal(id) => {
                     let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
                     match nominal.kind() {
@@ -418,11 +433,58 @@ fn emit_cleanup_jobs(
                             }
                         }
                         IrNominalKind::Opaque => {}
-                        // [PROV-6, S39] the referent is released first and
-                        // the cell's own storage after it: a general store's
-                        // cell frees, and a bump extent's is reclaimed by its
-                        // region's own reset and has no action of its own.
+                        // [PROV-6, STOR-3] release the referent first, then
+                        // free the cell back to the one heap.
                         IrNominalKind::Box { referent, release } => {
+                            // A boxed runtime-capacity shape is thin: the
+                            // cell pointer is the block, whose header and
+                            // elements are the same allocation
+                            // (compiler/storage-representation), which is
+                            // what [TYPE-9]'s "exactly one heap object" and
+                            // [STOR-3]'s "one compiler-derived heap free"
+                            // say. Loading the block would read past its
+                            // declared zero-length element array, so its
+                            // walk takes the pointer and the cell's own free
+                            // is the block's.
+                            if matches!(
+                                referent,
+                                IrType::Window { capacity: None, .. } | IrType::Buffer { .. }
+                            ) {
+                                if *release == IrReleaseClass::General {
+                                    jobs.push(CleanupJob::FreePointer(operand.clone()));
+                                }
+                                match referent {
+                                    IrType::Window { element, .. } => {
+                                        let element = program
+                                            .element(*element)
+                                            .ok_or(BackendFailure::InvalidIr)?;
+                                        if type_requires_cleanup(program, element)? {
+                                            let symbol = run_drop_helper(program, *referent)?
+                                                .ok_or(BackendFailure::InvalidIr)?;
+                                            writeln!(
+                                                output,
+                                                "  call void @{symbol}(ptr {operand})"
+                                            )
+                                            .map_err(|_| BackendFailure::TextEmission)?;
+                                        }
+                                    }
+                                    IrType::Buffer { element } => {
+                                        if type_requires_cleanup(program, element.ty())? {
+                                            let IrFlatElement::Nominal(id) = element else {
+                                                return Err(BackendFailure::InvalidIr);
+                                            };
+                                            writeln!(
+                                                output,
+                                                "  call void @{}(ptr {operand})",
+                                                buffer_drop_helper_symbol(*id)
+                                            )
+                                            .map_err(|_| BackendFailure::TextEmission)?;
+                                        }
+                                    }
+                                    _ => return Err(BackendFailure::InvalidIr),
+                                }
+                                continue;
+                            }
                             let loaded = next_temporary(temporary)?;
                             writeln!(
                                 output,
@@ -438,46 +500,19 @@ fn emit_cleanup_jobs(
                                 operand: format!("%{loaded}"),
                             });
                         }
-                        // An arena value's storage is released with its
-                        // region, never by an owner-scope cleanup
-                        // [STOR-3, STOR-4].
-                        IrNominalKind::Arena { .. } => {}
-                        // The region's allocation-list drop: walk the list
-                        // and free every registered allocation, then leave
-                        // the cell empty [STOR-3].
-                        IrNominalKind::ArenaStorage => {
-                            writeln!(output, "  call void @wf_arena_release(ptr {operand})")
-                                .map_err(|_| BackendFailure::TextEmission)?;
-                        }
                     }
                 }
-                // A run's release visits its window and then releases its own
-                // backing [PROV-6, BLK-1], and the helper is what carries
-                // that order. A frame-resident run reclaims no storage of its
-                // own, and a bump extent's run is reclaimed by its region's
-                // own reset [BLK-2]; a general store's run spends that
-                // store's capability, and its backing action is the free
-                // emitted here, after the window walk.
-                IrType::Vector { element, release } => {
-                    let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
-                    if type_requires_cleanup(program, element)? {
-                        let symbol =
-                            run_drop_helper(program, ty)?.ok_or(BackendFailure::InvalidIr)?;
-                        let run_llvm = llvm_type(program, ty)?;
-                        writeln!(output, "  call void @{symbol}({run_llvm} {operand})")
-                            .map_err(|_| BackendFailure::TextEmission)?;
-                    }
-                    if release == IrReleaseClass::General {
-                        let run_llvm = llvm_type(program, ty)?;
-                        let pointer = next_temporary(temporary)?;
-                        writeln!(
-                            output,
-                            "  %{pointer} = extractvalue {run_llvm} {operand}, 0\n  call void @free(ptr %{pointer})",
-                        )
-                        .map_err(|_| BackendFailure::TextEmission)?;
-                    }
-                }
-                IrType::Array { element, .. } | IrType::FixedVector { element, .. } => {
+                // A runtime-capacity window exists only as `Box` content
+                // [TYPE-9] and is never an owned value of its own, so the
+                // cell arm above is the one route to its release. Reaching
+                // here would mean a value of a type no storage can hold.
+                IrType::Window { capacity: None, .. } => return Err(BackendFailure::InvalidIr),
+                IrType::Array { element, .. }
+                | IrType::Window {
+                    element,
+                    capacity: Some(_),
+                    ..
+                } => {
                     let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
                     if type_requires_cleanup(program, element)? {
                         let symbol =
@@ -491,8 +526,8 @@ fn emit_cleanup_jobs(
                 | IrType::Bool
                 | IrType::Integer { .. }
                 | IrType::Float { .. }
-                | IrType::Slice { .. }
-                | IrType::Provider
+                | IrType::Range { .. }
+                | IrType::RuntimeBoxPayload { .. }
                 | IrType::Address(_) => {}
             },
         }

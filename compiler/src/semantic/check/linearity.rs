@@ -1,5 +1,6 @@
-//! [PROV-6] the release graph, the linearity predicate, the `linear`
-//! modifier, and the two statements that read them.
+//! [PROV-6] the release graph, the linearity predicate, the `nodrop` and
+//! `nocopy` modifiers, the capability bounds, and the statements that read
+//! them.
 //!
 //! Everything here is derived from a type and a scope, never from a name, a
 //! signature, or a statement's shape. The release graph is the one object the
@@ -14,21 +15,25 @@ use crate::{Production, SemanticIssueKind, SemanticRule, TerminalPredicate};
 use super::super::model::{CheckedNominalKind, CheckedReleaseMode, CheckedType, NominalId};
 use super::{CheckStop, Checker};
 
-/// [PROV-6, S37] the linearity class a declaration writes as a bound, and the
-/// class this compiler computes for a type in a scope.
+/// [OWN-1, PROV-6] the class read from a type's two capabilities, copy and
+/// drop, and the class a type parameter's bound grants its body.
 ///
-/// The three form the strict chain `copy < affine < linear`, ordered by what a
+/// A type with both capabilities is copy, a type with drop alone is affine,
+/// and a type with neither is linear; no type has copy without drop. The
+/// three form the strict chain `copy < affine < linear`, ordered by what a
 /// body may do with a value of the class: `copy` may duplicate it, use it bare
 /// and drop it; `affine` may `move` it at most once and may drop it; `linear`
-/// must consume it exactly once and may never drop it.
+/// must consume it exactly once and may never drop it. A parameter written
+/// `T: copy` is copy, `T: drop` is affine, and one written with no bound is
+/// linear.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(in crate::semantic) enum LinearityClass {
     /// Duplicated on use and dropped without any action [OWN-1].
     Copy,
     /// Reclaimed without spending a capability and unmarked.
     Affine,
-    /// Marked by the modifier, or reclaimed by spending a capability this
-    /// scope does not hold.
+    /// Marked `nodrop`, or owning a part that is, or a type parameter whose
+    /// declaration writes no bound.
     Linear,
 }
 
@@ -41,48 +46,27 @@ impl LinearityClass {
         }
     }
 
-    /// [PROV-6, S37] satisfaction is the chain read left to right: an argument
-    /// of class `self` instantiates the bound `bound` exactly when
-    /// `self <= bound`. The reverse direction is the rule's hard error.
+    /// [PROV-6] satisfaction is the filter itself: `T: copy` accepts copy
+    /// arguments only, `T: drop` accepts copy and affine arguments, and a
+    /// parameter with no bound accepts every class. With the bound read as
+    /// the class it grants, that is `self <= bound`.
     pub(in crate::semantic) fn satisfies(self, bound: Self) -> bool {
         self <= bound
+    }
+
+    /// [GRAM-2] the `capability_bound` spelling that grants this class, which
+    /// a rejection naming the written bound prints. A linear parameter writes
+    /// no bound, and no argument fails to satisfy it.
+    pub(in crate::semantic) const fn bound_spelling(self) -> &'static str {
+        match self {
+            Self::Copy => "copy",
+            Self::Affine => "drop",
+            Self::Linear => "no bound",
+        }
     }
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// [PROV-6] whether this type's own reclamation is a release to a store
-    /// whose provider is a value.
-    ///
-    /// In this version the heap-backed types are exactly those types, and
-    /// the ambient heap is their sole provider. Nothing here reads a name:
-    /// the storage class [STOR-1] selects the answer.
-    pub(in crate::semantic) fn is_capability_released(
-        &self,
-        ty: CheckedType,
-    ) -> Result<bool, CheckStop> {
-        Ok(match ty {
-            CheckedType::Buffer { .. } => true,
-            // [PROV-1] a run branded to a general store is released to that
-            // store; a bump extent's run is reclaimed by its region's own
-            // reset and spends nothing.
-            CheckedType::Vector { release, .. } => {
-                release == super::super::model::CheckedReleaseClass::General
-            }
-            // A cell is released to the store its own region names S39: a
-            // general store's cell frees, a bump extent's is reclaimed by
-            // its region's own reset, and the ambient heap's `box<T>` is
-            // released to a store that is not a value at all.
-            CheckedType::Nominal(id) => matches!(
-                self.nominal(id)?.kind,
-                CheckedNominalKind::Box {
-                    release: super::super::model::CheckedReleaseClass::General,
-                    ..
-                }
-            ),
-            _ => false,
-        })
-    }
-
     /// [PROV-6, STOR-5] whether this type is or reaches a view, which owns
     /// nothing and contributes no release-graph node.
     pub(in crate::semantic) fn is_loan_bearing(&self, ty: CheckedType) -> Result<bool, CheckStop> {
@@ -96,11 +80,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         visited: &mut HashSet<NominalId>,
     ) -> Result<bool, CheckStop> {
         match ty {
-            CheckedType::Slice { .. } => Ok(true),
             CheckedType::Buffer { element } => self.loan_bearing_with(element.ty(), visited),
-            CheckedType::Array { element, .. }
-            | CheckedType::FixedVector { element, .. }
-            | CheckedType::Vector { element, .. } => {
+            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 self.loan_bearing_with(self.element_type(element)?, visited)
             }
             CheckedType::Nominal(id) => {
@@ -119,7 +100,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// The types one nominal owns directly [PROV-6]: its fields, its enum
-    /// variant payloads, its `box` referent, and its `arena` content.
+    /// variant payloads and its `box` referent.
     fn owned_components(&self, id: NominalId) -> Result<Vec<CheckedType>, CheckStop> {
         Ok(match &self.nominal(id)?.kind {
             CheckedNominalKind::Struct { fields } => fields.iter().map(|field| field.ty).collect(),
@@ -128,8 +109,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
                 .collect(),
             CheckedNominalKind::Box { referent, .. } => vec![*referent],
-            CheckedNominalKind::Arena { content, .. } => vec![*content],
-            CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => Vec::new(),
+            CheckedNominalKind::Opaque => Vec::new(),
         })
     }
 
@@ -164,9 +144,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 // A run owns the elements of its window [BLK-1], so its
                 // element is a sub-node exactly as a field is.
-                CheckedType::Array { element, .. }
-                | CheckedType::FixedVector { element, .. }
-                | CheckedType::Vector { element, .. } => {
+                CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                     pending.push(self.element_type(element)?);
                 }
                 CheckedType::Nominal(id) => pending.extend(self.owned_components(id)?),
@@ -184,19 +162,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ty: CheckedType,
         release: CheckedReleaseMode,
     ) -> Result<Vec<CheckedType>, CheckStop> {
-        if release == CheckedReleaseMode::EmptyRun
-            && matches!(
-                ty,
-                CheckedType::FixedVector { .. } | CheckedType::Vector { .. }
-            )
-        {
+        if release == CheckedReleaseMode::EmptyRun && matches!(ty, CheckedType::Window { .. }) {
             return Ok(vec![ty]);
         }
         self.release_graph_nodes(ty)
     }
 
     /// [PROV-6] whether any node of this type's release graph carries the
-    /// `linear` modifier, this type's own node included.
+    /// `nodrop` modifier, this type's own node included.
     pub(in crate::semantic) fn owns_modifier_linear_node(
         &self,
         ty: CheckedType,
@@ -214,17 +187,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [PROV-6] the linearity class of a value of this type in the scope now
     /// being checked.
     ///
-    /// The copy half is [OWN-1]'s own classification, which [PROV-6] refines
-    /// and replaces nothing of: a copy value is never affine and never linear.
-    /// The capability half is stated over the provider a scope holds. In this
-    /// version the only provider is the ambient heap, which every scope
-    /// holds, so the capability half makes nothing linear here and the
-    /// modifier is the whole of the remaining answer. The version that makes a
-    /// provider a written value is where the second half first fires.
+    /// The copy half is [OWN-1]'s structural capability: every owned part is
+    /// copy and the declaration removes nothing. The drop half is [PROV-6]'s
+    /// closure: a type lacks drop exactly when its declaration carries
+    /// `nodrop`, or it owns at any depth a type that lacks it, a type
+    /// parameter written with no bound included.
     ///
     /// A type parameter standing for itself at a symbolic instance [FN-2] has
-    /// exactly the class its written bound names [S37]: the body is checked
-    /// once under that bound and the bound is what the body was written for.
+    /// exactly the class its written bound grants: the body is checked once
+    /// under that bound and the bound is what the body was written for.
     pub(in crate::semantic) fn linearity_class(
         &self,
         ty: CheckedType,
@@ -235,7 +206,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.is_copy_type(ty)? {
             return Ok(LinearityClass::Copy);
         }
-        Ok(if self.owns_modifier_linear_node(ty)?.is_some() {
+        Ok(if self.linear_release_obligation(ty)?.is_some() {
             LinearityClass::Linear
         } else {
             LinearityClass::Affine
@@ -262,43 +233,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ty: CheckedType,
         release: CheckedReleaseMode,
     ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
-        let mut stores = Vec::new();
-        for node in self.release_graph_nodes_for(ty, release)? {
-            let store = match node {
-                CheckedType::Vector {
-                    region,
-                    release: super::super::model::CheckedReleaseClass::General,
-                    ..
-                } => Some(region),
-                // S39 a cell branded to a general store spends that
-                // store's capability exactly as a run branded to it does.
-                CheckedType::Nominal(id) => match self.nominal(id)?.kind {
-                    CheckedNominalKind::Box {
-                        region: Some(region),
-                        release: super::super::model::CheckedReleaseClass::General,
-                        ..
-                    } => Some(region),
-                    _ => None,
-                },
-                _ => None,
-            };
-            if let Some(store) = store
-                && !stores.contains(&store)
-            {
-                stores.push(store);
-            }
-        }
-        Ok(stores)
+        // [STOR-8] one heap, provided by the trusted base: no value provides
+        // storage, so no release spends a provider a parameter supplies and
+        // no release-graph node names one. The graph is still walked, so a
+        // type whose release graph this version cannot build is reported here
+        // rather than answered with an empty set.
+        self.release_graph_nodes_for(ty, release)?;
+        Ok(Vec::new())
     }
 
-    fn direct_run(&self, ty: CheckedType) -> bool {
-        matches!(
-            ty,
-            CheckedType::FixedVector { .. } | CheckedType::Vector { .. }
-        )
-    }
-
-    fn linear_release_obligation(&self, ty: CheckedType) -> Result<Option<String>, CheckStop> {
+    pub(super) fn linear_release_obligation(
+        &self,
+        ty: CheckedType,
+    ) -> Result<Option<String>, CheckStop> {
         if let Some(marked) = self.owns_modifier_linear_node(ty)? {
             return Ok(Some(self.nominal(marked)?.name.clone()));
         }
@@ -309,7 +256,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 && self.generic_parameter_class(declaration)? == LinearityClass::Linear
             {
                 return Ok(Some(format!(
-                    "the `linear` bound written on {}",
+                    "the absent bound of {}, which grants its body no drop capability",
                     self.declaration_spelling(declaration)?
                 )));
             }
@@ -336,14 +283,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if linear.is_none() && missing.is_none() {
             return Ok(CheckedReleaseMode::Full);
         }
-        if self.direct_run(ty)
-            && self
-                .capability_released_stores_for(ty, CheckedReleaseMode::EmptyRun)?
-                .into_iter()
-                .all(|store| self.scope_holds_store_capability(bindings, store))
-        {
-            return Ok(CheckedReleaseMode::EmptyRun);
-        }
+        // [WIN-3] "No operation releases a linear element: a storage whose
+        // element type is linear is itself linear [PROV-6] and the program
+        // must take every element out and consume it, and then, with the
+        // storage proved empty, call `free_empty` [OP-14]." A proved-empty
+        // run therefore takes no compiler-derived release of its own either:
+        // `free_empty` is a written call that consumes the window, so a run
+        // reaching a scope exit is refused here whatever its length, and the
+        // v0.59 element-free derived release is gone with the capability
+        // leaves it was written for.
         if linear.is_some() {
             self.reject_linear_value_not_consumed(ty, name, node)?;
         }
@@ -362,11 +310,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(in crate::semantic) fn scope_holds_store_capability(
         &self,
         bindings: &std::collections::HashMap<crate::DeclarationId, super::LocalBinding>,
-        store: crate::DeclarationId,
+        _store: crate::DeclarationId,
     ) -> bool {
-        bindings.values().any(|local| {
-            local.live && matches!(local.ty, CheckedType::Heap { region } if region == store)
-        })
+        bindings.values().any(|local| local.live && false)
     }
 
     /// [PROV-6, D3] the refusal of a value whose release spends a capability
@@ -411,11 +357,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         name: &str,
         node: NodeId,
     ) -> Result<(), CheckStop> {
-        // [S37] a `linear`-bounded type parameter is linear at its symbolic
-        // instance: the body is checked once under its written bound, and
-        // under `linear` it must consume the value exactly once and may never
-        // drop it. The obligation names the bound rather than a nominal,
-        // because at the symbolic instance no nominal carries it.
+        // [PROV-6] a type parameter with no bound is linear at its symbolic
+        // instance: the body is checked once under what its bound grants, and
+        // with no bound it must consume the value exactly once and may never
+        // drop it. The obligation names the absent bound rather than a
+        // nominal, because at the symbolic instance no nominal carries it.
         let Some(marked) = self.linear_release_obligation(ty)? else {
             return Ok(());
         };
@@ -478,55 +424,47 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// [PROV-6] the `linear` modifier is admitted only on a nominal [OWN-1]
-    /// classifies as affine.
-    pub(in crate::semantic) fn check_linear_modifier_admission(
-        &self,
-        id: NominalId,
-        node: NodeId,
-    ) -> Result<(), CheckStop> {
-        let nominal = self.nominal(id)?;
-        if !nominal.linear || !nominal.is_copy() {
-            return Ok(());
-        }
-        self.issue_node::<()>(
-            SemanticRule::Prov6,
-            node,
-            SemanticIssueKind::LinearModifierOnCopyNominal {
-                nominal: nominal.name.clone(),
-                mechanical_fix: "give a variant a payload, or put the obligation on the \
-                     value the issuer hands out",
-            },
-        )?;
-        Ok(())
-    }
-
-    /// Whether a `struct_decl` or `enum_decl` node writes the modifier.
+    /// Whether a `struct_decl` or `enum_decl` node writes `nodrop`, the
+    /// modifier that removes the drop capability and copy with it [OWN-1].
     pub(in crate::semantic) fn declaration_is_linear(
         &self,
         node: NodeId,
     ) -> Result<bool, CheckStop> {
         Ok(self
             .tree
-            .direct_token_with(node, TerminalPredicate::Fixed(crate::FixedTerminal::Linear))?
+            .direct_token_with(node, TerminalPredicate::Fixed(crate::FixedTerminal::Nodrop))?
             .is_some())
     }
 
-    /// [PROV-6, GRAM-2] the linearity bound a `gparam` or a `region_param`
-    /// writes, when it writes one.
+    /// Whether a `struct_decl` or `enum_decl` node writes `nocopy`, the
+    /// modifier that removes the copy capability alone [OWN-1, GRAM-2].
+    pub(in crate::semantic) fn declaration_is_nocopy(
+        &self,
+        node: NodeId,
+    ) -> Result<bool, CheckStop> {
+        Ok(self
+            .tree
+            .direct_token_with(node, TerminalPredicate::Fixed(crate::FixedTerminal::Nocopy))?
+            .is_some())
+    }
+
+    /// [PROV-6, GRAM-2] the class a `gparam`'s written capability bound
+    /// grants, when it writes one: `copy` grants both capabilities and `drop`
+    /// grants drop alone, which are the copy and affine classes read at the
+    /// parameter.
     pub(in crate::semantic) fn written_linearity_bound(
         &self,
         node: NodeId,
     ) -> Result<Option<LinearityClass>, CheckStop> {
         let Some(bound) = self
             .tree
-            .first_child_with(node, Production::LinearityBound)?
+            .first_child_with(node, Production::CapabilityBound)?
         else {
             return Ok(None);
         };
         for (terminal, class) in [
-            (crate::FixedTerminal::Linear, LinearityClass::Linear),
             (crate::FixedTerminal::Copy, LinearityClass::Copy),
+            (crate::FixedTerminal::Drop, LinearityClass::Affine),
         ] {
             if self
                 .tree
@@ -536,15 +474,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Ok(Some(class));
             }
         }
-        Ok(Some(LinearityClass::Affine))
+        Err(crate::SemanticCompilerFailure::InvalidCanonicalTree.into())
     }
 
-    /// [PROV-6, S37] the class a type parameter's written bound names.
+    /// [PROV-6, FN-2] the class a type parameter's bound grants its body.
     ///
-    /// The bound is mandatory [GRAM-2], so a `gparam` that writes no
-    /// `linearity_bound` writes a marker TYPEID instead — `Int` or `Float`,
-    /// each of which is a copy class [OP-1, OWN-1]. The reader is over the
-    /// parameter's own declaration and never over a use of it.
+    /// A `gparam` writes a `capability_bound`, a numeric marker TYPEID —
+    /// `Int` or `Float`, each of which implies copy [OP-1, OWN-1] — or no
+    /// bound at all, which grants no capability and is the linear class. The
+    /// reader is over the parameter's own declaration and never over a use of
+    /// it.
     pub(in crate::semantic) fn generic_parameter_class(
         &self,
         declaration: crate::DeclarationId,
@@ -583,98 +522,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             return Err(crate::SemanticCompilerFailure::InvalidResolution.into());
         }
-        Ok(self
-            .written_linearity_bound(node)?
-            .unwrap_or(LinearityClass::Copy))
+        if let Some(class) = self.written_linearity_bound(node)? {
+            return Ok(class);
+        }
+        // A `gparam` with no `capability_bound` child writes a numeric marker
+        // after its colon, or nothing: the colon tells the two apart.
+        Ok(
+            if self
+                .tree
+                .direct_token_with(node, TerminalPredicate::Fixed(crate::FixedTerminal::Colon))?
+                .is_some()
+            {
+                LinearityClass::Copy
+            } else {
+                LinearityClass::Linear
+            },
+        )
     }
 
-    /// [PROV-1, PROV-6, S37] the store class of one region, or `None` when
-    /// that region names no store.
+    /// [PROV-6] an instantiation whose argument's class does not satisfy the
+    /// written bound is refused at the call, naming the parameter, the bound
+    /// and the argument.
     ///
-    /// The answer is read from the region's own declaration and from the
-    /// reserving occurrences of the unit, never from a type over it: the entry
-    /// heap is the general store, a bounded region parameter is the class its
-    /// bound names, and a `region_stmt` region is a bump extent exactly when a
-    /// reserving occurrence [BLK-2] names it. Every other region — a loop
-    /// body's, an unwritten borrow position's, an unbounded region parameter's
-    /// — names no store, which is the answer that satisfies neither bound.
-    pub(in crate::semantic) fn region_store_class(
-        &self,
-        region: crate::DeclarationId,
-    ) -> Result<Option<LinearityClass>, CheckStop> {
-        let record = self
-            .resolved
-            .declarations()
-            .iter()
-            .find(|candidate| candidate.id() == region)
-            .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
-        let role = record.role();
-        let Some(node) = self.tree.node_with_path(record.origin().node()) else {
-            return Ok(None);
-        };
-        if role == crate::DeclarationRole::RegionParameter {
-            return self.written_linearity_bound(node);
-        }
-        if role != crate::DeclarationRole::LocalRegion {
-            return Ok(None);
-        }
-        for call in self
-            .tree
-            .descendants_with(self.tree.root(), Production::Call)?
-        {
-            if self.reserving_occurrence_names(call, region)? {
-                return Ok(Some(LinearityClass::Affine));
-            }
-        }
-        Ok(None)
-    }
-
-    /// [PROV-6, STOR-1, STOR-3] the release class of a run branded by one
-    /// region, decided from that region's own declaration.
-    ///
-    /// It is the store class read fail-closed: an `affine`-bounded region
-    /// parameter and a `region_stmt` region are bump extents, whose
-    /// reclamation is the region's own reset, and every other region — the
-    /// an unbounded region parameter or a `linear`-bounded one — is
-    /// a general store whose run is released by spending a provider. A
-    /// misclassification in the extent direction would drop a free, so the
-    /// two extent cases are the ones that must be positively identified.
-    pub(in crate::semantic) fn vector_release_class(
-        &self,
-        region: crate::DeclarationId,
-    ) -> Result<super::super::model::CheckedReleaseClass, CheckStop> {
-        use super::super::model::CheckedReleaseClass;
-        let Some(record) = self
-            .resolved
-            .declarations()
-            .iter()
-            .find(|candidate| candidate.id() == region)
-        else {
-            return Ok(CheckedReleaseClass::General);
-        };
-        Ok(match record.role() {
-            crate::DeclarationRole::LocalRegion => CheckedReleaseClass::Extent,
-            crate::DeclarationRole::RegionParameter => {
-                let node = self
-                    .tree
-                    .node_with_path(record.origin().node())
-                    .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
-                match self.written_linearity_bound(node)? {
-                    Some(LinearityClass::Affine) => CheckedReleaseClass::Extent,
-                    _ => CheckedReleaseClass::General,
-                }
-            }
-            _ => CheckedReleaseClass::General,
-        })
-    }
-
-    /// [PROV-6, S37] an instantiation whose argument's class does not satisfy
-    /// the written bound is refused at the call, naming the parameter, the
-    /// bound and the argument.
-    ///
-    /// Satisfaction is the chain `copy < affine < linear` read left to right,
-    /// so the bound is a ceiling and not an equality: `linear` accepts every
-    /// class, `affine` accepts copy and affine, and `copy` accepts copy alone.
+    /// The bound is a capability filter, so it is a ceiling and not an
+    /// equality: no bound accepts every class, `drop` accepts copy and
+    /// affine, and `copy` accepts copy alone.
     pub(in crate::semantic) fn check_linearity_bound(
         &self,
         parameter: &str,
@@ -692,46 +564,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node,
             SemanticIssueKind::LinearityBoundMismatch {
                 parameter: parameter.to_owned(),
-                bound: bound.spelling(),
+                bound: bound.bound_spelling(),
                 argument,
                 actual: actual.spelling(),
-            },
-        )?;
-        Ok(())
-    }
-
-    /// [PROV-6, S37] the region axis of the same check.
-    ///
-    /// A region argument's class is `affine` when the store it names is a bump
-    /// extent, whose reclamation is its own region reset, and `linear` when it
-    /// names a general store, whose reclamation spends a provider capability
-    /// [PROV-1]. A region that names no store — a loan region, or a region a
-    /// `region_stmt` introduced that no reserving occurrence names — has no
-    /// store class and satisfies neither bound.
-    ///
-    /// This axis is an equality and not the type axis' chain: a region bound
-    /// names *which kind of store* its region identifies, so an extent does
-    /// not stand in for a general store any more than a general store stands
-    /// in for an extent [PROV-6].
-    pub(in crate::semantic) fn check_region_linearity_bound(
-        &self,
-        parameter: &str,
-        bound: LinearityClass,
-        argument: crate::DeclarationId,
-        node: NodeId,
-    ) -> Result<(), CheckStop> {
-        let actual = self.region_store_class(argument)?;
-        if actual == Some(bound) {
-            return Ok(());
-        }
-        self.issue_node::<()>(
-            SemanticRule::Prov6,
-            node,
-            SemanticIssueKind::LinearityBoundMismatch {
-                parameter: parameter.to_owned(),
-                bound: bound.spelling(),
-                argument: self.region_phrase(argument)?,
-                actual: actual.map_or("a region that names no store", LinearityClass::spelling),
             },
         )?;
         Ok(())
@@ -739,106 +574,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// [PROV-6] `dispose p;`'s admission over `p`'s release graph, judged
-    /// before the operand's own ownership consume.
-    pub(in crate::semantic::check) fn dispose_admission(
-        &self,
-        function: &super::FunctionSignature,
-        ty: CheckedType,
-        node: NodeId,
-    ) -> Result<CheckedReleaseMode, CheckStop> {
-        if self.is_loan_bearing(ty)? {
-            return self.issue_node(
-                SemanticRule::Prov6,
-                node,
-                SemanticIssueKind::DisposeOfLoanBearingOperand {
-                    ty: self.checked_type_name(ty)?,
-                    mechanical_fix: "a view owns nothing and has no release action of its own; \
-                         release the value it views",
-                },
-            );
-        }
-        let linear = self.linear_release_obligation(ty)?;
-        let missing = self
-            .capability_released_stores(ty)?
-            .into_iter()
-            .find(|store| {
-                !function.parameters.iter().any(
-                    |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == *store),
-                )
-            });
-        let root_missing = if self.direct_run(ty) {
-            self.capability_released_stores_for(ty, CheckedReleaseMode::EmptyRun)?
-                .into_iter()
-                .find(|store| {
-                    !function.parameters.iter().any(
-                        |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == *store),
-                    )
-                })
-        } else {
-            None
-        };
-        if (linear.is_some() || missing.is_some()) && self.direct_run(ty) {
-            let mut root_has_capability = false;
-            for node_ty in self.release_graph_nodes_for(ty, CheckedReleaseMode::EmptyRun)? {
-                root_has_capability |= self.is_capability_released(node_ty)?;
-            }
-            let root_provider_missing = self
-                .capability_released_stores_for(ty, CheckedReleaseMode::EmptyRun)?
-                .into_iter()
-                .any(|store| {
-                    !function.parameters.iter().any(
-                        |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store),
-                    )
-                });
-            if root_has_capability && !root_provider_missing {
-                return Ok(CheckedReleaseMode::EmptyRun);
-            }
-        }
-        if root_missing.is_some() {
-            self.reject_dispose_without_provider_for(
-                function,
-                ty,
-                CheckedReleaseMode::EmptyRun,
-                node,
-            )?;
-        }
-        if let Some(marked) = linear {
-            return self.issue_node(
-                SemanticRule::Prov6,
-                node,
-                SemanticIssueKind::DisposeOfLinearNode {
-                    nominal: marked,
-                    mechanical_fix: "take the value apart with let N(f: a, ...) = move v; \
-                         and discharge the marked component",
-                },
-            );
-        }
-        if missing.is_some() {
-            self.reject_dispose_without_provider_for(function, ty, CheckedReleaseMode::Full, node)?;
-        }
-        let mut capability_leaf = false;
-        for node_ty in self.release_graph_nodes(ty)? {
-            capability_leaf |= self.is_capability_released(node_ty)?;
-        }
-        if !capability_leaf {
-            return self.issue_node(
-                SemanticRule::Prov6,
-                node,
-                SemanticIssueKind::DisposeWithoutCapabilityLeaf {
-                    ty: self.checked_type_name(ty)?,
-                    mechanical_fix: "this value's release action reclaims no capability; \
-                         let the scope exit run it",
-                },
-            );
-        }
-        // [PROV-6] the resolution: an ambient-heap leaf resolves no binding,
-        // and a general-store leaf resolves that store's live provider and
-        // writes it. The provider write itself is added by the caller, which
-        // holds the function signature this resolution reads.
-        Ok(CheckedReleaseMode::Full)
-    }
-
     /// [PROV-6, D3] the provider place each general store reached by `ty`'s
     /// release graph spends, resolved against this function's own parameters.
     ///
@@ -861,45 +596,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         release: CheckedReleaseMode,
     ) -> Result<Vec<super::super::model::CheckedStatePath>, CheckStop> {
         let mut writes = Vec::new();
-        for store in self.capability_released_stores_for(ty, release)? {
-            if let Some(parameter) = function.parameters.iter().find(
-                |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store),
-            ) {
+        for _store in self.capability_released_stores_for(ty, release)? {
+            if let Some(parameter) = function.parameters.iter().find(|_parameter| false) {
                 writes.push(super::super::model::CheckedStatePath {
                     root: parameter.declaration,
-                    fields: Vec::new(),
+                    steps: Vec::new(),
                 });
             }
         }
         Ok(writes)
-    }
-
-    /// [PROV-6] `dispose p;` in a scope holding no provider of a store `p`
-    /// releases to, rendered with the parameter the scope is missing.
-    pub(in crate::semantic) fn reject_dispose_without_provider_for(
-        &self,
-        function: &super::FunctionSignature,
-        ty: CheckedType,
-        release: CheckedReleaseMode,
-        node: NodeId,
-    ) -> Result<(), CheckStop> {
-        for store in self.capability_released_stores_for(ty, release)? {
-            if function.parameters.iter().any(
-                |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store),
-            ) {
-                continue;
-            }
-            let phrase = self.region_phrase(store)?;
-            return self.issue_node(
-                SemanticRule::Prov6,
-                node,
-                SemanticIssueKind::DisposeHasNoProvider {
-                    store: phrase,
-                    provider: "a Heap parameter of this store's own region".to_owned(),
-                    mechanical_fix: "receive this store's provider as a parameter, so the                          release this statement runs has a capability to spend",
-                },
-            );
-        }
-        Ok(())
     }
 }

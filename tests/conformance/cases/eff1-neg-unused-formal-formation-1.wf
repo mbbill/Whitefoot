@@ -1,5 +1,5 @@
-formal Invalid {
-  fn inspect(value: &u64) -> result: own unit writes(value);
+interface Invalid {
+  fn inspect(value: own u64) -> result: own unit writes(value);
 }
 
 fn main() -> status: own ExitStatus pure {

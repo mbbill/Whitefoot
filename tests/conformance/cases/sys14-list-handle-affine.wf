@@ -87,73 +87,53 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn exercise['heap](cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq Heap<'heap>) -> status: own ExitStatus reads(cwd, files, heap), writes(files, heap), allocates(heap) {
+fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(cwd), writes(files) {
   doc "An ordinary DirectorySource is non-copy and linear. The original duplicate use remains an OWN-1 rejection; selected linearity additionally requires explicit consumption on accepted paths.";
-  region {
-    match heap_vector::<u8>(store: &uniq deref(heap), count: 1024_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh) => {
-        let entries = move fresh;
-        for @scratch (
-          at in 0_u64..1024_u64,
-          invariant grown: len_of(entries) >= at,
-          invariant spare: room_of(entries) + at >= 1024_u64,
-          invariant flat: head_of(entries) <= 0_u64
-        ) {
-          place_back(vector: &uniq entries, value: 0_u8);
+  let entries = slots_new::<u8, 1024>();
+  for @scratch (
+    at in 0_u64..1024_u64,
+    invariant grown: entries.len >= at,
+    invariant vacancy: entries.cap - entries.len + at >= 1024_u64
+  ) {
+    place_back(window: &entries, value: 0_u8);
+  }
+  let window = &entries[0_u64..1024_u64];
+  match open_directory_source(factory: files, directory: cwd) {
+    Ok(value: list) => {
+      let held = move list;
+      let (list_result_1, bytes, reported) = directory_next(source: &list, destination: window, start: 0_u64, end: 1024_u64);
+      match list_result_1 {
+        Ok(value: done) => {
+          close_directory_source(factory: files, source: move held);
+          return exit_status(code: 0_u8);
         }
-        region {
-          let window = mut_slice_of(&uniq entries);
-          region {
-            match open_directory_source(factory: &uniq deref(files), directory: cwd) {
-              Ok(value: list) => {
-                let held = move list;
-                region {
-                  let (list_result_1, bytes, reported) = directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: 1024_u64);
-                  match list_result_1 {
-                    Ok(value: done) => {
-                      close_directory_source(factory: &uniq deref(files), source: move held);
-                      return exit_status(code: 0_u8);
-                    }
-                    Err(error: list_stop_1) => {
-                      match list_stop_1 {
-                        ListEnd() => {
-                          close_directory_source(factory: &uniq deref(files), source: move held);
-                          return exit_status(code: 0_u8);
-                        }
-                        ListFailed(error: problem) => {
-                          close_directory_source(factory: &uniq deref(files), source: move held);
-                          return exit_status(code: 3_u8);
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-              Err(error: problem) => {
-                region {
-                  if factory_refusal(error: &problem) {
-                    return exit_status(code: 5_u8);
-                  }
-                }
-                return exit_status(code: 4_u8);
-              }
+        Err(error: list_stop_1) => {
+          match list_stop_1 {
+            ListEnd() => {
+              close_directory_source(factory: files, source: move held);
+              return exit_status(code: 0_u8);
+            }
+            ListFailed(error: problem) => {
+              close_directory_source(factory: files, source: move held);
+              return exit_status(code: 3_u8);
             }
           }
         }
       }
     }
+    Err(error: problem) => {
+      if factory_refusal(error: &problem) {
+        return exit_status(code: 5_u8);
+      }
+      return exit_status(code: 4_u8);
+    }
   }
 }
 
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
-  region {
-    let outcome = exercise(cwd: &cwd, files: &uniq files, heap: &uniq heap);
-    close_directory(factory: &uniq files, directory: move cwd);
-    return move outcome;
-  }
+  let outcome = exercise(cwd: &cwd, files: &files);
+  close_directory(factory: &files, directory: move cwd);
+  return move outcome;
 }

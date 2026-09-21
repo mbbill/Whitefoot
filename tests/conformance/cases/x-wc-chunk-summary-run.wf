@@ -6,8 +6,9 @@ struct Summary {
   last_space: u64;
 }
 
-fn summarize<const n: u64>(out: &uniq Summary, input: own FixedVector<u8, n>) -> function_result: own unit reads(input), writes(out.lines, out.words, out.bytes, out.first_space, out.last_space) {
-  let length = len_of(input);
+fn summarize<const n: u64>(out: &Summary, input: own Slots<u8, n>) -> function_result: own unit writes(out.lines), writes(out.words), writes(out.bytes), writes(out.first_space), writes(out.last_space) {
+  doc "Scans the owned chunk and publishes its counts through the field paths its row declares; the by-value input carries no effect entry [EFF-1].";
+  let length = input.len;
   let index_value = 0_u64;
   let lines = 0_u64;
   let words = 0_u64;
@@ -63,7 +64,8 @@ fn summarize<const n: u64>(out: &uniq Summary, input: own FixedVector<u8, n>) ->
   return unit;
 }
 
-fn combine['r](out: &uniq 'r Summary, left: &'r Summary, right: &'r Summary) -> function_result: own unit reads(left.lines, left.words, left.bytes, left.first_space, left.last_space, right.lines, right.words, right.bytes, right.first_space, right.last_space), writes(out.lines, out.words, out.bytes, out.first_space, out.last_space) {
+fn combine(out: &Summary, left: &Summary, right: &Summary) -> function_result: own unit reads(left.lines), reads(left.words), reads(left.bytes), reads(left.first_space), reads(left.last_space), reads(right.lines), reads(right.words), reads(right.bytes), reads(right.first_space), reads(right.last_space), writes(out.lines), writes(out.words), writes(out.bytes), writes(out.first_space), writes(out.last_space) {
+  doc "Combines two summaries associatively; the three reference parameters supply three distinct roots, so the call site proves every substituted pair disjoint [EFF-5, OWN-7].";
   if deref(left).bytes == 0_u64 {
     set deref(out).lines = deref(right).lines;
     set deref(out).words = deref(right).words;
@@ -99,35 +101,20 @@ fn combine['r](out: &uniq 'r Summary, left: &'r Summary, right: &'r Summary) -> 
 }
 
 fn main() -> status: own ExitStatus pure {
-  let left_input = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq left_input, value: 97_u8);
-  }
-  region {
-    place_back(vector: &uniq left_input, value: 32_u8);
-  }
-  region {
-    place_back(vector: &uniq left_input, value: 98_u8);
-  }
-  region {
-    place_back(vector: &uniq left_input, value: 10_u8);
-  }
+  doc "Two owned byte chunks are summarized and associatively combined through one output struct and two input structs; whitespace state, early identity return, call-site disjointness, caller-visible writes, discharged bounds obligations, and inline-run storage execute through the normal compiler path.";
+  let left_input = slots_new::<u8, 4>();
+  place_back(window: &left_input, value: 97_u8);
+  place_back(window: &left_input, value: 32_u8);
+  place_back(window: &left_input, value: 98_u8);
+  place_back(window: &left_input, value: 10_u8);
   let left = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
-  region {
-    summarize::<4>(out: &uniq left, input: move left_input);
-  }
-  let right_input = fixed_vector::<u8, 1>();
-  region {
-    place_back(vector: &uniq right_input, value: 99_u8);
-  }
+  summarize::<4>(out: &left, input: move left_input);
+  let right_input = slots_new::<u8, 1>();
+  place_back(window: &right_input, value: 99_u8);
   let right = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
-  region {
-    summarize::<1>(out: &uniq right, input: move right_input);
-  }
+  summarize::<1>(out: &right, input: move right_input);
   let total = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
-  region {
-    combine(out: &uniq total, left: &left, right: &right);
-  }
+  combine(out: &total, left: &left, right: &right);
   if total.lines == 1_u64 {
   } else {
     return exit_status(code: 1_u8);
@@ -150,9 +137,7 @@ fn main() -> status: own ExitStatus pure {
   }
   let empty = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 1_u64, last_space: 1_u64);
   let copied = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
-  region {
-    combine(out: &uniq copied, left: &empty, right: &total);
-  }
+  combine(out: &copied, left: &empty, right: &total);
   if copied.lines == 1_u64 {
   } else {
     return exit_status(code: 6_u8);

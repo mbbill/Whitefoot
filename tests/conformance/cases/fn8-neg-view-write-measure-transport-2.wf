@@ -1,6 +1,6 @@
-fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
-  doc "Writes one byte through the borrow and returns the next position.";
-  let spare = len_of(deref(destination));
+fn fill(destination: &Slots<u8, 64>, at: own u64) -> result: own u64 writes(destination) {
+  doc "Writes one byte through the reference and returns the next position.";
+  let spare = deref(destination).len;
   let inside = at < spare;
   if inside {
     set deref(destination)[at] = 65_u8;
@@ -9,8 +9,8 @@ fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(des
   return next;
 }
 
-fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
-  define capacity = len_of(deref(source));
+fn emit(source: &Slots<u8, 64>, length: own u64) -> result: own u64 reads(source) contract {
+  define capacity = deref(source).len;
   requires length <= capacity;
 } {
   doc "Consumes a prefix whose length the caller has proved.";
@@ -23,14 +23,10 @@ fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) c
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Emits a prefix without a live length fact.";
-  let line = buffer_new(64_u64, 0_u8);
+  doc "Emits a prefix without a live length fact: nothing relates the position `fill` returned to the run's current length, so the instantiated requirement is unproved.";
+  let line = slots_new::<u8, 64>();
   let end = 0_u64;
-  region {
-    set end = fill(destination: &uniq line, at: end);
-  }
-  region {
-    let sent = emit(source: &line, length: end);
-  }
+  set end = fill(destination: &line, at: end);
+  let sent = emit(source: &line, length: end);
   return exit_status(code: 0_u8);
 }

@@ -1,22 +1,20 @@
-formal PureMember {
-  fn apply['heap](store: &uniq Heap<'heap>, x: own i32) -> result: own i32 reads(store);
+struct Counter {
+  count: u64;
 }
 
-fn allocating_apply['heap](store: &uniq Heap<'heap>, x: own i32) -> result: own i32 reads(store), writes(store), allocates(store) {
-  region {
-    match heap_vector::<u8>(store: &uniq deref(store), count: 1_u64) {
-      None() => {
-        return x;
-      }
-      Some(value: scratch) => {
-        return x;
-      }
-    }
-  }
+interface PureMember {
+  fn apply(store: &Counter, x: own i32) -> result: own i32 reads(store.count);
 }
 
-actual First : PureMember {
-  apply = allocating_apply;
+fn writing_apply(store: &Counter, x: own i32) -> result: own i32 writes(store.count) {
+  doc "FN-4 requires every actual effect path to be covered in the same category by the formal row. A writing actual exceeds a reads-only formal, and `writes` subsumes `reads` rather than the other way round [EFF-1].";
+  let seen = deref(store).count;
+  set deref(store).count = seen;
+  return x;
+}
+
+binding First : PureMember {
+  apply = writing_apply;
 }
 
 fn main() -> status: own ExitStatus pure {

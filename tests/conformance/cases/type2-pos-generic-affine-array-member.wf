@@ -1,5 +1,5 @@
-struct Holder<T: affine> {
-  values: array<T, 2>;
+struct Holder<T: drop> {
+  values: Array<T, 2>;
 }
 
 fn main() -> status: own ExitStatus pure {

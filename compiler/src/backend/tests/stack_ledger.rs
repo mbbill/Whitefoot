@@ -387,67 +387,31 @@ fn the_compilers_own_drop_glue_has_rows_and_reports_its_cycle() {
 }
 
 /// A recursive nominal, built and destroyed, with nothing recursive written.
-const RECURSIVE_VALUE: &[u8] = br#"enum Tree['s] {
+///
+/// [STOR-8] makes allocation total in the source, so the `Option` arms this
+/// fixture used to carry around every cell have no subject left: `box_new`
+/// returns the cell itself and no allocating operation carries a `Result`.
+const RECURSIVE_VALUE: &[u8] = br#"enum Tree {
   Leaf();
-  Branch(left: Box<'s, Tree<'s>>, right: Box<'s, Tree<'s>>);
+  Branch(left: Box<Tree>, right: Box<Tree>);
 }
 
-fn boxed_leaf['s](store: &uniq Heap<'s>) -> made: own Option<Box<'s, Tree<'s>>> reads(store), writes(store), allocates(store) {
-  let leaf = Leaf<'s>();
-  region {
-    match heap_box(store: &uniq deref(store), value: move leaf) {
-      Ok(value: cell) => {
-        return Some<Box<'s, Tree<'s>>>(value: move cell);
-      }
-      Err(error: back) => {
-        return None<Box<'s, Tree<'s>>>();
-      }
-    }
-  }
+fn boxed_leaf() -> made: own Box<Tree> pure {
+  let leaf = Leaf();
+  let cell = box_new::<Tree>(value: move leaf);
+  return move cell;
 }
 
-fn boxed_branch['s](store: &uniq Heap<'s>, left: own Box<'s, Tree<'s>>, right: own Box<'s, Tree<'s>>) -> made: own Option<Box<'s, Tree<'s>>> reads(store), writes(store), allocates(store) {
+fn boxed_branch(left: own Box<Tree>, right: own Box<Tree>) -> made: own Box<Tree> pure {
   let branch = Branch(left: move left, right: move right);
-  region {
-    match heap_box(store: &uniq deref(store), value: move branch) {
-      Ok(value: cell) => {
-        return Some<Box<'s, Tree<'s>>>(value: move cell);
-      }
-      Err(error: back) => {
-        return None<Box<'s, Tree<'s>>>();
-      }
-    }
-  }
+  let cell = box_new::<Tree>(value: move branch);
+  return move cell;
 }
 
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  region {
-    match boxed_leaf(store: &uniq heap) {
-      None() => {
-        return exit_status(code: 2_u8);
-      }
-      Some(value: boxed_left) => {
-        match boxed_leaf(store: &uniq heap) {
-          None() => {
-            return exit_status(code: 2_u8);
-          }
-          Some(value: boxed_right) => {
-            match boxed_branch(store: &uniq heap, left: move boxed_left, right: move boxed_right) {
-              None() => {
-                return exit_status(code: 2_u8);
-              }
-              Some(value: root) => {
-                return exit_status(code: 0_u8);
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+fn main() -> status: own ExitStatus pure {
+  let boxed_left = boxed_leaf();
+  let boxed_right = boxed_leaf();
+  let root = boxed_branch(left: move boxed_left, right: move boxed_right);
+  return exit_status(code: 0_u8);
 }
 "#;

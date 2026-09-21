@@ -1,15 +1,13 @@
-fn two_in_a_row(vector: &uniq FixedVector<u8, 4>) -> result: own unit reads(vector), writes(vector) contract {
-  requires room_of(deref(vector)) > 1_u64;
+fn two_in_a_row(window: &Slots<u8, 4>) -> result: own unit writes(window) contract {
+  requires 1_u64 < deref(window).cap - deref(window).len;
 } {
-  doc "The first placement publishes its exit room relative to its entry room, supplying the second placement's requirement.";
-  region {
-    place_back(vector: &uniq deref(vector), value: 1_u8);
-    place_back(vector: &uniq deref(vector), value: 2_u8);
-  }
+  doc "The first placement publishes its exit length and capacity against their entry values, and that is the only premise the second placement's own cap - len requirement has.";
+  place_back(window: window, value: 1_u8);
+  place_back(window: window, value: 2_u8);
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "CALL-6: a kernel-domain row's declared relation is instantiated at the call and established on its continuation, exactly as a source contract's is.";
+  doc "A PRE-1 record's declared relation is instantiated at the call and established on its normal continuation, exactly as a source contract's is. The second call is admitted by the first call's publication and by nothing else.";
   return exit_status(code: 0_u8);
 }

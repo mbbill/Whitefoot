@@ -1,31 +1,29 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
-  ensures len_of(result) >= n;
-  ensures room_of(result) <= 0_u64;
-  ensures head_of(result) <= 0_u64;
+fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+  ensures result.len >= n;
+  ensures result.cap <= result.len;
 } {
-  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
-  let built = fixed_vector::<T, n>();
+  doc "Builds a window of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
+  let built = slots_new::<T, n>();
   for @fill (
     at in 0_u64..n,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= n,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len >= at,
+    invariant spare: built.cap - built.len + at >= n
   ) {
-    place_back(vector: &uniq built, value: value);
+    place_back(window: &built, value: value);
   }
   return move built;
 }
 
 struct Frame {
   flags: u64;
-  tail: FixedVector<u8, 8>;
+  tail: Slots<u8, 8>;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "[MSR-2] the support of a measure term over P is P's descriptor storage, not P's root binding. `frame.flags` and `frame.tail` are two disjoint parts of one struct, so a [SET-1] commit to the sibling field overlaps neither the descriptor storage of `frame.tail` nor any holder reached to it, and `len_of(frame.tail)` survives the write. The subscript after the write therefore still discharges against that fact. Under the root-granular reading this rule replaces, the same program was an [OP-4] rejection with the residual 3_u64 < len_of(frame.tail).";
+  doc "MSR-2: the support of a measure term over P is P's descriptor storage, not P's root binding. frame.flags and frame.tail are two disjoint parts of one struct, so a SET-1 commit to the sibling field overlaps neither the descriptor storage of frame.tail nor any holder reached to it, and frame.tail.len survives the write. The subscript after the write therefore still discharges against that fact.";
   let body = filled::<u8, 8>(value: 0_u8);
   let frame = Frame(flags: 0_u64, tail: move body);
-  let size = len_of(frame.tail);
+  let size = frame.tail.len;
   if 3_u64 < size {
     set frame.flags = 1_u64;
     let byte = frame.tail[3_u64];

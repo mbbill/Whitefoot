@@ -9,10 +9,12 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedFlatElement,
-    CheckedMode, CheckedNominalKind, CheckedStatePath, CheckedType, CheckedValue, ConstOperation,
-    FloatType, IntegerType, LoanStrength, evaluate_const_operation,
+    CheckedConst, CheckedConstant, CheckedConstantId, CheckedEffectStep, CheckedElement,
+    CheckedFlatElement, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedStatePath,
+    CheckedType, CheckedValue, ConstOperation, FloatType, IntegerType, WindowShape,
+    evaluate_const_operation,
 };
+use super::super::places::WindowPart;
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
 use super::{CheckStop, Checker, EffectSet, ParameterSignature, PreludeType};
@@ -28,6 +30,10 @@ const TYPE5_NO_TARGS_FOUND: &str = "a written `<...>` type-argument list on a ty
 /// constructor name; naming both spellings is what makes the repair
 /// mechanical there.
 const RESULT_TARGS_EXPECTED: &str = "Result with both type arguments written: as a type `Result<u64, IoError>`, and as a variant constructor `Ok<u64, IoError>(value: v)`";
+/// [STOR-8]'s own restructuring, shared by the type and call halves.
+pub(super) const STOR8_NO_HEAP: &str =
+    "use a constant-capacity shape, or withdraw the no-heap declaration";
+
 const OPTION_TARGS_EXPECTED: &str = "Option with its type argument written: as a type `Option<u64>`, and as a variant constructor `Some<u64>(value: v)`";
 /// [EFF-1]'s five row conditions, each with the repair it admits.
 ///
@@ -36,19 +42,69 @@ const OPTION_TARGS_EXPECTED: &str = "Option with its type argument written: as a
 /// repeated-category one — `writes(cwd), writes(out)` — with nothing but the
 /// rule number to work from. The field-of-non-struct condition is cited at two
 /// sites, so five conditions cover six rejections.
-const EFF1_SHARED_WRITE: &str = "a `writes` path is rooted at a shared borrow parameter, which grants no exclusive access to that state";
-const EFF1_SHARED_WRITE_FIX: &str = "declare that parameter `&uniq` or `own`, or drop the path from `writes`; an effect path grants no permission of its own";
-const EFF1_CATEGORY_ONCE: &str = "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates";
-const EFF1_CATEGORY_ONCE_FIX: &str = "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates";
+const EFF1_CATEGORY_ORDER: &str =
+    "a row is written in the canonical order, every `reads` entry before every `writes` entry";
+const EFF1_CATEGORY_ORDER_FIX: &str = "move every `reads` entry ahead of the first `writes` entry; a category may appear more than once";
+const EFF1_REPEATED_PATH: &str =
+    "a row lists each path at most once per category, and this entry repeats one";
+const EFF1_REPEATED_PATH_FIX: &str = "delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path";
 const EFF1_NON_PARAMETER_ROOT: &str = "every effect path is rooted at one formal value parameter of the same callable, and this root is not one";
 const EFF1_NON_PARAMETER_ROOT_FIX: &str = "root the path at a parameter of this function; a local, a result binder, a region, and an unrelated declaration are never effect roots";
-const EFF1_FIELD_OF_NON_STRUCT: &str = "each effect-path suffix selects one statically known field of a source struct, and this prefix is not a source struct";
-const EFF1_FIELD_OF_NON_STRUCT_FIX: &str = "name the parameter itself, which names the complete state it supplies; an enum payload, a subscript, and a `deref` spelling are outside the effect-path grammar";
-const EFF1_UNKNOWN_FIELD: &str = "an effect-path suffix names a field the struct does not declare";
+const EFF1_FIELD_OF_NON_STRUCT: &str = "each effect-path suffix must select a field, payload, measure, window part, or indexed position admitted by its prefix type";
+const EFF1_FIELD_OF_NON_STRUCT_FIX: &str = "select a member or position admitted by the prefix type, or name the reference parameter's complete state; use .inner for Box contents";
+const EFF1_UNKNOWN_FIELD: &str =
+    "an effect-path suffix names a member its selected type does not declare";
 const EFF1_UNKNOWN_FIELD_FIX: &str =
-    "name a declared field of that struct, or the parameter itself";
+    "name a declared member of that type, or the reference parameter itself";
+
+/// The kind selected at one point in an effect path.
+///
+/// A range reference carries its element type in [`ParameterSignature::ty`],
+/// so that type alone cannot distinguish the range's own `len` from a field
+/// or measure of its element. Keep the distinction through the row walk and
+/// discard it exactly when an index selects one element.
+#[derive(Clone, Copy)]
+pub(super) enum SelectedPlaceType {
+    Value(CheckedType),
+    Range(CheckedType),
+    /// A symbolic PRE-1 window part whose element type awaits its operand.
+    /// It carries a path identity but admits no further typed projection.
+    UnresolvedWindowElement,
+}
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// [TYPE-9] a runtime-capacity shape may appear only as the content of a
+    /// `Box` — the type of its `inner` field — and never inline in another
+    /// value and never as a local binding.
+    ///
+    /// The type reader forms the type and never judges the placement, because
+    /// one reader serves a parameter, a field, an element and a `Box` content
+    /// position alike and only the position knows which of them it is. This
+    /// is the refusal those positions make: every written `type` whose value
+    /// would be stored inline calls it, and the `Box` referent position does
+    /// not.
+    pub(super) fn reject_inline_runtime_capacity(
+        &self,
+        node: NodeId,
+        ty: CheckedType,
+    ) -> Result<(), CheckStop> {
+        // `Array<T>` is the one runtime-capacity form the checker represents
+        // today; a runtime-capacity `Slots<T>` and a `Ring` in either
+        // placement stop earlier as an unimplemented representation, which is
+        // compiler/storage-representation's checker-shapes decision.
+        if !matches!(ty, CheckedType::Buffer { .. }) || self.tree.is_prelude_node(node)? {
+            return Ok(());
+        }
+        self.issue_node(
+            SemanticRule::Type9,
+            node,
+            SemanticIssueKind::InlineRuntimeCapacityShape {
+                spelling: self.checked_type_name(ty)?,
+                mechanical_fix: "wrap it in a Box, or write the constant-capacity form",
+            },
+        )
+    }
+
     pub(super) fn parse_parameters_with(
         &self,
         function: NodeId,
@@ -63,18 +119,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut parameters = Vec::new();
         for node in self.tree.children_with(list, Production::Param)? {
             let declaration = self.declaration_at(node, DeclarationRole::Parameter)?;
-            let mode = self
-                .tree
-                .first_child_with(node, Production::Mode)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let mode = self.parse_mode(mode)?;
+            // `param := IDENT ":" (mode type | "&" "[" type "]")` [GRAM-2]:
+            // the range-reference alternative writes no `mode` node at all,
+            // so the mode is read from the node when there is one and is the
+            // `&[T]` kind when there is not [REF-4].
+            let mode = self.parse_mode(node)?;
             let ty_node = self
                 .tree
                 .first_child_with(node, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let ty = self.parse_type_with(ty_node, substitution)?;
-            if mode != CheckedMode::Own && !self.borrowable_type(ty)? {
-                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node);
+            // A reference parameter names a path into storage its caller
+            // owns, so only the by-value position stores a shape inline.
+            if mode == CheckedMode::Own {
+                self.reject_inline_runtime_capacity(ty_node, ty)?;
             }
             parameters.push(ParameterSignature {
                 declaration: declaration.id(),
@@ -82,7 +140,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 name: declaration.spelling().to_owned(),
                 mode,
                 ty,
-                region_shape: self.type_region_shape(ty, Some(ty_node))?,
             });
         }
         Ok(parameters)
@@ -93,16 +150,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(CheckedMode, CheckedType), CheckStop> {
-        let mode = self
-            .tree
-            .first_child_with(node, Production::Mode)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let mode = self.parse_mode(mode)?;
+        // `rtype := "own" type` [GRAM-2]: a result is always owned, because a
+        // reference never leaves the function that formed it [REF-3].
         let ty = self
             .tree
             .first_child_with(node, Production::Type)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        Ok((mode, self.parse_type_with(ty, substitution)?))
+        Ok((CheckedMode::Own, self.parse_type_with(ty, substitution)?))
     }
 
     pub(super) fn parse_type(&self, node: NodeId) -> Result<CheckedType, CheckStop> {
@@ -140,88 +194,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if self.has_fixed(node, FixedTerminal::F64)? {
             return Ok(CheckedType::Float(FloatType::F64));
-        }
-        if self.has_fixed(node, FixedTerminal::Array)? {
-            let element_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(element_node, substitution)?;
-            let length_node = self
-                .tree
-                .first_child_with(node, Production::Const)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let element_type = self.parse_type_with(element_node, substitution)?;
-            let element = self.intern_element(element_type)?;
-            return Ok(CheckedType::Array {
-                element,
-                length: self.parse_const_expression_with(length_node, substitution)?,
-            });
-        }
-        if self.has_fixed(node, FixedTerminal::Buffer)? {
-            let element_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(element_node, substitution)?;
-            let element_type = self.parse_type_with(element_node, substitution)?;
-            // [TYPE-2] v0.31 forms buffers over copy elements and over
-            // region-free affine nominal elements. The structural affine
-            // composites (`buffer<buffer<T>>`, `buffer<array<T, N>>`) and
-            // generic elements have no implemented representation yet and
-            // stop as an explicit unsupported capability rather than a
-            // source rejection.
-            return match self.buffer_element(element_type)? {
-                Some(element) => Ok(CheckedType::Buffer { element }),
-                None => self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node),
-            };
-        }
-        if self.has_fixed(node, FixedTerminal::Arena)? {
-            let content_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(content_node, substitution)?;
-            let content = self.parse_type_with(content_node, substitution)?;
-            let region = self.substituted_type_region(node, substitution)?;
-            return self
-                .arena_nominals
-                .get(&(region, content))
-                .copied()
-                .map(CheckedType::Nominal)
-                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
-        }
-        // [VIEW-1] the two views are one type shape at two loan strengths,
-        // and the atom the writer wrote is which strength this is.
-        if let Some(strength) = self.written_loan_strength(node)? {
-            let region = self.substituted_type_region(node, substitution)?;
-            let element_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let element_type = self.parse_type_with(element_node, substitution)?;
-            let Some(element) = self.buffer_element(element_type)? else {
-                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node);
-            };
-            return Ok(CheckedType::Slice {
-                region,
-                element,
-                strength,
-            });
-        }
-        if self.has_fixed(node, FixedTerminal::Box)? {
-            let referent_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(referent_node, substitution)?;
-            let referent = self.parse_type_with(referent_node, substitution)?;
-            return self
-                .box_nominals
-                .get(&referent)
-                .copied()
-                .map(CheckedType::Nominal)
-                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
         }
         if self
             .tree
@@ -342,184 +314,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.unsupported(UnsupportedSemanticFeature::CompositeValues, node)
     }
 
-    pub(super) fn reject_region_bearing_generic_argument(
-        &self,
-        argument: NodeId,
-        substitution: &GenericSubstitution,
-    ) -> Result<(), CheckStop> {
-        if self.type_node_is_region_bearing_with(argument, substitution)? {
-            return self.issue_node(
-                SemanticRule::Fn2,
-                argument,
-                SemanticIssueKind::RegionBearingGenericArgument {
-                    mechanical_fix:
-                        "make the slice or arena a direct written parameter or result instead of a generic argument",
-                },
-            );
-        }
-        Ok(())
-    }
-
-    pub(super) fn reject_region_bearing_storage_type(
-        &self,
-        ty: NodeId,
-        substitution: &GenericSubstitution,
-    ) -> Result<(), CheckStop> {
-        if self.type_node_is_region_bearing_with(ty, substitution)? {
-            return self.issue_node(
-                SemanticRule::Stor5,
-                ty,
-                SemanticIssueKind::RegionBearingStorage {
-                    mechanical_fix:
-                        "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
-                },
-            );
-        }
-        Ok(())
-    }
-
-    /// [STOR-5]'s region-bearing relation over a checked type: a type is
-    /// region-bearing when its complete type after generic substitution
-    /// contains `Slice<'r, T>` or `arena<'r, T>` at any depth.
-    ///
-    /// The judgment is structural, so it holds for every region-bearing type
-    /// constructor rather than an enumerated list of spellings: a slice, an
-    /// arena instance, and any array, buffer, box, struct field, or enum
-    /// payload that reaches one. The `visited` set keeps the walk finite
-    /// because box content may close a nominal cycle [STOR-2].
-    /// [PROV-3] the loan-bearing predicate: a value of one of the two view
-    /// types carries a finite set of origins and a loan on each, and no
-    /// other type does.
-    ///
-    /// It is the type itself and never a component of one, because [STOR-5]
-    /// keeps a view out of every stored position: a view is never a field, a
-    /// payload, a slot, or a generic argument, so a loan-bearing type is
-    /// reached at the top or not at all.
-    pub(in crate::semantic::check) const fn checked_type_is_loan_bearing(ty: CheckedType) -> bool {
-        matches!(ty, CheckedType::Slice { .. })
-    }
-
-    pub(in crate::semantic::check) fn checked_type_is_region_bearing(
-        &self,
-        ty: CheckedType,
-    ) -> Result<bool, CheckStop> {
-        let mut pending = vec![ty];
-        let mut visited: HashSet<CheckedType> = HashSet::new();
-        while let Some(ty) = pending.pop() {
-            if !visited.insert(ty) {
-                continue;
-            }
-            match ty {
-                // [STOR-5]: a provider is region-bearing because a move would
-                // strand its own store, exactly as a loan is because storage
-                // would hide its provenance. A store-branded run is not: the
-                // store's identity travels in the type [PROV-1], so the
-                // position it occupies is itself confined to that store.
-                CheckedType::Slice { .. }
-                | CheckedType::Heap { .. }
-                | CheckedType::Extent { .. } => return Ok(true),
-                CheckedType::Buffer { element } => {
-                    pending.push(element.ty());
-                }
-                CheckedType::Array { element, .. }
-                | CheckedType::FixedVector { element, .. }
-                | CheckedType::Vector { element, .. } => {
-                    pending.push(self.element_type(element)?);
-                }
-                CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
-                    CheckedNominalKind::Arena { .. } => return Ok(true),
-                    CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
-                    CheckedNominalKind::Struct { fields } => {
-                        pending.extend(fields.iter().map(|field| field.ty));
-                    }
-                    CheckedNominalKind::Enum { variants } => {
-                        pending.extend(
-                            variants
-                                .iter()
-                                .flat_map(|variant| variant.fields.iter())
-                                .map(|field| field.ty),
-                        );
-                    }
-                    CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
-                },
-                CheckedType::Unit
-                | CheckedType::Bool
-                | CheckedType::Integer(_)
-                | CheckedType::Float(_)
-                | CheckedType::Generic(_)
-                | CheckedType::GenericInt(_)
-                | CheckedType::GenericFloat(_) => {}
-            }
-        }
-        Ok(false)
-    }
-
-    /// The loan strength one written `type` node names, where that node is a
-    /// view [VIEW-1].
-    ///
-    /// The two views are two atoms of the `type` production [GRAM-3] and one
-    /// checked shape, so every rule that asks "is this written type a view"
-    /// asks this one question and reads the strength back where it needs it.
-    pub(in crate::semantic::check) fn written_loan_strength(
-        &self,
-        node: NodeId,
-    ) -> Result<Option<LoanStrength>, CheckStop> {
-        if self.has_fixed(node, FixedTerminal::Slice)? {
-            return Ok(Some(LoanStrength::Shared));
-        }
-        if self.has_fixed(node, FixedTerminal::MutSlice)? {
-            return Ok(Some(LoanStrength::Exclusive));
-        }
-        Ok(None)
-    }
-
-    fn type_node_is_region_bearing_with(
-        &self,
-        node: NodeId,
-        substitution: &GenericSubstitution,
-    ) -> Result<bool, CheckStop> {
-        if self.written_loan_strength(node)?.is_some()
-            || self.has_fixed(node, FixedTerminal::Arena)?
-        {
-            return Ok(true);
-        }
-        if self
-            .tree
-            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-            .is_some()
-        {
-            let usage = self.use_at(node, LexicalUseRole::Type)?;
-            // [STOR-5]: a provider a move would strand is region-bearing; a
-            // store-branded run is not, because its brand confines the
-            // position rather than hiding a provenance [PROV-1].
-            if let ResolvedTarget::Container(id) = usage.target()
-                && crate::container_nominal(id).is_some_and(|nominal| {
-                    matches!(
-                        nominal.shape,
-                        crate::ContainerShape::Heap | crate::ContainerShape::Arena
-                    )
-                })
-            {
-                return Ok(true);
-            }
-            if let ResolvedTarget::Source {
-                declaration,
-                class: DeclarationClass::GenericType,
-            } = usage.target()
-                && let Some(ty) = substitution.type_argument(declaration)
-                && self.checked_type_is_region_bearing(ty)?
-            {
-                return Ok(true);
-            }
-        }
-        for child in self.tree.children_with(node, Production::Type)? {
-            if self.type_node_is_region_bearing_with(child, substitution)? {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
     pub(super) fn result_type_arguments_with(
         &self,
         node: NodeId,
@@ -546,8 +340,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ),
             );
         };
-        self.reject_region_bearing_generic_argument(*ok, substitution)?;
-        self.reject_region_bearing_generic_argument(*error, substitution)?;
         let Some(ok) = self.tree.first_child_with(*ok, Production::Type)? else {
             return self.issue_node(
                 SemanticRule::Type5,
@@ -573,80 +365,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok((ok, error))
     }
 
-    /// One written `Vector`, `FixedVector`, `Heap`, or `Arena` type
-    /// [TYPE-2, BLK-1, PROV-1].
+    /// One written `Array`, `Slots`, `Ring`, or `Box` type [TYPE-9].
     ///
-    /// Each is a TYPEID with `targs` [GRAM-3], so the argument list is read
-    /// positionally against the nominal's own parameter list, and a store
-    /// region left unwritten resolves by [PROV-1]'s brand rule: the enclosing
-    /// nominal's sole region parameter at a stored position, and the entry
-    /// heap's store region otherwise. A bump extent's region is one the
-    /// caller must choose and is therefore written at every position
-    /// [FORM-8].
-    /// S39 the store region and referent of one written `Box<'s, T>`, read
-    /// the way [`Self::parse_container_type`] reads them.
-    pub(super) fn store_box_arguments(
-        &self,
-        node: NodeId,
-        substitution: &GenericSubstitution,
-    ) -> Result<(crate::DeclarationId, CheckedType), CheckStop> {
-        let arguments = match self.tree.argument_list(node)? {
-            Some(targs) => self.tree.children_with(targs, Production::Targ)?,
-            None => Vec::new(),
-        };
-        let mut written_region = None;
-        let mut rest = arguments.as_slice();
-        if let Some(first) = arguments.first()
-            && self
-                .tree
-                .direct_token_with(*first, crate::TerminalPredicate::RegionIdentifier)?
-                .is_some()
-        {
-            let usage = self.use_at(*first, LexicalUseRole::TypeArgumentRegion)?;
-            let ResolvedTarget::Source {
-                declaration,
-                class: DeclarationClass::Region,
-            } = usage.target()
-            else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
-            written_region = Some(
-                substitution
-                    .region_argument(declaration)
-                    .unwrap_or(declaration),
-            );
-            rest = &arguments[1..];
-        }
-        let [referent] = rest else {
-            return self.issue_node(
-                SemanticRule::Type5,
-                node,
-                SemanticIssueKind::type_mismatch(
-                    "Box<'s, T> with one referent type",
-                    "a Box type-argument list of a different length",
-                ),
-            );
-        };
-        let Some(referent_node) = self.tree.first_child_with(*referent, Production::Type)? else {
-            return self.issue_node(
-                SemanticRule::Type5,
-                node,
-                SemanticIssueKind::type_mismatch(
-                    "Box<'s, T> with one referent type",
-                    "a const argument in the Box referent position",
-                ),
-            );
-        };
-        let referent = self.parse_type_with(referent_node, substitution)?;
-        Ok((
-            match written_region {
-                Some(region) => region,
-                None => self.elided_store_region(node)?,
-            },
-            referent,
-        ))
-    }
-
+    /// Each is a TYPEID with `targs` [GRAM-3], read positionally: a shape
+    /// takes its element type and, in the constant-capacity form, the type
+    /// constant N [CONST-1]; `Box` takes its referent and carries no brand,
+    /// there being one heap [STOR-8].
+    ///
+    /// A runtime-capacity shape may appear only as the content of a `Box`
+    /// [TYPE-9]. That is a judgment about the position the type is written
+    /// at, not about reading the type, so this function forms the type and
+    /// the writing position refuses it.
     fn parse_container_type(
         &self,
         node: NodeId,
@@ -660,37 +389,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Some(targs) => self.tree.children_with(targs, Production::Targ)?,
             None => Vec::new(),
         };
-        let mut written_region = None;
-        let mut rest = arguments.as_slice();
-        if let Some(first) = arguments.first()
-            && self
-                .tree
-                .direct_token_with(*first, crate::TerminalPredicate::RegionIdentifier)?
-                .is_some()
-        {
-            let usage = self.use_at(*first, LexicalUseRole::TypeArgumentRegion)?;
-            let ResolvedTarget::Source {
-                declaration,
-                class: DeclarationClass::Region,
-            } = usage.target()
-            else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
-            written_region = Some(
-                substitution
-                    .region_argument(declaration)
-                    .unwrap_or(declaration),
-            );
-            rest = &arguments[1..];
-        }
         let expected = match shape {
-            crate::ContainerShape::Vector => "Vector<'s, T> with one element type",
-            crate::ContainerShape::FixedVector => {
-                "FixedVector<T, n> with one element type and one capacity"
-            }
-            crate::ContainerShape::Heap => "Heap with no further argument",
-            crate::ContainerShape::Arena => "Arena<'s, bytes, align> with two constants",
-            crate::ContainerShape::Box => "Box<'s, T> with one referent type",
+            crate::ContainerShape::Array => "Array<T, N> or Array<T>",
+            crate::ContainerShape::Slots => "Slots<T, N> or Slots<T>",
+            crate::ContainerShape::Ring => "Ring<T, N> or Ring<T>",
+            crate::ContainerShape::Box => "Box<T> with one referent type",
         };
         let mismatch = |found: &str| -> Result<CheckedType, CheckStop> {
             self.issue_node(
@@ -699,157 +402,158 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::type_mismatch(expected, found),
             )
         };
-        // [BLK-1] every nameable type is a slot type; STOR-5 checks
-        // contained providers and views independently of representation.
-        let element_of = |argument: NodeId| -> Result<CheckedElement, CheckStop> {
-            let element_node = self
-                .tree
-                .first_child_with(argument, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(element_node, substitution)?;
-            let element_type = self.parse_type_with(element_node, substitution)?;
-            self.intern_element(element_type)
-        };
-        match shape {
-            crate::ContainerShape::Vector => {
-                let [element] = rest else {
-                    return mismatch("a Vector type-argument list of a different length");
-                };
-                if self
-                    .tree
-                    .first_child_with(*element, Production::Type)?
-                    .is_none()
-                {
-                    return mismatch("a const argument in the Vector element position");
-                }
-                let element = element_of(*element)?;
-                let region = match written_region {
-                    Some(region) => region,
-                    None => self.elided_store_region(node)?,
-                };
-                Ok(CheckedType::Vector {
-                    region,
-                    element,
-                    release: self.vector_release_class(region)?,
-                })
-            }
-            crate::ContainerShape::FixedVector => {
-                if written_region.is_some() {
-                    return mismatch("a region argument on a FixedVector, which has no store");
-                }
-                let [element, length] = rest else {
-                    return mismatch("a FixedVector type-argument list of a different length");
-                };
-                if self
-                    .tree
-                    .first_child_with(*element, Production::Type)?
-                    .is_none()
-                {
-                    return mismatch("a const argument in the FixedVector element position");
-                }
+        // [STOR-8] a unit carrying the no-heap declaration cannot name `Box`
+        // or a runtime-capacity shape, which is the type half of what that
+        // declaration withdraws; the call half is judged at the `call`.
+        if self.no_heap
+            && (shape == crate::ContainerShape::Box || arguments.len() == 1)
+            && !self.tree.is_prelude_node(node)?
+        {
+            return self.issue_node(
+                SemanticRule::Stor8,
+                node,
+                SemanticIssueKind::HeapTypeUnderNoHeap {
+                    spelling: expected.to_owned(),
+                    mechanical_fix: STOR8_NO_HEAP,
+                },
+            );
+        }
+        if shape == crate::ContainerShape::Box {
+            let [referent] = arguments.as_slice() else {
+                return mismatch("a Box type-argument list of a different length");
+            };
+            let Some(referent_node) = self.tree.first_child_with(*referent, Production::Type)?
+            else {
+                return mismatch("a const argument in the Box referent position");
+            };
+            let referent = self.parse_type_with(referent_node, substitution)?;
+            return self
+                .box_nominals
+                .get(&referent)
+                .copied()
+                .map(CheckedType::Nominal)
+                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
+        }
+        // [TYPE-9]'s two placements: a written type constant is the
+        // constant-capacity form, and its absence is the runtime-capacity
+        // form, whose capacity is a measure fixed at construction [MSR-1].
+        let (element, capacity) = match arguments.as_slice() {
+            [element] => (*element, None),
+            [element, length] => {
                 let Some(length_node) = self.tree.first_child_with(*length, Production::Const)?
                 else {
-                    return mismatch("a type argument in the FixedVector capacity position");
+                    return mismatch("a type argument in the capacity position");
                 };
-                let element = element_of(*element)?;
-                Ok(CheckedType::FixedVector {
-                    element,
-                    length: self.parse_const_expression_with(length_node, substitution)?,
-                })
+                (*element, Some(length_node))
             }
-            crate::ContainerShape::Heap => {
-                if !rest.is_empty() {
-                    return mismatch("a Heap type-argument list with a further argument");
+            _ => return mismatch("a type-argument list of a different length"),
+        };
+        let Some(element_node) = self.tree.first_child_with(element, Production::Type)? else {
+            return mismatch("a const argument in the element position");
+        };
+        let element_type = self.parse_type_with(element_node, substitution)?;
+        let capacity = capacity
+            .map(|length| self.parse_const_expression_with(length, substitution))
+            .transpose()?;
+        match (shape, capacity) {
+            // An `Array` has no window: every slot always holds a value and
+            // `a.len == a.cap` [WIN-1].
+            (crate::ContainerShape::Array, Some(length)) => Ok(CheckedType::Array {
+                element: self.intern_element(element_type)?,
+                length,
+            }),
+            (crate::ContainerShape::Array, None) => {
+                self.reject_unboxed_runtime_capacity(node)?;
+                match self.buffer_element(element_type)? {
+                    Some(element) => Ok(CheckedType::Buffer { element }),
+                    None => {
+                        self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node)
+                    }
                 }
-                Ok(CheckedType::Heap {
-                    region: match written_region {
-                        Some(region) => region,
-                        None => self.elided_store_region(node)?,
-                    },
+            }
+            // The two window shapes in both placements [WIN-1]: the filled
+            // prefix is `r.len` and a `Ring` additionally carries the window
+            // origin `head`.
+            (crate::ContainerShape::Slots, capacity) => {
+                if capacity.is_none() {
+                    self.reject_unboxed_runtime_capacity(node)?;
+                }
+                Ok(CheckedType::Window {
+                    shape: WindowShape::Slots,
+                    element: self.intern_element(element_type)?,
+                    capacity,
                 })
             }
-            // S39 one store-resident cell. Its referent is any nameable
-            // type — the element domain's flat restriction is [BLK-1]'s and
-            // belongs to a run's slots, not to a cell — and its region is the
-            // store brand [PROV-1] resolves exactly as a run's.
-            crate::ContainerShape::Box => {
-                let [referent] = rest else {
-                    return mismatch("a Box type-argument list of a different length");
-                };
-                let Some(referent_node) =
-                    self.tree.first_child_with(*referent, Production::Type)?
-                else {
-                    return mismatch("a const argument in the Box referent position");
-                };
-                self.reject_region_bearing_storage_type(referent_node, substitution)?;
-                let referent = self.parse_type_with(referent_node, substitution)?;
-                let region = match written_region {
-                    Some(region) => region,
-                    None => self.elided_store_region(node)?,
-                };
-                self.store_box_nominal(region, referent)
-                    .map(CheckedType::Nominal)
-            }
-            crate::ContainerShape::Arena => {
-                let [bytes, align] = rest else {
-                    return mismatch("an Arena type-argument list of a different length");
-                };
-                let (Some(bytes_node), Some(align_node)) = (
-                    self.tree.first_child_with(*bytes, Production::Const)?,
-                    self.tree.first_child_with(*align, Production::Const)?,
-                ) else {
-                    return mismatch("a type argument in an Arena constant position");
-                };
-                // A bump extent's store region is one the caller must choose,
-                // so [FORM-8] writes it at every position and an elided one
-                // names no extent [PROV-1].
-                let Some(region) = written_region else {
-                    return self.issue_node(
-                        SemanticRule::Form8,
-                        node,
-                        SemanticIssueKind::RegionSpelling {
-                            mechanical_fix: "write the store region this extent names: a bump \
-extent's region is one the caller must choose, so it is written at every position",
-                        },
-                    );
-                };
-                Ok(CheckedType::Extent {
-                    region,
-                    bytes: self.parse_const_expression_with(bytes_node, substitution)?,
-                    align: self.parse_const_expression_with(align_node, substitution)?,
+            (crate::ContainerShape::Ring, capacity) => {
+                if capacity.is_none() {
+                    self.reject_unboxed_runtime_capacity(node)?;
+                }
+                Ok(CheckedType::Window {
+                    shape: WindowShape::Ring,
+                    element: self.intern_element(element_type)?,
+                    capacity,
                 })
+            }
+            (crate::ContainerShape::Box, _) => {
+                Err(SemanticCompilerFailure::InvalidResolution.into())
             }
         }
     }
 
-    /// [PROV-1]'s brand resolution for an elided store region: the enclosing
-    /// nominal's sole region parameter at a stored position, and the entry
-    /// heap's store region everywhere else.
-    /// The region one `slice` or `arena` type carries, read through the
-    /// enclosing nominal instance's region axis [S20, PROV-1].
-    fn substituted_type_region(
-        &self,
-        node: NodeId,
-        substitution: &GenericSubstitution,
-    ) -> Result<crate::DeclarationId, CheckStop> {
-        let region = self.type_region(node)?;
-        Ok(substitution.region_argument(region).unwrap_or(region))
-    }
-
-    pub(in crate::semantic::check) fn elided_store_region(
-        &self,
-        node: NodeId,
-    ) -> Result<crate::DeclarationId, CheckStop> {
-        if let Some(region) = self.elided_store_brand.get() {
-            return Ok(region);
+    /// [TYPE-9] a runtime-capacity `Array<T>`, `Slots<T>`, or `Ring<T>`
+    /// appears only as the content of a `Box`, the type of its `inner`
+    /// field, and never inline in another value and never as a local
+    /// binding; every other written position is this rule's hard error at
+    /// the complete `type`.
+    fn reject_unboxed_runtime_capacity(&self, node: NodeId) -> Result<(), CheckStop> {
+        if self.is_box_content_position(node)? {
+            return Ok(());
         }
         self.issue_node(
-            SemanticRule::Form8,
+            SemanticRule::Type9,
             node,
-            SemanticIssueKind::RegionSpelling {
-                mechanical_fix: "write the store region argument",
-            },
+            SemanticIssueKind::type_mismatch(
+                "the content of a Box, which is the one position a runtime-capacity shape occupies",
+                "a stored, element, parameter, local, or type-argument position",
+            ),
         )
+    }
+
+    /// Whether this written `type` is the one type argument of a `Box`.
+    ///
+    /// The judgment is over the written form and not over a substituted
+    /// instance: [TYPE-9] refuses the *occurrence*, and a generic parameter
+    /// bound to `Box<Slots<T>>` writes no runtime-capacity type of its own.
+    fn is_box_content_position(&self, node: NodeId) -> Result<bool, CheckStop> {
+        let Some(argument) = self.tree.parent(node)? else {
+            return Ok(false);
+        };
+        if self.tree.production(argument)? != Production::Targ {
+            return Ok(false);
+        }
+        let Some(list) = self.tree.parent(argument)? else {
+            return Ok(false);
+        };
+        if self.tree.production(list)? != Production::Targs {
+            return Ok(false);
+        }
+        let Some(owner) = self.tree.parent(list)? else {
+            return Ok(false);
+        };
+        if self.tree.production(owner)? != Production::Type {
+            return Ok(false);
+        }
+        if self
+            .tree
+            .direct_token_with(owner, TerminalPredicate::TypeIdentifier)?
+            .is_none()
+        {
+            return Ok(false);
+        }
+        let usage = self.use_at(owner, LexicalUseRole::Type)?;
+        Ok(matches!(usage.target(), ResolvedTarget::Container(id)
+            if crate::container_nominal(id)
+                .is_some_and(|entry| entry.shape == crate::ContainerShape::Box)))
     }
 
     pub(super) fn option_type_argument_with(
@@ -878,7 +582,6 @@ extent's region is one the caller must choose, so it is written at every positio
                 ),
             );
         };
-        self.reject_region_bearing_generic_argument(*value, substitution)?;
         let Some(value) = self.tree.first_child_with(*value, Production::Type)? else {
             return self.issue_node(
                 SemanticRule::Type5,
@@ -912,6 +615,13 @@ extent's region is one the caller must choose, so it is written at every positio
         Ok(None)
     }
 
+    /// [EFF-1] one written row: every `reads` entry before every `writes`
+    /// entry, each entry naming exactly one path, and each path written at
+    /// most once per category.
+    ///
+    /// `pure` is the unique spelling of the empty row. Allocation and release
+    /// carry no effect entry at all [STOR-8], so the row has exactly these two
+    /// categories and the canonical order is the two-element one.
     pub(super) fn parse_effects(
         &self,
         node: NodeId,
@@ -923,84 +633,52 @@ extent's region is one the caller must choose, so it is written at every positio
         let effects = self.tree.children_with(node, Production::Effect)?;
         let mut previous = None;
         let mut declared = EffectSet::NONE;
+        let mut written = [Vec::new(), Vec::new()];
         for effect in effects {
             let ordinal = if self.has_fixed(effect, FixedTerminal::Reads)? {
-                for path in self.effect_paths(effect, parameters)? {
-                    declared.add_read(path);
-                }
-                0
+                0_usize
             } else if self.has_fixed(effect, FixedTerminal::Writes)? {
-                for path in self.effect_paths(effect, parameters)? {
-                    if parameters
-                        .iter()
-                        .find(|parameter| parameter.declaration == path.root)
-                        .is_some_and(|parameter| matches!(parameter.mode, CheckedMode::Shared(_)))
-                    {
-                        return self.issue_node(
-                            SemanticRule::Eff1,
-                            effect,
-                            SemanticIssueKind::InvalidEffectRow {
-                                reason: EFF1_SHARED_WRITE,
-                                mechanical_fix: EFF1_SHARED_WRITE_FIX,
-                            },
-                        );
-                    }
-                    declared.add_write(path);
-                }
                 1
-            } else if self.has_fixed(effect, FixedTerminal::Allocates)? {
-                // [S23] the entry takes the same formal-rooted paths `reads`
-                // and `writes` take; the `arena REGIONID` alternative is the
-                // transitional half [EFF-1] keeps while `arena<'r, T>` lives.
-                for path in self.effect_paths(effect, parameters)? {
-                    declared.add_allocation(path);
-                }
-                for region in self.effect_allocation_regions(effect)? {
-                    declared.add_arena_allocation(region);
-                }
-                2
             } else {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             };
-            if previous.is_some_and(|last| last >= ordinal) {
+            // [EFF-1] "A category may appear more than once in one row, and
+            // the canonical order is every `reads` entry before every
+            // `writes` entry"; only a descending step is the rejection.
+            if previous.is_some_and(|last| last > ordinal) {
                 return self.issue_node(
                     SemanticRule::Eff1,
                     node,
                     SemanticIssueKind::InvalidEffectRow {
-                        reason: EFF1_CATEGORY_ONCE,
-                        mechanical_fix: EFF1_CATEGORY_ONCE_FIX,
+                        reason: EFF1_CATEGORY_ORDER,
+                        mechanical_fix: EFF1_CATEGORY_ORDER_FIX,
                     },
                 );
             }
             previous = Some(ordinal);
+            for path in self.effect_paths(effect, parameters)? {
+                // [EFF-1] "A row lists each path at most once per category,
+                // and a repeated entry is an EFF-1 rejection at that
+                // `effect`."
+                if written[ordinal].contains(&path) {
+                    return self.issue_node(
+                        SemanticRule::Eff1,
+                        effect,
+                        SemanticIssueKind::InvalidEffectRow {
+                            reason: EFF1_REPEATED_PATH,
+                            mechanical_fix: EFF1_REPEATED_PATH_FIX,
+                        },
+                    );
+                }
+                written[ordinal].push(path.clone());
+                if ordinal == 0 {
+                    declared.add_read(path);
+                } else {
+                    declared.add_write(path);
+                }
+            }
         }
         Ok(declared)
-    }
-
-    fn effect_allocation_regions(
-        &self,
-        node: NodeId,
-    ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
-        let path = self.tree.path(node)?;
-        let mut uses = self
-            .resolved
-            .lexical_uses()
-            .iter()
-            .filter(|usage| {
-                usage.role() == LexicalUseRole::EffectAllocationRegion
-                    && usage.origin().node() == path
-            })
-            .collect::<Vec<_>>();
-        uses.sort_by_key(|usage| usage.origin().role_ordinal());
-        uses.into_iter()
-            .map(|usage| match usage.target() {
-                ResolvedTarget::Source {
-                    declaration,
-                    class: DeclarationClass::Region,
-                } => Ok(declaration),
-                _ => Err(SemanticCompilerFailure::InvalidResolution.into()),
-            })
-            .collect()
     }
 
     fn effect_paths(
@@ -1010,15 +688,287 @@ extent's region is one the caller must choose, so it is written at every positio
     ) -> Result<Vec<CheckedStatePath>, CheckStop> {
         let mut paths = Vec::new();
         for path_node in self.tree.children_with(node, Production::EffectPath)? {
-            let path = self.tree.path(path_node)?;
-            let usage = self
-                .resolved
-                .lexical_uses()
-                .iter()
-                .find(|usage| {
-                    usage.role() == LexicalUseRole::EffectRoot && usage.origin().node() == path
-                })
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            paths.push(self.effect_path(node, path_node, parameters)?.0);
+        }
+        Ok(paths)
+    }
+
+    /// One `effect_path := epbase epsuffix*` [EFF-1], with the type its last
+    /// step selects.
+    ///
+    /// `epbase := IDENT` names the reference parameter's selected storage;
+    /// the row has no source `deref` wrapper.
+    fn effect_path(
+        &self,
+        effect: NodeId,
+        path_node: NodeId,
+        parameters: &[ParameterSignature],
+    ) -> Result<(CheckedStatePath, SelectedPlaceType), CheckStop> {
+        let base = self
+            .tree
+            .first_child_with(path_node, Production::Epbase)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let (mut path, mut ty) = self.effect_root(effect, base, parameters)?;
+        for suffix in self.tree.children_with(path_node, Production::Epsuffix)? {
+            let (step, next) = self.effect_step(effect, path_node, suffix, ty, parameters)?;
+            path.steps.push(step);
+            ty = next;
+        }
+        Ok((path, ty))
+    }
+
+    /// The root of one row entry [EFF-1]: one reference parameter of the same
+    /// callable, whose complete state a bare parameter names.
+    fn effect_root(
+        &self,
+        effect: NodeId,
+        base: NodeId,
+        parameters: &[ParameterSignature],
+    ) -> Result<(CheckedStatePath, SelectedPlaceType), CheckStop> {
+        let origin = self.tree.path(base)?;
+        let usage = self
+            .resolved
+            .lexical_uses()
+            .iter()
+            .find(|usage| {
+                usage.role() == LexicalUseRole::EffectRoot && usage.origin().node() == origin
+            })
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::Value,
+        } = usage.target()
+        else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        // [EFF-1] a root resolving to a local, a result binder, a by-value
+        // parameter, or a non-parameter declaration is a rejection: a
+        // by-value parameter has no effect entry at all, the call site
+        // recording the consumption of a `move` argument instead [EFF-5].
+        let Some(parameter) = parameters
+            .iter()
+            .find(|parameter| parameter.declaration == declaration)
+            .filter(|parameter| parameter.mode.is_reference())
+        else {
+            return self.issue_node(
+                SemanticRule::Eff1,
+                effect,
+                SemanticIssueKind::InvalidEffectRow {
+                    reason: EFF1_NON_PARAMETER_ROOT,
+                    mechanical_fix: EFF1_NON_PARAMETER_ROOT_FIX,
+                },
+            );
+        };
+        Ok((
+            CheckedStatePath {
+                root: declaration,
+                steps: Vec::new(),
+            },
+            if parameter.mode == CheckedMode::Range {
+                SelectedPlaceType::Range(parameter.ty)
+            } else {
+                SelectedPlaceType::Value(parameter.ty)
+            },
+        ))
+    }
+
+    /// One `epsuffix := "." IDENT | "." TYPEID "." IDENT | "[" IDENT erange? "]"`
+    /// [EFF-1], with the type it selects.
+    ///
+    /// A one-name `.IDENT` suffix is a struct field, a measure, or a window
+    /// part [TYPE-10, WIN-2]. The spelling reserves nothing: the type selected
+    /// by the preceding path decides whether the measure/part vocabulary
+    /// applies, and every other type takes the ordinary field walk.
+    fn effect_step(
+        &self,
+        effect: NodeId,
+        path_node: NodeId,
+        suffix: NodeId,
+        selected: SelectedPlaceType,
+        parameters: &[ParameterSignature],
+    ) -> Result<(CheckedEffectStep, SelectedPlaceType), CheckStop> {
+        if self.has_fixed(suffix, FixedTerminal::LeftBracket)? {
+            return self.effect_index_step(suffix, selected, parameters);
+        }
+        let origin = self.tree.path(suffix)?;
+        let mut names = self
+            .resolved
+            .deferred_uses()
+            .iter()
+            .filter(|field| {
+                matches!(
+                    field.role(),
+                    crate::DeferredUseRole::EffectField | crate::DeferredUseRole::PayloadVariant
+                ) && field.origin().node() == origin
+            })
+            .collect::<Vec<_>>();
+        names.sort_by_key(|field| field.origin().role_ordinal());
+        match names.as_slice() {
+            // `.TYPEID.IDENT`: one enum payload step [GRAM-5].
+            [variant_use, field_use] => {
+                let SelectedPlaceType::Value(ty) = selected else {
+                    return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
+                };
+                let CheckedType::Nominal(nominal) = ty else {
+                    return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
+                };
+                let CheckedNominalKind::Enum { variants } = &self.nominal(nominal)?.kind else {
+                    return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
+                };
+                let Some((variant_ordinal, variant)) = variants
+                    .iter()
+                    .enumerate()
+                    .find(|(_, variant)| variant.name == variant_use.spelling())
+                else {
+                    return self.invalid_effect_row(path_node, EFF1_UNKNOWN_FIELD);
+                };
+                let Some((field_ordinal, field)) = variant
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .find(|(_, field)| field.name == field_use.spelling())
+                else {
+                    return self.invalid_effect_row(path_node, EFF1_UNKNOWN_FIELD);
+                };
+                Ok((
+                    CheckedEffectStep::Payload {
+                        variant: u32::try_from(variant_ordinal)
+                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+                        field: u32::try_from(field_ordinal)
+                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+                    },
+                    SelectedPlaceType::Value(field.ty),
+                ))
+            }
+            [field_use] => {
+                let spelling = field_use.spelling();
+                // [OP-10] PRE-1's W/X parameters carry a window identity
+                // before an operand supplies their shape. Their declaration
+                // origin distinguishes them from an ordinary source generic
+                // with the same name; concrete rows are checked again below.
+                let symbolic_window = match selected {
+                    SelectedPlaceType::Value(CheckedType::Generic(declaration)) => {
+                        self.is_window_type_parameter(declaration)?
+                    }
+                    _ => false,
+                };
+                let selected_measure = match selected {
+                    SelectedPlaceType::Range(_) => {
+                        (spelling == "len").then_some(CheckedMeasure::Length)
+                    }
+                    SelectedPlaceType::Value(ty) => measure_named(spelling).filter(|measure| {
+                        (symbolic_window && *measure != CheckedMeasure::Head)
+                            || ty.measured().is_some_and(|measured| {
+                                !matches!(
+                                    measure.cell(measured),
+                                    super::super::model::MeasureCell::Absent
+                                )
+                            })
+                    }),
+                    SelectedPlaceType::UnresolvedWindowElement => None,
+                };
+                if let Some(measure) = selected_measure {
+                    // A measure is a u64 pseudo-field of the measured place
+                    // and selects no storage below itself [MSR-1, TYPE-10]. A
+                    // missing row falls through: the same spelling may be an
+                    // ordinary field of another type.
+                    return Ok((
+                        CheckedEffectStep::Measure(measure),
+                        SelectedPlaceType::Value(CheckedType::Integer(IntegerType::U64)),
+                    ));
+                }
+                let SelectedPlaceType::Value(ty) = selected else {
+                    // A range has only its own `len`; its element's fields,
+                    // measures and parts require an intervening index.
+                    return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
+                };
+                if let Some(part) = window_part_named(spelling)
+                    && (symbolic_window || matches!(ty, CheckedType::Window { .. }))
+                {
+                    // A window part names slots of the window it belongs to,
+                    // so the selected type stays the element type [WIN-2].
+                    let element = self.container_element_type(ty)?.unwrap_or(ty);
+                    return Ok((
+                        CheckedEffectStep::Part(part),
+                        if symbolic_window {
+                            SelectedPlaceType::UnresolvedWindowElement
+                        } else {
+                            SelectedPlaceType::Value(element)
+                        },
+                    ));
+                }
+                let CheckedType::Nominal(nominal) = ty else {
+                    return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
+                };
+                // [TYPE-9] a `Box`'s content is its field `inner`, reached by
+                // the ordinary field step, so a row names it as that step and
+                // the selected type below it is the cell's referent. The
+                // resolved place identity of that step is the dereference the
+                // content already is, which is what [OWN-7] compares.
+                if let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind {
+                    if spelling != "inner" {
+                        return self.invalid_effect_row(path_node, EFF1_UNKNOWN_FIELD);
+                    }
+                    return Ok((CheckedEffectStep::Deref, SelectedPlaceType::Value(referent)));
+                }
+                let CheckedNominalKind::Struct { fields } = &self.nominal(nominal)?.kind else {
+                    return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
+                };
+                let Some((ordinal, field)) = fields
+                    .iter()
+                    .enumerate()
+                    .find(|(_, field)| field.name == spelling)
+                else {
+                    return self.invalid_effect_row(path_node, EFF1_UNKNOWN_FIELD);
+                };
+                Ok((
+                    CheckedEffectStep::Field(
+                        u32::try_from(ordinal)
+                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+                    ),
+                    SelectedPlaceType::Value(field.ty),
+                ))
+            }
+            _ => {
+                let _ = effect;
+                Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
+            }
+        }
+    }
+
+    /// One `"[" IDENT erange? "]"` suffix [EFF-1]: a whole-index position, or
+    /// a range position whose two endpoints are value parameters of the same
+    /// callable. A signature never contains an index expression, so an index
+    /// enters a row only through such an IDENT.
+    fn effect_index_step(
+        &self,
+        suffix: NodeId,
+        selected: SelectedPlaceType,
+        parameters: &[ParameterSignature],
+    ) -> Result<(CheckedEffectStep, SelectedPlaceType), CheckStop> {
+        let origin = self.tree.path(suffix)?;
+        let range = self.tree.first_child_with(suffix, Production::Erange)?;
+        let range_origin = range.map(|node| self.tree.path(node)).transpose()?;
+        let mut indices = self
+            .resolved
+            .lexical_uses()
+            .iter()
+            .filter(|usage| {
+                usage.role() == LexicalUseRole::EffectIndex
+                    && (usage.origin().node() == origin
+                        || range_origin.is_some_and(|range| usage.origin().node() == range))
+            })
+            .collect::<Vec<_>>();
+        indices.sort_by_key(|usage| {
+            (
+                range_origin
+                    .as_ref()
+                    .is_some_and(|range| usage.origin().node() == *range),
+                usage.origin().role_ordinal(),
+            )
+        });
+        let mut endpoints = Vec::new();
+        for usage in indices {
             let ResolvedTarget::Source {
                 declaration,
                 class: DeclarationClass::Value,
@@ -1026,80 +976,70 @@ extent's region is one the caller must choose, so it is written at every positio
             else {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             };
-            let Some(parameter) = parameters
+            if !parameters
                 .iter()
-                .find(|parameter| parameter.declaration == declaration)
-            else {
-                return self.issue_node(
-                    SemanticRule::Eff1,
-                    node,
-                    SemanticIssueKind::InvalidEffectRow {
-                        reason: EFF1_NON_PARAMETER_ROOT,
-                        mechanical_fix: EFF1_NON_PARAMETER_ROOT_FIX,
-                    },
-                );
-            };
-            let mut ty = parameter.ty;
-            let mut fields = Vec::new();
-            let mut field_uses = self
-                .resolved
-                .deferred_uses()
-                .iter()
-                .filter(|field| {
-                    field.role() == crate::DeferredUseRole::EffectField
-                        && field.origin().node() == path
-                })
-                .collect::<Vec<_>>();
-            field_uses.sort_by_key(|field| field.origin().role_ordinal());
-            for field_use in field_uses {
-                let CheckedType::Nominal(nominal) = ty else {
-                    return self.issue_node(
-                        SemanticRule::Eff1,
-                        path_node,
-                        SemanticIssueKind::InvalidEffectRow {
-                            reason: EFF1_FIELD_OF_NON_STRUCT,
-                            mechanical_fix: EFF1_FIELD_OF_NON_STRUCT_FIX,
-                        },
-                    );
-                };
-                let CheckedNominalKind::Struct {
-                    fields: declared_fields,
-                } = &self.nominal(nominal)?.kind
-                else {
-                    return self.issue_node(
-                        SemanticRule::Eff1,
-                        path_node,
-                        SemanticIssueKind::InvalidEffectRow {
-                            reason: EFF1_FIELD_OF_NON_STRUCT,
-                            mechanical_fix: EFF1_FIELD_OF_NON_STRUCT_FIX,
-                        },
-                    );
-                };
-                let Some((ordinal, field)) = declared_fields
-                    .iter()
-                    .enumerate()
-                    .find(|(_, field)| field.name == field_use.spelling())
-                else {
-                    return self.issue_node(
-                        SemanticRule::Eff1,
-                        path_node,
-                        SemanticIssueKind::InvalidEffectRow {
-                            reason: EFF1_UNKNOWN_FIELD,
-                            mechanical_fix: EFF1_UNKNOWN_FIELD_FIX,
-                        },
-                    );
-                };
-                fields.push(
-                    u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
-                );
-                ty = field.ty;
+                .any(|parameter| parameter.declaration == declaration)
+            {
+                return self.invalid_effect_row(suffix, EFF1_NON_PARAMETER_ROOT);
             }
-            paths.push(CheckedStatePath {
-                root: declaration,
-                fields,
-            });
+            endpoints.push(declaration);
         }
-        Ok(paths)
+        let element = match selected {
+            // An index into a range selects the range's element itself. It
+            // must not project through that element again when T is Array or
+            // another container.
+            SelectedPlaceType::Range(element) => element,
+            SelectedPlaceType::Value(ty) => self.container_element_type(ty)?.unwrap_or(ty),
+            SelectedPlaceType::UnresolvedWindowElement => {
+                return self.invalid_effect_row(suffix, EFF1_FIELD_OF_NON_STRUCT);
+            }
+        };
+        match endpoints.as_slice() {
+            [index] => Ok((
+                CheckedEffectStep::Index(*index),
+                SelectedPlaceType::Value(element),
+            )),
+            // A range position names a run of elements [REF-4], so every step
+            // below it is relative to that run and reads the element type.
+            [start, end] => Ok((
+                CheckedEffectStep::Range {
+                    start: *start,
+                    end: *end,
+                },
+                SelectedPlaceType::Range(element),
+            )),
+            _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+        }
+    }
+
+    /// The element type of a storage shape [TYPE-9], or `None` where the type
+    /// is not one.
+    fn container_element_type(&self, ty: CheckedType) -> Result<Option<CheckedType>, CheckStop> {
+        Ok(match ty {
+            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+                Some(self.element_type(element)?)
+            }
+            CheckedType::Buffer { element } => Some(element.ty()),
+            _ => None,
+        })
+    }
+
+    fn invalid_effect_row<T>(&self, node: NodeId, reason: &'static str) -> Result<T, CheckStop> {
+        let mechanical_fix = if reason == EFF1_UNKNOWN_FIELD {
+            EFF1_UNKNOWN_FIELD_FIX
+        } else if reason == EFF1_NON_PARAMETER_ROOT {
+            EFF1_NON_PARAMETER_ROOT_FIX
+        } else {
+            EFF1_FIELD_OF_NON_STRUCT_FIX
+        };
+        self.issue_node(
+            SemanticRule::Eff1,
+            node,
+            SemanticIssueKind::InvalidEffectRow {
+                reason,
+                mechanical_fix,
+            },
+        )
     }
 
     pub(super) fn parse_const_expression_with(
@@ -1322,7 +1262,7 @@ extent's region is one the caller must choose, so it is written at every positio
                 SemanticIssueKind::InvalidConstValue,
             );
         }
-        if matches!(expected, CheckedType::FixedVector { .. }) {
+        if matches!(expected, CheckedType::Window { .. }) {
             // Top-level constant runs use dense array storage. A run nested
             // in another constant needs the same normalization at its field
             // or element position; that representation path is not wired yet.
@@ -1475,7 +1415,12 @@ extent's region is one the caller must choose, so it is written at every positio
         // [CONST-1, CONST-2, S34] a top-level fixed-run constant occupies only
         // dense element storage. Its four measures are materialized from the
         // type rather than stored in a window descriptor.
-        if let CheckedType::FixedVector { element, length } = ty {
+        if let CheckedType::Window {
+            shape: WindowShape::Slots,
+            element,
+            capacity: Some(length),
+        } = ty
+        {
             let Some(_) = self.flat_element(self.element_type(element)?)? else {
                 return self.issue_node(
                     SemanticRule::Const2,
@@ -1504,56 +1449,29 @@ extent's region is one the caller must choose, so it is written at every positio
         }
     }
 
-    /// Reject forbidden storage constructors before parsing types whose
+    /// [CONST-2] reject an ineligible storage shape before parsing types whose
     /// nominal instances need not exist for an ineligible const declaration.
-    /// Follow only array/run element positions: arbitrary nominal type
-    /// arguments may be phantom and do not themselves decide eligibility.
+    ///
+    /// A const is pure static rodata, so `Box`, `Slots`, and `Ring` are not
+    /// const-eligible, and a runtime-capacity `Array<T>` is not either, its
+    /// capacity being fixed at a construction a const never performs. The
+    /// walk follows only the `Array` element position: an arbitrary nominal
+    /// type argument may be phantom and does not itself decide eligibility.
     fn reject_ineligible_const_storage(&self, root: NodeId) -> Result<(), CheckStop> {
         let mut current = Some(root);
         while let Some(node) = current {
-            let directly_ineligible = self.written_loan_strength(node)?.is_some()
-                || self.has_fixed(node, FixedTerminal::Box)?
-                || self.has_fixed(node, FixedTerminal::Arena)?
-                || self.has_fixed(node, FixedTerminal::Buffer)?;
-            if directly_ineligible {
+            let shape = self.written_container_shape(node)?;
+            let eligible_array = matches!(shape, Some(crate::ContainerShape::Array))
+                && self.written_container_capacity(node)?.is_some();
+            if shape.is_some() && !eligible_array {
                 return self.issue_node(
                     SemanticRule::Const2,
                     node,
                     SemanticIssueKind::InvalidConstValue,
                 );
             }
-            // FixedVector is the one eligible compiler-owned container. The
-            // other constructors name storage, a store region, or release.
-            if self
-                .tree
-                .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-                .is_some()
-                && matches!(
-                    self.use_at(node, LexicalUseRole::Type)?.target(),
-                    ResolvedTarget::Container(_)
-                )
-                && !self.written_type_is_fixed_vector(node)?
-            {
-                return self.issue_node(
-                    SemanticRule::Const2,
-                    node,
-                    SemanticIssueKind::InvalidConstValue,
-                );
-            }
-            current = if self.has_fixed(node, FixedTerminal::Array)? {
-                self.tree.first_child_with(node, Production::Type)?
-            } else if self.written_type_is_fixed_vector(node)? {
-                match self.tree.argument_list(node)? {
-                    Some(targs) => {
-                        match self.tree.children_with(targs, Production::Targ)?.first() {
-                            Some(argument) => {
-                                self.tree.first_child_with(*argument, Production::Type)?
-                            }
-                            None => None,
-                        }
-                    }
-                    None => None,
-                }
+            current = if eligible_array {
+                self.written_container_element(node)?
             } else {
                 None
             };
@@ -1561,17 +1479,50 @@ extent's region is one the caller must choose, so it is written at every positio
         Ok(())
     }
 
-    /// Whether one written `type` node spells the compiler-owned inline run
-    /// [BLK-1], which is the one container nominal a `const` item may write
-    /// [CONST-2, S34].
-    fn written_type_is_fixed_vector(&self, node: NodeId) -> Result<bool, CheckStop> {
-        let Some(token) = self
+    /// The storage shape one written `type` node spells [TYPE-9], or `None`
+    /// where the node spells any other type.
+    fn written_container_shape(
+        &self,
+        node: NodeId,
+    ) -> Result<Option<crate::ContainerShape>, CheckStop> {
+        if self
             .tree
             .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let ResolvedTarget::Container(id) = self.use_at(node, LexicalUseRole::Type)?.target()
         else {
-            return Ok(false);
+            return Ok(None);
         };
-        Ok(self.tree.token_bytes(token)? == b"FixedVector")
+        Ok(crate::container_nominal(id).map(|nominal| nominal.shape))
+    }
+
+    /// The written element `type` node of a storage shape [TYPE-9], which is
+    /// its first type argument.
+    fn written_container_element(&self, node: NodeId) -> Result<Option<NodeId>, CheckStop> {
+        let Some(targs) = self.tree.argument_list(node)? else {
+            return Ok(None);
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        let Some(first) = arguments.first() else {
+            return Ok(None);
+        };
+        Ok(self.tree.first_child_with(*first, Production::Type)?)
+    }
+
+    /// The written capacity `const` node of a constant-capacity storage shape
+    /// [TYPE-9], which is its second type argument.
+    fn written_container_capacity(&self, node: NodeId) -> Result<Option<NodeId>, CheckStop> {
+        let Some(targs) = self.tree.argument_list(node)? else {
+            return Ok(None);
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        let Some(second) = arguments.get(1) else {
+            return Ok(None);
+        };
+        Ok(self.tree.first_child_with(*second, Production::Const)?)
     }
 
     /// Check every type reachable through CONST-2's element and field
@@ -1590,7 +1541,7 @@ extent's region is one the caller must choose, so it is written at every positio
                 CheckedType::Array { element, .. } => {
                     pending.push(self.element_type(element)?);
                 }
-                CheckedType::FixedVector { element, .. } => {
+                CheckedType::Window { element, .. } => {
                     let element = self.element_type(element)?;
                     if self.flat_element(element)?.is_none() {
                         return Ok(false);
@@ -1611,11 +1562,7 @@ extent's region is one the caller must choose, so it is written at every positio
                 | CheckedType::Generic(_)
                 | CheckedType::GenericInt(_)
                 | CheckedType::GenericFloat(_)
-                | CheckedType::Slice { .. }
-                | CheckedType::Buffer { .. }
-                | CheckedType::Vector { .. }
-                | CheckedType::Heap { .. }
-                | CheckedType::Extent { .. } => return Ok(false),
+                | CheckedType::Buffer { .. } => return Ok(false),
             }
         }
         Ok(true)
@@ -1651,9 +1598,10 @@ extent's region is one the caller must choose, so it is written at every positio
         Ok(element)
     }
 
-    /// The [TYPE-2] buffer element domain: every flat copy element, plus a
-    /// region-free affine nominal stored by value. Direct views use the same
-    /// represented element domain; arrays use complete elements.
+    /// The [TYPE-2] buffer element domain: every scalar or tag-only value,
+    /// plus a region-free payload nominal stored by value. Capability class
+    /// does not select representation: direct views use the same represented
+    /// element domain, and arrays use complete elements.
     pub(super) fn buffer_element(
         &self,
         ty: CheckedType,
@@ -1662,13 +1610,12 @@ extent's region is one the caller must choose, so it is written at every positio
             return Ok(Some(element));
         }
         Ok(match ty {
-            CheckedType::Nominal(id) => match self.nominal(id)?.kind {
-                // An arena is region-bearing [STOR-5] and the region
-                // allocation list is compiler-owned; neither is an element.
-                super::super::model::CheckedNominalKind::Arena { .. }
-                | super::super::model::CheckedNominalKind::ArenaStorage => None,
-                _ => Some(CheckedFlatElement::Nominal(id)),
-            },
+            CheckedType::Nominal(id) => Some(CheckedFlatElement::Nominal(id)),
+            // [FN-2] the one source-canonical symbolic instance of a generic
+            // record carries its unsubstituted element; every concrete
+            // instance re-reads this position with its own substitution, so
+            // this variant reaches no lowering.
+            CheckedType::Generic(declaration) => Some(CheckedFlatElement::Generic(declaration)),
             _ => None,
         })
     }
@@ -1688,18 +1635,14 @@ extent's region is one the caller must choose, so it is written at every positio
             CheckedType::GenericFloat(declaration) => {
                 Some(CheckedFlatElement::GenericFloat(declaration))
             }
-            CheckedType::Nominal(id) if self.nominal(id)?.is_copy() => {
+            CheckedType::Nominal(id) if self.nominal(id)?.is_tag_only_enum() => {
                 Some(CheckedFlatElement::TagOnlyNominal(id))
             }
             CheckedType::Generic(_)
             | CheckedType::Nominal(_)
             | CheckedType::Array { .. }
-            | CheckedType::Slice { .. }
             | CheckedType::Buffer { .. }
-            | CheckedType::FixedVector { .. }
-            | CheckedType::Vector { .. }
-            | CheckedType::Heap { .. }
-            | CheckedType::Extent { .. } => None,
+            | CheckedType::Window { .. } => None,
         })
     }
 
@@ -1776,4 +1719,28 @@ fn parse_integer(bytes: &[u8]) -> Option<CheckedValue> {
         u64::try_from(magnitude).ok()?
     };
     Some(CheckedValue::Integer { ty, bits })
+}
+
+/// The measure-vocabulary candidate for one `.IDENT` spelling [MSR-1,
+/// TYPE-10]. A consumer still checks the type the suffix follows: these names
+/// reserve nothing and remain ordinary fields of types with no matching row.
+pub(super) fn measure_named(spelling: &str) -> Option<CheckedMeasure> {
+    match spelling {
+        "len" => Some(CheckedMeasure::Length),
+        "cap" => Some(CheckedMeasure::Capacity),
+        "head" => Some(CheckedMeasure::Head),
+        _ => None,
+    }
+}
+
+/// The window-part-vocabulary candidate for one `.IDENT` spelling [WIN-2,
+/// TYPE-10]. A consumer still checks that the suffix follows a window.
+pub(super) fn window_part_named(spelling: &str) -> Option<WindowPart> {
+    match spelling {
+        "next" => Some(WindowPart::Next),
+        "last" => Some(WindowPart::Last),
+        "filled" => Some(WindowPart::Filled),
+        "free" => Some(WindowPart::Free),
+        _ => None,
+    }
 }

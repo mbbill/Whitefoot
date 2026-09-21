@@ -43,14 +43,14 @@ fn the_stream_uses_ordinary_linked_calls_and_an_ordinary_inputs_argument() {
     }
     assert!(!llvm.contains("call void @wf_read_at("));
     assert!(!llvm.contains("@wf__completion_"));
-    // Build initialization supplies one ordinary Inputs owner and the Heap
-    // value, then receives the ordinary opaque ExitStatus through its result
-    // destination. The launcher does not open either standard stream.
+    // Build initialization supplies one ordinary Inputs owner, then receives
+    // the ordinary opaque ExitStatus through its result destination. The
+    // launcher does not open either standard stream. The heap is ambient and
+    // has no source spelling [STOR-8], so the entry call carries no store
+    // argument beside the inputs.
     let entry = emitted_function(&llvm, "_main_body");
     assert!(entry.contains("call i32 @wf__ordinary_inputs(ptr %inputs, i32 %argc, ptr %argv)"));
-    assert!(entry.contains(
-        "call void @\"wf_main\"(ptr %status, ptr %inputs, { ptr, i64 } zeroinitializer)"
-    ));
+    assert!(entry.contains("call void @\"wf_main\"(ptr %status, ptr %inputs)"));
     assert!(!entry.contains("@open"));
 }
 

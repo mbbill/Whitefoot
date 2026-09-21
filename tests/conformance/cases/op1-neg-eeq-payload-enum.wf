@@ -1,4 +1,4 @@
-enum PayloadEq {
+nocopy enum PayloadEq {
   PayloadEmpty();
   PayloadValue(value: u32);
 }

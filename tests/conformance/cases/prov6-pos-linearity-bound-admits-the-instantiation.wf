@@ -1,4 +1,4 @@
-fn discard<T: affine>(value: own T) -> count: own u8 pure {
+fn discard<T: drop>(value: own T) -> count: own u8 pure {
   doc "A body written for the affine class: the value reaches this scope's exit and takes the compiler-derived release there.";
   return 2_u8;
 }

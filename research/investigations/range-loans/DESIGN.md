@@ -29,6 +29,27 @@ signature-complete callable boundaries, one shared loan/parallel overlap
 judgment, and deterministic proof discharge. Range extent proofs refine that
 existing overlap judgment; they do not introduce a second alias model.
 
+## Reference-only port: written partitions
+
+Replacing exclusive views with ordinary references removes the type-level
+distinction between a writable output tile and read-only input ranges. The
+iteration partition condition therefore belongs to the ranges the body's
+actual write footprints reach. Applying it to every reference formation would
+deny Jacobi's overlapping input rows despite their origin never being written.
+It would lose the existing stencil permission without preventing a race.
+
+The port's criterion is to preserve the stencil and blocked-kernel permissions
+while refusing both differently mapped writes on one origin and a read that
+can reach another iteration's written tile. The existing shifted-partition and
+whole-origin negatives remain required. Formations alone do not make a loop
+an independent write map. This uses the same finite partition images already
+proved at range formation; it adds no index search or runtime test.
+
+The check retains formations, marks those actually reached by writes, compares
+the marked partitions, then checks all reads against their written origins.
+A child reference inherits its covering parent's partition; the child's own
+endpoint proof still establishes containment. Unresolved accesses fail closed.
+
 ## Source rule
 
 Both existing view formers gain an optional pair of positional endpoints:

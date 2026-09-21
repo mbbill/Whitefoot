@@ -1,16 +1,17 @@
-fn fold_pair['r](left: own Slice<'r, u64>, right: own Slice<'r, u64>, length: own u64) -> total: own u64 reads(left, right) contract {
-  define left_length = len_of(left);
-  define right_length = len_of(right);
+fn fold_pair(left: &[u64], right: &[u64], length: own u64) -> total: own u64 reads(left), reads(right) contract {
+  define left_length = deref(left).len;
+  define right_length = deref(right).len;
   requires length <= left_length;
   requires length <= right_length;
 } {
+  doc "Two requirements separately constrain one counted prefix against two distinct range references; each bound proves only its own subscript.";
   let acc = 0_u64;
   for (
     i in 0_u64..length,
     invariant bounded: i <= length
   ) {
-    let l = left[i];
-    let r = right[i];
+    let l = deref(left)[i];
+    let r = deref(right)[i];
     set acc = acc +wrap l;
     set acc = acc +wrap r;
   }
@@ -18,43 +19,14 @@ fn fold_pair['r](left: own Slice<'r, u64>, right: own Slice<'r, u64>, length: ow
 }
 
 fn main() -> status: own ExitStatus pure {
-  let left = fixed_vector::<u64, 4>();
-  region {
-    place_back(vector: &uniq left, value: 2_u64);
-  }
-  region {
-    place_back(vector: &uniq left, value: 2_u64);
-  }
-  region {
-    place_back(vector: &uniq left, value: 2_u64);
-  }
-  region {
-    place_back(vector: &uniq left, value: 2_u64);
-  }
-  let right = fixed_vector::<u64, 5>();
-  region {
-    place_back(vector: &uniq right, value: 3_u64);
-  }
-  region {
-    place_back(vector: &uniq right, value: 3_u64);
-  }
-  region {
-    place_back(vector: &uniq right, value: 3_u64);
-  }
-  region {
-    place_back(vector: &uniq right, value: 3_u64);
-  }
-  region {
-    place_back(vector: &uniq right, value: 3_u64);
-  }
-  region {
-    let lp = slice_of(&left);
-    let rp = slice_of(&right);
-    let total = fold_pair(left: lp, right: rp, length: 3_u64);
-    if total == 15_u64 {
-    } else {
-      return exit_status(code: 201_u8);
-    }
+  let left = array_filled::<u64, 4>(value: 2_u64);
+  let right = array_filled::<u64, 5>(value: 3_u64);
+  let lp = &left[0_u64..4_u64];
+  let rp = &right[0_u64..5_u64];
+  let total = fold_pair(left: lp, right: rp, length: 3_u64);
+  if total == 15_u64 {
+  } else {
+    return exit_status(code: 201_u8);
   }
   return exit_status(code: 0_u8);
 }

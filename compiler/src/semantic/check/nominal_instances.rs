@@ -17,7 +17,21 @@ use super::{
 };
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// [TYPE-2] whether this `struct_decl` carries the `opaque` modifier.
+    ///
+    /// The modifier is a written one, and [GRAM-2] admits it on a source
+    /// `struct_decl` exactly as on the prelude's own opaque structs, so the
+    /// written token decides it first. The prelude-file test stays beside it
+    /// because the prelude's opaque declarations are read through a record
+    /// reader that fixes the modifier by its phase rather than by a token.
     fn is_opaque_declaration(&self, node: NodeId) -> Result<bool, CheckStop> {
+        if self
+            .tree
+            .direct_token_with(node, TerminalPredicate::Fixed(crate::FixedTerminal::Opaque))?
+            .is_some()
+        {
+            return Ok(true);
+        }
         let source = self.tree.coordinate(node)?.source();
         Ok(self
             .resolved
@@ -144,9 +158,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Vec::new()
         };
         let linear = self.declaration_is_linear(node)?;
-        // [S20, GRAM-2] a nominal's `region_params` are its own, exactly as a
-        // function's are, and each is a component of its type name.
-        let region_parameters = self.parse_region_parameters(node)?;
+        let nocopy = self.declaration_is_nocopy(node)?;
+        // [GRAM-2] no nominal declares a region parameter in v0.60.
+        let region_parameters = Vec::new();
         let template = NominalTemplate {
             declaration: declaration_id,
             node,
@@ -155,6 +169,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             generic_parameters,
             region_parameters,
             linear,
+            nocopy,
             constructors: Vec::new(),
         };
         let template_index = self.nominal_templates.len();
@@ -205,24 +220,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.register_prelude_nominals()?;
         self.complete_pending_source_nominals()?;
         self.reject_recursive_nominal_layouts()?;
-        self.validate_nominal_templates()?;
-        self.validate_linear_modifiers()
-    }
-
-    /// [PROV-6] the `linear` modifier is admitted only on a nominal [OWN-1]
-    /// classifies as affine; a tag-only enum is copy and the modifier would
-    /// mark a value the language duplicates.
-    fn validate_linear_modifiers(&self) -> Result<(), CheckStop> {
-        for index in 0..self.nominals.len() {
-            let id = NominalId(
-                u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
-            );
-            let Some(node) = self.nominal_nodes.get(index).copied().flatten() else {
-                continue;
-            };
-            self.check_linear_modifier_admission(id, node)?;
-        }
-        Ok(())
+        self.validate_nominal_templates()
     }
 
     pub(super) fn ensure_nominals_in_node(
@@ -381,27 +379,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(), CheckStop> {
-        if self.has_fixed(node, crate::FixedTerminal::Box)? {
-            let referent_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(referent_node, substitution)?;
-            let referent = self.parse_type_with(referent_node, substitution)?;
-            self.intern_box_nominal(referent)?;
-            return Ok(());
-        }
-        if self.has_fixed(node, crate::FixedTerminal::Arena)? {
-            let content_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(content_node, substitution)?;
-            let content = self.parse_type_with(content_node, substitution)?;
-            let region = self.type_region(node)?;
-            self.intern_arena_nominal(region, content)?;
-            return Ok(());
-        }
+        // [TYPE-9] `box<T>` is no longer a grammar atom: `Box<T>` is the
+        // prelude's opaque struct and reaches the container branch below.
         if self
             .tree
             .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
@@ -417,8 +396,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             && crate::container_nominal(id)
                 .is_some_and(|entry| entry.shape == crate::ContainerShape::Box)
         {
-            let (region, referent) = self.store_box_arguments(node, substitution)?;
-            self.intern_store_box_nominal(region, referent)?;
+            // [TYPE-9] `Box<T>`: one written type argument, its content.
+            // The argument is reached the way every other `targs` argument
+            // is -- the argument list, then its one `targ`, then that
+            // argument's `type` -- because `type := TYPEID targs?` puts no
+            // `type` among the head's own children.
+            let Some(targs) = self.tree.argument_list(node)? else {
+                return Ok(());
+            };
+            let arguments = self.tree.children_with(targs, Production::Targ)?;
+            let [referent] = arguments.as_slice() else {
+                return Ok(());
+            };
+            let Some(referent_node) = self.tree.first_child_with(*referent, Production::Type)?
+            else {
+                return Ok(());
+            };
+            self.ensure_nominals_in_node(referent_node, substitution)?;
+            let referent = self.parse_type_with(referent_node, substitution)?;
+            self.intern_box_nominal(referent)?;
             return Ok(());
         }
         match usage.target() {
@@ -490,6 +486,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let ResolvedTarget::Source { declaration, .. } = usage.target() else {
             return Ok(());
         };
+        // [TYPE-2] an opaque struct has no usable constructor and contributes
+        // no constructor template, so no instance is ever named through its
+        // entry; this pre-scan interns nothing for it and leaves the refusal
+        // to the ordinary construct judgment, which is where the rule sites
+        // its hard error.
+        if self.is_opaque_struct_declaration(declaration)? {
+            return Ok(());
+        }
         // [FORM-8] a construct whose field operands determine a region
         // parameter does not write it, so this pre-scan cannot read the
         // instance off the written list: it is formed while the operands are
@@ -671,6 +675,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             },
             linear: template.linear,
+            nocopy: template.nocopy,
         });
         self.nominals_by_declaration
             .entry(template.declaration)
@@ -795,7 +800,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             constructors.push(super::ConstructorShape {
                 fields: fields.iter().map(|field| field.name.clone()).collect(),
                 determining_field,
-                field_regions,
             });
         }
         Ok(constructors)
@@ -953,11 +957,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(field, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(ty, substitution)?;
             self.ensure_nominal_type(ty, substitution)?;
             let parsed = self.parse_type_with(ty, substitution)?;
-
-            fields.push(CheckedField { name, ty: parsed });
+            self.reject_inline_runtime_capacity(ty, parsed)?;
+            // [TYPE-2, GRAM-2] `field := "readonly"? IDENT ":" type ";"`: the
+            // written modifier is what makes the field unassignable.
+            let readonly = self
+                .tree
+                .direct_token_with(
+                    field,
+                    TerminalPredicate::Fixed(crate::FixedTerminal::Readonly),
+                )?
+                .is_some();
+            fields.push(CheckedField {
+                name,
+                ty: parsed,
+                readonly,
+            });
         }
         Ok(fields)
     }
@@ -996,13 +1012,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .tree
                         .first_child_with(field, Production::Type)?
                         .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                    self.reject_region_bearing_storage_type(ty, substitution)?;
                     self.ensure_nominal_type(ty, substitution)?;
                     let parsed = self.parse_type_with(ty, substitution)?;
-
+                    self.reject_inline_runtime_capacity(ty, parsed)?;
+                    // [GRAM-2] a `vfield` carries no modifier: `readonly` is
+                    // a `field` alternative and an enum payload has none.
                     fields.push(CheckedField {
                         name: field_name,
                         ty: parsed,
+                        readonly: false,
                     });
                 }
             }
@@ -1113,43 +1131,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.substitute_element_regions(element, regions)?,
                 length,
             },
-            CheckedType::Slice {
-                region,
-                element,
-                strength,
-            } => CheckedType::Slice {
-                region: Self::substituted_region(regions, region),
-                element: self.substitute_flat_element_regions(element, regions)?,
-                strength,
-            },
             CheckedType::Buffer { element } => CheckedType::Buffer {
                 element: self.substitute_flat_element_regions(element, regions)?,
             },
-            CheckedType::FixedVector { element, length } => CheckedType::FixedVector {
+            CheckedType::Window {
+                shape,
+                element,
+                capacity,
+            } => CheckedType::Window {
+                shape,
                 element: self.substitute_element_regions(element, regions)?,
-                length,
-            },
-            CheckedType::Vector {
-                region, element, ..
-            } => {
-                let region = Self::substituted_region(regions, region);
-                CheckedType::Vector {
-                    region,
-                    element: self.substitute_element_regions(element, regions)?,
-                    release: self.vector_release_class(region)?,
-                }
-            }
-            CheckedType::Heap { region } => CheckedType::Heap {
-                region: Self::substituted_region(regions, region),
-            },
-            CheckedType::Extent {
-                region,
-                bytes,
-                align,
-            } => CheckedType::Extent {
-                region: Self::substituted_region(regions, region),
-                bytes,
-                align,
+                capacity,
             },
         })
     }
@@ -1170,7 +1162,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// contain one arbitrarily far inside its instance — for example the
     /// `'s` in `Option<Entry<'s>>` — while remaining one flat slot element.
     /// Substitution changes that instance identity and preserves whether the
-    /// element was admitted as tag-only or as an affine nominal.
+    /// element has tag-only or payload representation; capability class is
+    /// independent of that shape.
     fn substitute_flat_element_regions(
         &self,
         element: CheckedFlatElement,
@@ -1294,33 +1287,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(CheckedType::Nominal(existing));
         }
         match &self.nominal(id)?.kind {
-            // S39 a store-branded cell substitutes both halves of its own
-            // identity: its store region and its referent.
-            CheckedNominalKind::Box {
-                referent,
-                region: Some(region),
-                ..
-            } => {
-                let substituted_region = Self::substituted_region(regions, *region);
-                let substituted = self.substitute_type_regions(*referent, regions)?;
-                if substituted == *referent && substituted_region == *region {
-                    return Ok(CheckedType::Nominal(id));
-                }
-                let Some(existing) = self
-                    .store_box_nominals
-                    .get(&(substituted_region, substituted))
-                    .copied()
-                else {
-                    self.pending_nominals
-                        .borrow_mut()
-                        .push(super::PendingNominal::StoreBox(
-                            substituted_region,
-                            substituted,
-                        ));
-                    return Err(CheckStop::DeferredNominal);
-                };
-                Ok(CheckedType::Nominal(existing))
-            }
             CheckedNominalKind::Box { referent, .. } => {
                 let substituted = self.substitute_type_regions(*referent, regions)?;
                 if substituted == *referent {
@@ -1334,24 +1300,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 Ok(CheckedType::Nominal(existing))
             }
-            CheckedNominalKind::Arena { region, content } => {
-                let substituted_region = Self::substituted_region(regions, *region);
-                let substituted_content = self.substitute_type_regions(*content, regions)?;
-                if substituted_region == *region && substituted_content == *content {
-                    return Ok(CheckedType::Nominal(id));
-                }
-                let key = (substituted_region, substituted_content);
-                let Some(existing) = self.arena_nominals.get(&key).copied() else {
-                    self.pending_nominals
-                        .borrow_mut()
-                        .push(super::PendingNominal::Arena(key.0, key.1));
-                    return Err(CheckStop::DeferredNominal);
-                };
-                Ok(CheckedType::Nominal(existing))
-            }
             CheckedNominalKind::Struct { .. }
             | CheckedNominalKind::Enum { .. }
-            | CheckedNominalKind::ArenaStorage
             | CheckedNominalKind::Opaque => Ok(CheckedType::Nominal(id)),
         }
     }
@@ -1361,7 +1311,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ///
     /// The same name shape — one source declaration at two regions, one
     /// prelude shape over two region-blind-equal arguments, one result list
-    /// [CALL-4] with the same ordinal names, one `box` or one `arena`
+    /// [CALL-4] with the same ordinal names, or one `box`
     /// [STOR-2] — and the same lowered content: a region names a store for
     /// the proof, so two such nominals are two checked types and one IR
     /// nominal. The content comparison is what keeps a difference the run
@@ -1404,32 +1354,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         &mut pending,
                     )?,
                 (
-                    CheckedType::Vector {
+                    CheckedType::Window {
+                        shape: left_shape,
                         element: left,
-                        release: left_release,
-                        ..
+                        capacity: left_capacity,
                     },
-                    CheckedType::Vector {
+                    CheckedType::Window {
+                        shape: right_shape,
                         element: right,
-                        release: right_release,
-                        ..
+                        capacity: right_capacity,
                     },
                 ) => {
                     pending.push((self.element_type(left)?, self.element_type(right)?));
-                    !release_sensitive || left_release == right_release
-                }
-                (
-                    CheckedType::FixedVector {
-                        element: left,
-                        length: left_length,
-                    },
-                    CheckedType::FixedVector {
-                        element: right,
-                        length: right_length,
-                    },
-                ) => {
-                    pending.push((self.element_type(left)?, self.element_type(right)?));
-                    left_length == right_length
+                    left_shape == right_shape && left_capacity == right_capacity
                 }
                 (
                     CheckedType::Array {
@@ -1448,34 +1385,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     pending.push((left.ty(), right.ty()));
                     true
                 }
-                (
-                    CheckedType::Slice {
-                        element: left,
-                        strength: left_strength,
-                        ..
-                    },
-                    CheckedType::Slice {
-                        element: right,
-                        strength: right_strength,
-                        ..
-                    },
-                ) => {
-                    pending.push((left.ty(), right.ty()));
-                    left_strength == right_strength
-                }
-                (CheckedType::Heap { .. }, CheckedType::Heap { .. }) => true,
-                (
-                    CheckedType::Extent {
-                        bytes: left_bytes,
-                        align: left_align,
-                        ..
-                    },
-                    CheckedType::Extent {
-                        bytes: right_bytes,
-                        align: right_align,
-                        ..
-                    },
-                ) => left_bytes == right_bytes && left_align == right_align,
                 _ => false,
             };
             if !same {
@@ -1492,8 +1401,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         release_sensitive: bool,
         pending: &mut Vec<(CheckedType, CheckedType)>,
     ) -> Result<bool, CheckStop> {
-        // Box and legacy arena content lives in the kind, rather than in
-        // fields. The ordinary lowering alias retains Box's release action;
+        // Box content lives in the kind, rather than in fields. The ordinary
+        // lowering alias retains Box's release action;
         // the physical family defers it to the closed release environment.
         match (&self.nominal(left)?.kind, &self.nominal(right)?.kind) {
             (
@@ -1511,15 +1420,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 pending.push((*left, *right));
                 return Ok(!release_sensitive || left_release == right_release);
             }
-            (
-                CheckedNominalKind::Arena { content: left, .. },
-                CheckedNominalKind::Arena { content: right, .. },
-            ) => {
-                pending.push((*left, *right));
-                return Ok(true);
-            }
-            (CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. }, _)
-            | (_, CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. }) => {
+            (CheckedNominalKind::Box { .. }, _) | (_, CheckedNominalKind::Box { .. }) => {
                 return Ok(false);
             }
             _ => {}
@@ -1528,7 +1429,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         }
         let (left_nominal, right_nominal) = (self.nominal(left)?, self.nominal(right)?);
-        if left_nominal.linear != right_nominal.linear {
+        if left_nominal.linear != right_nominal.linear
+            || left_nominal.nocopy != right_nominal.nocopy
+        {
             return Ok(false);
         }
         match (&left_nominal.kind, &right_nominal.kind) {
@@ -1694,6 +1597,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .map(|instance| instance.id)
     }
 
+    /// [TYPE-2] whether this declaration is an `opaque struct`, whose
+    /// constructor entry exists only to be refused.
+    ///
+    /// An opaque struct contributes no constructor template at all, so the
+    /// refusal has to be made from the nominal template before the ordinary
+    /// constructor lookup, which would otherwise report a missing entry as a
+    /// resolution failure rather than as the rule's own hard error.
+    pub(super) fn is_opaque_struct_declaration(
+        &self,
+        declaration: crate::DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        let Some(&index) = self.nominal_templates_by_declaration.get(&declaration) else {
+            return Ok(false);
+        };
+        let template = self
+            .nominal_templates
+            .get(index)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(
+            template.role == DeclarationRole::Struct
+                && self.is_opaque_declaration(template.node)?,
+        )
+    }
+
     pub(super) fn source_constructor(
         &self,
         node: NodeId,
@@ -1770,18 +1697,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .retain(|_, id| (id.0 as usize) < checkpoint);
         self.box_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
-        self.store_box_nominals
-            .retain(|_, id| (id.0 as usize) < checkpoint);
-        self.arena_nominals
-            .retain(|_, id| (id.0 as usize) < checkpoint);
         self.result_list_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
-        if self
-            .arena_storage_nominal
-            .is_some_and(|id| (id.0 as usize) >= checkpoint)
-        {
-            self.arena_storage_nominal = None;
-        }
         Ok(())
     }
 }

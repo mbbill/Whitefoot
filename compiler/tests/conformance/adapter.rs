@@ -4,31 +4,32 @@
 //! rule coverage, and the schema of one manifest line. This module owns the
 //! other half its docstring names — driving each case through a real
 //! toolchain and reducing the outcome to one corpus verdict. It re-derives
-//! none of the corpus: it reads the same `manifest.jsonl` bytes, applies the
-//! same match rule, and honours the same `runnable`/`pending`/`xfail` axis.
+//! none of the corpus: it reads the same `manifest.jsonl` bytes and applies
+//! the same match rule. There is no readiness axis: `runnable` is the only
+//! status a manifest line may carry, so every case must reach its declared
+//! verdict and a case that does not is a defect rather than a status.
 //!
 //! The split is deliberate. Python states what the corpus *is*, which must
 //! outlive this compiler; Rust states what *this* toolchain does with it,
 //! because reproducing compiler behaviour in Python would create a second,
 //! divergent implementation of the language.
 //!
-//! A case reaches its verdict through the ordinary compiler path and, when
-//! the expectation is a `run`, through a real invocation: the
-//! emitted module is linked with the same host arguments every Whitefoot
-//! executable uses, the manifest's `arrange` is realized as actual fixture
-//! files, actual argument bytes, an actual standard input, and actual
-//! redirection, and the process's own exit status is the verdict. A process
-//! that ends without an exit status is a harness stop, never a language
-//! verdict.
+//! A source `accept` or `reject` reaches the complete semantic-publication
+//! boundary of the ordinary compiler path. A `run` or `unsupported` case
+//! continues through ordinary lowering and target compilation, and a `run`
+//! then reaches a real invocation: the emitted module is linked with the same
+//! host arguments every Whitefoot executable uses, the manifest's `arrange`
+//! is realized as actual fixture files, actual argument bytes, an actual
+//! standard input, and actual redirection. A process that ends without an exit
+//! status is a harness stop, never a language verdict.
 //! Nothing about a case's identity, name, or family selects a path here.
 //!
 //! The corpus-wide run is an ordinary test in the shared source-corpus
-//! executable. It obtains every non-pending verdict and executes each run
-//! case. `make conformance-run` selects it for focused use; the full gate
-//! reaches it once through the normal corpus tests, with no ignored opt-in.
-//! The adapter excludes no case, weakens no expectation, and skips nothing the
-//! manifest does not itself mark `pending`; running it prints the complete
-//! tally.
+//! executable. It obtains every case's verdict and executes each run case.
+//! `make conformance-run` selects it for focused use; the full gate reaches
+//! it once through the normal corpus tests, with no ignored opt-in. The
+//! adapter excludes no case, weakens no expectation, and skips nothing;
+//! running it prints the complete tally.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -40,12 +41,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
     CompilationFailureKind, CompilerLimits, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
-    SourceInput, compile,
+    SourceInput, check, compile,
 };
 
 use crate::support::append_runtime_objects;
 
-use super::corpus::{self, Arrangement, Case, Expectation, Status, Verdict};
+use super::corpus::{self, Arrangement, Case, Expectation, Verdict};
 
 static NEXT_INVOCATION: AtomicU64 = AtomicU64::new(0);
 
@@ -63,10 +64,21 @@ struct Reached {
 fn reach(case: &Case) -> Reached {
     let source = case.source();
     let path = case.logical_path();
-    let module = match compile(
-        &[SourceInput::new(&path, &source)],
-        CompilerLimits::default(),
-    ) {
+    let inputs = [SourceInput::new(&path, &source)];
+    // `accept` and `reject` are source-language verdicts. [STOR-6] begins only
+    // after their complete semantic boundary, so target qualification cannot
+    // change either one. A runtime or unsupported expectation still needs the
+    // complete toolchain: the former executes its module, while the latter may
+    // name a capability first encountered during lowering.
+    let module = match &case.expect {
+        Expectation::Accept | Expectation::Reject(_) => {
+            check(&inputs, CompilerLimits::default()).map(|()| None)
+        }
+        Expectation::Run(_) | Expectation::Unsupported => {
+            compile(&inputs, CompilerLimits::default()).map(Some)
+        }
+    };
+    let module = match module {
         Ok(module) => module,
         Err(failure) => {
             let note = Some(failure.to_string());
@@ -96,7 +108,12 @@ fn reach(case: &Case) -> Reached {
         };
     }
     Reached {
-        verdict: execute(&module, case.arrange.as_ref()),
+        verdict: execute(
+            module
+                .as_deref()
+                .expect("a run expectation uses the complete compiler path"),
+            case.arrange.as_ref(),
+        ),
         note: None,
     }
 }
@@ -230,33 +247,29 @@ fn link(module: &str, directory: &Path) -> PathBuf {
     executable
 }
 
-/// One case's outcome on the readiness axis, named as `runner.py` names it.
+/// One case's outcome, named as `runner.py` names it.
+///
+/// x1 retires the readiness axis with the manifest statuses that carried it:
+/// `Xfail`, `Xpass` and `Skip` are gone because `pending` and `xfail` are no
+/// longer manifest values, so a case either reaches its declared verdict or
+/// fails.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum Outcome {
     Pass,
     Fail,
-    Xfail,
-    Xpass,
-    Skip,
 }
 
 fn outcome(case: &Case, reached: &Verdict) -> Outcome {
-    let matched = case.expect.matched_by(reached);
-    match case.status {
-        Status::Pending => Outcome::Skip,
-        Status::Xfail if matched => Outcome::Xpass,
-        Status::Xfail => Outcome::Xfail,
-        // A runnable case that stops as unsupported is a toolchain gap
-        // reported in the wrong place: runnable means supported, and a gap
-        // belongs in `status`, never in a verdict comparison.
-        Status::Runnable
-            if matches!(reached, Verdict::Unsupported(_))
-                && case.expect != Expectation::Unsupported =>
-        {
-            Outcome::Fail
-        }
-        Status::Runnable if matched => Outcome::Pass,
-        Status::Runnable => Outcome::Fail,
+    // A case that stops as unsupported without declaring it is a toolchain gap
+    // reported in the wrong place: the corpus has no status for a gap, so it
+    // is an ordinary failure.
+    if matches!(reached, Verdict::Unsupported(_)) && case.expect != Expectation::Unsupported {
+        return Outcome::Fail;
+    }
+    if case.expect.matched_by(reached) {
+        Outcome::Pass
+    } else {
+        Outcome::Fail
     }
 }
 
@@ -270,19 +283,10 @@ fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() 
     let mut tally: BTreeMap<Outcome, usize> = BTreeMap::new();
     let mut reports = Vec::new();
     for case in &cases {
-        if case.status == Status::Pending {
-            *tally.entry(Outcome::Skip).or_default() += 1;
-            continue;
-        }
         let reached = reach(case);
         let outcome = outcome(case, &reached.verdict);
         *tally.entry(outcome).or_default() += 1;
-        let interesting = match outcome {
-            Outcome::Fail | Outcome::Xpass => true,
-            Outcome::Xfail => true,
-            Outcome::Pass | Outcome::Skip => false,
-        };
-        if interesting {
+        if outcome == Outcome::Fail {
             let note = reached
                 .note
                 .or_else(|| case.reason.clone())
@@ -302,7 +306,6 @@ fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() 
         println!("{report}");
     }
     println!("conformance adapter: {summary}");
-    let failed = tally.get(&Outcome::Fail).copied().unwrap_or_default()
-        + tally.get(&Outcome::Xpass).copied().unwrap_or_default();
+    let failed = tally.get(&Outcome::Fail).copied().unwrap_or_default();
     assert_eq!(failed, 0, "conformance adapter: {summary}");
 }

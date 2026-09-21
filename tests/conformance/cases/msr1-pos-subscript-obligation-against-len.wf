@@ -1,25 +1,23 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
-  ensures len_of(result) >= n;
-  ensures room_of(result) <= 0_u64;
-  ensures head_of(result) <= 0_u64;
+fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+  ensures result.len >= n;
+  ensures result.cap <= result.len;
 } {
-  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
-  let built = fixed_vector::<T, n>();
+  doc "Builds a window of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
+  let built = slots_new::<T, n>();
   for @fill (
     at in 0_u64..n,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= n,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len >= at,
+    invariant spare: built.cap - built.len + at >= n
   ) {
-    place_back(vector: &uniq built, value: value);
+    place_back(window: &built, value: value);
   }
   return move built;
 }
 
-fn read_halves(run: own FixedVector<u8, 8>) -> total: own u64 reads(run) contract {
-  requires 8_u64 <= len_of(run);
+fn read_halves(run: own Slots<u8, 8>) -> total: own u64 pure contract {
+  requires 8_u64 <= run.len;
 } {
-  doc "Two disjoint logical ranges over one run.";
+  doc "Two disjoint logical ranges over one window.";
   let seen = 0_u64;
   for (at in 0_u64..4_u64) {
     let byte = run[at];
@@ -31,7 +29,7 @@ fn read_halves(run: own FixedVector<u8, 8>) -> total: own u64 reads(run) contrac
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "[MSR-1, OP-4] a subscript offset is a logical offset: it names the slot at physical offset (head + i) mod cap, so its obligation is against len and never against cap. Every row of this version's measure table gives head the exact value zero, so the map i |-> (head + i) mod cap is the identity here and the injectivity sentence's conclusion - two disjoint logical ranges of one run describe disjoint storage - holds immediately from len <= cap, which [MSR-2] publishes as a standing fact rather than as an obligation any occurrence submits. The two counted loops walk two disjoint ranges of one run and every subscript discharges against len.";
+  doc "MSR-1, OP-4: a subscript offset is a logical offset naming the slot at physical offset (origin + i) mod cap, so its obligation is against len and never against cap. A Slots window begins at slot zero, so the map is the identity here and the injectivity sentence's conclusion - two disjoint logical ranges of one measured value describe disjoint storage - follows immediately from len <= cap, which MSR-2 publishes as a standing fact rather than as an obligation any occurrence submits. The two counted loops walk two disjoint ranges of one window and every subscript discharges against len.";
   let run = filled::<u8, 8>(value: 0_u8);
   let total = read_halves(run: move run);
   if total == 0_u64 {

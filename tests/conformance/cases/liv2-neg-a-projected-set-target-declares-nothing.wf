@@ -3,7 +3,7 @@ struct Frame {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "LIV-2: only a bare identifier target declares. A projected target selects one component of a value that must already exist, so an unresolved base there keeps its ordinary unresolved-use rejection.";
+  doc "A projected set target selects one component of a binding that must already exist. The absent base therefore fails TYPE-5 name resolution before SET-1 can type or commit the target; no set target declares a binding.";
   set absent.count = 4_u64;
   return exit_status(code: 0_u8);
 }

@@ -1,37 +1,20 @@
 fn main() -> status: own ExitStatus pure {
-  doc "LIV-2: a move of a subscripted target place, in the right-hand side of that target's own set, is that target's read-out. Two elements of one run therefore exchange slots in one commit: the offsets are two literals with unequal values, so the targets do not overlap, and each move reads out the target whose offset it provably names. No writer-observable point lies between the read-outs and the commit, so no slot is observed empty and no second owner of a stored element is minted.";
-  region 'a {
-    let workspace = arena_frame::<65536, 16, 'a>();
-    region {
-      let empty = fixed_vector::<Vector<'a, u8>, 2>();
-      let small = arena_vector_proved::<u8>(store: &uniq workspace, count: 256_u64);
-      region {
-        place_back(vector: &uniq empty, value: move small);
-      }
-      let one = move empty;
-      let large = arena_vector_proved::<u8>(store: &uniq workspace, count: 512_u64);
-      region {
-        place_back(vector: &uniq one, value: move large);
-      }
-      let grid = move one;
-      set (grid[0_u64], grid[1_u64]) = move grid[1_u64], move grid[0_u64];
-      region {
-        let back = take_back(vector: &uniq grid);
-        let rest = move grid;
-        let width = room_of(back);
-        if width == 256_u64 {
-          region {
-            let front = take_back(vector: &uniq rest);
-            let drained = move rest;
-            let other = room_of(front);
-            if other == 512_u64 {
-              return exit_status(code: 0_u8);
-            }
-            return exit_status(code: 2_u8);
-          }
-        }
-        return exit_status(code: 1_u8);
-      }
+  doc "OP-11: swap exchanges the values at two owned places of one type and consumes neither root, so two elements of one window exchange slots with no writer-observable point at which a slot is empty or a stored element has a second owner. It is the one operation whose two reference arguments may name the same place, so the pair needs no distinctness proof. The exit code reports each cell's own capacity after the exchange.";
+  let grid = slots_new::<Box<Slots<u8>>, 2>();
+  let small = box_slots_new::<u8>(capacity: 256_u64);
+  place_back(window: &grid, value: move small);
+  let large = box_slots_new::<u8>(capacity: 512_u64);
+  place_back(window: &grid, value: move large);
+  swap(first: &grid[0_u64], second: &grid[1_u64]);
+  let back = take_back(window: &grid);
+  let width = back.inner.cap;
+  if width == 256_u64 {
+    let front = take_back(window: &grid);
+    let other = front.inner.cap;
+    if other == 512_u64 {
+      return exit_status(code: 0_u8);
     }
+    return exit_status(code: 2_u8);
   }
+  return exit_status(code: 1_u8);
 }

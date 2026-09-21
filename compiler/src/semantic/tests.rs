@@ -1,11 +1,34 @@
 #![allow(clippy::panic)]
 
-mod arenas;
+// Five suites of this module retired whole with the v0.60 amendment, because
+// the mechanism each one tested no longer exists. Each names its successor:
+//
+// - `borrows` (33 tests) retired with [OWN-2], [OWN-5], [OWN-6], [OWN-9],
+//   [OWN-12] and [OWN-14]: there are no borrow modes, loans, holders, child
+//   reborrows or suspension. Successor: `references`, over [REF-1] paths,
+//   [REF-2] validity, [REF-3] escape and [EFF-5]'s pairwise call check.
+// - `slices` (30 tests) retired with [VIEW-1], [VIEW-2], [VIEW-4] and
+//   [VIEW-6]: slices and views are not values, and `Slice<T>`/`MutSlice<T>`
+//   are not types. Successor: `range_references`, over [REF-4]'s `&x[lo..hi]`
+//   and the `&[T]` parameter kind, with [CALL-3]'s transport.
+// - `buffers` (22 tests) retired with [BLK-1] through [BLK-4], [PROV-1] and
+//   the `buffer` / `FixedVector` / `Vector` storage names. Successor:
+//   `windows`, over [TYPE-9]'s shapes, [WIN-1] through [WIN-3] and the
+//   [PRE-1] window, construction and release records [OP-10, OP-13, OP-14].
+// - `replace` (14 tests) retired with [SET-2]: `let x = replace p = e;` has no
+//   v0.60 production, exchange being the built-in `swap` [OP-11] and
+//   replacement the ordinary `set` whose old value takes [WIN-3]'s
+//   disposition. Successor: the [SET-1] tests in this file, `owned_places`,
+//   and the `swap` tests in `windows`. [OP-12]'s atomic in-place update
+//   `set p = f(move p, args...);` is the remaining successor and the checker
+//   does not implement it yet, so no test of it is added here.
+// - `arenas` (15 tests) retired with [OWN-3], [OWN-4], [OWN-10], [FORM-8] and
+//   [STOR-4]: v0.60 has no regions, lifetimes, arenas or store brands at all.
+//   There is no successor rule; a pool or an arena is ordinary `Slots` usage
+//   under [OP-13] over the one heap [STOR-8].
 mod arithmetic_obligations;
 mod arrays;
 mod boolean_composition;
-mod borrows;
-mod buffers;
 mod cells;
 mod checked_division;
 mod conditionals;
@@ -13,6 +36,7 @@ mod const_eval;
 mod contracts;
 mod counted_ranges;
 mod derivation;
+mod descriptor_invalidation;
 mod division_obligations;
 mod entailment;
 mod entailment_sources;
@@ -35,11 +59,12 @@ mod originating_acceptance;
 mod owned_places;
 mod permission;
 mod postconditions;
+mod range_references;
+mod references;
 mod reinterpret;
-mod replace;
 mod requires;
-mod slices;
 mod source_proofs;
+mod windows;
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
@@ -52,8 +77,12 @@ use crate::{
 
 use super::model::{CheckedExpression, CheckedStatement};
 
+// [PRE-1] the prelude contributes one source per declaration record, so a
+// harness bundle is that record count plus the test's own sources; the
+// ceiling is the driver's [`crate::driver`] rather than a number the record
+// list can grow past.
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
-    max_sources: 64,
+    max_sources: 1_024,
     max_logical_path_bytes: 128,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
@@ -61,7 +90,7 @@ const SOURCE_LIMITS: SourceLimits = SourceLimits {
 };
 
 const LEX_LIMITS: LexLimits = LexLimits {
-    max_sources: 64,
+    max_sources: 1_024,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
     max_token_bytes: 16_384,
@@ -91,7 +120,7 @@ const FINALIZE_LIMITS: FinalizeLimits = FinalizeLimits {
     max_nodes: 262_144,
     max_child_edges: 262_144,
     max_terminals: 131_072,
-    max_sources: 64,
+    max_sources: 1_024,
 };
 
 const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
@@ -292,6 +321,16 @@ fn assert_rule_kind(source: &[u8], rule: SemanticRule, kind: fn(&SemanticIssueKi
 
 /// Asserts a rejection and the exact source bytes it cites, for the rules
 /// that name *which* operand or node they land on.
+/// Asserts that one complete source is accepted by every whole-unit judgment.
+fn assert_accepts(source: &[u8]) {
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "expected an accepted program, got {outcome:?}"
+        );
+    });
+}
+
 fn assert_rule_at(source: &[u8], rule: SemanticRule, cited: &str) {
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
@@ -338,15 +377,13 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_non_ordered_local_invariant_target_is_an_inv1_rejection() {
+fn a_local_invariant_equality_is_an_inv1_target() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   invariant held: 0_u64 == 0_u64;
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_kind(source, SemanticRule::Inv1, |kind| {
-        matches!(kind, SemanticIssueKind::InvalidInvariant { .. })
-    });
+    assert_accepts(source);
 }
 
 #[test]
@@ -418,19 +455,22 @@ fn semantic_rule_owners_remain_distinct() {
         SemanticIssueKind::ReturnMismatch,
     );
     assert_rule_kind(
-        b"fn main() -> status: own ExitStatus pure {\n  invariant bad: 0_u64 == 0_u64;\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  invariant bad: 0_u64 != 0_u64;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Inv1,
         |kind| matches!(kind, SemanticIssueKind::InvalidInvariant { .. }),
     );
-    // [S23] both EFF-2 arms name a provider path: the first declares less
-    // than the body exhibits, the second more.
+    // [EFF-2] rows are checked both ways: the first declares less than the
+    // body exhibits, the second more. Both arms named a provider path in
+    // v0.59; v0.60 roots every `effect_path` at a reference parameter, and
+    // allocation and release carry no entry at all [EFF-1, STOR-8], so the
+    // `allocates(heap)` arm is now a row a writer cannot even spell.
     assert_rule_kind(
-        b"fn helper['s](heap: &uniq Heap<'s>) -> result: own unit reads(heap), writes(heap) {\n  region {\n    match heap_vector::<u8>(store: &uniq deref(heap), count: 1_u64) {\n      None() => {\n        return unit;\n      }\n      Some(value: run) => {\n        return unit;\n      }\n    }\n  }\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        include_bytes!("../../../tests/conformance/cases/eff2-neg-undeclared-exhibited.wf"),
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     assert_rule_kind(
-        b"fn helper['s](heap: &uniq Heap<'s>) -> result: own unit allocates(heap) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        include_bytes!("../../../tests/conformance/cases/eff2-neg-declared-unexhibited.wf"),
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
@@ -474,13 +514,13 @@ fn function_control_is_checked_and_main_has_an_ordinary_signature() {
 #[test]
 fn loops_enforce_own11_for_outer_affine_moves() {
     assert_rule(
-        br#"fn measure(cell: own FixedVector<u8, 4>) -> size: own u64 reads(cell) {
-  let n = len_of(cell);
+        br#"fn measure(cell: own Slots<u8, 4>) -> size: own u64 pure {
+  let n = cell.len;
   return n;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let c = fixed_vector::<u8, 4>();
+  let c = slots_new::<u8, 4>();
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
   }
@@ -496,16 +536,16 @@ fn main() -> status: own ExitStatus pure {
         },
     );
     with_semantics(
-        br#"fn measure(cell: own FixedVector<u8, 4>) -> size: own u64 reads(cell) {
-  let n = len_of(cell);
+        br#"fn measure(cell: own Slots<u8, 4>) -> size: own u64 pure {
+  let n = cell.len;
   return n;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let c = fixed_vector::<u8, 4>();
+  let c = slots_new::<u8, 4>();
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
-    set c = fixed_vector::<u8, 4>();
+    set c = slots_new::<u8, 4>();
   }
   return exit_status(code: 0_u8);
 }
@@ -531,7 +571,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn loop_break_and_backedge_cleanup_is_explicit() {
-    let source = br#"struct Cell {
+    let source = br#"nocopy struct Cell {
   value: i32;
 }
 
@@ -644,7 +684,7 @@ fn operation_call_shapes_keep_their_exact_rule_owners() {
 fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     // Missing the arguments the callee's class mandates.
     assert_rule_kind(
-        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: affine>(value: own T) -> result: own T pure {\n  return move value;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: drop>(value: own T) -> result: own T pure {\n  return move value;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -656,7 +696,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
 
     // A wrong-count argument list, the same failure on both classes.
     assert_rule_kind(
-        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: affine>(value: own T) -> result: own T pure {\n  return move value;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick::<Held, Held>(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: drop>(value: own T) -> result: own T pure {\n  return move value;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick::<Held, Held>(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -671,7 +711,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     // user-generic call, so it is the control that the rule is not simply
     // keyed on that reader.
     assert_rule_kind(
-        b"struct Pair<T: affine> {\n  v: T;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let p = Pair(v: 1_i32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Pair<T: drop> {\n  v: T;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let p = Pair(v: 1_i32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -679,7 +719,23 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
 
 #[test]
 fn effect_mismatch_is_located_at_the_written_effect_row() {
-    let source = b"fn main['s](heap: own Heap<'s>) -> status: own ExitStatus pure {\n  region {\n    match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {\n      None() => {\n        return exit_status(code: 1_u8);\n      }\n      Some(value: run) => {\n        return exit_status(code: 0_u8);\n      }\n    }\n  }\n}\n";
+    // [EFF-2] the body places one value into the window behind its reference
+    // parameter, which exhibits `writes(target.next)` and `writes(target.len)`
+    // [OP-10, WIN-2], and the declaration writes the empty row instead. The
+    // citation lands on the written row, which is the `pure` atom.
+    let source = br#"fn fill(target: &Slots<u8, 4>) -> result: own unit pure contract {
+  requires deref(target).len < deref(target).cap;
+} {
+  place_back(window: target, value: 7_u8);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let block = slots_new::<u8, 4>();
+  fill(target: &block);
+  return exit_status(code: 0_u8);
+}
+"#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("expected EFF-2 mismatch, got {outcome:?}");
@@ -725,7 +781,7 @@ fn nominal_diagnostics_retain_required_lists_and_repairs() {
         },
     );
     assert_rule(
-        b"enum Pairing {\n  Both(a: i32, b: i32);\n}\n\nfn main() -> status: own ExitStatus pure {\n  let pair = Both(a: 1_i32, b: 2_i32);\n  match move pair {\n    Both(a: first) => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Pairing {\n  Both(a: i32, b: i32);\n}\n\nfn main() -> status: own ExitStatus pure {\n  let pair = Both(a: 1_i32, b: 2_i32);\n  match pair {\n    Both(a: first) => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Gram10,
         SemanticIssueKind::InvalidMatchFields {
             variant: "Both".to_owned(),
@@ -751,7 +807,7 @@ fn give_completeness_rejects_each_structural_failure() {
 #[test]
 fn enum_equality_exclusions_reach_the_intended_rule() {
     assert_rule(
-        b"enum PayloadEq {\n  PayloadEmpty();\n  PayloadValue(value: u32);\n}\n\nfn main() -> status: own ExitStatus pure {\n  let left = PayloadEmpty();\n  let right = PayloadEmpty();\n  let equal = eeq(move left, move right);\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum PayloadEq {\n  PayloadEmpty();\n  PayloadValue(value: u32);\n}\n\nfn main() -> status: own ExitStatus pure {\n  let left = PayloadEmpty();\n  let right = PayloadEmpty();\n  let equal = eeq(left, right);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
@@ -782,7 +838,7 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // borrow-matched through `&'r` whose scrutinee stays live for a second
     // read, with each derived binder explicitly dereferenced.
     with_semantics(
-        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\nfn main() -> status: own ExitStatus pure {\n  let c = Full(v: 20_i32);\n  region {\n    let p = &c;\n    let a = match deref(p) {\n      Full(v: x) => {\n        give deref(x);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    let q = &c;\n    let b = match deref(q) {\n      Full(v: y) => {\n        give deref(y);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\nfn main() -> status: own ExitStatus pure {\n  let c = Full(v: 20_i32);\n  let p = &c;\n  let a = match deref(p) {\n    Full(v: x) => {\n      give deref(x);\n    }\n    Void() => {\n      give 0_i32;\n    }\n  }\n  let q = &c;\n  let b = match deref(q) {\n    Full(v: y) => {\n      give deref(y);\n    }\n    Void() => {\n      give 0_i32;\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_unsupported(
@@ -797,12 +853,12 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // that binding. Ordinary ownership checks the complete replacement without
     // recovering the returned owner's ancestry from the helper body.
     with_semantics(
-        br#"fn consume(cell: own FixedVector<u8, 4>) -> out: own FixedVector<u8, 4> pure {
+        br#"fn consume(cell: own Slots<u8, 4>) -> out: own Slots<u8, 4> pure {
   return move cell;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let c = fixed_vector::<u8, 4>();
+  let c = slots_new::<u8, 4>();
   for (i in 0_u64..2_u64) {
     set c = consume(cell: move c);
   }
@@ -815,87 +871,82 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn ordinary_signature_effects_reject_both_row_directions() {
-    // Capability effects are checked in both directions [EFF-1, EFF-2].
-    // First an unexhibited declaration, then an undeclared exhibited read.
+    // Rows are checked in both directions [EFF-2]: first an unexhibited
+    // declaration, then an undeclared exhibited read. Both are now written
+    // over a reference parameter, because [EFF-1] gives a by-value parameter
+    // no effect entry at all; a row rooted at one is the third assertion.
+    assert_rule_kind(
+        b"fn probe(args: &Args) -> result: own unit reads(args) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        SemanticRule::Eff2,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
+    );
+    assert_rule_kind(
+        b"fn probe(args: &Args) -> result: own u64 pure {\n  let total = args_count(args: args);\n  return total;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        SemanticRule::Eff2,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
+    );
     assert_rule_kind(
         b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Eff2,
-        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
+        SemanticRule::Eff1,
+        |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
+    );
+}
+
+#[test]
+fn a_bare_reference_subscript_is_a_type7_missing_dereference() {
+    // [TYPE-7] a reference variable denotes the reference, and its referent is
+    // reached only through `deref`, so a bare reference operand in a
+    // consuming context is the missing dereference. v0.59 also routed a `box`
+    // holder here; v0.60 does not, a `Box` being an opaque struct and not a
+    // reference at all [TYPE-2, TYPE-9], so the `Box` half of this test moved
+    // to `box_holders_are_refused_by_each_positions_own_rule` below with the
+    // rule each position actually owns.
+    assert_rule(
+        include_bytes!("../../../tests/conformance/cases/type7-neg-index-reference-holder.wf"),
+        SemanticRule::Type7,
+        SemanticIssueKind::MissingDereference {
+            mechanical_fix: "write `deref(holder)`",
+        },
+    );
+}
+
+/// [TYPE-7] the reference positions, each citing TYPE-7 and its own
+/// mechanical `deref(.)` repair.
+#[test]
+fn reference_holders_written_bare_are_type7_missing_dereferences() {
+    assert_rule(
+        include_bytes!("../../../tests/conformance/cases/type7-neg-match-reference-holder.wf"),
+        SemanticRule::Type7,
+        SemanticIssueKind::MissingDereference {
+            mechanical_fix: "write `deref(holder)`",
+        },
+    );
+}
+
+/// [TYPE-9] a `Box` holder written where its content is required is refused by
+/// the rule that owns the position, not by [TYPE-7]: a `Box` is an opaque
+/// struct and its content is the field `inner`, so nothing about it is a
+/// missing dereference.
+///
+/// This replaces the v0.59 test that routed all three positions to TYPE-7,
+/// which rested on `box<T>` being a holder kind [TYPE-7 v0.59]; that reading
+/// is retired.
+#[test]
+fn box_holders_are_refused_by_each_positions_own_rule() {
+    assert_rule_kind(
+        include_bytes!("../../../tests/conformance/cases/type7-neg-propagate-box-holder.wf"),
+        SemanticRule::Err3,
+        |kind| matches!(kind, SemanticIssueKind::InvalidPropagation),
     );
     assert_rule_kind(
-        b"fn probe(args: own Args) -> result: own u64 pure {\n  region {\n    let total = args_count(args: &args);\n    return total;\n  }\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Eff2,
-        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
+        include_bytes!("../../../tests/conformance/cases/type7-neg-match-box-holder.wf"),
+        SemanticRule::Type5,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
-}
-
-#[test]
-fn propagate_of_a_cell_holder_is_a_type7_missing_dereference() {
-    // ERR-3: a borrow or box holder used without `deref` retains its TYPE-7
-    // judgment; the propagate path previously fell through to ERR-3
-    // invalid-propagation for a Box<Result<..>> operand (task 0019, bucket 4).
-    assert_rule(
-        br#"enum StepError {
-  Failed();
-}
-
-fn unwrap['s](holder: own Box<'s, Result<i32, StepError>>) -> result: own Result<i32, StepError> pure {
-  let accepted = propagate holder;
-  return Ok<i32, StepError>(value: accepted);
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Type7,
-        SemanticIssueKind::MissingDereference {
-            mechanical_fix: "write `deref(holder)`",
-        },
-    );
-}
-
-#[test]
-fn match_and_index_of_a_cell_holder_are_type7_missing_dereferences() {
-    // TYPE-7 owns the implicit-read case exclusively at every position that
-    // states the exclusivity, so a cell holder written where its referent enum
-    // or its referent indexable would be required cites TYPE-7 and the
-    // position's own wrong-type judgment forms no rejection.
-    assert_rule(
-        br#"enum State {
-  Ready();
-}
-
-fn inspect['s](holder: own Box<'s, State>) -> result: own unit pure {
-  match holder {
-    Ready() => {
-    }
-  }
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Type7,
-        SemanticIssueKind::MissingDereference {
-            mechanical_fix: "write `deref(holder)`",
-        },
-    );
-    assert_rule(
-        br#"fn read['s](holder: own Box<'s, FixedVector<u8, 4>>) -> result: own u8 pure {
-  return holder[0_u64];
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Type7,
-        SemanticIssueKind::MissingDereference {
-            mechanical_fix: "write `deref(holder)`",
-        },
+    assert_rule_kind(
+        include_bytes!("../../../tests/conformance/cases/type7-neg-index-box-holder.wf"),
+        SemanticRule::Op4,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
 }
 
@@ -916,19 +967,19 @@ fn step(value: own i32) -> result: own Result<i32, StepError> pure {
 fn forward(value: own i32) -> result: own Result<Pair, StepError> pure {
   let accepted = propagate step(value: value);
   let pair = Pair(value: accepted);
-  return Ok<Pair, StepError>(value: move pair);
+  return Ok<Pair, StepError>(value: pair);
 }
 
 fn direct(error: own StepError) -> result: own Result<Pair, StepError> pure {
   let accepted = propagate Err<i32, StepError>(error: error);
   let pair = Pair(value: accepted);
-  return Ok<Pair, StepError>(value: move pair);
+  return Ok<Pair, StepError>(value: pair);
 }
 
 fn bare(outcome: own Result<i32, StepError>) -> result: own Result<Pair, StepError> pure {
   let accepted = propagate outcome;
   let pair = Pair(value: accepted);
-  return Ok<Pair, StepError>(value: move pair);
+  return Ok<Pair, StepError>(value: pair);
 }
 
 fn main() -> status: own ExitStatus pure {
@@ -955,7 +1006,7 @@ fn main() -> status: own ExitStatus pure {
     });
 
     assert_rule(
-        br#"enum StepError {
+        br#"nocopy enum StepError {
   Failed();
 }
 
@@ -1027,7 +1078,7 @@ fn main() -> status: own ExitStatus pure {
   let number = 1_i32;
   set number = 2_i32;
   let inner = Inner(value: 3_i32);
-  let outer = Outer(inner: move inner, other: 4_i32);
+  let outer = Outer(inner: inner, other: 4_i32);
   set outer.inner.value = number;
   return exit_status(code: 0_u8);
 }
@@ -1061,12 +1112,16 @@ fn set_rejections_keep_their_exact_rule_owners() {
         SemanticRule::Const2,
         SemanticIssueKind::ImmutableSetTarget,
     );
+    // [STOR-1]'s affine-set-target rejection retired with the `replace`
+    // statement it restructured to [SET-2]: under [WIN-3] assigning over an
+    // owned place releases the old value when it is affine, and is a hard
+    // error only when it is linear. The linear half is the live successor.
     assert_rule(
-        b"struct Cell {\n  value: i32;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let left = Cell(value: 1_i32);\n  let right = Cell(value: 2_i32);\n  set left = move right;\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Stor1,
-        SemanticIssueKind::AffineSetTarget {
-            target_type: "Cell".to_owned(),
-            mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
+        b"nodrop struct Token {\n  value: i32;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let left = Token(value: 1_i32);\n  let right = Token(value: 2_i32);\n  set left = move right;\n  let Token(value: v) = move left;\n  return exit_status(code: 0_u8);\n}\n",
+        SemanticRule::Win3,
+        SemanticIssueKind::LinearAssignmentTarget {
+            target_type: "Token".to_owned(),
+            mechanical_fix: "take the linear value out and consume it before writing this place",
         },
     );
     assert_rule_kind(
@@ -1076,28 +1131,27 @@ fn set_rejections_keep_their_exact_rule_owners() {
     );
 }
 
-/// [LIV-2] an affine `set` target is admitted exactly when it is dead at the
-/// commit.
+/// [WIN-3] assigning over an owned place releases the old value when it is
+/// affine.
 ///
-/// The two halves of the rule's first condition are checked side by side: a
-/// live affine target whose previous value the right-hand side does not read
-/// out keeps [STOR-1]'s rejection and its one restructuring, and the same
-/// statement whose right-hand side consumes that value is the read-out and is
-/// accepted. The second program is probe `q9`'s shape, which [STOR-1] refused
-/// before this rule and which offered a fresh-`let` restructuring that the
-/// rule makes unnecessary.
+/// v0.59's [LIV-2] admitted an affine `set` target only when the right-hand
+/// side read the previous value out, and refused it otherwise with [STOR-1]'s
+/// `replace` restructuring. Both halves retire: `replace` has no v0.60
+/// production and [WIN-3] gives the old affine value its compiler-derived
+/// release at the commit, so the plain overwrite and the consuming form are
+/// both accepted. The remaining refusal is a linear target, checked above.
 #[test]
-fn an_affine_set_is_admitted_exactly_when_its_target_is_dead_at_the_commit() {
-    assert_rule(
-        b"struct Cell {\n  value: i32;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let left = Cell(value: 1_i32);\n  let right = Cell(value: 2_i32);\n  set left = move right;\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Stor1,
-        SemanticIssueKind::AffineSetTarget {
-            target_type: "Cell".to_owned(),
-            mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
+fn an_affine_assignment_releases_its_old_value() {
+    with_semantics(
+        b"nocopy struct Cell {\n  value: i32;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let left = Cell(value: 1_i32);\n  let right = Cell(value: 2_i32);\n  set left = move right;\n  let seen = left.value;\n  return exit_status(code: 0_u8);\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("an affine overwrite releases the old value: {outcome:?}");
+            };
         },
     );
     with_semantics(
-        br#"struct Counts {
+        br#"nocopy struct Counts {
   lines: u64;
   bytes: u64;
 }
@@ -1115,14 +1169,14 @@ fn main() -> status: own ExitStatus pure {
 "#,
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
-                panic!("the read-out and its commit must check: {outcome:?}");
+                panic!("[OP-12]'s atomic in-place update must check: {outcome:?}");
             };
         },
     );
-    // The two-statement form stays accepted: [LIV-2] adds a spelling and
-    // removes none.
+    // The two-statement form stays accepted beside it: [OP-12] adds a
+    // spelling and removes none.
     with_semantics(
-        br#"struct Counts {
+        br#"nocopy struct Counts {
   lines: u64;
   bytes: u64;
 }
@@ -1154,7 +1208,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn entry_dead_owner_reinitialization_has_no_displaced_owner_write() {
-    let source = r#"fn reuse(file: own ReadFile, incoming: own ReadFile) -> (current: own ReadFile, previous: own ReadFile) pure {
+    let source = r#"fn reuse(file: own Box<u64>, incoming: own Box<u64>) -> (current: own Box<u64>, previous: own Box<u64>) pure {
   let previous = move file;
   set file = move incoming;
   return move file, move previous;
@@ -1170,141 +1224,197 @@ fn main() -> status: own ExitStatus pure {
             "an entry-dead binding initializes without writing its displaced owner: {outcome:?}"
         );
     });
+    // v0.59 read the spurious `writes(file)` as an unexhibited declaration
+    // [EFF-2]. [EFF-1] now gives a by-value parameter no effect entry at all,
+    // so the same row is refused one rule earlier, at its own root.
     let spurious = source.replacen(" pure {", " writes(file) {", 1);
-    assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
-        matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
-            if extra == &["writes(file)"])
+    assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff1, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidEffectRow { .. })
     });
 }
 
-#[test]
-fn same_statement_owner_readout_retains_its_atomic_commit_write() {
-    let source = r#"fn relay(file: own ReadFile) -> result: own ReadFile pure {
-  return move file;
-}
+// Retired with [LIV-2]'s same-statement read-out:
+// `same_statement_owner_readout_retains_its_atomic_commit_write` wrote its row
+// over a by-value parameter (`reads(file), writes(file)` on `file: own
+// ReadFile`), which [EFF-1] now refuses outright, and the shape it tested is
+// [OP-12]'s atomic in-place update `set p = f(move p, args...);`. Its current
+// successor assertions are `an_affine_assignment_releases_its_old_value`, the
+// argument-order controls below, and the singleton/union target controls in
+// `tests/references.rs`.
+//
+// Retired with [OWN-5]: `a_prior_rhs_borrow_cannot_retarget_a_later_atomic_readout`
+// asserted a `BorrowConflict` between an exclusive loan and a later read-out,
+// and it spelled `&uniq`, `replace` and the multi-target `set (a, b) = ...`,
+// none of which has a v0.60 production. Its successors are [EFF-5]'s pairwise
+// comparison of a call's substituted paths, exercised in
+// `tests/references.rs::two_overlapping_substituted_writes_are_refused`, and
+// [REF-2]'s invalidation of a bystander reference, exercised beside it.
 
-fn rebind(file: own ReadFile) -> result: own ReadFile reads(file), writes(file) {
-  set file = relay(file: move file);
-  return move file;
+/// [OWN-1, DIAG-1] each actual is checked before the call's EFF-5 comparison.
+/// A repeated move therefore fails at the later actual, including an owner
+/// after one of its fields was consumed. None of these is OP-12: the first
+/// actual is a different place from the assignment target. EFF-5's own
+/// overlapping-reference refusal remains covered by
+/// `references::two_overlapping_substituted_writes_are_refused`.
+#[test]
+fn repeated_by_value_moves_are_rejected_before_call_effect_comparison() {
+    assert_rule_kind(
+        br#"fn pair(other: own Slots<u8, 4>, left: own Slots<u8, 4>, right: own Slots<u8, 4>) -> out: own Slots<u8, 4> pure {
+  return move left;
 }
 
 fn main() -> status: own ExitStatus pure {
+  let c = slots_new::<u8, 4>();
+  let spare = slots_new::<u8, 4>();
+  set c = pair(other: move spare, left: move c, right: move c);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own1,
+        |kind| matches!(kind, SemanticIssueKind::UseAfterMove { .. }),
+    );
+    assert_rule_kind(
+        br#"struct Holder {
+  run: Slots<u8, 4>;
+}
+
+fn pair(other: own Slots<u8, 4>, left: own Slots<u8, 4>, right: own Slots<u8, 4>) -> out: own Slots<u8, 4> pure {
+  return move left;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let first = slots_new::<u8, 4>();
+  let spare = slots_new::<u8, 4>();
+  let holder = Holder(run: move first);
+  set holder.run = pair(other: move spare, left: move holder.run, right: move holder.run);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own1,
+        |kind| matches!(kind, SemanticIssueKind::UseAfterMove { .. }),
+    );
+    assert_rule_kind(
+        br#"struct Holder {
+  run: Slots<u8, 4>;
+  spare: Slots<u8, 4>;
+}
+
+fn take(other: own Slots<u8, 4>, left: own Slots<u8, 4>, right: own Holder) -> out: own Slots<u8, 4> pure {
+  return move left;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let first = slots_new::<u8, 4>();
+  let second = slots_new::<u8, 4>();
+  let spare = slots_new::<u8, 4>();
+  let holder = Holder(run: move first, spare: move second);
+  set holder.run = take(other: move spare, left: move holder.run, right: move holder);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own1,
+        |kind| matches!(kind, SemanticIssueKind::UseAfterMove { .. }),
+    );
+}
+
+#[test]
+fn only_an_op12_first_actual_gets_the_commit_read_out() {
+    let ordinary_whole = br#"nocopy struct Cell {
+  value: u64;
+}
+
+fn forward(other: own u64, value: own Cell) -> result: own Cell pure {
+  return move value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 7_u64);
+  set cell = forward(other: 0_u64, value: move cell);
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(source.as_bytes(), |outcome| {
+    with_semantics(ordinary_whole, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),
-            "same-statement read-out and write remain one atomic exchange: {outcome:?}"
+            "a complete binding is reinitialized from post-RHS liveness: {outcome:?}"
         );
     });
-    let missing = source.replacen("reads(file), writes(file)", "reads(file)", 1);
-    assert_rule_kind(missing.as_bytes(), SemanticRule::Eff2, |kind| {
-        matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
-            if missing == &["writes(file)"])
+
+    let projected_later = br#"nocopy struct Cell {
+  value: u64;
+}
+
+nocopy struct Holder {
+  cell: Cell;
+  spare: Cell;
+}
+
+fn forward(other: own u64, value: own Cell) -> result: own Cell pure {
+  return move value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let first = Cell(value: 7_u64);
+  let second = Cell(value: 8_u64);
+  let holder = Holder(cell: move first, spare: move second);
+  set holder.cell = forward(other: 0_u64, value: move holder.cell);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(projected_later, SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::UseAfterMove { .. })
     });
+
+    let failed_result = br#"nocopy struct Cell {
+  value: u64;
 }
 
-#[test]
-fn a_prior_rhs_borrow_cannot_retarget_a_later_atomic_readout() {
-    assert_rule_kind(
-        br#"fn install(target: &uniq OutputStream, incoming: own OutputStream) -> result: own unit reads(target), writes(target) {
-  let previous = replace deref(target) = move incoming;
-  return unit;
+fn extract(value: own Cell) -> result: own u64 pure {
+  return value.value;
 }
 
-fn later(file: &uniq OutputStream, incoming: own OutputStream) -> result: own unit reads(file), writes(file) {
-  let marker = unit;
-  region {
-    set (marker, deref(file)) = install(target: &uniq deref(file), incoming: move incoming), move deref(file);
+fn main() -> status: own ExitStatus pure {
+  let cell = Cell(value: 7_u64);
+  set cell = extract(value: move cell);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(failed_result, SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::UseAfterMove { .. })
+    });
+
+    let routed_result = br#"fn retain(value: own Result<u64, Box<u64>>) -> result: own Result<u64, Box<u64>> pure contract {
+  ensures when Ok(value: payload): payload == payload;
+} {
+  match move value {
+    Ok(value: payload) => {
+      return Ok<u64, Box<u64>>(value: payload);
+    }
+    Err(error: problem) => {
+      return Err<u64, Box<u64>>(error: move problem);
+    }
   }
-  return marker;
 }
 
 fn main() -> status: own ExitStatus pure {
+  let owner = box_new::<u64>(value: 7_u64);
+  let wrapped = Err<u64, Box<u64>>(error: move owner);
+  set wrapped = retain(value: move wrapped);
   return exit_status(code: 0_u8);
 }
-"#,
-        SemanticRule::Own5,
-        |kind| matches!(kind, SemanticIssueKind::BorrowConflict),
-    );
-}
-
-/// [LIV-2] after its read-out the target is dead for the remainder of the
-/// right-hand side.
-///
-/// Every shape that would consume one target's value twice is a rejection: the
-/// same place moved twice, the same field moved twice, and a field read out
-/// beside a move of the whole root. Without the sentence the first of these
-/// compiled and freed one run twice.
-#[test]
-fn a_read_out_target_is_dead_for_the_rest_of_the_right_hand_side() {
-    let expected = SemanticIssueKind::UseAfterMove {
-        mechanical_fix: "introduce a new `let` binding before reuse",
-    };
-    assert_rule(
-        br#"fn pair(left: own FixedVector<u8, 4>, right: own FixedVector<u8, 4>) -> out: own FixedVector<u8, 4> pure {
-  return move left;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let c = fixed_vector::<u8, 4>();
-  set c = pair(left: move c, right: move c);
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Own1,
-        expected.clone(),
-    );
-    assert_rule(
-        br#"struct Holder {
-  run: FixedVector<u8, 4>;
-}
-
-fn pair(left: own FixedVector<u8, 4>, right: own FixedVector<u8, 4>) -> out: own FixedVector<u8, 4> pure {
-  return move left;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let first = fixed_vector::<u8, 4>();
-  let holder = Holder(run: move first);
-  set holder.run = pair(left: move holder.run, right: move holder.run);
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Own1,
-        expected.clone(),
-    );
-    assert_rule(
-        br#"struct Holder {
-  run: FixedVector<u8, 4>;
-  spare: FixedVector<u8, 4>;
-}
-
-fn take(left: own FixedVector<u8, 4>, right: own Holder) -> out: own FixedVector<u8, 4> pure {
-  return move left;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let first = fixed_vector::<u8, 4>();
-  let second = fixed_vector::<u8, 4>();
-  let holder = Holder(run: move first, spare: move second);
-  set holder.run = take(left: move holder.run, right: move holder);
-  return exit_status(code: 0_u8);
-}
-"#,
-        SemanticRule::Own1,
-        expected,
-    );
+"#;
+    assert_rule_kind(routed_result, SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::UseAfterMove { .. })
+    });
 }
 
 #[test]
 fn set_revalidates_the_target_after_rhs_ownership_changes() {
-    let source = br#"struct Cell {
+    let source = br#"nocopy struct Cell {
   value: i32;
 }
 
-fn take(cell: own Cell) -> result: own i32 reads(cell.value) {
+fn take(cell: own Cell) -> result: own i32 pure {
   return cell.value;
 }
 
@@ -1325,7 +1435,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn checked_cleanup_edges_cover_every_current_affine_exit() {
-    let source = br#"struct Cell {
+    let source = br#"nocopy struct Cell {
   value: i32;
 }
 

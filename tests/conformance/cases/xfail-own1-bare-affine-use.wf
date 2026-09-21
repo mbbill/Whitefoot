@@ -1,4 +1,4 @@
-enum Sign {
+nocopy enum Sign {
   Neg(mag: i32);
   Zero();
   Pos();

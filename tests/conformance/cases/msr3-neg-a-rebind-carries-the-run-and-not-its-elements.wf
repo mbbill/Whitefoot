@@ -1,29 +1,18 @@
 fn main() -> status: own ExitStatus pure {
-  doc "MSR-3: a placement carries the measures of the value the event names and nothing below it. A rebind of a run carries that run's own four measures, so the element measures an earlier element placement established are killed by the consume the rebind performs and the value displaced out of the renamed run's slot arrives with none.";
-  region 'a {
-    let workspace = arena_frame::<4096, 16, 'a>();
-    region {
-      let blocks = fixed_vector::<Vector<'a, u8>, 2>();
-      let first = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
-      let second = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
-      let third = arena_vector_proved::<u8>(store: &uniq workspace, count: 32_u64);
-      region {
-        place_back(vector: &uniq blocks, value: move first);
-      }
-      let one = move blocks;
-      let spare = replace one[0_u64] = move second;
-      let renamed = move one;
-      let held = replace renamed[0_u64] = move third;
-      region {
-        place_back(vector: &uniq held, value: 9_u8);
-      }
-      let filled = move held;
-      let seen = filled[0_u64];
-      if seen == 9_u8 {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-    }
+  doc "MSR-3: a placement carries the measures of the value the event names and nothing below it. The rebind carries the window's own four measures, so the subscript into the renamed window still discharges, while the element measures an earlier event established die with the consume the rebind performs and the cell exchanged out of that slot arrives with none.";
+  let blocks = slots_new::<Box<Slots<u8>>, 2>();
+  let first = box_slots_new::<u8>(capacity: 8_u64);
+  let second = box_slots_new::<u8>(capacity: 16_u64);
+  let third = box_slots_new::<u8>(capacity: 32_u64);
+  place_back(window: &blocks, value: move first);
+  swap(first: &blocks[0_u64], second: &second);
+  let renamed = move blocks;
+  swap(first: &renamed[0_u64], second: &third);
+  place_back(window: &third.inner, value: 9_u8);
+  let seen = third.inner[0_u64];
+  if seen == 9_u8 {
+  } else {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

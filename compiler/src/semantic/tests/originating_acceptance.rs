@@ -21,7 +21,7 @@ fn accepts(source: &[u8]) {
 
 #[test]
 fn an_unproved_array_bound_rejects_under_op4() {
-    let source = br#"const values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+    let source = br#"const values: Array<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(input: own u64) -> result: own i32 pure {
   let bounded = imin(input, 3_u64);
@@ -108,7 +108,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_unproved_loop_header_fact_rejects_under_inv1() {
-    let source = br#"const values: FixedVector<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
+    let source = br#"const values: Array<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(input: own u64) -> result: own unit pure {
   let bounded = imin(input, 3_u64);
@@ -132,19 +132,13 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_unproved_allocation_ceiling_rejects_under_op9() {
-    // The acquiring row is `heap_vector`, which carries the same [OP-9]
-    // allocation-fit obligation on its count that `buffer_new` did; the
-    // fallible outcome is matched so the refusal reached here is the static
-    // ceiling and not the runtime one.
-    let source = br#"fn allocate['heap](count: own u64, store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
-  region {
-    match heap_vector::<u16>(store: &uniq deref(store), count: count) {
-      Some(value: values) => {
-      }
-      None() => {
-      }
-    }
-  }
+    // The acquiring row is `box_array_filled`, a runtime-capacity [OP-13]
+    // construction, which carries the same [OP-9] allocation-fit obligation on
+    // its own count that the retiring `buffer_new` did. Allocation is total
+    // [STOR-8], so there is no fallible outcome to match and the refusal
+    // reached here is the static ceiling alone.
+    let source = br#"fn allocate(count: own u64) -> result: own unit pure {
+  let values = box_array_filled::<u16>(count: count, value: 0_u16);
   return unit;
 }
 
@@ -162,13 +156,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unproved_prelude_endpoints_reject_under_fn8() {
-    let source = br#"fn publish(factory: &uniq HandleFactory, output: &uniq OutputStream, source: own Slice<u8>, start: own u64, end: own u64) -> result: own unit reads(factory, output, source), writes(factory, output) {
-  region {
-    match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: &source, start: start, end: end) {
-      Ok(value: next) => {
-      }
-      Err(error: problem) => {
-      }
+    let source = br#"fn publish(factory: &HandleFactory, output: &OutputStream, source: &[u8], start: own u64, end: own u64) -> result: own unit reads(source), writes(factory), writes(output) {
+  match write_once(factory: factory, output: output, source: source, start: start, end: end) {
+    Ok(value: next) => {
+    }
+    Err(error: problem) => {
     }
   }
   return unit;
@@ -185,32 +177,28 @@ fn main(output: own OutputStream) -> status: own ExitStatus pure {
 
 #[test]
 fn an_external_index_needs_a_real_control_flow_fact() {
-    let direct = br#"const bytes: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+    let direct = br#"const bytes: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main(args: own Args) -> status: own ExitStatus reads(args) {
-  region {
-    let index = args_count(args: &args);
-    let value = bytes[index];
-    return exit_status(code: value);
-  }
+fn main(args: own Args) -> status: own ExitStatus pure {
+  let index = args_count(args: &args);
+  let value = bytes[index];
+  return exit_status(code: value);
 }
 "#;
     rejects_as(direct, SemanticRule::Op4, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
     });
 
-    let guarded = br#"const bytes: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+    let guarded = br#"const bytes: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main(args: own Args) -> status: own ExitStatus reads(args) {
-  region {
-    let index = args_count(args: &args);
-    let spare = len_of(bytes);
-    if index < spare {
-      let value = bytes[index];
-      return exit_status(code: value);
-    } else {
-      return exit_status(code: 0_u8);
-    }
+fn main(args: own Args) -> status: own ExitStatus pure {
+  let index = args_count(args: &args);
+  let spare = bytes.len;
+  if index < spare {
+    let value = bytes[index];
+    return exit_status(code: value);
+  } else {
+    return exit_status(code: 0_u8);
   }
 }
 "#;
@@ -219,8 +207,11 @@ fn main(args: own Args) -> status: own ExitStatus reads(args) {
 
 #[test]
 fn an_external_call_actual_needs_a_real_control_flow_fact() {
-    let function = r#"fn read_at_index(bytes: own FixedVector<u8, 4>, index: own u64) -> result: own u8 reads(bytes) contract {
-  define spare = len_of(bytes);
+    // An `own` parameter carries no effect entry at all in v0.60 [EFF-1], so
+    // the reader's row is `pure`; the requirement and its measure operand are
+    // unchanged apart from the [OP-15] member spelling.
+    let function = r#"fn read_at_index(bytes: own Array<u8, 4>, index: own u64) -> result: own u8 pure contract {
+  define spare = bytes.len;
   requires index < spare;
 } {
   return bytes[index];
@@ -228,14 +219,14 @@ fn an_external_call_actual_needs_a_real_control_flow_fact() {
 
 "#;
     let direct = format!(
-        "{function}fn main(args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let empty = fixed_vector::<u8, 4>();\n    region {{\n      place_back(vector: &uniq empty, value: 0_u8);\n    }}\n    let bytes = move empty;\n    let value = read_at_index(bytes: move bytes, index: index);\n    return exit_status(code: value);\n  }}\n}}\n"
+        "{function}fn main(args: own Args) -> status: own ExitStatus pure {{\n  let index = args_count(args: &args);\n  let bytes = array_filled::<u8, 4>(value: 0_u8);\n  let value = read_at_index(bytes: bytes, index: index);\n  return exit_status(code: value);\n}}\n"
     );
     rejects_as(direct.as_bytes(), SemanticRule::Fn8, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
     });
 
     let guarded = format!(
-        "{function}fn main(args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let empty = fixed_vector::<u8, 4>();\n    region {{\n      place_back(vector: &uniq empty, value: 0_u8);\n    }}\n    let bytes = move empty;\n    let spare = len_of(bytes);\n    if index < spare {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
+        "{function}fn main(args: own Args) -> status: own ExitStatus pure {{\n  let index = args_count(args: &args);\n  let bytes = array_filled::<u8, 4>(value: 0_u8);\n  let spare = bytes.len;\n  if index < spare {{\n    let value = read_at_index(bytes: bytes, index: index);\n    return exit_status(code: value);\n  }} else {{\n    return exit_status(code: 0_u8);\n  }}\n}}\n"
     );
     accepts(guarded.as_bytes());
 }

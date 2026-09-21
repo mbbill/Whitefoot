@@ -61,7 +61,7 @@ use std::fmt::Write;
 use super::{BackendFailure, FunctionEmitter, IntrinsicDeclaration, llvm_type, value_name};
 use crate::backend::abi::{FunctionAbi, ResultAbi};
 use crate::{
-    IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType, IrValueId,
+    IrAddressed, IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType, IrValueId,
     IrWorkEstimate,
 };
 
@@ -654,7 +654,19 @@ impl FunctionEmitter<'_, '_> {
             }
             IrWorkEstimate::Length(value) => {
                 let ty = self.value_type(*value).ok_or(BackendFailure::InvalidIr)?;
-                if !matches!(ty, IrType::Buffer { .. } | IrType::Slice { .. }) {
+                // A runtime-capacity `Array<T>` keeps its `len` in the block
+                // the owning `Box` points at [TYPE-9]; a `&[T]` range
+                // reference carries its count beside its pointer [REF-4].
+                if let IrType::Address(IrAddressed::Buffer { element }) = ty {
+                    let block = IrType::Buffer { element };
+                    let address = self.value_name(*value);
+                    let length_address = self.aggregate_field_pointer(block, &address, 0)?;
+                    let result = format!("%{}", self.next_temporary()?);
+                    writeln!(self.output, "  {result} = load i64, ptr {length_address}")
+                        .map_err(|_| BackendFailure::TextEmission)?;
+                    return Ok(result);
+                }
+                if !matches!(ty, IrType::Range { .. }) {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let result = format!("%{}", self.next_temporary()?);

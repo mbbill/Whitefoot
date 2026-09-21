@@ -1,23 +1,21 @@
-formal Inspect<T: linear> {
+nodrop struct Token {
+  id: u64;
+}
+
+interface Inspect<T: drop> {
   fn inspect(value: &T) -> result: own unit pure;
 }
 
-fn ignore['s](value: &Box<'s, u64>) -> result: own unit pure {
+fn ignore(value: &Token) -> result: own unit pure {
+  doc "Observes nothing, so the row is empty.";
   return unit;
 }
 
-actual ExtentOnly['b: affine] : Inspect<Box<'b, u64>> {
+binding TokenInspect : Inspect<Token> {
   inspect = ignore;
 }
 
-fn apply<Inspect<T>>(value: &T) -> result: own unit pure {
-  return Inspect::inspect(value: value);
-}
-
-fn accepts['h: linear](value: &Box<'h, u64>) -> result: own unit pure {
-  return apply::<ExtentOnly<'h>>(value: value);
-}
-
 fn main() -> status: own ExitStatus pure {
+  doc "PROV-6: every actual application must satisfy its group's written linearity bound. Satisfaction is the chain copy < affine < linear read left to right, so an affine bound accepts copy and affine arguments only; Token carries the linear modifier and is refused here. The matching affine application and the ownership-closed linear one are the other two variants.";
   return exit_status(code: 0_u8);
 }

@@ -1,37 +1,29 @@
 fn main() -> status: own ExitStatus pure {
-  doc "VIEW-2 widens the viewed domain to the two runs, and the formation row's own requirement head_of(vector) <= room_of(vector) is what makes the viewed window one contiguous range. This run has never had a front removal, so the requirement is discharged from the standing head_of = 0. Two shared views of the one run are formed, which OWN-5 admits without limit, and the program reads the viewed length through one and the elements back through both.";
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 3_u8);
+  doc "A Slots window is a range-reference source [REF-4], its initialized storage being one contiguous extent beginning at slot zero [WIN-1]; a Ring is refused there instead, a wrapped window being two extents. Two overlapping range references of the one run are formed, which read/read overlap admits without limit [EFF-5], and the program reads the range length through one and the elements back through both.";
+  let two = slots_new::<u8, 4>();
+  place_back(window: &two, value: 3_u8);
+  place_back(window: &two, value: 4_u8);
+  let window = &two[0_u64..2_u64];
+  let width = deref(window).len;
+  if width == 2_u64 {
+  } else {
+    return exit_status(code: 21_u8);
   }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 4_u8);
+  let second_view = &two[0_u64..2_u64];
+  let first = deref(window)[0_u64];
+  let second = deref(second_view)[1_u64];
+  let agreed = deref(second_view)[0_u64];
+  if agreed == first {
+  } else {
+    return exit_status(code: 24_u8);
   }
-  let two = move one;
-  region {
-    let window = slice_of(&two);
-    let width = len_of(window);
-    if width == 2_u64 {
-    } else {
-      return exit_status(code: 21_u8);
-    }
-    let second_view = slice_of(&two);
-    let first = window[0_u64];
-    let second = second_view[1_u64];
-    let agreed = second_view[0_u64];
-    if agreed == first {
-    } else {
-      return exit_status(code: 24_u8);
-    }
-    if first == 3_u8 {
-    } else {
-      return exit_status(code: 22_u8);
-    }
-    if second == 4_u8 {
-    } else {
-      return exit_status(code: 23_u8);
-    }
+  if first == 3_u8 {
+  } else {
+    return exit_status(code: 22_u8);
+  }
+  if second == 4_u8 {
+  } else {
+    return exit_status(code: 23_u8);
   }
   return exit_status(code: 0_u8);
 }

@@ -1,6 +1,6 @@
-fn read['heap](holder: own Box<'heap, i32>) -> function_result: own i32 pure {
-  doc "TYPE-7: returning a box referent requires deref(holder); returning the box itself is a distinct affine transfer.";
-  return holder;
+fn read(holder: own Box<i32>) -> function_result: own i32 pure {
+  doc "FN-1: returning a Box where its content type is required is a return type mismatch; the mechanical fix is move holder.inner, the Box content being reached by the ordinary field step [TYPE-9], and transferring the cell itself is a distinct affine move.";
+  return move holder;
 }
 
 fn main() -> status: own ExitStatus pure {

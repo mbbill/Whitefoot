@@ -1,38 +1,49 @@
 //! Typed-outcome oracle for proof-gated wide-probe lowering.
 //!
-//! The program below carries five recognized byte-walk loops. The
-//! equivalence walks pin the exact per-byte results (needle positions at
-//! every probe-lane boundary, an absent needle, and a bound below the
-//! buffer length). The argument-selected boundary walks deliberately use
-//! loop bounds past their buffers, but express exhaustion as distinct exit
-//! statuses: at the first byte of an empty buffer, and one past the last
-//! byte at an offset inside a would-be wide stride, with every pre-failure
-//! published effect identical to the scalar reference. Expectations are
-//! fixed input/output/status triples;
+//! The program below carries five byte-walk loops of the recognized shape.
+//! The equivalence walks pin the exact per-byte results (needle positions at
+//! every probe-lane boundary, an absent needle, and a bound below the run's
+//! length). The argument-selected boundary walks deliberately use loop bounds
+//! past their runs, but express exhaustion as distinct exit statuses: at the
+//! first byte of an empty run, and one past the last byte at an offset inside
+//! a would-be wide stride, with every pre-failure published effect identical
+//! to the scalar reference. Expectations are fixed input/output/status
+//! triples;
 //! the compiler has no optimizer-fact channel, so this single ordinary
 //! mode is the facts-off mode.
 //!
-//! **LEFT ON `buffer<T>` DELIBERATELY, and the reason is the probe itself.**
-//! The subject of this oracle is the wide probe, and the wide probe is a
-//! buffer-only lowering at both ends: the recognizer matches a
+//! **THE FIXTURE IS NO LONGER ON `buffer<T>`, AND THAT IS WHAT THIS ORACLE
+//! NOW DEMANDS OF THE PROBE.** The module doc used to say the fixture was left
+//! on `buffer<T>` deliberately, because the wide probe was a buffer-only
+//! lowering at both ends: the recognizer matched a
 //! `CheckedExpression::BufferIndex` walk and nothing else, and the emitter
-//! refuses any operand whose IR type is not `IrType::Buffer`. A run walk is
-//! therefore not recognized at all, so a migrated oracle would assert three
-//! wide loads and find none, and the case would stop being evidence of
-//! anything.
+//! refused any operand whose IR type was not `IrType::Buffer`. The v0.60 port
+//! migrated the fixture anyway. The three equivalence walks below now walk a
+//! constant-capacity `Array<u8, N>` and read its length as the readonly field
+//! `data.len` [TYPE-9, MSR-1, OP-15], and the two boundary walks index a boxed
+//! `Array<u8>` and an `Array<u8, 37>`. The `count == 3` assertion below is
+//! therefore a demand on the probe rather than a description of it, and it
+//! stays exactly as written: while the recognizer still matches only a buffer
+//! walk it finds no wide load at all and this test fails, and it passes again
+//! when the recognizer and the emitter reach `Array` and window walks.
 //!
-//! Extending the probe to a run is not a rename. A buffer is one contiguous
-//! range whose descriptor's second word is its length, which is exactly what
-//! the probe's window guard reads; a run is a *window* — `len_of` slots
-//! beginning at `head_of` modulo `cap_of` [BLK-1] — so `base + index` is the
-//! right address only where `head_of` is proved identically zero, and the
-//! guard needs the run's own three measure words rather than one. That is a
-//! backend change with its own proof obligation and its own cases, and it is
-//! a precondition of the retirement rather than part of this batch.
+//! Extending the probe is not a rename, and the shapes differ in what its
+//! guard has to read. An `Array<T, N>` is a contiguous run whose `len` is the
+//! type constant N and whose `cap` is absent [MSR-1], so `base + index` is
+//! always the right address and the guard reads one constant; an `Array<T>`
+//! is the same run with a runtime length. A `Slots` or a `Ring` is a
+//! *window* -- `P.len` slots beginning at the origin `P.head` taken modulo
+//! `P.cap`, under the map `i |-> (origin + i) mod P.cap` [MSR-1] -- so
+//! `base + index` is the right address only where the origin is proved
+//! identically zero: always for a `Slots`, whose row gives `head` as
+//! *absent*, and never for a `Ring` after a front operation, `head` being the
+//! one *bounded* cell of that table. A range reference `&[T]` carries one
+//! base and the range's own `len` and is the `Array` case again. That is a
+//! backend change with its own proof obligation and its own cases
+//! (compiler/wide-probe-lowering), not part of the port that moved the
+//! fixture.
 //!
-//! Publication uses an ordinary slice view of the retained buffer fixture.
-//! Migrating the fixtures to store-backed runs would also require an ordinary
-//! `Heap` entry parameter.
+//! Publication uses a range reference over the retained fixture [REF-4].
 
 use super::support::{build_program, compile_sources, fixture_directory};
 
@@ -43,11 +54,11 @@ const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> result: own u64 pure c
   return n;
 }
 
-fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(factory, output, source), writes(factory, output) contract {
-  define source_length = len_of(deref(source));
+fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], length: own u64) -> result: own Result<unit, IoError> reads(source), writes(factory), writes(output) contract {
+  define source_length = deref(source).len;
   requires length <= source_length;
 } {
-  doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
+  doc "Publishes one prefix of the source range, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @publish {
     let pending = sent < length;
@@ -55,17 +66,12 @@ fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source:
     } else {
       break @publish;
     }
-    region {
-      let window = slice_of(&deref(source));
-      region {
-        match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: &window, start: sent, end: length) {
-          Ok(value: next) => {
-            set sent = next;
-          }
-          Err(error: problem) => {
-            return Err<unit, IoError>(error: move problem);
-          }
-        }
+    match write_once(factory: factory, output: output, source: source, start: sent, end: length) {
+      Ok(value: accepted) => {
+        set sent = accepted;
+      }
+      Err(error: problem) => {
+        return Err<unit, IoError>(error: problem);
       }
     }
   }
@@ -75,36 +81,28 @@ fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source:
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "Runs three equivalence byte walks, publishes their recorded positions, then runs one argument-selected boundary walk with a typed exhaustion status.";
   let Inputs(args: args, cwd: unused_cwd, stdout: out, stderr: unused_err, handles: factory, stdin: unused_in) = move inputs;
-  region {
-    close_directory(factory: &uniq factory, directory: move unused_cwd);
-  }
+  close_directory(factory: &factory, directory: move unused_cwd);
   let selector = 111_u8;
-  let choice = buffer_new(8_u64, 0_u8);
+  let choice = array_filled::<u8, 8>(value: 0_u8);
   let chosen = 0_u64;
-  region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text) => {
-        region {
-          let choice_view = mut_slice_of(&uniq choice);
-          region {
-            match host_copy_bytes(value: &text, destination: &uniq choice_view, start: 0_u64, end: 8_u64) {
-              Ok(value: next) => {
-                set chosen = next;
-              }
-              Err(error: too_small) => {
-              }
-            }
-          }
+  match arg_get(args: &args, position: 1_u64) {
+    Ok(value: text) => {
+      let choice_window = &choice[0_u64..8_u64];
+      match host_copy_bytes(value: &text, destination: choice_window, start: 0_u64, end: 8_u64) {
+        Ok(value: copied) => {
+          set chosen = copied;
+        }
+        Err(error: too_small) => {
         }
       }
-      Err(error: absent) => {
-      }
+    }
+    Err(error: absent) => {
     }
   }
   if chosen >= 1_u64 {
     set selector = choice[0_u64];
   }
-  let data = buffer_new(37_u64, 97_u8);
+  let data = array_filled::<u8, 37>(value: 97_u8);
   set data[0_u64] = 88_u8;
   set data[1_u64] = 88_u8;
   set data[15_u64] = 88_u8;
@@ -112,10 +110,10 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   set data[17_u64] = 88_u8;
   set data[31_u64] = 10_u8;
   set data[36_u64] = 88_u8;
-  let found = buffer_new(64_u64, 0_u8);
+  let found = array_filled::<u8, 64>(value: 0_u8);
   let count = 0_u64;
   let mark = 88_u8;
-  let stop = len_of(data);
+  let stop = data.len;
   let cursor = 0_u64;
   loop @first_walk {
     let done = cursor >= stop;
@@ -164,8 +162,8 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 6_u8);
   }
-  let blank = buffer_new(40_u64, 97_u8);
-  let blank_stop = len_of(blank);
+  let blank = array_filled::<u8, 40>(value: 97_u8);
+  let blank_stop = blank.len;
   let blank_cursor = 0_u64;
   loop @second_walk {
     let blank_done = blank_cursor >= blank_stop;
@@ -239,22 +237,21 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 6_u8);
   }
-  let phase_room = len_of(found);
+  let phase_room = found.len;
   let phase_fits = count <= phase_room;
   if phase_fits {
-    region {
-      match publish_all(factory: &uniq factory, output: &uniq out, source: &found, length: count) {
-        Ok(value: published) => {
-        }
-        Err(error: problem) => {
-        }
+    let phase_window = &found[0_u64..64_u64];
+    match publish_all(factory: &factory, output: &out, source: phase_window, length: count) {
+      Ok(value: published) => {
+      }
+      Err(error: problem) => {
       }
     }
   }
   if selector == 102_u8 {
     let empty_length = opaque_length(n: 0_u64);
-    let empty = buffer_new(empty_length, 0_u8);
-    let empty_room = len_of(empty);
+    let empty = box_array_filled::<u8>(count: empty_length, value: 0_u8);
+    let empty_room = empty.inner.len;
     let empty_bound = 5_u64;
     let empty_cursor = 0_u64;
     loop @empty_walk {
@@ -264,7 +261,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
       }
       let empty_walk_ok = empty_cursor < empty_room;
       if empty_walk_ok {
-        let empty_byte = empty[empty_cursor];
+        let empty_byte = empty.inner[empty_cursor];
         let empty_newline = empty_byte == 10_u8;
         if empty_newline {
         }
@@ -275,11 +272,11 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
     }
   }
   if selector == 109_u8 {
-    let field = buffer_new(37_u64, 97_u8);
+    let field = array_filled::<u8, 37>(value: 97_u8);
     set field[21_u64] = 88_u8;
     set field[36_u64] = 89_u8;
-    let scratch = buffer_new(1_u64, 0_u8);
-    let field_room = len_of(field);
+    let scratch = array_filled::<u8, 1>(value: 0_u8);
+    let field_room = field.len;
     let wall = 64_u64;
     let probe = 0_u64;
     loop @bounded_walk {
@@ -293,24 +290,22 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
         let selected_lead = selected_byte == mark;
         if selected_lead {
           set scratch[0_u64] = 88_u8;
-          region {
-            match publish_all(factory: &uniq factory, output: &uniq out, source: &scratch, length: 1_u64) {
-              Ok(value: lead_published) => {
-              }
-              Err(error: lead_problem) => {
-              }
+          let lead_window = &scratch[0_u64..1_u64];
+          match publish_all(factory: &factory, output: &out, source: lead_window, length: 1_u64) {
+            Ok(value: lead_published) => {
+            }
+            Err(error: lead_problem) => {
             }
           }
         }
         let selected_tail = selected_byte == 89_u8;
         if selected_tail {
           set scratch[0_u64] = 89_u8;
-          region {
-            match publish_all(factory: &uniq factory, output: &uniq out, source: &scratch, length: 1_u64) {
-              Ok(value: tail_published) => {
-              }
-              Err(error: tail_problem) => {
-              }
+          let tail_window = &scratch[0_u64..1_u64];
+          match publish_all(factory: &factory, output: &out, source: tail_window, length: 1_u64) {
+            Ok(value: tail_published) => {
+            }
+            Err(error: tail_problem) => {
             }
           }
         }

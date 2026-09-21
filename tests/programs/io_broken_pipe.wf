@@ -1,106 +1,99 @@
 fn main(inputs: own Inputs) -> result: own ExitStatus pure {
+  doc "One byte is offered to an output stream whose far end is already closed; the host's refusal arrives as an ordinary IoError value and the match over its declared variants reports which one it is [ERR-1, ERR-2].";
   let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
-  region {
-    close_directory(factory: &uniq factory, directory: move cwd);
-  }
-  let bytes = fixed_vector::<u8, 1>();
-  region {
-    place_back(vector: &uniq bytes, value: 65_u8);
-  }
-  region {
-    let window = slice_of(&bytes);
-    region {
-      match write_once(factory: &uniq factory, output: &uniq out, source: &window, start: 0_u64, end: 1_u64) {
-        Ok(value: written) => {
-          return exit_status(code: 44_u8);
+  close_directory(factory: &factory, directory: move cwd);
+  let bytes = slots_new::<u8, 1>();
+  place_back(window: &bytes, value: 65_u8);
+  let window = &bytes[0_u64..1_u64];
+  match write_once(factory: &factory, output: &out, source: window, start: 0_u64, end: 1_u64) {
+    Ok(value: written) => {
+      return exit_status(code: 44_u8);
+    }
+    Err(error: problem) => {
+      match problem {
+        NotFound(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
         }
-        Err(error: problem) => {
-          match problem {
-            NotFound(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            PermissionDenied(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            AlreadyExists(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            NotDirectory(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            IsDirectory(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            DirectoryNotEmpty(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            ReadOnly(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            ResourceBusy(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            InvalidInput(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            InvalidPath(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            Unsupported(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            TimedOut(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            BrokenPipe(code: error_code, origin: error_origin) => {
-              return exit_status(code: 42_u8);
-            }
-            WriteZero(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            UnexpectedEnd(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            ConnectionRefused(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            ConnectionReset(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            ConnectionAborted(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            NotConnected(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            AddressInUse(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            AddressUnavailable(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            ResourceExhausted(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            FileTooLarge(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            NoSpace(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            QuotaExceeded(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            CrossDevice(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            DeviceFailure(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-            Other(code: error_code, origin: error_origin) => {
-              return exit_status(code: 43_u8);
-            }
-          }
+        PermissionDenied(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        AlreadyExists(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        NotDirectory(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        IsDirectory(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        DirectoryNotEmpty(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        ReadOnly(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        ResourceBusy(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        InvalidInput(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        InvalidPath(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        Unsupported(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        TimedOut(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        BrokenPipe(code: error_code, origin: error_origin) => {
+          return exit_status(code: 42_u8);
+        }
+        WriteZero(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        UnexpectedEnd(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        ConnectionRefused(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        ConnectionReset(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        ConnectionAborted(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        NotConnected(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        AddressInUse(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        AddressUnavailable(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        ResourceExhausted(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        FileTooLarge(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        NoSpace(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        QuotaExceeded(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        CrossDevice(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        DeviceFailure(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
+        }
+        Other(code: error_code, origin: error_origin) => {
+          return exit_status(code: 43_u8);
         }
       }
     }

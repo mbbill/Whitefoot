@@ -361,7 +361,7 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
 /// makes the operand a term, mirroring the subscript-offset fallback.
 #[test]
 fn a_subscripted_class_operand_is_underivable_and_rejects() {
-    let source = br#"const a: FixedVector<u8, 2> =[7_u8, 7_u8];
+    let source = br#"const a: Array<u8, 2> =[7_u8, 7_u8];
 
 fn main() -> status: own ExitStatus pure {
   let y = a[0_u64] + 1_u8;
@@ -384,12 +384,14 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [TYPE-9] a `Box`'s content is its field `inner`, reached and rendered by
+/// that ordinary field step. The indexed operand remains no term.
 #[test]
-fn an_owning_box_index_renders_only_its_written_dereference() {
+fn an_owning_box_index_renders_its_content_step_as_a_dereference() {
     let source = br#"fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(7_u8);
-  let boxed = box_new(move values);
-  let result = deref(boxed)[0_u64] + 1_u8;
+  let values = array_filled::<u8, 2>(value: 7_u8);
+  let boxed = box_new::<Array<u8, 2>>(value: values);
+  let result = boxed.inner[0_u64] + 1_u8;
   return exit_status(code: 0_u8);
 }
 "#;
@@ -401,7 +403,7 @@ fn an_owning_box_index_renders_only_its_written_dereference() {
         assert_eq!(
             issue.kind(),
             &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "deref(boxed)[0_u64] +defined 1_u8".to_owned(),
+                residual: "boxed.inner[0_u64] +defined 1_u8".to_owned(),
                 disposition: StaticObligationDisposition::Unproved,
                 mechanical_fix: OVERFLOW_FIX,
             },
@@ -409,9 +411,19 @@ fn an_owning_box_index_renders_only_its_written_dereference() {
     });
 }
 
+/// [REF-1] "A reference variable denotes the reference, and the storage it
+/// names is reached only through `deref` [TYPE-7]: every place expression,
+/// subscript, field selection, payload step, and measure read that goes
+/// through a reference variable `p` is written under that step -- `deref(p)`,
+/// `deref(p).field`, `deref(part)[i]`, `deref(part).len`, and
+/// `deref(p).Some.value`." The residual therefore spells the indexed operand
+/// under its `deref` step, which is what the writer wrote and the only
+/// spelling the writer can write. Resolving that step away is what [OWN-7]
+/// does to decide overlap, not what a diagnostic prints. The operand is still
+/// no term, which is what the rejection states.
 #[test]
-fn a_borrowed_array_index_preserves_its_holder_dereference() {
-    let source = br#"fn increment(values: &array<u8, 2>) -> result: own u8 reads(values) {
+fn a_reference_parameter_index_renders_under_its_deref_step() {
+    let source = br#"fn increment(values: &Array<u8, 2>) -> result: own u8 reads(values) {
   return deref(values)[0_u64] + 1_u8;
 }
 
@@ -435,13 +447,17 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// Rule precedence is stable on the default semantic path: an unexhibited
-/// allocation effect rejects under EFF-2 before an unproved exact-site
-/// obligation, while the matching `pure` row reaches OP-2.
+/// Rule precedence is stable on the default semantic path: a declared effect
+/// entry the body does not exhibit rejects under EFF-2 before an unproved
+/// exact-site obligation, while the matching `pure` row reaches OP-2.
+///
+/// v0.59 wrote that unexhibited entry as `allocates(heap)`. There is no
+/// allocation category in v0.60: allocation and release carry no effect entry
+/// at all [EFF-1, STOR-8], so the unexhibited entry is an ordinary
+/// `writes(cell)` of a reference parameter the body never writes.
 #[test]
 fn effect_mismatch_precedes_static_integer_domain_rejection() {
-    let extra_effect_row =
-        br#"fn bump['heap](heap: &uniq Heap<'heap>, x: own u64) -> result: own u64 allocates(heap) {
+    let extra_effect_row = br#"fn bump(cell: &u64, x: own u64) -> result: own u64 writes(cell) {
   let y = x + 1_u64;
   return y;
 }
@@ -452,7 +468,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(extra_effect_row, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("an exact site does not exhibit allocation: {outcome:?}");
+            panic!("an exact site does not exhibit the declared write: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
         assert!(

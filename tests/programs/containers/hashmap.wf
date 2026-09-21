@@ -22,14 +22,14 @@ struct Slot {
 
 fn vacant_slot(tombstone: own Bool) -> slot: own Slot pure {
   let no_entry = None<Entry>();
-  return Slot(stored_entry: move no_entry, tombstone: tombstone);
+  return Slot(stored_entry: no_entry, tombstone: tombstone);
 }
 
 fn occupied_slot(key: own u64, value: own u64) -> slot: own Slot pure {
   let stored_entry = Entry(key: key, value: value);
-  let present = Some<Entry>(value: move stored_entry);
+  let present = Some<Entry>(value: stored_entry);
   let clear = False();
-  return Slot(stored_entry: move present, tombstone: clear);
+  return Slot(stored_entry: present, tombstone: clear);
 }
 
 fn view_entry(stored_entry: &Option<Entry>, tombstone: own Bool) -> view: own SlotView reads(stored_entry) {
@@ -46,57 +46,41 @@ fn view_entry(stored_entry: &Option<Entry>, tombstone: own Bool) -> view: own Sl
   }
 }
 
-fn empty_slots() -> slots: own FixedVector<Slot, 8> pure contract {
-  ensures len_of(slots) == 8_u64;
+fn empty_slots() -> slots: own Slots<Slot, 8> pure contract {
+  ensures slots.len == 8_u64;
 } {
-  let slots = fixed_vector::<Slot, 8>();
+  let slots = slots_new::<Slot, 8>();
   let clear0 = False();
   let vacant0 = vacant_slot(tombstone: clear0);
-  region {
-    place_back(vector: &uniq slots, value: move vacant0);
-  }
+  place_back(window: &slots, value: vacant0);
   let clear1 = False();
   let vacant1 = vacant_slot(tombstone: clear1);
-  region {
-    place_back(vector: &uniq slots, value: move vacant1);
-  }
+  place_back(window: &slots, value: vacant1);
   let clear2 = False();
   let vacant2 = vacant_slot(tombstone: clear2);
-  region {
-    place_back(vector: &uniq slots, value: move vacant2);
-  }
+  place_back(window: &slots, value: vacant2);
   let clear3 = False();
   let vacant3 = vacant_slot(tombstone: clear3);
-  region {
-    place_back(vector: &uniq slots, value: move vacant3);
-  }
+  place_back(window: &slots, value: vacant3);
   let clear4 = False();
   let vacant4 = vacant_slot(tombstone: clear4);
-  region {
-    place_back(vector: &uniq slots, value: move vacant4);
-  }
+  place_back(window: &slots, value: vacant4);
   let clear5 = False();
   let vacant5 = vacant_slot(tombstone: clear5);
-  region {
-    place_back(vector: &uniq slots, value: move vacant5);
-  }
+  place_back(window: &slots, value: vacant5);
   let clear6 = False();
   let vacant6 = vacant_slot(tombstone: clear6);
-  region {
-    place_back(vector: &uniq slots, value: move vacant6);
-  }
+  place_back(window: &slots, value: vacant6);
   let clear7 = False();
   let vacant7 = vacant_slot(tombstone: clear7);
-  region {
-    place_back(vector: &uniq slots, value: move vacant7);
-  }
+  place_back(window: &slots, value: vacant7);
   return move slots;
 }
 
-fn insert(slots: &uniq FixedVector<Slot, 8>, size: own u64, key: own u64, value: own u64) -> (updated_size: own u64, result: own PutResult) reads(slots), writes(slots) contract {
-  requires 8_u64 <= len_of(deref(slots));
-  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
-  ensures 8_u64 <= len_of(deref(slots));
+fn insert(slots: &Slots<Slot, 8>, size: own u64, key: own u64, value: own u64) -> (updated_size: own u64, result: own PutResult) writes(slots) contract {
+  requires 8_u64 <= deref(slots).len;
+  ensures deref(slots).len == deref(entry(slots)).len;
+  ensures 8_u64 <= deref(slots).len;
 } {
   let home = key % 8_u64;
   let first_tombstone = 8_u64;
@@ -109,7 +93,7 @@ fn insert(slots: &uniq FixedVector<Slot, 8>, size: own u64, key: own u64, value:
       Occupied(key: current_key, value: current_value) => {
         if current_key == key {
           let replacement = occupied_slot(key: key, value: value);
-          let displaced = replace deref(slots)[at] = move replacement;
+          set deref(slots)[at] = replacement;
           return size, Replaced();
         }
       }
@@ -121,10 +105,10 @@ fn insert(slots: &uniq FixedVector<Slot, 8>, size: own u64, key: own u64, value:
       Empty() => {
         if first_tombstone < 8_u64 {
           let replacement = occupied_slot(key: key, value: value);
-          let displaced = replace deref(slots)[first_tombstone] = move replacement;
+          set deref(slots)[first_tombstone] = replacement;
         } else {
           let replacement = occupied_slot(key: key, value: value);
-          let displaced = replace deref(slots)[at] = move replacement;
+          set deref(slots)[at] = replacement;
         }
         let larger = size +wrap 1_u64;
         return larger, Inserted();
@@ -133,15 +117,15 @@ fn insert(slots: &uniq FixedVector<Slot, 8>, size: own u64, key: own u64, value:
   }
   if first_tombstone < 8_u64 {
     let replacement = occupied_slot(key: key, value: value);
-    let displaced = replace deref(slots)[first_tombstone] = move replacement;
+    set deref(slots)[first_tombstone] = replacement;
     let larger = size +wrap 1_u64;
     return larger, Inserted();
   }
   return size, Full();
 }
 
-fn find(slots: &FixedVector<Slot, 8>, key: own u64) -> result: own Option<u64> reads(slots) contract {
-  requires 8_u64 <= len_of(deref(slots));
+fn find(slots: &Slots<Slot, 8>, key: own u64) -> result: own Option<u64> reads(slots) contract {
+  requires 8_u64 <= deref(slots).len;
 } {
   let home = key % 8_u64;
   for (step in 0_u64..8_u64) {
@@ -165,9 +149,9 @@ fn find(slots: &FixedVector<Slot, 8>, key: own u64) -> result: own Option<u64> r
   return None<u64>();
 }
 
-fn remove(slots: &uniq FixedVector<Slot, 8>, size: own u64, key: own u64) -> (updated_size: own u64, removed: own Option<u64>) reads(slots), writes(slots) contract {
-  requires 8_u64 <= len_of(deref(slots));
-  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
+fn remove(slots: &Slots<Slot, 8>, size: own u64, key: own u64) -> (updated_size: own u64, removed: own Option<u64>) writes(slots) contract {
+  requires 8_u64 <= deref(slots).len;
+  ensures deref(slots).len == deref(entry(slots)).len;
 } {
   let home = key % 8_u64;
   for (step in 0_u64..8_u64) {
@@ -180,7 +164,7 @@ fn remove(slots: &uniq FixedVector<Slot, 8>, size: own u64, key: own u64) -> (up
         if current_key == key {
           let tombstone = True();
           let removed_slot = vacant_slot(tombstone: tombstone);
-          let displaced = replace deref(slots)[at] = move removed_slot;
+          set deref(slots)[at] = removed_slot;
           let smaller = size -wrap 1_u64;
           return smaller, Some<u64>(value: current_value);
         }
@@ -234,54 +218,52 @@ fn map_trace(seed: own u64, repetitions: own u64) -> checksum: own u64 pure {
     let key_d = key_a +wrap 24_u64;
     let missing_key = key_a +wrap 32_u64;
     let slots = empty_slots();
-    region {
-      let (size1, put_a) = insert(slots: &uniq slots, size: 0_u64, key: key_a, value: 11_u64);
-      let put_a_code = put_code(result: put_a);
-      set checksum = mix(checksum: checksum, value: put_a_code);
-      let (size2, put_b) = insert(slots: &uniq slots, size: size1, key: key_b, value: 22_u64);
-      let put_b_code = put_code(result: put_b);
-      set checksum = mix(checksum: checksum, value: put_b_code);
-      let (size3, put_c) = insert(slots: &uniq slots, size: size2, key: key_c, value: 33_u64);
-      let put_c_code = put_code(result: put_c);
-      set checksum = mix(checksum: checksum, value: put_c_code);
-      let (size4, replace_b) = insert(slots: &uniq slots, size: size3, key: key_b, value: 44_u64);
-      let replace_b_code = put_code(result: replace_b);
-      set checksum = mix(checksum: checksum, value: replace_b_code);
-      let found_a = find(slots: &slots, key: key_a);
-      let found_a_code = option_code(value: move found_a);
-      set checksum = mix(checksum: checksum, value: found_a_code);
-      let found_b = find(slots: &slots, key: key_b);
-      let found_b_code = option_code(value: move found_b);
-      set checksum = mix(checksum: checksum, value: found_b_code);
-      let found_c = find(slots: &slots, key: key_c);
-      let found_c_code = option_code(value: move found_c);
-      set checksum = mix(checksum: checksum, value: found_c_code);
-      let (size5, removed_a) = remove(slots: &uniq slots, size: size4, key: key_a);
-      let removed_a_code = option_code(value: move removed_a);
-      set checksum = mix(checksum: checksum, value: removed_a_code);
-      let found_past_tombstone = find(slots: &slots, key: key_c);
-      let found_past_tombstone_code = option_code(value: move found_past_tombstone);
-      set checksum = mix(checksum: checksum, value: found_past_tombstone_code);
-      let (size6, put_d) = insert(slots: &uniq slots, size: size5, key: key_d, value: 55_u64);
-      let put_d_code = put_code(result: put_d);
-      set checksum = mix(checksum: checksum, value: put_d_code);
-      let (size7, removed_b) = remove(slots: &uniq slots, size: size6, key: key_b);
-      let removed_b_code = option_code(value: move removed_b);
-      set checksum = mix(checksum: checksum, value: removed_b_code);
-      let (size8, removed_missing) = remove(slots: &uniq slots, size: size7, key: missing_key);
-      let removed_missing_code = option_code(value: move removed_missing);
-      set checksum = mix(checksum: checksum, value: removed_missing_code);
-      let found_c_after_reuse = find(slots: &slots, key: key_c);
-      let found_c_after_reuse_code = option_code(value: move found_c_after_reuse);
-      set checksum = mix(checksum: checksum, value: found_c_after_reuse_code);
-      let found_d_after_reuse = find(slots: &slots, key: key_d);
-      let found_d_after_reuse_code = option_code(value: move found_d_after_reuse);
-      set checksum = mix(checksum: checksum, value: found_d_after_reuse_code);
-      let absent_b_after_remove = find(slots: &slots, key: key_b);
-      let absent_b_after_remove_code = option_code(value: move absent_b_after_remove);
-      set checksum = mix(checksum: checksum, value: absent_b_after_remove_code);
-      set checksum = mix(checksum: checksum, value: size8);
-    }
+    let (size1, put_a) = insert(slots: &slots, size: 0_u64, key: key_a, value: 11_u64);
+    let put_a_code = put_code(result: put_a);
+    set checksum = mix(checksum: checksum, value: put_a_code);
+    let (size2, put_b) = insert(slots: &slots, size: size1, key: key_b, value: 22_u64);
+    let put_b_code = put_code(result: put_b);
+    set checksum = mix(checksum: checksum, value: put_b_code);
+    let (size3, put_c) = insert(slots: &slots, size: size2, key: key_c, value: 33_u64);
+    let put_c_code = put_code(result: put_c);
+    set checksum = mix(checksum: checksum, value: put_c_code);
+    let (size4, replace_b) = insert(slots: &slots, size: size3, key: key_b, value: 44_u64);
+    let replace_b_code = put_code(result: replace_b);
+    set checksum = mix(checksum: checksum, value: replace_b_code);
+    let found_a = find(slots: &slots, key: key_a);
+    let found_a_code = option_code(value: found_a);
+    set checksum = mix(checksum: checksum, value: found_a_code);
+    let found_b = find(slots: &slots, key: key_b);
+    let found_b_code = option_code(value: found_b);
+    set checksum = mix(checksum: checksum, value: found_b_code);
+    let found_c = find(slots: &slots, key: key_c);
+    let found_c_code = option_code(value: found_c);
+    set checksum = mix(checksum: checksum, value: found_c_code);
+    let (size5, removed_a) = remove(slots: &slots, size: size4, key: key_a);
+    let removed_a_code = option_code(value: removed_a);
+    set checksum = mix(checksum: checksum, value: removed_a_code);
+    let found_past_tombstone = find(slots: &slots, key: key_c);
+    let found_past_tombstone_code = option_code(value: found_past_tombstone);
+    set checksum = mix(checksum: checksum, value: found_past_tombstone_code);
+    let (size6, put_d) = insert(slots: &slots, size: size5, key: key_d, value: 55_u64);
+    let put_d_code = put_code(result: put_d);
+    set checksum = mix(checksum: checksum, value: put_d_code);
+    let (size7, removed_b) = remove(slots: &slots, size: size6, key: key_b);
+    let removed_b_code = option_code(value: removed_b);
+    set checksum = mix(checksum: checksum, value: removed_b_code);
+    let (size8, removed_missing) = remove(slots: &slots, size: size7, key: missing_key);
+    let removed_missing_code = option_code(value: removed_missing);
+    set checksum = mix(checksum: checksum, value: removed_missing_code);
+    let found_c_after_reuse = find(slots: &slots, key: key_c);
+    let found_c_after_reuse_code = option_code(value: found_c_after_reuse);
+    set checksum = mix(checksum: checksum, value: found_c_after_reuse_code);
+    let found_d_after_reuse = find(slots: &slots, key: key_d);
+    let found_d_after_reuse_code = option_code(value: found_d_after_reuse);
+    set checksum = mix(checksum: checksum, value: found_d_after_reuse_code);
+    let absent_b_after_remove = find(slots: &slots, key: key_b);
+    let absent_b_after_remove_code = option_code(value: absent_b_after_remove);
+    set checksum = mix(checksum: checksum, value: absent_b_after_remove_code);
+    set checksum = mix(checksum: checksum, value: size8);
   }
   return checksum;
 }

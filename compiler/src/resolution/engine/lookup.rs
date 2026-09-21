@@ -53,9 +53,22 @@ pub(super) fn resolve_uses_deferred(
                 }
                 if admissible.contains(class) {
                     if visible {
-                        candidates.push(ResolvedTarget::Source {
-                            declaration: declaration.id,
-                            class: *class,
+                        // [TYPE-2, PRE-1] the three storage shapes and the
+                        // cell `Box` are declared by the prelude like any
+                        // other opaque struct, but each names one
+                        // compiler-owned shape [TYPE-9] and not a source
+                        // struct, so a use that selects one of those four
+                        // declarations resolves to its container identity in
+                        // both of its domains: the nominal-type entry an
+                        // `Array<T, n>` or `Box<T>` type names, and the
+                        // constructor entry [TYPE-2] exists to refuse.
+                        candidates.push(if let Some(container) = meta.container {
+                            ResolvedTarget::Container(container)
+                        } else {
+                            ResolvedTarget::Source {
+                                declaration: declaration.id,
+                                class: *class,
+                            }
                         });
                     } else {
                         invisible.push(declaration.diagnostic_origin(*class));
@@ -74,40 +87,12 @@ pub(super) fn resolve_uses_deferred(
                 }
             }
         }
-        for (ordinal, nominal) in crate::CONTAINER_NOMINALS.iter().enumerate() {
-            if nominal.spelling != use_record.spelling {
-                continue;
-            }
-            for class in crate::CONTAINER_NOMINAL_CLASSES {
-                if !universe.contains(&class) {
-                    continue;
-                }
-                available.insert(class);
-                if admissible.contains(&class)
-                    && kernel_admissible(use_record.role)
-                    && let Ok(ordinal) = u8::try_from(ordinal)
-                {
-                    candidates.push(ResolvedTarget::Container(crate::ContainerNominalId::new(
-                        ordinal,
-                    )));
-                }
-            }
-        }
-        for (ordinal, operation) in crate::KERNEL_OPERATIONS.iter().enumerate() {
-            if operation.spelling == use_record.spelling
-                && universe.contains(&crate::KERNEL_OPERATION_CLASS)
-            {
-                available.insert(crate::KERNEL_OPERATION_CLASS);
-                if admissible.contains(&crate::KERNEL_OPERATION_CLASS)
-                    && kernel_admissible(use_record.role)
-                    && let Ok(ordinal) = u8::try_from(ordinal)
-                {
-                    candidates.push(ResolvedTarget::Kernel(crate::KernelOperationId::new(
-                        ordinal,
-                    )));
-                }
-            }
-        }
+        // x1 [TYPE-2, PRE-1]: the three storage shapes no longer stand beside
+        // the declaration tables. They are prelude opaque structs, so their
+        // nominal-type and constructor entries arrive through the declaration
+        // loop above like `Box`'s, and the container identity is attached
+        // there. A second candidate source here would make every written
+        // `Array` ambiguous against its own declaration.
         if universe.contains(&DeclarationClass::OperationFamily)
             && let Some(operation) = operation_id(&use_record.spelling)
         {
@@ -202,29 +187,16 @@ pub(super) fn resolve_uses_deferred(
     Ok((resolved, None))
 }
 
-/// Kernel rows are not function-kind actual arguments.
-fn kernel_admissible(role: LexicalUseRole) -> bool {
-    matches!(
-        role,
-        LexicalUseRole::Type
-            | LexicalUseRole::TypeArgument
-            | LexicalUseRole::Construct
-            | LexicalUseRole::ArmVariant
-            | LexicalUseRole::EnsuresVariant
-            | LexicalUseRole::IdentifierCallee
-    )
-}
-
 fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationClass> {
     match role {
         LexicalUseRole::Type => vec![DeclarationClass::GenericType, DeclarationClass::NominalType],
         LexicalUseRole::TypeArgument => vec![
             DeclarationClass::GenericType,
             DeclarationClass::NominalType,
-            DeclarationClass::Formal,
-            DeclarationClass::Actual,
+            DeclarationClass::Interface,
+            DeclarationClass::Binding,
         ],
-        LexicalUseRole::FormalGroup => vec![DeclarationClass::Formal, DeclarationClass::Actual],
+        LexicalUseRole::FormalGroup => vec![DeclarationClass::Interface, DeclarationClass::Binding],
         LexicalUseRole::GenericBound => {
             vec![DeclarationClass::NumericBound]
         }
@@ -235,12 +207,9 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
         LexicalUseRole::ArmVariant | LexicalUseRole::EnsuresVariant => {
             vec![DeclarationClass::EnumVariant]
         }
-        LexicalUseRole::TypeRegion
-        | LexicalUseRole::ModeRegion
-        | LexicalUseRole::TypeArgumentRegion
-        | LexicalUseRole::EffectAllocationRegion
-        | LexicalUseRole::BorrowRegion => vec![DeclarationClass::Region],
-        LexicalUseRole::EffectRoot => vec![DeclarationClass::Value],
+        LexicalUseRole::EffectRoot | LexicalUseRole::EffectIndex => {
+            vec![DeclarationClass::Value]
+        }
         LexicalUseRole::BreakLabel => vec![DeclarationClass::Label],
         LexicalUseRole::Const => {
             vec![DeclarationClass::NamedConst, DeclarationClass::ConstGeneric]
@@ -301,8 +270,8 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
         LexicalUseRole::TypeArgument | LexicalUseRole::FormalGroup => vec![
             DeclarationClass::GenericType,
             DeclarationClass::NominalType,
-            DeclarationClass::Formal,
-            DeclarationClass::Actual,
+            DeclarationClass::Interface,
+            DeclarationClass::Binding,
         ],
         LexicalUseRole::GenericBound => {
             vec![DeclarationClass::NumericBound]
@@ -313,12 +282,9 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
                 DeclarationClass::EnumVariant,
             ]
         }
-        LexicalUseRole::TypeRegion
-        | LexicalUseRole::ModeRegion
-        | LexicalUseRole::TypeArgumentRegion
-        | LexicalUseRole::EffectAllocationRegion
-        | LexicalUseRole::BorrowRegion => vec![DeclarationClass::Region],
-        LexicalUseRole::EffectRoot => vec![DeclarationClass::Value],
+        LexicalUseRole::EffectRoot | LexicalUseRole::EffectIndex => {
+            vec![DeclarationClass::Value]
+        }
         LexicalUseRole::BreakLabel => vec![DeclarationClass::Label],
         LexicalUseRole::Const
         | LexicalUseRole::ConstValue
@@ -364,16 +330,11 @@ fn use_rule(role: LexicalUseRole) -> ResolutionRule {
         | LexicalUseRole::ArmVariant
         | LexicalUseRole::EnsuresVariant
         | LexicalUseRole::BreakLabel => ResolutionRule::Type6,
-        LexicalUseRole::TypeRegion
-        | LexicalUseRole::ModeRegion
-        | LexicalUseRole::TypeArgumentRegion
-        | LexicalUseRole::EffectAllocationRegion
-        | LexicalUseRole::BorrowRegion => ResolutionRule::Own3,
-        LexicalUseRole::EffectRoot => ResolutionRule::Eff1,
+        LexicalUseRole::EffectRoot | LexicalUseRole::EffectIndex => ResolutionRule::Eff1,
         LexicalUseRole::Const => ResolutionRule::Const1,
         LexicalUseRole::ConstValue => ResolutionRule::Const2,
         LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee => ResolutionRule::Op1,
-        // FN-3 selects the function named by an actual group's binding;
+        // FN-3 selects the function named by a binding group's member;
         // FN-4 checks its compatibility after resolution.
         LexicalUseRole::FunctionBinding => ResolutionRule::Fn3,
         LexicalUseRole::GenericNumericSuffix => ResolutionRule::Form5,

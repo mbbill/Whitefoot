@@ -1,0 +1,19 @@
+fn push_one(window: &Slots<u64, 4>) -> result: own unit writes(window.next), writes(window.len) contract {
+  requires deref(window).len < deref(window).cap;
+} {
+  doc "WIN-2: r.next is the append slot at index r.len and the measure r.len is itself a write target; the part vocabulary is ordinary, so a user function declares the same rows place_back declares.";
+  place_back(window: window, value: 7_u64);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "WIN-2: the four window parts are vocabulary that paths and effect rows may name, all interpreted at call entry.";
+  let r = slots_new::<u64, 4>();
+  push_one(window: &r);
+  let n = r.len;
+  if n == 1_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

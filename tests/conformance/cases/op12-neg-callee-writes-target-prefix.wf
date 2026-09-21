@@ -1,0 +1,22 @@
+struct Counter {
+  value: u64;
+}
+
+fn recomputed(current: own u64, holder: &Box<Counter>) -> result: own u64 writes(holder) {
+  doc "OP-12 refuses this callee at the update site: its declared row writes a proper prefix of the target place.";
+  set deref(holder).inner = Counter(value: 0_u64);
+  return current;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "OP-12: f's declared row must not write, move out of, or free any prefix of the target place; a row that does is a hard error at the complete call.";
+  let start = Counter(value: 1_u64);
+  let cell = box_new::<Counter>(value: start);
+  set cell.inner.value = recomputed(current: cell.inner.value, holder: &cell);
+  let seen = cell.inner.value;
+  if seen == 1_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,6 +1,6 @@
-fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
-  doc "Writes one byte through the borrow and returns the next position.";
-  let spare = len_of(deref(destination));
+fn fill(destination: &Slots<u8, 64>, at: own u64) -> result: own u64 writes(destination) {
+  doc "Writes one byte through the reference and returns the next position.";
+  let spare = deref(destination).len;
   let inside = at < spare;
   if inside {
     set deref(destination)[at] = 65_u8;
@@ -9,8 +9,8 @@ fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(des
   return next;
 }
 
-fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
-  define capacity = len_of(deref(source));
+fn emit(source: &Slots<u8, 64>, length: own u64) -> result: own u64 reads(source) contract {
+  define capacity = deref(source).len;
   requires length <= capacity;
 } {
   doc "Consumes a prefix whose length the caller has proved.";
@@ -22,19 +22,19 @@ fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) c
   return length;
 }
 
-fn main() -> status: own ExitStatus pure {
-  doc "Hoists the length above a write the callee makes through a unique buffer borrow.";
-  let line = buffer_new(64_u64, 0_u8);
-  let spare = len_of(line);
-  let end = 0_u64;
-  region {
-    set end = fill(destination: &uniq line, at: end);
-  }
+fn transport(line: &Slots<u8, 64>, at: own u64) -> result: own unit writes(line) contract {
+  requires at < deref(line).len;
+} {
+  doc "Hoists the length above a call whose substituted row writes the whole run: that write kills the saved measure image [CALL-5, ENT-5]. The caller's line and offset are unknown at function entry, and the selected branch is reachable, but its comparison against the stale image establishes nothing about the current length required by emit.";
+  let spare = deref(line).len;
+  let end = fill(destination: &deref(line), at: at);
   let fits = end <= spare;
   if fits {
-    region {
-      let sent = emit(source: &line, length: end);
-    }
+    let sent = emit(source: &deref(line), length: end);
   }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

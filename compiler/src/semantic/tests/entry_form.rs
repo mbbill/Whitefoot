@@ -76,12 +76,16 @@ fn a_bundle_without_a_build_selected_entry_is_ordinary_source() {
 }
 
 #[test]
-fn main_has_ordinary_parameters_results_regions_and_generics() {
+fn main_has_ordinary_parameters_results_and_generics() {
     for source in [
         &b"fn main() -> result: own unit pure {\n  return unit;\n}\n"[..],
         &b"fn main(value: own i32) -> result: own i32 pure {\n  return value;\n}\n"[..],
-        &b"fn main<T: affine>(value: own T) -> result: own T pure {\n  return move value;\n}\n"[..],
-        &b"fn main['s](heap: own Heap<'s>) -> result: own unit pure {\n  return unit;\n}\n"[..],
+        &b"fn main<T: drop>(value: own T) -> result: own T pure {\n  return move value;\n}\n"[..],
+        // v0.59 also wrote a region-parameterized `main['s](heap: own Heap<'s>)`
+        // here. Region parameters retired with [FORM-8] and the store retired
+        // with [PROV-1]; the ordinary-parameter subject survives through the
+        // owned-handle row below, and [STOR-8]'s one heap is not a parameter.
+        &b"fn main(cell: own Box<u64>) -> result: own unit pure {\n  let value = cell.inner;\n  return unit;\n}\n"[..],
         &b"fn main(env: own Args, again: own Args) -> result: own unit pure {\n  return unit;\n}\n"[..],
         &b"fn main(args: own DirectoryRead) -> result: own DirectoryRead pure {\n  return move args;\n}\n"[..],
     ] {
@@ -108,15 +112,22 @@ fn a_source_call_to_main_uses_the_ordinary_function_contract() {
 
 #[test]
 fn unexhibited_main_effects_are_still_rejected_by_eff2() {
-    for source in [
-        &b"fn main['s](heap: own Heap<'s>) -> result: own unit allocates(heap) {\n  return unit;\n}\n"
-            [..],
-        &b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n"[..],
-    ] {
-        assert_rule_kind(source, SemanticRule::Eff2, |kind| {
-            matches!(kind, SemanticIssueKind::EffectMismatch { .. })
-        });
-    }
+    // v0.59's first source was `main['s](heap: own Heap<'s>) ... allocates(heap)`.
+    // The `allocates` category retired with [STOR-8], which gives allocation
+    // and release no effect entry at all, and the store retired with
+    // [PROV-1]; a by-value parameter now carries no entry either [EFF-1], so
+    // that row is refused one rule earlier. The surviving [EFF-2] subject is
+    // an unexhibited entry on a reference parameter.
+    assert_rule_kind(
+        b"fn main(handle: &HandleFactory) -> result: own unit writes(handle) {\n  return unit;\n}\n",
+        SemanticRule::Eff2,
+        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
+    );
+    assert_rule_kind(
+        b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n",
+        SemanticRule::Eff1,
+        |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
+    );
 }
 
 #[test]

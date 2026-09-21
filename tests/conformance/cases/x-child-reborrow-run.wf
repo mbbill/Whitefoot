@@ -2,73 +2,60 @@ struct Counter {
   value: u64;
 }
 
-fn write_byte(out: &uniq MutSlice<u8>) -> function_result: own unit writes(out) contract {
-  define spare = len_of(deref(out));
+fn write_byte(out: &[u8]) -> function_result: own unit writes(out) contract {
+  define spare = deref(out).len;
   requires 0_u64 < spare;
 } {
+  doc "Writes one element through the range reference it was handed.";
   set deref(out)[0_u64] = 7_u8;
   return unit;
 }
 
-fn proxy_byte(out: own MutSlice<u8>) -> function_result: own unit writes(out) contract {
-  define spare = len_of(out);
+fn proxy_byte(out: &[u8]) -> function_result: own unit writes(out) contract {
+  define spare = deref(out).len;
   requires 1_u64 < spare;
 } {
-  region {
-    write_byte(out: &uniq out);
-  }
-  set out[1_u64] = 9_u8;
+  doc "Hands its own reference parameter onward to another callee and then writes through it again; a reference that is itself an argument is the thing being accessed and does not invalidate itself [EFF-5].";
+  write_byte(out: out);
+  set deref(out)[1_u64] = 9_u8;
   return unit;
 }
 
-fn bump_counter(counter: &uniq Counter) -> function_result: own unit reads(counter.value), writes(counter.value) {
+fn bump_counter(counter: &Counter) -> function_result: own unit writes(counter.value) {
+  doc "Reads and writes one field through a reference parameter; writes subsumes reads for one path, so the pair is never written [EFF-1].";
   let next = deref(counter).value +wrap 1_u64;
   set deref(counter).value = next;
   return unit;
 }
 
-fn proxy_counter(counter: &uniq Counter) -> function_result: own unit reads(counter.value), writes(counter.value) {
-  region {
-    bump_counter(counter: &uniq deref(counter));
-  }
-  set deref(counter).value = deref(counter).value +wrap 1_u64;
+fn proxy_counter(counter: &Counter) -> function_result: own unit writes(counter.value) {
+  doc "Passes its reference parameter onward and writes the same field again afterward.";
+  bump_counter(counter: counter);
+  let next = deref(counter).value +wrap 1_u64;
+  set deref(counter).value = next;
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "A reference parameter passed onward through an ordinary helper call names the same path at both levels, projects the caller's effect footprint at each call, and remains usable for a later write in the same body; a heap-resident array and an inline struct field both take that route.";
   let counter = Counter(value: 40_u64);
-  region 'w {
-    let workspace = arena_frame::<2, 1, 'w>();
-    region {
-      let output = arena_vector_proved::<u8>(store: &uniq workspace, count: 2_u64);
-      region {
-        place_back(vector: &uniq output, value: 0_u8);
-      }
-      region {
-        place_back(vector: &uniq output, value: 0_u8);
-      }
-      region {
-        let window = mut_slice_of(&uniq output);
-        proxy_byte(out: move window);
-      }
-      region {
-        proxy_counter(counter: &uniq counter);
-      }
-      let first = output[0_u64];
-      let second = output[1_u64];
-      if first == 7_u8 {
-      } else {
-        return exit_status(code: 201_u8);
-      }
-      if second == 9_u8 {
-      } else {
-        return exit_status(code: 202_u8);
-      }
-      if counter.value == 42_u64 {
-      } else {
-        return exit_status(code: 203_u8);
-      }
-    }
+  let output = box_array_filled::<u8>(count: 2_u64, value: 0_u8);
+  let window = &output.inner[0_u64..2_u64];
+  proxy_byte(out: window);
+  proxy_counter(counter: &counter);
+  let first = output.inner[0_u64];
+  let second = output.inner[1_u64];
+  if first == 7_u8 {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  if second == 9_u8 {
+  } else {
+    return exit_status(code: 202_u8);
+  }
+  if counter.value == 42_u64 {
+  } else {
+    return exit_status(code: 203_u8);
   }
   return exit_status(code: 0_u8);
 }

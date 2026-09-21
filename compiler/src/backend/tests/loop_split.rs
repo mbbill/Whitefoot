@@ -11,6 +11,37 @@
 //! A run at `WF_WORKERS=1` proves nothing about overlapping — it takes the
 //! sequential world — so the cases that need real overlap read the runtime's
 //! own grant count and refuse a repeat that never actually handed anything out.
+//!
+//! # Kernel spec v0.60
+//!
+//! No test in this module retired. Every subject here is [PAR-2]'s counted
+//! permission and the lowering that actualizes it, and [PAR-2] survives the
+//! amendment: what changed under it is how a statement's footprint is spelled,
+//! not which loops may split. The `.wf` fixtures were retargeted:
+//!
+//! - `region { .. }` wrappers are gone with regions themselves [OWN-3, OWN-4,
+//!   OWN-10, FORM-8]; their statements stay in the enclosing block. Nothing is
+//!   lost, because loans and arenas contribute no footprint any more and
+//!   [STOR-8] gives allocation and release no effect entry at all, so neither
+//!   can stop two statements from overlapping [PAR-1].
+//! - `buffer_new(count, value)` became [OP-13]'s `box_array_filled` over the
+//!   one heap [STOR-8], and `array_new` became `array_filled`.
+//! - `slice_of` / `mut_slice_of` and the types `Slice<T>` / `MutSlice<T>`
+//!   retired with [VIEW-1] and [VIEW-4]. The successor is [REF-4]'s range
+//!   reference `&x[lo..hi]` carried by the parameter kind `&[T]`, whose
+//!   disjointness is [OWN-7]'s four non-strict range orderings - the same
+//!   judgment [PAR-1] and [PAR-2] now name directly.
+//! - `len_of(p)` became [OP-15]'s measure member read `p.len`, a place form
+//!   and not a call.
+//! - `&uniq p` became the one reference spelling `&p`; whether a callee writes
+//!   through it is stated by its effect row [EFF-1], and `writes` subsumes
+//!   `reads` for one path, so `reads(d), writes(d)` collapses to `writes(d)`.
+//!
+//! [`map_and_reduction_source`] now takes its eight-byte speller from
+//! [`COMBINE_PRELUDE`] instead of splicing it out of the `range_fold.wf`
+//! program fixture. The two were byte-identical; taking the one this module
+//! owns keeps the generated fixture on the spec version the module is written
+//! against.
 
 use std::process::Command;
 
@@ -247,7 +278,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &[u8], at: own u64, value: own u64) -> result: own u64 writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -256,7 +287,7 @@ fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result
     if done {
       break @octets;
     }
-    let spare = len_of(deref(destination));
+    let spare = deref(destination).len;
     let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
@@ -281,32 +312,17 @@ fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pu
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
-  let report = buffer_new(8_u64, 0_u8);
-  region {
-    let window = mut_slice_of(&uniq report);
-    region {
-      let filled = spell(destination: &uniq window, at: 0_u64, value: value);
+  let report = box_array_filled::<u8>(count: 8_u64, value: 0_u8);
+  let window = &report.inner[0_u64..8_u64];
+  let stored = spell(destination: window, at: 0_u64, value: value);
+  match write_once(factory: &entry_factory, output: &out, source: window, start: 0_u64, end: 8_u64) {
+    Ok(value: accepted) => {
+      return exit_status(code: 0_u8);
     }
-  }
-  region {
-    region {
-      region {
-        let native_window_2 = slice_of(&report);
-        region {
-          match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_2, start: 0_u64, end: 8_u64) {
-            Ok(value: next) => {
-              return exit_status(code: 0_u8);
-            }
-            Err(error: problem) => {
-              return exit_status(code: 1_u8);
-            }
-          }
-        }
-      }
+    Err(error: problem) => {
+      return exit_status(code: 1_u8);
     }
   }
 }
@@ -345,81 +361,204 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn mapped() -> result: own buffer<u8> pure {
-  let out = buffer_new(400000_u64, 0_u8);
+fn mapped() -> result: own Box<Array<u8>> pure {
+  let out = box_array_filled::<u8>(count: 400000_u64, value: 0_u8);
   for @fill (i in 0_u64..400000_u64) {
     let copied = i;
     let slot = copied * 1_u64;
     let mixed = mix(seed: i);
     let byte = low_byte(v: mixed);
-    set out[slot] = byte;
+    set out.inner[slot] = byte;
   }
   return move out;
 }
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
   let report = mapped();
-  let size = len_of(report);
-  region {
-    let source = slice_of(&report);
-    region {
-      match write_once(factory: &uniq entry_factory, output: &uniq out, source: &source, start: 0_u64, end: size) {
-        Ok(value: next) => {
-          return exit_status(code: 0_u8);
-        }
-        Err(error: problem) => {
-          return exit_status(code: 1_u8);
-        }
-      }
+  let size = report.inner.len;
+  let source = &report.inner[0_u64..size];
+  match write_once(factory: &entry_factory, output: &out, source: source, start: 0_u64, end: size) {
+    Ok(value: accepted) => {
+      return exit_status(code: 0_u8);
+    }
+    Err(error: problem) => {
+      return exit_status(code: 1_u8);
     }
   }
 }
 "#;
 
+/// One supported padded nominal in a runtime-capacity Array. Whole-element
+/// assignment avoids the currently unsupported projection through a nominal
+/// buffer element while retaining the `{ u8, u64 }` element's alignment and
+/// stride. Reading the written Array's whole measure inside the loop denies
+/// PAR-2; the test retains that negative control and moves only this measure
+/// read to the preheader for its positive split. The empty Box's measure is
+/// still read by each iteration. A zero-length call takes the empty edge.
+/// `discarded` is deliberately consumed before the loop: the lowering carries
+/// all lexical bindings, so projecting its now-dead pointer must remain a
+/// harmless address calculation and must never recreate cleanup or a read.
+const ALIGNED_PAYLOAD_MAP: &[u8] = br#"struct Aligned {
+  tag: u8;
+  word: u64;
+}
+
+fn discard(value: own Box<Array<Aligned>>) -> result: own unit pure {
+  return unit;
+}
+
+fn mix(seed: own u64) -> result: own u64 pure {
+  let state = seed;
+  let round = 0_u64;
+  loop @rounds {
+    let done = round == 24_u64;
+    if done {
+      break @rounds;
+    }
+    let shifted = irotl(state, 27_u32);
+    let scaled = state *wrap 6364136223846793005_u64;
+    set state = ixor(shifted, scaled);
+    set state = state +wrap 1442695040888963407_u64;
+    set round = round +wrap 1_u64;
+  }
+  return state;
+}
+
+fn marked(seed: own u64) -> result: own Aligned pure {
+  let mixed = mix(seed: seed);
+  let result = Aligned(tag: 7_u8, word: mixed);
+  return result;
+}
+
+fn aligned_array(count: own u64, tag: own u8, word: own u64) -> result: own Box<Array<Aligned>> pure contract {
+  requires count <= 400000_u64;
+  ensures result.inner.len == count;
+} {
+  let value = Aligned(tag: tag, word: word);
+  let result = box_array_filled::<Aligned>(count: count, value: value);
+  return move result;
+}
+
+fn mapped(count: own u64) -> result: own Box<Array<Aligned>> pure contract {
+  requires count <= 400000_u64;
+  ensures result.inner.len == count;
+} {
+  let discarded = aligned_array(count: 1_u64, tag: 99_u8, word: 99_u64);
+  set discarded.inner[0_u64] = Aligned(tag: 98_u8, word: 98_u64);
+  let gone = discard(value: move discarded);
+  let empty = aligned_array(count: 0_u64, tag: 0_u8, word: 0_u64);
+  let output = aligned_array(count: count, tag: 0_u8, word: 0_u64);
+  let extent = output.inner.len;
+  for @fill (i in 0_u64..extent) {
+    let empty_extent = empty.inner.len;
+    let current_extent = output.inner.len;
+    let all_extents = empty_extent + current_extent;
+    let shifted = i +wrap all_extents;
+    let selected = marked(seed: shifted);
+    set output.inner[i] = selected;
+  }
+  return move output;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let empty = mapped(count: 0_u64);
+  if empty.inner.len != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  let output = mapped(count: 400000_u64);
+  if output.inner.len != 400000_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let first = output.inner[0_u64];
+  let first_expected = mix(seed: 400000_u64);
+  if first.tag != 7_u8 {
+    return exit_status(code: 3_u8);
+  }
+  if first.word != first_expected {
+    return exit_status(code: 4_u8);
+  }
+  let last = output.inner[399999_u64];
+  let last_expected = mix(seed: 799999_u64);
+  if last.tag != 7_u8 {
+    return exit_status(code: 5_u8);
+  }
+  if last.word != last_expected {
+    return exit_status(code: 6_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// Two lexically nested split reductions share one locally owned boxed Array.
+/// The owner is projected into the outer split, reconstructed in its chunk,
+/// and projected again into the inner split reached from that chunk.
+const NESTED_PAYLOAD_REDUCTIONS: &[u8] = br#"fn nested() -> result: own u64 pure {
+  let source = box_array_filled::<u64>(count: 65536_u64, value: 3_u64);
+  let total = 0_u64;
+  for @batches (i in 0_u64..8_u64) {
+    let partial = 0_u64;
+    let extent = source.inner.len;
+    for @items (j in 0_u64..extent) {
+      let value = source.inner[j];
+      let salted = value +wrap i;
+      set partial = partial +wrap salted;
+    }
+    set total = total +wrap partial;
+  }
+  return total;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let observed = nested();
+  if observed != 3407872_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
 /// Preserve the entire map and append all eight checksum bytes, so a defect in
 /// any reduction bit is visible without overwriting the map's first element.
+///
+/// The speller is taken from [`COMBINE_PRELUDE`], which this module owns, so
+/// the generated fixture is on the same spec version as the rest of the file.
 fn map_and_reduction_source() -> Vec<u8> {
     let source = std::str::from_utf8(INDEPENDENT_MAP).expect("UTF-8 fixture");
-    let fold = std::str::from_utf8(PERMITTED_FOLD).expect("UTF-8 fixture");
-    let spell = fold
-        .split("fn spell(")
-        .nth(1)
-        .unwrap()
-        .split("fn folded(")
-        .next()
-        .unwrap();
-    format!("fn spell({spell}{source}")
-        .replacen("buffer_new(400000_u64, 0_u8)", "buffer_new(400008_u64, 0_u8)", 1)
+    let (_, spell) = COMBINE_PRELUDE
+        .split_once("fn spell(")
+        .expect("the shared prelude defines the eight-byte speller");
+    format!("fn spell({spell}\n{source}")
+        .replacen("count: 400000_u64", "count: 400008_u64", 1)
         .replacen("  for @fill", "  let checksum = 0_u64;\n  for @fill", 1)
-        .replacen("    set out[slot] = byte;", "    set out[slot] = byte;\n    set checksum = checksum +wrap mixed;", 1)
-        .replacen("  return move out;", "  region {\n    let tail = mut_slice_of(&uniq out);\n    region {\n      let end = spell(destination: &uniq tail, at: 400000_u64, value: checksum);\n    }\n  }\n  return move out;", 1)
+        .replacen("    set out.inner[slot] = byte;", "    set out.inner[slot] = byte;\n    set checksum = checksum +wrap mixed;", 1)
+        .replacen("  return move out;", "  let tail = &out.inner[0_u64..400008_u64];\n  let end = spell(destination: tail, at: 400000_u64, value: checksum);\n  return move out;", 1)
         .into_bytes()
 }
 
-/// The same work as [`INDEPENDENT_MAP`], expressed through a unique output
-/// parameter and a same-index read-modify-write. This keeps the result bytes
-/// unchanged while exercising both read-side map evidence and holder capture.
+/// The same work as [`INDEPENDENT_MAP`], expressed through an ordinary
+/// reference to its boxed Array and a same-index read-modify-write. PAR-2's
+/// single-element family requires an Array or Slots subscript; it does not
+/// admit indexing an unpartitioned range reference. This exercises that
+/// family's reference-parameter route without changing its access pattern.
 fn borrowed_read_modify_map_source() -> Vec<u8> {
     let source = std::str::from_utf8(INDEPENDENT_MAP).expect("the fixture is UTF-8");
     source
         .replacen(
-            "fn mapped() -> result: own buffer<u8> pure {\n  let out = buffer_new(400000_u64, 0_u8);\n",
-            "fn mapped(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define spare = len_of(deref(out));\n  requires 400000_u64 <= spare;\n} {\n",
+            "fn mapped() -> result: own Box<Array<u8>> pure {\n  let out = box_array_filled::<u8>(count: 400000_u64, value: 0_u8);\n",
+            "fn mapped(out: &Box<Array<u8>>) -> result: own unit writes(out.inner) contract {\n  define spare = deref(out).inner.len;\n  requires 400000_u64 <= spare;\n} {\n",
             1,
         )
         .replacen(
-            "    set out[slot] = byte;\n",
-            "    let old = deref(out)[slot];\n    let next = old +wrap byte;\n    set deref(out)[slot] = next;\n",
+            "    set out.inner[slot] = byte;\n",
+            "    let old = deref(out).inner[slot];\n    let blended = old +wrap byte;\n    set deref(out).inner[slot] = blended;\n",
             1,
         )
         .replacen("  return move out;\n", "  return unit;\n", 1)
         .replacen(
             "  let report = mapped();\n",
-            "  let report = buffer_new(400000_u64, 173_u8);\n  region {\n    let done = mapped(out: &uniq report);\n  }\n",
+            "  let report = box_array_filled::<u8>(count: 400000_u64, value: 173_u8);\n  let done = mapped(out: &report);\n",
             1,
         )
         .into_bytes()
@@ -577,6 +716,16 @@ fn the_sequential_world_of_a_split_loop_is_the_loop() {
 /// tail has to be a number, because the runtime's own `wf__par_split_budget`
 /// shares a prefix with the splitter and is not one of these.
 fn synthesized(module: &str, prefix: &str) -> String {
+    let found = synthesized_symbols(module, prefix);
+    let [only] = found.as_slice() else {
+        panic!("the module must define exactly one {prefix}: {found:?}\n{module}");
+    };
+    only.clone()
+}
+
+/// Every synthesized definition bearing `prefix`, without runtime helpers or
+/// sequential-clone spellings that merely contain a similar suffix.
+fn synthesized_symbols(module: &str, prefix: &str) -> Vec<String> {
     let mut found: Vec<String> = module
         .lines()
         .filter_map(|line| line.split_once(prefix))
@@ -587,10 +736,7 @@ fn synthesized(module: &str, prefix: &str) -> String {
         .collect();
     found.sort_unstable();
     found.dedup();
-    let [only] = found.as_slice() else {
-        panic!("the module must define exactly one {prefix}: {found:?}\n{module}");
-    };
-    only.clone()
+    found
 }
 
 /// A split that carries captures and folds under a second admitted operation
@@ -611,6 +757,10 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
         "the fixture's loop must actually split, or this checks nothing:\n{split}"
     );
     // Three captures, so the chunk takes the seed, both endpoints, and them.
+    // KEPT AS WRITTEN for the lowering port: the count is the chunk's emitted
+    // parameter ABI. The source still declares exactly three captures, so if
+    // the split lowering changes how a capture is passed, re-derive the count
+    // rather than the fixture.
     let chunk = function_body(&split, &synthesized(&split, "@wf__par_chunk_"));
     let signature = chunk.lines().next().expect("a definition has a signature");
     assert_eq!(
@@ -655,6 +805,237 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
 /// A proved single-binder affine map uses the same split machinery without inventing
 /// a source accumulator: Unit carries the worker join, while the captured
 /// buffer carries the only observable result.
+fn assert_map_payload_capture(module: &str, chunk: &str, seed_type: &str, element_type: &str) {
+    let signature = chunk.lines().next().expect("chunk definition");
+    let (_, arguments) = signature.split_once('(').expect("chunk parameters");
+    let (arguments, _) = arguments.split_once(')').expect("closed parameters");
+    let arguments = arguments.split(',').collect::<Vec<_>>();
+    let types = arguments
+        .iter()
+        .map(|argument| argument.split_whitespace().next().expect("parameter type"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        types,
+        [seed_type, "i64", "i64", "ptr"],
+        "the chunk must capture exactly the stable thin Box pointer after its seed and bounds:\n{chunk}"
+    );
+    let captured_payload = arguments
+        .last()
+        .and_then(|argument| argument.split_whitespace().next_back())
+        .expect("Box<Array<T>> payload capture parameter");
+    let parent_slot_load = format!("load ptr, ptr {captured_payload}");
+    assert!(
+        !chunk.contains(&parent_slot_load),
+        "the chunk must not reload a Box pointer through the captured parent owner slot:\n{chunk}"
+    );
+
+    let block_type = format!("{{ i64, [0 x {element_type}] }}");
+    let forward = format!("getelementptr inbounds {block_type}, ptr ");
+    let outer = function_body(module, "@wf_mapped");
+    let projection = outer
+        .find(&forward)
+        .expect("the owner must be projected to its element base before the split");
+    let split_call = outer
+        .find("call i8 @wf__par_split_")
+        .or_else(|| outer.find("call i64 @wf__par_split_"))
+        .expect("the projected capture must reach the splitter");
+    assert!(
+        projection < split_call,
+        "payload projection must precede the split:\n{outer}"
+    );
+    assert!(
+        outer[projection..].contains("i64 0, i32 1, i64 0"),
+        "the forward operation must select the first array element:\n{outer}"
+    );
+
+    let offset =
+        format!("ptrtoint (ptr getelementptr ({block_type}, ptr null, i64 0, i32 1) to i64)");
+    assert!(
+        chunk.contains(&offset),
+        "the chunk must derive the exact inverse of the typed payload projection:\n{chunk}"
+    );
+    assert!(
+        chunk.contains(&format!(
+            "getelementptr inbounds i8, ptr {captured_payload}, i64 %"
+        )),
+        "the chunk must reconstruct a local owner from its payload parameter:\n{chunk}"
+    );
+}
+
+#[test]
+fn an_aligned_nominal_payload_capture_handles_empty_and_mixed_measure_element_paths() {
+    let unsplit = emit(ALIGNED_PAYLOAD_MAP);
+    assert!(!module_requires_parallel_runtime(&unsplit));
+    let denied = emit_with_overlap(ALIGNED_PAYLOAD_MAP);
+    assert!(
+        synthesized_symbols(&denied, "@wf__par_chunk_").is_empty(),
+        "PAR-2 must still deny a whole-root measure read beside a mapped write"
+    );
+    // The specification forbids the whole-root read inside an element map;
+    // the preheader already captures the same immutable length. Preserve the
+    // entire write fixture, its exact output oracle, and the negative control.
+    let source = std::str::from_utf8(ALIGNED_PAYLOAD_MAP)
+        .expect("UTF-8 fixture")
+        .replacen(
+            "let current_extent = output.inner.len;",
+            "let current_extent = extent;",
+            1,
+        );
+    let split = emit_with_overlap(source.as_bytes());
+    assert!(
+        module_requires_parallel_runtime(&split),
+        "the nominal-element map must actualize its permitted split:\n{split}"
+    );
+
+    let aligned_type = split
+        .lines()
+        .find_map(|line| line.strip_suffix(" = type { i8, i64 }"))
+        .expect("Aligned must retain its padding-sensitive nominal LLVM type");
+    let block_type = format!("{{ i64, [0 x {aligned_type}] }}");
+    let outer = function_body(&split, "@wf_mapped");
+    let forward = format!("getelementptr inbounds {block_type}, ptr ");
+    assert_eq!(
+        outer
+            .lines()
+            .filter(|line| line.contains(&forward) && line.contains("i64 0, i32 1, i64 0"))
+            .count(),
+        3,
+        "the live output, live empty box, and consumed lexical Box must use typed payload captures:\n{outer}"
+    );
+
+    let chunk = function_body(&split, &synthesized(&split, "@wf__par_chunk_"));
+    let inverse =
+        format!("ptrtoint (ptr getelementptr ({block_type}, ptr null, i64 0, i32 1) to i64)");
+    assert_eq!(
+        chunk.matches(&inverse).count(),
+        3,
+        "the chunk must reconstruct all three lexical Box values without dereferencing the consumed one:\n{chunk}"
+    );
+    assert!(
+        chunk.lines().any(|line| {
+            line.contains(&format!("getelementptr inbounds {block_type}, ptr "))
+                && line.contains("i32 1, i64 %")
+        }),
+        "the live payload must still reach ordinary indexed element lowering:\n{chunk}"
+    );
+    assert!(
+        chunk.lines().any(|line| line.contains("load i64, ptr ")),
+        "the reconstructed empty owner must still support its len read:\n{chunk}"
+    );
+    assert!(!chunk.contains("call void @free("), "{chunk}");
+
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&unsplit, &directory))
+        .output()
+        .expect("run the unsplit nominal-element map");
+    assert_eq!(reference.status.code(), Some(0), "{reference:?}");
+    assert!(reference.stdout.is_empty());
+
+    let executable = build_executable(&split, &directory);
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the split nominal-element map");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "WF_WORKERS={workers}: {output:?}"
+        );
+        assert_eq!(output.stdout, reference.stdout, "WF_WORKERS={workers}");
+    }
+    let (granted, output) = CountedProgram::link(&split, &directory).run(Some("4"));
+    assert!(
+        granted > 0,
+        "the nominal-element map must execute a real worker callback"
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, reference.stdout);
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+#[test]
+fn nested_boxed_array_payload_reductions_preserve_the_unsplit_result() {
+    let unsplit = emit(NESTED_PAYLOAD_REDUCTIONS);
+    assert!(!module_requires_parallel_runtime(&unsplit));
+    let split = emit_with_overlap(NESTED_PAYLOAD_REDUCTIONS);
+    assert!(module_requires_parallel_runtime(&split));
+
+    let splitters = synthesized_symbols(&split, "@wf__par_split_");
+    let chunks = synthesized_symbols(&split, "@wf__par_chunk_");
+    assert_eq!(
+        splitters.len(),
+        2,
+        "both reductions must split: {splitters:?}\n{split}"
+    );
+    assert_eq!(
+        chunks.len(),
+        2,
+        "both reductions must have chunks: {chunks:?}\n{split}"
+    );
+    let chunk_bodies = chunks
+        .iter()
+        .map(|symbol| function_body(&split, symbol))
+        .collect::<Vec<_>>();
+    let block_type = "{ i64, [0 x i64] }";
+    let inverse =
+        format!("ptrtoint (ptr getelementptr ({block_type}, ptr null, i64 0, i32 1) to i64)");
+    for chunk in &chunk_bodies {
+        assert!(
+            chunk.contains(&inverse),
+            "each nested chunk must reconstruct its payload capture:\n{chunk}"
+        );
+    }
+    let outer_chunk = chunk_bodies
+        .iter()
+        .find(|chunk| chunk.contains("call i64 @wf__par_split_"))
+        .expect("the outer chunk must enter the inner splitter");
+    assert!(
+        outer_chunk.lines().any(|line| {
+            line.contains("getelementptr inbounds { i64, [0 x i64] }, ptr ")
+                && line.contains("i64 0, i32 1, i64 0")
+        }),
+        "the outer chunk must project the reconstructed owner into the inner split:\n{outer_chunk}"
+    );
+    let nested = function_body(&split, "@wf_nested");
+    assert!(
+        nested.lines().any(|line| {
+            line.contains("getelementptr inbounds { i64, [0 x i64] }, ptr ")
+                && line.contains("i64 0, i32 1, i64 0")
+        }),
+        "the source owner must be projected into the outer split:\n{nested}"
+    );
+
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&unsplit, &directory))
+        .output()
+        .expect("run the unsplit nested reductions");
+    assert_eq!(reference.status.code(), Some(0), "{reference:?}");
+    assert!(reference.stdout.is_empty());
+
+    let executable = build_executable(&split, &directory);
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the nested split reductions");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "WF_WORKERS={workers}: {output:?}"
+        );
+        assert_eq!(output.stdout, reference.stdout, "WF_WORKERS={workers}");
+    }
+    let (granted, output) = CountedProgram::link(&split, &directory).run(Some("4"));
+    assert!(
+        granted > 0,
+        "the controlled nested program must grant worker work"
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, reference.stdout);
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
 #[test]
 fn an_independent_map_joins_and_preserves_its_outer_buffer() {
     let unsplit = emit(INDEPENDENT_MAP);
@@ -680,13 +1061,11 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
         splitter.starts_with("define i8 "),
         "an independent map splitter must return the Unit token:\n{splitter}"
     );
-    assert!(
-        chunk
-            .lines()
-            .next()
-            .is_some_and(|signature| signature.contains("{ ptr, i64 }")),
-        "the mapped buffer descriptor must be captured by the chunk:\n{chunk}"
-    );
+    // STOR-1 puts the descriptor inside the allocation. The complete chunk
+    // signature is Unit seed, two bounds, and the stable thin Box pointer
+    // snapshotted before the split. Native bytes and the source owner's
+    // per-exit releases are checked below.
+    assert_map_payload_capture(&split, chunk, "i8", "i8");
     for step in [
         "call ptr @wf__par_acquire_lane(",
         "call void @wf__par_publish(",
@@ -706,6 +1085,10 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
     // Captures are proof-scoped aliases, not source owners. Neither helper may
     // release the captured descriptor, while each selectable outer main owns
     // and frees exactly the buffer returned after the joined loop.
+    //
+    // KEPT AS WRITTEN for the lowering port: the `@free` counts are the
+    // emitted release shape of one `Box<Array<u8>>` per return path [STOR-3].
+    // If the release lowering of a boxed run changes, re-derive the counts.
     assert!(!chunk.contains("call void @free("), "{chunk}");
     assert!(!splitter.contains("call void @free("), "{splitter}");
     for outer in ["@wf_main", "@wf__par_seq_main"] {
@@ -737,7 +1120,7 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
 
     let executable = build_executable(&split, &directory);
     let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "4"] {
+    for workers in ["0", "1", "4"] {
         let output = Command::new(&executable)
             .env("WF_WORKERS", workers)
             .output()
@@ -785,7 +1168,7 @@ fn a_borrowed_read_modify_map_preserves_the_sequential_bytes() {
 
     let executable = build_executable(&split, &directory);
     let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "4"] {
+    for workers in ["0", "1", "4"] {
         let output = Command::new(&executable)
             .env("WF_WORKERS", workers)
             .output()
@@ -822,13 +1205,9 @@ fn a_map_and_reduction_preserves_both_results() {
         splitter.starts_with("define i64 "),
         "the combined loop must retain its real reduction result:\n{splitter}"
     );
-    assert!(
-        chunk
-            .lines()
-            .next()
-            .is_some_and(|signature| signature.contains("{ ptr, i64 }")),
-        "the reduction chunk must also capture its mapped buffer:\n{chunk}"
-    );
+    // The reduction seed replaces Unit; bounds and the one stable thin Box
+    // pointer retain exactly the independent map's capture ABI.
+    assert_map_payload_capture(&split, chunk, "i64", "i8");
 
     let directory = test_directory();
     let reference = Command::new(build_executable(&unsplit, &directory))
@@ -839,7 +1218,7 @@ fn a_map_and_reduction_preserves_both_results() {
 
     let executable = build_executable(&split, &directory);
     let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "4"] {
+    for workers in ["0", "1", "4"] {
         let output = Command::new(&executable)
             .env("WF_WORKERS", workers)
             .output()
@@ -1114,7 +1493,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &[u8], at: own u64, value: own u64) -> result: own u64 writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -1123,7 +1502,7 @@ fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result
     if done {
       break @octets;
     }
-    let spare = len_of(deref(destination));
+    let spare = deref(destination).len;
     let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
@@ -1174,28 +1553,25 @@ fn admitted_combine_source() -> Vec<u8> {
     let width = 8 * ADMITTED_COMBINES.len();
     source.push_str(&format!(
         "\nfn main(inputs: own Inputs) -> status: own ExitStatus pure {{\n  \
-         let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;\n  region {{\n    \
-         close_directory(factory: &uniq factory, directory: move cwd);\n  }}\n  \
-         let report = buffer_new({width}_u64, 0_u8);\n  region {{\n    \
-         let window = mut_slice_of(&uniq report);\n"
+         let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;\n  \
+         close_directory(factory: &factory, directory: move cwd);\n  \
+         let report = box_array_filled::<u8>(count: {width}_u64, value: 0_u8);\n  \
+         let window = &report.inner[0_u64..{width}_u64];\n"
     ));
     let mut at = "0_u64".to_owned();
     for (index, combine) in ADMITTED_COMBINES.iter().enumerate() {
         let name = combine.name;
         source.push_str(&format!(
-            "    let v{index} = value_{name}(after: {at});\n    \
-             let a{index} = 0_u64;\n    region {{\n      \
-             set a{index} = spell(destination: &uniq window, at: {at}, value: v{index});\n    \
-             }}\n"
+            "  let v{index} = value_{name}(after: {at});\n  \
+             let a{index} = spell(destination: window, at: {at}, value: v{index});\n"
         ));
         at = format!("a{index}");
     }
     source.push_str(&format!(
-        "  }}\n  region {{\n    let source = slice_of(&report);\n    region {{\n      \
-         match write_once(factory: &uniq factory, output: &uniq out, source: &source, start: 0_u64, \
-         end: {width}_u64) {{\n        Ok(value: next) => {{\n          \
-         return exit_status(code: 0_u8);\n        }}\n        Err(error: problem) => {{\n          \
-         return exit_status(code: 1_u8);\n        }}\n      }}\n    }}\n  }}\n}}\n"
+        "  match write_once(factory: &factory, output: &out, source: window, start: 0_u64, \
+         end: {width}_u64) {{\n    Ok(value: accepted) => {{\n      \
+         return exit_status(code: 0_u8);\n    }}\n    Err(error: problem) => {{\n      \
+         return exit_status(code: 1_u8);\n    }}\n  }}\n}}\n"
     ));
     source.into_bytes()
 }
@@ -1217,6 +1593,11 @@ fn admitted_combine_source() -> Vec<u8> {
 #[test]
 fn every_admitted_combine_splits_and_publishes_the_unsplit_bytes() {
     let source = admitted_combine_source();
+    // KEPT AS WRITTEN for the lowering port: the ledger row spellings
+    // (`PAR split`, `fold_NAME  loop at `, `split under OP over`) are the
+    // permission reporter's own text. The subject - every admitted combine
+    // reaches a real split - is unchanged; re-derive the strings if the
+    // reporter's wording moves.
     let ledger = super::compile_permission_ledger(&source);
     for combine in ADMITTED_COMBINES {
         let expected = format!("fold_{}  loop at ", combine.name);
@@ -1407,6 +1788,8 @@ __attribute__((constructor)) static void register_report(void) { atexit(report);
 /// report. Declining here converts that into a line naming the width.
 #[test]
 fn a_loop_whose_frame_is_too_wide_declines_and_says_so() {
+    // KEPT AS WRITTEN for the lowering port: `declined:` and `lane frame` are
+    // the permission reporter's own words for the capacity refusal.
     let ledger = super::compile_permission_ledger(WIDE_FRAME);
     let declined = ledger
         .iter()

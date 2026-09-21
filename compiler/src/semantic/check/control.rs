@@ -9,18 +9,17 @@ mod results;
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationClass, DeclarationId, DeclarationRole, LexicalUseRole, Production, ResolvedTarget,
-    SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticRule,
-    UnsupportedSemanticFeature,
+    DeclarationId, DeclarationRole, Production, SemanticCompilerFailure, SemanticIssue,
+    SemanticIssueKind, SemanticLocation, SemanticRule,
 };
 
 use super::super::model::{
-    BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode, CheckedProjectedDrop,
-    CheckedStatement, CheckedType, ValueInitializerKind,
+    BindingId, CheckedDrop, CheckedLoopId, CheckedMode, CheckedStatement, CheckedType,
+    ValueInitializerKind,
 };
-use super::borrows::ReborrowPosition;
-use super::expressions::MutationTarget;
+use super::references::{InvalidationEvent, REF3_RETURN_AN_INDEX, ReferenceInfo};
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
+use crate::semantic::places::PlaceRoot;
 pub(super) use commit::CommitReadOut;
 use loops::{BreakState, LoopContext};
 
@@ -50,6 +49,11 @@ pub(super) struct GiveContext {
     /// that first `give` is checked; still `None` afterwards exactly when
     /// the delivery set is empty.
     delivered: Cell<Option<(CheckedMode, CheckedType)>>,
+    /// [REF-1] the union of the path sets the delivering `give`s name, where
+    /// every delivering `give` of this initializer delivers a reference. The
+    /// binder is then itself a reference variable naming that union, and
+    /// every check on it must hold for every member of the set.
+    delivered_reference: std::cell::RefCell<Option<ReferenceInfo>>,
     preserved: HashSet<DeclarationId>,
     enclosing_loops: HashSet<CheckedLoopId>,
 }
@@ -58,6 +62,7 @@ impl GiveContext {
     pub(super) fn empty(preserved: &HashSet<DeclarationId>, scope: ControlScope<'_>) -> Self {
         Self {
             delivered: Cell::new(None),
+            delivered_reference: std::cell::RefCell::new(None),
             preserved: preserved.clone(),
             enclosing_loops: scope.loops.iter().map(|context| context.id).collect(),
         }
@@ -65,6 +70,54 @@ impl GiveContext {
 
     pub(super) fn delivered(&self) -> Option<(CheckedMode, CheckedType)> {
         self.delivered.get()
+    }
+
+    /// [REF-1] the reference the delivery set names, which is the union of
+    /// the incoming path sets.
+    pub(super) fn delivered_reference(&self) -> Option<ReferenceInfo> {
+        self.delivered_reference.borrow().clone()
+    }
+
+    /// [REF-1] one delivering `give` of a reference joins its path set into
+    /// the set the binder will name.
+    fn deliver_reference(&self, delivered: &ReferenceInfo) {
+        let mut current = self.delivered_reference.borrow_mut();
+        match current.as_mut() {
+            Some(existing) => existing.join(delivered),
+            None => *current = Some(delivered.clone()),
+        }
+    }
+
+    /// [REF-2] a delivered reference is stored separately from the ownership
+    /// state copied onto its `give` edge. Scope exit must invalidate both
+    /// representations before the value initializer publishes its binder.
+    fn invalidate_reference_roots_leaving_scope(&self, leaving: &[BindingId]) {
+        let mut delivered = self.delivered_reference.borrow_mut();
+        let Some(reference) = delivered.as_mut() else {
+            return;
+        };
+        if reference.paths.iter().any(|path| match path.root {
+            PlaceRoot::Binding(binding) => leaving.contains(&binding),
+            PlaceRoot::Constant(_) => false,
+        }) {
+            reference.invalidate(InvalidationEvent::RootScopeEnded);
+        }
+    }
+
+    /// [REF-2, ENT-3.S15] meet the delivered reference with the live
+    /// refinement witnesses on every delivery edge crossing one scope.
+    fn invalidate_reference_refinements(
+        &self,
+        states: &[HashMap<DeclarationId, LocalBinding>],
+        leaving: &[BindingId],
+    ) {
+        let mut delivered = self.delivered_reference.borrow_mut();
+        let Some(reference) = delivered.as_mut() else {
+            return;
+        };
+        for state in states {
+            Checker::invalidate_reference_without_refinement_witness(reference, state, leaving);
+        }
     }
 }
 
@@ -146,10 +199,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
-        let loan_base = self.statement_loans.borrow().len();
-        let result = self.check_statement_body(function, node, bindings, counters, scope);
-        self.statement_loans.borrow_mut().truncate(loan_base);
-        result
+        self.check_statement_body(function, node, bindings, counters, scope)
     }
 
     fn check_statement_body(
@@ -172,7 +222,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let value = self.check_call(function, call, bindings, scope.loops.len())?;
                 // A discarded borrow-mode result is a reference, never the
                 // owner of its referent: no drop or release may run for it
-                // [OWN-2, STOR-3]. Only an own-mode affine result is dropped.
+                // [REF-1, STOR-3]. Only an own-mode affine result is dropped.
                 let statement = if value.mode != CheckedMode::Own
                     || self.is_copy_type(value.expression.ty())?
                 {
@@ -205,25 +255,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .tree
                     .first_child_with(node, Production::Expr)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                // [REF-3] "a `return_stmt` whose selected expression is a
+                // reference is that violation": a `borrow_expr` [GRAM-5] is
+                // that expression whatever place it names, so the escape is
+                // settled from the written form before the place is
+                // resolved. Resolving it first would report whatever the
+                // named place happens to owe — an unproved subscript bound,
+                // a base [OP-4] does not admit — as though repairing that
+                // could make the return legal, when the restructuring
+                // [REF-3] names is to return an index instead.
+                if self.complete_borrow_expression(expression_node)?.is_some() {
+                    return self.issue_node(
+                        SemanticRule::Ref3,
+                        expression_node,
+                        SemanticIssueKind::EscapingReference {
+                            mechanical_fix: REF3_RETURN_AN_INDEX,
+                        },
+                    );
+                }
                 self.check_return_implicit_read(function, expression_node, bindings)?;
-                // A borrow_expr as the complete return expression is the sole
-                // non-argument position that admits a written reborrow form:
-                // the returned reborrow [OWN-14]. Control leaves the function
-                // before the creating statement ends, so the suspended holder
-                // never resumes and no point observes both usable [OWN-5].
-                let value = if let Some(borrow) =
-                    self.complete_borrow_expression(expression_node)?
-                {
-                    self.check_borrow(
-                        borrow,
-                        function,
-                        bindings,
-                        scope.loops.len(),
-                        ReborrowPosition::ReturnExpression,
-                    )?
-                } else {
-                    self.check_expression(function, expression_node, bindings, scope.loops.len())?
-                };
+                let value =
+                    self.check_expression(function, expression_node, bindings, scope.loops.len())?;
+                // [REF-3] a `return_stmt` whose selected expression is a
+                // reference is the escape violation itself, and [FN-1] forms
+                // no candidate there.
+                self.reject_escaping_reference(&value, expression_node)?;
                 if value.expression.ty() != function.result {
                     return Err(CheckStop::source_issue(SemanticIssue {
                         rule: SemanticRule::Fn1,
@@ -233,56 +289,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         ),
                         kind: SemanticIssueKind::ReturnMismatch,
                     }));
-                }
-                self.check_confined_destination(function, value.expression.ty(), None, node)?;
-                // [FN-1] owns the result mode; [OWN-4] owns the region
-                // relation between the returned borrow and the written
-                // `rtype` region, so the two are judged separately.
-                let modes_agree = matches!(
-                    (value.mode, function.result_mode),
-                    (CheckedMode::Own, CheckedMode::Own)
-                        | (CheckedMode::Shared(_), CheckedMode::Shared(_))
-                        | (CheckedMode::Unique(_), CheckedMode::Unique(_))
-                );
-                if !modes_agree {
-                    if value.mode != CheckedMode::Own && function.result_mode == CheckedMode::Own {
-                        return self.issue_node(
-                            SemanticRule::Type7,
-                            expression_node,
-                            SemanticIssueKind::MissingDereference {
-                                mechanical_fix: "write `deref(holder)`",
-                            },
-                        );
-                    }
-                    return self.issue_node(
-                        SemanticRule::Fn1,
-                        node,
-                        SemanticIssueKind::ReturnMismatch,
-                    );
-                }
-                self.borrow_for_destination(function.result_mode, &value, expression_node)?;
-                if matches!(function.result, CheckedType::Slice { .. }) {
-                    let origins = value
-                        .slice
-                        .as_ref()
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    if !origins.origins.iter().all(|origin| {
-                        function
-                            .slice_return_ceiling
-                            .iter()
-                            .any(|ceiling| origin.within_ceiling(ceiling))
-                    }) {
-                        return Err(CheckStop::source_issue(SemanticIssue {
-                            rule: SemanticRule::Fn1,
-                            location: SemanticLocation::SourceNode(
-                                self.tree.path(node)?.clone(),
-                                self.tree.coordinate(expression_node)?,
-                            ),
-                            kind: SemanticIssueKind::InvalidSliceReturnOrigin {
-                                mechanical_fix: "accept an exact direct input slice in the result region or keep the newly formed view in its caller; do not return a view of raw callee storage",
-                            },
-                        }));
-                    }
                 }
                 Ok(StatementResult {
                     statement: CheckedStatement::Return {
@@ -353,6 +359,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // set: the first delivering `give` produces the binding's
                 // exact mode and type, and every later one must match them.
                 let delivered = (value.mode, value.expression.ty());
+                // [REF-1, GIVE-1] when every delivering `give` delivers a
+                // reference, the agreement above is agreement of reference
+                // kind and the binder's path set is the union over the
+                // delivery set.
+                if let Some(reference) = &value.reference {
+                    context.deliver_reference(reference);
+                }
                 match context.delivered.get() {
                     None => context.delivered.set(Some(delivered)),
                     Some(earlier) if earlier == delivered => {}
@@ -381,7 +394,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     break_states: Vec::new(),
                 })
             }
-            // [GRAM-4, SET-1, LIV-2] every written `set` is one commit: the
+            // [GRAM-4, SET-1] every written `set` is one commit: the
             // targets are resolved and judged first, then the whole
             // right-hand side, then the three admission conditions.
             Production::SetStmt => self.check_commit(function, node, bindings, counters, scope),
@@ -390,78 +403,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.check_counted_range(function, node, bindings, counters, scope)
             }
             Production::BreakStmt => self.check_break(node, bindings, scope),
-            // [PROV-6, GRAM-4] `dispose p;` runs at this point exactly the
-            // release walk the scope exit would have run for `p`.
-            Production::DisposeStmt => self.check_dispose(function, node, bindings, scope),
-            Production::RegionStmt => self.check_region(function, node, bindings, counters, scope),
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
-    }
-
-    /// [PROV-6, GRAM-4] `dispose p;`.
-    ///
-    /// The admission is judged over `p`'s release graph before the operand's
-    /// own ownership consume, so a value the walk could never reclaim is
-    /// refused at the statement rather than after it has killed a binding.
-    fn check_dispose(
-        &self,
-        function: &FunctionSignature,
-        node: NodeId,
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        scope: ControlScope<'_>,
-    ) -> Result<StatementResult, CheckStop> {
-        let place = self
-            .tree
-            .first_child_with(node, Production::Place)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        // The statement is one consuming use of `p`'s root [OWN-1], and every
-        // ownership rejection here — a shared-borrow root, a dead root, a live
-        // loan, a partial consume of a linear value — is that judgment's,
-        // asked first because [OWN-1] is defined before [PROV-6] [DIAG-1].
-        let value =
-            self.check_consumed_place(function, node, place, bindings, scope.loops.len(), false)?;
-        if value.mode != CheckedMode::Own {
-            return self.issue_node(
-                SemanticRule::Own1,
-                node,
-                SemanticIssueKind::BareAffineUse {
-                    mechanical_fix: "dispose an own-mode value; a borrow owns nothing to release",
-                },
-            );
-        }
-        let ty = value.expression.ty();
-        let release = self.dispose_admission(function, ty, node)?;
-        let paths = self.drop_paths(ty, Vec::new())?;
-        // [PROV-6, EFF-2] the statement writes `p`'s ultimate storage origin
-        // exactly as a commit writes its target's, and the walk
-        // contributes its ordinary required-provider writes.
-        let mut effects = value.effects;
-        for access in &value.accesses {
-            for path in self.effect_paths_for_place(node, &access.place, bindings)? {
-                effects.add_write(path);
-            }
-        }
-        // [PROV-6] the statement spends each resolved store's provider, so
-        // its row carries a write of that provider place.
-        for path in self.resolved_provider_writes_for(function, ty, release)? {
-            effects.add_write(path);
-        }
-        let mut drops = Vec::new();
-        for (fields, ty) in paths {
-            drops.push(CheckedProjectedDrop {
-                fields,
-                ty,
-                release,
-            });
-        }
-        Ok(Self::continuing_statement(
-            CheckedStatement::Dispose {
-                node_path: self.tree.path(node)?.clone(),
-                value: value.expression,
-                drops,
-            },
-            effects,
-        ))
     }
 
     fn check_let(
@@ -543,30 +486,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some((mode, expected)) = matched.delivered else {
                 return self.issue_node(SemanticRule::Give1, node, SemanticIssueKind::InvalidGive);
             };
-            if mode != CheckedMode::Own {
-                return self
-                    .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, initializer);
-            }
-            // [STOR-4] the delivered value lands in this binding, so a
-            // delivered arena value whose region block does not enclose the
-            // binding has been moved to a destination outside its region.
-            if let Some((region, _)) = self.arena_instance(expected)?
-                && !self.declaration_is_within_region_block(declaration_id, region)?
-            {
-                return self.issue_node(
-                    SemanticRule::Stor4,
-                    initializer,
-                    SemanticIssueKind::ArenaEscape {
-                        mechanical_fix: super::ARENA_ESCAPE_RESTRUCTURING,
-                    },
-                );
-            }
-            // [OWN-5]'s slice-valued-delivery prohibition used to be judged
-            // here, one step too late: the branch-state join runs inside the
-            // checkers above and stopped with a capability limit before this
-            // rejection could be reached. It now lives at the delivery site,
-            // in `reject_slice_valued_delivery`, so the rule has one home and
-            // no capability stop stands in front of it.
+            let result_range_element = if mode == CheckedMode::Range {
+                Some(self.intern_element(expected)?)
+            } else {
+                None
+            };
+            // [REF-1] a binder every arm of which delivers a reference is
+            // itself a reference variable, naming the union of the path sets
+            // its delivering arms name, rather than taking a type [TYPE-5].
+            let reference = if mode.is_reference() {
+                Some(
+                    matched
+                        .delivered_reference
+                        .clone()
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                )
+            } else {
+                None
+            };
             if matched.can_continue
                 && bindings
                     .insert(
@@ -579,10 +516,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             live: true,
                             loop_depth: scope.loops.len(),
                             compiler_updated: false,
-                            borrow: None,
-                            slice: None,
-                            slice_loans: Vec::new(),
-                            suspended: false,
+                            reference,
+                            refinement_witnesses: Vec::new(),
                         },
                     )
                     .is_some()
@@ -599,6 +534,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                     binding,
                     result_type: expected,
+                    result_mode: mode,
+                    result_range_element,
                     scrutinee: matched.scrutinee,
                     enum_type: matched.enum_type,
                     arms: matched.arms,
@@ -626,20 +563,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 scope,
             );
         }
-        if let Some(replace) = self
-            .tree
-            .first_child_with(node, Production::ReplaceLetRhs)?
-        {
-            return self.check_replace_let(
-                function,
-                node,
-                replace,
-                declaration_id,
-                binding,
-                bindings,
-                scope,
-            );
-        }
         let expression_owner = if self.tree.production(node)? == Production::ContractDefine {
             node
         } else {
@@ -657,41 +580,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.check_expression(function, expression_node, bindings, scope.loops.len())?;
         let mode = value.mode;
         let expected = value.expression.ty();
-        if matches!(mode, CheckedMode::Unique(_)) && value.holder.is_some() {
-            return self.unsupported(
-                UnsupportedSemanticFeature::RegionsAndBorrows,
-                expression_node,
-            );
+        // [REF-1] a binder whose initializer is a `borrow_expr`, and a binder
+        // that reads a reference variable, is itself a reference variable
+        // naming the same path — an alias, not a copy of the referent. The
+        // binder takes that reference kind rather than a type [TYPE-5].
+        let reference = value.reference.clone();
+        if mode.is_reference() && reference.is_none() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        // Binding a borrow-mode call result requires the callee signature to
-        // determine its one provenance-candidate parameter. [FN-1] rejects
-        // every boundary whose borrow result has no signature-determined
-        // source at its own `rtype`, so a bound result is either usable or
-        // its declaration is already gone — bindable iff usable. What
-        // reaches here is the const-storage disposition, whose validity needs a
-        // const-rooted holder the checker does not represent: an explicit
-        // capability stop, never an invalid-source verdict [OWN-6, OWN-8].
-        if mode != CheckedMode::Own
-            && value.borrow.is_none()
-            && matches!(value.expression, CheckedExpression::UserCall { .. })
-        {
-            return self.unsupported(
-                UnsupportedSemanticFeature::RegionsAndBorrows,
-                expression_node,
-            );
-        }
-        if !self.borrow_holder_scope_supported(declaration_id, mode)? {
-            return self.unsupported(
-                UnsupportedSemanticFeature::RegionsAndBorrows,
-                expression_node,
-            );
-        }
-        let borrow = self.borrow_for_destination(mode, &value, node)?;
-        // [PROV-3] a loan's extent is its holding value's own liveness, and
-        // this `let` is where that value becomes a binding with uses. Every
-        // exact claim carried by this value — formed here, copied, passed
-        // through a call, or returned — gains this binding as a holder.
-        Self::hold_slice_loans_of(declaration_id, value.slice.as_ref(), bindings);
         if bindings
             .insert(
                 declaration_id,
@@ -703,10 +599,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     live: true,
                     loop_depth: scope.loops.len(),
                     compiler_updated: false,
-                    borrow,
-                    slice: value.slice,
-                    slice_loans: Vec::new(),
-                    suspended: false,
+                    reference,
+                    refinement_witnesses: Vec::new(),
                 },
             )
             .is_some()
@@ -721,282 +615,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             value.effects,
         ))
-    }
-
-    /// [SET-2] `let x = replace p = e;`: SET-1's target order with the
-    /// affine class judgment, then the fresh old-value binding.
-    #[allow(clippy::too_many_arguments)]
-    fn check_replace_let(
-        &self,
-        function: &FunctionSignature,
-        node: NodeId,
-        replace: NodeId,
-        declaration_id: DeclarationId,
-        binding: crate::BindingId,
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        scope: ControlScope<'_>,
-    ) -> Result<StatementResult, CheckStop> {
-        let target_node = self
-            .tree
-            .first_child_with(replace, Production::Place)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let expression_node = self
-            .tree
-            .first_child_with(replace, Production::Expr)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-
-        // [SET-2] fixes SET-1's order: form and check the target first
-        // (its affine, region-free class judged inside), then evaluate the
-        // right-hand side, then re-establish target-root liveness.
-        let MutationTarget {
-            declaration: target_declaration,
-            target,
-            effects: target_effects,
-            unsupported: target_unsupported,
-            access,
-            ..
-        } = self.check_replace_target(function, target_node, bindings, scope.loops.len())?;
-        let value =
-            self.check_expression(function, expression_node, bindings, scope.loops.len())?;
-        // [TYPE-5]: the right-hand side must produce exactly `own T`.
-        if value.expression.ty() != target.ty() || value.mode != CheckedMode::Own {
-            return self.issue_node(
-                SemanticRule::Type5,
-                expression_node,
-                SemanticIssueKind::type_mismatch(
-                    format!("own {}", self.checked_type_name(target.ty())?),
-                    self.checked_value_name(value.mode, value.expression.ty())?,
-                ),
-            );
-        }
-        if !bindings
-            .get(&target_declaration)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?
-            .live
-        {
-            return self.issue_node(
-                SemanticRule::Own1,
-                target_node,
-                SemanticIssueKind::UseAfterMove {
-                    mechanical_fix: "introduce a new `let` binding before reuse",
-                },
-            );
-        }
-        self.revalidate_mutation_access(&access, bindings, target_node)?;
-        // Every source rejection of this statement is judged above; a target
-        // this compiler cannot lower stops here and nowhere earlier [DIAG-1].
-        if let Some(feature) = target_unsupported {
-            return self.unsupported(feature, target_node);
-        }
-        // The moved-out value's sole owner is the fresh ordinary binding;
-        // the target root stays live [SET-2, OWN-1].
-        if bindings
-            .insert(
-                declaration_id,
-                LocalBinding {
-                    binding,
-                    declaration: declaration_id,
-                    mode: CheckedMode::Own,
-                    ty: target.ty(),
-                    live: true,
-                    loop_depth: scope.loops.len(),
-                    compiler_updated: false,
-                    borrow: None,
-                    slice: None,
-                    slice_loans: Vec::new(),
-                    suspended: false,
-                },
-            )
-            .is_some()
-        {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
-        }
-        Ok(Self::continuing_statement(
-            CheckedStatement::Replace {
-                node_path: self.tree.path(node)?.clone(),
-                binding,
-                target,
-                value: value.expression,
-            },
-            value.effects.union(target_effects),
-        ))
-    }
-
-    fn check_region(
-        &self,
-        function: &FunctionSignature,
-        node: NodeId,
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        counters: &mut ControlCounters<'_>,
-        scope: ControlScope<'_>,
-    ) -> Result<StatementResult, CheckStop> {
-        let declaration = self.declaration_at(node, DeclarationRole::LocalRegion)?;
-        let region = declaration.id();
-        // [FORM-8] a loop body is itself a region block [OWN-11], so a block
-        // that is the body's only statement has exactly the body's own block
-        // and is a second spelling of its region. The exception is a block
-        // some `targ` inside it must write the name at, because an implicit
-        // region has no name to put there.
-        if self.region_block_is_the_loop_body(node)?
-            && !(self.writes_region(node)?
-                && self.region_is_type_argument_below(node, declaration.spelling())?)
-        {
-            return self.issue_node(
-                SemanticRule::Form8,
-                node,
-                SemanticIssueKind::RegionSpelling {
-                    mechanical_fix: "the loop body is its own region; remove the region block, \
-keep its statements where they stand, and drop every region name it carried",
-                },
-            );
-        }
-        // [FORM-8] the block writes its name exactly when its body still
-        // references it after elision.
-        if self.writes_region(node)?
-            && !self.region_is_referenced_below(node, declaration.spelling())?
-        {
-            return self.issue_node(
-                SemanticRule::Form8,
-                node,
-                SemanticIssueKind::RegionSpelling {
-                    mechanical_fix: "drop the region name: nothing inside this block names it, \
-so the block is written `region { ... }`",
-                },
-            );
-        }
-        let base_keys = bindings.keys().copied().collect::<HashSet<_>>();
-        // A region block with arena allocations carries the compiler-owned
-        // allocation list [STOR-3]: an ordinary hidden own binding keyed by
-        // the region declaration, so `arena_new` sites find it by region and
-        // every existing exit-edge drop derivation releases it exactly once
-        // per normal edge leaving the block, after the block's own bindings.
-        let arena_list = if self.region_allocates_arenas(node, region)? {
-            let storage = self.arena_storage_nominal_or_defer()?;
-            let list = Self::allocate_binding(counters.next_binding)?;
-            counters
-                .binding_names
-                .push(format!("<arena {}>", declaration.spelling()));
-            if bindings
-                .insert(
-                    region,
-                    LocalBinding {
-                        binding: list,
-                        declaration: region,
-                        mode: CheckedMode::Own,
-                        ty: CheckedType::Nominal(storage),
-                        live: true,
-                        loop_depth: scope.loops.len(),
-                        compiler_updated: false,
-                        borrow: None,
-                        slice: None,
-                        slice_loans: Vec::new(),
-                        suspended: false,
-                    },
-                )
-                .is_some()
-            {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-            Some(list)
-        } else {
-            None
-        };
-        let statements = self.tree.children_with(node, Production::Stmt)?;
-        let mut checked = self.check_block(function, &statements, bindings, counters, scope)?;
-        let fallthrough_drops = if checked.can_continue {
-            self.live_affine_drops(bindings, &base_keys, node)?
-        } else {
-            Vec::new()
-        };
-        if checked.can_continue {
-            bindings.retain(|declaration, _| base_keys.contains(declaration));
-        }
-        for local in bindings.values_mut() {
-            local.end_slice_region(region);
-        }
-        for state in &mut checked.give_states {
-            state.retain(|declaration, _| base_keys.contains(declaration));
-            for local in state.values_mut() {
-                local.end_slice_region(region);
-            }
-        }
-        for state in &mut checked.break_states {
-            state.retain_bindings(&base_keys);
-            state.end_slice_region(region);
-        }
-        Ok(StatementResult {
-            statement: CheckedStatement::Region {
-                arena_list,
-                body: checked.statements,
-                fallthrough_drops,
-            },
-            can_continue: checked.can_continue,
-            effects: checked.effects,
-            all_paths_deliver: checked.all_paths_deliver,
-            direct_give: false,
-            give_states: checked.give_states,
-            break_states: checked.break_states,
-        })
-    }
-
-    /// Whether any `call` in this region block resolves to the `arena_new`
-    /// operation naming this region [STOR-2]. The judgment reads resolved
-    /// operation identity and the resolved region argument — never a source
-    /// spelling — so shadowing cannot select it, and an inner region's
-    /// allocations register on the inner region's own list.
-    fn region_allocates_arenas(
-        &self,
-        node: NodeId,
-        region: DeclarationId,
-    ) -> Result<bool, CheckStop> {
-        for call in self.tree.descendants_with(node, Production::Call)? {
-            let Some(callee) = self.tree.first_child_with(call, Production::Callee)? else {
-                continue;
-            };
-            if self
-                .tree
-                .first_child_with(callee, Production::PackUse)?
-                .is_some()
-            {
-                continue;
-            }
-            let usage = self.use_at_roles(
-                callee,
-                &[
-                    LexicalUseRole::IdentifierCallee,
-                    LexicalUseRole::OperationCallee,
-                ],
-            )?;
-            let ResolvedTarget::Operation(operation) = usage.target() else {
-                continue;
-            };
-            if crate::operation_family_spelling(operation) != Some("arena_new") {
-                continue;
-            }
-            let Some(targs) = self.tree.argument_list(call)? else {
-                continue;
-            };
-            let Some(first) = self
-                .tree
-                .children_with(targs, Production::Targ)?
-                .first()
-                .copied()
-            else {
-                continue;
-            };
-            let Ok(region_use) = self.use_at(first, LexicalUseRole::TypeArgumentRegion) else {
-                continue;
-            };
-            if region_use.target()
-                == (ResolvedTarget::Source {
-                    declaration: region,
-                    class: DeclarationClass::Region,
-                })
-            {
-                return Ok(true);
-            }
-        }
-        Ok(false)
     }
 
     /// The compiler-derived releases one edge leaving a scope carries

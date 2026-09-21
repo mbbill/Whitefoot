@@ -1,7 +1,10 @@
-fn use3['r](a: own i32, b: &'r i32, c: &uniq 'r i32) -> return_value: own i32 reads(b) {
-  doc "GRAM-3: the three modes own / &'r / &uniq 'r written on i32 params.";
+fn use3(a: own i32, b: &i32, part: &[i32]) -> return_value: own i32 reads(b), reads(part) contract {
+  requires 0_u64 < deref(part).len;
+} {
+  doc "GRAM-3: the two modes `own` and `&` written on i32 parameters, beside the parameter-only range-reference kind `&[i32]` [GRAM-2, REF-4]. There is no third mode and no qualifier on the reference; write authority is the row's [EFF-1].";
+  let first = deref(part)[0_u64];
   let x = a +wrap deref(b);
-  return x;
+  return x +wrap first;
 }
 
 fn main() -> return_value: own ExitStatus pure {

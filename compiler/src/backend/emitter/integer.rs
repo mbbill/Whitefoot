@@ -77,9 +77,27 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     ),
                     _ => return Err(BackendFailure::InvalidIr),
                 };
+                // The `exact` family is the one whose [OP-2] domain
+                // obligation the checker discharged before lowering, so its
+                // result is in range by a proof the emitted module may state
+                // (compiler/backend-facts). The `wrap` family is defined at
+                // every operand and carries no such flag.
+                let domain = match operation {
+                    IrIntegerOperation::AddExact
+                    | IrIntegerOperation::SubtractExact
+                    | IrIntegerOperation::MultiplyExact
+                    | IrIntegerOperation::NegateExact => {
+                        if signed {
+                            " nsw"
+                        } else {
+                            " nuw"
+                        }
+                    }
+                    _ => "",
+                };
                 writeln!(
                     self.output,
-                    "  {} = {opcode} {ty} {left}, {right}",
+                    "  {} = {opcode}{domain} {ty} {left}, {right}",
                     self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;

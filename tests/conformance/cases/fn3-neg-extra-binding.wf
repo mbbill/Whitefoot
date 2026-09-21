@@ -1,8 +1,8 @@
-formal Single {
+interface Single {
   fn value() -> result: own i32 pure;
 }
 
-actual First : Single {
+binding First : Single {
   value = make_value;
   extra = make_extra;
 }

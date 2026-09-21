@@ -6,8 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef void (*bfs_entry)(const uint64_t *, uint64_t, uint64_t, uint64_t **, uint64_t *);
-typedef void (*bfs_release)(uint64_t *, uint64_t);
+typedef void (*bfs_entry)(const uint64_t *, uint64_t, uint64_t, uint64_t **, uint64_t *, void **);
+/* The owned result is a Box<Array<T>> cell; the adapter hands that cell back
+ * as the retained handle and the release row consumes exactly it. */
+typedef void (*bfs_release)(void *);
 static void fail(const char *message) {
     (void)fprintf(stderr, "bfs: %s\n", message); exit(2);
 }
@@ -78,11 +80,12 @@ static size_t matrix(bfs_entry entry, bfs_release release) {
             uint64_t *expected = oracle(edges, n, NULL);
             for (unsigned pull = 0; pull < 2; ++pull) {
                 uint64_t *result = NULL, length = UINT64_MAX;
-                entry(edges, 4 * n, pull, &result, &length);
+                void *held = NULL;
+                entry(edges, 4 * n, pull, &result, &length, &held);
                 if (length != n) fail("output length");
                 checked += compare(result, expected, n);
                 checked += compare(edges, original, 4 * n);
-                release(result, length);
+                release(held);
             }
             free(expected); free(original); free(edges);
         }
@@ -91,8 +94,8 @@ static size_t matrix(bfs_entry entry, bfs_release release) {
 }
 
 #ifndef WF_ORACLE_NO_MAIN
-extern void wf_bench_bfs(const uint64_t *, uint64_t, uint64_t, uint64_t **, uint64_t *);
-extern void wf_bench_bfs_release(uint64_t *, uint64_t);
+extern void wf_bench_bfs(const uint64_t *, uint64_t, uint64_t, uint64_t **, uint64_t *, void **);
+extern void wf_bench_bfs_release(void *);
 extern int wf__floor_run(int, char **);
 #ifdef WFB_ORACLE_PARALLEL
 extern int wf__par_pool_active(void);

@@ -1,26 +1,24 @@
 struct Record {
-  bytes: array<u8, 4096>;
+  bytes: Array<u8, 4096>;
 }
 
 fn make_record(seed: own u8) -> result: own Result<Record, u8> pure {
   if seed == 0_u8 {
     return Err<Record, u8>(error: 7_u8);
   }
-  let bytes = array_new::<u8, 4096>(seed);
-  let record = Record(bytes: move bytes);
-  return Ok<Record, u8>(value: move record);
+  let bytes = array_filled::<u8, 4096>(value: seed);
+  let record = Record(bytes: bytes);
+  return Ok<Record, u8>(value: record);
 }
 
-fn build_record(seed: own u8) -> result: own FixedVector<Record, 2> pure {
-  let rows = fixed_vector::<Record, 2>();
+fn build_record(seed: own u8) -> result: own Slots<Record, 2> pure {
+  let rows = slots_new::<Record, 2>();
   match make_record(seed: seed) {
     Err(error: code) => {
       return move rows;
     }
     Ok(value: item) => {
-      region {
-        place_back(vector: &uniq rows, value: move item);
-      }
+      place_back(window: &rows, value: item);
       let built = move rows;
       return move built;
     }
@@ -29,28 +27,24 @@ fn build_record(seed: own u8) -> result: own FixedVector<Record, 2> pure {
 
 fn main() -> status: own ExitStatus pure {
   let built = build_record(seed: 9_u8);
-  let count = len_of(built);
+  let count = built.len;
   if count == 1_u64 {
-    region {
-      let record = take_front(vector: &uniq built);
-      let rest = move built;
-      region {
-        let bytes = slice_of(&record.bytes);
-        for (at in 0_u64..4096_u64) {
-          let byte = bytes[at];
-          if byte == 9_u8 {
-          } else {
-            return exit_status(code: 1_u8);
-          }
-        }
+    let record = take_back(window: &built);
+    let rest = move built;
+    let bytes = &record.bytes[0_u64..4096_u64];
+    for (at in 0_u64..4096_u64) {
+      let byte = deref(bytes)[at];
+      if byte == 9_u8 {
+      } else {
+        return exit_status(code: 1_u8);
       }
-      let failed = build_record(seed: 0_u8);
-      let remaining = len_of(failed);
-      if remaining == 0_u64 {
-        return exit_status(code: 0_u8);
-      }
-      return exit_status(code: 1_u8);
     }
+    let failed = build_record(seed: 0_u8);
+    let remaining = failed.len;
+    if remaining == 0_u64 {
+      return exit_status(code: 0_u8);
+    }
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 1_u8);
 }

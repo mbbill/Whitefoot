@@ -1,4 +1,4 @@
-formal CheckedMember {
+interface CheckedMember {
   fn apply(x: own i32) -> result: own i32 pure;
 }
 
@@ -9,7 +9,7 @@ fn checked_apply(x: own i32) -> result: own i32 pure contract {
   return x;
 }
 
-actual First : CheckedMember {
+binding First : CheckedMember {
   apply = checked_apply;
 }
 

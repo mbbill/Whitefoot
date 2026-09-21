@@ -1,29 +1,17 @@
-fn hold(taken: own FixedVector<u8, 4>) -> kept: own FixedVector<u8, 4> pure contract {
-  ensures len_of(kept) >= 1_u64;
+fn hold(taken: own Slots<u8, 4>) -> kept: own Slots<u8, 4> pure contract {
+  ensures kept.len >= 1_u64;
 } {
-  doc "A measure of a result is an admitted operand, and this one is unprovable: the parameter arrives with no known length, so the relation it publishes has no premise.";
+  doc "A measure of a result is an admitted operand, and this one is unprovable: the parameter arrives with no known length, so the relation it publishes has no premise at the selected return.";
   return move taken;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "CALL-4: a measured result and a measure over its bare result place are admitted operands, so the refusal is the ordinary FN-9 proof at the selected return rather than the admission or the grammar.";
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: 0_u8);
-  }
-  let two = move one;
-  region {
-    place_back(vector: &uniq two, value: 0_u8);
-  }
-  let three = move two;
-  region {
-    place_back(vector: &uniq three, value: 0_u8);
-  }
-  let run = move three;
+  doc "An ensures names a measure of a result of measured type. MSR-5 makes the clause parse and CALL-4 admits both the measured result and the measure over its bare result place, so what refuses the declaration is the ordinary FN-9 proof. This pins that the refusal is a proof and no longer an admission or a grammar rejection.";
+  let run = slots_new::<u8, 4>();
+  place_back(window: &run, value: 0_u8);
+  place_back(window: &run, value: 0_u8);
+  place_back(window: &run, value: 0_u8);
+  place_back(window: &run, value: 0_u8);
   let kept = hold(taken: move run);
   return exit_status(code: 0_u8);
 }

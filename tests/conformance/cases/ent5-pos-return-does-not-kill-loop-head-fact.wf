@@ -1,12 +1,12 @@
-fn get(b: own Slice<u8>, stop: own Bool, done: own Bool) -> result: own u8 reads(b) {
-  doc "An ordinary branch establishes the zero offset's bound before the loop. A return edge inside the loop cannot reach a later iteration front, so its scope-exit kills do not remove that real pre-loop fact [ENT-5, OP-4].";
-  let spare = len_of(b);
+fn get(b: &[u8], stop: own Bool, done: own Bool) -> result: own u8 reads(b) {
+  doc "An ordinary branch establishes the zero offset's bound before the loop. A return edge inside the loop cannot reach a later iteration head, so its scope-exit kills do not remove that real pre-loop fact [ENT-5], and the head subscript discharges [OP-4].";
+  let spare = deref(b).len;
   let offset = 0_u64;
   let inside = offset < spare;
   if inside {
     let sample = 0_u8;
     loop @walk {
-      set sample = b[offset];
+      set sample = deref(b)[offset];
       if stop {
         return sample;
       }
@@ -21,5 +21,6 @@ fn get(b: own Slice<u8>, stop: own Bool, done: own Bool) -> result: own u8 reads
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "No construction is needed to exercise the loop head state.";
   return exit_status(code: 0_u8);
 }

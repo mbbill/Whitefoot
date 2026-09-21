@@ -7,8 +7,10 @@
 #include <string.h>
 
 enum { BLOCK = 256 };
-typedef void (*scatter_entry)(const uint64_t *, uint64_t, uint32_t, uint64_t **, uint64_t *);
-typedef void (*scatter_release)(uint64_t *, uint64_t);
+typedef void (*scatter_entry)(const uint64_t *, uint64_t, uint32_t, uint64_t **, uint64_t *, void **);
+/* The owned result is a Box<Array<T>> cell; the adapter hands that cell back
+ * as the retained handle and the release row consumes exactly it. */
+typedef void (*scatter_release)(void *);
 
 static _Noreturn void fail(const char *message) {
     (void)fprintf(stderr, "radix_scatter: %s\n", message);
@@ -57,12 +59,13 @@ static size_t verify_case(scatter_entry entry, scatter_release release, size_t c
     uint64_t *input = allocate(count, sizeof(*input));
     fill(input, count, shape, bit);
     uint64_t *expected = oracle(input, count, bit), *actual = NULL, length = UINT64_MAX;
-    entry(input, count, bit, &actual, &length);
+    void *held = NULL;
+    entry(input, count, bit, &actual, &length, &held);
     if (length != count) fail("output length");
     size_t checked = compare(actual, expected, count);
     for (size_t i = 0; i < count; ++i)
         if (input[i] != key_at(i, shape, bit)) fail("input modified");
-    release(actual, length);
+    release(held);
     free(input);
     free(expected);
     ++configurations;
@@ -87,8 +90,8 @@ static size_t matrix(scatter_entry entry, scatter_release release) {
 }
 
 #ifndef WF_ORACLE_NO_MAIN
-extern void wf_bench_radix_scatter(const uint64_t *, uint64_t, uint32_t, uint64_t **, uint64_t *);
-extern void wf_bench_radix_scatter_release(uint64_t *, uint64_t);
+extern void wf_bench_radix_scatter(const uint64_t *, uint64_t, uint32_t, uint64_t **, uint64_t *, void **);
+extern void wf_bench_radix_scatter_release(void *);
 extern int wf__floor_run(int, char **);
 #ifdef WFB_ORACLE_PARALLEL
 #include <stdatomic.h>

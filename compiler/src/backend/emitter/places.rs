@@ -74,7 +74,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } if !self.overlap_handed_out.contains(&result) => {
                 self.emit_call(result, ty, *function, arguments)?;
             }
-            IrOperation::FixedVector => self.emit_fixed_vector(result, ty)?,
+            IrOperation::Window => self.emit_fixed_vector(result, ty)?,
             IrOperation::ArrayFill {
                 value,
                 target_domain,
@@ -90,9 +90,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             }
             IrOperation::FullArrayConversion { value } => {
                 self.emit_full_array_conversion(result, ty, *value)?;
-            }
-            IrOperation::SliceFromArray { array } => {
-                self.emit_slice_from_array(result, ty, *array)?
             }
             IrOperation::RunIndex {
                 run,
@@ -334,7 +331,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         result: IrValueId,
         ty: IrType,
         address: IrValueId,
-        projection: &crate::IrPlaceProjection,
+        projection: &crate::IrPlaceStep,
     ) -> Result<(), BackendFailure> {
         let Some(IrType::Address(base)) = self.value_type(address) else {
             return Err(BackendFailure::InvalidIr);
@@ -343,7 +340,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         };
         let pointer = match projection {
-            crate::IrPlaceProjection::Field { nominal, field } => {
+            crate::IrPlaceStep::Field { nominal, field } => {
                 let IrNominalKind::Struct { fields } = self.nominal(*nominal)?.kind() else {
                     return Err(BackendFailure::InvalidIr);
                 };
@@ -354,7 +351,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 }
                 self.aggregate_field_pointer(base.ty(), &self.value_name(address), *field as usize)?
             }
-            crate::IrPlaceProjection::BoxReferent { nominal } => {
+            crate::IrPlaceStep::BoxReferent { nominal } => {
                 let IrNominalKind::Box {
                     referent: boxed, ..
                 } = self.nominal(*nominal)?.kind()
@@ -373,7 +370,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 .map_err(|_| BackendFailure::TextEmission)?;
                 format!("%{pointer}")
             }
-            crate::IrPlaceProjection::EnumVariant {
+            crate::IrPlaceStep::EnumVariant {
                 nominal,
                 variant,
                 field,
@@ -397,11 +394,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let index = variant_field_base(variants, *variant)? + *field as usize;
                 self.aggregate_field_pointer(base.ty(), &self.value_name(address), index)?
             }
-            crate::IrPlaceProjection::RunElement {
+            crate::IrPlaceStep::RunElement {
                 offset,
                 target_domain,
             } => self.run_element_place(address, *offset, referent.ty(), *target_domain)?,
-            crate::IrPlaceProjection::ArrayElement {
+            crate::IrPlaceStep::ArrayElement {
                 offset,
                 target_domain,
             } => {
@@ -525,7 +522,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         destination: &str,
     ) -> Result<(), BackendFailure> {
         let ty = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
-        if self.storage.slot(value).is_some() {
+        if is_stored_aggregate(self.program, ty)? {
             let source = self.value_place(value)?;
             return self.copy_storage(ty, &source, destination);
         }

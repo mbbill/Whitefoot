@@ -49,7 +49,6 @@ pub(super) fn classify_roles(
         let is_name = [
             TerminalPredicate::Identifier,
             TerminalPredicate::TypeIdentifier,
-            TerminalPredicate::RegionIdentifier,
             TerminalPredicate::Label,
             TerminalPredicate::OperationName,
         ]
@@ -191,11 +190,11 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::FormalDecl => add_single(
+        Production::InterfaceDecl => add_single(
             classified,
             owner,
             &names,
-            RawRoleKind::Declaration(DeclarationRole::Formal),
+            RawRoleKind::Declaration(DeclarationRole::Interface),
             roles,
             complete_counts,
         )?,
@@ -251,17 +250,6 @@ fn classify_node(
                 _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
             }
         }
-        // [PROV-6] one `region_param` owns one REGIONID and, when written,
-        // its linearity bound; the bound is a fixed atom and satisfies no
-        // name predicate, so the name list here is still exactly the region.
-        Production::RegionParam => add_all(
-            classified,
-            owner,
-            &names,
-            RawRoleKind::Declaration(DeclarationRole::RegionParameter),
-            roles,
-            complete_counts,
-        )?,
         Production::Param => add_single(
             classified,
             owner,
@@ -350,7 +338,7 @@ fn classify_node(
         }
         // [GRAM-4] a `let` writes one binder or a parenthesized list of two or
         // more, and every binder of either form is one ordinary `let`
-        // declaration in the statement's own scope [S16, CALL-4].
+        // declaration in the statement's own scope [TYPE-6, CALL-4].
         Production::LetStmt => add_all(
             classified,
             owner,
@@ -375,65 +363,20 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::LoopStmt | Production::ForStmt => {
-            match names.as_slice() {
-                [] => {}
-                [label] if name_predicate(classified, *label) == Some(TerminalPredicate::Label) => {
-                    add_complete(
-                        classified,
-                        owner,
-                        *label,
-                        RawRoleKind::Declaration(DeclarationRole::LoopLabel),
-                        roles,
-                        complete_counts,
-                    )?;
-                }
-                _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
-            }
-            // [OWN-11] every loop body is a region block. The body's own
-            // region is unnamed and no position can write it [FORM-8], so its
-            // declaration is minted at the `loop` or `for` token under a
-            // spelling no source token can form, exactly as an unnamed
-            // `region_stmt`'s is.
-            add_elided_region(
-                classified,
-                owner,
-                direct,
-                if production == Production::LoopStmt {
-                    FixedTerminal::Loop
-                } else {
-                    FixedTerminal::For
-                },
-                DeclarationRole::LocalRegion,
-                roles,
-                complete_counts,
-            )?;
-        }
-        Production::RegionStmt => {
-            if names.is_empty() {
-                // [FORM-8] `region { ... }`: the block still introduces one
-                // local region, so the declaration is minted at the `region`
-                // token under a spelling no source token can form.
-                add_elided_region(
+        Production::LoopStmt | Production::ForStmt => match names.as_slice() {
+            [] => {}
+            [label] if name_predicate(classified, *label) == Some(TerminalPredicate::Label) => {
+                add_complete(
                     classified,
                     owner,
-                    direct,
-                    FixedTerminal::Region,
-                    DeclarationRole::LocalRegion,
-                    roles,
-                    complete_counts,
-                )?;
-            } else {
-                add_single(
-                    classified,
-                    owner,
-                    &names,
-                    RawRoleKind::Declaration(DeclarationRole::LocalRegion),
+                    *label,
+                    RawRoleKind::Declaration(DeclarationRole::LoopLabel),
                     roles,
                     complete_counts,
                 )?;
             }
-        }
+            _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
+        },
         Production::Field => add_single(
             classified,
             owner,
@@ -558,34 +501,6 @@ fn classify_node(
                 return Err(ResolutionCompilerFailure::InvalidRoleShape);
             }
         }
-        // [FORM-8] `Slice<T>`, `MutSlice<T>` / `arena<T>`: a view still
-        // carries one region [VIEW-1].
-        Production::Type
-            if !direct.is_empty()
-                && (has_fixed_terminal(classified, direct, FixedTerminal::Slice)
-                    || has_fixed_terminal(classified, direct, FixedTerminal::MutSlice)
-                    || has_fixed_terminal(classified, direct, FixedTerminal::Arena))
-                && !names.iter().any(|index| {
-                    name_predicate(classified, *index) == Some(TerminalPredicate::RegionIdentifier)
-                }) =>
-        {
-            let anchor = if has_fixed_terminal(classified, direct, FixedTerminal::Slice) {
-                FixedTerminal::Slice
-            } else if has_fixed_terminal(classified, direct, FixedTerminal::MutSlice) {
-                FixedTerminal::MutSlice
-            } else {
-                FixedTerminal::Arena
-            };
-            add_elided_region(
-                classified,
-                owner,
-                direct,
-                anchor,
-                DeclarationRole::RegionParameter,
-                roles,
-                complete_counts,
-            )?;
-        }
         Production::Type if group_binder(topology, owner) && names.is_empty() => {}
         Production::Type if group_binder(topology, owner) => add_all(
             classified,
@@ -595,11 +510,14 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::Type => add_names_by_predicate(
+        // [GRAM-3] `type := <primitive> | TYPEID targs?`: a primitive writes
+        // no name at all, and a nominal writes exactly one direct TYPEID,
+        // every argument sitting below the child `targs`.
+        Production::Type if names.is_empty() => {}
+        Production::Type => add_single(
             classified,
             owner,
             &names,
-            TerminalPredicate::TypeIdentifier,
             RawRoleKind::LexicalUse(
                 if parent_production(topology, owner) == Some(Production::Targ) {
                     LexicalUseRole::TypeArgument
@@ -607,16 +525,14 @@ fn classify_node(
                     LexicalUseRole::Type
                 },
             ),
-            TerminalPredicate::RegionIdentifier,
-            RawRoleKind::LexicalUse(LexicalUseRole::TypeRegion),
             roles,
             complete_counts,
         )?,
-        Production::ActualDecl => add_single(
+        Production::BindingDecl => add_single(
             classified,
             owner,
             &names,
-            RawRoleKind::Declaration(DeclarationRole::Actual),
+            RawRoleKind::Declaration(DeclarationRole::Binding),
             roles,
             complete_counts,
         )?,
@@ -661,79 +577,39 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::Mode if !names.is_empty() => add_single(
+        // [EFF-1] `epbase := IDENT`: the reference parameter is the row's
+        // root, with no source `deref` wrapper.
+        Production::Epbase => add_single(
             classified,
             owner,
             &names,
-            RawRoleKind::LexicalUse(LexicalUseRole::ModeRegion),
+            RawRoleKind::LexicalUse(LexicalUseRole::EffectRoot),
             roles,
             complete_counts,
         )?,
-        // [FORM-8] `&T` / `&uniq T`: the borrow mode still carries one region,
-        // fresh and distinct from every other region of its declaration.
-        Production::Mode if has_fixed_terminal(classified, direct, FixedTerminal::Ampersand) => {
-            add_elided_region(
+        // [EFF-1] `epsuffix := "." IDENT | "." TYPEID "." IDENT
+        // | "[" IDENT erange? "]"`. The three alternatives are told apart by
+        // the bracket and by the number of names, exactly as `psuffix`'s are.
+        Production::Epsuffix => {
+            let subscript = has_fixed_terminal(classified, direct, FixedTerminal::LeftBracket);
+            classify_projection_names(
                 classified,
                 owner,
-                direct,
-                FixedTerminal::Ampersand,
-                DeclarationRole::RegionParameter,
+                &names,
+                subscript,
+                RawRoleKind::LexicalUse(LexicalUseRole::EffectIndex),
+                RawRoleKind::DeferredUse(DeferredUseRole::EffectField),
                 roles,
                 complete_counts,
             )?;
         }
-        Production::Targ if !names.is_empty() => add_single(
+        // [EFF-1] `erange := ".." IDENT`: a range endpoint is one IDENT that
+        // must resolve to a value parameter of the same callable.
+        Production::Erange => add_single(
             classified,
             owner,
             &names,
-            RawRoleKind::LexicalUse(LexicalUseRole::TypeArgumentRegion),
-            roles,
-            complete_counts,
-        )?,
-        Production::EffectPath => {
-            let Some((root, fields)) = names.split_first() else {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape);
-            };
-            add_complete(
-                classified,
-                owner,
-                *root,
-                RawRoleKind::LexicalUse(LexicalUseRole::EffectRoot),
-                roles,
-                complete_counts,
-            )?;
-            for field in fields {
-                add_complete(
-                    classified,
-                    owner,
-                    *field,
-                    RawRoleKind::DeferredUse(DeferredUseRole::EffectField),
-                    roles,
-                    complete_counts,
-                )?;
-            }
-        }
-        Production::Effect if !names.is_empty() => add_names_by_predicate(
-            classified,
-            owner,
-            &names,
-            TerminalPredicate::RegionIdentifier,
-            RawRoleKind::LexicalUse(LexicalUseRole::EffectAllocationRegion),
-            TerminalPredicate::RegionIdentifier,
-            RawRoleKind::LexicalUse(LexicalUseRole::EffectAllocationRegion),
-            roles,
-            complete_counts,
-        )?,
-        // [FORM-8] an elided `&p` / `&uniq p` denotes the innermost enclosing
-        // `region_stmt`'s region. That target is lexical rather than a name
-        // lookup, so no use role is classified here and the checker resolves
-        // it from the enclosing construct.
-        Production::BorrowExpr if names.is_empty() => {}
-        Production::BorrowExpr => add_single(
-            classified,
-            owner,
-            &names,
-            RawRoleKind::LexicalUse(LexicalUseRole::BorrowRegion),
+            RawRoleKind::LexicalUse(LexicalUseRole::EffectIndex),
             roles,
             complete_counts,
         )?,
@@ -883,19 +759,23 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::Psuffix if !names.is_empty() => {
-            // The field alternative owns exactly one projected-field name; the
-            // subscript alternative owns only bracket punctuation, and its
-            // offset atom classifies through the atom's own productions.
-            add_single(
-                classified,
-                owner,
-                &names,
-                RawRoleKind::DeferredUse(DeferredUseRole::ProjectedField),
-                roles,
-                complete_counts,
-            )?;
-        }
+        // [GRAM-5] `psuffix := "." IDENT | "." TYPEID "." IDENT
+        // | "[" atom range_tail? "]"`. The field alternative owns exactly one
+        // projected-field name; the payload alternative owns the variant
+        // TYPEID and that variant's field name, both deferred to the owner
+        // type [DIAG-1]; the subscript alternative owns only bracket
+        // punctuation, its offset and endpoint atoms classifying through the
+        // `atom` productions below it.
+        Production::Psuffix if !names.is_empty() => classify_projection_names(
+            classified,
+            owner,
+            &names,
+            false,
+            RawRoleKind::DeferredUse(DeferredUseRole::ProjectedField),
+            RawRoleKind::DeferredUse(DeferredUseRole::ProjectedField),
+            roles,
+            complete_counts,
+        )?,
         _ => {}
     }
     if matches!(production, Production::Atom | Production::Cvalue) {
@@ -1014,7 +894,6 @@ fn name_predicate(
     [
         TerminalPredicate::Identifier,
         TerminalPredicate::TypeIdentifier,
-        TerminalPredicate::RegionIdentifier,
         TerminalPredicate::Label,
         TerminalPredicate::OperationName,
     ]
@@ -1035,60 +914,6 @@ fn has_fixed_terminal(
                 .contains(TerminalPredicate::Fixed(terminal))
         })
     })
-}
-
-/// Declares the region an elided [FORM-8] position denotes.
-///
-/// The position writes no REGIONID, so the declaration is anchored at the
-/// construct's own introducing token and spelled `'0_<source>_<offset>`.
-/// [FORM-3] admits only `'[a-z][a-z0-9_]*`, so no source token can form that
-/// spelling and no lookup, redeclaration, or shadowing judgment can reach the
-/// minted declaration by name; every consumer reaches it through the owning
-/// node instead. The offset makes each minted region distinct, which is
-/// exactly what [FORM-8] says an unnamed position denotes.
-fn add_elided_region(
-    classified: &crate::ClassifiedBundle<'_, '_>,
-    owner: NodeId,
-    direct: &[usize],
-    anchor: FixedTerminal,
-    role: DeclarationRole,
-    roles: &mut Vec<RawRole>,
-    counts: &mut [u8],
-) -> Result<(), ResolutionCompilerFailure> {
-    let terminal = direct
-        .iter()
-        .copied()
-        .find(|index| {
-            classified
-                .tokens()
-                .get(*index)
-                .is_some_and(|token| token.terminals().contains(TerminalPredicate::Fixed(anchor)))
-        })
-        .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
-    let token = classified
-        .tokens()
-        .get(terminal)
-        .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
-        .token();
-    let id = token.id();
-    let count = counts
-        .get_mut(terminal)
-        .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
-    *count = count
-        .checked_add(1)
-        .ok_or(ResolutionCompilerFailure::CounterOverflow)?;
-    roles.push(RawRole {
-        kind: RawRoleKind::Declaration(role),
-        spelling: format!("'0_{}_{}", id.source().ordinal(), id.start().value()),
-        owner,
-        source: id.source(),
-        carrier_start: id.start(),
-        carrier_end: id.end(),
-        role_start: id.start(),
-        role_end: id.end(),
-        subtoken_ordinal: 0,
-    });
-    Ok(())
 }
 
 fn add_single(
@@ -1122,31 +947,50 @@ fn add_all(
     Ok(())
 }
 
+/// The names one projection step writes, for the `psuffix` of a place and the
+/// `epsuffix` of an effect path alike [GRAM-5, EFF-1].
+///
+/// The two productions have the same three alternatives and differ only in
+/// what sits in the subscript: a place writes an `atom`, which classifies
+/// through its own productions and leaves no direct name here, while an effect
+/// path writes a bare IDENT the caller admits as `index_kind`. The field and
+/// payload alternatives are told apart by the shape kind of the token after
+/// the `.`, never by grammar position, which is what keeps both spellings
+/// context-free [GRAM-5].
 #[allow(clippy::too_many_arguments)]
-fn add_names_by_predicate(
+fn classify_projection_names(
     classified: &crate::ClassifiedBundle<'_, '_>,
     owner: NodeId,
-    terminals: &[usize],
-    first_predicate: TerminalPredicate,
-    first_kind: RawRoleKind,
-    second_predicate: TerminalPredicate,
-    second_kind: RawRoleKind,
+    names: &[usize],
+    subscript: bool,
+    index_kind: RawRoleKind,
+    field_kind: RawRoleKind,
     roles: &mut Vec<RawRole>,
     counts: &mut [u8],
 ) -> Result<(), ResolutionCompilerFailure> {
-    for terminal in terminals {
-        let predicate = name_predicate(classified, *terminal)
-            .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
-        let kind = if predicate == first_predicate {
-            first_kind
-        } else if predicate == second_predicate {
-            second_kind
-        } else {
-            return Err(ResolutionCompilerFailure::InvalidRoleShape);
-        };
-        add_complete(classified, owner, *terminal, kind, roles, counts)?;
+    if subscript {
+        return add_single(classified, owner, names, index_kind, roles, counts);
     }
-    Ok(())
+    match names {
+        [field] if name_predicate(classified, *field) == Some(TerminalPredicate::Identifier) => {
+            add_complete(classified, owner, *field, field_kind, roles, counts)
+        }
+        [variant, field]
+            if name_predicate(classified, *variant) == Some(TerminalPredicate::TypeIdentifier)
+                && name_predicate(classified, *field) == Some(TerminalPredicate::Identifier) =>
+        {
+            add_complete(
+                classified,
+                owner,
+                *variant,
+                RawRoleKind::DeferredUse(DeferredUseRole::PayloadVariant),
+                roles,
+                counts,
+            )?;
+            add_complete(classified, owner, *field, field_kind, roles, counts)
+        }
+        _ => Err(ResolutionCompilerFailure::InvalidRoleShape),
+    }
 }
 
 fn add_complete(

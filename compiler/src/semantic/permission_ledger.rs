@@ -220,19 +220,8 @@ fn denied_detail<Source: LedgerSource>(
     // cannot drift from the condition that actually refused the pair.
     let condition = denial.condition();
     let reason = match denial {
-        // Every window statement that defines a binding defines exactly one,
-        // so naming the two ends locates the link without a binding table.
-        Denial::Dataflow {
-            definer, reader, ..
-        } => format!(
-            "the operands of {} read what {} defines",
-            statement_name(*reader),
-            statement_name(*definer)
-        ),
-        // The kind comes from the conflict loop that found it, so a read/write
-        // conflict is never reported as two writes, and the sides come from
-        // the same place, so a conflict with an interposed statement is never
-        // reported against s1 or s2.
+        // The kind comes from the conflict loop that found it, so a
+        // read/write conflict is never reported as two writes.
         Denial::Footprint {
             kind,
             left,
@@ -248,38 +237,26 @@ fn denied_detail<Source: LedgerSource>(
                 access(right, source)?
             )
         }
-        Denial::Loan {
-            kind,
-            left,
-            right,
-            sides,
-        } => {
-            let (left_half, right_half) = kind.halves();
-            format!(
-                "the {left_half} of {} overlaps the {right_half} of {} at {} vs {}",
-                statement_name(sides.0),
-                statement_name(sides.1),
-                source.spelling(left)?,
-                source.spelling(right)?
-            )
-        }
         Denial::UnresolvedFootprint { side, argument } => format!(
             "unresolved footprint through {} of {}",
             source.spelling(argument)?,
             statement_name(*side)
         ),
-        // F3's disclosure half: a form this judgment does not account for is
-        // reported here rather than ending the enumeration silently, so the
-        // writer sees the statement that costs the overlap.
-        Denial::InterposedForm { side, form } => {
-            format!("{} between s1 and s2 is {form}", statement_name(*side))
+        // The disclosure half: a form this judgment does not account for is
+        // reported here rather than passed over silently, so the writer sees
+        // the statement that costs the overlap.
+        Denial::UnclassifiedForm { side, form } => {
+            format!("{} is {form}", statement_name(*side))
         }
         Denial::SkippingExit { side, kind } => {
             let edge = match kind {
                 ExitKind::PropagateError => "Err edge",
                 ExitKind::BlockExit => "exit edge",
             };
-            format!("the {edge} of {} skips s2", statement_name(*side))
+            format!(
+                "the {edge} of {} may skip the statement written after it",
+                statement_name(*side)
+            )
         }
     };
     Ok(format!("condition {condition}: {reason}"))
@@ -322,10 +299,6 @@ fn loop_denied_detail<Source: LedgerSource>(
             "the accumulator is read {reads} times in the body and a reduction reads it once, at {}",
             source.spelling(statement)?
         ),
-        LoopDenial::Loan { argument } => format!(
-            "an iteration holds an exclusive loan on storage the iteration does not introduce, at {}",
-            source.spelling(argument)?
-        ),
         LoopDenial::SharedWrite { argument } => format!(
             "the body writes storage that is neither introduced by the iteration nor the accumulator, at {}",
             source.spelling(argument)?
@@ -345,22 +318,14 @@ fn loop_denied_detail<Source: LedgerSource>(
 
 /// One footprint element as the writer wrote it.
 fn access<Source: LedgerSource>(access: &Access, source: &Source) -> Result<String, Source::Error> {
-    match access {
-        Access::Place { argument, .. } => source.spelling(argument),
-        // An arena row reaches its region through no actual, so the citation
-        // is the call that allocates into it.
-        Access::Arena { call, .. } => Ok(format!("the arena of {}", source.spelling(call)?)),
-    }
+    source.spelling(&access.argument)
 }
 
-/// How the ledger names one window statement. The interposed ones are counted
-/// from one in source order, so "interposed statement 2" is the second
-/// statement the writer put between the two calls.
-fn statement_name(side: PairSide) -> String {
+/// How the ledger names one member of an adjacency.
+const fn statement_name(side: PairSide) -> &'static str {
     match side {
-        PairSide::First => "s1".to_owned(),
-        PairSide::Second => "s2".to_owned(),
-        PairSide::Between(index) => format!("interposed statement {}", index + 1),
+        PairSide::First => "s1",
+        PairSide::Second => "s2",
     }
 }
 

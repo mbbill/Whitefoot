@@ -1,18 +1,13 @@
 fn main() -> status: own ExitStatus pure {
-  doc "The same append while the view is still used is the ordinary OWN-5 conflict: the shared loan the view holds refuses the move of the run its origin names, and the loan is live because the view has a use after this statement. This is the other half of the loan's end condition, so the pair pins that the accept above is the last use and not the region.";
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 7_u8);
-  }
-  let one = move empty;
-  region {
-    let window = slice_of(&one);
-    place_back(vector: &uniq one, value: 9_u8);
-    let two = move one;
-    let seen = window[0_u64];
-    if seen == 7_u8 {
-      return exit_status(code: 0_u8);
-    }
+  doc "A range reference is formed over the filled window, and then take_back writes the window's last slot and its len. Those writes reach a proper prefix of the reference's path, so the reference is invalid after that call; the write itself is legal, and the later read through the stale reference is the rejection [REF-2, EFF-5].";
+  let run = slots_new::<u8, 4>();
+  place_back(window: &run, value: 7_u8);
+  place_back(window: &run, value: 9_u8);
+  let window = &run[0_u64..2_u64];
+  let dropped = take_back(window: &run);
+  let seen = deref(window)[0_u64];
+  if seen == 7_u8 {
+    return exit_status(code: 0_u8);
   }
   return exit_status(code: 1_u8);
 }

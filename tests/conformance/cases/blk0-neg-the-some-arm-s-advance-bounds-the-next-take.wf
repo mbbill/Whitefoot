@@ -1,22 +1,14 @@
 fn main() -> status: own ExitStatus pure {
-  doc "BLK-0, CALL-6: the same publication read the other way. advance<T>(count) rounds a take up to the store's own alignment, so a 4080-byte take out of a 4096-byte extent leaves 16 and a proved take of 17 needs 32. The requirement is undischarged on the arm the acquisition succeeded on, which is the only arm on which the store's new length is known at all.";
-  region 'a {
-    let workspace = arena_frame::<4096, 16, 'a>();
-    region {
-      match arena_vector::<u8>(store: &uniq workspace, count: 4080_u64) {
-        None() => {
-          return exit_status(code: 1_u8);
-        }
-        Some(value: bulk) => {
-          let rest = arena_vector_proved::<u8>(store: &uniq workspace, count: 17_u64);
-          let held = cap_of(rest);
-          if held == 17_u64 {
-          } else {
-            return exit_status(code: 2_u8);
-          }
-        }
-      }
-    }
+  doc "The same publication read the other way: split_off publishes deref(source).len == index, so after a split at zero the source is known empty and take_back's requires deref(window).len > 0_u64 is refuted on the one path on which the source's new length is known at all.";
+  let source = slots_new::<u64, 8>();
+  for (
+    i in 0_u64..8_u64,
+    invariant h: source.len == i
+  ) {
+    place_back(window: &source, value: i);
   }
+  let destination = slots_new::<u64, 8>();
+  split_off(source: &source, index: 0_u64, destination: &destination);
+  let taken = take_back(window: &source);
   return exit_status(code: 0_u8);
 }

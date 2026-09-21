@@ -1,13 +1,13 @@
-fn source['r](x: &'r i32) -> result: &'r i32 pure {
-  return x;
+fn source(x: &i32) -> result: own i32 reads(x) {
+  doc "A function hands back owned data rather than a reference; the caller keeps the reference it formed.";
+  return deref(x);
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "Discarding the returned owned copy leaves the underlying scalar unchanged and permits its later ordinary read.";
   let v = 5_i32;
-  region {
-    let h = &v;
-    source(x: h);
-  }
+  let h = &v;
+  source(x: h);
   if v != 5_i32 {
     return exit_status(code: 1_u8);
   }

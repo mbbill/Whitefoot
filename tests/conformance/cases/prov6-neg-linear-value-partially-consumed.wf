@@ -1,29 +1,18 @@
-linear struct Chunk {
-  page: FixedVector<u8, 4>;
-  spare: u8;
+nodrop struct Token {
+  id: u8;
+}
+
+struct Chunk {
+  page: Slots<u8, 4>;
+  tickets: Slots<Token, 2>;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "PROV-6: a consume of a proper sub-place of a value linear in this scope, with no commit reinitialising that sub-place, abandons the residual the obligation was written for. The refusal is stated over the consume and names the destructuring consume as its repair.";
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let r1 = move empty;
-  region {
-    place_back(vector: &uniq r1, value: 0_u8);
-  }
-  let r2 = move r1;
-  region {
-    place_back(vector: &uniq r2, value: 0_u8);
-  }
-  let r3 = move r2;
-  region {
-    place_back(vector: &uniq r3, value: 0_u8);
-  }
-  let run = move r3;
-  let chunk = Chunk(page: move run, spare: 7_u8);
+  doc "PROV-6: a consume of a proper sub-place of a value one of whose remaining parts is linear abandons the residual the obligation was written for. The refusal is stated over the consume, so it reaches every consuming use of that sub-place, and its restructuring is the destructuring consume of the whole value.";
+  let values = array_filled::<u8, 4>(value: 0_u8);
+  let run = slots_from_array::<u8, 4>(values: values);
+  let tickets = slots_new::<Token, 2>();
+  let chunk = Chunk(page: move run, tickets: move tickets);
   let page = move chunk.page;
-  dispose page;
   return exit_status(code: 0_u8);
 }

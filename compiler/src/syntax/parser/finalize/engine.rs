@@ -437,18 +437,17 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
                 .classified
                 .source_tokens(source)
                 .ok_or(FinalizeCompilerFailure::InvalidTokenCoverage)?;
-            // PRE-1 supplies a signature record, not a writer fn_decl. Its
-            // fn_sig subtree is verified normally; the surrounding record
-            // consists exactly of that signature and its semicolon.
-            let prelude_signature_record = production == Production::Item
-                && self
-                    .parsed
-                    .classified
-                    .source_bundle()
-                    .file(source)
-                    .is_some_and(|file| {
-                        file.prelude() == Some(crate::source::PreludeSource::Function)
-                    });
+            // PRE-1 supplies a declaration head without a source body. Its
+            // internal fn_sig subtree includes the fn_decl generic header
+            // through `grammar::prelude_signature_children`; the surrounding
+            // record consists exactly of that head and its table semicolon.
+            let prelude_record = self
+                .parsed
+                .classified
+                .source_bundle()
+                .file(source)
+                .is_some_and(|file| file.prelude() == Some(crate::source::PreludeSource::Function));
+            let prelude_signature_record = production == Production::Item && prelude_record;
             let shape = if prelude_signature_record {
                 match &self.roots[root_start..] {
                     [
@@ -473,6 +472,7 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
             } else {
                 verify_production_shape(
                     production,
+                    prelude_record && production == Production::FnSig,
                     &self.roots[root_start..],
                     source_tokens,
                     &mut self.shape_tasks,

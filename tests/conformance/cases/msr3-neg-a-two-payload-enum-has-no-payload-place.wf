@@ -1,26 +1,19 @@
 fn main() -> status: own ExitStatus pure {
-  doc "MSR-3, ENT-2: a tracked place's path is field selections, deref wrappings and subscripts, and none of those names a variant. Result's Ok(value) and Err(error) are two storages one field path cannot separate, so the payload placement is not stated over it and the arm binder carries no measure of its own; the placement into it is undischarged.";
-  region 'a {
-    let workspace = arena_frame::<4096, 16, 'a>();
-    region {
-      let block = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
-      let slot = Ok<Vector<'a, u8>, u8>(value: move block);
-      match slot {
-        Err(error: code) => {
-          return exit_status(code: 1_u8);
-        }
-        Ok(value: back) => {
-          region {
-            place_back(vector: &uniq back, value: 2_u8);
-          }
-          let filled = move back;
-          let seen = filled[0_u64];
-          if seen == 2_u8 {
-          } else {
-            return exit_status(code: 2_u8);
-          }
-        }
+  doc "MSR-3, ENT-2: a tracked place's path admits the enum payload step, so an arm's path names its own variant's storage and an enum more than one of whose variants carries fields needs no separate treatment. The construct carries the window's measures into Result's Ok payload and the arm binder reads them back out, which is what discharges the place_back in the arm. Under the previous version no place path could separate Ok(value) from Err(error) and the identical program was refused; v0.60 admits the payload step, so this case is now an acceptance rather than a rejection, and its identifier keeps the question it was written for.";
+  let block = slots_new::<u8, 4>();
+  place_back(window: &block, value: 1_u8);
+  let slot = Ok<Slots<u8, 4>, u8>(value: move block);
+  match slot {
+    Ok(value: back) => {
+      place_back(window: &back, value: 2_u8);
+      let seen = back[0_u64];
+      if seen == 1_u8 {
+      } else {
+        return exit_status(code: 2_u8);
       }
+    }
+    Err(error: code) => {
+      return exit_status(code: 1_u8);
     }
   }
   return exit_status(code: 0_u8);

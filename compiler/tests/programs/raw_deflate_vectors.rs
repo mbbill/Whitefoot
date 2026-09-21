@@ -244,8 +244,11 @@ fn decoder_wire_boundaries_run_as_one_batch_through_the_actual_wf_decoder() {
         llvm = llvm.replacen(&definition, &format!("define i32 @fixture_{name}("), 1);
     }
     llvm.push_str("\ndeclare i32 @wf__main_body(i32, ptr)\n");
-    // Load WF's exact view aggregates in LLVM; C passes descriptor pointers
-    // and makes no assumption about the platform's aggregate coercions.
+    // Load WF's exact range-reference aggregates in LLVM; C passes pointers to
+    // the pointer-plus-count pair and makes no assumption about the platform's
+    // aggregate coercions. A `&[u8]` parameter is that pair: the address of the
+    // first element of the range and the element count, which is its one
+    // measure [REF-4, MSR-1].
     llvm.push_str(
         r#"
 define i64 @wf_test_decode(ptr %source, ptr %destination) {

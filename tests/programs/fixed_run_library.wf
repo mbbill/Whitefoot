@@ -1,136 +1,115 @@
-fn vacant<T: affine, const n: u64>() -> result: own FixedVector<Option<T>, n> pure contract {
-  ensures len_of(result) >= n;
-  ensures room_of(result) <= 0_u64;
-  ensures head_of(result) <= 0_u64;
+fn vacant<T: drop, const n: u64>() -> result: own Ring<Option<T>, n> pure contract {
+  ensures result.len >= n;
+  ensures result.cap <= result.len;
 } {
-  doc "Builds a run of n slots, every one holding None.";
-  let built = fixed_vector::<Option<T>, n>();
+  doc "Builds a window of n slots, every one holding None.";
+  let built = ring_new::<Option<T>, n>();
   for @fill (
     at in 0_u64..n,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= n,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len >= at,
+    invariant bounded: built.len <= at,
+    invariant spare: built.cap - built.len + at >= n
   ) {
     let empty = None<T>();
-    place_back(vector: &uniq built, value: move empty);
+    place_back(window: &built, value: move empty);
   }
   return move built;
 }
 
-fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
-  ensures len_of(result) >= n;
-  ensures room_of(result) <= 0_u64;
-  ensures head_of(result) <= 0_u64;
+fn filled<T: copy, const n: u64>(value: own T) -> result: own Ring<T, n> pure contract {
+  ensures result.len >= n;
+  ensures result.cap <= result.len;
 } {
-  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
-  let built = fixed_vector::<T, n>();
+  doc "Builds a window of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
+  let built = ring_new::<T, n>();
   for @fill (
     at in 0_u64..n,
-    invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= n,
-    invariant flat: head_of(built) <= 0_u64
+    invariant grown: built.len >= at,
+    invariant bounded: built.len <= at,
+    invariant spare: built.cap - built.len + at >= n
   ) {
-    place_back(vector: &uniq built, value: value);
+    place_back(window: &built, value: value);
   }
   return move built;
 }
 
-fn take_at<T: affine, const n: u64>(vector: &uniq FixedVector<T, n>, at: own u64) -> taken: own T reads(vector), writes(vector) contract {
-  requires at + 2_u64 <= len_of(deref(vector));
-  ensures len_of(deref(vector)) + 1_u64 == len_of(deref(entry(vector)));
-  ensures room_of(deref(vector)) == room_of(deref(entry(vector))) + 1_u64;
-  ensures head_of(deref(vector)) == head_of(deref(entry(vector)));
+fn take_at<T: drop, const n: u64>(window: &Ring<T, n>, at: own u64) -> taken: own T writes(window) contract {
+  requires at + 2_u64 <= deref(window).len;
+  ensures deref(window).len + 1_u64 == deref(entry(window)).len;
 } {
-  doc "Removes the element at at, moving the last element into its place.";
-  region {
-    let endv = take_back(vector: &uniq deref(vector));
-    let old = replace deref(vector)[at] = move endv;
-    return move old;
-  }
+  doc "Removes the element at at, moving the last element into its place. The exchange is the built-in swap, which no source body could write without a hole [OP-11, WIN-3].";
+  let endv = take_back(window: window);
+  swap(first: &deref(window)[at], second: &endv);
+  return move endv;
 }
 
-fn try_place<T: affine, const n: u64>(vector: &uniq FixedVector<T, n>, value: own T) -> unplaced: own Option<T> reads(vector), writes(vector) contract {
-  ensures head_of(deref(vector)) == head_of(deref(entry(vector)));
-  ensures len_of(deref(vector)) <= len_of(deref(entry(vector))) + 1_u64;
-  ensures len_of(deref(vector)) >= len_of(deref(entry(vector)));
-  ensures room_of(deref(vector)) <= room_of(deref(entry(vector)));
-  ensures room_of(deref(vector)) + 1_u64 >= room_of(deref(entry(vector)));
+fn try_place<T: drop, const n: u64>(window: &Ring<T, n>, value: own T) -> unplaced: own Option<T> writes(window.next), writes(window.len) contract {
+  ensures deref(window).len <= deref(entry(window)).len + 1_u64;
+  ensures deref(window).len >= deref(entry(window)).len;
 } {
-  doc "Appends one value, handing it back when the run is full.";
-  let spare = room_of(deref(vector));
-  let fits = spare > 0_u64;
+  doc "Appends one value, handing it back when the window is full; the fullness test is the length against the written capacity, and the standing identity len + (cap - len) = cap turns it into place_back's requirement [MSR-2].";
+  let held = deref(window).len;
+  let fits = held < n;
   if fits {
-    region {
-      place_back(vector: &uniq deref(vector), value: move value);
-    }
+    place_back(window: window, value: move value);
     return None<T>();
   }
   return Some<T>(value: move value);
 }
 
-fn try_take<T: affine, const n: u64>(vector: &uniq FixedVector<T, n>) -> taken: own Option<T> reads(vector), writes(vector) contract {
-  ensures head_of(deref(vector)) == head_of(deref(entry(vector)));
-  ensures len_of(deref(vector)) <= len_of(deref(entry(vector)));
-  ensures len_of(deref(vector)) + 1_u64 >= len_of(deref(entry(vector)));
-  ensures room_of(deref(vector)) >= room_of(deref(entry(vector)));
-  ensures room_of(deref(vector)) <= room_of(deref(entry(vector))) + 1_u64;
+fn try_take<T: drop, const n: u64>(window: &Ring<T, n>) -> taken: own Option<T> writes(window.last), writes(window.len) contract {
+  ensures deref(window).len <= deref(entry(window)).len;
+  ensures deref(window).len + 1_u64 >= deref(entry(window)).len;
 } {
-  doc "Removes one value from the end, or reports that the run is empty.";
-  let held = len_of(deref(vector));
+  doc "Removes one value from the end, or reports that the window is empty.";
+  let held = deref(window).len;
   let any = held > 0_u64;
   if any {
-    region {
-      let one = take_back(vector: &uniq deref(vector));
-      return Some<T>(value: move one);
-    }
+    let one = take_back(window: window);
+    return Some<T>(value: move one);
   }
   return None<T>();
 }
 
-fn rebase<T: affine, const n: u64>(vector: own FixedVector<T, n>, spare: own FixedVector<T, n>) -> rebased: own FixedVector<T, n> reads(vector), writes(vector) contract {
-  requires len_of(spare) <= 0_u64;
-  requires room_of(spare) >= n;
-  requires room_of(spare) <= n;
-  requires head_of(spare) <= 0_u64;
-  ensures len_of(rebased) >= len_of(vector);
-  ensures len_of(rebased) <= len_of(vector);
-  ensures head_of(rebased) <= 0_u64;
+fn rebase<T: drop, const n: u64>(window: own Ring<T, n>, spare: own Ring<T, n>) -> rebased: own Ring<T, n> pure contract {
+  requires spare.len <= 0_u64;
+  ensures rebased.len >= window.len;
+  ensures rebased.len <= window.len;
 } {
-  doc "Moves every element of a wrapped run into a fresh run, in order, so the result does not wrap; the front element's binding is declared by the commit that produces it.";
-  let count = len_of(vector);
+  doc "Moves every element of a wrapped window into a fresh one, in order, so the result does not wrap. Both operands arrive by value, so every access is rooted in local storage and the row is empty [EFF-1, EFF-2].";
+  let count = window.len;
   let built = move spare;
   for @rot (
     at in 0_u64..count,
-    invariant left: len_of(vector) + at >= count,
-    invariant gone: len_of(vector) + at <= count,
-    invariant made_lo: len_of(built) >= at,
-    invariant made_hi: len_of(built) <= at,
-    invariant spare_lo: room_of(built) + at >= n,
-    invariant spare_hi: room_of(built) + at <= n,
-    invariant flat: head_of(built) <= 0_u64
+    invariant left: window.len + at >= count,
+    invariant gone: window.len + at <= count,
+    invariant made_lo: built.len >= at,
+    invariant made_hi: built.len <= at,
+    invariant spare_lo: built.cap - built.len + at >= n,
+    invariant spare_hi: built.cap - built.len + at <= n
   ) {
-    set one = take_front(vector: &uniq vector);
-    place_back(vector: &uniq built, value: move one);
+    let one = take_front(window: &window);
+    place_back(window: &built, value: move one);
   }
   return move built;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Runs the six fixed-run library functions of the container design at a copy element type and at an affine one: the two constructions, the transposing removal, the two checked boundary forms, and the drain that returns a wrapped window to its origin.";
+  doc "Runs all six fixed-window library functions at copy element types, then separately instantiates the transposing removal at an affine Box element type: the two constructions, the removal built on swap, the two checked boundary forms, and the drain that returns a wrapped window to its origin.";
   let slots = vacant::<u8, 4>();
-  let vacant_held = len_of(slots);
+  let vacant_held = slots.len;
   if vacant_held == 4_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
   let nested = vacant::<Option<u8>, 4>();
-  let nested_held = len_of(nested);
+  let nested_held = nested.len;
   if nested_held == 4_u64 {
   } else {
     return exit_status(code: 19_u8);
   }
   let bytes = filled::<u8, 4>(value: 7_u8);
-  let filled_held = len_of(bytes);
+  let filled_held = bytes.len;
   if filled_held == 4_u64 {
   } else {
     return exit_status(code: 2_u8);
@@ -151,225 +130,181 @@ fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 4_u8);
   }
-  let empty = fixed_vector::<Option<u8>, 4>();
+  let three = ring_new::<Option<u8>, 4>();
   let a = Some<u8>(value: 1_u8);
-  region {
-    place_back(vector: &uniq empty, value: move a);
-  }
-  let one = move empty;
+  place_back(window: &three, value: a);
   let b = Some<u8>(value: 2_u8);
-  region {
-    place_back(vector: &uniq one, value: move b);
-  }
-  let two = move one;
+  place_back(window: &three, value: b);
   let c = Some<u8>(value: 3_u8);
-  region {
-    place_back(vector: &uniq two, value: move c);
+  place_back(window: &three, value: c);
+  let pulled = take_at::<Option<u8>, 4>(window: &three, at: 0_u64);
+  let rest_held = three.len;
+  if rest_held == 2_u64 {
+  } else {
+    return exit_status(code: 5_u8);
   }
-  let three = move two;
-  region {
-    let pulled = take_at::<Option<u8>, 4>(vector: &uniq three, at: 0_u64);
-    let rest = move three;
-    let rest_held = len_of(rest);
-    if rest_held == 2_u64 {
-    } else {
-      return exit_status(code: 5_u8);
-    }
-    match pulled {
-      Some(value: got) => {
-        if got == 1_u8 {
-        } else {
-          return exit_status(code: 6_u8);
-        }
-      }
-      None() => {
-        return exit_status(code: 7_u8);
-      }
-    }
-    let plain = fixed_vector::<u8, 4>();
-    region {
-      place_back(vector: &uniq plain, value: 21_u8);
-    }
-    let plain_one = move plain;
-    region {
-      place_back(vector: &uniq plain_one, value: 22_u8);
-    }
-    let plain_two = move plain_one;
-    region {
-      place_back(vector: &uniq plain_two, value: 23_u8);
-    }
-    let plain_three = move plain_two;
-    region {
-      let plain_pulled = take_at::<u8, 4>(vector: &uniq plain_three, at: 0_u64);
-      let plain_rest = move plain_three;
-      if plain_pulled == 21_u8 {
+  match pulled {
+    Some(value: got) => {
+      if got == 1_u8 {
       } else {
-        return exit_status(code: 21_u8);
-      }
-      let probe = None<u8>();
-      let moved = replace rest[0_u64] = move probe;
-      match moved {
-        Some(value: at_front) => {
-          if at_front == 3_u8 {
-          } else {
-            return exit_status(code: 8_u8);
-          }
-        }
-        None() => {
-          return exit_status(code: 9_u8);
-        }
-      }
-      let hole = None<u8>();
-      region {
-        let unplaced = try_place::<Option<u8>, 4>(vector: &uniq rest, value: move hole);
-        let grown = move rest;
-        let grown_held = len_of(grown);
-        if grown_held == 3_u64 {
-        } else {
-          return exit_status(code: 10_u8);
-        }
-        match unplaced {
-          None() => {
-          }
-          Some(value: handed_back) => {
-            return exit_status(code: 11_u8);
-          }
-        }
-        region {
-          let plain_unplaced = try_place::<u8, 4>(vector: &uniq plain_rest, value: 24_u8);
-          let plain_grown = move plain_rest;
-          match plain_unplaced {
-            None() => {
-            }
-            Some(value: plain_handed_back) => {
-              return exit_status(code: 22_u8);
-            }
-          }
-          region {
-            let pulled_back = try_take::<Option<u8>, 4>(vector: &uniq grown);
-            let shrunk = move grown;
-            let shrunk_held = len_of(shrunk);
-            if shrunk_held == 2_u64 {
-            } else {
-              return exit_status(code: 12_u8);
-            }
-            match pulled_back {
-              Some(value: taken_back) => {
-              }
-              None() => {
-                return exit_status(code: 13_u8);
-              }
-            }
-            region {
-              let plain_back = try_take::<u8, 4>(vector: &uniq plain_grown);
-              let plain_shrunk = move plain_grown;
-              match plain_back {
-                Some(value: plain_taken_back) => {
-                  if plain_taken_back == 24_u8 {
-                  } else {
-                    return exit_status(code: 23_u8);
-                  }
-                }
-                None() => {
-                  return exit_status(code: 24_u8);
-                }
-              }
-              let start = fixed_vector::<u8, 4>();
-              region {
-                place_back(vector: &uniq start, value: 11_u8);
-              }
-              let s1 = move start;
-              region {
-                place_back(vector: &uniq s1, value: 12_u8);
-              }
-              let s2 = move s1;
-              region {
-                place_back(vector: &uniq s2, value: 13_u8);
-              }
-              let s3 = move s2;
-              region {
-                let dropped = take_front(vector: &uniq s3);
-                let after_front = move s3;
-                region {
-                  place_back(vector: &uniq after_front, value: 14_u8);
-                }
-                let wrapped = move after_front;
-                let fresh = fixed_vector::<u8, 4>();
-                let flat = rebase::<u8, 4>(vector: move wrapped, spare: move fresh);
-                let flat_held = len_of(flat);
-                if flat_held == 3_u64 {
-                } else {
-                  return exit_status(code: 14_u8);
-                }
-                let flat_head = head_of(flat);
-                if flat_head == 0_u64 {
-                } else {
-                  return exit_status(code: 15_u8);
-                }
-                let f0 = flat[0_u64];
-                let f1 = flat[1_u64];
-                let f2 = flat[2_u64];
-                if f0 == 12_u8 {
-                } else {
-                  return exit_status(code: 16_u8);
-                }
-                if f1 == 13_u8 {
-                } else {
-                  return exit_status(code: 17_u8);
-                }
-                if f2 == 14_u8 {
-                } else {
-                  return exit_status(code: 18_u8);
-                }
-                let ring = fixed_vector::<Option<u8>, 4>();
-                let r1v = Some<u8>(value: 31_u8);
-                region {
-                  place_back(vector: &uniq ring, value: move r1v);
-                }
-                let r1 = move ring;
-                let r2v = Some<u8>(value: 32_u8);
-                region {
-                  place_back(vector: &uniq r1, value: move r2v);
-                }
-                let r2 = move r1;
-                let r3v = Some<u8>(value: 33_u8);
-                region {
-                  place_back(vector: &uniq r2, value: move r3v);
-                }
-                let r3 = move r2;
-                region {
-                  let ring_dropped = take_front(vector: &uniq r3);
-                  let ring_rest = move r3;
-                  let r4v = Some<u8>(value: 34_u8);
-                  region {
-                    place_back(vector: &uniq ring_rest, value: move r4v);
-                  }
-                  let ring_wrapped = move ring_rest;
-                  let ring_fresh = fixed_vector::<Option<u8>, 4>();
-                  let ring_flat = rebase::<Option<u8>, 4>(vector: move ring_wrapped, spare: move ring_fresh);
-                  let ring_head = head_of(ring_flat);
-                  if ring_head == 0_u64 {
-                  } else {
-                    return exit_status(code: 25_u8);
-                  }
-                  let ring_first = replace ring_flat[0_u64] = None<u8>();
-                  match ring_first {
-                    Some(value: ring_got) => {
-                      if ring_got == 32_u8 {
-                        return exit_status(code: 0_u8);
-                      }
-                      return exit_status(code: 26_u8);
-                    }
-                    None() => {
-                      return exit_status(code: 27_u8);
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+        return exit_status(code: 6_u8);
       }
     }
+    None() => {
+      return exit_status(code: 7_u8);
+    }
   }
+  let plain_three = ring_new::<u8, 4>();
+  place_back(window: &plain_three, value: 21_u8);
+  place_back(window: &plain_three, value: 22_u8);
+  place_back(window: &plain_three, value: 23_u8);
+  let plain_pulled = take_at::<u8, 4>(window: &plain_three, at: 0_u64);
+  if plain_pulled == 21_u8 {
+  } else {
+    return exit_status(code: 21_u8);
+  }
+  let probe = None<u8>();
+  let previous_probe = three[0_u64];
+  set three[0_u64] = probe;
+  set probe = previous_probe;
+  match probe {
+    Some(value: at_front) => {
+      if at_front == 3_u8 {
+      } else {
+        return exit_status(code: 8_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 9_u8);
+    }
+  }
+  let hole = None<u8>();
+  let unplaced = try_place::<Option<u8>, 4>(window: &three, value: hole);
+  let grown_held = three.len;
+  if grown_held == 3_u64 {
+  } else {
+    return exit_status(code: 10_u8);
+  }
+  match unplaced {
+    None() => {
+    }
+    Some(value: handed_back) => {
+      return exit_status(code: 11_u8);
+    }
+  }
+  let plain_unplaced = try_place::<u8, 4>(window: &plain_three, value: 24_u8);
+  match plain_unplaced {
+    None() => {
+    }
+    Some(value: plain_handed_back) => {
+      return exit_status(code: 22_u8);
+    }
+  }
+  let pulled_back = try_take::<Option<u8>, 4>(window: &three);
+  let shrunk_held = three.len;
+  if shrunk_held == 2_u64 {
+  } else {
+    return exit_status(code: 12_u8);
+  }
+  match pulled_back {
+    Some(value: taken_back) => {
+    }
+    None() => {
+      return exit_status(code: 13_u8);
+    }
+  }
+  let plain_back = try_take::<u8, 4>(window: &plain_three);
+  match plain_back {
+    Some(value: plain_taken_back) => {
+      if plain_taken_back == 24_u8 {
+      } else {
+        return exit_status(code: 23_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 24_u8);
+    }
+  }
+  let s3 = ring_new::<u8, 4>();
+  place_back(window: &s3, value: 11_u8);
+  place_back(window: &s3, value: 12_u8);
+  place_back(window: &s3, value: 13_u8);
+  let dropped = take_front(window: &s3);
+  place_back(window: &s3, value: 14_u8);
+  let fresh = ring_new::<u8, 4>();
+  let flat = rebase::<u8, 4>(window: move s3, spare: move fresh);
+  let flat_held = flat.len;
+  if flat_held == 3_u64 {
+  } else {
+    return exit_status(code: 14_u8);
+  }
+  let flat_head = flat.head;
+  if flat_head == 0_u64 {
+  } else {
+    return exit_status(code: 15_u8);
+  }
+  let f0 = flat[0_u64];
+  let f1 = flat[1_u64];
+  let f2 = flat[2_u64];
+  if f0 == 12_u8 {
+  } else {
+    return exit_status(code: 16_u8);
+  }
+  if f1 == 13_u8 {
+  } else {
+    return exit_status(code: 17_u8);
+  }
+  if f2 == 14_u8 {
+  } else {
+    return exit_status(code: 18_u8);
+  }
+  let r3 = ring_new::<Option<u8>, 4>();
+  let r1v = Some<u8>(value: 31_u8);
+  place_back(window: &r3, value: r1v);
+  let r2v = Some<u8>(value: 32_u8);
+  place_back(window: &r3, value: r2v);
+  let r3v = Some<u8>(value: 33_u8);
+  place_back(window: &r3, value: r3v);
+  let ring_dropped = take_front(window: &r3);
+  let r4v = Some<u8>(value: 34_u8);
+  place_back(window: &r3, value: r4v);
+  let ring_fresh = ring_new::<Option<u8>, 4>();
+  let ring_flat = rebase::<Option<u8>, 4>(window: move r3, spare: move ring_fresh);
+  let ring_head = ring_flat.head;
+  if ring_head == 0_u64 {
+  } else {
+    return exit_status(code: 25_u8);
+  }
+  let ring_probe = None<u8>();
+  let previous_ring_probe = ring_flat[0_u64];
+  set ring_flat[0_u64] = ring_probe;
+  set ring_probe = previous_ring_probe;
+  match ring_probe {
+    Some(value: ring_got) => {
+      if ring_got == 32_u8 {
+      } else {
+        return exit_status(code: 26_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 27_u8);
+    }
+  }
+  let owners = ring_new::<Box<u64>, 2>();
+  let owner_first = box_new::<u64>(value: 41_u64);
+  place_back(window: &owners, value: move owner_first);
+  let owner_second = box_new::<u64>(value: 42_u64);
+  place_back(window: &owners, value: move owner_second);
+  let owner_pulled = take_at::<Box<u64>, 2>(window: &owners, at: 0_u64);
+  let owner_value = owner_pulled.inner;
+  if owner_value == 41_u64 {
+  } else {
+    return exit_status(code: 28_u8);
+  }
+  let survivor_value = owners[0_u64].inner;
+  if survivor_value == 42_u64 {
+  } else {
+    return exit_status(code: 29_u8);
+  }
+  return exit_status(code: 0_u8);
 }

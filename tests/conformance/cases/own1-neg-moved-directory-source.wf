@@ -1,8 +1,11 @@
-fn moved(list: own DirectorySource, destination: &uniq MutSlice<u8>) -> result: own unit reads(list, destination), writes(list, destination) {
-  doc "Moves an ordinary linear enumeration value and then borrows its dead place.";
+fn moved(factory: &HandleFactory, list: own DirectorySource, destination: &[u8]) -> result: own unit writes(factory), writes(destination) {
+  doc "Moves an ordinary linear enumeration value and then forms a reference to its dead place.";
   let taken = move list;
-  region {
-    let (outcome, endpoint, reported) = directory_next(source: &uniq list, destination: &uniq deref(destination), start: 0_u64, end: 0_u64);
-  }
+  let (outcome, endpoint, reported) = directory_next(source: &list, destination: destination, start: 0_u64, end: 0_u64);
+  let closed = close_directory_source(factory: factory, source: move taken);
   return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

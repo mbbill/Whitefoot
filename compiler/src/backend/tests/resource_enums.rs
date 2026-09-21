@@ -3,8 +3,8 @@ use super::*;
 #[test]
 fn source_enum_cleanup_switches_on_the_active_variant() {
     let source = br#"struct PairBuffers {
-  left: buffer<u8>;
-  right: buffer<u8>;
+  left: Box<Slots<u8>>;
+  right: Box<Slots<u8>>;
 }
 
 enum Owner {
@@ -22,10 +22,10 @@ fn consume(owner: own Owner) -> result: own u8 pure {
       return 0_u8;
     }
     Full(value: pair) => {
-      let spare = len_of(pair.left);
+      let spare = pair.left.inner.len;
       let ok = 0_u64 < spare;
       let byte = if ok {
-        give pair.left[0_u64];
+        give pair.left.inner[0_u64];
       } else {
         give 0_u8;
       }
@@ -35,15 +35,19 @@ fn consume(owner: own Owner) -> result: own u8 pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let abandoned_left = buffer_new(1_u64, 7_u8);
-  let abandoned_right = buffer_new(1_u64, 9_u8);
+  let abandoned_left = box_slots_new::<u8>(capacity: 1_u64);
+  place_back(window: &abandoned_left.inner, value: 7_u8);
+  let abandoned_right = box_slots_new::<u8>(capacity: 1_u64);
+  place_back(window: &abandoned_right.inner, value: 9_u8);
   let abandoned_pair = PairBuffers(left: move abandoned_left, right: move abandoned_right);
   let abandoned = Full(value: move abandoned_pair);
   abandon(owner: move abandoned);
   let empty = Empty();
   abandon(owner: move empty);
-  let consumed_left = buffer_new(1_u64, 11_u8);
-  let consumed_right = buffer_new(1_u64, 13_u8);
+  let consumed_left = box_slots_new::<u8>(capacity: 1_u64);
+  place_back(window: &consumed_left.inner, value: 11_u8);
+  let consumed_right = box_slots_new::<u8>(capacity: 1_u64);
+  place_back(window: &consumed_right.inner, value: 13_u8);
   let consumed_pair = PairBuffers(left: move consumed_left, right: move consumed_right);
   let consumed = Full(value: move consumed_pair);
   let consumed_byte = consume(owner: move consumed);
@@ -53,15 +57,19 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    // C2 deletes value-history effect roots. After the ordinary owned match,
-    // payload bindings are local; reading them does not publish reads(owner).
-    // Check both exact-row directions: pure is accepted, the wider row fails.
+    // After the ordinary owned match, payload bindings are local; reading them
+    // publishes nothing about `owner`. Check both exact-row directions: pure
+    // is accepted, the wider row fails. The wider row's rejecting rule moved
+    // with v0.60: [EFF-1] roots every `effect_path` at a reference parameter
+    // and a by-value parameter has no effect entry at all, so `reads(owner)`
+    // over `owner: own Owner` is refused at the row itself rather than at
+    // [EFF-2]'s both-ways comparison against the exhibited set.
     let excessive = std::str::from_utf8(source).unwrap().replace(
         "fn consume(owner: own Owner) -> result: own u8 pure",
         "fn consume(owner: own Owner) -> result: own u8 reads(owner)",
     );
     let failure = compile_rejection(excessive.as_bytes());
-    assert_eq!(failure.rule_id(), Some("EFF-2"));
+    assert_eq!(failure.rule_id(), Some("EFF-1"));
     assert!(failure.detail().contains("reads(owner)"));
     let llvm = compile(source);
     let abandon = emitted_function(&llvm, "abandon");
@@ -100,10 +108,9 @@ fn main() -> status: own ExitStatus pure {
 
 /// The same transfer, error and abandonment program over an inline run.
 ///
-/// The case was migrated from `Result<buffer<u8>, DecodeError>` to
-/// `Result<FixedVector<u8, n>, DecodeError>`, and the payload's storage moved
-/// with it: an inline run lives in its owner, so the enum owns no
-/// heap resource, needs no drop helper, and abandoning one on any arm frees
+/// The payload is a constant-capacity `Result<Slots<u8, n>, DecodeError>`
+/// [TYPE-9], so its storage is frame-resident [STOR-1]: the enum owns no heap
+/// resource, needs no drop helper, and abandoning one on any arm frees
 /// nothing. That is the fact under test here, and it is checked directly
 /// rather than through a helper that no longer exists;
 /// `source_enum_cleanup_switches_on_the_active_variant` above keeps the drop-helper
@@ -163,21 +170,21 @@ fn result_run_transfer_error_and_abandonment_execute() {
 }
 
 #[test]
-fn option_buffer_some_none_and_transfer_execute() {
-    let source = br#"fn abandon(value: own Option<buffer<u8>>) -> result: own unit pure {
+fn option_boxed_window_some_none_and_transfer_execute() {
+    let source = br#"fn abandon(value: own Option<Box<Slots<u8>>>) -> result: own unit pure {
   return unit;
 }
 
-fn consume(value: own Option<buffer<u8>>) -> result: own u8 pure {
+fn consume(value: own Option<Box<Slots<u8>>>) -> result: own u8 pure {
   match move value {
     None() => {
       return 0_u8;
     }
     Some(value: bytes) => {
-      let spare = len_of(bytes);
+      let spare = bytes.inner.len;
       let ok = 0_u64 < spare;
       let byte = if ok {
-        give bytes[0_u64];
+        give bytes.inner[0_u64];
       } else {
         give 0_u8;
       }
@@ -187,13 +194,15 @@ fn consume(value: own Option<buffer<u8>>) -> result: own u8 pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let abandoned_bytes = buffer_new(1_u64, 5_u8);
-  let abandoned_some = Some<buffer<u8>>(value: move abandoned_bytes);
+  let abandoned_bytes = box_slots_new::<u8>(capacity: 1_u64);
+  place_back(window: &abandoned_bytes.inner, value: 5_u8);
+  let abandoned_some = Some<Box<Slots<u8>>>(value: move abandoned_bytes);
   abandon(value: move abandoned_some);
-  let abandoned_none = None<buffer<u8>>();
+  let abandoned_none = None<Box<Slots<u8>>>();
   abandon(value: move abandoned_none);
-  let consumed_bytes = buffer_new(1_u64, 17_u8);
-  let consumed_some = Some<buffer<u8>>(value: move consumed_bytes);
+  let consumed_bytes = box_slots_new::<u8>(capacity: 1_u64);
+  place_back(window: &consumed_bytes.inner, value: 17_u8);
+  let consumed_some = Some<Box<Slots<u8>>>(value: move consumed_bytes);
   let consumed_byte = consume(value: move consumed_some);
   if consumed_byte != 17_u8 {
     return exit_status(code: 1_u8);
@@ -204,7 +213,7 @@ fn main() -> status: own ExitStatus pure {
     let llvm = compile(source);
     let helper_start = llvm
         .find("define private void @wf.drop.")
-        .expect("Option<buffer<u8>> must have a drop helper");
+        .expect("Option<Box<Slots<u8>>> must have a drop helper");
     let helper_end = llvm[helper_start..]
         .find("\n}\n\n")
         .map(|offset| helper_start + offset + 3)
@@ -224,7 +233,7 @@ fn main() -> status: own ExitStatus pure {
     let output = compile_and_run(&llvm);
     assert!(
         output.status.success(),
-        "Option buffer program failed: {}",
+        "Option boxed-window program failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(output.stdout.is_empty());

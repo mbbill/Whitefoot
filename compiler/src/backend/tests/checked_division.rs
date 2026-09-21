@@ -4,7 +4,7 @@ use super::{compile, compile_and_run};
 fn guards_every_integer_error_before_llvm() {
     let template = r#"fn main() -> status: own ExitStatus pure {
   let quotient = 84_$TYPE /checked 2_$TYPE;
-  match move quotient {
+  match quotient {
     Ok(value: quotient_value) => {
       if quotient_value == 42_$TYPE {
       } else {
@@ -16,7 +16,7 @@ fn guards_every_integer_error_before_llvm() {
     }
   }
   let remainder = 85_$TYPE %checked 43_$TYPE;
-  match move remainder {
+  match remainder {
     Ok(value: remainder_value) => {
       if remainder_value == 42_$TYPE {
       } else {
@@ -28,7 +28,7 @@ fn guards_every_integer_error_before_llvm() {
     }
   }
   let divide_zero = 42_$TYPE /checked 0_$TYPE;
-  match move divide_zero {
+  match divide_zero {
     Ok(value: divide_zero_value) => {
       return exit_status(code: 5_u8);
     }
@@ -43,7 +43,7 @@ fn guards_every_integer_error_before_llvm() {
     }
   }
   let remainder_zero = 42_$TYPE %checked 0_$TYPE;
-  match move remainder_zero {
+  match remainder_zero {
     Ok(value: remainder_zero_value) => {
       return exit_status(code: 7_u8);
     }
@@ -73,7 +73,7 @@ $SIGNED_CASES  return exit_status(code: 0_u8);
         let signed_cases = if signed {
             format!(
                 r#"  let divide_overflow = {minimum}_{ty} /checked -1_{ty};
-  match move divide_overflow {{
+  match divide_overflow {{
     Ok(value: divide_overflow_value) => {{
       return exit_status(code: 9_u8);
     }}
@@ -88,7 +88,7 @@ $SIGNED_CASES  return exit_status(code: 0_u8);
     }}
   }}
   let remainder_overflow = {minimum}_{ty} %checked -1_{ty};
-  match move remainder_overflow {{
+  match remainder_overflow {{
     Ok(value: remainder_overflow_value) => {{
       return exit_status(code: 11_u8);
     }}

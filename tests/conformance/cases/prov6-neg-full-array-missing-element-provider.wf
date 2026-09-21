@@ -1,8 +1,13 @@
-fn abandon['heap](values: own array<Box<'heap, u64>, 1>) -> result: own unit pure {
-  doc "PROV-6 reaches the general-store cell through the full array element. This helper holds no Heap provider, so it cannot derive the array's element release at its return edge.";
+nodrop struct Token {
+  id: u64;
+}
+
+fn abandon(values: own Array<Box<Token>, 1>) -> result: own unit pure {
+  doc "PROV-6: the release closure reaches the linear Token through the Box content and then through the full array element, so the array itself is linear. This helper lets it reach the return edge, and the compiler-derived release never carries a linear value.";
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "The rejection is in the helper above; this entry point does nothing.";
   return exit_status(code: 0_u8);
 }

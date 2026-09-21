@@ -20,7 +20,7 @@ RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-targ
 # One group inventory for local execution and the hosted correctness matrix.
 # The _check-<group> recipes below own the commands on both paths. CI reads
 # check-groups and invokes check-group; it keeps no second command inventory.
-CHECK_GROUPS := static unit corpus runtime libraries
+CHECK_GROUPS := static unit corpus runtime
 ifeq ($(strip $(CHECK_GROUPS)),)
 $(error the correctness group inventory must not be empty)
 endif
@@ -88,11 +88,6 @@ _check-corpus:
 _check-runtime:
 	@$(MAKE) -C compiler completion-test
 
-.PHONY: _check-libraries
-_check-libraries:
-	@$(MAKE) -C compiler build
-	@$(MAKE) library-tests
-
 # Both supported agent entry points carry exactly the same project rules.
 # The repository-level stages that read the tree without running a compiled
 # program. CI's `static` job runs this instead of restating their names: a
@@ -109,6 +104,9 @@ DESIGN_REVIEW_BASE ?= origin/main
 design-lint:
 	@$(PY) -m unittest discover -s design/skill -p 'test_lint.py'
 	@$(PY) design/skill/lint.py --trees language compiler --base "$(DESIGN_REVIEW_BASE)"
+
+design-ready:
+	@$(PY) design/skill/lint.py --trees language compiler --base "$(DESIGN_REVIEW_BASE)" --require-no-amendments
 
 repository-invariants:
 	@$(PY) .github/check-research-inputs.py --self-test
@@ -192,12 +190,6 @@ conformance:
 compiler:
 	$(MAKE) -C compiler check
 
-# Reusable Whitefoot libraries are bundled with real callers and executed in
-# every supported lowering mode. Keeping this separate from compiler unit tests
-# makes a source-library regression visible as its own gate stage.
-library-tests:
-	$(MAKE) -C lib/containers check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
-
 # Test the separate paired runner's result integrity with synthetic data only.
 # No compiler, native image or timing campaign is part of this gate stage.
 performance-instrument:
@@ -229,4 +221,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: historical-tool-tests _historical-tool-tests check _check check-groups check-group static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler library-tests performance-instrument conformance-run install-hooks
+.PHONY: historical-tool-tests _historical-tool-tests check _check check-groups check-group static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint design-ready conformance compiler performance-instrument conformance-run install-hooks

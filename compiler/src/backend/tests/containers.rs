@@ -1,4 +1,4 @@
-//! Allocation identity/refusal and retained aggregate boundaries. Whole-value
+//! Allocation identity and retained aggregate boundaries. Whole-value
 //! container behavior lives in the programs corpus; these observers add native
 //! ownership evidence an exit code cannot provide.
 
@@ -32,19 +32,33 @@ fn observe_allocations(module: &str) -> String {
     result
 }
 
+/// Retired subject: the allocation-refusal sweep, which [STOR-8]'s total
+/// allocation leaves without a source-visible subject; successor: this test,
+/// which keeps the owner-identity half the observer still observes, including
+/// the `Full(offered:)` owner return the sweep used to check.
+///
+/// The counts are derived from the fixture, not read back from it. `main`
+/// runs `exercise` for the sixteen seeds `0_u64..16_u64`; each `exercise`
+/// makes twelve `allocate_put` calls and each of those one
+/// `box_new::<u64>(value: v)`, and [STOR-1] gives a `Box<T>` "one
+/// compiler-derived allocation released by one compiler-derived free at owner
+/// scope exit [STOR-3]" while [TYPE-9] stores its content "in exactly one heap
+/// object the `Box` value owns". So 16 x 12 = 192 owners and 192 frees, and
+/// the twelfth of each seed is the owner offered to a genuinely full table and
+/// handed straight back as `Full(offered: back)`: 16 of those. An open
+/// `allocations=` would let an owner go missing without this line changing.
 #[test]
-fn owning_map_collision_tombstone_and_full_return_preserve_every_owner() {
+fn owning_map_collision_and_tombstone_preserve_every_owner_identity() {
     let source = include_bytes!("../../../../tests/programs/containers/owning-map.wf");
     let module = observe_allocations(&emit(source));
     let output = compile_link_and_run(&module, Some(include_str!("owning_map_observer.c")), &[]);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
     let report = String::from_utf8(output.stdout).unwrap();
-    assert!(
-        report.starts_with("PASS runs=193 refusal_positions=1..192 "),
-        "{report}"
+    assert_eq!(
+        report,
+        "PASS status=0 allocations=192 releases=192 full_original_owners=16 live=0\n"
     );
-    assert!(report.ends_with(" live=0\n"), "{report}");
 }
 
 fn check_migration(source: &[u8], behavior: bool) {
@@ -66,18 +80,25 @@ fn check_migration(source: &[u8], behavior: bool) {
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
     let report = String::from_utf8(output.stdout).unwrap();
-    assert!(
-        report.starts_with("owning-growth: 1808 matched executions; "),
-        "{report}"
+    let mut expected = String::from(
+        "owning-growth: 304 matched executions; 912 resource releases; 592 backing releases\n",
     );
-    assert_eq!(report.lines().count(), if behavior { 2 } else { 1 });
     if behavior {
-        assert!(report.contains("behavior: 12 stateful, branded-key and hostile-equality executions; every refusal and release checked\n"), "{report}");
+        expected.push_str(
+            "behavior: 3 stateful, branded-key and hostile-equality executions; every owner and release checked\n",
+        );
     }
+    assert_eq!(report, expected);
 }
 
+/// STOR-8 makes an allocation request total: host exhaustion terminates inside
+/// the trusted base instead of returning a source-visible refusal. The retired
+/// observer injected `malloc == NULL` and compared return code 70, which no
+/// longer corresponds to a Whitefoot execution. This keeps every successful
+/// migration budget, blocked/full domain result, exact allocation extent,
+/// owner identity, and release comparison against the independent C control.
 #[test]
-fn direct_migration_budgets_and_refusals_preserve_state_and_allocation_identity() {
+fn direct_migration_budgets_and_domain_limits_preserve_state_and_allocation_identity() {
     check_migration(
         include_bytes!("../../../../tests/programs/containers/owning-growth.wf"),
         false,
@@ -85,7 +106,7 @@ fn direct_migration_budgets_and_refusals_preserve_state_and_allocation_identity(
 }
 
 #[test]
-fn generic_migration_and_behavior_refusals_preserve_state_and_allocation_identity() {
+fn generic_migration_and_behavior_limits_preserve_state_and_allocation_identity() {
     check_migration(
         include_bytes!("../../../../tests/programs/containers/owning-behavior.wf"),
         true,
@@ -181,12 +202,12 @@ fn aggregate_transfer_inspector_counts_copy_and_vector_traffic() {
 }
 
 #[test]
-fn growing_a_run_keeps_the_original_data_on_limit_and_allocation_refusal() {
+fn growing_a_run_keeps_the_original_data_at_capacity_and_target_limits() {
     let source = include_bytes!("../../../../tests/programs/growable_vec.wf");
     let mut module = observe_allocations(&emit(source));
-    assert!(
-        module.contains("define i64 @wf_growth_trace(ptr %v0, i8 %v1, i64 %v2, i64 %v3, i64 %v4)")
-    );
+    // The retired region/store actual was the leading pointer in v0.59.
+    // v0.60's one heap leaves exactly the four declared scalar parameters.
+    assert!(module.contains("define i64 @wf_growth_trace(i8 %v0, i64 %v1, i64 %v2, i64 %v3)"));
     module = module.replacen(
         "define i32 @wf__main_body(",
         "define i32 @wf_fixture_body(",
@@ -198,6 +219,6 @@ fn growing_a_run_keeps_the_original_data_on_limit_and_allocation_refusal() {
     assert!(output.stderr.is_empty(), "{output:?}");
     assert_eq!(
         output.stdout,
-        b"growth: 108 boundary/refusal traces; all owners returned\n"
+        b"growth: 36 boundary traces; all owners returned\n"
     );
 }

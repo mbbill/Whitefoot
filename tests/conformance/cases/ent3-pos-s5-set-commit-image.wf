@@ -1,18 +1,19 @@
-fn tail_byte(data: own Slice<u8>) -> result: own u8 reads(data) {
-  doc "A direct-place set commit publishes its finite S5 post-write image only after facts about the old target value die.";
-  let n = len_of(data);
+fn tail_byte(data: &[u8]) -> result: own u8 reads(data) {
+  doc "A direct-place set commit publishes its finite S5 post-write image only after facts about the old target value die. Here start = back carries the already proved n - 8 bound to the subscript without a runtime check.";
+  let n = deref(data).len;
   let have_room = n >= 8_u64;
   let start = 0_u64;
   let out = 0_u8;
   if have_room {
     let back = n -wrap 8_u64;
     set start = back;
-    let byte = data[start];
+    let byte = deref(data)[start];
     set out = byte;
   }
   return out;
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "No construction is needed to exercise the commit image.";
   return exit_status(code: 0_u8);
 }

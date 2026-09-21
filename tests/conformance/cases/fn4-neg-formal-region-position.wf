@@ -1,13 +1,18 @@
-formal FirstLength {
-  fn length(x: &FixedVector<u8, 4>, y: &FixedVector<u8, 4>) -> result: own u64 reads(x);
+struct Cell {
+  value: u8;
 }
 
-fn second_length(first: &FixedVector<u8, 4>, second: &FixedVector<u8, 4>) -> result: own u64 reads(second) {
-  return len_of(deref(second));
+interface FirstValue {
+  fn read(x: &Cell, y: &Cell) -> result: own u8 reads(x.value);
 }
 
-actual Wrong : FirstLength {
-  length = second_length;
+fn second_value(first: &Cell, second: &Cell) -> result: own u8 reads(second.value) {
+  doc "The row names the second parameter ordinal where the formal names the first.";
+  return deref(second).value;
+}
+
+binding Wrong : FirstValue {
+  read = second_value;
 }
 
 fn main() -> status: own ExitStatus pure {

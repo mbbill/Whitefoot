@@ -1,55 +1,47 @@
-struct Holder['s] {
-  run: Vector<'s, u8>;
+struct Holder {
+  run: Slots<u8, 4>;
 }
 
-fn grow['s](old: own Vector<'s, u8>) -> bigger: own Vector<'s, u8> reads(old) {
-  doc "Consumes the run it is handed and hands one back.";
-  let seen = len_of(old);
+fn regrow(old: own Slots<u8, 4>) -> bigger: own Slots<u8, 4> pure contract {
+  ensures bigger.len == old.len;
+} {
+  doc "Consumes the window it is handed and hands one of the same shape back.";
   return move old;
 }
 
-fn bump['heap](cell: own Box<'heap, u64>) -> back: own Box<'heap, u64> pure {
-  doc "Consumes the cell it is handed and hands one back.";
-  return move cell;
+fn bump(cell: own u64) -> back: own u64 pure contract {
+  requires cell +defined 1_u64;
+  ensures back == cell + 1_u64;
+} {
+  doc "One more than the value it is handed.";
+  let raised = cell + 1_u64;
+  return raised;
 }
 
-fn refill['heap](out: &uniq Box<'heap, u64>) -> done: own unit reads(out), writes(out) {
-  doc "The commit at a deref: the read-out is admitted on [SET-2]'s exchange ground.";
-  set deref(out) = bump(cell: move deref(out));
+fn refill(out: &Box<u64>) -> done: own unit writes(out) contract {
+  requires deref(out).inner +defined 1_u64;
+} {
+  doc "The atomic update at a cell's content reached through a reference parameter: the old value enters the callee by value and the result is committed with no program point between.";
+  set deref(out).inner = bump(cell: deref(out).inner);
   return unit;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "LIV-2: probe q9's statement at each of the three place shapes a commit reinitializes. The right-hand side reads the target's previous value out, so the target is dead at the commit and every one of the three is admitted where [STOR-1] refused all three before.";
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh_bare) => {
-        let bare = move fresh_bare;
-        set bare = grow(old: move bare);
-        match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
-          None() => {
-            return exit_status(code: 70_u8);
-          }
-          Some(value: run) => {
-            let holder = Holder(run: move run);
-            set holder.run = grow(old: move holder.run);
-            match heap_box(store: &uniq heap, value: 5_u64) {
-              Err(error: refused) => {
-                return exit_status(code: 71_u8);
-              }
-              Ok(value: target) => {
-                region {
-                  let done = refill(out: &uniq target);
-                }
-                return exit_status(code: 0_u8);
-              }
-            }
-          }
-        }
-      }
-    }
+fn main() -> status: own ExitStatus pure {
+  doc "OP-12: the atomic in-place update at each of the three place shapes a commit reinitializes - a bare binding, a field of a struct, and Box content reached through a reference parameter whose row writes that path. The old value enters the callee by value and the callee's result is committed, so the place owns exactly one valid value at every program point and none of the three needs a hole.";
+  let values = array_filled::<u8, 4>(value: 0_u8);
+  let bare = slots_from_array::<u8, 4>(values: values);
+  set bare = regrow(old: move bare);
+  let holder = Holder(run: move bare);
+  set holder.run = regrow(old: move holder.run);
+  let target = box_new::<u64>(value: 5_u64);
+  if target.inner +defined 1_u64 {
+    refill(out: &target);
+  } else {
+    return exit_status(code: 2_u8);
   }
+  let seen = target.inner;
+  if seen == 6_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
 }

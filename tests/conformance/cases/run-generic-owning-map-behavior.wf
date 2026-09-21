@@ -2,12 +2,14 @@ struct Seed {
   salt: u64;
 }
 
-fn seed_hash(env: &Seed, key: &u64) -> hash: own u64 reads(env.salt, key) {
+fn seed_hash(env: &Seed, key: &u64) -> hash: own u64 reads(env.salt), reads(key) {
+  doc "Reference parameters are read through deref, so the salt and the key are ordinary place reads.";
   let mixed = deref(key) +wrap deref(env).salt;
   return mixed;
 }
 
-fn seed_equal(env: &Seed, left: &u64, right: &u64) -> equal: own Bool reads(left, right) {
+fn seed_equal(env: &Seed, left: &u64, right: &u64) -> equal: own Bool reads(left), reads(right) {
+  doc "The supplied row is a subset of the formal's, which FN-4 admits.";
   let same = deref(left) == deref(right);
   return same;
 }
@@ -20,10 +22,10 @@ struct Resource {
   data3: u64;
 }
 
-enum Slot<K: linear>['s] {
+enum Slot<K> {
   Vacant();
   Deleted();
-  Occupied(fingerprint: u8, key: K, payload: Box<'s, Resource>);
+  Occupied(fingerprint: u8, key: K, payload: Box<Resource>);
 }
 
 enum Probe {
@@ -33,21 +35,21 @@ enum Probe {
   Match();
 }
 
-enum KeyPut<K: linear>['s] {
-  Installed(previous: Slot<'s, K>);
-  Rejected(key: K, payload: Box<'s, Resource>);
+enum KeyPut<K> {
+  Installed(previous: Slot<K>);
+  Rejected(key: K, payload: Box<Resource>);
 }
 
-formal Key<K: linear, E: linear> {
-  fn hash(env: &E, key: &K) -> hash: own u64 reads(env, key);
-  fn equal(env: &E, left: &K, right: &K) -> equal: own Bool reads(env, left, right);
+interface Key<K, E> {
+  fn hash(env: &E, key: &K) -> hash: own u64 reads(env), reads(key);
+  fn equal(env: &E, left: &K, right: &K) -> equal: own Bool reads(env), reads(left), reads(right);
 }
 
-struct Map<Key<K, E>>['s] {
-  slots: Vector<'s, Slot<'s, K>>;
+struct Map<interface Key<K, E>> {
+  slots: Box<Slots<Slot<K>>>;
 }
 
-actual SeedKey : Key<u64, Seed> {
+binding SeedKey : Key<u64, Seed> {
   hash = seed_hash;
   equal = seed_equal;
 }
@@ -56,19 +58,23 @@ struct Empty {
 }
 
 fn word_hash(env: &Empty, key: &u64) -> hash: own u64 reads(key) {
+  doc "An empty-environment hash.";
   return deref(key);
 }
 
-fn word_equal(env: &Empty, left: &u64, right: &u64) -> equal: own Bool reads(left, right) {
-  return deref(left) == deref(right);
+fn word_equal(env: &Empty, left: &u64, right: &u64) -> equal: own Bool reads(left), reads(right) {
+  doc "An empty-environment equality.";
+  let same = deref(left) == deref(right);
+  return same;
 }
 
-actual WordKey : Key<u64, Empty> {
+binding WordKey : Key<u64, Empty> {
   hash = word_hash;
   equal = word_equal;
 }
 
 fn fingerprint(key: own u64) -> result: own u8 pure {
+  doc "Seven low bits of the hash, folded one at a time.";
   let tag = 0_u8;
   let bit0 = iand(key, 1_u64);
   if bit0 != 0_u64 {
@@ -106,6 +112,7 @@ fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 p
   requires step < count;
   ensures index < count;
 } {
+  doc "Linear probing with an explicit wrap, so the returned offset is proved inside the window.";
   let until_end = count - home;
   if step >= until_end {
     let wrapped = step - until_end;
@@ -115,7 +122,8 @@ fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 p
   return straight;
 }
 
-fn key_probe<Key<K, E>>['s](slot: &Slot<'s, K>, tag: own u8, key: &K, env: &E) -> action: own Probe reads(slot, key, env) {
+fn key_probe<interface Key<K, E>>(slot: &Slot<K>, tag: own u8, key: &K, env: &E) -> action: own Probe reads(slot), reads(key), reads(env) {
+  doc "Matching through a reference leaves the scrutinee live and binds each payload as a reference naming the scrutinee path.";
   match deref(slot) {
     Vacant() => {
       return Stop();
@@ -135,102 +143,87 @@ fn key_probe<Key<K, E>>['s](slot: &Slot<'s, K>, tag: own u8, key: &K, env: &E) -
   }
 }
 
-fn key_put<Key<K, E>>['s](slots: &uniq Vector<'s, Slot<'s, K>>, key: own K, payload: own Box<'s, Resource>, env: &E) -> outcome: own KeyPut<'s, K> reads(slots, key, env), writes(slots) contract {
-  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
-  ensures head_of(deref(slots)) == head_of(deref(entry(slots)));
+fn key_put<interface Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: own K, payload: own Box<Resource>, env: &E) -> outcome: own KeyPut<K> reads(env), writes(slots) contract {
+  ensures deref(slots).inner.len == deref(entry(slots)).inner.len;
 } {
-  let hash = 0_u64;
-  region {
-    set hash = Key::hash(env: env, key: &key);
-  }
+  doc "The probe loop only selects a destination, so the owning key and payload are never moved inside a loop body; the one installation is written after it and exchanges the old occupant out by swap.";
+  let hash = Key::hash(env: env, key: &key);
   let tag = fingerprint(key: hash);
-  let count = len_of(deref(slots));
+  let count = deref(slots).inner.len;
   let first_deleted = count;
+  let destination = count;
   for (step in 0_u64..count) {
-    let home = hash % count;
-    let index = probe_index(home: home, step: step, count: count);
-    let action = Miss();
-    region {
-      set action = key_probe::<Key<K, E>>(slot: &deref(slots)[index], tag: tag, key: &key, env: env);
-    }
-    match action {
-      Match() => {
-        let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
-        let previous = replace deref(slots)[index] = move offered;
-        return Installed<K>(previous: move previous);
-      }
-      Skip() => {
-        if first_deleted == count {
-          set first_deleted = index;
+    if destination == count {
+      let home = hash % count;
+      let index = probe_index(home: home, step: step, count: count);
+      let action = key_probe::<Key<K, E>>(slot: &deref(slots).inner[index], tag: tag, key: &key, env: env);
+      match action {
+        Match() => {
+          set destination = index;
         }
-      }
-      Stop() => {
-        let destination = index;
-        if first_deleted < count {
-          set destination = first_deleted;
+        Skip() => {
+          if first_deleted == count {
+            set first_deleted = index;
+          }
         }
-        let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
-        let previous = replace deref(slots)[destination] = move offered;
-        return Installed<K>(previous: move previous);
-      }
-      Miss() => {
+        Stop() => {
+          if first_deleted < count {
+            set destination = first_deleted;
+          } else {
+            set destination = index;
+          }
+        }
+        Miss() => {
+        }
       }
     }
   }
-  if first_deleted < count {
-    let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
-    let previous = replace deref(slots)[first_deleted] = move offered;
-    return Installed<K>(previous: move previous);
+  if destination == count {
+    if first_deleted < count {
+      set destination = first_deleted;
+    }
   }
-  return Rejected<K>(key: move key, payload: move payload);
+  if destination < count {
+  } else {
+    return Rejected<K>(key: move key, payload: move payload);
+  }
+  let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
+  swap(first: &deref(slots).inner[destination], second: &offered);
+  return Installed<K>(previous: move offered);
 }
 
-fn key_fill<K: linear>['s](slots: &uniq Vector<'s, Slot<'s, K>>, count: own u64) -> result: own unit reads(slots), writes(slots) contract {
-  requires len_of(deref(slots)) == 0_u64;
-  requires head_of(deref(slots)) <= 0_u64;
-  requires room_of(deref(slots)) >= count;
-  ensures len_of(deref(slots)) == count;
-  ensures head_of(deref(slots)) <= 0_u64;
+fn key_fill<K>(slots: &Box<Slots<Slot<K>>>, count: own u64) -> result: own unit writes(slots) contract {
+  requires deref(slots).inner.len == 0_u64;
+  requires count <= deref(slots).inner.cap - deref(slots).inner.len;
+  ensures deref(slots).inner.len == count;
 } {
+  doc "One vacant slot per position, under a counted header that carries the length and the remaining room.";
   for (
     index in 0_u64..count,
-    invariant filled: len_of(deref(slots)) >= index,
-    invariant bounded: len_of(deref(slots)) <= index,
-    invariant spare: room_of(deref(slots)) + index >= count,
-    invariant flat: head_of(deref(slots)) <= 0_u64
+    invariant filled: deref(slots).inner.len >= index,
+    invariant bounded: deref(slots).inner.len <= index,
+    invariant spare: deref(slots).inner.cap - deref(slots).inner.len + index >= count
   ) {
-    let vacant = Vacant<'s, K>();
-    region {
-      place_back(vector: &uniq deref(slots), value: move vacant);
-    }
+    let vacant = Vacant<K>();
+    place_back(window: &deref(slots).inner, value: move vacant);
   }
-  invariant complete_min: len_of(deref(slots)) >= count;
-  invariant complete_max: len_of(deref(slots)) <= count;
+  invariant complete_min: deref(slots).inner.len >= count;
+  invariant complete_max: deref(slots).inner.len <= count;
   return unit;
 }
 
-fn key_create<K: linear>['s](store: &uniq Heap<'s>, count: own u64) -> result: own Option<Vector<'s, Slot<'s, K>>> reads(store), writes(store), allocates(store) {
-  let fits = buffer_fits::<Slot<'s, K>>(count);
-  if fits {
-  } else {
-    return None<Vector<'s, Slot<'s, K>>>();
-  }
-  region {
-    match heap_vector::<Slot<'s, K>>(store: &uniq deref(store), count: count) {
-      None() => {
-        return None<Vector<'s, Slot<'s, K>>>();
-      }
-      Some(value: spare) => {
-        region {
-          key_fill::<K>(slots: &uniq spare, count: count);
-        }
-        return Some<Vector<'s, Slot<'s, K>>>(value: move spare);
-      }
-    }
-  }
+fn key_create<K>(count: own u64) -> result: own Box<Slots<Slot<K>>> pure contract {
+  requires count <= 384307168202282324_u64;
+  ensures result.inner.len == count;
+} {
+  doc "Allocation is total, so the creation has no failure arm and the static allocation-size obligation is discharged at the constructor. For this native fixture's concrete Slot types, STOR-6 also requires the 16-byte descriptor plus 24 bytes per slot to fit the signed 64-bit address domain: floor((9223372036854775807 - 16) / 24) = 384307168202282324. The former u64 product-only ceiling did not qualify a native allocation. All workload inputs and runtime observations are unchanged.";
+  let spare = box_slots_new::<Slot<K>>(capacity: count);
+  key_fill::<K>(slots: &spare, count: count);
+  return move spare;
 }
 
-fn key_inspect<Key<K, E>>['s](slot: &Slot<'s, K>, tag: own u8, key: &K, env: &E) -> (action: own Probe, id: own u64) reads(slot, key, env) {
+fn key_inspect<interface Key<K, E>>(slot: &Slot<K>, tag: own u8, key: &K, env: &E) -> (action: own Probe, id: own u64) reads(slot), reads(key), reads(env) {
+  doc "The same probe, reporting the occupant's identifier beside its verdict.";
   match deref(slot) {
     Vacant() => {
       return Stop(), 0_u64;
@@ -242,7 +235,8 @@ fn key_inspect<Key<K, E>>['s](slot: &Slot<'s, K>, tag: own u8, key: &K, env: &E)
       if deref(saved) == tag {
         let same = Key::equal(env: env, left: present, right: key);
         if same {
-          return Match(), deref(deref(owner)).id;
+          let found = deref(owner).inner.id;
+          return Match(), found;
         }
       }
       return Miss(), 0_u64;
@@ -250,237 +244,180 @@ fn key_inspect<Key<K, E>>['s](slot: &Slot<'s, K>, tag: own u8, key: &K, env: &E)
   }
 }
 
-fn key_find<Key<K, E>>['s](slots: &Vector<'s, Slot<'s, K>>, key: &K, env: &E) -> (found: own Option<u64>, examined: own u64) reads(slots, key, env) {
+fn key_find<interface Key<K, E>>(slots: &Box<Slots<Slot<K>>>, key: &K, env: &E) -> (found: own Option<u64>, examined: own u64) reads(slots), reads(key), reads(env) {
+  doc "The lookup walks the same probe order and reports how many positions it examined.";
   let hash = Key::hash(env: env, key: key);
   let tag = fingerprint(key: hash);
-  let count = len_of(deref(slots));
+  let count = deref(slots).inner.len;
   for (offset in 0_u64..count) {
     let home = hash % count;
     let index = probe_index(home: home, step: offset, count: count);
     let work = offset + 1_u64;
-    region {
-      let (action, id) = key_inspect::<Key<K, E>>(slot: &deref(slots)[index], tag: tag, key: key, env: env);
-      match action {
-        Stop() => {
-          return None<u64>(), work;
-        }
-        Match() => {
-          return Some<u64>(value: id), work;
-        }
-        Skip() => {
-        }
-        Miss() => {
-        }
+    let (action, id) = key_inspect::<Key<K, E>>(slot: &deref(slots).inner[index], tag: tag, key: key, env: env);
+    match action {
+      Stop() => {
+        return None<u64>(), work;
+      }
+      Match() => {
+        return Some<u64>(value: id), work;
+      }
+      Skip() => {
+      }
+      Miss() => {
       }
     }
   }
   return None<u64>(), count;
 }
 
-struct Branded['s] {
-  value: Box<'s, u64>;
+struct Branded {
+  value: Box<u64>;
 }
 
-fn branded_hash['s](env: &Seed, key: &Branded<'s>) -> hash: own u64 reads(env.salt, key.value) {
-  let value = deref(deref(key).value);
-  return value +wrap deref(env).salt;
+fn branded_hash(env: &Seed, key: &Branded) -> hash: own u64 reads(env.salt), reads(key.value) {
+  doc "An owning key whose content is reached through the cell step.";
+  let value = deref(key).value.inner;
+  let mixed = value +wrap deref(env).salt;
+  return mixed;
 }
 
-fn branded_equal['s](env: &Seed, left: &Branded<'s>, right: &Branded<'s>) -> equal: own Bool reads(left.value, right.value) {
-  let a = deref(deref(left).value);
-  let b = deref(deref(right).value);
-  return a == b;
+fn branded_equal(env: &Seed, left: &Branded, right: &Branded) -> equal: own Bool reads(left.value), reads(right.value) {
+  doc "Two owning keys compared by their contents.";
+  let a = deref(left).value.inner;
+  let b = deref(right).value.inner;
+  let same = a == b;
+  return same;
 }
 
-actual BrandedKey['s] : Key<Branded<'s>, Seed> {
+binding BrandedKey : Key<Branded, Seed> {
   hash = branded_hash;
   equal = branded_equal;
 }
 
 fn never_equal(env: &Empty, left: &u64, right: &u64) -> equal: own Bool pure {
+  doc "A hostile equality that is not even reflexive.";
   return False();
 }
 
-actual HostileKey : Key<u64, Empty> {
+binding HostileKey : Key<u64, Empty> {
   hash = word_hash;
   equal = never_equal;
 }
 
-fn demo_payload['s](store: &uniq Heap<'s>, id: own u64) -> result: own Result<Box<'s, Resource>, Resource> reads(store), writes(store), allocates(store) {
+fn demo_payload(id: own u64) -> result: own Box<Resource> pure {
+  doc "Allocation is total, so the payload constructor has no failure arm.";
   let data0 = id *wrap 17_u64;
   let data1 = data0 +wrap 1_u64;
   let data2 = data0 +wrap 2_u64;
   let data3 = data0 +wrap 3_u64;
   let value = Resource(id: id, data0: data0, data1: data1, data2: data2, data3: data3);
-  region {
-    return heap_box(store: &uniq deref(store), value: move value);
-  }
+  let owner = box_new::<Resource>(value: value);
+  return move owner;
 }
 
-fn seed_case['s](store: &uniq Heap<'s>) -> code: own u8 reads(store), writes(store), allocates(store) {
+fn seed_case() -> code: own u8 pure {
+  doc "The stateful hash and equality instantiation: one insertion and one successful lookup.";
   let env = Seed(salt: 8_u64);
   let query = 5_u64;
-  region {
-    match key_create::<u64>(store: &uniq deref(store), count: 4_u64) {
-      None() => {
-        return 70_u8;
-      }
-      Some(value: slots) => {
-        let map = Map<SeedKey>(slots: move slots);
-        region {
-          match demo_payload(store: &uniq deref(store), id: 81_u64) {
-            Err(error: failed) => {
-              return 70_u8;
-            }
-            Ok(value: owner) => {
-              let outcome = key_put::<SeedKey>(slots: &uniq map.slots, key: 5_u64, payload: move owner, env: &env);
-              dispose outcome;
-              let (found, examined) = key_find::<SeedKey>(slots: &map.slots, key: &query, env: &env);
-              match move found {
-                None() => {
-                  return 1_u8;
-                }
-                Some(value: id) => {
-                  if id != 81_u64 {
-                    return 2_u8;
-                  }
-                }
-              }
-            }
-          }
-          return 0_u8;
-        }
+  let slots = key_create::<u64>(count: 4_u64);
+  let map = Map<SeedKey>(slots: move slots);
+  let owner = demo_payload(id: 81_u64);
+  let outcome = key_put::<SeedKey>(slots: &map.slots, key: 5_u64, payload: move owner, env: &env);
+  let (found, examined) = key_find::<SeedKey>(slots: &map.slots, key: &query, env: &env);
+  match found {
+    None() => {
+      return 1_u8;
+    }
+    Some(value: id) => {
+      if id != 81_u64 {
+        return 2_u8;
       }
     }
   }
+  return 0_u8;
 }
 
-fn branded_case['s](store: &uniq Heap<'s>) -> code: own u8 reads(store), writes(store), allocates(store) {
+fn branded_case() -> code: own u8 pure {
+  doc "The owning-key instantiation: the key itself owns a heap cell and is stored in the slot.";
   let env = Seed(salt: 8_u64);
-  region {
-    match key_create::<Branded<'s>>(store: &uniq deref(store), count: 4_u64) {
-      None() => {
-        return 70_u8;
-      }
-      Some(value: slots) => {
-        let map = Map<BrandedKey<'s>>(slots: move slots);
-        region {
-          match heap_box(store: &uniq deref(store), value: 9_u64) {
-            Err(error: failed_key) => {
-              return 70_u8;
-            }
-            Ok(value: key_owner) => {
-              let key = Branded(value: move key_owner);
-              match heap_box(store: &uniq deref(store), value: 9_u64) {
-                Err(error: failed_query) => {
-                  return 70_u8;
-                }
-                Ok(value: query_owner) => {
-                  let query = Branded(value: move query_owner);
-                  region {
-                    match demo_payload(store: &uniq deref(store), id: 81_u64) {
-                      Err(error: failed_payload) => {
-                        return 70_u8;
-                      }
-                      Ok(value: owner) => {
-                        let outcome = key_put::<BrandedKey<'s>>(slots: &uniq map.slots, key: move key, payload: move owner, env: &env);
-                        dispose outcome;
-                        let (found, examined) = key_find::<BrandedKey<'s>>(slots: &map.slots, key: &query, env: &env);
-                        match move found {
-                          None() => {
-                            return 3_u8;
-                          }
-                          Some(value: id) => {
-                            if id != 81_u64 {
-                              return 4_u8;
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-          return 0_u8;
-        }
+  let slots = key_create::<Branded>(count: 4_u64);
+  let map = Map<BrandedKey>(slots: move slots);
+  let key_owner = box_new::<u64>(value: 9_u64);
+  let key = Branded(value: move key_owner);
+  let query_owner = box_new::<u64>(value: 9_u64);
+  let query = Branded(value: move query_owner);
+  let owner = demo_payload(id: 81_u64);
+  let outcome = key_put::<BrandedKey>(slots: &map.slots, key: move key, payload: move owner, env: &env);
+  let (found, examined) = key_find::<BrandedKey>(slots: &map.slots, key: &query, env: &env);
+  match found {
+    None() => {
+      return 3_u8;
+    }
+    Some(value: id) => {
+      if id != 81_u64 {
+        return 4_u8;
       }
     }
   }
+  return 0_u8;
 }
 
-fn hostile_case['s](store: &uniq Heap<'s>) -> code: own u8 reads(store), writes(store), allocates(store) {
+fn hostile_case() -> code: own u8 pure {
+  doc "Repeated identical keys under a non-reflexive equality stay safe: every insertion lands in a vacant slot and every owner is still cleaned up.";
   let env = Empty();
   let query = 5_u64;
-  region {
-    match key_create::<u64>(store: &uniq deref(store), count: 2_u64) {
-      None() => {
-        return 70_u8;
+  let slots = key_create::<u64>(count: 2_u64);
+  let map = Map<HostileKey>(slots: move slots);
+  for (ordinal in 0_u64..2_u64) {
+    let id = ordinal +wrap 81_u64;
+    let owner = demo_payload(id: id);
+    let outcome = key_put::<HostileKey>(slots: &map.slots, key: 5_u64, payload: move owner, env: &env);
+    match outcome {
+      Rejected(key: offered_key, payload: offered_owner) => {
+        return 5_u8;
       }
-      Some(value: slots) => {
-        let map = Map<HostileKey>(slots: move slots);
-        region {
-          for (ordinal in 0_u64..2_u64) {
-            let id = ordinal +wrap 81_u64;
-            match demo_payload(store: &uniq deref(store), id: id) {
-              Err(error: failed) => {
-                return 70_u8;
-              }
-              Ok(value: owner) => {
-                let outcome = key_put::<HostileKey>(slots: &uniq map.slots, key: 5_u64, payload: move owner, env: &env);
-                match move outcome {
-                  Rejected(key: offered_key, payload: offered_owner) => {
-                    return 5_u8;
-                  }
-                  Installed(previous: old) => {
-                    match move old {
-                      Occupied(fingerprint: tag, key: old_key, payload: old_owner) => {
-                        return 6_u8;
-                      }
-                      Vacant() => {
-                      }
-                      Deleted() => {
-                      }
-                    }
-                  }
-                }
-              }
-            }
+      Installed(previous: old) => {
+        match old {
+          Occupied(fingerprint: tag, key: old_key, payload: old_owner) => {
+            return 6_u8;
           }
-          let (found, examined) = key_find::<HostileKey>(slots: &map.slots, key: &query, env: &env);
-          match move found {
-            Some(value: id) => {
-              return 7_u8;
-            }
-            None() => {
-              if examined != 2_u64 {
-                return 8_u8;
-              }
-            }
+          Vacant() => {
           }
-          return 0_u8;
+          Deleted() => {
+          }
         }
       }
     }
   }
-}
-
-fn behavior_contract['s](store: &uniq Heap<'s>, variant: own u64) -> code: own u8 reads(store), writes(store), allocates(store) {
-  region {
-    if variant == 0_u64 {
-      return seed_case(store: &uniq deref(store));
+  let (found, examined) = key_find::<HostileKey>(slots: &map.slots, key: &query, env: &env);
+  match found {
+    Some(value: id) => {
+      return 7_u8;
     }
-    if variant == 1_u64 {
-      return branded_case(store: &uniq deref(store));
+    None() => {
+      if examined != 2_u64 {
+        return 8_u8;
+      }
     }
-    return hostile_case(store: &uniq deref(store));
   }
+  return 0_u8;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn behavior_contract(variant: own u64) -> code: own u8 pure {
+  doc "One entry per instantiation.";
+  if variant == 0_u64 {
+    return seed_case();
+  }
+  if variant == 1_u64 {
+    return branded_case();
+  }
+  return hostile_case();
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "One owning enum-slot map instantiated with stateful hash and equality, an owning key, and an empty-environment hostile equality. All owners are cleaned up.";
   for (variant in 0_u64..3_u64) {
-    let code = behavior_contract(store: &uniq heap, variant: variant);
+    let code = behavior_contract(variant: variant);
     if code != 0_u8 {
       return exit_status(code: code);
     }

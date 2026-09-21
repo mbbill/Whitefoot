@@ -26,7 +26,8 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq MutSlice<u8>, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &[u8], value: own u64) -> result: own u64 writes(destination) {
+  doc "Writes the eight little-endian bytes of value through the range reference, skipping any slot the range does not have.";
   let cursor = 0_u64;
   let rest = value;
   loop @octets {
@@ -34,7 +35,7 @@ fn spell(destination: &uniq MutSlice<u8>, value: own u64) -> result: own u64 rea
     if done {
       break @octets;
     }
-    let spare = len_of(deref(destination));
+    let spare = deref(destination).len;
     let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
@@ -48,31 +49,18 @@ fn spell(destination: &uniq MutSlice<u8>, value: own u64) -> result: own u64 rea
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
   let total = spine(depth: 4000_u64, v: 1.0009765625_f64);
   let bits = reinterpret::<f64, u64>(total);
-  let report = buffer_new(8_u64, 0_u8);
-  region {
-    let window = mut_slice_of(&uniq report);
-    region {
-      let filled = spell(destination: &uniq window, value: bits);
+  let report = box_array_filled::<u8>(count: 8_u64, value: 0_u8);
+  let window = &report.inner[0_u64..8_u64];
+  let filled = spell(destination: window, value: bits);
+  match write_once(factory: &entry_factory, output: &out, source: window, start: 0_u64, end: 8_u64) {
+    Ok(value: next) => {
+      return exit_status(code: 0_u8);
     }
-  }
-  region {
-    region {
-      let ordinary_source_3 = slice_of(&report);
-      region {
-        match write_once(factory: &uniq entry_factory, output: &uniq out, source: &ordinary_source_3, start: 0_u64, end: 8_u64) {
-          Ok(value: next) => {
-            return exit_status(code: 0_u8);
-          }
-          Err(error: problem) => {
-            return exit_status(code: 1_u8);
-          }
-        }
-      }
+    Err(error: problem) => {
+      return exit_status(code: 1_u8);
     }
   }
 }

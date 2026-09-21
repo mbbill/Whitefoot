@@ -137,8 +137,6 @@ pub enum SourceIssueKind {
     InvalidUtf8,
     /// A byte is not part of the active raw token or retained trivia shape.
     UnexpectedByte,
-    /// An apostrophe is not followed by a lowercase region-name start.
-    MissingRegionName,
     /// An at sign is not followed by a lowercase label-name start.
     MissingLabelName,
     /// A string reached the source boundary without a closing quote.
@@ -159,16 +157,18 @@ impl SourceIssueKind {
     /// DIAG-1's raw lexical scanning paragraph fixes one rule per defect
     /// shape, and the scanner already branches on exactly those shapes: an
     /// invalid UTF-8 encoding or a forbidden control byte cites FORM-2
-    /// everywhere it occurs, a `'` or `@` with no lowercase follower cites
-    /// FORM-3, a `//` or `/*` prefix cites FORM-4, every STRING-interior
-    /// defect cites FORM-5, and any other byte or scalar that cannot begin a
-    /// specified token cites FORM-1.
+    /// everywhere it occurs, an `@` with no lowercase follower cites FORM-3,
+    /// a `//` or `/*` prefix cites FORM-4, every STRING-interior defect cites
+    /// FORM-5, and any other byte or scalar that cannot begin a specified
+    /// token cites FORM-1. v0.60 removed the apostrophe clause with REGIONID,
+    /// so `'` is now an ordinary byte that begins no specified token and
+    /// falls to the residual FORM-1 clause.
     #[must_use]
     pub const fn rule_id(self) -> &'static str {
         match self {
             Self::InvalidUtf8 | Self::InvalidSourceByte => "FORM-2",
             Self::UnexpectedByte => "FORM-1",
-            Self::MissingRegionName | Self::MissingLabelName => "FORM-3",
+            Self::MissingLabelName => "FORM-3",
             Self::UnterminatedString | Self::InvalidStringByte | Self::InvalidStringEscape => {
                 "FORM-5"
             }

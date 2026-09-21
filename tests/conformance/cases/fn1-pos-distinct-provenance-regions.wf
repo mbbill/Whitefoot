@@ -1,16 +1,11 @@
-fn pick['r](a: &uniq 'r i32, b: &uniq i32) -> result: &uniq 'r i32 pure {
-  return &uniq 'r deref(a);
+fn pick(a: &i32, b: &i32) -> result: own i32 reads(a) {
+  doc "One input supplies the result and the other stays unrelated. That is settled by value: the result is owned data read out of `a`, so no region relation is needed to say where it came from and `b` is neither read nor written [FN-1, REF-1].";
+  return deref(a);
 }
 
 fn main() -> status: own ExitStatus pure {
   let x = 1_i32;
   let y = 2_i32;
-  region 'a {
-    region {
-      let r = pick(a: &uniq 'a x, b: &uniq y);
-      set deref(r) = 9_i32;
-      let w = deref(r);
-    }
-  }
+  let r = pick(a: &x, b: &y);
   return exit_status(code: 0_u8);
 }

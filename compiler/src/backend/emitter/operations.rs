@@ -61,14 +61,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         {
             return Err(BackendFailure::InvalidIr);
         }
-        writeln!(
-            self.output,
-            "  store {} {}, ptr {}",
-            llvm_type(self.program, referent.ty())?,
-            self.value_name(value),
-            self.value_name(address)
-        )
-        .map_err(|_| BackendFailure::TextEmission)
+        let destination = self.value_name(address);
+        self.store_value_at(value, &destination)
     }
 
     fn referent_is_stored(&self, referent: IrAddressed) -> Result<bool, BackendFailure> {
@@ -85,16 +79,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             | IrAddressed::Integer { .. }
             | IrAddressed::Float { .. }
             | IrAddressed::Buffer { .. }
-            | IrAddressed::Slice { .. }
-            // A run's storage — inline slots, or the descriptor of a
-            // store-resident one — lives in its owner, so a borrow of either
-            // run addresses that storage [BLK-1].
-            | IrAddressed::FixedVector { .. }
+            // An inline window's storage lives in its owner, so a reference
+            // to one addresses that storage [TYPE-9, REF-1].
             | IrAddressed::Array { .. }
-            | IrAddressed::Vector { .. }
-            // A provider is stored content: its cursor is the state a bump
-            // take advances through the `&uniq` borrow [PROV-1, BLK-2].
-            | IrAddressed::Provider => true,
+            | IrAddressed::Window { .. } => true,
         })
     }
 

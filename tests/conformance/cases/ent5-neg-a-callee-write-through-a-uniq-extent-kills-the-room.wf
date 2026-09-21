@@ -1,18 +1,15 @@
-fn reserve['s](store: &uniq Arena<'s, 64, 1>) -> taken: own Option<Vector<'s, u8>> reads(store), writes(store), allocates(store) {
-  doc "Takes eight bytes from the extent it was handed and hands the run back, which moves the extent's own cursor.";
-  region {
-    return arena_vector::<u8>(store: &uniq deref(store), count: 8_u64);
-  }
+fn reserve(store: &Slots<u8, 64>) -> result: own unit writes(store.next), writes(store.len) contract {
+  requires deref(store).len < deref(store).cap;
+} {
+  doc "Fills one slot of the window it was handed, which moves that window's own boundary.";
+  place_back(window: store, value: 0_u8);
+  return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "The callee writes the extent behind its `&uniq Arena` parameter. [EFF-2] projects writes(store) onto the actual place workspace, which is the support member of room_of(workspace), and [ENT-5] clause (a) makes that projected write kill the extent's measure facts. The opening room_of(workspace) = 64 must therefore not survive the call, and the later proved take of the whole extent must be rejected at [BLK-0] with the residual room_of(workspace) >= 64_u64. This is the [S34] successor of the retiring buffer program: the extent is the measured non-view referent a `&uniq` parameter may still name [BLK-4].";
-  region 'w {
-    let workspace = arena_frame::<64, 1, 'w>();
-    region {
-      let taken = reserve(store: &uniq workspace);
-      let run = arena_vector_proved::<u8>(store: &uniq workspace, count: 64_u64);
-    }
-  }
+  doc "The callee writes the window behind its reference parameter. [EFF-2] projects writes(store.len) onto the actual place workspace, which is the support member of every measure over it, and [ENT-5] clause (b) kills those measure facts. The opening free slots therefore does not survive the call, and the later window operation's own requirement is rejected at [FN-8] with the residual workspace.len < workspace.cap submitted to [MSR-4].";
+  let workspace = slots_new::<u8, 64>();
+  reserve(store: &workspace);
+  place_back(window: &workspace, value: 1_u8);
   return exit_status(code: 0_u8);
 }

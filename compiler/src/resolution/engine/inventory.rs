@@ -76,6 +76,19 @@ fn check_inventory(
         if !include(role) {
             continue;
         }
+        // [FORM-3] reserves the dotless operation families and the five
+        // operation-mode words from "No source declaration or FN-9
+        // result-datum candidate in this closed list".
+        //
+        // x1 deletes the prelude-origin exemption that stood here. It existed
+        // only for the eight measure and window-part names, which the rule no
+        // longer reserves: the prelude's own fence writes `next` as a payload
+        // binder of `host_copy_bytes` and as a result binding of
+        // `directory_next`, so reading the old eight-name set against every
+        // declaration role made the prelude reject itself before any source
+        // file was read. No PRE-1 record is spelled like a dotless operation
+        // family or a mode word, so the two surviving classes need no skip and
+        // the prelude is now read exactly as source is.
         if let Some((reserved_role, checked_spelling)) = reserved_role(topology, role)
             && let Some((class, inventory_ordinal)) = reserved_name(checked_spelling)
         {
@@ -98,33 +111,6 @@ fn check_inventory(
         let declaration = declarations
             .get(record_index)
             .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
-
-        if matches!(
-            declaration.role,
-            DeclarationRole::RegionParameter | DeclarationRole::LocalRegion
-        ) && let Some(conflicting) = index
-            .with_spelling(&declaration.spelling)
-            .iter()
-            .copied()
-            .take_while(|candidate| *candidate < meta.record_index)
-            .filter_map(|candidate| metas.get(candidate))
-            .find(|candidate| {
-                candidate.region_owner == meta.region_owner
-                    && matches!(
-                        declarations[candidate.record_index].role,
-                        DeclarationRole::RegionParameter | DeclarationRole::LocalRegion
-                    )
-            })
-        {
-            return Ok(Some(ResolutionIssue {
-                rule: ResolutionRule::Own3,
-                origin: declaration.origin.clone(),
-                kind: ResolutionIssueKind::RepeatedRegion {
-                    spelling: declaration.spelling.clone(),
-                    conflicting: declarations[conflicting.record_index].origin.clone(),
-                },
-            }));
-        }
 
         if declaration.role == DeclarationRole::MatchBinder
             && let Some(issue) = match_binder_issue(topology, scopes, role, declaration, &tables)?
@@ -180,23 +166,9 @@ fn reserved_role<'role>(
         RawRoleKind::DependentDeclaration(DependentDeclarationRole::VariantField) => {
             ReservedDeclarationRole::VariantField
         }
-        RawRoleKind::Declaration(DeclarationRole::RegionParameter) => {
-            ReservedDeclarationRole::RegionParameter
-        }
-        RawRoleKind::Declaration(DeclarationRole::LocalRegion) => {
-            ReservedDeclarationRole::LocalRegion
-        }
         _ => return None,
     };
-    let spelling = if matches!(
-        mapped,
-        ReservedDeclarationRole::RegionParameter | ReservedDeclarationRole::LocalRegion
-    ) {
-        role.spelling.strip_prefix('\'')?
-    } else {
-        &role.spelling
-    };
-    Some((mapped, spelling))
+    Some((mapped, role.spelling.as_str()))
 }
 
 fn match_binder_issue(
@@ -330,56 +302,13 @@ fn collision_issue(
         )));
     }
 
-    // [DIAG-1] rank 5, read over the two compiler-owned container domains:
-    // the [TYPE-2] container and provider nominals and the [BLK-0] kernel
-    // operations enter every unit [BLK-0], so a source declaration in the same
-    // domain is the same collision and neither declaration resolves.
-    let mut container_conflicts = Vec::new();
-    for class in &meta.entries {
-        let domain =
-            declaration_domain(*class).ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
-        for (ordinal, nominal) in crate::CONTAINER_NOMINALS.iter().enumerate() {
-            if nominal.spelling != declaration.spelling {
-                continue;
-            }
-            for entry in crate::CONTAINER_NOMINAL_CLASSES {
-                if declaration_domain(entry) != Some(domain) {
-                    continue;
-                }
-                container_conflicts.push(DeclarationConflict {
-                    domain,
-                    class: entry,
-                    origin: DeclarationOrigin::Container(crate::ContainerNominalId::new(
-                        u8::try_from(ordinal)
-                            .map_err(|_| ResolutionCompilerFailure::InvalidRoleShape)?,
-                    )),
-                });
-            }
-        }
-        for (ordinal, operation) in crate::KERNEL_OPERATIONS.iter().enumerate() {
-            if operation.spelling == declaration.spelling
-                && declaration_domain(crate::KERNEL_OPERATION_CLASS) == Some(domain)
-            {
-                container_conflicts.push(DeclarationConflict {
-                    domain,
-                    class: crate::KERNEL_OPERATION_CLASS,
-                    origin: DeclarationOrigin::Kernel(crate::KernelOperationId::new(
-                        u8::try_from(ordinal)
-                            .map_err(|_| ResolutionCompilerFailure::InvalidRoleShape)?,
-                    )),
-                });
-            }
-        }
-    }
-    sort_conflicts(&mut container_conflicts, tables.declarations);
-    if !container_conflicts.is_empty() {
-        return Ok(Some(collision(
-            declaration,
-            container_conflicts,
-            declaration_collision_rule(declaration),
-            COLLIDES_WITH_CONTAINER,
-        )));
-    }
+    // x1 [TYPE-2, PRE-1]: the four storage nominals no longer stand beside the
+    // declaration tables as their own rank. `Array`, `Slots`, `Ring` and `Box`
+    // are the prelude's opaque structs, so a source declaration of one of
+    // those spellings meets it through the ordinary prelude rank above, in the
+    // same words every other PRE-1 collision uses. Nothing is narrowed: the
+    // spelling still collides in both domains and neither declaration
+    // resolves.
 
     let mut same_scope = Vec::new();
     for candidate in tables
@@ -509,7 +438,6 @@ fn collect_domain_conflicts(
 /// blind-writer trial of 2026-08-28 met that one twice and repaired it by
 /// guessing.
 const COLLIDES_WITH_PRELUDE: &str = "a source declaration never displaces, overrides, or shadows a PRE-1 prelude declaration of the same spelling and domain, and neither declaration resolves after the collision; rename this declaration";
-const COLLIDES_WITH_CONTAINER: &str = "a source declaration never displaces, overrides, or shadows a compiler-owned container nominal or kernel-domain operation of the same spelling and domain [TYPE-2, BLK-0], and neither declaration resolves after the collision; rename this declaration";
 const COLLIDES_IN_ONE_SCOPE: &str = "one scope declares each spelling once in a domain, so this is a redeclaration and not a shadow; rename this declaration, or delete the earlier one when nothing reads it";
 const COLLIDES_WITH_LIVE_OUTER: &str = "a declaration's scope ends with the block that declares it, and not where its value is consumed: a binding whose value was moved is dead as a value while its declaration stays live, so an inner declaration of the same spelling still collides with it. Rename the inner declaration, or close the block that declares the outer one before this point";
 
@@ -545,8 +473,7 @@ pub(super) fn conflict_key(
     declarations: &[DeclarationRecord],
 ) -> (u8, EventKey) {
     // [DIAG-1] orders conflicts within one domain by PRE-1 declaration
-    // ordinal first, then container declaration ordinal, then source
-    // declaration-event key.
+    // ordinal first, then source declaration-event key.
     match origin {
         DeclarationOrigin::Prelude(id) => (
             0,
@@ -559,35 +486,9 @@ pub(super) fn conflict_key(
                 subtoken: 0,
             },
         ),
-        // [DIAG-1] orders the two compiler-owned container domains after the
-        // prelude and before any source event, by their own
-        // ordinals: the nominal-type rows [TYPE-2] then the
-        // `container_declaration_ordinal` rows [BLK-0].
-        DeclarationOrigin::Container(id) => (
-            2,
-            EventKey {
-                source: 0,
-                start: u64::from(id.ordinal()),
-                end: 0,
-                path: Vec::new(),
-                role: 0,
-                subtoken: 0,
-            },
-        ),
-        DeclarationOrigin::Kernel(id) => (
-            3,
-            EventKey {
-                source: 0,
-                start: u64::from(id.ordinal()),
-                end: 0,
-                path: Vec::new(),
-                role: 0,
-                subtoken: 0,
-            },
-        ),
         DeclarationOrigin::Source(origin) => {
             let _ = declarations;
-            (4, EventKey::from_origin(origin))
+            (3, EventKey::from_origin(origin))
         }
     }
 }

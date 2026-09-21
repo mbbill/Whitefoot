@@ -5,34 +5,43 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 
 /// One exact raw-token spelling produced by a fixed grammar atom in the active specification.
 ///
-/// Compound source atoms such as `&uniq` are represented by their two raw
-/// token predicates. The declaration order is the stable dense predicate
-/// index: the v0.17 inventory, the three spellings v0.18 added, and the two
-/// v0.21 added, less the `index` spelling v0.22 released to IDENT, plus the
-/// twenty-one v0.23 added — `if` and the twenty `infix_op` operator spellings —
-/// and the three v0.25 counted-range spellings, plus v0.28's `ensures`,
-/// v0.33's contract, command, and integer-domain spellings, the v0.40 proof
-/// spellings, and v0.41's four compound comparisons and call-site `::`
-/// delimiter, plus v0.45's route-ordinal `is` and its capitalized view atom
-/// `MutSlice`. Retired source atoms are removed from this current-grammar
-/// inventory; the dense indices are compiler-local and are never serialized.
-/// First grammar-occurrence order is carried by
-/// [`ALL_FIXED_TERMINALS`] and is stable language data, not parser priority.
+/// Every v0.60 fixed atom is exactly one raw formed token [GRAM-1]: the last
+/// compound atom, `&uniq`, retired with the permission marker, so no variant
+/// stands for a two-token sequence any more. Every atom is also lowercase or
+/// punctuation, the capitalized `Slice` and `MutSlice` having retired with the
+/// view nominals [TYPE-2]; nothing in the inventory competes with TYPEID.
+///
+/// The declaration order is the stable dense predicate index and is kept equal
+/// to first grammar-occurrence order, which [`ALL_FIXED_TERMINALS`] carries.
+/// v0.60 puts `heap_decl` third in [GRAM-2], so `program`, `no_heap`, and `;`
+/// take the first three slots and every other index moves; retired source
+/// atoms leave this current-grammar inventory outright. The indices are
+/// compiler-local and are never serialized.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum FixedTerminal {
-    /// `linear`.
-    Linear,
+    /// `program`.
+    Program,
+    /// `no_heap`.
+    NoHeap,
+    /// `;`.
+    Semicolon,
+    /// `opaque`.
+    Opaque,
+    /// `nocopy`.
+    Nocopy,
+    /// `nodrop`.
+    Nodrop,
     /// `struct`.
     Struct,
     /// `{`.
     LeftBrace,
     /// `}`.
     RightBrace,
+    /// `readonly`.
+    Readonly,
     /// `:`.
     Colon,
-    /// `;`.
-    Semicolon,
     /// `enum`.
     Enum,
     /// `(`.
@@ -59,10 +68,10 @@ pub enum FixedTerminal {
     When,
     /// `is`.
     Is,
-    /// `formal`.
-    Formal,
-    /// `actual`.
-    Actual,
+    /// `interface`.
+    Interface,
+    /// `binding`.
+    Binding,
     /// `::`.
     ColonColon,
     /// `const`.
@@ -73,14 +82,16 @@ pub enum FixedTerminal {
     LeftAngle,
     /// `>`.
     RightAngle,
+    /// `copy`.
+    Copy,
+    /// `drop`.
+    Drop,
+    /// `&`.
+    Ampersand,
     /// `[`.
     LeftBracket,
     /// `]`.
     RightBracket,
-    /// `copy`.
-    Copy,
-    /// `affine`.
-    Affine,
     /// `i8`.
     I8,
     /// `i16`.
@@ -103,26 +114,12 @@ pub enum FixedTerminal {
     F64,
     /// `unit`.
     Unit,
-    /// `array`.
-    Array,
-    /// `Slice`, S35's capitalized view spelling.
-    Slice,
-    /// `MutSlice`, the second view S6 and S35 name.
-    MutSlice,
-    /// `box`.
-    Box,
-    /// `arena`.
-    Arena,
-    /// `buffer`.
-    Buffer,
     /// `own`.
     Own,
-    /// `&`.
-    Ampersand,
-    /// `uniq`.
-    Uniq,
     /// `let`.
     Let,
+    /// `..`.
+    DotDot,
     /// `move`.
     Move,
     /// `if`.
@@ -131,8 +128,6 @@ pub enum FixedTerminal {
     Else,
     /// `propagate`.
     Propagate,
-    /// `replace`.
-    Replace,
     /// `set`.
     Set,
     /// `return`.
@@ -143,13 +138,11 @@ pub enum FixedTerminal {
     For,
     /// `in`.
     In,
-    /// `..`.
-    DotDot,
     /// `invariant`.
     Invariant,
     /// `use`.
     Use,
-    /// `times`, the multiplicity of one cited proof premise [PRF-1].
+    /// `times`.
     Times,
     /// `*`.
     Star,
@@ -159,12 +152,8 @@ pub enum FixedTerminal {
     Minus,
     /// `break`.
     Break,
-    /// `region`.
-    Region,
     /// `give`.
     Give,
-    /// `dispose`.
-    Dispose,
     /// `match`.
     Match,
     /// `=>`.
@@ -225,18 +214,21 @@ pub enum FixedTerminal {
     Reads,
     /// `writes`.
     Writes,
-    /// `allocates`.
-    Allocates,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
-    FixedTerminal::Linear,
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 97] = [
+    FixedTerminal::Program,
+    FixedTerminal::NoHeap,
+    FixedTerminal::Semicolon,
+    FixedTerminal::Opaque,
+    FixedTerminal::Nocopy,
+    FixedTerminal::Nodrop,
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
+    FixedTerminal::Readonly,
     FixedTerminal::Colon,
-    FixedTerminal::Semicolon,
     FixedTerminal::Enum,
     FixedTerminal::LeftParen,
     FixedTerminal::RightParen,
@@ -250,17 +242,18 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
     FixedTerminal::Ensures,
     FixedTerminal::When,
     FixedTerminal::Is,
-    FixedTerminal::Formal,
-    FixedTerminal::Actual,
+    FixedTerminal::Interface,
+    FixedTerminal::Binding,
     FixedTerminal::ColonColon,
     FixedTerminal::Const,
     FixedTerminal::Doc,
     FixedTerminal::LeftAngle,
     FixedTerminal::RightAngle,
+    FixedTerminal::Copy,
+    FixedTerminal::Drop,
+    FixedTerminal::Ampersand,
     FixedTerminal::LeftBracket,
     FixedTerminal::RightBracket,
-    FixedTerminal::Copy,
-    FixedTerminal::Affine,
     FixedTerminal::I8,
     FixedTerminal::I16,
     FixedTerminal::I32,
@@ -272,27 +265,18 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
     FixedTerminal::F32,
     FixedTerminal::F64,
     FixedTerminal::Unit,
-    FixedTerminal::Array,
-    FixedTerminal::Slice,
-    FixedTerminal::MutSlice,
-    FixedTerminal::Box,
-    FixedTerminal::Arena,
-    FixedTerminal::Buffer,
     FixedTerminal::Own,
-    FixedTerminal::Ampersand,
-    FixedTerminal::Uniq,
     FixedTerminal::Let,
+    FixedTerminal::DotDot,
     FixedTerminal::Move,
     FixedTerminal::If,
     FixedTerminal::Else,
     FixedTerminal::Propagate,
-    FixedTerminal::Replace,
     FixedTerminal::Set,
     FixedTerminal::Return,
     FixedTerminal::Loop,
     FixedTerminal::For,
     FixedTerminal::In,
-    FixedTerminal::DotDot,
     FixedTerminal::Invariant,
     FixedTerminal::Use,
     FixedTerminal::Times,
@@ -300,9 +284,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
     FixedTerminal::Plus,
     FixedTerminal::Minus,
     FixedTerminal::Break,
-    FixedTerminal::Region,
     FixedTerminal::Give,
-    FixedTerminal::Dispose,
     FixedTerminal::Match,
     FixedTerminal::FatArrow,
     FixedTerminal::PlusWrap,
@@ -333,7 +315,6 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
     FixedTerminal::Pure,
     FixedTerminal::Reads,
     FixedTerminal::Writes,
-    FixedTerminal::Allocates,
 ];
 
 impl FixedTerminal {
@@ -346,26 +327,40 @@ impl FixedTerminal {
     #[must_use]
     pub const fn spelling(self) -> &'static str {
         match self {
+            Self::Program => "program",
+            Self::NoHeap => "no_heap",
+            Self::Semicolon => ";",
+            Self::Opaque => "opaque",
+            Self::Nocopy => "nocopy",
+            Self::Nodrop => "nodrop",
             Self::Struct => "struct",
             Self::LeftBrace => "{",
             Self::RightBrace => "}",
+            Self::Readonly => "readonly",
             Self::Colon => ":",
-            Self::Semicolon => ";",
             Self::Enum => "enum",
             Self::LeftParen => "(",
             Self::RightParen => ")",
             Self::Comma => ",",
             Self::Fn => "fn",
             Self::ThinArrow => "->",
-            Self::Requires => "requires",
             Self::Contract => "contract",
-            Self::Formal => "formal",
-            Self::Actual => "actual",
-            Self::Const => "const",
+            Self::Define => "define",
             Self::Equal => "=",
+            Self::Requires => "requires",
+            Self::Ensures => "ensures",
+            Self::When => "when",
+            Self::Is => "is",
+            Self::Interface => "interface",
+            Self::Binding => "binding",
+            Self::ColonColon => "::",
+            Self::Const => "const",
             Self::Doc => "doc",
             Self::LeftAngle => "<",
             Self::RightAngle => ">",
+            Self::Copy => "copy",
+            Self::Drop => "drop",
+            Self::Ampersand => "&",
             Self::LeftBracket => "[",
             Self::RightBracket => "]",
             Self::I8 => "i8",
@@ -379,76 +374,56 @@ impl FixedTerminal {
             Self::F32 => "f32",
             Self::F64 => "f64",
             Self::Unit => "unit",
-            Self::Array => "array",
-            Self::Slice => "Slice",
-            Self::MutSlice => "MutSlice",
-            Self::Box => "box",
-            Self::Arena => "arena",
-            Self::Buffer => "buffer",
             Self::Own => "own",
-            Self::Ampersand => "&",
-            Self::Uniq => "uniq",
             Self::Let => "let",
+            Self::DotDot => "..",
+            Self::Move => "move",
+            Self::If => "if",
+            Self::Else => "else",
             Self::Propagate => "propagate",
             Self::Set => "set",
             Self::Return => "return",
             Self::Loop => "loop",
+            Self::For => "for",
+            Self::In => "in",
+            Self::Invariant => "invariant",
+            Self::Use => "use",
+            Self::Times => "times",
+            Self::Star => "*",
+            Self::Plus => "+",
+            Self::Minus => "-",
             Self::Break => "break",
-            Self::Region => "region",
-            Self::Define => "define",
-            Self::Else => "else",
-            Self::When => "when",
-            Self::Is => "is",
             Self::Give => "give",
             Self::Match => "match",
             Self::FatArrow => "=>",
-            Self::Move => "move",
+            Self::PlusWrap => "+wrap",
+            Self::PlusDefined => "+defined",
+            Self::PlusChecked => "+checked",
+            Self::PlusSat => "+sat",
+            Self::MinusWrap => "-wrap",
+            Self::MinusDefined => "-defined",
+            Self::MinusChecked => "-checked",
+            Self::MinusSat => "-sat",
+            Self::StarWrap => "*wrap",
+            Self::StarDefined => "*defined",
+            Self::StarChecked => "*checked",
+            Self::StarSat => "*sat",
+            Self::Slash => "/",
+            Self::SlashDefined => "/defined",
+            Self::SlashChecked => "/checked",
+            Self::Percent => "%",
+            Self::PercentDefined => "%defined",
+            Self::PercentChecked => "%checked",
+            Self::EqualEqual => "==",
+            Self::BangEqual => "!=",
+            Self::LessEqual => "<=",
+            Self::GreaterEqual => ">=",
             Self::Deref => "deref",
             Self::Entry => "entry",
             Self::Dot => ".",
             Self::Pure => "pure",
             Self::Reads => "reads",
             Self::Writes => "writes",
-            Self::Allocates => "allocates",
-            Self::If => "if",
-            Self::Plus => "+",
-            Self::PlusWrap => "+wrap",
-            Self::PlusChecked => "+checked",
-            Self::PlusSat => "+sat",
-            Self::Minus => "-",
-            Self::MinusWrap => "-wrap",
-            Self::MinusChecked => "-checked",
-            Self::MinusSat => "-sat",
-            Self::Star => "*",
-            Self::StarWrap => "*wrap",
-            Self::StarChecked => "*checked",
-            Self::StarSat => "*sat",
-            Self::Slash => "/",
-            Self::SlashChecked => "/checked",
-            Self::Percent => "%",
-            Self::PercentChecked => "%checked",
-            Self::For => "for",
-            Self::In => "in",
-            Self::DotDot => "..",
-            Self::Ensures => "ensures",
-            Self::Replace => "replace",
-            Self::PlusDefined => "+defined",
-            Self::MinusDefined => "-defined",
-            Self::StarDefined => "*defined",
-            Self::SlashDefined => "/defined",
-            Self::PercentDefined => "%defined",
-            Self::Invariant => "invariant",
-            Self::Use => "use",
-            Self::Times => "times",
-            Self::EqualEqual => "==",
-            Self::BangEqual => "!=",
-            Self::LessEqual => "<=",
-            Self::GreaterEqual => ">=",
-            Self::ColonColon => "::",
-            Self::Linear => "linear",
-            Self::Affine => "affine",
-            Self::Copy => "copy",
-            Self::Dispose => "dispose",
         }
     }
 
@@ -517,8 +492,6 @@ pub enum TerminalPredicate {
     Identifier,
     /// FORM-3 `TYPEID`.
     TypeIdentifier,
-    /// FORM-3 `REGIONID`.
-    RegionIdentifier,
     /// FORM-3 `LABEL`.
     Label,
     /// FORM-3 `OPNAME`.
@@ -535,10 +508,9 @@ pub enum TerminalPredicate {
 ///
 /// [FORM-3] and [FORM-5] give the classes; `SOURCE_END` is intentionally
 /// absent from the inventory this list completes.
-const EXTERNAL_TERMINAL_PREDICATES: [TerminalPredicate; 8] = [
+const EXTERNAL_TERMINAL_PREDICATES: [TerminalPredicate; 7] = [
     TerminalPredicate::Identifier,
     TerminalPredicate::TypeIdentifier,
-    TerminalPredicate::RegionIdentifier,
     TerminalPredicate::Label,
     TerminalPredicate::OperationName,
     TerminalPredicate::Literal,
@@ -582,12 +554,11 @@ impl TerminalPredicate {
             Self::Fixed(terminal) => terminal.index(),
             Self::Identifier => base,
             Self::TypeIdentifier => base + 1,
-            Self::RegionIdentifier => base + 2,
-            Self::Label => base + 3,
-            Self::OperationName => base + 4,
-            Self::Literal => base + 5,
-            Self::String => base + 6,
-            Self::Digits => base + 7,
+            Self::Label => base + 2,
+            Self::OperationName => base + 3,
+            Self::Literal => base + 4,
+            Self::String => base + 5,
+            Self::Digits => base + 6,
         }
     }
 
@@ -604,7 +575,6 @@ impl TerminalPredicate {
             Self::Fixed(terminal) => terminal.spelling(),
             Self::Identifier => "IDENT",
             Self::TypeIdentifier => "TYPEID",
-            Self::RegionIdentifier => "REGIONID",
             Self::Label => "LABEL",
             Self::OperationName => "OPNAME",
             Self::Literal => "literal",
@@ -678,25 +648,17 @@ pub fn is_identifier(spelling: &[u8]) -> bool {
     lower_word(spelling) && FixedTerminal::from_spelling(spelling).is_none()
 }
 
-/// Tests active specification `TYPEID` membership, excluding the fixed
-/// capitalized spellings.
+/// Tests active specification `TYPEID` membership.
 ///
-/// S35 capitalizes the view nominals, so `Slice` is a fixed atom of the
-/// `type` production [GRAM-3] exactly as `array` and `buffer` are, and the
-/// same exclusion `is_identifier` makes for a fixed lowercase word is made
-/// here: a fixed spelling is its atom and never also a TYPEID, so no token
-/// carries two predicates one `type` decision would have to choose between.
+/// v0.60's [GRAM-3] derives every storage shape as `TYPEID targs?`, so the
+/// capitalized fixed atoms `Slice` and `MutSlice` retired with the view
+/// nominals and no fixed spelling starts with an uppercase byte. The
+/// exclusion `is_identifier` still makes for a fixed lowercase word therefore
+/// has no subject here, and an upper word is a TYPEID on its shape alone.
 #[must_use]
 pub fn is_type_identifier(spelling: &[u8]) -> bool {
     spelling.first().is_some_and(u8::is_ascii_uppercase)
         && spelling[1..].iter().all(u8::is_ascii_alphanumeric)
-        && FixedTerminal::from_spelling(spelling).is_none()
-}
-
-/// Tests active specification `REGIONID` membership.
-#[must_use]
-pub fn is_region_identifier(spelling: &[u8]) -> bool {
-    spelling.strip_prefix(b"'").is_some_and(lower_word)
 }
 
 /// Tests active specification `LABEL` membership.
@@ -842,25 +804,44 @@ mod tests {
                 Some(terminal)
             );
         }
-        assert_eq!(FixedTerminal::PercentChecked as u8, 91);
-        assert_eq!(FixedTerminal::For as u8, 59);
-        assert_eq!(FixedTerminal::In as u8, 60);
-        assert_eq!(FixedTerminal::DotDot as u8, 61);
-        assert_eq!(FixedTerminal::Ensures as u8, 16);
-        assert_eq!(FixedTerminal::Replace as u8, 55);
-        assert_eq!(FixedTerminal::Invariant as u8, 62);
-        assert_eq!(FixedTerminal::Use as u8, 63);
-        assert_eq!(FixedTerminal::Is as u8, 18);
-        // D7 uses first grammar occurrence for the fixed-terminal inventory;
-        // function signatures and member applications move several keywords.
-        assert_eq!(FixedTerminal::Linear as u8, 0);
-        assert_eq!(FixedTerminal::Affine as u8, 29);
-        assert_eq!(FixedTerminal::Copy as u8, 28);
-        assert_eq!(FixedTerminal::Dispose as u8, 71);
-        assert_eq!(FixedTerminal::MutSlice as u8, 43);
-        assert_eq!(FixedTerminal::Times as u8, 64);
-        assert_eq!(TerminalPredicate::Identifier.index(), 103);
-        assert_eq!(TerminalPredicate::Digits.index(), 110);
+        // v0.60 puts `heap_decl` third in [GRAM-2], so its two atoms and the
+        // record terminator open the inventory and every later ordinal moves
+        // down by the same shift less the eleven retired atoms. `Replace`,
+        // `Dispose` and `MutSlice` are gone from this list because `replace`,
+        // `dispose` and the view nominals are no longer source atoms.
+        assert_eq!(FixedTerminal::Program as u8, 0);
+        assert_eq!(FixedTerminal::NoHeap as u8, 1);
+        assert_eq!(FixedTerminal::Semicolon as u8, 2);
+        // `struct_decl`'s `"opaque"? ("nocopy" | "nodrop")?` order [GRAM-2, TYPE-2] puts
+        // the opaque modifier ahead of both capability modifiers, so it takes slot three and
+        // every later ordinal moves down by one.
+        assert_eq!(FixedTerminal::Opaque as u8, 3);
+        assert_eq!(FixedTerminal::Nocopy as u8, 4);
+        assert_eq!(FixedTerminal::Nodrop as u8, 5);
+        // x1 [GRAM-2]: `field := "readonly"? IDENT ":" type ";"` reaches the
+        // field modifier before the colon of the same production, so
+        // `readonly` takes slot nine and every later ordinal moves down by
+        // one.
+        assert_eq!(FixedTerminal::Readonly as u8, 9);
+        assert_eq!(FixedTerminal::Colon as u8, 10);
+        assert_eq!(FixedTerminal::Ensures as u8, 21);
+        assert_eq!(FixedTerminal::Is as u8, 23);
+        assert_eq!(FixedTerminal::Copy as u8, 31);
+        assert_eq!(FixedTerminal::Drop as u8, 32);
+        // `&` is reached through `param`'s `"&" "[" type "]"` arm before the
+        // bracket atoms of the same arm, so the reference sigil now precedes
+        // them; in v0.59 it entered through `mode`'s `&uniq`.
+        assert_eq!(FixedTerminal::Ampersand as u8, 33);
+        assert_eq!(FixedTerminal::DotDot as u8, 49);
+        assert_eq!(FixedTerminal::For as u8, 57);
+        assert_eq!(FixedTerminal::In as u8, 58);
+        assert_eq!(FixedTerminal::Invariant as u8, 59);
+        assert_eq!(FixedTerminal::Use as u8, 60);
+        assert_eq!(FixedTerminal::Times as u8, 61);
+        assert_eq!(FixedTerminal::PercentChecked as u8, 86);
+        assert_eq!(FixedTerminal::Writes as u8, 96);
+        assert_eq!(TerminalPredicate::Identifier.index(), 97);
+        assert_eq!(TerminalPredicate::Digits.index(), 103);
     }
 
     /// The inventory holds every predicate, once.

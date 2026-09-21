@@ -113,20 +113,24 @@ fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
     );
 }
 
-const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination) contract {
+/// The same declared boundary `host_copy_bytes` carries [PRE-1], written as
+/// an ordinary Whitefoot definition.
+///
+/// The writer-side clauses use the local binder `copied` where the prelude
+/// record uses `next`. Both spellings are ordinary identifiers; renaming the
+/// binder changes neither the declared relation nor the ABI being compared.
+const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
   requires start <= end;
-  requires end <= len_of(deref(destination));
-  ensures when Ok(value: next): start <= next;
-  ensures when Ok(value: next): next <= end;
+  requires end <= deref(destination).len;
+  ensures when Ok(value: copied): start <= copied;
+  ensures when Ok(value: copied): copied <= end;
 } {
-  region {
-    match host_copy_bytes(value: value, destination: &uniq deref(destination), start: start, end: end) {
-      Ok(value: next) => {
-        return Ok<u64, CopyError>(value: next);
-      }
-      Err(error: problem) => {
-        return Err<u64, CopyError>(error: move problem);
-      }
+  match host_copy_bytes(value: value, destination: destination, start: start, end: end) {
+    Ok(value: copied) => {
+      return Ok<u64, CopyError>(value: copied);
+    }
+    Err(error: problem) => {
+      return Err<u64, CopyError>(error: problem);
     }
   }
 }
@@ -134,7 +138,7 @@ const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destinatio
 "#;
 
 #[test]
-fn a_view_signature_is_identical_for_a_wf_body_and_a_linked_body() {
+fn a_range_reference_signature_is_identical_for_a_wf_body_and_a_linked_body() {
     let original = String::from_utf8(corpus_source("run-syshost-nontext-argv-bytes-roundtrip"))
         .expect("source is UTF-8");
     let source = format!(
@@ -163,11 +167,11 @@ fn a_view_signature_is_identical_for_a_wf_body_and_a_linked_body() {
                 crate::compile_with_overlap(&inputs, crate::CompilerLimits::default(), overlap)
             }
         };
-        let llvm = llvm.expect("ordinary view wrapper compiles in each driver mode");
+        let llvm = llvm.expect("ordinary range-reference wrapper compiles in each driver mode");
         let result = compile_and_run_with(&llvm, &[b"a\xffb"]);
         assert!(
             result.status.success(),
-            "same-signature view call: {result:?}"
+            "same-signature range-reference call: {result:?}"
         );
         assert!(result.stdout.is_empty());
         assert!(result.stderr.is_empty());
@@ -175,25 +179,27 @@ fn a_view_signature_is_identical_for_a_wf_body_and_a_linked_body() {
 }
 
 #[test]
-fn behavior_actuals_preserve_ordinary_view_calls_rows_and_contracts() {
-    let formal = r#"formal Copier {
-  fn transfer(value: &HostString, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination) contract {
+fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts() {
+    // The interface uses the same locally renamed clause binder as the
+    // ordinary wrapper; the relation and callable boundary stay identical.
+    let formal = r#"interface Copier {
+  fn transfer(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
     requires start <= end;
-    requires end <= len_of(deref(destination));
-    ensures when Ok(value: next): start <= next;
-    ensures when Ok(value: next): next <= end;
+    requires end <= deref(destination).len;
+    ensures when Ok(value: copied): start <= copied;
+    ensures when Ok(value: copied): copied <= end;
   };
 }
 
 "#;
     let forwarding = COPY_BYTES_WRAPPER
-        .replacen("fn copy_bytes(", "fn copy_through<Copier>(", 1)
+        .replacen("fn copy_bytes(", "fn copy_through<interface Copier>(", 1)
         .replace("host_copy_bytes(", "Copier::transfer(");
     let original = String::from_utf8(corpus_source("run-syshost-nontext-argv-bytes-roundtrip"))
         .expect("source is UTF-8");
     let caller = original.replace("host_copy_bytes(", "copy_through::<Selected>(");
     for member in ["host_copy_bytes", "copy_bytes"] {
-        let actual = format!("actual Selected : Copier {{\n  transfer = {member};\n}}\n\n");
+        let actual = format!("binding Selected : Copier {{\n  transfer = {member};\n}}\n\n");
         let prefix = format!("{formal}{actual}{COPY_BYTES_WRAPPER}{forwarding}");
         let source = format!("{prefix}{caller}");
         let forwarding_name = with_ir(source.as_bytes(), |program| {
@@ -228,9 +234,16 @@ fn behavior_actuals_preserve_ordinary_view_calls_rows_and_contracts() {
             compile_rejection(out_of_range.as_bytes()).rule_id(),
             Some("FN-8")
         );
+        // Two directions [FN-4] refuses: an actual whose row writes a path the
+        // formal does not declare, and an actual whose `requires` is stronger
+        // than the formal's. Dropping an `ensures` from the formal is the
+        // third direction and is *admitted* — [FN-4] asks the actual's
+        // postcondition to be stronger, and an actual carrying one clause the
+        // formal does not is exactly that — so the second negative narrows a
+        // `requires` instead of an `ensures`.
         for changed_formal in [
             formal.replace(", writes(destination)", ""),
-            formal.replace("    ensures when Ok(value: next): next <= end;\n", ""),
+            formal.replace("    requires end <= deref(destination).len;\n", ""),
         ] {
             // FN-4 checks the binding itself, before any generic caller is
             // needed. Keeping the forwarding body out of these negatives

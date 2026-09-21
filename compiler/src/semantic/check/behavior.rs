@@ -12,8 +12,8 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
+use super::super::model::CheckedStatePath;
 use super::super::model::FunctionId;
-use super::super::model::{CheckedMode, CheckedStatePath};
 use super::generics::{
     GenericArgument, GenericParameter, GenericParameterKey, GenericSubstitution,
     StableGenericSubstitution,
@@ -268,7 +268,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .map(|declaration| declaration.id())
             .collect::<Vec<_>>();
         for member in members {
-            // Formation is required even without an actual or a member call.
+            // Formation is required even without a binding group or a member call.
             // The transient signature supplies no executable function or
             // contract theorem to the concrete inventory.
             let signature = self.symbolic_behavior_signature(member)?;
@@ -350,7 +350,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Production::FnDecl
                     | Production::StructDecl
                     | Production::EnumDecl
-                    | Production::FormalDecl
+                    | Production::InterfaceDecl
             ) {
                 break;
             }
@@ -508,14 +508,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     pub(super) fn collect_behavior_groups(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
-        for phase in [Production::FormalDecl, Production::ActualDecl] {
+        for phase in [Production::InterfaceDecl, Production::BindingDecl] {
             for node in items.iter().copied() {
                 if self.tree.production(node)? != phase {
                     continue;
                 }
                 match self.tree.production(node)? {
-                    Production::FormalDecl => {
-                        let declaration = self.declaration_at(node, DeclarationRole::Formal)?.id();
+                    Production::InterfaceDecl => {
+                        let declaration =
+                            self.declaration_at(node, DeclarationRole::Interface)?.id();
                         if let Some(generics) =
                             self.tree.first_child_with(node, Production::Generics)?
                         {
@@ -531,7 +532,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                         .first_child_with(parameter, Production::FnSig)?
                                         .is_some()
                                 {
-                                    return self.behavior_mismatch(SemanticRule::Fn3, parameter, "a formal header contains only flat type and const parameters");
+                                    return self.behavior_mismatch(SemanticRule::Fn3, parameter, "an interface header contains only flat type and const parameters");
                                 }
                             }
                         }
@@ -543,7 +544,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             return self.behavior_mismatch(
                                 SemanticRule::Fn3,
                                 node,
-                                "a formal header contains only flat type and const parameters",
+                                "an interface header contains only flat type and const parameters",
                             );
                         }
                         let mut members = Vec::new();
@@ -555,7 +556,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 return self.behavior_mismatch(
                                     SemanticRule::Fn3,
                                     signature,
-                                    "each formal member name occurs once",
+                                    "each interface member name occurs once",
                                 );
                             }
                             members.push((member.id(), signature, member.spelling().to_owned()));
@@ -568,8 +569,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             },
                         );
                     }
-                    Production::ActualDecl => {
-                        let declaration = self.declaration_at(node, DeclarationRole::Actual)?.id();
+                    Production::BindingDecl => {
+                        let declaration = self.declaration_at(node, DeclarationRole::Binding)?.id();
                         let application = self
                             .tree
                             .first_child_with(node, Production::PackUse)?
@@ -577,13 +578,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         let usage = self.use_at(application, LexicalUseRole::FormalGroup)?;
                         let ResolvedTarget::Source {
                             declaration: formal,
-                            class: DeclarationClass::Formal,
+                            class: DeclarationClass::Interface,
                         } = usage.target()
                         else {
                             return self.behavior_mismatch(
                                 SemanticRule::Fn3,
                                 application,
-                                "an actual names a formal parameter group",
+                                "a binding group names an interface declaration",
                             );
                         };
                         let group = self
@@ -593,7 +594,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                         let bindings = self.tree.children_with(node, Production::FnBind)?;
                         if bindings.len() != group.members.len() {
-                            return self.behavior_mismatch(SemanticRule::Fn3, node, "an actual binds every formal member exactly once in declared order");
+                            return self.behavior_mismatch(SemanticRule::Fn3, node, "a binding group binds every interface member exactly once in declared order");
                         }
                         for (binding, (_, _, name)) in bindings.iter().zip(&group.members) {
                             if self
@@ -604,11 +605,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 return self.behavior_mismatch(
                                     SemanticRule::Fn3,
                                     *binding,
-                                    "actual member names follow the formal's declared order",
+                                    "binding member names follow the interface's declared order",
                                 );
                             }
                         }
-                        let regions = self.parse_region_parameters(node)?;
+                        // [FORM-3, GRAM-2] no declaration carries a region
+                        // parameter in v0.60, so a binding group captures
+                        // none.
+                        let regions = Vec::new();
                         self.behavior.actuals.insert(
                             declaration,
                             ActualGroup {
@@ -629,7 +633,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// Abbreviations must close before instance discovery. A reference in a
     /// member binding's type/function arguments is just as much an expansion
-    /// edge as a reference in the actual's header.
+    /// edge as a reference in the binding group's header.
     fn reject_actual_group_cycles(&self) -> Result<(), CheckStop> {
         let mut groups = self.behavior.actuals.iter().collect::<Vec<_>>();
         groups.sort_by_key(|(_, group)| group.node.index());
@@ -639,7 +643,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             for usage in self.resolved.lexical_uses() {
                 let ResolvedTarget::Source {
                     declaration,
-                    class: DeclarationClass::Actual,
+                    class: DeclarationClass::Binding,
                 } = usage.target()
                 else {
                     continue;
@@ -669,14 +673,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         let names = path
                             .iter()
                             .map(|index| {
-                                self.declaration_at(groups[*index].1.node, DeclarationRole::Actual)
+                                self.declaration_at(groups[*index].1.node, DeclarationRole::Binding)
                                     .map(|declaration| declaration.spelling().to_owned())
                             })
                             .collect::<Result<Vec<_>, _>>()?;
                         return self.behavior_mismatch(
                             SemanticRule::Fn3,
                             groups[source].1.node,
-                            &format!("acyclic actual expansion; cycle: {}", names.join(" -> ")),
+                            &format!("acyclic binding expansion; cycle: {}", names.join(" -> ")),
                         );
                     }
                     pending.push_back((*target, path));
@@ -706,13 +710,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let usage = self.use_at(application, LexicalUseRole::FormalGroup)?;
         let ResolvedTarget::Source {
             declaration,
-            class: DeclarationClass::Formal,
+            class: DeclarationClass::Interface,
         } = usage.target()
         else {
             return self.behavior_mismatch(
                 SemanticRule::Fn3,
                 application,
-                "a parameter group names a formal declaration",
+                "a parameter group names an interface declaration",
             );
         };
         let group = self
@@ -728,7 +732,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.behavior_mismatch(
                 SemanticRule::Fn3,
                 application,
-                "a group application writes one fresh binder per formal header parameter",
+                "a group application writes one fresh binder per interface header parameter",
             );
         }
         let mut parameters = Vec::new();
@@ -891,12 +895,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         match usage.target() {
             ResolvedTarget::Source {
                 declaration,
-                class: DeclarationClass::Formal,
+                class: DeclarationClass::Interface,
             } => Ok(declaration),
             _ => self.behavior_mismatch(
                 SemanticRule::Fn3,
                 node,
-                "a forwarded group names a formal declaration",
+                "a forwarded group names an interface declaration",
             ),
         }
     }
@@ -933,7 +937,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.behavior_mismatch(
                     SemanticRule::Fn3,
                     node,
-                    "the formal application is in scope",
+                    "the interface application is in scope",
                 );
             };
             owner = parent;
@@ -1030,7 +1034,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.behavior_mismatch(
                 SemanticRule::Fn5,
                 node,
-                "select one in-scope group; when a formal occurs twice, write its full application",
+                "select one in-scope group; when an interface occurs twice, write its full application",
             );
         };
         Ok(*selected)
@@ -1045,7 +1049,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let usage = self.use_at(application, LexicalUseRole::FormalGroup)?;
         if let ResolvedTarget::Source {
             declaration,
-            class: DeclarationClass::Actual,
+            class: DeclarationClass::Binding,
         } = usage.target()
         {
             let actual = self
@@ -1066,7 +1070,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.behavior_mismatch(
                     SemanticRule::Fn3,
                     application,
-                    "the actual's formal declares the selected member",
+                    "the binding group's interface declares the selected member",
                 );
             };
             let values = self.expand_actual_arguments(application, declaration, caller)?;
@@ -1087,7 +1091,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.behavior_mismatch(
                 SemanticRule::Fn3,
                 application,
-                "the formal declares the selected member",
+                "the interface declares the selected member",
             );
         };
         caller
@@ -1120,7 +1124,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let mut member_sources = match usage.target() {
                 ResolvedTarget::Source {
                     declaration,
-                    class: DeclarationClass::Actual,
+                    class: DeclarationClass::Binding,
                 } => self
                     .behavior
                     .actuals
@@ -1134,11 +1138,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let values = match usage.target() {
                 ResolvedTarget::Source {
                     declaration,
-                    class: DeclarationClass::Actual,
+                    class: DeclarationClass::Binding,
                 } => self.expand_actual_arguments(ty, declaration, caller)?,
                 ResolvedTarget::Source {
                     declaration,
-                    class: DeclarationClass::Formal,
+                    class: DeclarationClass::Interface,
                 } => {
                     let application = self.enclosing_group(ty, declaration)?;
                     let mut values = Vec::new();
@@ -1203,13 +1207,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let application = match self.use_at(ty, LexicalUseRole::Type)?.target() {
             ResolvedTarget::Source {
                 declaration,
-                class: DeclarationClass::Actual,
+                class: DeclarationClass::Binding,
             } => {
                 if visiting.contains(&declaration) {
                     return self.behavior_mismatch(
                         SemanticRule::Fn3,
                         ty,
-                        "actual group expansion is acyclic",
+                        "binding group expansion is acyclic",
                     );
                 }
                 visiting.push(declaration);
@@ -1220,7 +1224,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .application
             }
             ResolvedTarget::Source {
-                class: DeclarationClass::Formal,
+                class: DeclarationClass::Interface,
                 ..
             } => ty,
             _ => return Ok(vec![ty]),
@@ -1252,51 +1256,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Some(list) => self.tree.children_with(list, Production::Targ)?,
             None => Vec::new(),
         };
-        if written.len() != group.regions.len() {
+        if !written.is_empty() {
             return self.behavior_mismatch(
                 SemanticRule::Fn2,
                 use_node,
-                "an actual group writes each captured region explicitly",
+                "a binding group's written application carries type, const and function arguments only",
             );
         }
-        let mut regions = Vec::new();
-        for (argument, formal) in written.into_iter().zip(&group.regions) {
-            if self
-                .tree
-                .direct_token_with(argument, crate::TerminalPredicate::RegionIdentifier)?
-                .is_none()
-            {
-                return self.behavior_mismatch(
-                    SemanticRule::Fn2,
-                    argument,
-                    "an actual group argument is a captured region",
-                );
-            }
-            let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
-            let ResolvedTarget::Source {
-                declaration,
-                class: DeclarationClass::Region,
-            } = usage.target()
-            else {
-                return self.behavior_mismatch(
-                    SemanticRule::Fn2,
-                    argument,
-                    "an actual group argument is a captured region",
-                );
-            };
-            let actual = Self::substituted_region(caller.region_arguments(), declaration);
-            if let Some(bound) = self.region_store_class(*formal)? {
-                let parameter = self
-                    .resolved
-                    .declarations()
-                    .iter()
-                    .find(|record| record.id() == *formal)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                self.check_region_linearity_bound(parameter.spelling(), bound, actual, argument)?;
-            }
-            regions.push((*formal, actual));
-        }
-        let context = GenericSubstitution::default().with_regions(regions);
+        let _ = caller;
+        let context = GenericSubstitution::default();
         let formal = self
             .behavior
             .formals
@@ -1392,163 +1360,56 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
-    /// Solve the actual's explicitly written store positions from the bound
-    /// interface types before alpha-matching its remaining loan parameters.
-    /// Opaque actual type parameters expose no new written region positions.
-    fn bind_behavior_store_regions(
-        &self,
-        node: NodeId,
-        formal: &FunctionSignature,
-        actual: &FunctionSignature,
-    ) -> Result<FunctionSignature, CheckStop> {
-        let mut observations = Vec::new();
-        for (expected, implementation) in formal.parameters.iter().zip(&actual.parameters) {
-            observations
-                .extend(self.match_type_regions(&implementation.region_shape, expected.ty)?);
-        }
-        for (expected, implementation) in formal.results.iter().zip(&actual.results) {
-            let source = self
-                .tree
-                .first_child_with(implementation.rtype, Production::Type)?;
-            let shape = self.type_region_shape(implementation.ty, source)?;
-            observations.extend(self.match_type_regions(&shape, expected.ty)?);
-        }
-        let mut captured = Vec::new();
-        for (position, brand) in observations {
-            if !position.invariant
-                || !actual.region_parameters.contains(&position.formal)
-                || formal.region_parameters.contains(&brand)
-            {
-                continue;
-            }
-            if let Some(bound) = self.region_store_class(position.formal)?
-                && self.region_store_class(brand)? != Some(bound)
-            {
-                return self.behavior_mismatch(
-                    SemanticRule::Fn4,
-                    node,
-                    "captured store brands satisfy the actual's declared region bounds",
-                );
-            }
-            if let Some((_, earlier)) = captured
-                .iter()
-                .find(|(source, _)| *source == position.formal)
-            {
-                if *earlier != brand {
-                    return self.behavior_mismatch(
-                        SemanticRule::Fn4,
-                        node,
-                        "each actual store parameter resolves to one exact captured brand",
-                    );
-                }
-            } else {
-                captured.push((position.formal, brand));
-            }
-        }
-        let mut bound = actual.clone();
-        bound
-            .region_parameters
-            .retain(|region| !captured.iter().any(|(source, _)| source == region));
-        let bind_mode = |mode| match mode {
-            CheckedMode::Own => CheckedMode::Own,
-            CheckedMode::Shared(region) => {
-                CheckedMode::Shared(Self::substituted_region(&captured, region))
-            }
-            CheckedMode::Unique(region) => {
-                CheckedMode::Unique(Self::substituted_region(&captured, region))
-            }
-        };
-        for parameter in &mut bound.parameters {
-            parameter.ty = self.substitute_type_regions(parameter.ty, &captured)?;
-            parameter.mode = bind_mode(parameter.mode);
-        }
-        for result in &mut bound.results {
-            result.ty = self.substitute_type_regions(result.ty, &captured)?;
-            result.mode = bind_mode(result.mode);
-        }
-        bound.result = self.substitute_type_regions(bound.result, &captured)?;
-        bound.result_mode = bind_mode(bound.result_mode);
-        let mut regions = bound.substitution.region_arguments().to_vec();
-        for (source, target) in captured {
-            if let Some((_, prior)) = regions
-                .iter_mut()
-                .find(|(candidate, _)| *candidate == source)
-            {
-                *prior = target;
-            } else {
-                regions.push((source, target));
-            }
-        }
-        bound.substitution = bound.substitution.with_regions(regions);
-        Ok(bound)
-    }
-
     /// Rebase the public interface onto the implementation's declaration
     /// identities. The selected function remains the direct-call target.
     pub(super) fn behavior_call_signature(
         &self,
         node: NodeId,
+        instance: Option<super::super::model::FunctionId>,
         formal: &FunctionSignature,
         actual: &FunctionSignature,
-    ) -> Result<FunctionSignature, CheckStop> {
-        let bound_actual = self.bind_behavior_store_regions(node, formal, actual)?;
+    ) -> Result<
+        (
+            FunctionSignature,
+            super::super::model::CheckedEffects,
+            super::super::model::CheckedCallContract,
+        ),
+        CheckStop,
+    > {
+        let bound_actual = actual.clone();
         if formal.parameters.len() != actual.parameters.len()
             || formal.results.len() != actual.results.len()
-            || formal.region_parameters.len() != bound_actual.region_parameters.len()
         {
             return self.behavior_mismatch(
                 SemanticRule::Fn4,
                 node,
-                "matching parameter, result and formal-region counts",
+                "matching parameter and result counts",
             );
         }
-        let regions = formal
-            .region_parameters
-            .iter()
-            .copied()
-            .zip(bound_actual.region_parameters.iter().copied())
-            .collect::<Vec<_>>();
-        for (left, right) in &regions {
-            if self.region_store_class(*left)? != self.region_store_class(*right)? {
-                return self.behavior_mismatch(
-                    SemanticRule::Fn4,
-                    node,
-                    "matching formal-region bounds after region renaming",
-                );
-            }
-        }
-        let same_mode = |left, right| -> Result<bool, CheckStop> {
-            Ok(match (left, right) {
-                (CheckedMode::Own, CheckedMode::Own) => true,
-                (CheckedMode::Shared(left), CheckedMode::Shared(right))
-                | (CheckedMode::Unique(left), CheckedMode::Unique(right)) => {
-                    Self::substituted_region(&regions, left) == right
-                }
-                _ => false,
-            })
-        };
+        // [FN-4] parameter and result counts, modes and exact types must
+        // agree in order; binder spellings are not signature identity.
         for (left, right) in formal.parameters.iter().zip(&bound_actual.parameters) {
-            if !same_mode(left.mode, right.mode)?
-                || self.substitute_type_regions(left.ty, &regions)? != right.ty
-            {
+            if left.mode != right.mode || left.ty != right.ty {
                 return self.behavior_mismatch(
                     SemanticRule::Fn4,
                     node,
-                    "matching parameter modes and types after region renaming",
+                    "matching parameter modes and types",
                 );
             }
         }
         for (left, right) in formal.results.iter().zip(&bound_actual.results) {
-            if !same_mode(left.mode, right.mode)?
-                || self.substitute_type_regions(left.ty, &regions)? != right.ty
-            {
+            if left.mode != right.mode || left.ty != right.ty {
                 return self.behavior_mismatch(
                     SemanticRule::Fn4,
                     node,
-                    "matching result modes and types after region renaming",
+                    "matching result modes and types",
                 );
             }
         }
+        // [FN-4] the actual's row must be a SUBSET of the formal's after
+        // parameter-ordinal and path normalization, which is the refinement
+        // direction: a supplied function may read and write less than the
+        // interface promises and may never exceed it.
         let rebase = |paths: &[CheckedStatePath]| -> Result<Vec<CheckedStatePath>, CheckStop> {
             paths
                 .iter()
@@ -1560,30 +1421,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     Ok(CheckedStatePath {
                         root: actual.parameters[ordinal].declaration,
-                        fields: path.fields.clone(),
+                        steps: path.steps.clone(),
                     })
                 })
                 .collect()
         };
-        let mut effective = actual.clone();
         let mut boundary = formal.declared_effects.clone();
         boundary.reads = rebase(&boundary.reads)?;
         boundary.writes = rebase(&boundary.writes)?;
-        boundary.allocates = rebase(&boundary.allocates)?;
-        boundary.allocates_arenas = boundary
-            .allocates_arenas
-            .iter()
-            .map(|region| Self::substituted_region(&regions, *region))
-            .collect();
+        // [STOR-8] allocation has no source effect entry and therefore is
+        // not an FN-4 refinement dimension. It remains compiler metadata:
+        // retained analyses index the selected actual, so preserve that
+        // actual's allocation fact rather than inferring purity from the
+        // interface's path row.
+        boundary.allocates = actual.declared_effects.allocates;
         for (implementation, promised) in [
             (&actual.declared_effects.reads, &boundary.reads),
             (&actual.declared_effects.writes, &boundary.writes),
-            (&actual.declared_effects.allocates, &boundary.allocates),
         ] {
             if implementation.iter().any(|path| {
-                !promised.iter().any(|prefix| {
-                    prefix.root == path.root && path.fields.starts_with(&prefix.fields)
-                })
+                !promised
+                    .iter()
+                    .any(|prefix| prefix.root == path.root && path.steps.starts_with(&prefix.steps))
             }) {
                 return self.behavior_mismatch(
                     SemanticRule::Fn4,
@@ -1592,25 +1451,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
         }
-        if actual
-            .declared_effects
-            .allocates_arenas
-            .iter()
-            .any(|region| !boundary.allocates_arenas.contains(region))
-        {
-            return self.behavior_mismatch(
-                SemanticRule::Fn4,
-                node,
-                "the formal row covers every actual arena allocation",
-            );
-        }
-        effective.declared_effects = boundary;
-        for (parameter, formal_parameter) in effective.parameters.iter_mut().zip(&formal.parameters)
-        {
-            parameter.name = formal_parameter.name.clone();
-        }
-        self.check_behavior_contracts(node, formal, &bound_actual)?;
-        Ok(effective)
+        let contract = self.check_behavior_contracts(node, instance, formal, &bound_actual)?;
+        // [FN-5] the immediate call judgment stays wholly in the formal
+        // parameter namespace, including its row roots. Keep a second copy of
+        // the same row rebased onto the actual parameter declarations only
+        // for retained analyses that index the executable callee by its
+        // FunctionId. Mixing either namespace makes a valid row look
+        // unresolved and can omit its overlap checks.
+        let mut effective = formal.clone();
+        effective.id = actual.id;
+        effective.name = actual.name.clone();
+        effective.symbol = actual.symbol.clone();
+        effective.declared_effects.allocates = actual.declared_effects.allocates;
+        Ok((
+            effective,
+            super::super::model::CheckedEffects {
+                reads: boundary.reads,
+                writes: boundary.writes,
+                allocates: boundary.allocates,
+            },
+            contract,
+        ))
     }
 
     pub(super) fn check_behavior_bindings(&self) -> Result<(), CheckStop> {
@@ -1642,7 +1503,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     &substitution,
                     target,
                 )?;
-                self.behavior_call_signature(*binding, &signature, actual)?;
+                let _ = self.behavior_call_signature(*binding, None, &signature, actual)?;
             }
         }
         let mut contexts = self
@@ -1667,7 +1528,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let formal = self.formal_signature(*key, substitution, target)?;
                 let source = self.behavior_binding_site(node, *key, substitution)?;
-                self.behavior_call_signature(source, &formal, actual)?;
+                let _ = self.behavior_call_signature(source, None, &formal, actual)?;
             }
         }
         Ok(())

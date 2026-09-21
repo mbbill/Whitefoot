@@ -1,4 +1,4 @@
-enum Inner {
+nocopy enum Inner {
   Value(number: i32);
   Empty();
 }

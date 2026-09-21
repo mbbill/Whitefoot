@@ -1,8 +1,8 @@
-struct Holder['heap] {
-  store: Heap;
+struct Holder {
+  store: Slots<u8>;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Stores a provider in a field.";
+  doc "Stores a runtime-capacity window directly in a field.";
   return exit_status(code: 0_u8);
 }

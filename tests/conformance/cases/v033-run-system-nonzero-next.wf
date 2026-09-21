@@ -1,65 +1,39 @@
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "Ordinary copy function results use absolute endpoints for a nonzero start. Source receives their bounds through ordinary Result.Ok ensures, with the original byte observations retained.";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 3_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh) => {
-        let bytes = move fresh;
-        for @scratch (
-          at in 0_u64..3_u64,
-          invariant grown: len_of(bytes) >= at,
-          invariant spare: room_of(bytes) + at >= 3_u64,
-          invariant flat: head_of(bytes) <= 0_u64
-        ) {
-          place_back(vector: &uniq bytes, value: 0_u8);
+  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let bytes = array_filled::<u8, 3>(value: 0_u8);
+  let window = &bytes[0_u64..3_u64];
+  match arg_get(args: &args, position: 1_u64) {
+    Ok(value: text) => {
+      match host_copy_bytes(value: &text, destination: window, start: 1_u64, end: 3_u64) {
+        Ok(value: next) => {
+          if next == 3_u64 {
+          } else {
+            return exit_status(code: 2_u8);
+          }
         }
-        region {
-          let window = mut_slice_of(&uniq bytes);
-          region {
-            match arg_get(args: &args, position: 1_u64) {
-              Ok(value: text) => {
-                region {
-                  region {
-                    match host_copy_bytes(value: &text, destination: &uniq window, start: 1_u64, end: 3_u64) {
-                      Ok(value: next) => {
-                        if next == 3_u64 {
-                        } else {
-                          return exit_status(code: 2_u8);
-                        }
-                      }
-                      Err(error: problem) => {
-                        return exit_status(code: 1_u8);
-                      }
-                    }
-                  }
-                }
-                let first = bytes[0_u64];
-                let second = bytes[1_u64];
-                let third = bytes[2_u64];
-                let untouched = first == 0_u8;
-                let copied_a = second == 65_u8;
-                let copied_b = third == 66_u8;
-                if untouched {
-                  if copied_a {
-                    if copied_b {
-                      return exit_status(code: 0_u8);
-                    }
-                  }
-                }
-                return exit_status(code: 3_u8);
-              }
-              Err(error: absent) => {
-                return exit_status(code: 4_u8);
-              }
-            }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+      let first = bytes[0_u64];
+      let second = bytes[1_u64];
+      let third = bytes[2_u64];
+      let untouched = first == 0_u8;
+      let copied_a = second == 65_u8;
+      let copied_b = third == 66_u8;
+      if untouched {
+        if copied_a {
+          if copied_b {
+            return exit_status(code: 0_u8);
           }
         }
       }
+      return exit_status(code: 3_u8);
+    }
+    Err(error: absent) => {
+      return exit_status(code: 4_u8);
     }
   }
 }

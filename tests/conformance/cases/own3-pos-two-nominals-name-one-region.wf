@@ -1,12 +1,12 @@
-struct Lease['s] {
-  run: Vector<'s, u8>;
+struct Lease<T> {
+  run: Box<Slots<T>>;
 }
 
-struct BlockPool['s] {
-  free: FixedVector<Vector<'s, u8>, 8>;
+struct BlockPool<T> {
+  free: Slots<Box<Slots<T>>, 8>;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "OWN-3: a region identifier is unique within the declaration that introduces it, so two nominals of one unit may each write 's. A nominal's region parameters are its own exactly as a function's are, and the second declaration is neither a repeated region nor a TYPE-6 redeclaration of the first's.";
+  doc "A type parameter is owner-local to the declaration that introduces it, so two nominals of one compilation unit may each write T; the second declaration is neither a repeated parameter nor a redeclaration of the first's.";
   return exit_status(code: 0_u8);
 }

@@ -1,32 +1,27 @@
-struct Row {
+nocopy struct Row {
   left: u64;
   right: u64;
 }
 
-fn exchange(values: &uniq FixedVector<Row, 2>, left: own u64, right: own u64) -> result: own unit reads(values), writes(values) contract {
-  requires left < len_of(deref(values));
-  requires right < len_of(deref(values));
+fn exchange(values: &Slots<Row, 2>, left: own u64, right: own u64) -> result: own unit writes(values) contract {
+  requires left < deref(values).len;
+  requires right < deref(values).len;
   requires left < right;
-  ensures len_of(deref(values)) == len_of(deref(entry(values)));
+  ensures deref(values).len == deref(entry(values)).len;
 } {
-  set (deref(values)[left], deref(values)[right]) = move deref(values)[right], move deref(values)[left];
+  doc "Exchanges two runtime-selected elements of one window under a proved strict order.";
+  swap(first: &deref(values)[left], second: &deref(values)[right]);
   return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "LIV-2 and OWN-7: a completed strict-order proof at target formation separates two runtime-selected elements, and repeating the same live index bindings on the right reads those affine targets out before the one commit.";
-  let values = fixed_vector::<Row, 2>();
+  doc "OP-11 and OWN-7: a completed strict-order proof separates the two runtime-selected element paths, and swap exchanges their values without consuming either root. A write at an element position overlaps that element's descriptor storage and none of the window's own, so the window's length relation crosses the call and the executed result confirms the exchange.";
+  let values = slots_new::<Row, 2>();
   let first = Row(left: 3_u64, right: 4_u64);
-  region {
-    place_back(vector: &uniq values, value: move first);
-  }
+  place_back(window: &values, value: move first);
   let second = Row(left: 5_u64, right: 6_u64);
-  region {
-    place_back(vector: &uniq values, value: move second);
-  }
-  region {
-    exchange(values: &uniq values, left: 0_u64, right: 1_u64);
-  }
+  place_back(window: &values, value: move second);
+  exchange(values: &values, left: 0_u64, right: 1_u64);
   if values[0_u64].left == 5_u64 {
     if values[1_u64].left == 3_u64 {
       return exit_status(code: 0_u8);

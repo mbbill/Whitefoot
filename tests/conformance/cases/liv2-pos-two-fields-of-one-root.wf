@@ -9,11 +9,15 @@ fn two_bytes(bound: own u64) -> (small: own u8, large: own u8) pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "LIV-2's second condition admits two distinct fields of one root, which the version before it refused as a repeated target root, and its term-identity sentence makes a target that names a binding in scope a commit rather than a declaration: `total` names the outer binding and keeps it. The exit code reports the second field's ordinal.";
+  doc "SET-1, OWN-7: two distinct fields of one root are non-overlapping places, so each takes its own commit and neither disturbs the other or kills the root. A set target that names a binding in scope is a commit and never a declaration, which is now the only thing a set target can be. The exit code reports the second field.";
   let pair = Pair(low: 0_u8, high: 0_u8);
-  set (pair.low, pair.high) = two_bytes(bound: 4_u64);
+  let (small, large) = two_bytes(bound: 4_u64);
+  set pair.low = small;
+  set pair.high = large;
   let total = 0_u8;
-  let spare = 0_u8;
-  set (total, spare) = two_bytes(bound: 4_u64);
+  let held = 0_u8;
+  let (other_small, other_large) = two_bytes(bound: 4_u64);
+  set total = other_small;
+  set held = other_large;
   return exit_status(code: pair.high);
 }

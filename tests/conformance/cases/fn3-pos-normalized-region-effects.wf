@@ -1,15 +1,18 @@
-formal BorrowedSum {
-  fn sum(x: own Slice<u8>, y: own Slice<u8>) -> result: own u64 reads(x, y);
+struct Cell {
+  value: u64;
 }
 
-actual First : BorrowedSum {
+interface BorrowedSum {
+  fn sum(x: &Cell, y: &Cell) -> result: own u64 reads(x.value), reads(y.value);
+}
+
+binding First : BorrowedSum {
   sum = add_borrowed;
 }
 
-fn add_borrowed(x: own Slice<u8>, y: own Slice<u8>) -> result: own u64 reads(y, x) {
-  let x_length = len_of(x);
-  let y_length = len_of(y);
-  return x_length +wrap y_length;
+fn add_borrowed(first: &Cell, second: &Cell) -> total: own u64 reads(first.value), reads(second.value) {
+  doc "FN-3 and EFF-1: formal and actual rows compare by parameter ordinal and path, never by binder spelling, so renaming both inputs preserves the boundary. The entries themselves stay in canonical order, every `reads` before every `writes` and each in written argument order.";
+  return deref(first).value +wrap deref(second).value;
 }
 
 fn main() -> status: own ExitStatus pure {

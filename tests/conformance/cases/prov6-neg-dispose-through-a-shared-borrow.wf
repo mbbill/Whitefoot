@@ -1,36 +1,19 @@
 struct Pair {
-  page: FixedVector<u8, 4>;
+  page: Slots<u8, 4>;
   spare: u64;
 }
 
 fn look(holder: &Pair) -> size: own u64 reads(holder) {
-  doc "PROV-6: `dispose p;` is one consuming use of `p`'s root [OWN-1], so `p` must be rooted in a live own-mode binding of this function. Content reached through a borrow may never be moved, and this statement is no exception to that.";
-  dispose deref(holder);
+  doc "OWN-1: a consuming use requires a place rooted in a live own-mode binding of this function. Content reached through a reference whose row declares only a read may never be moved out, so the rejection is the ordinary one at the complete place.";
+  let taken = move deref(holder).page;
   return 0_u64;
 }
 
 fn main() -> status: own ExitStatus pure {
   doc "The caller.";
-  let empty = fixed_vector::<u8, 4>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let r1 = move empty;
-  region {
-    place_back(vector: &uniq r1, value: 0_u8);
-  }
-  let r2 = move r1;
-  region {
-    place_back(vector: &uniq r2, value: 0_u8);
-  }
-  let r3 = move r2;
-  region {
-    place_back(vector: &uniq r3, value: 0_u8);
-  }
-  let run = move r3;
+  let values = array_filled::<u8, 4>(value: 0_u8);
+  let run = slots_from_array::<u8, 4>(values: values);
   let pair = Pair(page: move run, spare: 1_u64);
-  region {
-    let n = look(holder: &pair);
-  }
+  let n = look(holder: &pair);
   return exit_status(code: 0_u8);
 }

@@ -1,0 +1,24 @@
+fn main() -> status: own ExitStatus pure {
+  doc "OP-10: a window operation on a boxed window takes a reference to the content, so place_back and take_back are written over &b.inner, while grow is defined on Box<Slots<T>> alone, takes the cell itself, and remakes the content whole while carrying the length across. The contract-visible length is then the ordinary field step b.inner.len [TYPE-9, OP-15].";
+  let b = box_slots_new::<u64>(capacity: 2_u64);
+  place_back(window: &b.inner, value: 5_u64);
+  place_back(window: &b.inner, value: 6_u64);
+  let popped = take_back(window: &b.inner);
+  grow(cell: &b, capacity: 8_u64);
+  invariant carried: b.inner.len == 1_u64;
+  let n = b.inner.len;
+  let room = b.inner.cap - b.inner.len;
+  if popped == 6_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if n == 1_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  if room == 7_u64 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}

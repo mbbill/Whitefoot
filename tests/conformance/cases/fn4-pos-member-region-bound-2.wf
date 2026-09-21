@@ -1,12 +1,13 @@
-formal Inspect {
-  fn length['s: linear](values: &Vector<'s, u64>) -> result: own u64 reads(values);
+interface Inspect<T> {
+  fn length(values: &T) -> result: own u64 reads(values);
 }
 
-fn shorter['t: linear](values: &Vector<'t, u64>) -> result: own u64 reads(values) {
-  return len_of(deref(values));
+fn shorter(values: &Array<u64, 4>) -> result: own u64 reads(values) {
+  doc "Parameter mode and exact type agree with the instantiated member, so the binding is admitted before any call exists.";
+  return deref(values)[0_u64];
 }
 
-actual Narrow : Inspect {
+binding Narrow : Inspect<Array<u64, 4>> {
   length = shorter;
 }
 

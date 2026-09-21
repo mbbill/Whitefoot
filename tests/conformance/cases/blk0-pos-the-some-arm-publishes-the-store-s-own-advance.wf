@@ -1,22 +1,20 @@
 fn main() -> status: own ExitStatus pure {
-  doc "BLK-0, CALL-6: the Some arm publishes what the acquisition did to the store as well as the run it made. A take of 4080 bytes out of a 4096-byte extent leaves exactly 16, and the proved take of 16 that follows discharges its own room requirement from len_of(store) = len_of(store at the call) + advance<T>(count) and MSR-2's standing identity, with no read of room_of anywhere.";
-  region 'a {
-    let workspace = arena_frame::<4096, 16, 'a>();
-    region {
-      match arena_vector::<u8>(store: &uniq workspace, count: 4080_u64) {
-        None() => {
-          return exit_status(code: 1_u8);
-        }
-        Some(value: bulk) => {
-          let rest = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
-          let held = cap_of(rest);
-          if held == 16_u64 {
-          } else {
-            return exit_status(code: 2_u8);
-          }
-        }
-      }
-    }
+  doc "A window operation publishes what it did to both windows as well as the elements it moved: append states deref(destination).len == deref(entry(destination)).len + deref(entry(source)).len and deref(source).len == 0_u64, so the caller reads both new lengths from the record and from nothing else.";
+  let source = slots_new::<u8, 4>();
+  place_back(window: &source, value: 1_u8);
+  place_back(window: &source, value: 2_u8);
+  let destination = slots_new::<u8, 8>();
+  place_back(window: &destination, value: 3_u8);
+  append(destination: &destination, source: &source);
+  let moved = destination.len;
+  if moved == 3_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let drained = source.len;
+  if drained == 0_u64 {
+  } else {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

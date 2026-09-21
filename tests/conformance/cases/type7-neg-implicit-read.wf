@@ -3,11 +3,9 @@ fn takes(value: own i32) -> function_result: own unit pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Using a borrow where a value of its referent type is expected, without deref, is forbidden [TYPE-7].";
+  doc "A reference variable denotes the reference [REF-1], and the storage it names is reached only through deref, so writing the bare reference where a value of the referent type is declared is the missing dereference [TYPE-7], whose mechanical fix is deref(p).";
   let a = 1_i32;
-  region {
-    let p = &a;
-    takes(value: p);
-  }
+  let p = &a;
+  takes(value: p);
   return exit_status(code: 0_u8);
 }

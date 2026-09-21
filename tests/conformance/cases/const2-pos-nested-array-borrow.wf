@@ -1,13 +1,13 @@
-const rows: array<array<u64, 2>, 1> =[[7_u64, 9_u64]];
+const rows: Array<Array<u64, 2>, 1> =[[7_u64, 9_u64]];
 
-fn read(values: &array<array<u64, 2>, 1>) -> result: own u64 reads(values) {
+fn read(values: &Array<Array<u64, 2>, 1>) -> result: own u64 reads(values) {
+  doc "Reads the selected inner element through a shared reference.";
   return deref(values)[0_u64][1_u64];
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "Nested constant arrays support direct reads and a shared reference path to the selected inner element.";
   let direct = rows[0_u64][1_u64];
-  region {
-    let value = read(values: &rows);
-  }
+  let value = read(values: &rows);
   return exit_status(code: 0_u8);
 }

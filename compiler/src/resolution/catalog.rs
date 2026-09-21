@@ -116,7 +116,7 @@ const fn prelude(
 
 /// Distinct OP-1 spellings in normative table order, with repeated `cvt`
 /// collapsed at its first occurrence as required by OP-1.
-pub(crate) const OPERATION_FAMILIES: [&str; 98] = [
+pub(crate) const OPERATION_FAMILIES: [&str; 86] = [
     "+wrap",
     "-wrap",
     "*wrap",
@@ -162,18 +162,6 @@ pub(crate) const OPERATION_FAMILIES: [&str; 98] = [
     "bxor",
     "bnot",
     "cvt",
-    "len_of",
-    "cap_of",
-    "room_of",
-    "head_of",
-    "slice_of",
-    "mut_slice_of",
-    "box_new",
-    "arena_new",
-    "array_new",
-    "buffer_fits",
-    "buffer_new",
-    "buffer_vacant",
     "iand",
     "ior",
     "ixor",
@@ -240,11 +228,21 @@ pub(crate) fn reserved_name(spelling: &str) -> Option<(ReservedNameClass, u16)> 
             .ok()
             .map(|ordinal| (ReservedNameClass::DotlessOperation, ordinal));
     }
-    MODE_WORDS
+    if let Some(index) = MODE_WORDS
         .iter()
         .position(|candidate| *candidate == spelling)
-        .and_then(|index| u16::try_from(index).ok())
-        .map(|ordinal| (ReservedNameClass::ModeWord, ordinal))
+    {
+        return u16::try_from(index)
+            .ok()
+            .map(|ordinal| (ReservedNameClass::ModeWord, ordinal));
+    }
+    // x1 [FORM-3, TYPE-10]: the eight measure and window-part names are no
+    // longer reserved. `len`, `cap` and `head` are the readonly fields
+    // [PRE-1] declares on the storage shapes, and `next`, `last`, `filled`
+    // and `free` are effect-row vocabulary selected by the window type of
+    // the place they follow, so neither set takes a declaration spelling
+    // away from a writer.
+    None
 }
 
 #[cfg(test)]
@@ -258,7 +256,7 @@ mod tests {
     #[test]
     fn exact_catalogs_are_closed_and_unique_where_required() {
         assert_eq!(PRELUDE_DECLARATIONS.len(), 24);
-        assert_eq!(OPERATION_FAMILIES.len(), 98);
+        assert_eq!(OPERATION_FAMILIES.len(), 86);
         assert_eq!(
             OPERATION_FAMILIES
                 .iter()
@@ -296,6 +294,31 @@ mod tests {
                 "{retired} is a free identifier"
             );
         }
+        // OP-1's table no longer carries a reader, view, or acquiring row, so
+        // the twelve v0.59 spellings below became free identifiers with them.
+        for retired in [
+            "len_of",
+            "cap_of",
+            "room_of",
+            "head_of",
+            "slice_of",
+            "mut_slice_of",
+            "arena_new",
+            "array_new",
+            "buffer_fits",
+            "buffer_new",
+            "buffer_vacant",
+        ] {
+            assert_eq!(
+                reserved_name(retired),
+                None,
+                "{retired} is a free identifier"
+            );
+        }
+        // `box_new` also left the operation table, but it is now an ordinary
+        // PRE-1 construction function [OP-13], so it is taken by declaration
+        // collision rather than by reservation.
+        assert_eq!(reserved_name("box_new"), None);
         assert_eq!(
             reserved_name("cvt"),
             Some((ReservedNameClass::DotlessOperation, 44))
@@ -304,6 +327,15 @@ mod tests {
             reserved_name("wrap"),
             Some((ReservedNameClass::ModeWord, 0))
         );
+        // x1 [FORM-3, TYPE-10]: the eight measure and window-part names
+        // reserve nothing. Retires the ordinal assertion of
+        // `measure-or-part`, whose successor is this free-identifier
+        // assertion over the same eight spellings.
+        for free in [
+            "len", "cap", "head", "next", "last", "filled", "free", "room",
+        ] {
+            assert_eq!(reserved_name(free), None, "{free} is a free identifier");
+        }
     }
 
     #[test]
@@ -321,12 +353,20 @@ mod tests {
         );
     }
 
+    /// The built-in half of [PRE-1], read out of the rule's own fences.
+    ///
+    /// [PRE-1] opens with the opaque-struct fence [TYPE-2] — the cell `Box`
+    /// and the fourteen host handles — which this catalog does not carry:
+    /// those are parsed prelude records whose declarations are ordinary
+    /// source text. The records read here are the leading enums of the
+    /// *ordinary* struct and enum fence, up to its first `struct`, plus the
+    /// two numeric bounds the sentence after it names.
     fn extract_prelude_records(spec: &str) -> Vec<(String, Option<DeclarationClass>)> {
         let (block, after) = spec
             .split_once("[PRE-1] The prelude contributes")
             .expect("exact PRE-1 opening")
             .1
-            .split_once("```\n")
+            .split_once("The complete ordinary struct and enum declarations are:\n\n```\n")
             .expect("PRE-1 ordinary declaration fence")
             .1
             .split_once("\n```\n")
@@ -352,11 +392,16 @@ mod tests {
                     .and_then(|(_, rest)| rest.split_once('>'))
                     .map(|(generics, _)| generics)
                 {
-                    records.extend(
-                        generics
-                            .split(',')
-                            .map(|generic| (generic.trim().to_owned(), None)),
-                    );
+                    // x1 [FN-2, PRE-1]: `enum Option<T: linear>` writes the
+                    // linearity bound the grammar has always required. The
+                    // bound is a property of the declaration and not part of
+                    // the parameter's name [TYPE-3], so the record carries the
+                    // TYPEID alone.
+                    records.extend(generics.split(',').map(|generic| {
+                        let generic = generic.trim();
+                        let name = generic.split_once(':').map_or(generic, |(name, _)| name);
+                        (name.trim().to_owned(), None)
+                    }));
                 }
             } else if in_enum && trimmed == "}" {
                 in_enum = false;

@@ -177,9 +177,9 @@ fn socket_class(error: own IoError) -> result: own u8 pure {
   }
 }
 
-fn byte_at(store: &Slice<u8>, index: own u64) -> result: own u8 reads(store) {
-  doc "Reads one stored byte, delivering zero for a position the view does not hold.";
-  let room = len_of(deref(store));
+fn byte_at(store: &[u8], index: own u64) -> result: own u8 reads(store) {
+  doc "Reads one stored byte, delivering zero for a position the range reference does not hold.";
+  let room = deref(store).len;
   let inside = index < room;
   if inside {
     let value = deref(store)[index];
@@ -188,7 +188,7 @@ fn byte_at(store: &Slice<u8>, index: own u64) -> result: own u8 reads(store) {
   return 0_u8;
 }
 
-fn parse_port(digits: &Slice<u8>, length: own u64) -> result: own u16 reads(digits) {
+fn parse_port(digits: &[u8], length: own u64) -> result: own u16 reads(digits) {
   doc "Reads one decimal port out of the argument bytes the invocation supplied; a byte that is not a digit ends the number.";
   let port = 0_u16;
   let ended = 0_u8;
@@ -220,11 +220,11 @@ fn parse_port(digits: &Slice<u8>, length: own u64) -> result: own u16 reads(digi
   return port;
 }
 
-fn send_all(send: &uniq TcpSend, source: &Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(send, source), writes(send) contract {
-  define source_length = len_of(deref(source));
+fn send_all(send: &TcpSend, source: &[u8], length: own u64) -> result: own Result<unit, IoError> reads(source), writes(send) contract {
+  define source_length = deref(source).len;
   requires length <= source_length;
 } {
-  doc "Sends one prefix of the source view, reattempting until the connection has accepted every byte or refused it.";
+  doc "Sends one prefix of the source range, reattempting until the connection has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @sending {
     let pending = sent < length;
@@ -232,192 +232,131 @@ fn send_all(send: &uniq TcpSend, source: &Slice<u8>, length: own u64) -> result:
     } else {
       break @sending;
     }
-    region {
-      match send_once(send: &uniq deref(send), source: source, start: sent, end: length) {
-        Ok(value: next) => {
-          set sent = next;
-        }
-        Err(error: problem) => {
-          return Err<unit, IoError>(error: move problem);
-        }
+    match send_once(send: send, source: source, start: sent, end: length) {
+      Ok(value: next) => {
+        set sent = next;
+      }
+      Err(error: problem) => {
+        return Err<unit, IoError>(error: problem);
       }
     }
   }
   return Ok<unit, IoError>(value: unit);
 }
 
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "Listens on the loopback port named by the invocation, takes one connection, and returns every byte the peer sends until the peer stops sending through ordinary prelude calls [PRE-1]. The prelude declares no operation reporting a listener's own local address, so the port is the caller's choice and arrives as an argument. The argument scratch and the echo chunk are store-resident runs, each viewed exclusively where it is written and shared where it is read.";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "Listens on the loopback port named by the invocation, takes one connection, and returns every byte the peer sends until the peer stops sending through ordinary prelude calls [PRE-1]. The prelude declares no operation reporting a listener's own local address, so the port is the caller's choice and arrives as an argument. The argument scratch and the echo chunk are two inline Slots windows of this frame, each reached through one range reference [TYPE-9, REF-4].";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  close_directory(factory: &handles, directory: move unused_cwd);
+  let digits = slots_new::<u8, 16>();
+  for @fill_digits (
+    at in 0_u64..16_u64,
+    invariant grown_digits: digits.len == at
+  ) {
+    place_back(window: &digits, value: 0_u8);
   }
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 16_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh_digits) => {
-        let digits = move fresh_digits;
-        for @fill_digits (
-          at in 0_u64..16_u64,
-          invariant grown_digits: len_of(digits) >= at,
-          invariant spare_digits: room_of(digits) + at >= 16_u64,
-          invariant flat_digits: head_of(digits) <= 0_u64
-        ) {
-          place_back(vector: &uniq digits, value: 0_u8);
+  let chunk = slots_new::<u8, 4096>();
+  for @fill_chunk (
+    at in 0_u64..4096_u64,
+    invariant grown_chunk: chunk.len == at
+  ) {
+    place_back(window: &chunk, value: 0_u8);
+  }
+  let room = 16_u64;
+  let held = 4096_u64;
+  let window = &digits[0_u64..16_u64];
+  let sink = &chunk[0_u64..4096_u64];
+  let port = 0_u16;
+  let arguments = args_count(args: &args);
+  let named = arguments >= 2_u64;
+  if named {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let carried = 0_u64;
+  match arg_get(args: &args, position: 1_u64) {
+    Ok(value: text) => {
+      match host_copy_utf8(value: &text, destination: window, start: 0_u64, end: room) {
+        Ok(value: written) => {
+          set carried = written;
         }
-        match heap_vector::<u8>(store: &uniq heap, count: 4096_u64) {
-          None() => {
-            return exit_status(code: 70_u8);
-          }
-          Some(value: fresh_chunk) => {
-            let chunk = move fresh_chunk;
-            for @fill_chunk (
-              at in 0_u64..4096_u64,
-              invariant grown_chunk: len_of(chunk) >= at,
-              invariant spare_chunk: room_of(chunk) + at >= 4096_u64,
-              invariant flat_chunk: head_of(chunk) <= 0_u64
-            ) {
-              place_back(vector: &uniq chunk, value: 0_u8);
-            }
-            let room = len_of(digits);
-            let held = len_of(chunk);
-            let port = 0_u16;
-            let arguments = 0_u64;
-            region {
-              set arguments = args_count(args: &args);
-            }
-            let named = arguments >= 2_u64;
-            if named {
-            } else {
-              return exit_status(code: 1_u8);
-            }
-            let carried = 0_u64;
-            region {
-              match arg_get(args: &args, position: 1_u64) {
-                Ok(value: text) => {
-                  region {
-                    region {
-                      let window = mut_slice_of(&uniq digits);
-                      region {
-                        match host_copy_utf8(value: &text, destination: &uniq window, start: 0_u64, end: room) {
-                          Ok(value: written) => {
-                            set carried = written;
-                          }
-                          Err(error: problem) => {
-                            set carried = 0_u64;
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-                Err(error: problem) => {
-                  set carried = 0_u64;
-                }
-              }
-            }
-            if carried == 0_u64 {
-              return exit_status(code: 2_u8);
-            }
-            region {
-              let named_port = slice_of(&digits);
-              region {
-                set port = parse_port(digits: &named_port, length: carried);
-              }
-            }
-            let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
-            let outcome = 0_u8;
-            region {
-              region {
-                match tcp_listen(factory: &uniq handles, address: &address) {
-                  Ok(value: bound) => {
-                    region {
-                      region {
-                        match tcp_accept(factory: &uniq handles, listener: &uniq bound) {
-                          Ok(value: accepted_link) => {
-                            let AcceptedConnection(connection: link, peer: from) = move accepted_link;
-                            loop @chunks {
-                              let available = 0_u64;
-                              let ended = 0_u8;
-                              region {
-                                let sink = mut_slice_of(&uniq chunk);
-                                region {
-                                  match receive_next(receive: &uniq link.receive, destination: &uniq sink, start: 0_u64, end: held) {
-                                    Ok(value: endpoint) => {
-                                      set available = endpoint;
-                                    }
-                                    Err(error: read_stop_1) => {
-                                      match read_stop_1 {
-                                        ReadEnd() => {
-                                          set ended = 1_u8;
-                                        }
-                                        ReadFailed(error: problem) => {
-                                          let reported = socket_class(error: move problem);
-                                          set outcome = 20_u8 +wrap reported;
-                                          set ended = 2_u8;
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                              if ended == 0_u8 {
-                                region {
-                                  let returned = slice_of(&chunk);
-                                  region {
-                                    match send_all(send: &uniq link.send, source: &returned, length: available) {
-                                      Ok(value: delivered) => {
-                                      }
-                                      Err(error: problem) => {
-                                        let reported = socket_class(error: move problem);
-                                        set outcome = 30_u8 +wrap reported;
-                                        set ended = 2_u8;
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                              if ended == 0_u8 {
-                              } else {
-                                break @chunks;
-                              }
-                            }
-                            let TcpConnection(receive: close_receive_2, send: close_send_2) = move link;
-                            close_receive(factory: &uniq handles, receive: move close_receive_2);
-                            close_send(factory: &uniq handles, send: move close_send_2);
-                          }
-                          Err(error: problem) => {
-                            region {
-                              if factory_refusal(error: &problem) {
-                                set outcome = 8_u8;
-                              } else {
-                                set outcome = 7_u8;
-                              }
-                            }
-                          }
-                        }
-                      }
-                      let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
-                    }
-                  }
-                  Err(error: problem) => {
-                    region {
-                      if factory_refusal(error: &problem) {
-                        set outcome = 10_u8;
-                      } else {
-                        set outcome = 9_u8;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            return exit_status(code: outcome);
-          }
+        Err(error: problem) => {
+          set carried = 0_u64;
         }
       }
     }
+    Err(error: problem) => {
+      set carried = 0_u64;
+    }
   }
+  if carried == 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  set port = parse_port(digits: window, length: carried);
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
+  let outcome = 0_u8;
+  match tcp_listen(factory: &handles, address: &address) {
+    Ok(value: bound) => {
+      match tcp_accept(factory: &handles, listener: &bound) {
+        Ok(value: accepted_link) => {
+          let AcceptedConnection(connection: link, peer: from) = move accepted_link;
+          loop @chunks {
+            let available = 0_u64;
+            let ended = 0_u8;
+            match receive_next(receive: &link.receive, destination: sink, start: 0_u64, end: held) {
+              Ok(value: endpoint) => {
+                set available = endpoint;
+              }
+              Err(error: read_stop_1) => {
+                match read_stop_1 {
+                  ReadEnd() => {
+                    set ended = 1_u8;
+                  }
+                  ReadFailed(error: problem) => {
+                    let reported = socket_class(error: problem);
+                    set outcome = 20_u8 +wrap reported;
+                    set ended = 2_u8;
+                  }
+                }
+              }
+            }
+            if ended == 0_u8 {
+              match send_all(send: &link.send, source: sink, length: available) {
+                Ok(value: delivered) => {
+                }
+                Err(error: problem) => {
+                  let reported = socket_class(error: problem);
+                  set outcome = 30_u8 +wrap reported;
+                  set ended = 2_u8;
+                }
+              }
+            }
+            if ended == 0_u8 {
+            } else {
+              break @chunks;
+            }
+          }
+          let TcpConnection(receive: close_receive_2, send: close_send_2) = move link;
+          close_receive(factory: &handles, receive: move close_receive_2);
+          close_send(factory: &handles, send: move close_send_2);
+        }
+        Err(error: problem) => {
+          if factory_refusal(error: &problem) {
+            set outcome = 8_u8;
+          } else {
+            set outcome = 7_u8;
+          }
+        }
+      }
+      let listener_credit = close_listener(factory: &handles, listener: move bound);
+    }
+    Err(error: problem) => {
+      if factory_refusal(error: &problem) {
+        set outcome = 10_u8;
+      } else {
+        set outcome = 9_u8;
+      }
+    }
+  }
+  return exit_status(code: outcome);
 }

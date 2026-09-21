@@ -3,8 +3,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-typedef struct { void *data; uint64_t length; } View;
-extern uint64_t wf_test_decode(const View *input, const View *output);
+/* One `&[u8]` range reference: the address of the first element of the range
+ * and the element count, which is its one measure [REF-4, MSR-1]. */
+typedef struct { void *data; uint64_t length; } Range;
+extern uint64_t wf_test_decode(const Range *input, const Range *output);
 extern int wf__floor_run(int, char **);
 static unsigned char input[70000], output[70002];
 static uint32_t word(const unsigned char *p) {
@@ -22,7 +24,7 @@ int wf__main_body(int argc, char **argv) {
         if (length > sizeof input || capacity > sizeof output - 2) return 82;
         if (fread(input, 1, length, stdin) != length) return 83;
         memset(output, 0xa5, sizeof output);
-        View source = {input, length}, destination = {output + 1, capacity};
+        Range source = {input, length}, destination = {output + 1, capacity};
         uint64_t result = wf_test_decode(&source, &destination);
         if (output[0] != 0xa5 || output[capacity + 1] != 0xa5) return 84;
         if (result > capacity && result < UINT64_MAX - 6) return 85;

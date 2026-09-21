@@ -5,7 +5,7 @@ enum Sign {
 }
 
 fn sign_of(x: own i32) -> function_result: own Sign pure {
-  doc "Conditional value produced by returning from arms (return-position match).";
+  doc "Conditional value produced by returning from branches (canonical for return position).";
   if x < 0_i32 {
     return Neg();
   } else if x == 0_i32 {
@@ -16,35 +16,33 @@ fn sign_of(x: own i32) -> function_result: own Sign pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "let-initializer match with give, named construction, named user-fn call.";
+  doc "let-initializer match with give, a reference read through deref, named binders, a named user-fn call, and checked arithmetic.";
   let a = 40_i32;
-  region {
-    let p = &a;
-    let v = match deref(p) +checked 2_i32 {
-      Ok(value: w) => {
-        give w;
-      }
-      Err(error: e) => {
-        return exit_status(code: 1_u8);
-      }
+  let p = &a;
+  let v = match deref(p) +checked 2_i32 {
+    Ok(value: w) => {
+      give w;
     }
-    if v == 42_i32 {
-    } else {
-      return exit_status(code: 2_u8);
+    Err(error: e) => {
+      return exit_status(code: 1_u8);
     }
-    let sg = sign_of(x: v);
-    match sg {
-      Neg() => {
-        return exit_status(code: 3_u8);
-      }
-      Zero() => {
-        return exit_status(code: 4_u8);
-      }
-      Pos() => {
-        if v == 42_i32 {
-        } else {
-          return exit_status(code: 5_u8);
-        }
+  }
+  if v == 42_i32 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let sg = sign_of(x: v);
+  match sg {
+    Neg() => {
+      return exit_status(code: 3_u8);
+    }
+    Zero() => {
+      return exit_status(code: 4_u8);
+    }
+    Pos() => {
+      if v == 42_i32 {
+      } else {
+        return exit_status(code: 5_u8);
       }
     }
   }

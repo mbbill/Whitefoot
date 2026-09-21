@@ -15,26 +15,37 @@ fn sign_of(x: own i32) -> result: own Sign pure {
   }
 }
 
+fn fill_eight() -> total: own u64 pure {
+  doc "A Slots window appended by place_back under a counted header invariant, then measured.";
+  let r = slots_new::<u64, 8>();
+  for (
+    i in 0_u64..8_u64,
+    invariant h: r.len == i
+  ) {
+    place_back(window: &r, value: i);
+  }
+  let n = r.len;
+  return n;
+}
+
 fn main() -> status: own ExitStatus pure {
-  doc "let-initializer match with give: a conditional value bound, then reused.";
+  doc "let-initializer match with give and a reference read through deref.";
   let a = 40_i32;
-  region {
-    let p = &a;
-    let v = match deref(p) +checked 2_i32 {
-      Ok(value: w) => {
-        give w;
-      }
-      Err(error: e) => {
-        let failed = exit_status(code: 1_u8);
-        return move failed;
-      }
+  let p = &a;
+  let v = match deref(p) +checked 2_i32 {
+    Ok(value: w) => {
+      give w;
     }
-    let expected = v == 42_i32;
-    if expected {
-    } else {
+    Err(error: e) => {
       let failed = exit_status(code: 1_u8);
       return move failed;
     }
+  }
+  let expected = v == 42_i32;
+  if expected {
+  } else {
+    let failed = exit_status(code: 1_u8);
+    return move failed;
   }
   let success = exit_status(code: 0_u8);
   return move success;

@@ -1,41 +1,21 @@
 fn main() -> status: own ExitStatus pure {
-  doc "MSR-1, OP-4: a subscript inside a measure place is an ordinary OP-4 occurrence and owes `i < len_of(base)` where the place is formed. One row was placed, so `1 < len_of(grid)` is not derivable and the measure term never exists.";
-  region 'a {
-    let workspace = arena_frame::<8192, 16, 'a>();
-    region {
-      match arena_vector::<u8>(store: &uniq workspace, count: 8_u64) {
-        None() => {
-          return exit_status(code: 1_u8);
-        }
-        Some(value: first) => {
-          let spare = room_of(first);
-          if spare == 0_u64 {
-            return exit_status(code: 5_u8);
-          }
-          region {
-            place_back(vector: &uniq first, value: 5_u8);
-          }
-          let filled = move first;
-          let table = fixed_vector::<Vector<'a, u8>, 4>();
-          region {
-            place_back(vector: &uniq table, value: move filled);
-          }
-          let grid = move table;
-          let rows = len_of(grid);
-          if rows == 1_u64 {
-            let width = len_of(grid[1_u64]);
-            if width == 1_u64 {
-              let cell = grid[0_u64][0_u64];
-              if cell == 5_u8 {
-                return exit_status(code: 0_u8);
-              }
-              return exit_status(code: 4_u8);
-            }
-            return exit_status(code: 2_u8);
-          }
-          return exit_status(code: 3_u8);
-        }
+  doc "MSR-1, OP-4: a subscript inside a measure place is an ordinary OP-4 occurrence and owes i < base.len where the place is formed. One row was placed, so 1 < grid.len is not derivable and the measure term over that place never exists.";
+  let row = slots_new::<u8, 8>();
+  place_back(window: &row, value: 5_u8);
+  let table = slots_new::<Slots<u8, 8>, 4>();
+  place_back(window: &table, value: move row);
+  let grid = move table;
+  let rows = grid.len;
+  if rows == 1_u64 {
+    let width = grid[1_u64].len;
+    if width == 1_u64 {
+      let cell = grid[0_u64][0_u64];
+      if cell == 5_u8 {
+        return exit_status(code: 0_u8);
       }
+      return exit_status(code: 4_u8);
     }
+    return exit_status(code: 2_u8);
   }
+  return exit_status(code: 3_u8);
 }

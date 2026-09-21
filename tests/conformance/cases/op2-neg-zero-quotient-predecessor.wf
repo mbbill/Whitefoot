@@ -1,8 +1,9 @@
-fn last_chunk_status<const n_buf: u64, const n_status: u64>(buf: own FixedVector<u8, n_buf>, status: own FixedVector<u8, n_status>) -> value: own u8 reads(buf, status) contract {
-  define status_len = len_of(status);
+fn last_chunk_status<const n_buf: u64, const n_status: u64>(buf: own Slots<u8, n_buf>, status: own Slots<u8, n_status>) -> value: own u8 pure contract {
+  define status_len = status.len;
   requires status_len > 0_u64;
 } {
-  let data_len = len_of(buf);
+  doc "Without a positive quotient bound, length / 3 can be zero and subtracting one is unproved.";
+  let data_len = buf.len;
   let chunk_count = data_len / 3_u64;
   let last_chunk = chunk_count - 1_u64;
   let value = status[last_chunk];

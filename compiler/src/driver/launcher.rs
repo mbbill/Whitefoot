@@ -2,7 +2,7 @@
 //!
 //! This is build glue, applied after acceptance. The language does not require
 //! an entry name or signature. Other signatures remain callable from linked
-//! code; this runner supplies Inputs and/or a general Heap, or no arguments.
+//! code; this runner supplies Inputs, or no arguments.
 
 use std::fmt::Write;
 
@@ -35,7 +35,6 @@ pub(crate) fn render(
     let abi = FunctionAbi::build(program, main)?;
     let mut arguments = Vec::new();
     let mut inputs = None;
-    let mut heap = false;
     for parameter in abi.parameters() {
         match parameter {
             ParameterAbi::ContentPointer(IrType::Nominal(id))
@@ -46,10 +45,6 @@ pub(crate) fn render(
             {
                 inputs = Some(*id);
                 arguments.push("ptr %inputs".to_owned());
-            }
-            ParameterAbi::Value(IrType::Provider) if !heap => {
-                heap = true;
-                arguments.push("{ ptr, i64 } zeroinitializer".to_owned());
             }
             _ => return Ok(String::new()),
         }

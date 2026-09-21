@@ -1,8 +1,8 @@
-linear struct Lease {
+nodrop struct Lease {
   slot: u8;
 }
 
-fn discard<T: affine>(value: own T) -> count: own u8 pure {
+fn discard<T: drop>(value: own T) -> count: own u8 pure {
   doc "The same body written for the affine class.";
   return 2_u8;
 }

@@ -26,8 +26,8 @@ const ENUM_ORDER: &[&str] = &[
     "fn_decl",
     "result_binding",
     "contract_block",
-    "formal_decl",
-    "actual_decl",
+    "interface_decl",
+    "binding_decl",
     "fn_sig",
     "pack_use",
     "function_arg",
@@ -36,7 +36,6 @@ const ENUM_ORDER: &[&str] = &[
     "doc",
     "generics",
     "gparam",
-    "region_params",
     "param_list",
     "param",
     "type",
@@ -53,7 +52,6 @@ const ENUM_ORDER: &[&str] = &[
     "return_stmt",
     "loop_stmt",
     "break_stmt",
-    "region_stmt",
     "contract_define",
     "give_stmt",
     "match_stmt",
@@ -86,7 +84,6 @@ const ENUM_ORDER: &[&str] = &[
     "requires_clause",
     "ensures_clause",
     "result_route",
-    "replace_let_rhs",
     "effect_path",
     "invariant_stmt",
     "affine_expr",
@@ -97,15 +94,31 @@ const ENUM_ORDER: &[&str] = &[
     "compare_op",
     "clause_expr",
     "clause_op",
-    "dispose_stmt",
-    "region_param",
-    "linearity_bound",
+    "capability_bound",
+    // v0.60 additions, appended so every surviving production keeps its dense
+    // index: the no-heap declaration [GRAM-2, STOR-8], the factored range step
+    // [GRAM-5], and the effect-path productions [EFF-1] broke out of prose.
+    "heap_decl",
+    "range_tail",
+    "epbase",
+    "epsuffix",
+    "erange",
 ];
 
 /// v0.33 deliberately replaces the old pseudo-statement contract grammar.
 /// Decision identities are regenerated from source order because none is a
 /// source- or artifact-visible language identity.
 const HISTORICAL_DECISIONS: &[(usize, usize)] = &[];
+
+/// Whether one formed token can satisfy both predicates: the same predicate,
+/// or fixed `unit` against the `literal` union [GRAM-1].
+fn predicates_overlap(left: Pred, right: Pred) -> bool {
+    left == right
+        || matches!(
+            (left, right),
+            (Pred::Fixed("Unit"), Pred::Literal) | (Pred::Literal, Pred::Fixed("Unit"))
+        )
+}
 
 /// Productions whose entry frontier carries DIAG-1 construct-entry behaviour.
 const CONSTRUCT_ENTRY: &[&str] = &[
@@ -251,6 +264,24 @@ fn build_decisions(
                 if seen.insert((first, second)) {
                     rows.push(Row { arm, first, second });
                 }
+            }
+        }
+        for (position, left) in rows.iter().enumerate() {
+            for right in &rows[position + 1..] {
+                assert!(
+                    left.arm == right.arm
+                        || !predicates_overlap(left.first.pred, right.first.pred)
+                        || !predicates_overlap(left.second.pred, right.second.pred),
+                    "[GRAM-1] arms {} and {} of a decision in `{}` share the two-token word {} {}",
+                    left.arm,
+                    right.arm,
+                    index
+                        .iter()
+                        .find(|(_, production)| **production == owner[id])
+                        .map_or("?", |(name, _)| name.as_str()),
+                    left.first.pred.bare(),
+                    left.second.pred.bare(),
+                );
             }
         }
         rows.sort_by(|left, right| {

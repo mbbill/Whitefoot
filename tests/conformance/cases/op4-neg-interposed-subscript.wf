@@ -1,8 +1,10 @@
 fn peek(v: &u64) -> result: own u64 reads(v) {
+  doc "Reads through deref the value the reference names and hands back an owned copy.";
   return deref(v);
 }
 
-fn probe['r](values: own array<u8, 8>, index: own u64, cell: &'r u64, other: &'r u64) -> result: own u64 reads(values, cell, other) {
+fn probe(values: own Array<u8, 8>, index: own u64, cell: &u64, other: &u64) -> result: own u64 reads(cell), reads(other) {
+  doc "A subscript between ordinary read calls still requires its own proved bound.";
   let a = peek(v: other);
   let picked = values[index];
   let b = peek(v: cell);
@@ -12,9 +14,7 @@ fn probe['r](values: own array<u8, 8>, index: own u64, cell: &'r u64, other: &'r
 fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   let other = 2_u64;
-  let table = array_new::<u8, 8>(0_u8);
-  region {
-    let total = probe(values: move table, index: 3_u64, cell: &cell, other: &other);
-  }
+  let table = array_filled::<u8, 8>(value: 0_u8);
+  let total = probe(values: table, index: 3_u64, cell: &cell, other: &other);
   return exit_status(code: 0_u8);
 }

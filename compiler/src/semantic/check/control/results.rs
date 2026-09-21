@@ -2,12 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationClass, DeclarationId, LexicalUseRole, Production, ResolvedTarget,
+    DeclarationClass, DeclarationId, FixedTerminal, LexicalUseRole, Production, ResolvedTarget,
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
 use super::super::super::model::{
-    BindingId, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType, PropagationContext,
+    BindingId, CheckedMode, CheckedNominalKind, CheckedProjectedDrop, CheckedReleaseMode,
+    CheckedStatement, CheckedType, PropagationContext,
 };
 use super::super::{CheckStop, Checker, FunctionSignature, LocalBinding, PreludeType};
 use super::{ControlScope, StatementResult};
@@ -115,22 +116,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         live: true,
                         loop_depth: scope.loops.len(),
                         compiler_updated: false,
-                        borrow: None,
-                        slice: None,
-                        slice_loans: Vec::new(),
-                        suspended: false,
+                        reference: None,
+                        refinement_witnesses: Vec::new(),
                     },
                 )
                 .is_some()
             {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
-            binder_ids.push((binding, ty));
+            binder_ids.push((
+                binding,
+                ty,
+                u32::try_from(binder_ids.len())
+                    .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+            ));
         }
         Ok(Self::continuing_statement(
             CheckedStatement::DestructuringLet {
                 node_path: self.tree.path(node)?.clone(),
                 bindings: binder_ids,
+                // [CALL-4] a result list binds every ordinal, so there is no
+                // covered ordinal and no derived release here.
+                covered: Vec::new(),
                 nominal,
                 value: value.expression,
             },
@@ -161,6 +168,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let cell = matches!(usage.target(), ResolvedTarget::Container(id)
             if crate::container_nominal(id)
                 .is_some_and(|entry| entry.shape == crate::ContainerShape::Box));
+        // [TYPE-2] an opaque struct has no usable constructor, and a
+        // destructuring `let_stmt` whose TYPEID names one is that rule's hard
+        // error at the complete statement. `Box` is the prelude's opaque
+        // struct [TYPE-9, PRE-1], so a cell's content is reached through its
+        // member `inner` and never by taking the cell apart.
+        let opaque_typeid = match usage.target() {
+            ResolvedTarget::Source { declaration, .. } => {
+                self.is_opaque_struct_declaration(declaration)?
+            }
+            _ => cell,
+        };
+        if opaque_typeid {
+            return self.issue_node(
+                SemanticRule::Type2,
+                node,
+                SemanticIssueKind::ContainerConstruction {
+                    nominal: written,
+                    mechanical_fix: "build it with a construction function [OP-13, PRE-1]",
+                },
+            );
+        }
         let source_declaration = match usage.target() {
             ResolvedTarget::Source { declaration, .. } => Some(declaration),
             _ if cell => None,
@@ -194,6 +222,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } if cell => vec![super::super::super::model::CheckedField {
                 name: "value".to_owned(),
                 ty: *referent,
+                readonly: false,
             }],
             _ => return self.destructuring_shape_rejection(node, &written),
         };
@@ -204,18 +233,41 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Some(list) => self.tree.children_with(list, Production::Fieldbind)?,
             None => Vec::new(),
         };
-        if binders.len() != fields.len() {
+        // [GRAM-4] the rest marker is the statement's own `..` token. The
+        // consumed `place` carries none: a range step spells its `..` inside
+        // a `psuffix`, which is not a direct token of this statement.
+        let rest = self.has_fixed(node, FixedTerminal::DotDot)?;
+        if !rest && binders.len() != fields.len() {
             return self.invalid_destructuring_fields(&written, &fields, node);
         }
         let mut binder_ids = Vec::with_capacity(fields.len());
-        for (written_binder, field) in binders.into_iter().zip(&fields) {
-            if self
+        let mut cursor = 0_usize;
+        let mut covered = Vec::new();
+        for written_binder in binders {
+            let spelling = self
                 .deferred_use_at(written_binder, crate::DeferredUseRole::MatchField)?
                 .spelling()
-                != field.name
-            {
+                .to_owned();
+            // [GRAM-10] every written field name is written exactly once in
+            // declared order, so the next one is found at or after the field
+            // the previous binder took. A missing, extra, repeated,
+            // misspelled, or out-of-order name leaves no field here.
+            let Some(offset) = fields[cursor..]
+                .iter()
+                .position(|field| field.name == spelling)
+            else {
+                return self.invalid_destructuring_fields(&written, &fields, written_binder);
+            };
+            if offset > 0 && !rest {
                 return self.invalid_destructuring_fields(&written, &fields, written_binder);
             }
+            covered.extend(cursor..cursor.saturating_add(offset));
+            let ordinal = cursor
+                .checked_add(offset)
+                .ok_or(SemanticCompilerFailure::CounterOverflow)?;
+            let field = fields
+                .get(ordinal)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             let declaration = self.declaration_at(written_binder, crate::DeclarationRole::Let)?;
             let binding = Self::allocate_binding(counters.next_binding)?;
             counters
@@ -232,27 +284,81 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         live: true,
                         loop_depth: scope.loops.len(),
                         compiler_updated: false,
-                        borrow: None,
-                        slice: None,
-                        slice_loans: Vec::new(),
-                        suspended: false,
+                        reference: None,
+                        refinement_witnesses: Vec::new(),
                     },
                 )
                 .is_some()
             {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
-            binder_ids.push((binding, field.ty));
+            binder_ids.push((
+                binding,
+                field.ty,
+                u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+            ));
+            cursor = ordinal
+                .checked_add(1)
+                .ok_or(SemanticCompilerFailure::CounterOverflow)?;
         }
+        if cursor < fields.len() {
+            if !rest {
+                return self.invalid_destructuring_fields(&written, &fields, node);
+            }
+            covered.extend(cursor..fields.len());
+        }
+        let covered = self.covered_field_releases(place, &fields, &covered)?;
         Ok(Self::continuing_statement(
             CheckedStatement::DestructuringLet {
                 node_path: self.tree.path(node)?.clone(),
                 bindings: binder_ids,
+                covered,
                 nominal,
                 value: value.expression,
             },
             value.effects,
         ))
+    }
+
+    /// [WIN-3, STOR-3] the compiler-derived release of every field a final
+    /// `..` covers.
+    ///
+    /// The owner ceases to exist at the statement, so each covered field's
+    /// own release action runs there. A covered field that is linear has no
+    /// such action: it is a remaining linear part of a consumed owner, which
+    /// is [WIN-3]'s hard error at the complete consumed `place`.
+    fn covered_field_releases(
+        &self,
+        place: NodeId,
+        fields: &[super::super::super::model::CheckedField],
+        covered: &[usize],
+    ) -> Result<Vec<CheckedProjectedDrop>, CheckStop> {
+        let mut releases = Vec::new();
+        for ordinal in covered {
+            let field = fields
+                .get(*ordinal)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            if self.linear_release_obligation(field.ty)?.is_some() {
+                return self.issue_node(
+                    SemanticRule::Win3,
+                    place,
+                    SemanticIssueKind::InvalidElementMove {
+                        mechanical_fix:
+                            "take it in the same destructuring: let N(f: a, ..) = move v;",
+                    },
+                );
+            }
+            let ordinal =
+                u32::try_from(*ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            for (path, ty) in self.drop_paths(field.ty, vec![ordinal])? {
+                releases.push(CheckedProjectedDrop {
+                    fields: path,
+                    ty,
+                    release: CheckedReleaseMode::Full,
+                });
+            }
+        }
+        Ok(releases)
     }
 
     /// [TYPE-5] the destructuring consume's operand is not a value of the
@@ -324,13 +430,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     kind: SemanticIssueKind::ReturnMismatch,
                 }));
             }
-            self.check_confined_destination(
-                function,
-                value.expression.ty(),
-                None,
-                *expression_node,
-            )?;
-            self.borrow_for_destination(CheckedMode::Own, &value, *expression_node)?;
+            // [REF-3] a result ordinal is owned, so a reference written at
+            // one is the escape violation itself.
+            self.reject_escaping_reference(&value, *expression_node)?;
             effects = effects.union(value.effects);
             fields.push(value.expression);
         }
@@ -378,19 +480,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             scope.loops.len(),
         )?;
-        let holder_without_deref = value.mode != CheckedMode::Own
-            || match value.expression.ty() {
-                CheckedType::Nominal(nominal) => {
-                    matches!(self.nominal(nominal)?.kind, CheckedNominalKind::Box { .. })
-                }
-                _ => false,
-            };
-        if holder_without_deref {
+        // [REF-1] a reference variable denotes the reference, and the storage
+        // it names is reached only through `deref`, so a bare holder written
+        // here is that missing step. A `Box` is not one of these at v0.60:
+        // its content is the ordinary field `inner` [TYPE-9], so a `Box`
+        // operand is [ERR-3]'s own wrong-operand rejection below.
+        if value.mode != CheckedMode::Own {
             return self.issue_node(
                 SemanticRule::Type7,
                 expression_node,
                 SemanticIssueKind::MissingDereference {
                     mechanical_fix: "write `deref(holder)`",
+                },
+            );
+        }
+        // [ERR-3] propagation is a consuming context, and [OWN-1] admits a
+        // consume only for a place rooted in a live own-mode binding, which a
+        // place written under a `deref` is not.
+        if !self.is_copy_type(value.expression.ty())?
+            && self.operand_is_written_under_deref(expression_node)?
+        {
+            return self.issue_node(
+                SemanticRule::Own1,
+                expression_node,
+                SemanticIssueKind::MoveThroughReference {
+                    mechanical_fix: super::super::references::OWN1_ROOTED_CONSUME,
                 },
             );
         }
@@ -423,10 +537,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     live: true,
                     loop_depth: scope.loops.len(),
                     compiler_updated: false,
-                    borrow: None,
-                    slice: None,
-                    slice_loans: Vec::new(),
-                    suspended: false,
+                    reference: None,
+                    refinement_witnesses: Vec::new(),
                 },
             )
             .is_some()
@@ -452,6 +564,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ))
     }
 
+    /// Whether one written `expr` is a place whose `pbase` is a `deref`,
+    /// which [REF-1] makes the storage a reference names rather than a place
+    /// this function owns.
+    fn operand_is_written_under_deref(&self, expression: NodeId) -> Result<bool, CheckStop> {
+        let Some(atom) = self.tree.first_child_with(expression, Production::Atom)? else {
+            return Ok(false);
+        };
+        let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
+            return Ok(false);
+        };
+        let Some(pbase) = self.tree.first_child_with(place, Production::Pbase)? else {
+            return Ok(false);
+        };
+        self.has_fixed(pbase, crate::FixedTerminal::Deref)
+    }
+
     fn invalid_propagation<ResultValue>(&self, node: NodeId) -> Result<ResultValue, CheckStop> {
         self.issue_node(
             SemanticRule::Err3,
@@ -460,12 +588,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )
     }
 
-    /// [TYPE-7]'s implicit read at return position: a live borrow-mode or
-    /// box binding used where the written `rtype` requires its referent
+    /// [TYPE-7]'s implicit read at return position: a live borrow-mode
+    /// binding used where the written `rtype` requires its referent
     /// value is rejected citing TYPE-7, and [FN-1] forms no candidate for
     /// that use. TYPE-7's definition precedes OWN-1's spelling judgments,
     /// so this same-node rejection event is cited first
     /// [DIAG-1, `SemanticRule::definition_rank`].
+    ///
+    /// A `Box` is not a reference [TYPE-7], so a cell returned where its
+    /// content type is declared is not an implicit read at all: it is the
+    /// ordinary [FN-1] return type mismatch, whose fix names the content's
+    /// own field step `move holder.inner` [TYPE-9].
     pub(super) fn check_return_implicit_read(
         &self,
         function: &FunctionSignature,
@@ -511,14 +644,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if !local.live {
             return Ok(());
         }
-        let referent = if local.mode != CheckedMode::Own {
-            Some(local.ty)
-        } else if let CheckedType::Nominal(nominal) = local.ty
-            && let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind
-        {
-            Some(referent)
-        } else {
+        let referent = if local.mode == CheckedMode::Own {
             None
+        } else {
+            Some(local.ty)
         };
         if referent == Some(function.result) {
             return self.issue_node(

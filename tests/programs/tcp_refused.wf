@@ -177,9 +177,9 @@ fn socket_class(error: own IoError) -> result: own u8 pure {
   }
 }
 
-fn byte_at(store: &Slice<u8>, index: own u64) -> result: own u8 reads(store) {
-  doc "Reads one stored byte, delivering zero for a position the view does not hold.";
-  let room = len_of(deref(store));
+fn byte_at(store: &[u8], index: own u64) -> result: own u8 reads(store) {
+  doc "Reads one stored byte, delivering zero for a position the range reference does not hold.";
+  let room = deref(store).len;
   let inside = index < room;
   if inside {
     let value = deref(store)[index];
@@ -188,7 +188,7 @@ fn byte_at(store: &Slice<u8>, index: own u64) -> result: own u8 reads(store) {
   return 0_u8;
 }
 
-fn parse_port(digits: &Slice<u8>, length: own u64) -> result: own u16 reads(digits) {
+fn parse_port(digits: &[u8], length: own u64) -> result: own u16 reads(digits) {
   doc "Reads one decimal port out of the argument bytes the invocation supplied; a byte that is not a digit ends the number.";
   let port = 0_u16;
   let ended = 0_u8;
@@ -220,118 +220,81 @@ fn parse_port(digits: &Slice<u8>, length: own u64) -> result: own u16 reads(digi
   return port;
 }
 
-fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "Connects twice to a loopback port nobody listens on through the same ordinary factory, so a refused connect is shown to leave its capacity available for the next attempt. The argument scratch is a store-resident run, viewed exclusively where the argument is copied into it and shared where the port is read out.";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "Connects twice to a loopback port nobody listens on through the same ordinary factory, so a refused connect is shown to leave its capacity available for the next attempt. The argument scratch is one inline Slots window of this frame, reached through one range reference for both the copy in and the read out [TYPE-9, REF-4].";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  close_directory(factory: &handles, directory: move unused_cwd);
+  let digits = slots_new::<u8, 16>();
+  for @fill_digits (
+    at in 0_u64..16_u64,
+    invariant grown_digits: digits.len == at
+  ) {
+    place_back(window: &digits, value: 0_u8);
   }
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 16_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
+  let room = 16_u64;
+  let window = &digits[0_u64..16_u64];
+  let port = 0_u16;
+  let arguments = args_count(args: &args);
+  let named = arguments >= 2_u64;
+  if named {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let carried = 0_u64;
+  match arg_get(args: &args, position: 1_u64) {
+    Ok(value: text) => {
+      match host_copy_utf8(value: &text, destination: window, start: 0_u64, end: room) {
+        Ok(value: written) => {
+          set carried = written;
+        }
+        Err(error: problem) => {
+          set carried = 0_u64;
+        }
       }
-      Some(value: fresh_digits) => {
-        let digits = move fresh_digits;
-        for @fill_digits (
-          at in 0_u64..16_u64,
-          invariant grown_digits: len_of(digits) >= at,
-          invariant spare_digits: room_of(digits) + at >= 16_u64,
-          invariant flat_digits: head_of(digits) <= 0_u64
-        ) {
-          place_back(vector: &uniq digits, value: 0_u8);
-        }
-        let room = len_of(digits);
-        let port = 0_u16;
-        let arguments = 0_u64;
-        region {
-          set arguments = args_count(args: &args);
-        }
-        let named = arguments >= 2_u64;
-        if named {
-        } else {
-          return exit_status(code: 1_u8);
-        }
-        let carried = 0_u64;
-        region {
-          match arg_get(args: &args, position: 1_u64) {
-            Ok(value: text) => {
-              region {
-                region {
-                  let window = mut_slice_of(&uniq digits);
-                  region {
-                    match host_copy_utf8(value: &text, destination: &uniq window, start: 0_u64, end: room) {
-                      Ok(value: written) => {
-                        set carried = written;
-                      }
-                      Err(error: problem) => {
-                        set carried = 0_u64;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            Err(error: problem) => {
-              set carried = 0_u64;
+    }
+    Err(error: problem) => {
+      set carried = 0_u64;
+    }
+  }
+  if carried == 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  set port = parse_port(digits: window, length: carried);
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
+  let outcome = 0_u8;
+  match tcp_connect(factory: &handles, address: &address) {
+    Ok(value: link) => {
+      let TcpConnection(receive: close_receive_9, send: close_send_9) = move link;
+      close_receive(factory: &handles, receive: move close_receive_9);
+      close_send(factory: &handles, send: move close_send_9);
+      set outcome = 3_u8;
+    }
+    Err(error: problem) => {
+      let exhausted = factory_refusal(error: &problem);
+      let first = socket_class(error: problem);
+      if exhausted {
+        set outcome = 5_u8;
+      } else {
+        match tcp_connect(factory: &handles, address: &address) {
+          Ok(value: again) => {
+            let TcpConnection(receive: close_receive_10, send: close_send_10) = move again;
+            close_receive(factory: &handles, receive: move close_receive_10);
+            close_send(factory: &handles, send: move close_send_10);
+            set outcome = 4_u8;
+          }
+          Err(error: second_problem) => {
+            let second = socket_class(error: second_problem);
+            let refused = first == 1_u8;
+            let twice = second == 1_u8;
+            let both = band(refused, twice);
+            if both {
+            } else {
+              set outcome = 40_u8 +wrap second;
             }
           }
         }
-        if carried == 0_u64 {
-          return exit_status(code: 2_u8);
-        }
-        region {
-          let named_port = slice_of(&digits);
-          region {
-            set port = parse_port(digits: &named_port, length: carried);
-          }
-        }
-        let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
-        let outcome = 0_u8;
-        region {
-          region {
-            match tcp_connect(factory: &uniq handles, address: &address) {
-              Ok(value: link) => {
-                let TcpConnection(receive: close_receive_9, send: close_send_9) = move link;
-                close_receive(factory: &uniq handles, receive: move close_receive_9);
-                close_send(factory: &uniq handles, send: move close_send_9);
-                set outcome = 3_u8;
-              }
-              Err(error: problem) => {
-                region {
-                  let exhausted = factory_refusal(error: &problem);
-                  let first = socket_class(error: move problem);
-                  if exhausted {
-                    set outcome = 5_u8;
-                  } else {
-                    region {
-                      match tcp_connect(factory: &uniq handles, address: &address) {
-                        Ok(value: again) => {
-                          let TcpConnection(receive: close_receive_10, send: close_send_10) = move again;
-                          close_receive(factory: &uniq handles, receive: move close_receive_10);
-                          close_send(factory: &uniq handles, send: move close_send_10);
-                          set outcome = 4_u8;
-                        }
-                        Err(error: second_problem) => {
-                          let second = socket_class(error: move second_problem);
-                          let refused = first == 1_u8;
-                          let twice = second == 1_u8;
-                          let both = band(refused, twice);
-                          if both {
-                          } else {
-                            set outcome = 40_u8 +wrap second;
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        return exit_status(code: outcome);
       }
     }
   }
+  return exit_status(code: outcome);
 }

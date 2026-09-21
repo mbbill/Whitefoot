@@ -1,18 +1,15 @@
-fn nibble['s](store: &uniq Arena<'s, 64, 1>) -> taken: own Option<Vector<'s, u8>> reads(store), writes(store), allocates(store) {
-  doc "Takes one byte and no more, so the amount its body moves the cursor by is not a fact of the signature.";
-  region {
-    return arena_vector::<u8>(store: &uniq deref(store), count: 1_u64);
-  }
+fn nibble(run: &Slots<u8, 64>) -> result: own unit writes(run) contract {
+  requires deref(run).len < deref(run).cap;
+} {
+  doc "Places one byte and no more, so the amount its body moves the boundary by is not a fact of the signature.";
+  place_back(window: run, value: 0_u8);
+  return unit;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "[CALL-5] no transport reads the callee's body. This callee moves the extent's cursor by one byte and the caller's whole opening room nevertheless dies: the transport is selected by the declared parameter mode and type, a &uniq parameter whose referent type is measured and is not a view selects no transport, and an unselected transport kills conservatively as an ordinary descriptor-storage event [CALL-3]. A body that takes one byte and a body that takes eight are the same declaration to every reader of the signature, which is why this program and the eight-byte one beside it reach the same [BLK-0] rejection with the residual room_of(workspace) >= 64_u64. The helper that keeps its caller's measure is the one that takes the run by value and returns it, or takes a view of it.";
-  region 'w {
-    let workspace = arena_frame::<64, 1, 'w>();
-    region {
-      let taken = nibble(store: &uniq workspace);
-      let run = arena_vector_proved::<u8>(store: &uniq workspace, count: 64_u64);
-    }
-  }
+  doc "No transport reads the callee's body. This callee moves the boundary by one byte and the caller's whole length fact nevertheless dies: the declared row is a whole-state write of a reference parameter, and a projected write through a parameter that is not a range reference reaches the ordinary descriptor storage. A body that places one byte and a body that places two are the same declaration to every reader of the signature, so both reach the same undischarged requires deref(window).len > 0_u64.";
+  let workspace = slots_new::<u8, 64>();
+  let taken = nibble(run: &workspace);
+  let extra = take_back(window: &workspace);
   return exit_status(code: 0_u8);
 }

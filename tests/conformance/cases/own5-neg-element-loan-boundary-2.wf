@@ -1,27 +1,22 @@
-struct Row {
+nocopy struct Row {
   left: u64;
   right: u64;
 }
 
-fn identity['r](value: &'r Row) -> result: &'r Row pure {
-  return value;
-}
-
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<Row, 4>();
-  let first = Row(left: 3_u64, right: 4_u64);
-  region {
-    place_back(vector: &uniq empty, value: move first);
-  }
-  let prefix = move empty;
-  let second = Row(left: 5_u64, right: 6_u64);
-  region {
-    place_back(vector: &uniq prefix, value: move second);
-  }
-  let rows = move prefix;
-  region {
-    let saved = &rows[0_u64];
-    let moved = move rows;
-  }
+  doc "Moving the owner is now an ordinary consuming use; it invalidates every reference formed from it, and the later use of that reference is the rejection.";
+  let row0 = Row(left: 3_u64, right: 4_u64);
+  let row1 = Row(left: 3_u64, right: 4_u64);
+  let row2 = Row(left: 3_u64, right: 4_u64);
+  let row3 = Row(left: 3_u64, right: 4_u64);
+  let slots = slots_new::<Row, 4>();
+  place_back(window: &slots, value: move row0);
+  place_back(window: &slots, value: move row1);
+  place_back(window: &slots, value: move row2);
+  place_back(window: &slots, value: move row3);
+  let rows = slots_into_array::<Row, 4>(values: move slots);
+  let saved = &rows[0_u64];
+  let moved = move rows;
+  let observed = deref(saved).left;
   return exit_status(code: 0_u8);
 }

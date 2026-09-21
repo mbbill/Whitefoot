@@ -25,41 +25,13 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
-            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. } => collect_expression(value, bindings),
             CheckedStatement::PropagateLet { scrutinee, .. } => {
                 collect_expression(scrutinee, bindings);
             }
-            CheckedStatement::SetList {
-                targets, values, ..
-            } => {
-                for target in targets {
-                    match target {
-                        CheckedSetTarget::Place(_) => {}
-                        CheckedSetTarget::ArrayIndex(target) => {
-                            bindings.insert(target.binding);
-                            collect_expression(&target.offset, bindings);
-                        }
-                        CheckedSetTarget::BufferIndex(target) => {
-                            collect_expression(&target.offset, bindings);
-                        }
-                        CheckedSetTarget::Storage(root) => {
-                            bindings.extend(root.binding());
-                            collect_place(root, bindings);
-                        }
-                        CheckedSetTarget::SliceIndex(target) => {
-                            collect_expression(&target.offset, bindings);
-                        }
-                    }
-                }
-                for value in values.expressions() {
-                    collect_expression(value, bindings);
-                }
-            }
-            CheckedStatement::Set { target, value, .. }
-            | CheckedStatement::Replace { target, value, .. } => {
+            CheckedStatement::Set { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
                     CheckedSetTarget::ArrayIndex(target) => {
@@ -67,14 +39,17 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                         collect_expression(&target.offset, bindings);
                     }
                     CheckedSetTarget::BufferIndex(target) => {
+                        bindings.insert(target.root.binding);
                         collect_expression(&target.offset, bindings);
+                    }
+                    CheckedSetTarget::RangeIndex(target) => {
+                        for offset in target.offsets() {
+                            collect_expression(offset, bindings);
+                        }
                     }
                     CheckedSetTarget::Storage(root) => {
                         bindings.extend(root.binding());
                         collect_place(root, bindings);
-                    }
-                    CheckedSetTarget::SliceIndex(target) => {
-                        collect_expression(&target.offset, bindings);
                     }
                 }
                 collect_expression(value, bindings);
@@ -97,7 +72,7 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                     collect_statements(&arm.body, bindings);
                 }
             }
-            CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+            CheckedStatement::Loop { body, .. } => {
                 collect_statements(body, bindings);
             }
             CheckedStatement::CountedRange {
@@ -122,9 +97,7 @@ fn collect_borrowed_place_expression(
 ) {
     match expression {
         CheckedExpression::Binding { binding, .. }
-        | CheckedExpression::DerefAddressed { binding, .. }
-        | CheckedExpression::ReborrowAddressed { binding, .. }
-        | CheckedExpression::BorrowBox { binding, .. } => {
+        | CheckedExpression::DerefAddressed { binding, .. } => {
             bindings.insert(*binding);
         }
         CheckedExpression::Project { binding, .. } => {
@@ -134,6 +107,10 @@ fn collect_borrowed_place_expression(
         | CheckedExpression::ReadStorage { root, .. } => {
             bindings.extend(root.binding());
             collect_place(root, bindings);
+        }
+        CheckedExpression::BorrowRangeIndex { place, .. } => {
+            collect_expression(&place.offset, bindings);
+            collect_steps(&place.path, None, bindings);
         }
         CheckedExpression::BoxDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => {
@@ -145,27 +122,13 @@ fn collect_borrowed_place_expression(
 
 fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<BindingId>) {
     match expression {
-        CheckedExpression::BorrowBox { binding, .. } => {
-            bindings.insert(*binding);
-        }
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ReadStorage { root, .. } => {
             bindings.extend(root.binding());
             collect_place(root, bindings);
         }
-        CheckedExpression::SliceOf { source, range, .. } => {
-            if let crate::semantic::CheckedSliceSource::Run(root) = source {
-                bindings.extend(root.binding());
-                collect_place(root, bindings);
-            }
-            if let Some(range) = range {
-                collect_expression(&range.start, bindings);
-                collect_expression(&range.end, bindings);
-            }
-        }
         CheckedExpression::ContainerMeasure { root, .. } => collect_place(root, bindings),
         CheckedExpression::UserCall { arguments, .. }
-        | CheckedExpression::KernelCall { arguments, .. }
         | CheckedExpression::IntegerOperation { arguments, .. }
         | CheckedExpression::FloatOperation { arguments, .. }
         | CheckedExpression::BooleanOperation { arguments, .. }
@@ -182,42 +145,87 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         }
         CheckedExpression::NumericConversion { value, .. }
         | CheckedExpression::Reinterpret { value, .. }
-        | CheckedExpression::ArrayFill { value, .. }
-        | CheckedExpression::BoxNew { value, .. }
         | CheckedExpression::BoxDeref { value, .. }
-        | CheckedExpression::ArenaNew { value, .. }
-        | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => collect_expression(value, bindings),
-        CheckedExpression::ArrayIndex { offset, .. }
-        | CheckedExpression::BufferIndex { offset, .. }
-        | CheckedExpression::SliceIndex { offset, .. } => collect_expression(offset, bindings),
-        CheckedExpression::BufferFill { length, value, .. } => {
-            collect_expression(length, bindings);
-            collect_expression(value, bindings);
+        CheckedExpression::BoxTake {
+            binding,
+            path,
+            cleanup,
+            ..
+        } => {
+            bindings.insert(*binding);
+            collect_steps(path, Some(*binding), bindings);
+            for action in cleanup {
+                let path = match action {
+                    crate::semantic::CheckedOwnedTakeCleanup::Drop { path, .. }
+                    | crate::semantic::CheckedOwnedTakeCleanup::BoxShell { path, .. } => path,
+                };
+                collect_steps(path, Some(*binding), bindings);
+            }
         }
-        CheckedExpression::BufferVacant { length, .. }
-        | CheckedExpression::BufferFits { length, .. } => collect_expression(length, bindings),
+        CheckedExpression::ArrayIndex { offset, .. } => collect_expression(offset, bindings),
+        CheckedExpression::RangeIndex { place, .. } => {
+            collect_expression(&place.offset, bindings);
+            collect_steps(&place.path, None, bindings);
+        }
+        CheckedExpression::RangeElementMeasure { place, .. } => {
+            collect_expression(&place.offset, bindings);
+            collect_steps(&place.path, None, bindings);
+        }
+        CheckedExpression::BorrowRangeIndex { place, .. } => {
+            collect_expression(&place.offset, bindings);
+            collect_steps(&place.path, None, bindings);
+        }
+        // [TYPE-9] a runtime-capacity `Array<T>` is only ever `Box` content,
+        // and its block is reached through the pointer the owner's slot
+        // holds, exactly as a boxed window's is
+        // (compiler/storage-representation). The root binding therefore
+        // carries a stable address wherever the block is read, measured,
+        // borrowed, or written at an element.
+        CheckedExpression::BufferIndex { root, offset, .. } => {
+            bindings.insert(root.binding);
+            collect_expression(offset, bindings);
+        }
+        // [REF-4] the formation reads the source place's own offsets and
+        // evaluates both endpoints.
+        CheckedExpression::RangeOf {
+            source, start, end, ..
+        } => {
+            if let crate::semantic::CheckedRangeSource::Storage(root) = source {
+                bindings.extend(root.binding());
+                collect_place(root, bindings);
+            }
+            collect_expression(start, bindings);
+            collect_expression(end, bindings);
+        }
+        CheckedExpression::BufferMeasure { root, .. } => {
+            bindings.insert(root.binding);
+        }
         CheckedExpression::Constant(_)
         | CheckedExpression::NamedConstant { .. }
         | CheckedExpression::Binding { .. }
         | CheckedExpression::ArrayMeasure { .. }
-        | CheckedExpression::BufferMeasure { .. }
-        | CheckedExpression::PostconditionResultMeasure { .. }
-        | CheckedExpression::SliceMeasure { .. }
-        | CheckedExpression::BorrowBuffer { .. }
-        | CheckedExpression::ReborrowAddressed { .. }
+        | CheckedExpression::RangeMeasure { .. }
         | CheckedExpression::DerefAddressed { .. }
         | CheckedExpression::Project { .. } => {}
     }
 }
 
 fn collect_place(root: &crate::semantic::CheckedContainerRoot, bindings: &mut HashSet<BindingId>) {
-    for step in &root.path {
+    collect_steps(&root.path, root.binding(), bindings);
+}
+
+fn collect_steps(
+    steps: &[crate::semantic::CheckedPlaceStep],
+    owner: Option<BindingId>,
+    bindings: &mut HashSet<BindingId>,
+) {
+    for step in steps {
         match step {
             // A Box projection follows the pointer in its actual owner slot,
             // including when only a descriptor measure is read through it.
             crate::semantic::CheckedPlaceStep::BoxReferent(_) => {
-                bindings.extend(root.binding());
+                bindings.extend(owner);
             }
             crate::semantic::CheckedPlaceStep::Subscript(subscript) => {
                 collect_expression(&subscript.offset, bindings);
@@ -299,15 +307,17 @@ impl IrBuilder<'_> {
         let ty = lower_type(self.erasure, checked_ty)?;
         let address = match expression {
             CheckedExpression::Binding { binding, .. }
-            | CheckedExpression::DerefAddressed { binding, .. }
-            | CheckedExpression::ReborrowAddressed { binding, .. } => {
+            | CheckedExpression::DerefAddressed { binding, .. } => {
                 self.lower_addressed_borrow(*binding, ty)?
             }
             CheckedExpression::BorrowAddressed { root, .. } => self.lower_place_address(root)?,
+            CheckedExpression::BorrowRangeIndex { place, .. } => self.lower_range_address(
+                &place.root,
+                &place.offset,
+                &place.path,
+                place.target_domain,
+            )?,
             CheckedExpression::ReadStorage { root, .. } => self.lower_place_address(root)?,
-            CheckedExpression::BorrowBox {
-                binding, nominal, ..
-            } => self.lower_addressed_borrow(*binding, IrType::Nominal(self.erased(*nominal)))?,
             CheckedExpression::BoxDeref {
                 nominal,
                 referent,
@@ -323,7 +333,7 @@ impl IrBuilder<'_> {
                     ),
                     IrOperation::ProjectAddress {
                         address: owner,
-                        projection: IrPlaceProjection::BoxReferent { nominal },
+                        projection: IrPlaceStep::BoxReferent { nominal },
                     },
                 )?
             }
@@ -343,7 +353,7 @@ impl IrBuilder<'_> {
                     ),
                     IrOperation::ProjectAddress {
                         address: owner,
-                        projection: IrPlaceProjection::Field {
+                        projection: IrPlaceStep::Field {
                             nominal,
                             field: *field,
                         },
@@ -408,7 +418,7 @@ impl IrBuilder<'_> {
                         .ok_or(LoweringFailure::InvalidCheckedProgram)?
                         .ty;
                     (
-                        IrPlaceProjection::Field {
+                        IrPlaceStep::Field {
                             nominal,
                             field: *field,
                         },
@@ -424,21 +434,19 @@ impl IrBuilder<'_> {
                     else {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     };
-                    (IrPlaceProjection::BoxReferent { nominal }, *referent)
+                    (IrPlaceStep::BoxReferent { nominal }, *referent)
                 }
                 crate::semantic::CheckedPlaceStep::Subscript(subscript) => {
                     let offset = self.expression(&subscript.offset)?;
                     let projection = match lower_type(self.erasure, subscript.base_type)? {
-                        IrType::Array { .. } => IrPlaceProjection::ArrayElement {
+                        IrType::Array { .. } => IrPlaceStep::ArrayElement {
                             offset,
                             target_domain: subscript.target_domain.into(),
                         },
-                        IrType::FixedVector { .. } | IrType::Vector { .. } => {
-                            IrPlaceProjection::RunElement {
-                                offset,
-                                target_domain: subscript.target_domain.into(),
-                            }
-                        }
+                        IrType::Window { .. } => IrPlaceStep::RunElement {
+                            offset,
+                            target_domain: subscript.target_domain.into(),
+                        },
                         _ => return Err(LoweringFailure::InvalidCheckedProgram),
                     };
                     (

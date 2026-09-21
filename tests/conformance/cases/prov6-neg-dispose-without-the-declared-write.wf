@@ -1,22 +1,17 @@
-fn drain['s](store: &uniq Heap<'s>, cell: own Vector<'s, u8>) -> code: own u8 pure {
-  doc "PROV-6, EFF-2: the same body with the row left `pure`. The scope-exit release of an own parameter carries the empty row and this compiler emits it under none, so `pure` is exactly what the writer would have declared before this statement existed; the early release is refused until the row says so.";
-  dispose cell;
-  return 4_u8;
+struct Cell {
+  count: u64;
 }
 
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn drain(cell: &Cell) -> code: own u64 pure {
+  doc "EFF-2 checks rows both ways, so the ordinary read this body exhibits through its reference parameter must be declared, and a pure row declares nothing. Before this statement existed the same function exhibited nothing at all and pure was exactly right.";
+  let seen = deref(cell).count;
+  return seen;
+}
+
+fn main() -> status: own ExitStatus pure {
   doc "The caller.";
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: run) => {
-        region {
-          let code = drain(store: &uniq heap, cell: move run);
-          return exit_status(code: code);
-        }
-      }
-    }
-  }
+  let cell = Cell(count: 4_u64);
+  let seen = drain(cell: &cell);
+  let code = cvt::<u64, u8>(seen);
+  return exit_status(code: code);
 }

@@ -1,43 +1,32 @@
-fn first_byte(window: own Slice<u8>) -> byte: own u8 reads(window) {
-  let width = len_of(window);
-  let empty = width == 0_u64;
-  if empty {
-    return 0_u8;
-  }
+fn first_byte(window: &[u8]) -> byte: own u8 reads(window) {
+  doc "Reads the first byte of a range reference when the range is nonempty.";
+  let width = deref(window).len;
   let inside = 0_u64 < width;
   if inside {
-    let slot = window[0_u64];
+    let slot = deref(window)[0_u64];
     return slot;
   }
   return 0_u8;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "VIEW-1 makes Slice copy, so a shared view is used bare and every use is a second shared loan on the same range, which OWN-5 admits without limit. The program forms one view, hands it to a helper twice with no move, reads its own length after both calls, and observes the same byte each time.";
-  let data = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq data, value: 13_u8);
+  doc "A reference is not an owned value [REF-1], so handing one to a helper is not a consuming use: one range reference is passed to the helper twice with no move and its own length is read after both calls, so a classification that consumed it at the first call would be visible as a rejection rather than as a silent difference. Read/read overlap at the two calls is admitted [EFF-5].";
+  let data = array_filled::<u8, 2>(value: 13_u8);
+  let window = &data[0_u64..2_u64];
+  let once = first_byte(window: window);
+  let twice = first_byte(window: window);
+  let width = deref(window).len;
+  if width == 2_u64 {
+  } else {
+    return exit_status(code: 21_u8);
   }
-  region {
-    place_back(vector: &uniq data, value: 13_u8);
+  if once == 13_u8 {
+  } else {
+    return exit_status(code: 22_u8);
   }
-  region {
-    let window = slice_of(&data);
-    let once = first_byte(window: window);
-    let twice = first_byte(window: window);
-    let width = len_of(window);
-    if width == 2_u64 {
-    } else {
-      return exit_status(code: 21_u8);
-    }
-    if once == 13_u8 {
-    } else {
-      return exit_status(code: 22_u8);
-    }
-    if twice == once {
-    } else {
-      return exit_status(code: 23_u8);
-    }
+  if twice == once {
+  } else {
+    return exit_status(code: 23_u8);
   }
   return exit_status(code: 0_u8);
 }

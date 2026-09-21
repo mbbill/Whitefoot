@@ -1,4 +1,4 @@
-fn discard<T: linear>(value: own T) -> count: own u8 pure {
+fn discard<T>(value: own T) -> count: own u8 pure {
   doc "The value reaches this scope's exit without being consumed.";
   return 2_u8;
 }

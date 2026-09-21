@@ -2,11 +2,11 @@ use std::collections::HashSet;
 
 use crate::semantic::{
     BindingId, CheckedEnumType, CheckedExpression, CheckedIntegerOperation, CheckedLoopId,
-    CheckedMatchArm, CheckedStatement,
+    CheckedMatchArm, CheckedStatement, CheckedType,
 };
 use crate::{
-    IrConstant, IrEnumType, IrFlatElement, IrIntegerOperation, IrMatchTarget, IrOperation,
-    IrTerminator, IrType, LoweringFailure,
+    IrAddressed, IrConstant, IrEnumType, IrFlatElement, IrIntegerOperation, IrMatchTarget,
+    IrOperation, IrTerminator, IrType, LoweringFailure,
 };
 
 use super::IrBuilder;
@@ -30,6 +30,25 @@ enum Needle {
     Binding(BindingId),
 }
 
+/// The run a recognized walk reads, which is one contiguous extent of `u8`
+/// elements [TYPE-9].
+///
+/// Both admitted shapes start at their own first element and run without a
+/// gap: a runtime-capacity `Array<u8>` is the element array of the block its
+/// `Box` points at, whose `len` word heads that block
+/// (compiler/storage-representation), and a constant-capacity `Array<u8, N>`
+/// is the whole of its inline storage, whose length is the type constant and
+/// is stored nowhere. A `Slots` or a `Ring` is not admitted: a window is
+/// `len` slots beginning at `head` modulo `cap` [WIN-1], so its first logical
+/// element is not its base and its extent can wrap.
+#[derive(Clone)]
+enum WalkedRun {
+    /// `b.inner[i]` over a boxed runtime-capacity `Array<u8>`.
+    Boxed(crate::semantic::CheckedBufferRoot),
+    /// `a[i]` over an inline `Array<u8, N>` a binding names directly.
+    Inline(BindingId),
+}
+
 /// A loop body in the recognized byte-walk form: exit guard on the
 /// induction binding, one guarded `u8` load at the induction binding, a
 /// neutral middle whose only observable exits are dominated by equality
@@ -37,7 +56,7 @@ enum Needle {
 struct ByteWalk {
     induction: BindingId,
     bound: BindingId,
-    buffer: BindingId,
+    run: WalkedRun,
     needles: Vec<Needle>,
 }
 
@@ -56,7 +75,7 @@ fn recognize_byte_walk(
         _ => return None,
     };
     let (induction, bound) = recognize_guard(loop_id, guard_let, guard_match, declared_outside)?;
-    let (byte, buffer) = recognize_load(load, induction, declared_outside)?;
+    let (byte, run) = recognize_load(load, induction, declared_outside)?;
     if !recognize_increment(increment, induction) {
         return None;
     }
@@ -70,7 +89,7 @@ fn recognize_byte_walk(
     Some(ByteWalk {
         induction,
         bound,
-        buffer,
+        run,
         needles: needles.into_iter().map(|(_, needle)| needle).collect(),
     })
 }
@@ -134,36 +153,96 @@ fn recognize_guard(
     Some((induction, bound))
 }
 
-/// The probe load: `let b = buf[i];` on a direct `u8` buffer binding
+/// The probe load: `let b = run[i];` on a `u8` run whose root binding is
 /// declared outside the loop, offset exactly the induction binding.
+///
+/// The two admitted roots are [TYPE-9]'s two `Array` placements: the boxed
+/// runtime-capacity form, reached through its cell's content step, and the
+/// inline constant-capacity form named by a binding. A path carrying its own
+/// subscript is refused, because the storage the walk reads would then depend
+/// on an offset this recognizer has not proved loop-invariant.
 fn recognize_load(
     load: &CheckedStatement,
     induction: BindingId,
     declared_outside: &HashSet<BindingId>,
-) -> Option<(BindingId, BindingId)> {
+) -> Option<(BindingId, WalkedRun)> {
     let CheckedStatement::Let { binding, value, .. } = load else {
         return None;
     };
-    let CheckedExpression::BufferIndex { root, offset, .. } = value else {
-        return None;
+    let (root, offset) = match value {
+        CheckedExpression::BufferIndex { root, offset, .. } => {
+            if crate::lowering::lower_flat_element(TypeLowering::EMPTY, root.element)
+                .ok()?
+                .ty()
+                != U8
+                || root
+                    .path
+                    .iter()
+                    .any(|step| matches!(step, crate::semantic::CheckedPlaceStep::Subscript(_)))
+            {
+                return None;
+            }
+            (WalkedRun::Boxed(root.clone()), offset.as_ref())
+        }
+        CheckedExpression::ArrayIndex {
+            root,
+            element_type,
+            offset,
+            ..
+        } => {
+            let crate::semantic::CheckedArrayRoot::Binding { binding, fields } = root else {
+                return None;
+            };
+            if !fields.is_empty()
+                || crate::lowering::lower_type(TypeLowering::EMPTY, *element_type).ok()? != U8
+            {
+                return None;
+            }
+            (WalkedRun::Inline(*binding), offset.as_ref())
+        }
+        // An inline `Array<u8, N>` named by a binding reaches lowering as the
+        // measured storage place its subscript selects, so the run is that
+        // place's own base and the offset is the subscript's.
+        CheckedExpression::ReadStorage { root, .. } => {
+            let crate::semantic::CheckedPlaceRoot::Binding(binding) = root.root else {
+                return None;
+            };
+            let [crate::semantic::CheckedPlaceStep::Subscript(subscript)] = &root.path[..] else {
+                return None;
+            };
+            let CheckedType::Array { element, .. } = subscript.base_type else {
+                return None;
+            };
+            if crate::lowering::lower_type(TypeLowering::EMPTY, root.ty).ok()? != U8 {
+                return None;
+            }
+            let _ = element;
+            (WalkedRun::Inline(binding), &subscript.offset)
+        }
+        _ => return None,
     };
-    if !root.fields.is_empty()
-        || !declared_outside.contains(&root.binding)
-        || crate::lowering::lower_type(TypeLowering::EMPTY, root.element.ty()).ok()? != U8
-    {
+    if !declared_outside.contains(&run_root_binding(&root)) {
         return None;
     }
     let CheckedExpression::Binding {
         binding: offset_binding,
         ..
-    } = offset.as_ref()
+    } = offset
     else {
         return None;
     };
     if *offset_binding != induction {
         return None;
     }
-    Some((*binding, root.binding))
+    Some((*binding, root))
+}
+
+/// The binding one walked run is rooted at.
+const fn run_root_binding(run: &WalkedRun) -> BindingId {
+    match run {
+        WalkedRun::Boxed(root) => root.binding,
+        WalkedRun::Inline(binding) => *binding,
+    }
 }
 
 /// The trailing step: `set i = iadd.wrap::<u64>(i, 1_u64)`.
@@ -353,7 +432,11 @@ impl IrBuilder<'_> {
         let Some(walk) = recognize_byte_walk(loop_id, body, &declared_outside) else {
             return Ok(());
         };
-        let scalar_bindings = [walk.induction, walk.bound, walk.buffer];
+        // The induction binding, the exit bound and every needle binding are
+        // read as scalar values here, so an addressed one could hold a value
+        // the walk has since written through its address; the run itself is
+        // read through its own place and carries no such hazard.
+        let scalar_bindings = [walk.induction, walk.bound];
         let needle_bindings = walk.needles.iter().filter_map(|needle| match needle {
             Needle::Binding(binding) => Some(*binding),
             Needle::Literal(_) => None,
@@ -366,27 +449,46 @@ impl IrBuilder<'_> {
         {
             return Ok(());
         }
-        let Some(&buffer) = self.bindings.get(&walk.buffer) else {
-            return Ok(());
-        };
         let Some(&index) = self.bindings.get(&walk.induction) else {
             return Ok(());
         };
         let Some(&limit) = self.bindings.get(&walk.bound) else {
             return Ok(());
         };
-        let expected_buffer = IrType::Buffer {
-            element: IrFlatElement::Integer {
-                width: 8,
-                signed: false,
-            },
-        };
-        if self.value_type(buffer)? != expected_buffer
-            || self.value_type(index)? != U64
-            || self.value_type(limit)? != U64
-        {
+        if self.value_type(index)? != U64 || self.value_type(limit)? != U64 {
             return Ok(());
         }
+        let byte = IrFlatElement::Integer {
+            width: 8,
+            signed: false,
+        };
+        let buffer = match &walk.run {
+            // [TYPE-9] the boxed runtime-capacity block, reached through its
+            // cell exactly as every other read of it is.
+            WalkedRun::Boxed(root) => {
+                let address = self.buffer_root(root)?;
+                if self.value_type(address)?
+                    != IrType::Address(IrAddressed::Buffer { element: byte })
+                {
+                    return Ok(());
+                }
+                address
+            }
+            // The inline constant-capacity run, whose storage is its own and
+            // whose length is the type constant [TYPE-9, WIN-1].
+            WalkedRun::Inline(binding) => {
+                let Some(&value) = self.bindings.get(binding) else {
+                    return Ok(());
+                };
+                match self.value_type(value)? {
+                    IrType::Array { element, .. }
+                    | IrType::Address(IrAddressed::Array { element, .. })
+                        if self.element_type(element)? == U8 => {}
+                    _ => return Ok(()),
+                }
+                value
+            }
+        };
         let mut needles = Vec::with_capacity(walk.needles.len());
         for needle in &walk.needles {
             let value = match needle {

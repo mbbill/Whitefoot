@@ -1,92 +1,77 @@
 struct Record {
   tag: u64;
-  owner: box<u64>;
+  owner: Box<u64>;
 }
 
 fn record(tag: own u64) -> result: own Record pure {
-  let owner = box_new(tag);
+  doc "Builds one affine record whose owned part is a heap cell.";
+  let owner = box_new::<u64>(value: tag);
   return Record(tag: tag, owner: move owner);
 }
 
-fn seal<T: linear, const n: u64>(values: own FixedVector<T, n>) -> result: own array<T, n> reads(values) contract {
-  requires len_of(values) == n;
+fn seal<T, const n: u64>(values: own Slots<T, n>) -> result: own Array<T, n> pure contract {
+  requires values.len == n;
 } {
-  return array_from_fixed(vector: move values);
+  doc "Consumes a full window into a complete owning array.";
+  return slots_into_array::<T, n>(values: move values);
 }
 
-fn open<T: linear, const n: u64>(values: own array<T, n>) -> result: own FixedVector<T, n> pure contract {
-  ensures len_of(result) == n;
-  ensures head_of(result) == 0_u64;
+fn open<T, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pure contract {
+  ensures result.len == n;
 } {
-  let full = fixed_from_array(values: move values);
+  doc "Consumes a complete owning array back into a full window.";
+  let full = slots_from_array::<T, n>(values: move values);
   return move full;
 }
 
-fn first(values: &array<Record, 3>) -> result: own u64 reads(values) {
+fn lead_tag(values: &Array<Record, 3>) -> result: own u64 reads(values) {
+  doc "Reads one scalar field of the first element through a shared reference.";
   return deref(values)[0_u64].tag;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "BLK-3 transfers every initialized owner in logical order, including a wrapped full window. Both row generics come from the operand. General array elements survive generic helpers, shared reads, affine replacement and draining after the inverse conversion; neither conversion leaves a second owner.";
+  doc "A full Slots of affine records becomes a complete owning array in logical order. Operand-derived element types and explicit generic source helpers retain the exact type; a shared indexed read, an exchange through swap, the inverse conversion and a complete drain observe every value. Zero extent also crosses both conversions without element access. The wrapped-window variant of this round trip is not expressible here, because the two conversions admit Slots alone and only a Ring can wrap.";
   let a = record(tag: 11_u64);
   let b = record(tag: 22_u64);
   let c = record(tag: 33_u64);
-  let empty = fixed_vector::<Record, 3>();
-  region {
-    place_back(vector: &uniq empty, value: move a);
+  let built = slots_new::<Record, 3>();
+  place_back(window: &built, value: move c);
+  place_back(window: &built, value: move a);
+  place_back(window: &built, value: move b);
+  let values = seal::<Record, 3>(values: move built);
+  let observed = lead_tag(values: &values);
+  if observed != 33_u64 {
+    return exit_status(code: 1_u8);
   }
-  let one = move empty;
-  region {
-    place_back(vector: &uniq one, value: move b);
-  }
-  let two = move one;
-  region {
-    place_front(vector: &uniq two, value: move c);
-  }
-  let wrapped = move two;
-  let values = seal::<Record, 3>(values: move wrapped);
-  region {
-    let observed = first(values: &values);
-    if observed != 33_u64 {
-      return exit_status(code: 1_u8);
-    }
-  }
-  let old = replace values[1_u64] = record(tag: 99_u64);
-  let Record(tag: old_tag, owner: old_owner) = move old;
+  let fresh = record(tag: 99_u64);
+  swap(first: &values[1_u64], second: &fresh);
+  let Record(tag: old_tag, owner: old_owner) = move fresh;
   if old_tag != 11_u64 {
     return exit_status(code: 2_u8);
   }
-  if deref(old_owner) != 11_u64 {
+  let held = old_owner.inner;
+  if held != 11_u64 {
     return exit_status(code: 3_u8);
   }
   let full = open::<Record, 3>(values: move values);
-  region {
-    let last = take_back(vector: &uniq full);
-    let rest_two = move full;
-    region {
-      let middle = take_back(vector: &uniq rest_two);
-      let rest_one = move rest_two;
-      region {
-        let earliest = take_back(vector: &uniq rest_one);
-        let rest_empty = move rest_one;
-        if last.tag != 22_u64 {
-          return exit_status(code: 4_u8);
-        }
-        if middle.tag != 99_u64 {
-          return exit_status(code: 5_u8);
-        }
-        if earliest.tag != 33_u64 {
-          return exit_status(code: 6_u8);
-        }
-        let zero = fixed_vector::<Record, 0>();
-        let complete = seal::<Record, 0>(values: move zero);
-        let zero_again = open::<Record, 0>(values: move complete);
-        let remaining = len_of(zero_again);
-        if remaining != 0_u64 {
-          return exit_status(code: 7_u8);
-        }
-        return exit_status(code: 0_u8);
-      }
-    }
+  let last = take_back(window: &full);
+  let middle = take_back(window: &full);
+  let earliest = take_back(window: &full);
+  if last.tag != 22_u64 {
+    return exit_status(code: 4_u8);
   }
+  if middle.tag != 99_u64 {
+    return exit_status(code: 5_u8);
+  }
+  if earliest.tag != 33_u64 {
+    return exit_status(code: 6_u8);
+  }
+  let zero = slots_new::<Record, 0>();
+  let complete = seal::<Record, 0>(values: move zero);
+  let zero_again = open::<Record, 0>(values: move complete);
+  let remaining = zero_again.len;
+  if remaining != 0_u64 {
+    return exit_status(code: 7_u8);
+  }
+  return exit_status(code: 0_u8);
 }

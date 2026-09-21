@@ -9,10 +9,10 @@ enum Choice<T: Int> {
 }
 
 struct Packet<const n: u64> {
-  bytes: FixedVector<u8, n>;
+  bytes: Slots<u8, n>;
 }
 
-struct Holder<T: affine> {
+struct Holder<T: drop> {
   value: T;
 }
 
@@ -102,8 +102,8 @@ fn main() -> status: own ExitStatus pure {
     }
   }
   let optional = Some<u8>(value: 19_u8);
-  let wrapped = Wrapped<u8>(value: move optional);
-  let recovered_optional = move wrapped.value;
+  let wrapped = Wrapped<u8>(value: optional);
+  let recovered_optional = wrapped.value;
   match recovered_optional {
     None() => {
       return exit_status(code: 1_u8);
@@ -115,18 +115,14 @@ fn main() -> status: own ExitStatus pure {
       }
     }
   }
-  let bytes = fixed_vector::<u8, 2>();
-  region {
-    place_back(vector: &uniq bytes, value: 11_u8);
-  }
-  region {
-    place_back(vector: &uniq bytes, value: 11_u8);
-  }
+  let bytes = slots_new::<u8, 2>();
+  place_back(window: &bytes, value: 11_u8);
+  place_back(window: &bytes, value: 11_u8);
   let packet = Packet<2>(bytes: move bytes);
   let holder = Holder<Packet<2>>(value: move packet);
   let recovered_packet = move holder.value;
   let recovered_bytes = move recovered_packet.bytes;
-  let recovered_room = len_of(recovered_bytes);
+  let recovered_room = recovered_bytes.len;
   let recovered_ok = 1_u64 < recovered_room;
   if recovered_ok {
   } else {

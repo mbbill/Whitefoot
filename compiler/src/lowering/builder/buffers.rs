@@ -1,7 +1,12 @@
-use crate::semantic::{
-    CheckedBufferRoot, CheckedExpression, CheckedFlatElement, CheckedLayoutCeiling,
-    CheckedRuntimeTargetObligations, CheckedTargetDomainObligation,
-};
+//! Lowering of the runtime-capacity `Array<T>` [TYPE-9] and its readers.
+//!
+//! The shape is one heap block `[len | elements]` reached only through the
+//! `Box` that owns it (compiler/storage-representation), so every root here
+//! is the block's *address*: `b.inner` is the cell's own pointer, a measure
+//! reads the `len` word at the head of the block, and an element address is
+//! one `inbounds` step past that header.
+
+use crate::semantic::{CheckedBufferRoot, CheckedExpression, CheckedTargetDomainObligation};
 
 use super::*;
 
@@ -11,67 +16,6 @@ impl IrBuilder<'_> {
         root: &CheckedBufferRoot,
     ) -> Result<IrValueId, LoweringFailure> {
         self.buffer_root(root)
-    }
-
-    pub(super) fn lower_buffer_fill(
-        &mut self,
-        element: CheckedFlatElement,
-        length: &CheckedExpression,
-        value: &CheckedExpression,
-        layout_ceiling: CheckedLayoutCeiling,
-        target_domains: CheckedRuntimeTargetObligations,
-    ) -> Result<IrValueId, LoweringFailure> {
-        let element = lower_flat_element(self.erasure, element)?;
-        let length = self.expression(length)?;
-        let value = self.expression(value)?;
-        if self.value_type(length)?
-            != (IrType::Integer {
-                width: 64,
-                signed: false,
-            })
-            || self.value_type(value)? != element.ty()
-        {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        self.define(
-            IrType::Buffer { element },
-            IrOperation::BufferFill {
-                length,
-                value,
-                layout_ceiling: layout_ceiling.into(),
-                target_domains: target_domains.try_into()?,
-            },
-        )
-    }
-
-    /// One `buffer_vacant::<T>(n)` allocation [OP-1, OP-9]: the element is the
-    /// interned `Option<T>` instance and every element starts as its
-    /// compiler-minted `None()`.
-    pub(super) fn lower_buffer_vacant(
-        &mut self,
-        element: crate::semantic::NominalId,
-        length: &CheckedExpression,
-        layout_ceiling: CheckedLayoutCeiling,
-        target_domains: CheckedRuntimeTargetObligations,
-    ) -> Result<IrValueId, LoweringFailure> {
-        let element = IrFlatElement::Nominal(self.erased(element));
-        let length = self.expression(length)?;
-        if self.value_type(length)?
-            != (IrType::Integer {
-                width: 64,
-                signed: false,
-            })
-        {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        self.define(
-            IrType::Buffer { element },
-            IrOperation::BufferVacant {
-                length,
-                layout_ceiling: layout_ceiling.into(),
-                target_domains: target_domains.try_into()?,
-            },
-        )
     }
 
     pub(super) fn lower_buffer_length(
@@ -95,7 +39,7 @@ impl IrBuilder<'_> {
         target_domain: CheckedTargetDomainObligation,
     ) -> Result<IrValueId, LoweringFailure> {
         let buffer = self.buffer_root(root)?;
-        let IrType::Buffer { element } = self.value_type(buffer)? else {
+        let IrType::Address(IrAddressed::Buffer { element }) = self.value_type(buffer)? else {
             return Err(LoweringFailure::InvalidCheckedProgram);
         };
         let offset = self.expression(offset)?;
@@ -117,28 +61,32 @@ impl IrBuilder<'_> {
         )
     }
 
-    fn buffer_root(&mut self, root: &CheckedBufferRoot) -> Result<IrValueId, LoweringFailure> {
-        let value = self.binding_value(root.binding)?;
-        self.project_buffer_root(value, root)
-    }
-
-    fn project_buffer_root(
+    /// The address of the block one buffer place names [TYPE-9].
+    ///
+    /// A runtime-capacity shape is only ever `Box` content, so the path that
+    /// reaches it carries that content step and the binding rooting it is
+    /// storage-backed; the cell's own pointer slot is loaded once and what
+    /// that yields is the block.
+    pub(super) fn buffer_root(
         &mut self,
-        root_value: IrValueId,
         root: &CheckedBufferRoot,
     ) -> Result<IrValueId, LoweringFailure> {
-        let value = if root.fields.is_empty() {
-            root_value
-        } else {
-            self.project_struct_path(root_value, &root.fields, false)?
-        };
-        if self.value_type(value)?
-            != (IrType::Buffer {
+        let base = self
+            .bindings
+            .get(&root.binding)
+            .copied()
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        if !matches!(self.value_type(base)?, IrType::Address(_)) {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        let address = self.project_address_path(base, &root.path)?;
+        if self.value_type(address)?
+            != IrType::Address(IrAddressed::Buffer {
                 element: lower_flat_element(self.erasure, root.element)?,
             })
         {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        Ok(value)
+        Ok(address)
     }
 }

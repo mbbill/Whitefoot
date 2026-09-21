@@ -1,24 +1,24 @@
-fn last_index(values: own FixedVector<u8, 12>) -> index: own u64 reads(values) contract {
-  define capacity = len_of(values);
+fn last_index(values: &Slots<u8, 12>) -> index: own u64 reads(values.len) contract {
+  define capacity = deref(values).len;
   requires capacity > 0_u64;
   ensures index < capacity;
 } {
-  let capacity = len_of(values);
+  doc "A definition expands the run length in both the requirement and the result bound; a proved nonempty window admits length minus one and proves the returned index is strictly inside that same entry measure.";
+  let capacity = deref(values).len;
   let index = capacity - 1_u64;
   return index;
 }
 
 fn main() -> status: own ExitStatus pure {
-  let values = fixed_vector::<u8, 12>();
+  let values = slots_new::<u8, 12>();
   for (
     at_values in 0_u64..12_u64,
-    invariant grown_values: len_of(values) >= at_values,
-    invariant spare_values: room_of(values) + at_values >= 12_u64,
-    invariant flat_values: head_of(values) <= 0_u64
+    invariant grown_values: values.len >= at_values,
+    invariant spare_values: values.cap - values.len + at_values >= 12_u64
   ) {
-    place_back(vector: &uniq values, value: 0_u8);
+    place_back(window: &values, value: 0_u8);
   }
-  let index = last_index(values: move values);
+  let index = last_index(values: &values);
   if index == 11_u64 {
   } else {
     return exit_status(code: 1_u8);

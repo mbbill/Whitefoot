@@ -26,12 +26,35 @@ pub(super) fn base_elements(
     data: &CheckedProgramData,
     nominals: &[IrNominalId],
 ) -> Result<(Vec<IrType>, Vec<Option<IrElement>>), LoweringFailure> {
-    let mut pending = data
-        .functions
-        .iter()
-        .flat_map(specialize::executable_types)
-        .collect::<Vec<_>>();
+    let mut pending = Vec::new();
+    let mut needed = BTreeSet::new();
+    for function in &data.functions {
+        let (types, elements) = specialize::executable_storage(function);
+        pending.extend(types);
+        needed.extend(elements.into_iter().map(CheckedElement::index));
+        needed.extend(
+            function
+                .parameters
+                .iter()
+                .filter_map(|parameter| parameter.range_element)
+                .map(CheckedElement::index),
+        );
+    }
     pending.extend(data.constants.iter().map(|constant| constant.ty));
+    // [REF-4, TYPE-8] a range parameter or value-if result carries its element
+    // kind separately from `CheckedType`: the written type is the element
+    // type, so the ordinary executable-type walk cannot discover the interned
+    // handle. Seed those handles explicitly before building the physical map;
+    // otherwise a range reaches lowering with a `None` element even when the
+    // element itself is concrete.
+    for index in needed.iter().copied() {
+        pending.push(
+            *data
+                .elements
+                .get(index)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+        );
+    }
     for nominal in data.nominals.iter().take(data.executable_nominal_count) {
         match &nominal.kind {
             CheckedNominalKind::Struct { fields } => {
@@ -44,15 +67,11 @@ pub(super) fn base_elements(
                     .map(|field| field.ty),
             ),
             CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
-            CheckedNominalKind::Arena { content, .. } => pending.push(*content),
-            CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
+            CheckedNominalKind::Opaque => {}
         }
     }
-    let mut needed = BTreeSet::new();
     while let Some(ty) = pending.pop() {
-        if let CheckedType::Array { element, .. }
-        | CheckedType::FixedVector { element, .. }
-        | CheckedType::Vector { element, .. } = ty
+        if let CheckedType::Array { element, .. } | CheckedType::Window { element, .. } = ty
             && needed.insert(element.index())
         {
             pending.push(
@@ -274,12 +293,7 @@ impl<'a> PhysicalTypes<'a> {
                 referent: self.ty(referent, releases)?,
                 release: lower_release_class(effective_release(releases, region, release)),
             },
-            CheckedNominalKind::Arena { content, .. } => IrNominalKind::Arena {
-                content: self.ty(content, releases)?,
-            },
-            CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {
-                self.nominals[id.index()].kind.clone()
-            }
+            CheckedNominalKind::Opaque => self.nominals[id.index()].kind.clone(),
         };
         self.nominals[id.index()].kind = lowered;
         Ok(id)
@@ -299,26 +313,21 @@ impl<'a> PhysicalTypes<'a> {
                         .ok_or(LoweringFailure::InvalidCheckedProgram)?,
                 });
             }
-            CheckedType::FixedVector { element, length } => {
-                return Ok(IrType::FixedVector {
-                    element: self.element(element, releases)?,
-                    length: length
-                        .value()
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-                });
-            }
-            CheckedType::Vector {
-                region,
+            CheckedType::Window {
+                shape,
                 element,
-                release,
+                capacity,
             } => {
-                return Ok(IrType::Vector {
+                return Ok(IrType::Window {
+                    shape: lower_window_shape(shape),
                     element: self.element(element, releases)?,
-                    release: lower_release_class(effective_release(
-                        releases,
-                        Some(region),
-                        release,
-                    )),
+                    capacity: capacity
+                        .map(|capacity| {
+                            capacity
+                                .value()
+                                .ok_or(LoweringFailure::InvalidCheckedProgram)
+                        })
+                        .transpose()?,
                 });
             }
             _ => {}
@@ -335,9 +344,7 @@ impl<'a> PhysicalTypes<'a> {
                 CheckedType::Nominal(id) => {
                     map[id.0 as usize] = self.nominal(id, releases)?;
                 }
-                CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
-                    pending.push(element.ty())
-                }
+                CheckedType::Buffer { element } => pending.push(element.ty()),
                 _ => {}
             }
         }
@@ -402,10 +409,6 @@ impl<'a> PhysicalTypes<'a> {
                             pending.push((*lt, *rt));
                         }
                         (
-                            CheckedNominalKind::Arena { content: left, .. },
-                            CheckedNominalKind::Arena { content: right, .. },
-                        ) => pending.push((*left, *right)),
-                        (
                             CheckedNominalKind::Struct { fields: left },
                             CheckedNominalKind::Struct { fields: right },
                         ) => {
@@ -438,101 +441,57 @@ impl<'a> PhysicalTypes<'a> {
                                 );
                             }
                         }
-                        (CheckedNominalKind::ArenaStorage, CheckedNominalKind::ArenaStorage) => {}
                         (CheckedNominalKind::Opaque, CheckedNominalKind::Opaque) => {}
                         _ => return Ok(false),
                     }
                 }
                 (
-                    CheckedType::Vector {
-                        region: lr,
-                        element: le,
-                        release: lc,
+                    CheckedType::Window {
+                        shape: ls,
+                        element: left,
+                        capacity: ln,
                     },
-                    CheckedType::Vector {
-                        region: rr,
-                        element: re,
-                        release: rc,
+                    CheckedType::Window {
+                        shape: rs,
+                        element: right,
+                        capacity: rn,
                     },
-                ) => {
-                    if effective_release(left_releases, Some(lr), lc)
-                        != effective_release(right_releases, Some(rr), rc)
-                    {
-                        return Ok(false);
-                    }
-                    pending.push((
-                        *self
-                            .data
-                            .elements
-                            .get(le.index())
-                            .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-                        *self
-                            .data
-                            .elements
-                            .get(re.index())
-                            .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-                    ));
+                ) if ls == rs && ln == rn => pending.push((
+                    *self
+                        .data
+                        .elements
+                        .get(left.index())
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                    *self
+                        .data
+                        .elements
+                        .get(right.index())
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                )),
+                (
+                    CheckedType::Array {
+                        element: left,
+                        length: ln,
+                    },
+                    CheckedType::Array {
+                        element: right,
+                        length: rn,
+                    },
+                ) if ln == rn => pending.push((
+                    *self
+                        .data
+                        .elements
+                        .get(left.index())
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                    *self
+                        .data
+                        .elements
+                        .get(right.index())
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                )),
+                (CheckedType::Buffer { element: left }, CheckedType::Buffer { element: right }) => {
+                    pending.push((left.ty(), right.ty()));
                 }
-                (
-                    CheckedType::FixedVector {
-                        element: left,
-                        length: ln,
-                    },
-                    CheckedType::FixedVector {
-                        element: right,
-                        length: rn,
-                    },
-                ) if ln == rn => pending.push((
-                    *self
-                        .data
-                        .elements
-                        .get(left.index())
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-                    *self
-                        .data
-                        .elements
-                        .get(right.index())
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-                )),
-                (
-                    CheckedType::Array {
-                        element: left,
-                        length: ln,
-                    },
-                    CheckedType::Array {
-                        element: right,
-                        length: rn,
-                    },
-                ) if ln == rn => pending.push((
-                    *self
-                        .data
-                        .elements
-                        .get(left.index())
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-                    *self
-                        .data
-                        .elements
-                        .get(right.index())
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-                )),
-                (CheckedType::Buffer { element: left }, CheckedType::Buffer { element: right })
-                | (
-                    CheckedType::Slice { element: left, .. },
-                    CheckedType::Slice { element: right, .. },
-                ) => pending.push((left.ty(), right.ty())),
-                (CheckedType::Heap { .. }, CheckedType::Heap { .. }) => {}
-                (
-                    CheckedType::Extent {
-                        bytes: lb,
-                        align: la,
-                        ..
-                    },
-                    CheckedType::Extent {
-                        bytes: rb,
-                        align: ra,
-                        ..
-                    },
-                ) if lb == rb && la == ra => {}
                 _ if left == right => {}
                 _ => return Ok(false),
             }

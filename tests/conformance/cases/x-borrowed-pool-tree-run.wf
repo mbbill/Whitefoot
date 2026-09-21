@@ -4,18 +4,22 @@ enum PoolError {
   ArithmeticOverflow();
 }
 
-fn build(left: &uniq MutSlice<u64>, right: &uniq MutSlice<u64>, count: &uniq u64, depth: own u32) -> function_result: own Result<u64, PoolError> reads(left, right, count), writes(left, right, count) {
-  doc "Build a complete tree bottom-up in two parallel buffers; index zero is the null sentinel.";
+struct Cursor {
+  position: u64;
+}
+
+fn build(left: &[u64], right: &[u64], cursor: &Cursor, depth: own u32) -> function_result: own Result<u64, PoolError> writes(left), writes(right), writes(cursor.position) {
+  doc "Build a complete tree bottom-up in two parallel runs; index zero is the null sentinel. The three write paths have three distinct roots, so the call site proves them disjoint [EFF-5].";
   let leaves = ishl.wrap(1_u64, depth);
-  let start = deref(count);
+  let start = deref(cursor).position;
   let index_value = 0_u64;
   loop @leaves {
     let done = index_value >= leaves;
     if done {
       break @leaves;
     } else {
-      let slot = deref(count);
-      let left_room = len_of(deref(left));
+      let slot = deref(cursor).position;
+      let left_room = deref(left).len;
       let left_ok = slot < left_room;
       if left_ok {
       } else {
@@ -23,7 +27,7 @@ fn build(left: &uniq MutSlice<u64>, right: &uniq MutSlice<u64>, count: &uniq u64
         return Err<u64, PoolError>(error: error);
       }
       set deref(left)[slot] = 0_u64;
-      let right_room = len_of(deref(right));
+      let right_room = deref(right).len;
       let right_ok = slot < right_room;
       if right_ok {
       } else {
@@ -31,7 +35,7 @@ fn build(left: &uniq MutSlice<u64>, right: &uniq MutSlice<u64>, count: &uniq u64
         return Err<u64, PoolError>(error: error);
       }
       set deref(right)[slot] = 0_u64;
-      set deref(count) = slot + 1_u64;
+      set deref(cursor).position = slot + 1_u64;
       set index_value = index_value + 1_u64;
     }
   }
@@ -42,7 +46,7 @@ fn build(left: &uniq MutSlice<u64>, right: &uniq MutSlice<u64>, count: &uniq u64
       break @levels;
     } else {
       let half = ishr.wrap(width, 1_u32);
-      let next_start = deref(count);
+      let next_start = deref(cursor).position;
       let parent = 0_u64;
       loop @parents {
         let parents_done = parent >= half;
@@ -70,8 +74,8 @@ fn build(left: &uniq MutSlice<u64>, right: &uniq MutSlice<u64>, count: &uniq u64
             return Err<u64, PoolError>(error: error);
           }
           let right_child = left_child + 1_u64;
-          let slot = deref(count);
-          let left_room = len_of(deref(left));
+          let slot = deref(cursor).position;
+          let left_room = deref(left).len;
           let left_ok = slot < left_room;
           if left_ok {
           } else {
@@ -79,7 +83,7 @@ fn build(left: &uniq MutSlice<u64>, right: &uniq MutSlice<u64>, count: &uniq u64
             return Err<u64, PoolError>(error: error);
           }
           set deref(left)[slot] = left_child;
-          let right_room = len_of(deref(right));
+          let right_room = deref(right).len;
           let right_ok = slot < right_room;
           if right_ok {
           } else {
@@ -87,7 +91,7 @@ fn build(left: &uniq MutSlice<u64>, right: &uniq MutSlice<u64>, count: &uniq u64
             return Err<u64, PoolError>(error: error);
           }
           set deref(right)[slot] = right_child;
-          set deref(count) = slot + 1_u64;
+          set deref(cursor).position = slot + 1_u64;
           set parent = parent + 1_u64;
         }
       }
@@ -98,27 +102,28 @@ fn build(left: &uniq MutSlice<u64>, right: &uniq MutSlice<u64>, count: &uniq u64
   return Ok<u64, PoolError>(value: start);
 }
 
-fn checksum(left: own Slice<u64>, right: own Slice<u64>, root: own u64) -> function_result: own Result<u64, PoolError> reads(left, right) {
-  let left_room = len_of(left);
+fn checksum(left: &[u64], right: &[u64], root: own u64) -> function_result: own Result<u64, PoolError> reads(left), reads(right) {
+  doc "Walks the built tree through two read-only range references and counts its nodes.";
+  let left_room = deref(left).len;
   let left_ok = root < left_room;
   if left_ok {
   } else {
     let error = LeftOutOfBounds();
     return Err<u64, PoolError>(error: error);
   }
-  let left_child = left[root];
+  let left_child = deref(left)[root];
   let leaf = left_child == 0_u64;
   if leaf {
     return Ok<u64, PoolError>(value: 1_u64);
   }
-  let right_room = len_of(right);
+  let right_room = deref(right).len;
   let right_ok = root < right_room;
   if right_ok {
   } else {
     let error = RightOutOfBounds();
     return Err<u64, PoolError>(error: error);
   }
-  let right_child = right[root];
+  let right_child = deref(right)[root];
   let left_count = propagate checksum(left: left, right: right, root: left_child);
   let right_count = propagate checksum(left: left, right: right, root: right_child);
   let child_sum_defined = left_count +defined right_count;
@@ -139,66 +144,54 @@ fn checksum(left: own Slice<u64>, right: own Slice<u64>, root: own u64) -> funct
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "Two parallel store runs and a count are lent as views and a scalar borrow. The tree builder takes the two exclusive element views its writes need, and the checksum walk takes shared views; element-only effects preserve the run windows.";
-  let capacity = 64_u64;
-  region 'w {
-    let workspace = arena_frame::<1024, 8, 'w>();
-    region {
-      let left = arena_vector_proved::<u64>(store: &uniq workspace, count: 64_u64);
-      for @fill_left (
-        at in 0_u64..64_u64,
-        invariant grown_left: len_of(left) >= at,
-        invariant spare_left: room_of(left) + at >= 64_u64,
-        invariant flat_left: head_of(left) <= 0_u64
-      ) {
-        place_back(vector: &uniq left, value: 0_u64);
-      }
-      let right = arena_vector_proved::<u64>(store: &uniq workspace, count: 64_u64);
-      for @fill_right (
-        at in 0_u64..64_u64,
-        invariant grown_right: len_of(right) >= at,
-        invariant spare_right: room_of(right) + at >= 64_u64,
-        invariant flat_right: head_of(right) <= 0_u64
-      ) {
-        place_back(vector: &uniq right, value: 0_u64);
-      }
-      let count = 1_u64;
-      let depth = 5_u32;
-      region {
-        let left_out = mut_slice_of(&uniq left);
-        let right_out = mut_slice_of(&uniq right);
-        region {
-          let built = build(left: &uniq left_out, right: &uniq right_out, count: &uniq count, depth: depth);
-          match move built {
-            Ok(value: root) => {
-              region {
-                let left_in = slice_of(&left);
-                let right_in = slice_of(&right);
-                let checksum_result = checksum(left: left_in, right: right_in, root: root);
-                match move checksum_result {
-                  Ok(value: nodes) => {
-                    if nodes == 63_u64 {
-                    } else {
-                      return exit_status(code: 201_u8);
-                    }
-                  }
-                  Err(error: checksum_error) => {
-                    return exit_status(code: 204_u8);
-                  }
-                }
-              }
-            }
-            Err(error: build_error) => {
-              return exit_status(code: 203_u8);
-            }
+  doc "Two parallel heap-resident runs and a cursor field are handed to the builder as three references with three distinct roots, and the checksum walk takes two read-only range references over the same storage. Bounds and arithmetic failures use explicit typed PoolError results, main maps failures to nonzero statuses, and projected access, caller-visible storage, effects, and owner-only cleanup all use the normal compiler path.";
+  let left = box_slots_new::<u64>(capacity: 64_u64);
+  for @fill_left (
+    at in 0_u64..64_u64,
+    invariant grown_left: left.inner.len >= at,
+    invariant spare_left: left.inner.cap - left.inner.len + at >= 64_u64
+  ) {
+    place_back(window: &left.inner, value: 0_u64);
+  }
+  let right = box_slots_new::<u64>(capacity: 64_u64);
+  for @fill_right (
+    at in 0_u64..64_u64,
+    invariant grown_right: right.inner.len >= at,
+    invariant spare_right: right.inner.cap - right.inner.len + at >= 64_u64
+  ) {
+    place_back(window: &right.inner, value: 0_u64);
+  }
+  let cursor = Cursor(position: 1_u64);
+  let depth = 5_u32;
+  let left_length = left.inner.len;
+  let right_length = right.inner.len;
+  let left_out = &left.inner[0_u64..left_length];
+  let right_out = &right.inner[0_u64..right_length];
+  let built = build(left: left_out, right: right_out, cursor: &cursor, depth: depth);
+  match built {
+    Ok(value: root) => {
+      let left_in = &left.inner[0_u64..left_length];
+      let right_in = &right.inner[0_u64..right_length];
+      let checksum_result = checksum(left: left_in, right: right_in, root: root);
+      match checksum_result {
+        Ok(value: nodes) => {
+          if nodes == 63_u64 {
+          } else {
+            return exit_status(code: 201_u8);
           }
         }
-      }
-      if count == 64_u64 {
-      } else {
-        return exit_status(code: 202_u8);
+        Err(error: checksum_error) => {
+          return exit_status(code: 204_u8);
+        }
       }
     }
+    Err(error: build_error) => {
+      return exit_status(code: 203_u8);
+    }
+  }
+  if cursor.position == 64_u64 {
+  } else {
+    return exit_status(code: 202_u8);
   }
   return exit_status(code: 0_u8);
 }

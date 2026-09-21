@@ -10,7 +10,7 @@ use crate::{
 
 use super::super::entailment::{DerivationNode, ObligationFamily, S7DerivationKind, TermKind};
 use super::super::goal::{GoalExpression, GoalOperation};
-use super::super::model::{CheckedFunction, CheckedIntegerOperation};
+use super::super::model::{CheckedFunction, CheckedIntegerOperation, MeasuredKind};
 use super::entailment::validate_derivations;
 use super::with_semantics;
 
@@ -322,12 +322,13 @@ fn a_checked_division_attaches_no_obligation() {
     });
 }
 
-/// On the default checker, an unexhibited allocation effect is judged under
-/// EFF-2 before the undischarged exact-division obligation is reported.
+/// On the default checker, a declared effect entry the body does not exhibit
+/// is judged under EFF-2 before the undischarged exact-division obligation is
+/// reported. v0.59 wrote that entry `allocates(heap)`; v0.60 has no allocation
+/// category [EFF-1, STOR-8], so it is an ordinary unexhibited `writes`.
 #[test]
 fn effect_mismatch_precedes_static_division_rejection() {
-    let source =
-        br#"fn ratio['heap](heap: &uniq Heap<'heap>, n: own u64, d: own u64) -> result: own u64 allocates(heap) {
+    let source = br#"fn ratio(cell: &u64, n: own u64, d: own u64) -> result: own u64 writes(cell) {
   let q = n / d;
   let r = n % d;
   return q;
@@ -339,7 +340,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("exact division does not exhibit allocation: {outcome:?}");
+            panic!("exact division does not exhibit the declared write: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
     });
@@ -486,8 +487,8 @@ fn main() -> status: own ExitStatus pure {
 /// over the integers, so the midpoint subscript needs no written certificate.
 #[test]
 fn the_scaled_quotient_image_halves_into_an_automatic_midpoint_bound() {
-    let source = br#"fn probe(table: own Slice<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
-  define spare = len_of(table);
+    let source = br#"fn probe(table: &[u8], lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
+  define spare = deref(table).len;
   requires lo < hi;
   requires hi <= spare;
 } {
@@ -495,7 +496,7 @@ fn the_scaled_quotient_image_halves_into_an_automatic_midpoint_bound() {
   let half = span / 2_u64;
   let mid = lo + half;
   invariant inside: 2_u64 * mid + 1_u64 <= 2_u64 * hi;
-  let byte = table[mid];
+  let byte = deref(table)[mid];
   return byte;
 }
 
@@ -781,16 +782,15 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_fixed_run_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
-    // A `FixedVector` run replaces the retiring `array<u8, 1>`. A run's
-    // length is a descriptor word rather than a fact of its type [BLK-1], so
-    // the subscript's [OP-4] domain is stated as a requirement and the
-    // subscript exhibits the read an array subscript did not; the subject —
-    // one canonical index goal reused by the `+defined` guard and the exact
-    // addition — is unchanged, and the goal row is `RunIndex` where it was
-    // `ArrayIndex`.
-    let source =
-        br#"fn increment(values: own FixedVector<u8, 1>) -> result: own u8 reads(values) contract {
-  requires len_of(values) >= 1_u64;
+    // A `Slots<u8, 1>` window is the v0.60 spelling of the run this case used
+    // to write `FixedVector<u8, 1>`. A window's length is a descriptor word
+    // rather than a fact of its type [WIN-1], so the subscript's [OP-4] domain
+    // is stated as a requirement; the subject, one canonical index goal reused
+    // by the `+defined` guard and the exact addition, is unchanged, and the
+    // goal row is still `RunIndex`. An `own` parameter carries no effect entry
+    // [EFF-1], so the row is `pure` where it declared a read.
+    let source = br#"fn increment(values: own Slots<u8, 1>) -> result: own u8 pure contract {
+  requires values.len >= 1_u64;
 } {
   if values[0_u64] +defined 1_u8 {
     let result = values[0_u64] + 1_u8;
@@ -801,11 +801,8 @@ fn a_fixed_run_indexed_defined_guard_discharges_the_same_structural_exact_operat
 }
 
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 1>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let values = move empty;
+  let filled = array_filled::<u8, 1>(value: 0_u8);
+  let values = slots_from_array::<u8, 1>(values: filled);
   let result = increment(values: move values);
   return exit_status(code: result);
 }
@@ -840,8 +837,9 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn writing_the_indexed_collection_invalidates_its_old_defined_fact() {
-    let source = br#"fn increment_after_write(values: own FixedVector<u8, 1>) -> result: own u8 reads(values), writes(values) contract {
-  requires len_of(values) >= 1_u64;
+    let source =
+        br#"fn increment_after_write(values: own Slots<u8, 1>) -> result: own u8 pure contract {
+  requires values.len >= 1_u64;
 } {
   if values[0_u64] +defined 1_u8 {
     set values[0_u64] = 255_u8;
@@ -853,11 +851,8 @@ fn writing_the_indexed_collection_invalidates_its_old_defined_fact() {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let empty = fixed_vector::<u8, 1>();
-  region {
-    place_back(vector: &uniq empty, value: 0_u8);
-  }
-  let values = move empty;
+  let filled = array_filled::<u8, 1>(value: 0_u8);
+  let values = slots_from_array::<u8, 1>(values: filled);
   let result = increment_after_write(values: move values);
   return exit_status(code: result);
 }
@@ -878,13 +873,13 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_store_run_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
-    // The borrowed store-resident run replaces the retiring `&buffer<u8>`.
-    // Its measured kind is `Vector` where the fixed run above is
-    // `FixedVector`, so the two cases still pin two distinct index rows.
-    let source =
-        br#"fn increment['heap](values: &Vector<'heap, u8>) -> result: own u8 reads(values) {
-  let spare = len_of(deref(values));
+fn a_referenced_run_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
+    // The run reached through a reference parameter replaces the retiring
+    // store-resident `&Vector<'heap, u8>`. A constant `Array` takes the
+    // `ArrayIndex` row where the window above takes `RunIndex` [MSR-1], so
+    // the two cases still pin two distinct index rows.
+    let source = br#"fn increment(values: &Array<u8, 2>) -> result: own u8 reads(values) {
+  let spare = deref(values).len;
   if 0_u64 < spare {
     if deref(values)[0_u64] +defined 1_u8 {
       let result = deref(values)[0_u64] + 1_u8;
@@ -903,7 +898,9 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the identical store-run element must retain one structural goal: {outcome:?}");
+            panic!(
+                "the identical referenced-run element must retain one structural goal: {outcome:?}"
+            );
         };
         let increment = named(&checked.data.functions, "increment");
         let exact = increment
@@ -920,7 +917,7 @@ fn main() -> status: own ExitStatus pure {
             arguments.as_slice(),
             [
                 GoalExpression::Operation {
-                    row: GoalOperation::RunIndex { .. },
+                    row: GoalOperation::ArrayIndex { .. },
                     ..
                 },
                 GoalExpression::Datum(_)
@@ -930,12 +927,17 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_slice_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
-    let source = br#"fn increment(values: own Slice<u8>) -> result: own u8 reads(values) {
-  let spare = len_of(values);
+fn a_range_reference_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
+    // The [REF-4] range reference `&[T]` replaces the retiring `Slice<T>`
+    // view: the parameter kind is a reference kind and not a type, its one
+    // measure is `len`, and its element is reached through `deref` [REF-1].
+    // Its measured kind is `Range`, which is the third index row this file
+    // pins beside the constant window and the constant array.
+    let source = br#"fn increment(values: &[u8]) -> result: own u8 reads(values) {
+  let spare = deref(values).len;
   if 0_u64 < spare {
-    if values[0_u64] +defined 1_u8 {
-      let result = values[0_u64] + 1_u8;
+    if deref(values)[0_u64] +defined 1_u8 {
+      let result = deref(values)[0_u64] + 1_u8;
       return result;
     } else {
       return 0_u8;
@@ -951,7 +953,9 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the identical slice element must retain one structural goal: {outcome:?}");
+            panic!(
+                "the identical range-reference element must retain one structural goal: {outcome:?}"
+            );
         };
         let increment = named(&checked.data.functions, "increment");
         let exact = increment
@@ -968,7 +972,10 @@ fn main() -> status: own ExitStatus pure {
             arguments.as_slice(),
             [
                 GoalExpression::Operation {
-                    row: GoalOperation::SliceIndex { .. },
+                    row: GoalOperation::RunIndex {
+                        measured: MeasuredKind::Range,
+                        ..
+                    },
                     ..
                 },
                 GoalExpression::Datum(_)
@@ -979,7 +986,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn different_index_offsets_do_not_share_a_defined_fact() {
-    let source = br#"const values: FixedVector<u8, 2> =[0_u8, 0_u8];
+    let source = br#"const values: Array<u8, 2> =[0_u8, 0_u8];
 
 fn increment_other() -> result: own u8 pure {
   if values[0_u64] +defined 1_u8 {
@@ -1012,7 +1019,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn writing_the_index_binding_invalidates_its_old_indexed_defined_fact() {
-    let source = br#"const values: FixedVector<u8, 2> =[0_u8, 0_u8];
+    let source = br#"const values: Array<u8, 2> =[0_u8, 0_u8];
 
 fn increment_after_index_write() -> result: own u8 pure {
   let offset = 1_u64;

@@ -1,12 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 mod buffers;
 mod loops;
+mod prelude;
 mod probe;
+mod ranges;
 mod results;
 mod runs;
 mod scalar_grain;
-mod slices;
 mod split;
 mod storage;
 mod targets;
@@ -16,10 +17,9 @@ use crate::CheckedProgram;
 use crate::NodePath;
 use crate::semantic::CheckedSetTarget;
 use crate::semantic::{
-    BindingId, CheckedArrayRoot, CheckedCommitValues, CheckedDrop, CheckedExpression,
-    CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedParameter,
-    CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue, FunctionPermissions,
-    MeasureCell, MeasuredKind,
+    BindingId, CheckedArrayRoot, CheckedDrop, CheckedExpression, CheckedMatchArm, CheckedMeasure,
+    CheckedMode, CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
+    CheckedStatement, CheckedValue, FunctionPermissions, MeasureCell, MeasuredKind,
 };
 
 use super::*;
@@ -101,7 +101,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     // Each function's declared IR result carries its result *mode*: a borrow
     // of addressed content is an address. A call site must produce exactly
     // the callee's declared result type, so the declared results are computed
-    // once and consulted at every `UserCall` [OWN-2, TYPE-7].
+    // once and consulted at every `UserCall` [REF-1, TYPE-7].
     let function_results = physical
         .variants
         .iter()
@@ -340,10 +340,6 @@ fn lower_nominals(
                     referent: lower_type(erasure, *referent)?,
                     release: lower_release_class(*release),
                 },
-                CheckedNominalKind::Arena { content, .. } => IrNominalKind::Arena {
-                    content: lower_type(erasure, *content)?,
-                },
-                CheckedNominalKind::ArenaStorage => IrNominalKind::ArenaStorage,
                 CheckedNominalKind::Opaque => IrNominalKind::Opaque,
             };
             Ok(IrNominal {
@@ -365,6 +361,12 @@ fn lower_function<'program>(
     permissions: Option<&'program FunctionPermissions>,
     overlap: OverlapLowering,
 ) -> Result<IrFunction, LoweringFailure> {
+    // One of the compiler-owned [PRE-1] records: declared body-less exactly
+    // like a host row, but with no trusted-base object behind it, so the
+    // compiler emits the body here. Only a program that called the row
+    // reaches this instance, because a generic row has no instance until a
+    // call selects one, and the host rows are not compiler-owned at all.
+    let compiler_owned = function.body.is_none() && prelude::compiler_owned_row(&function.name);
     let uninhabited = matches!(
         function.body_disposition,
         crate::semantic::CheckedBodyDisposition::Uninhabited { .. }
@@ -396,7 +398,12 @@ fn lower_function<'program>(
         if builder.bindings.insert(parameter.binding, value).is_some() {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        builder.promote_binding_if_needed(parameter.binding)?;
+        // A compiler-owned row's body names no binding: it reads its
+        // parameters as the operands they already are, so nothing is
+        // promoted to a frame slot for it.
+        if !compiler_owned {
+            builder.promote_binding_if_needed(parameter.binding)?;
+        }
     }
     if let Some(body) = &function.body {
         if uninhabited {
@@ -404,6 +411,8 @@ fn lower_function<'program>(
         } else {
             builder.lower_statements(body, None)?;
         }
+    } else if compiler_owned {
+        builder.lower_prelude_row(&function.name)?;
     } else {
         builder.blocks.clear();
         builder.current = None;
@@ -424,8 +433,8 @@ fn lower_function<'program>(
 const fn lower_source_mode(mode: CheckedMode) -> IrSourceMode {
     match mode {
         CheckedMode::Own => IrSourceMode::Own,
-        CheckedMode::Shared(_) => IrSourceMode::Shared,
-        CheckedMode::Unique(_) => IrSourceMode::Unique,
+        CheckedMode::Reference => IrSourceMode::Reference,
+        CheckedMode::Range => IrSourceMode::Range,
     }
 }
 
@@ -438,16 +447,13 @@ fn lower_source_argument(argument: &CheckedExpression) -> IrSourceArgument {
             consume_root: *consume_root,
         },
         CheckedExpression::BorrowAddressed { .. }
-        | CheckedExpression::BorrowBuffer { .. }
-        | CheckedExpression::BorrowBox { .. }
-        | CheckedExpression::ReborrowAddressed { .. } => IrSourceArgument::Borrow,
+        | CheckedExpression::BorrowRangeIndex { .. }
+        | CheckedExpression::RangeOf { .. } => IrSourceArgument::Borrow,
         CheckedExpression::ReadStorage { .. }
         | CheckedExpression::DerefAddressed { .. }
         | CheckedExpression::ArrayIndex { .. }
         | CheckedExpression::BufferIndex { .. }
-        | CheckedExpression::SliceIndex { .. }
-        | CheckedExpression::BoxDeref { .. }
-        | CheckedExpression::ArenaDeref { .. } => IrSourceArgument::PlaceRead,
+        | CheckedExpression::BoxDeref { .. } => IrSourceArgument::PlaceRead,
         _ => IrSourceArgument::Value,
     }
 }
@@ -457,6 +463,19 @@ fn lower_parameter_type(
     parameter: &CheckedParameter,
     nominals: &[IrNominal],
 ) -> Result<IrType, LoweringFailure> {
+    // [REF-4, TYPE-8] a `&[T]` parameter's written type is the element type
+    // and its kind is its mode, so the descriptor type is formed here and
+    // never from the type alone.
+    if parameter.mode == CheckedMode::Range {
+        return Ok(IrType::Range {
+            element: lower_element(
+                erasure,
+                parameter
+                    .range_element
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+            )?,
+        });
+    }
     lower_borrow_mode_type(parameter.mode, lower_type(erasure, parameter.ty)?, nominals)
 }
 
@@ -464,13 +483,13 @@ fn lower_parameter_type(
 ///
 /// A borrow addresses the owner's storage, including a Box's pointer slot.
 /// Ordinary opaque values use the same address path. The buffer/view ABI
-/// retains its descriptor representation for every callable body [OWN-2].
+/// retains its descriptor representation for every callable body [REF-1].
 fn lower_borrow_mode_type(
     mode: CheckedMode,
     ty: IrType,
     nominals: &[IrNominal],
 ) -> Result<IrType, LoweringFailure> {
-    if mode == CheckedMode::Own || matches!(ty, IrType::Buffer { .. } | IrType::Slice { .. }) {
+    if mode == CheckedMode::Own || matches!(ty, IrType::Buffer { .. } | IrType::Range { .. }) {
         return Ok(ty);
     }
     let Some(referent) = IrAddressed::of(ty) else {
@@ -519,7 +538,7 @@ struct IrBuilder<'program> {
     addressed_bindings: std::collections::HashSet<BindingId>,
     /// Every physical function's result, indexed by its IR ordinal, so a
     /// call defines exactly the callee's declared result type — an address
-    /// for a borrow of addressed content [OWN-2, TYPE-7].
+    /// for a borrow of addressed content [REF-1, TYPE-7].
     function_results: &'program [IrType],
     /// For each statement holding exactly one named-function call in call
     /// position — a `let` right-hand side or a `match` scrutinee — the block
@@ -730,31 +749,6 @@ impl<'program> IrBuilder<'program> {
         )
     }
 
-    /// `cap_of - len_of`, the complement [MSR-2]'s standing identity fixes,
-    /// over a measured type whose capacity is its own type constant.
-    ///
-    /// The subtraction cannot go below zero: the identity holds at every
-    /// program point, so the loaded measure never exceeds the constant.
-    fn lower_measure_complement(
-        &mut self,
-        capacity: u64,
-        length: IrValueId,
-    ) -> Result<IrValueId, LoweringFailure> {
-        let ty = IrType::Integer {
-            width: 64,
-            signed: false,
-        };
-        let capacity = self.lower_fixed_measure(capacity)?;
-        self.define(
-            ty,
-            IrOperation::Integer {
-                operation: IrIntegerOperation::SubtractExact,
-                operand_type: ty,
-                arguments: vec![capacity, length],
-            },
-        )
-    }
-
     fn define(&mut self, ty: IrType, operation: IrOperation) -> Result<IrValueId, LoweringFailure> {
         let result = self.new_value(ty)?;
         self.current_block_mut()?
@@ -772,7 +766,7 @@ impl<'program> IrBuilder<'program> {
     ///
     /// The judgment is the checker's; this only narrows it to what the emitted
     /// shape can carry, and every narrowing drops members rather than adding
-    /// any. A group is a prefix of a permitted chain, kept only while
+    /// any. A group is a contiguous part of a permitted chain, kept only while
     ///
     /// - each site's `let` lowered to exactly one call definition, so a chain
     ///   member whose statement lowered to something else (a `propagate`, for
@@ -783,8 +777,9 @@ impl<'program> IrBuilder<'program> {
     ///   reads the call's value at the definition site — between the hand-out
     ///   and the join, where the value does not exist yet.
     ///
-    /// A prefix of a permitted chain is itself permitted: the chain's every
-    /// ordered pair was judged, so every ordered pair of the prefix was too.
+    /// Each contiguous part retains the chain's every-ordered-pair proof.
+    /// Finally, already-proved adjacent pairs recover opportunities across a
+    /// greedy run boundary. A call belongs to at most one emitted group.
     fn overlaps(&self) -> Vec<IrOverlap> {
         if self.overlap != OverlapLowering::On {
             return Vec::new();
@@ -793,28 +788,64 @@ impl<'program> IrBuilder<'program> {
             return Vec::new();
         };
         let mut overlaps = Vec::new();
-        for run in &permissions.runs {
+        let mut claimed = HashSet::new();
+        let finish = |members: &mut Vec<IrValueId>,
+                      claimed: &mut HashSet<IrValueId>,
+                      overlaps: &mut Vec<IrOverlap>| {
+            let members = std::mem::take(members);
+            if members.len() >= 2 {
+                claimed.extend(members.iter().copied());
+                overlaps.push(IrOverlap { members });
+            }
+        };
+        let runs = permissions
+            .runs
+            .iter()
+            .map(|run| run.sites.iter().collect::<Vec<_>>());
+        let pairs = permissions
+            .pairs
+            .iter()
+            .filter(|pair| pair.verdict.is_eligible())
+            .map(|pair| vec![&pair.first, &pair.second]);
+        for sites in runs.chain(pairs) {
             let mut members = Vec::new();
             let mut home = None;
-            for site in &run.sites {
-                let Some((block, value)) = self.call_results.get(&site.call).copied() else {
-                    break;
+            for site in sites {
+                // [PAR-1] judges every adjacent statement pair, so a run's
+                // members include statements that are not calls. The hand-out
+                // lowering has no form for one, so a non-call member ends the
+                // group here. A later contiguous part can start another
+                // group, but no group bridges this intervening statement.
+                let Some(call) = &site.call else {
+                    finish(&mut members, &mut claimed, &mut overlaps);
+                    home = None;
+                    continue;
                 };
-                if *home.get_or_insert(block) != block {
-                    break;
+                let Some((block, value)) = self.call_results.get(call).copied() else {
+                    finish(&mut members, &mut claimed, &mut overlaps);
+                    home = None;
+                    continue;
+                };
+                if claimed.contains(&value) {
+                    finish(&mut members, &mut claimed, &mut overlaps);
+                    home = None;
+                    continue;
                 }
+                if home.is_some_and(|previous| previous != block) {
+                    finish(&mut members, &mut claimed, &mut overlaps);
+                }
+                home = Some(block);
                 let addressed = site
                     .binding
                     .is_some_and(|binding| self.addressed_bindings.contains(&binding));
                 members.push(value);
                 if addressed {
                     // This member must be the group's last, so it ends it.
-                    break;
+                    finish(&mut members, &mut claimed, &mut overlaps);
+                    home = None;
                 }
             }
-            if members.len() >= 2 {
-                overlaps.push(IrOverlap { members });
-            }
+            finish(&mut members, &mut claimed, &mut overlaps);
         }
         overlaps
     }
@@ -892,6 +923,7 @@ impl<'program> IrBuilder<'program> {
                 // struct projection every other field read uses.
                 CheckedStatement::DestructuringLet {
                     bindings,
+                    covered,
                     nominal,
                     value: expression,
                     ..
@@ -907,7 +939,7 @@ impl<'program> IrBuilder<'program> {
                     if let Some(IrNominalKind::Box { .. }) =
                         self.nominals.get(erased.index()).map(IrNominal::kind)
                     {
-                        let [(binding, ty)] = bindings.as_slice() else {
+                        let [(binding, ty, _)] = bindings.as_slice() else {
                             return Err(LoweringFailure::InvalidCheckedProgram);
                         };
                         let referent = lower_type(self.erasure, *ty)?;
@@ -924,10 +956,17 @@ impl<'program> IrBuilder<'program> {
                         self.promote_binding_if_needed(*binding)?;
                         continue;
                     }
-                    for (ordinal, (binding, ty)) in bindings.iter().enumerate() {
-                        let field = u32::try_from(ordinal)
-                            .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
-                        let value = self.project_struct_path(aggregate, &[field], true)?;
+                    // [WIN-3, STOR-3] every field a final `..` covers takes
+                    // its compiler-derived release here, before the binders
+                    // read the fields the statement names: the statement is
+                    // the point at which the owner ceases to exist.
+                    let mut lowered = Vec::with_capacity(covered.len());
+                    for drop in covered {
+                        lowered.push(self.lower_projected_drop(aggregate, drop)?);
+                    }
+                    self.append_drops(lowered)?;
+                    for (binding, ty, field) in bindings {
+                        let value = self.project_struct_path(aggregate, &[*field], true)?;
                         if self.value_type(value)? != lower_type(self.erasure, *ty)? {
                             return Err(LoweringFailure::InvalidCheckedProgram);
                         }
@@ -937,38 +976,9 @@ impl<'program> IrBuilder<'program> {
                         self.promote_binding_if_needed(*binding)?;
                     }
                 }
-                CheckedStatement::SetList {
-                    targets, values, ..
-                } => self.set_list(targets, values)?,
                 CheckedStatement::Set { target, value, .. } => self.set(target, value)?,
-                CheckedStatement::Replace {
-                    binding,
-                    target,
-                    value,
-                    ..
-                } => self.replace(*binding, target, value)?,
                 CheckedStatement::Evaluate(expression) => {
                     self.expression(expression)?;
-                }
-                // [PROV-6] `dispose p;` runs exactly the walk the scope exit
-                // would have run for this value, at the point it is written.
-                CheckedStatement::Dispose { value, drops, .. } => {
-                    // Reading a binding solely to release it does not need a
-                    // value snapshot. Computed/proper-part consumes still run
-                    // their checked expression, including residual releases.
-                    let root = if let CheckedExpression::Binding { binding, .. } = value {
-                        self.bindings
-                            .get(binding)
-                            .copied()
-                            .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                    } else {
-                        self.expression(value)?
-                    };
-                    let mut lowered = Vec::with_capacity(drops.len());
-                    for drop in drops {
-                        lowered.push(self.lower_projected_drop(root, drop)?);
-                    }
-                    self.append_drops(lowered)?;
                 }
                 CheckedStatement::DropExpression {
                     value: expression, ..
@@ -1012,6 +1022,7 @@ impl<'program> IrBuilder<'program> {
                     invariants: _,
                     body,
                     backedge_drops,
+                    carried_references: _,
                 } => self.lower_loop(*id, body, backedge_drops, give_target.clone())?,
                 CheckedStatement::CountedRange {
                     id,
@@ -1025,6 +1036,7 @@ impl<'program> IrBuilder<'program> {
                     invariants: _,
                     body,
                     backedge_drops,
+                    carried_references: _,
                 } => self.lower_counted_range(
                     *id,
                     node_path,
@@ -1051,33 +1063,6 @@ impl<'program> IrBuilder<'program> {
                         drops,
                     })?;
                 }
-                CheckedStatement::Region {
-                    arena_list,
-                    body,
-                    fallthrough_drops,
-                } => {
-                    // The region's arena allocation list is materialized at
-                    // region entry; its compiler-derived drop on each normal
-                    // exit edge is the region's storage release [STOR-3].
-                    if let Some(list) = arena_list {
-                        let storage = self
-                            .nominals
-                            .iter()
-                            .find(|nominal| nominal.kind == IrNominalKind::ArenaStorage)
-                            .map(|nominal| nominal.id)
-                            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-                        let value =
-                            self.define(IrType::Nominal(storage), IrOperation::ArenaListNew)?;
-                        if self.bindings.insert(*list, value).is_some() {
-                            return Err(LoweringFailure::InvalidCheckedProgram);
-                        }
-                    }
-                    self.lower_statements(body, give_target.clone())?;
-                    if self.current.is_some() {
-                        let drops = self.lower_drops(fallthrough_drops)?;
-                        self.append_drops(drops)?;
-                    }
-                }
                 CheckedStatement::Match {
                     scrutinee,
                     enum_type,
@@ -1094,18 +1079,43 @@ impl<'program> IrBuilder<'program> {
                 CheckedStatement::ValueMatchLet {
                     binding,
                     result_type,
+                    result_mode,
+                    result_range_element,
                     scrutinee,
                     enum_type,
                     arms,
                     continues,
                     ..
                 } => {
+                    // [REF-1, REF-4] a binder every arm of which delivers a
+                    // reference is a reference variable. An addressed join
+                    // carries the selected address; a range join carries the
+                    // selected pointer and count. Neither has the by-value
+                    // representation of its written referent type.
+                    let result = if *result_mode == CheckedMode::Range {
+                        IrType::Range {
+                            element: lower_element(
+                                self.erasure,
+                                result_range_element
+                                    .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                            )?,
+                        }
+                    } else {
+                        if result_range_element.is_some() {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        }
+                        lower_borrow_mode_type(
+                            *result_mode,
+                            lower_type(self.erasure, *result_type)?,
+                            self.nominals,
+                        )?
+                    };
                     self.lower_match(
                         scrutinee,
                         *enum_type,
                         arms,
                         *continues,
-                        Some((*binding, lower_type(self.erasure, *result_type)?)),
+                        Some((*binding, result)),
                         give_target.clone(),
                     )?;
                     if self.current.is_some() {
@@ -1228,7 +1238,7 @@ impl<'program> IrBuilder<'program> {
                         IrType::Address(referent),
                         IrOperation::ProjectAddress {
                             address,
-                            projection: IrPlaceProjection::EnumVariant {
+                            projection: IrPlaceStep::EnumVariant {
                                 nominal,
                                 variant: arm.tag,
                                 field: binder.field,
@@ -1318,11 +1328,16 @@ impl<'program> IrBuilder<'program> {
                 } else {
                     value
                 };
+                // [REF-4, TYPE-8] a range reference read bare delivers its
+                // own pointer-and-count descriptor; `&[T]` is a reference
+                // kind and not a type, so the checked type beside it is the
+                // element type the range names.
                 if self.value_type(value)? != expected
                     && !matches!(
                         (actual, expected),
                         (IrType::Address(referent), _) if referent.ty() == expected
                     )
+                    && !matches!(actual, IrType::Range { element } if self.element_type(element)? == expected)
                 {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
@@ -1342,6 +1357,7 @@ impl<'program> IrBuilder<'program> {
                 call,
                 arguments,
                 result_borrow,
+                allocation,
                 ..
             } => {
                 let function = self
@@ -1350,13 +1366,29 @@ impl<'program> IrBuilder<'program> {
                     .find_map(|(site, target)| (site == call).then_some(*target))
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
                 let source_arguments = arguments.iter().map(lower_source_argument).collect();
+                let source_allocation = allocation
+                    .map(|allocation| {
+                        let IrType::Nominal(cell) = lower_type(self.erasure, allocation.cell)?
+                        else {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        };
+                        Ok(IrSourceAllocation {
+                            cell,
+                            count_argument: allocation.count,
+                            layout_ceiling: allocation.layout_ceiling.into(),
+                            source_length_upper_bound: allocation
+                                .source_length_upper_bound()
+                                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                        })
+                    })
+                    .transpose()?;
                 let arguments = arguments
                     .iter()
                     .map(|argument| self.expression(argument))
                     .collect::<Result<Vec<_>, _>>()?;
                 // The definition takes the callee's declared IR result, which
                 // carries the result mode: a borrow-returning callee delivers
-                // an address, not a referent value [OWN-2, TYPE-7].
+                // an address, not a referent value [REF-1, TYPE-7].
                 let result = *self
                     .function_results
                     .get(function as usize)
@@ -1372,6 +1404,7 @@ impl<'program> IrBuilder<'program> {
                     result,
                     arguments: source_arguments,
                     returned_borrow_argument: result_borrow.as_ref().map(|borrow| borrow.argument),
+                    allocation: source_allocation,
                 });
                 Ok(result)
             }
@@ -1482,33 +1515,12 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            CheckedExpression::ArrayFill {
-                ty,
-                value,
-                target_domain,
-                ..
-            } => {
-                let IrType::Array { element, .. } = lower_type(self.erasure, *ty)? else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                };
-                let value = self.expression(value)?;
-                if self.value_type(value)? != self.element_type(element)? {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                self.define(
-                    lower_type(self.erasure, *ty)?,
-                    IrOperation::ArrayFill {
-                        value,
-                        target_domain: (*target_domain).into(),
-                    },
-                )
-            }
             CheckedExpression::ArrayMeasure {
                 measure,
                 root,
                 length,
             } => {
-                if let Some(constant) = fixed_measure(*measure, MeasuredKind::Array) {
+                if let Some(constant) = fixed_measure(*measure, MeasuredKind::ConstantArray) {
                     return self.lower_fixed_measure(constant);
                 }
                 let (_, ty) = self.array_root(root)?;
@@ -1577,37 +1589,8 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            CheckedExpression::BufferFill {
-                element,
-                length,
-                value,
-                layout_ceiling,
-                target_domains,
-                ..
-            } => self.lower_buffer_fill(*element, length, value, *layout_ceiling, *target_domains),
-            CheckedExpression::BufferVacant {
-                element,
-                length,
-                layout_ceiling,
-                target_domains,
-                ..
-            } => self.lower_buffer_vacant(*element, length, *layout_ceiling, *target_domains),
-            CheckedExpression::BufferFits {
-                length,
-                layout_ceiling,
-                ..
-            } => {
-                let length = self.expression(length)?;
-                self.define(
-                    IrType::Bool,
-                    IrOperation::BufferFits {
-                        length,
-                        maximum_length: layout_ceiling.stride.allocation_limit(),
-                    },
-                )
-            }
             CheckedExpression::BufferMeasure { measure, root } => {
-                match fixed_measure(*measure, MeasuredKind::Buffer) {
+                match fixed_measure(*measure, MeasuredKind::RuntimeArray) {
                     Some(constant) => self.lower_fixed_measure(constant),
                     None => self.lower_buffer_length(root),
                 }
@@ -1615,54 +1598,43 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::ContainerMeasure { measure, root } => {
                 self.lower_container_measure(*measure, root)
             }
-            // [FN-9] a clause-only datum: the checker discards it with the
-            // clause's typing, so no checked program carries one here.
-            CheckedExpression::PostconditionResultMeasure { .. } => {
-                Err(LoweringFailure::InvalidCheckedProgram)
+            CheckedExpression::RangeElementMeasure { measure, place, .. } => {
+                self.lower_range_element_measure(*measure, place)
             }
             CheckedExpression::ReadStorage { root, .. } => {
                 let address = self.lower_place_address(root)?;
                 self.load_storage_value(address)
             }
-            CheckedExpression::KernelCall {
-                row,
-                instance,
-                arguments,
-                result,
-                ..
-            } => self.lower_kernel_call(*row, instance, arguments, *result),
             CheckedExpression::BufferIndex {
                 root,
                 offset,
                 target_domain,
                 ..
             } => self.lower_buffer_index(root, offset, *target_domain),
-            CheckedExpression::SliceOf {
+            // [REF-4] the range reference: its formation, its one measure,
+            // and one discharged element read.
+            CheckedExpression::RangeOf {
                 source,
-                range,
                 element,
+                start,
+                end,
                 ..
-            } => self.lower_slice_of(source, range.as_ref(), *element),
-            CheckedExpression::SliceMeasure { measure, root } => {
-                match fixed_measure(*measure, MeasuredKind::Slice) {
+            } => self.lower_range_of(source, start, end, *element),
+            CheckedExpression::RangeMeasure { measure, root } => {
+                match fixed_measure(*measure, MeasuredKind::Range) {
                     Some(constant) => self.lower_fixed_measure(constant),
-                    None => self.lower_slice_length(root),
+                    None => self.lower_range_measure(root),
                 }
             }
-            CheckedExpression::SliceIndex {
-                root,
-                offset,
-                target_domain,
-                ..
-            } => self.lower_slice_index(root, offset, *target_domain),
-            CheckedExpression::BoxNew { nominal, value, .. } => {
-                let value = self.expression(value)?;
-                let nominal = self.erased(*nominal);
-                self.define(
-                    IrType::Nominal(nominal),
-                    IrOperation::BoxNew { nominal, value },
-                )
+            CheckedExpression::RangeIndex { place, .. } => {
+                self.lower_range_index(&place.root, &place.offset, &place.path, place.target_domain)
             }
+            CheckedExpression::BorrowRangeIndex { place, .. } => self.lower_range_address(
+                &place.root,
+                &place.offset,
+                &place.path,
+                place.target_domain,
+            ),
             CheckedExpression::BoxDeref { nominal, value, .. } => {
                 let value = self.expression(value)?;
                 let nominal = self.erased(*nominal);
@@ -1676,59 +1648,66 @@ impl<'program> IrBuilder<'program> {
                 };
                 self.define(referent, IrOperation::BoxDeref { nominal, value })
             }
-            CheckedExpression::ArenaNew {
-                nominal,
-                list,
-                value,
+            // [TYPE-9, WIN-3] load the selected value before releasing any
+            // enclosing cell or residual field of the consumed root.
+            CheckedExpression::BoxTake {
+                binding,
+                path,
+                cleanup,
+                referent,
                 ..
             } => {
-                let value = self.expression(value)?;
-                let nominal = self.erased(*nominal);
-                let IrNominalKind::Arena { content } = self
-                    .nominals
-                    .get(nominal.index())
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                    .kind
-                else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                };
-                if self.value_type(value)? != content {
+                let root = self
+                    .bindings
+                    .get(binding)
+                    .copied()
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                if !matches!(self.value_type(root)?, IrType::Address(_)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                let list = self.binding_value(*list)?;
-                self.define(
-                    IrType::Nominal(nominal),
-                    IrOperation::ArenaNew {
-                        nominal,
-                        list,
-                        value,
-                    },
-                )
-            }
-            CheckedExpression::ArenaDeref { nominal, value, .. } => {
-                let value = self.expression(value)?;
-                let nominal = self.erased(*nominal);
-                if self.value_type(value)? != IrType::Nominal(nominal) {
+                let address = self.project_address_path(root, path)?;
+                let selected = self.load_storage_value(address)?;
+                if self.value_type(selected)? != lower_type(self.erasure, *referent)? {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                let IrNominalKind::Arena { content } = self
-                    .nominals
-                    .get(nominal.index())
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                    .kind
-                else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                };
-                self.define(content, IrOperation::ArenaDeref { nominal, value })
+                for action in cleanup {
+                    match action {
+                        crate::semantic::CheckedOwnedTakeCleanup::Drop { path, ty } => {
+                            let address = self.project_address_path(root, path)?;
+                            let IrType::Address(actual) = self.value_type(address)? else {
+                                return Err(LoweringFailure::InvalidCheckedProgram);
+                            };
+                            let ty = lower_type(self.erasure, *ty)?;
+                            if actual.ty() != ty {
+                                return Err(LoweringFailure::InvalidCheckedProgram);
+                            }
+                            self.append_drops(vec![IrDrop {
+                                subject: IrDropSubject::Place(address),
+                                ty,
+                            }])?;
+                        }
+                        crate::semantic::CheckedOwnedTakeCleanup::BoxShell {
+                            path,
+                            nominal,
+                            referent,
+                        } => {
+                            let address = self.project_address_path(root, path)?;
+                            let owner = self.load_storage_value(address)?;
+                            let nominal = self.erased(*nominal);
+                            let _ = lower_type(self.erasure, *referent)?;
+                            self.define(
+                                IrType::Unit,
+                                IrOperation::CellFree {
+                                    nominal,
+                                    value: owner,
+                                },
+                            )?;
+                        }
+                    }
+                }
+                Ok(selected)
             }
-            CheckedExpression::BorrowBuffer { root, .. } => self.lower_buffer_borrow(root),
-            CheckedExpression::BorrowBox {
-                binding, nominal, ..
-            } => self.lower_addressed_borrow(*binding, IrType::Nominal(self.erased(*nominal))),
             CheckedExpression::BorrowAddressed { root, .. } => self.lower_place_address(root),
-            CheckedExpression::ReborrowAddressed { binding, ty, .. } => {
-                self.lower_addressed_borrow(*binding, lower_type(self.erasure, *ty)?)
-            }
             CheckedExpression::DerefAddressed { binding, ty, .. } => {
                 let value = self.binding_value(*binding)?;
                 if self.value_type(value)? != lower_type(self.erasure, *ty)? {
@@ -1863,76 +1842,6 @@ impl<'program> IrBuilder<'program> {
         }
     }
 
-    /// [SET-2] capture the target, evaluate the RHS, then exchange the old
-    /// and new owners at one commit. The old value includes the RHS's effects.
-    fn replace(
-        &mut self,
-        binding: BindingId,
-        target: &CheckedSetTarget,
-        value: &CheckedExpression,
-    ) -> Result<(), LoweringFailure> {
-        let target = self.prepare_target(target)?;
-        let replacement = self.expression(value)?;
-        let previous = self.read_target(&target)?;
-        self.write_target(&target, replacement)?;
-        if self.bindings.insert(binding, previous).is_some() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        self.promote_binding_if_needed(binding)
-    }
-
-    /// [GRAM-4, SET-1, CALL-4] `set (x, y) = f(...);`.
-    ///
-    /// One evaluation of the call, then one projection per result ordinal in
-    /// written order, each committed to its checked target exactly as a
-    /// single-target `set` commits.
-    /// [LIV-2] one commit of a target list.
-    ///
-    /// The whole right-hand side is evaluated first — the one call, or every
-    /// written value in order — and only then is any target written, so a
-    /// statement whose targets and values name the same places, the swap
-    /// included, reads every previous value before the first commit.
-    fn set_list(
-        &mut self,
-        targets: &[CheckedSetTarget],
-        values: &CheckedCommitValues,
-    ) -> Result<(), LoweringFailure> {
-        let prepared = targets
-            .iter()
-            .map(|target| self.prepare_target(target))
-            .collect::<Result<Vec<_>, _>>()?;
-        let ordinals = match values {
-            CheckedCommitValues::ResultList { nominal, value } => {
-                let aggregate = self.expression(value)?;
-                self.note_call_result(value, aggregate)?;
-                if self.value_type(aggregate)? != IrType::Nominal(self.erased(*nominal)) {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                let mut ordinals = Vec::with_capacity(targets.len());
-                for ordinal in 0..targets.len() {
-                    let field = u32::try_from(ordinal)
-                        .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
-                    ordinals.push(self.project_struct_path(aggregate, &[field], true)?);
-                }
-                ordinals
-            }
-            CheckedCommitValues::Written(values) => {
-                if values.len() != targets.len() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                let mut ordinals = Vec::with_capacity(values.len());
-                for value in values {
-                    ordinals.push(self.expression(value)?);
-                }
-                ordinals
-            }
-        };
-        for (target, value) in prepared.iter().zip(ordinals) {
-            self.write_target(target, value)?;
-        }
-        Ok(())
-    }
-
     /// One target root's new value, written to the storage that holds it.
     fn commit_root_storage(
         &mut self,
@@ -1956,9 +1865,14 @@ impl<'program> IrBuilder<'program> {
         Ok(())
     }
 
-    /// [SET-1, LIV-2] the one-target commit: the right-hand side is
+    /// [SET-1] the one-target commit: the right-hand side is
     /// evaluated once and completely, then the one target is written by the
     /// same commit a target list uses.
+    ///
+    /// [WIN-3] assigning over an owned place releases the old value, so the
+    /// displaced owner is read at the commit and released after the write.
+    /// The write comes first so that the place holds its new owner for the
+    /// whole of the old one's release walk.
     fn set(
         &mut self,
         target: &CheckedSetTarget,
@@ -1966,7 +1880,12 @@ impl<'program> IrBuilder<'program> {
     ) -> Result<(), LoweringFailure> {
         let target = self.prepare_target(target)?;
         let value = self.expression(value)?;
-        self.write_target(&target, value)
+        let displaced = self.displaced_release(&target)?;
+        self.write_target(&target, value)?;
+        if let Some(drop) = displaced {
+            self.append_drops(vec![drop])?;
+        }
+        Ok(())
     }
 
     fn project_struct_path(
@@ -1996,11 +1915,7 @@ impl<'program> IrBuilder<'program> {
                 }
                 // An opaque system resource has no writer-visible field, so no
                 // struct path reaches through one.
-                IrNominalKind::Enum { .. }
-                | IrNominalKind::Box { .. }
-                | IrNominalKind::Arena { .. }
-                | IrNominalKind::ArenaStorage
-                | IrNominalKind::Opaque => {
+                IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } | IrNominalKind::Opaque => {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
             };
@@ -2043,11 +1958,7 @@ impl<'program> IrBuilder<'program> {
             }
             // An opaque system resource has no writer-visible field, so no
             // struct path reaches through one.
-            IrNominalKind::Enum { .. }
-            | IrNominalKind::Box { .. }
-            | IrNominalKind::Arena { .. }
-            | IrNominalKind::ArenaStorage
-            | IrNominalKind::Opaque => {
+            IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } | IrNominalKind::Opaque => {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
         };
