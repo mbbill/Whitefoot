@@ -1,8 +1,8 @@
 use crate::SemanticCompilerFailure;
 
 use super::super::model::{
-    CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedReleaseMode, CheckedSetTarget,
-    CheckedStatement, CheckedType,
+    CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedSetTarget, CheckedStatement,
+    CheckedType,
 };
 use super::{CheckStop, Checker, EffectSet};
 
@@ -128,7 +128,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
         for drop in drops {
-            for path in self.resolved_provider_writes_for(function, drop.ty, drop.release)? {
+            for path in self.resolved_provider_writes(function, drop.ty)? {
                 effects.add_write(path);
             }
         }
@@ -144,9 +144,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         match expression {
             CheckedExpression::Project { residual_drops, .. } => {
                 for drop in residual_drops {
-                    for path in
-                        self.resolved_provider_writes_for(function, drop.ty, drop.release)?
-                    {
+                    for path in self.resolved_provider_writes(function, drop.ty)? {
                         effects.add_write(path);
                     }
                 }
@@ -169,11 +167,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::BoxTake { cleanup, .. } => {
                 for action in cleanup {
                     if let super::super::model::CheckedOwnedTakeCleanup::Drop { ty, .. } = action {
-                        for path in self.resolved_provider_writes_for(
-                            function,
-                            *ty,
-                            CheckedReleaseMode::Full,
-                        )? {
+                        for path in self.resolved_provider_writes(function, *ty)? {
                             effects.add_write(path);
                         }
                     }

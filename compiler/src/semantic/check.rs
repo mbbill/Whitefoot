@@ -3239,7 +3239,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     Self::Obligation(outcome) => match outcome.family {
                         super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
-                        super::entailment::ObligationFamily::EmptyRunRelease => SemanticRule::Prov6,
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::RangeFormation => SemanticRule::Ref4,
@@ -3532,14 +3531,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             kind: SemanticIssueKind::UndischargedBoundsObligation {
                                 residual,
                                 mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
-                            },
-                        },
-                        super::entailment::ObligationFamily::EmptyRunRelease => SemanticIssue {
-                            rule: SemanticRule::Prov6,
-                            location,
-                            kind: SemanticIssueKind::UndischargedEmptyRunRelease {
-                                residual,
-                                mechanical_fix: "empty the run and establish its zero length at this release point; otherwise consume or release every live element before releasing the backing",
                             },
                         },
                         super::entailment::ObligationFamily::IntegerDomain => SemanticIssue {

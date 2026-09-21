@@ -7,8 +7,8 @@ use crate::{
 };
 
 use super::super::super::model::{
-    BindingId, CheckedMode, CheckedNominalKind, CheckedProjectedDrop, CheckedReleaseMode,
-    CheckedStatement, CheckedType, PropagationContext,
+    BindingId, CheckedMode, CheckedNominalKind, CheckedProjectedDrop, CheckedStatement,
+    CheckedType, PropagationContext,
 };
 use super::super::{CheckStop, Checker, FunctionSignature, LocalBinding, PreludeType};
 use super::{ControlScope, StatementResult};
@@ -351,11 +351,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let ordinal =
                 u32::try_from(*ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
             for (path, ty) in self.drop_paths(field.ty, vec![ordinal])? {
-                releases.push(CheckedProjectedDrop {
-                    fields: path,
-                    ty,
-                    release: CheckedReleaseMode::Full,
-                });
+                releases.push(CheckedProjectedDrop { fields: path, ty });
             }
         }
         Ok(releases)

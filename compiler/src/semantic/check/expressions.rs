@@ -13,8 +13,8 @@ use crate::{
 
 use super::super::model::{
     CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedMode, CheckedNominalKind,
-    CheckedProjectedDrop, CheckedReleaseMode, CheckedSetTarget, CheckedType, CheckedValue,
-    CheckedWritablePlace, FloatType, IntegerType,
+    CheckedProjectedDrop, CheckedSetTarget, CheckedType, CheckedValue, CheckedWritablePlace,
+    FloatType, IntegerType,
 };
 use super::super::places::ResolvedPlace;
 use super::{
@@ -1351,11 +1351,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let paths = self.residual_drop_paths(local.ty, &fields)?;
                     paths
                         .into_iter()
-                        .map(|(fields, ty)| CheckedProjectedDrop {
-                            fields,
-                            ty,
-                            release: CheckedReleaseMode::Full,
-                        })
+                        .map(|(fields, ty)| CheckedProjectedDrop { fields, ty })
                         .collect()
                 };
                 // [SET-1] after its read-out the target is dead for the
