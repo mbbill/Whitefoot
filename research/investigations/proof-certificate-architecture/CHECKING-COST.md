@@ -727,3 +727,39 @@ and invalidation by new terms, an existing measure's changed bound, and an
 existing goal's newly supplied projection. The 1043-test semantic suite and
 all-target Clippy check passed on the candidate. These are correctness
 controls for changed query preparation, not a proof that the compiler is sound.
+
+## Post-x1 context and fallback costs
+
+The follow-up starts at merged main `d47fb7c7` after the reference/window port
+and scatter integration. The earlier measurements above do not measure this
+compiler. Two maintained costs motivate it: materializing an ordinary fallback
+view clones and filters a fact state before closing it, and growing entering
+contexts still pay for query preparation and AUTO traversal. The consumers are
+the current fixed-run library, wfgrep and compute programs, plus the existing
+fixed/growing/control source-certificate generator.
+
+### Selection criteria (before measurement)
+
+Attribute the current compiler first, separating compiler construction from
+source checking. Keep the active specification, admitted automatic families,
+source inventory and proof rules fixed. An optimization must preserve both
+full and ordinary-layer results after kills, joins and materialization; equal
+closure values before candidate removal alone do not establish that property.
+Reuse the existing separate-state eager comparison and source-proof controls.
+
+Compare saved baseline and candidate gate binaries on identical inputs with
+the existing five-alternating-pair runner. Include fixed/growing/control sizes
+16, 64 and 256, fixed-context 4096 uses, and the current fixed-run, wfgrep,
+prefix, histogram and radix-scatter programs. Require identical emitted LLVM
+bytes and retained per-arm hashes; checking cost is not native execution cost.
+Record exploratory attribution separately from selection pairs. Run under the
+host-wide guard without a competing compiler build or benchmark.
+
+Retain a new mechanism only when it addresses an attributed cost and yields at
+least a 1.2x median speedup in its targeted real-program or growing-context
+cell, with all five pairs favoring the candidate. Investigate any protected
+cell increase exceeding both ten percent and one millisecond rather than
+averaging it away. If a candidate misses that line, remove it or identify and
+measure a materially simpler alternative. Report remaining costs and limits;
+these workloads establish no universal checking-time bound. No timeout, fuel,
+source rejection or omitted proof family may select the improvement.
