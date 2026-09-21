@@ -173,6 +173,181 @@ the whole-call rows unchanged. Record input grid, variant and pass with each
 invocation. Phase numbers 1 through 8 follow the boundary list above; call 0
 is the verified warm-up and is excluded from statistics.
 
+The initial mixed-input run identifies chunk initialization and packing as the
+largest W8 phases (about 0.596 and 0.569 ms). The ordinary whole call is 1.930
+ms. The WF identical-image and observer controls satisfy the stated band at
+all four widths; native-chain observer controls at W1/W2 do not. Retain their
+phase data as unqualified. Short-phase process CPU deltas are also unsuitable
+for attribution on this host: some exceed wall time times the entire machine's
+CPU count, so neither phase utilization nor a worker-idle diagnosis follows
+from them. Keep these raw readings, use phase wall time and successful steals,
+and do not change the shared clock based on this scatter experiment alone.
+
+A direct replacement of the fixed-count chunk owner with
+`Box<Array<Option<Chunk>>>`, filled once with `None`, would avoid repeated
+append bookkeeping if construction admitted it. It is rejected before timing:
+`Chunk` owns `Slots`, which is `nocopy` under TYPE-9/OWN-1, whereas
+`box_array_filled` requires a copy element under OP-13/PRE-1. A syntactically
+correct call cannot satisfy that capability requirement, even when the value
+is the empty `None` variant. No language rule or oracle is changed to admit
+the candidate. A fixed-count owner for affine elements needs a different
+construction path; it is a separate language/library question. The current
+optimized initializer also retains a 4,112-byte temporary clear and a
+4,120-byte copy for each appended `None`. Reducing that work needs a general
+construction/transport treatment that respects initialized values, not a
+scatter-specific omission of writes.
+
+The bounded scheduling control uses the existing
+`--par-recursive-frontier 32` and `--par-recursive-frontier off` options on
+identical source. At W8 the default budget of 9 crosses two component entries
+per chunk and therefore expands only four packing payloads before falling
+back to its sequential world. A budget of 32 exposes sixteen; disabling the
+budget offers at every node, still subject to the runtime's finite deque.
+Predict increased packing hand-outs; a wall
+improvement must survive the ordinary-image comparison on mixed and skewed
+inputs without a qualified small/W1 regression beyond three percent. More
+hand-outs with unchanged or worse packing/whole-call cost refute increasing
+the frontier alone as the next optimization. Keep all outcomes; this control
+does not select a universal budget or claim the chain has become a balanced
+algorithm. Qualify any new diagnostic image against its own ordinary image.
+
+#### Joined-phase result (2026-09-21)
+
+The [complete samples](../../experiments/compute-bench/radix-scatter-phases-2026-09-21.tsv)
+retain all three campaigns, including failed controls: 2,520 whole-call rows
+(420 warm-ups and 2,100 warm calls) and 3,840 phase rows. The dataset header
+records compiler/source/image hashes, dependency pins and native flags. The
+compiler and runtime sources are byte-identical between the previously checked
+`b11a313c` build and merged `d47fb7c7`; the existing compiler was reused and
+both native images were constructed afresh. Host: Apple M1 Pro, eight CPUs,
+32 GiB, arm64 macOS, Apple clang 21.0.0. The diagnostic implementation is
+`8d358e53`; the formal source, compiler, runtime, specification and oracle are
+unchanged in this experiment.
+
+Each value below is the median of five per-pass medians, each from five
+verified warm calls after one verified warm-up. Ratios are instead medians
+of the five within-pass ratios; dividing displayed medians is not the
+selection rule. The three-percent band is a control criterion, not a claimed
+confidence interval. Mixed and skewed inputs have 1,048,593 keys; small has
+257. Passes rotate width/variant order and alternate its direction, with no
+inter-call gap. Whole-call clocks exclude fixture preparation, result checks
+and release of the returned owner; temporary release inside the kernel stays
+included. Process CPU includes runtime work and is not a useful-work measure.
+
+| Ordinary mixed-input image | W1 wall / CPU ms | W2 wall / CPU ms | W4 wall / CPU ms | W8 wall / CPU ms |
+|---|---:|---:|---:|---:|
+| WF, default frontier | 3.376 / 3.371 | 2.565 / 3.446 | 2.113 / 3.868 | 1.930 / 5.257 |
+| oneTBB, native chain | 2.117 / 2.086 | 1.538 / 2.292 | 1.501 / 3.396 | 1.477 / 4.992 |
+| oneTBB, direct scatter | 1.328 / 1.321 | 0.760 / 1.143 | 0.483 / 1.239 | 0.484 / 1.890 |
+
+The WF null ratios at W1/W2/W4/W8 are 1.0124/0.9961/1.0119/0.9850; observer
+ratios are 1.0199/1.0167/1.0109/1.0022, satisfying the prior criterion.
+Individual W8 observer pairs range from 0.9915 to 1.0959, so these are coarse
+phase estimates, not precise cycle attribution. Native observer ratios fail
+at W1 (0.9682) and W2 (1.0616); W4/W8 qualify at 0.9975/1.0217.
+
+| Fully joined phase | WF W1 wall ms | WF W8 wall ms | WF W8 successful steals | Native chain W8 wall ms |
+|---|---:|---:|---:|---:|
+| Chunk allocation and initialization | 0.594 | 0.596 | 0 | 0.186 |
+| Input partition | 1.720 | 0.399 | 27 | 0.266 |
+| Tally | 0.021 | 0.024 | 0 | 0.015 |
+| Digit-stream allocation and fill | 0.154 | 0.170 | 0 | 0.155 |
+| Packing | 0.632 | 0.569 | 8 | 0.516 |
+| Result allocation and fill | 0.080 | 0.080 | 0 | 0.085 |
+| Final copy | 0.203 | 0.182 | 10 | 0.174 |
+| Temporary release | 0.003 | 0.005 | 0 | 0.005 |
+
+The phase medians need not sum to the whole-call median. The diagnostic's W8
+whole-call median is 2.049 ms; initialization and packing account for roughly
+57 percent of that estimate together. Both final WF copies retain PAR-2
+range splitting, so the two source calls do not imply a two-worker ceiling.
+The largest observed WF/native phase gap is initialization. Optimized LLVM
+retains a per-chunk 4,112-byte clear and 4,120-byte copy in the append loop;
+it also retains expanded aggregate transfers in `write_chunk`. Conversely,
+the temporary whole-enum reads in tally and borrowed packing are removed by
+LLVM. The raw IR alone would have misidentified those reads as a current
+large-copy bottleneck.
+
+Short-phase CPU attribution is unqualified independently of observer wall
+qualification. For example, native-chain W2 pass 0 warm call 1 reports
+304,000 CPU ns over 12,167 wall ns in tally, exceeding even eight CPUs' elapsed
+capacity. These `task_info` counter deltas cannot establish CPU occupancy at
+these boundaries. The exact accounting cause remains unverified; retain the
+raw deltas rather than clamp them or charge delayed CPU to a chosen phase.
+
+The fixed-source frontier experiment gives the following candidate/default
+paired wall ratios. Its mixed-input null passes at every width. Skew W8 and
+small W2/W4/W8 fail their null controls and have no performance verdict.
+
+| Input / frontier | W1 | W2 | W4 | W8 |
+|---|---:|---:|---:|---:|
+| Mixed / 32 | 1.0026 | 0.9839 | 0.9778 | 1.0260 |
+| Mixed / off | 1.0065 | 1.3001 | 1.3307 | 1.3676 |
+| Skew / 32 | 1.0155 | 1.0040 | 0.9934 | inconclusive |
+| Skew / off | 0.9964 | 1.2891 | 1.2350 | inconclusive |
+| Small / 32 | 1.0123 | inconclusive | inconclusive | inconclusive |
+| Small / off | 1.0124 | inconclusive | inconclusive | inconclusive |
+
+Budget 32 supplies no beyond-band whole-call improvement. Budget off makes
+every qualified parallel large-input comparison worse. Its W8 diagnostic
+qualifies (observer ratio 1.0059): packing takes about 1.273 ms and records 64
+successful steals, versus about 0.569 ms and eight in the earlier default
+diagnostic. The source chain still holds its pending offers until recursive
+return, and the runtime still has a finite deque; removing the compiler cut
+does not turn this into balanced independent block work. The 32/W8 diagnostic
+(0.9656) and off/W4 diagnostic (1.0310) fail their observer controls; do not
+use their phase timing to support the conclusion. The ordinary comparisons
+remain usable where their null passed. No frontier change is adopted.
+
+The resulting priority is to investigate aggregate construction/transport on
+the unchanged source, with an independent enum/affine correctness boundary,
+before expanding this task into a new array constructor or a general grain
+policy. Packing needs a control that changes its dependency span or batching,
+not merely the number of tiny offers. These remain open costs in
+`docs/todo.md`; this result does not implement either optimization or prove
+that the runtime has no other scheduling costs. Current proof/permission
+architecture and approved frontier defaults are unchanged; no tree amendment
+or specification revision is proposed by this measurement.
+
+Construction and execution were separately bounded and timed under the shared
+guard. Waiting for other worktrees is excluded from these stage times.
+
+| Stage | What ran | Elapsed |
+|---|---|---:|
+| WF emission | Existing gate compiler emitted parallel/sequential LLVM | 0.32 s |
+| Native construction | Clang/clang++, shared runtime/backends, ordinary and diagnostic images | 3.10 s |
+| Initial oracle | 15 invocations of the unchanged 109-configuration stable-result matrix | 1.30 s |
+| Identical-image timing | Five rotating passes, W1/W2/W4/W8 | 1.37 s |
+| Observer/context timing | WF and native observer pairs plus direct native context | 2.85 s |
+| Frontier construction | Two compiler invocations (0.09/0.08 s), native ordinary/diagnostic objects and links | 2.04 s total |
+| Frontier oracle | Eight matrix invocations | 1.65 s |
+| Frontier timing | Five rotating passes, mixed/skew/small, four widths | 7.89 s |
+
+All 23 oracle invocations passed; every timed call was also checked. The
+instrumenter rejected a deliberately renamed packing boundary without
+writing an output module; the admitted ordinary source receives exactly nine
+callbacks in each root. No Rust compiler/unit-test rebuild was needed for
+this research-only change. These measurements do not claim a new full gate.
+
+To reproduce, use the existing benchmark Makefile and dependency pins, an
+external scratch `BUILD`, and guarded commands. Build `images scatter-phases
+KERNELS=radix_scatter` with the selected `WFC`. The two frontier controls use
+that same compiler/source with `--par --par-recursive-frontier 32` or `off`;
+bind/prefix the emitted module with the same host adapter and
+`module-symbols.awk`, then replace only the parallel module object in the
+ordinary image's link recipe. For their diagnostic twins, pass the raw
+module through `radix_scatter_phases` first and link the phase callback object.
+The sequential module, native backends, runtime objects, flags and link order
+are shared. Before timing, run `verify wf W` at W1/W8 for each control and
+diagnostic (the default WF image was verified at all four widths). Native
+context uses `verify tbb W` and `WFB_SCATTER_NATIVE=chain|direct` at W1/W8;
+`verify wf-seq 1` checks the no-overlap control. Each timing invocation is
+`WF_WORKERS=W WFB_GAP_US=0 WFB_SCATTER_GRID=GRID IMAGE time FORM W PASS 5`;
+native context also selects `WFB_SCATTER_NATIVE`. The dataset records every
+invocation and its order. Reduce warm calls to per-pass medians, then pair
+matching passes before taking the median ratio. Keep null/observer failures
+and phase-CPU limitations separate from the whole-call results.
+
 #### Initial compatibility checkpoint
 
 At `efd6ebc9`, the guarded gate-profile library-test executable construction

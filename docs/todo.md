@@ -18,30 +18,28 @@ of them is a decision. Remove an item when its fix and test land.
   when a policy meets explicit representative criteria or its accepted
   tradeoffs are recorded.
 
-- **Stable scatter has low parallel utilization and unresolved costs.** The
-  [reference-model trial](../research/investigations/compute-model/DESIGN.md#reference-model-scatter-result-2026-09-20)
-  removes the owned tally/packing transfers and verifies nonempty helper work
-  in both input partitioning and output packing. At eight workers its mixed
-  input uses roughly 2.63 occupied CPUs for Whitefoot and 3.96 for oneTBB chain,
-  from process-CPU/wall-time medians; this includes runtime work and does not
-  identify the remaining cause. Attribute wall time, CPU time, runnable work and
-  worker activity to block partitioning, count tally, packing and final copy.
-  Hold the algorithm and representation fixed for scheduling controls, and
-  distinguish insufficient parallel work or a long serial critical path from
-  available work not reaching workers. Both implementations have a packing
-  chain and final two-way copy, with different recursive-budget realizations.
-  Padded initialization, partition payload construction, linear packing span
-  and final copying remain costs; use the attribution to choose between task expansion,
-  scheduling, critical-path reduction and a balanced destination representation.
-  Reestablish the baseline after the reference-model merge using the
-  [post-port attribution boundary](../research/investigations/compute-model/DESIGN.md#post-port-attribution-boundary-2026-09-21).
-  The earlier indexed-aggregate copy candidate was not performance-qualified;
-  revisit it only if current emitted code still exposes that cost on identical
-  source. Its old phase injector targets a retired ABI and is not a current tool.
-  Preserve stable order and machine-checked bounds. This local investigation
-  precedes the separate general grain/profile/PGO study. Remove this item when
-  the cause is established and the trial's work, space and measured-cost
-  criteria are met, or its remaining tradeoffs are accepted.
+- **Stable scatter retains construction and packing costs.** The merged-model
+  [joined-phase result](../research/investigations/compute-model/DESIGN.md#joined-phase-result-2026-09-21)
+  identifies about 0.596 ms of chunk initialization and 0.569 ms of packing at
+  W8, against a 1.930 ms ordinary mixed-input call. Optimized code still clears
+  and copies a full inactive chunk payload per appended `None`, and expands
+  aggregate transfers during input partitioning; borrowed tally/packing reads
+  no longer retain that full-copy cost. Reopen aggregate construction/transport
+  with a fixed-source control and enum/affine correctness coverage. This was
+  deferred from the attribution experiment because eliminating those writes
+  needs a general initialized-value treatment, not a consumer-specific patch.
+  A direct `Array` replacement is not admitted: `Chunk` contains `nocopy`
+  slots and the fill constructor requires a copy element. Any alternative
+  affine construction interface needs its own language/library grounds.
+  Expanding the existing recursion frontier supplies no qualified win at 32;
+  disabling it makes mixed input 30–37 percent slower at W2/W4/W8 despite more
+  successful steals. Investigate packing span/batching or a balanced output
+  representation while preserving stable order and machine-checked bounds.
+  Short-phase CPU counter deltas and several small/skew controls remain
+  unqualified, so they do not diagnose worker idleness. No general grain policy
+  follows. Close this item only after the remaining construction and packing
+  costs meet explicit work, space and performance criteria, or their tradeoffs
+  are accepted.
 
 - **The formal compute comparison has unresolved attribution and measurement costs.**
   [Hosted observations](../research/investigations/test-economy/redesign.md#identical-image-host-control-failure)
