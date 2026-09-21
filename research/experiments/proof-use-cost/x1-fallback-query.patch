@@ -1,0 +1,107 @@
+diff --git a/compiler/src/semantic/entailment/state.rs b/compiler/src/semantic/entailment/state.rs
+index 2317b2cd..6c5c3a70 100644
+--- a/compiler/src/semantic/entailment/state.rs
++++ b/compiler/src/semantic/entailment/state.rs
+@@ -5574,9 +5574,7 @@ pub(crate) fn materialize_closure_at(
+     // select an S12 proof. The second closure is not another flow walk: it is
+     // the same snapshot over the same live state with S12 candidates removed,
+     // and its proof candidates share the one structural snapshot event.
+-    let mut ordinary = state.clone();
+-    ordinary.retain_non_postcondition_candidates(ledger);
+-    let ordinary_closed = close(&ordinary, terms, goals, ledger);
++    let ordinary_closed = close_ordinary_query(state, terms, goals, ledger);
+     if !ordinary_closed.all_derivable {
+         // Only a relation whose selected proof depends on a postcondition call
+         // needs an ordinary candidate. Any other selection is derivable
+@@ -5619,6 +5617,75 @@ pub(crate) fn materialize_closure_at(
+     materialized
+ }
+ 
++/// Closes the ordinary selection for a query without copying flow origins or
++/// the candidates closure never reads. This temporary state never enters flow:
++/// the input retains every independently live candidate for later kills.
++fn close_ordinary_query(
++    state: &FactState,
++    terms: &TermTable,
++    goals: &GoalTable,
++    ledger: &mut DerivationLedger,
++) -> Rc<ClosedState> {
++    if state.all_derivable || !state.postcondition_candidates {
++        return close(state, terms, goals, ledger);
++    }
++    let mut bounds = BoundStore::with_terms(terms.ids().count());
++    for (left, right, bound, proof) in state.bounds.cells() {
++        let selected = if !ledger.depends_on_postcondition_call(proof) {
++            // A surviving selection was already preferred to every extra.
++            Some((bound, proof))
++        } else {
++            state.bounds.extra.get(&(left, right)).and_then(|extra| {
++                extra
++                    .iter()
++                    .copied()
++                    .filter(|(_, proof)| !ledger.depends_on_postcondition_call(*proof))
++                    .reduce(|current, candidate| {
++                        if candidate.0 < current.0
++                            || (candidate.0 == current.0 && ledger.better(candidate.1, current.1))
++                        {
++                            candidate
++                        } else {
++                            current
++                        }
++                    })
++            })
++        };
++        if let Some((bound, proof)) = selected {
++            bounds.store_single(left, right, bound, proof);
++        }
++    }
++    let mut distinct = HashSet::default();
++    let mut distinct_proofs = HashMap::default();
++    for (&pair, candidates) in state.distinct_candidates.iter() {
++        let selected = candidates
++            .iter()
++            .copied()
++            .filter(|proof| !ledger.depends_on_postcondition_call(*proof))
++            .reduce(|current, candidate| {
++                if ledger.better(candidate, current) {
++                    candidate
++                } else {
++                    current
++                }
++            });
++        if let Some(proof) = selected {
++            distinct.insert(pair);
++            distinct_proofs.insert(pair, proof);
++        }
++    }
++    let ordinary = FactState {
++        closure: state.ordinary_closure.clone(),
++        bounds: Rc::new(bounds),
++        distinct: Rc::new(distinct),
++        distinct_proofs: Rc::new(distinct_proofs),
++        opaque: state.opaque.clone(),
++        opaque_proofs: state.opaque_proofs.clone(),
++        ..FactState::new()
++    };
++    close(&ordinary, terms, goals, ledger)
++}
++
+ /// [ENT-5] join of arm-exit states, each already taken after its scope-exit
+ /// kills. Each input is closed first; the join keeps, per ordered term pair,
+ /// the weakest bound held by all, and each disequality held by all. The empty
+@@ -7316,6 +7383,15 @@ pub(crate) mod tests {
+             views[1].closed_view.take();
+             let fast = close(&views[0], terms, goals, &mut ledgers[0]);
+             let reference = close(&views[1], terms, goals, &mut ledgers[1]);
++            if ordinary {
++                let query = close_ordinary_query(&states[0], terms, goals, &mut ledgers[0]);
++                assert_eq!(query.all_derivable, fast.all_derivable);
++                if !query.all_derivable {
++                    assert_eq!(bound_values(&query), bound_values(&fast));
++                    assert_eq!(query.distinct, fast.distinct);
++                    assert_eq!(query.opaque, fast.opaque);
++                }
++            }
+             assert_eq!(
+                 fast.all_derivable, reference.all_derivable,
+                 "ordinary={ordinary}"

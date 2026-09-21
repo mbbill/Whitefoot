@@ -763,3 +763,87 @@ averaging it away. If a candidate misses that line, remove it or identify and
 measure a materially simpler alternative. Report remaining costs and limits;
 these workloads establish no universal checking-time bound. No timeout, fuel,
 source rejection or omitted proof family may select the improvement.
+
+### Entering-context attribution
+
+The first generated-source run used the saved, unmodified `d47fb7c7` gate
+compiler (SHA-256
+`ffe29d38590308caff2fd311b68405af18fd90690f3db09c8dc337891884bdee`).
+The [exploratory rows](../../experiments/proof-use-cost/x1-exploration-2026-09-21.tsv)
+come from `runner ... bench 16,64,256,512,4096 1`, which accepted
+every source. Growing-256 took 23.120 s, while control-256 took 0.544 s and
+fixed-4096 took 0.406 s. These are individual observations, not paired
+selection results; the first process was cold, and growing-512 was sampled.
+
+A two-second native `sample PID 2 1 -file OUTPUT` during growing-512 collected
+1,612 driver-thread samples. All were inside `source_proof_premise_results`;
+1,360 were beneath the call from `affine_target_proof` to `affine_l0_index`,
+with allocation, hashing and rehashing prominent. This window attributes
+repeated query preparation while checking the written premises; it does not
+measure the whole invocation or the final long-target AUTO traversal.
+
+The first candidate keeps the complete ordered affine L0 index beside the
+existing immutable entering-context closure, for the lifetime of the one
+certificate-premise loop. Candidate formation still precedes reuse, and term
+or goal metadata changes invalidate the index with the closed view. The loop
+borrows one unchanged value map; no index crosses a write, join or source
+certificate. Every premise and residual still runs the same ordered proof
+rules. This removes repeated preparation without changing the index contents,
+fact propagation, premise admission, or the specification's AUTO menu.
+
+With the index-reuse compiler saved separately, the next isolation uses the
+existing fixed word hasher for `AffineL0Index.by_terms`, as prescribed by
+`compiler/fact-map-hashing`. This map only finds an entry's position: its
+separate ordered vector owns candidate traversal. Native sampling attributes
+substantial index construction work to SipHash and rehashing. The prediction
+is a further improvement in growing contexts, including the three-use
+control, without changing any entry or traversal order. Compare reuse alone
+with reuse plus hashing before selecting the combined implementation.
+
+### Ordinary-fallback attribution and candidate
+
+On the current sources, baseline single invocations take 0.16 s for
+`fixed_run_library.wf` and 0.94 s for `wfgrep.wf` (wall time with startup and
+LLVM emission). The historical 1.21 s fixed-run result describes a different
+compiler and source. A native sample that follows the wfgrep driver until
+exit observes 756 samples, including 160 beneath `materialize_closure_at`
+and 61 beneath `retain_non_postcondition_candidates` across its callers.
+The shorter fixed-run sample catches only 40 driver samples, eight beneath
+that filtering function; it is insufficient for a whole-run percentage.
+
+The fallback candidate will prepare only the selected ordinary relations and
+signed goals consumed by closure, omitting flow-origin maps and unselected
+candidate storage from the temporary query. It will use the existing ordinary
+closure record and the same closure engine. The input flow state and all of
+its independently live candidates stay untouched; the materialized result
+still retains the ordinary fallback where a call-dependent selection needs
+one. Actual candidate kills and joins keep their existing implementation.
+Compare this against the saved index/hash compiler on fixed-run and wfgrep,
+and compare the projected closure with the existing clone-and-filter path
+through the generated transition checks. The prediction is reduced
+materialization work, with no benefit to proof contexts that never enter
+this fallback. Retain it only if the already recorded real-program criterion
+is met; the samples alone do not establish enough benefit to justify it.
+
+The [candidate patch](../../experiments/proof-use-cost/x1-fallback-query.patch)
+passed the generated 400-flow transition comparison (including direct
+comparison against clone-and-filter ordinary closure) and the focused
+ordinary-fallback survival test. It nevertheless misses the selection line:
+fixed-run falls from 136.233 to 132.510 ms (1.03x, four of five pairs), and
+wfgrep changes from 873.515 to 877.453 ms (1.00x, two of five pairs).
+Every emitted LLVM file is identical across arms. The projection code and
+its experimental assertion are removed from the production candidate; the
+patch remains reproducible evidence of the rejected alternative. The current
+fallback cost remains open. Revisit it when a current workload attributes a
+large enough share to this path, rather than adopting another representation
+for this measured gain. No passing maintained check is removed or narrowed.
+
+The pending amendment replaces the single decision at
+`compiler/proof-query-context`, adding reuse of the ordered affine index to
+the existing entering-closure reuse. It keeps the current invalidation,
+traversal-order and cross-flow qualifications. This keeps preparation owned
+by the proof query rather than adding a new live fact layer or another proof
+engine. Its index remains allocated until that certificate-premise loop
+finishes, and changing term or goal information requires rebuilding it.
+The fixed word hasher already follows `compiler/fact-map-hashing`; the
+rejected ordinary-query projection changes no live decision.
