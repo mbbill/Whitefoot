@@ -3243,7 +3243,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::RangeFormation => SemanticRule::Ref4,
-                        super::entailment::ObligationFamily::RangeSeparation => SemanticRule::Eff5,
+                        super::entailment::ObligationFamily::CallSeparation => SemanticRule::Eff5,
                     },
                     Self::Call(_) => SemanticRule::Fn8,
                 }
@@ -3563,12 +3563,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix: "the allocation's own size arithmetic must stay inside u64: bound the count with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when the refusal is intended program behavior; otherwise restructure the allocation",
                             },
                         },
-                        super::entailment::ObligationFamily::RangeSeparation => SemanticIssue {
+                        super::entailment::ObligationFamily::CallSeparation => SemanticIssue {
                             rule: SemanticRule::Eff5,
                             location,
-                            kind: SemanticIssueKind::UndischargedRangeSeparation {
+                            kind: SemanticIssueKind::UndischargedCallSeparation {
                                 residual,
-                                mechanical_fix: "prove the two ranges disjoint by one of OWN-7's four non-strict orderings before this call, or name one range in place of the pair",
+                                mechanical_fix: "prove the two positions distinct before this call, or pass one of them",
                             },
                         },
                         super::entailment::ObligationFamily::RangeFormation => SemanticIssue {

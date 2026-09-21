@@ -444,6 +444,13 @@ pub(crate) enum DerivationNode {
     RangeSeparation {
         detail: Box<RangeSeparationDetail>,
     },
+    /// One exact EFF-5 indexed-position conclusion and the fixed proof that
+    /// established it for these immutable capture occurrences.
+    IndexSeparation {
+        left: super::super::places::CaptureId,
+        right: super::super::places::CaptureId,
+        parent: DerivationId,
+    },
     /// One finite truth-table introduction for an already-interned Boolean
     /// parent (`band`, `bor`, or `bnot`).
     BooleanIntroduction {
@@ -728,6 +735,7 @@ impl DerivationNode {
                 }
             }
             Self::RangeSeparation { detail } => visit(detail.parent),
+            Self::IndexSeparation { parent, .. } => visit(*parent),
             Self::ContractCall { parents, .. } => {
                 for parent in parents {
                     visit(*parent);
@@ -797,7 +805,7 @@ impl DerivationNode {
             | Self::GoalNormalization { parents, .. }
             | Self::BooleanIntroduction { parents, .. } => parents.len(),
             Self::PostconditionCall { detail } => detail.parents.len(),
-            Self::RangeSeparation { .. } => 1,
+            Self::RangeSeparation { .. } | Self::IndexSeparation { .. } => 1,
             Self::ContractCall { parents, .. } => parents.len(),
             Self::SourceBound { .. }
             | Self::SourceDistinct { .. }
@@ -859,6 +867,7 @@ impl DerivationNode {
             Self::RequirementAffineImage { .. } => 37,
             Self::ContractCall { .. } => 38,
             Self::RangeSeparation { .. } => 39,
+            Self::IndexSeparation { .. } => 40,
         }
     }
 }
@@ -1552,6 +1561,21 @@ fn compare_node_ties(left: &DerivationNode, right: &DerivationNode) -> std::cmp:
     {
         return left.cmp(right);
     }
+    if let (
+        DerivationNode::IndexSeparation {
+            left: left_a,
+            right: left_b,
+            parent: left_parent,
+        },
+        DerivationNode::IndexSeparation {
+            left: right_a,
+            right: right_b,
+            parent: right_parent,
+        },
+    ) = (left, right)
+    {
+        return (left_a, left_b, left_parent).cmp(&(right_a, right_b, right_parent));
+    }
     let mut index = 0;
     loop {
         match (tie_component(left, index), tie_component(right, index)) {
@@ -1682,6 +1706,7 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         .get(index)
         .copied(),
         DerivationNode::RangeSeparation { detail } => (index == 0).then_some(detail.parent.0),
+        DerivationNode::IndexSeparation { parent, .. } => (index == 0).then_some(parent.0),
         DerivationNode::BooleanIntroduction {
             goal,
             sign,
@@ -1973,6 +1998,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         DerivationNode::RangeSeparation { detail } => {
             remap_id(&mut detail.parent, remap);
         }
+        DerivationNode::IndexSeparation { parent, .. } => remap_id(parent, remap),
         DerivationNode::SourceBound { .. }
         | DerivationNode::SourceDistinct { .. }
         | DerivationNode::SourceGoal { .. }
@@ -3814,7 +3840,7 @@ fn for_each_implicit_bound(
                 }
             }
         }
-        TermKind::CountedCapture { .. } => {
+        TermKind::CountedCapture { .. } | TermKind::IndexCapture { .. } => {
             let (minimum, maximum) = type_range(IntegerType::U64);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);

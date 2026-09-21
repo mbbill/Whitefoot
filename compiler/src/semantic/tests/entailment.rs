@@ -196,6 +196,10 @@ enum DerivationConclusion {
         right: CapturedRange,
         ordering: RangeSeparationOrdering,
     },
+    IndexSeparation {
+        left: crate::semantic::places::CaptureId,
+        right: crate::semantic::places::CaptureId,
+    },
     UnsignedDivisionProduct,
     RequirementAffineImage,
     ContractCall,
@@ -479,6 +483,7 @@ fn term_integer_range(kind: &TermKind) -> Option<(i128, i128)> {
         TermKind::Place(_, ty) => Some(type_range(*ty)),
         TermKind::Measure(..)
         | TermKind::CountedCapture { .. }
+        | TermKind::IndexCapture { .. }
         | TermKind::EntryDatum { .. }
         | TermKind::MeasureDatum { .. } => Some(type_range(IntegerType::U64)),
         TermKind::CommitValue { ty, .. } | TermKind::CallDatum { ty, .. } => Some(type_range(*ty)),
@@ -1272,6 +1277,56 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ordering: detail.ordering,
                 }
             }
+            DerivationNode::IndexSeparation {
+                left,
+                right,
+                parent,
+            } => {
+                let term_for = |capture| {
+                    summary
+                        .inventory
+                        .terms
+                        .iter()
+                        .position(|term| {
+                            matches!(term, TermKind::IndexCapture { capture: held } if held == capture)
+                        })
+                        .map(|term| TermId(u32::try_from(term).expect("term index fits u32")))
+                        .expect("an indexed-separation capture has a retained datum term")
+                };
+                let (left_term, right_term) = (term_for(left), term_for(right));
+                let expected = if left_term <= right_term {
+                    Relation::Distinct {
+                        left: left_term,
+                        right: right_term,
+                        difference: 0,
+                    }
+                } else {
+                    Relation::Distinct {
+                        left: right_term,
+                        right: left_term,
+                        difference: 0,
+                    }
+                };
+                match retained_conclusion(&conclusions, *parent) {
+                    DerivationConclusion::Relation(relation) => assert_eq!(relation, &expected),
+                    DerivationConclusion::AffineConsequence => {
+                        let DerivationNode::AffineConsequence {
+                            relation: Some(relation),
+                            ..
+                        } = &summary.derivations.nodes[parent.0 as usize]
+                        else {
+                            panic!("an indexed affine proof retains its exact L0 conclusion");
+                        };
+                        assert_eq!(relation.as_ref(), &expected);
+                    }
+                    DerivationConclusion::Contradiction => {}
+                    other => panic!("invalid indexed-separation parent: {other:?}"),
+                }
+                DerivationConclusion::IndexSeparation {
+                    left: *left,
+                    right: *right,
+                }
+            }
             DerivationNode::BooleanIntroduction {
                 goal,
                 sign,
@@ -1706,6 +1761,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         | DerivationConclusion::RequirementAffineImage
                         | DerivationConclusion::ContractCall
                         | DerivationConclusion::RangeSeparation { .. }
+                        | DerivationConclusion::IndexSeparation { .. }
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("delivery join parent must be a relation or contradiction")
                         }
@@ -1803,14 +1859,16 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 seen_obligations[ordinal] = true;
                 assert!(outcome.discharged);
                 // Retired with [BLK-0]: the KernelRequirement obligation family had the kernel declaration domain as its subject and has no v0.60 one; its successor is the ordinary PRE-1 record call and the UndischargedCallRequirement it submits under FN-8.
-                // Retired with [LIV-2]: the IndexSeparation obligation family judged one multi-target commit's element positions and has no v0.60 subject; its successor is SET-1's one written place per `set` together with EFF-5's RangeSeparation at a call.
+                // Retired with [LIV-2]: the former multi-target-commit
+                // IndexSeparation family has no v0.60 subject; indexed and
+                // ranged EFF-5 pairs now share CallSeparation at a call.
                 match outcome.family {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::EmptyRunRelease => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
                     // [EFF-5] a range separation submits its four orderings as
                     // one occurrence and never carries a conjunct of its own.
-                    ObligationFamily::RangeSeparation => assert_eq!(outcome.conjunct, 0),
+                    ObligationFamily::CallSeparation => assert_eq!(outcome.conjunct, 0),
                     // [REF-4] the two formation goals `lo <= hi` and
                     // `hi <= x.len` are conjuncts zero and one.
                     ObligationFamily::RangeFormation => {
@@ -1829,12 +1887,13 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 // goal plus an affine normalization. That root must conclude
                 // the exact retained positive goal (or the actual entering
                 // contradiction), rather than being accepted by shape alone.
-                if outcome.family == ObligationFamily::RangeSeparation {
+                if outcome.family == ObligationFamily::CallSeparation {
                     assert!(outcome.components.is_empty());
                     assert!(outcome.canonical_goal.is_none());
                     assert!(matches!(
                         conclusion,
                         DerivationConclusion::RangeSeparation { .. }
+                            | DerivationConclusion::IndexSeparation { .. }
                     ));
                 } else if outcome.components.is_empty() {
                     let canonical = outcome
@@ -1863,6 +1922,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         | DerivationConclusion::RequirementAffineImage
                         | DerivationConclusion::ContractCall
                         | DerivationConclusion::RangeSeparation { .. }
+                        | DerivationConclusion::IndexSeparation { .. }
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("an affine-only bounds root must conclude its exact goal")
                         }
@@ -1918,6 +1978,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         | DerivationConclusion::RequirementAffineImage
                         | DerivationConclusion::ContractCall
                         | DerivationConclusion::RangeSeparation { .. }
+                        | DerivationConclusion::IndexSeparation { .. }
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("this obligation root cannot conclude that goal")
                         }
@@ -2025,6 +2086,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     | DerivationConclusion::RequirementAffineImage
                     | DerivationConclusion::PostconditionAggregate
                     | DerivationConclusion::RangeSeparation { .. }
+                    | DerivationConclusion::IndexSeparation { .. }
                     | DerivationConclusion::ContractCall => {
                         panic!("a discharged call root cannot be a postcondition aggregate")
                     }

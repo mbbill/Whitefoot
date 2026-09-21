@@ -13,6 +13,7 @@
 //! over-approximates it [ENT-5].
 
 use super::super::model::{CheckedMeasure, IntegerType};
+use super::super::places::CaptureId;
 pub(crate) use super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
 use super::state::WordHashMap;
 use crate::DeclarationId;
@@ -49,6 +50,8 @@ pub(crate) enum TermKind {
         range_path: Vec<u32>,
         side: CountedCaptureSide,
     },
+    /// The immutable value of one index evaluation at formation.
+    IndexCapture { capture: CaptureId },
     /// One immutable compiler-owned commit value [ENT-2]: the value the
     /// right-hand side of one `set` statement evaluated to at that
     /// occurrence, before its target kill. The statement's finalized

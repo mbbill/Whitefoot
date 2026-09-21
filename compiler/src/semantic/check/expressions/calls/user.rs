@@ -347,6 +347,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 call,
                 argument_nodes,
                 arguments,
+                actual_captures,
                 goal_arguments,
                 goal_regions: Vec::new(),
                 requirements: Vec::new(),
@@ -680,13 +681,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // A pair whose only unseparated steps are index or range
                 // positions is the fixed families' question; every other
                 // overlap is refused here and now.
-                if Self::separable_by_position(&left.place, &right.place) {
+                if let Some(positions) = Self::separable_by_position(&left.place, &right.place) {
                     self.call_separations
                         .borrow_mut()
                         .push(CheckedCallSeparation {
                             site: self.tree.path(node)?.clone(),
-                            left: left.place.clone(),
-                            right: right.place.clone(),
+                            positions,
                             left_spelling: left.spelling.clone(),
                             right_spelling: right.spelling.clone(),
                         });
@@ -709,18 +709,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Whether the first step at which the two paths disagree is an index or
     /// a range position, which is the only disagreement an admitted [OWN-7]
     /// family can still separate.
-    fn separable_by_position(left: &ResolvedPlace, right: &ResolvedPlace) -> bool {
+    fn separable_by_position(
+        left: &ResolvedPlace,
+        right: &ResolvedPlace,
+    ) -> Option<super::super::super::super::model::CheckedCallSeparationPositions> {
+        use super::super::super::super::model::CheckedCallSeparationPositions;
         left.path
             .iter()
             .zip(&right.path)
-            .find(|(left, right)| left != right)
-            .is_some_and(|(left, right)| {
-                matches!(
-                    (left, right),
-                    (PlaceStep::Index(_), PlaceStep::Index(_))
-                        | (PlaceStep::Range(_), PlaceStep::Range(_))
-                )
+            .find_map(|(left, right)| match (left, right) {
+                (PlaceStep::Index(left), PlaceStep::Index(right)) if left.provably_same(*right) => {
+                    None
+                }
+                (PlaceStep::Range(left), PlaceStep::Range(right))
+                    if left.start.provably_same(right.start)
+                        && left.end.provably_same(right.end) =>
+                {
+                    None
+                }
+                (PlaceStep::Index(left), PlaceStep::Index(right)) => {
+                    Some(Some(CheckedCallSeparationPositions::Indices(*left, *right)))
+                }
+                (PlaceStep::Range(left), PlaceStep::Range(right)) => {
+                    Some(Some(CheckedCallSeparationPositions::Ranges(*left, *right)))
+                }
+                (left, right) if left == right => None,
+                _ => Some(None),
             })
+            .flatten()
     }
 
     /// [OP-10] the window operations that end the bound a reference into the

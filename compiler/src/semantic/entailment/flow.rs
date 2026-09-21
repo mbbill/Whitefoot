@@ -227,6 +227,7 @@ struct AffineFlowState {
     /// images lazily, but cloning a predecessor isolates its later kills.
     measure_atoms: RefCell<WordHashMap<TermId, AffineForm>>,
     ranges: WordHashMap<CaptureId, AffineRangeImage>,
+    indices: WordHashMap<CaptureId, AffineForm>,
     /// One atom standing for the whole value of a binding whose image is not
     /// already a single atom, minted on first demand.
     ///
@@ -1362,6 +1363,11 @@ struct SeparationLedger {
 }
 
 impl SeparationLedger {
+    fn record_indices_distinct(&mut self, left: CapturedValue, right: CapturedValue) {
+        self.distinct_indices.insert((left.capture, right.capture));
+        self.distinct_indices.insert((right.capture, left.capture));
+    }
+
     fn record_ranges_disjoint(&mut self, left: CapturedRange, right: CapturedRange) {
         self.disjoint_ranges.insert((left, right));
         self.disjoint_ranges.insert((right, left));
@@ -2658,6 +2664,7 @@ impl Analyzer<'_, '_> {
             }
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => {}
             TermKind::CountedCapture { .. }
+            | TermKind::IndexCapture { .. }
             | TermKind::CommitValue { .. }
             | TermKind::CallDatum { .. }
             | TermKind::EntryDatum { .. }
@@ -3057,6 +3064,7 @@ impl Analyzer<'_, '_> {
                 | TermKind::Constant(_)
                 | TermKind::ConstParameter(_)
                 | TermKind::CountedCapture { .. }
+                | TermKind::IndexCapture { .. }
                 | TermKind::CommitValue { .. }
                 | TermKind::CallDatum { .. }
         )
@@ -4534,6 +4542,7 @@ impl Analyzer<'_, '_> {
             // from source-place write/consume events; a commit value names one
             // evaluated value that no later event can change.
             TermKind::CountedCapture { .. }
+            | TermKind::IndexCapture { .. }
             | TermKind::CommitValue { .. }
             | TermKind::CallDatum { .. }
             | TermKind::EntryDatum { .. }
@@ -4700,6 +4709,7 @@ impl Analyzer<'_, '_> {
         match self.terms.kind(term) {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
             TermKind::CountedCapture { .. }
+            | TermKind::IndexCapture { .. }
             | TermKind::CommitValue { .. }
             | TermKind::CallDatum { .. }
             | TermKind::EntryDatum { .. }
@@ -6775,37 +6785,16 @@ impl Analyzer<'_, '_> {
     /// as one storage, which is the conservative direction for a kill.
     fn substituted_offsets(
         callee: Option<&super::EntailmentCallee>,
-        arguments: &[CheckedExpression],
+        captures: &[CapturedValue],
     ) -> HashMap<crate::DeclarationId, CapturedValue> {
         let mut offsets = HashMap::new();
         let Some(callee) = callee else {
             return offsets;
         };
-        for (declaration, argument) in callee.parameter_declarations.iter().zip(arguments) {
-            let term = match *argument {
-                CheckedExpression::Constant(super::super::model::CheckedValue::Integer {
-                    bits,
-                    ..
-                })
-                | CheckedExpression::NamedConstant {
-                    value: super::super::model::CheckedValue::Integer { bits, .. },
-                    ..
-                } => CapturedTerm::Literal(bits),
-                CheckedExpression::Constant(super::super::model::CheckedValue::ConstGeneric {
-                    declaration,
-                    ..
-                }) => CapturedTerm::Const(declaration),
-                CheckedExpression::Binding {
-                    binding,
-                    consume_root: false,
-                    ..
-                } => CapturedTerm::Binding(binding),
-                _ => continue,
-            };
-            offsets.insert(
-                *declaration,
-                CapturedValue::new(SUBSTITUTED_OFFSET_CAPTURE, term),
-            );
+        for (declaration, capture) in callee.parameter_declarations.iter().zip(captures) {
+            if !matches!(capture.term, CapturedTerm::Opaque) {
+                offsets.insert(*declaration, *capture);
+            }
         }
         offsets
     }
@@ -6977,6 +6966,7 @@ impl Analyzer<'_, '_> {
                 function,
                 call,
                 arguments,
+                actual_captures,
                 formal_effects,
                 ..
             } => {
@@ -6984,7 +6974,7 @@ impl Analyzer<'_, '_> {
                 for argument in arguments {
                     self.collect_expression_kills(argument, events);
                 }
-                let offsets = Self::substituted_offsets(callee, arguments);
+                let offsets = Self::substituted_offsets(callee, actual_captures);
                 for (index, argument) in arguments.iter().enumerate() {
                     let boundary_writes = formal_effects.as_ref().and_then(|effects| {
                         let declaration = callee?.parameter_declarations.get(index)?;
@@ -7187,6 +7177,7 @@ impl Analyzer<'_, '_> {
                 function,
                 call,
                 arguments,
+                actual_captures,
                 goal_arguments,
                 requirements,
                 formal_contract,
@@ -7197,6 +7188,30 @@ impl Analyzer<'_, '_> {
                 let mut actuals_reached = true;
                 for argument in arguments {
                     actuals_reached &= self.judge_expression(argument, states).reached;
+                }
+                if actuals_reached {
+                    let required_captures = self
+                        .function
+                        .call_separations
+                        .iter()
+                        .filter(|separation| separation.site == *call)
+                        .flat_map(|separation| match separation.positions {
+                            super::super::model::CheckedCallSeparationPositions::Indices(
+                                left,
+                                right,
+                            ) => [Some(left.capture), Some(right.capture)],
+                            super::super::model::CheckedCallSeparationPositions::Ranges(
+                                left,
+                                right,
+                            ) => [Some(left.start.capture), Some(right.start.capture)],
+                        })
+                        .flatten()
+                        .collect::<HashSet<_>>();
+                    for (argument, captured) in arguments.iter().zip(actual_captures) {
+                        if required_captures.contains(&captured.capture) {
+                            self.establish_index_capture(*captured, argument, states);
+                        }
+                    }
                 }
                 // [OP-9] a runtime-capacity construction [OP-13] and `grow`
                 // [OP-10] carry the static allocation-size obligation over
@@ -8586,6 +8601,47 @@ impl Analyzer<'_, '_> {
     /// [OP-4] occurrence: it is discharged against `len_of(table)`, over the
     /// prefix of the path that reaches its base, and the measure term itself
     /// exists only where every one of them is discharged.
+    /// Snapshot one binding-valued index at the point its place/call actual is
+    /// evaluated. The immutable term lets pre-kill closure preserve exactly
+    /// what was known about that occurrence without later rereading binding
+    /// storage.
+    fn establish_index_capture(
+        &mut self,
+        captured: CapturedValue,
+        expression: &CheckedExpression,
+        state: &mut ProofFlowState,
+    ) {
+        if !matches!(captured.capture, CaptureId::Source(_))
+            || !matches!(captured.term, CapturedTerm::Binding(_))
+        {
+            return;
+        }
+        let kind = TermKind::IndexCapture {
+            capture: captured.capture,
+        };
+        if self.terms.interned(&kind).is_some() {
+            return;
+        }
+        let image = self.affine_expression_form(expression, &mut state.affine);
+        let Some(source) = self.read_operand(expression) else {
+            return;
+        };
+        let datum = self.terms.intern(kind);
+        if let Some(image) = image {
+            state.affine.indices.insert(captured.capture, image);
+        }
+        let event = self.proof_event(FlowEventKind::S13, expression.carrier());
+        state.facts.establish(
+            &Relation::Equal {
+                left: datum,
+                right: source,
+                difference: 0,
+            },
+            &mut self.derivations,
+            event,
+        );
+    }
+
     fn judge_place_subscripts(
         &mut self,
         root: &CheckedContainerRoot,
@@ -8619,6 +8675,7 @@ impl Analyzer<'_, '_> {
                         .judge_children_reach_parent(std::iter::once(&subscript.offset), states);
                     let obligation_start = self.obligations.len();
                     if reaches_offset {
+                        self.establish_index_capture(subscript.captured, &subscript.offset, states);
                         self.judge_obligation(
                             base,
                             measured,
@@ -8656,6 +8713,7 @@ impl Analyzer<'_, '_> {
             self.judge_children_reach_parent(std::iter::once(&place.offset), states);
         let obligation_start = self.obligations.len();
         if reaches_offset {
+            self.establish_index_capture(place.captured, &place.offset, states);
             self.judge_obligation(
                 base.clone(),
                 MeasuredKind::Range,
@@ -8682,6 +8740,7 @@ impl Analyzer<'_, '_> {
                         .judge_children_reach_parent(std::iter::once(&subscript.offset), states);
                     let obligation_start = self.obligations.len();
                     if reaches_offset {
+                        self.establish_index_capture(subscript.captured, &subscript.offset, states);
                         self.judge_obligation(
                             base.clone(),
                             measured,
@@ -9694,12 +9753,25 @@ impl Analyzer<'_, '_> {
         separation: &super::super::model::CheckedCallSeparation,
         state: &mut ProofFlowState,
     ) -> bool {
-        let images = Self::range_step(&separation.left).zip(Self::range_step(&separation.right));
-        let proof =
-            images.and_then(|(left, right)| self.prove_range_separation(left, right, state));
+        use super::super::model::CheckedCallSeparationPositions;
+        let proof = match separation.positions {
+            CheckedCallSeparationPositions::Indices(left, right) => {
+                self.prove_index_separation(left, right, state)
+            }
+            CheckedCallSeparationPositions::Ranges(left, right) => {
+                self.prove_range_separation(left, right, state)
+            }
+        };
         let discharged = proof.is_some();
-        if discharged && let Some((left, right)) = images {
-            state.separations.record_ranges_disjoint(left, right);
+        if discharged {
+            match separation.positions {
+                CheckedCallSeparationPositions::Indices(left, right) => {
+                    state.separations.record_indices_distinct(left, right);
+                }
+                CheckedCallSeparationPositions::Ranges(left, right) => {
+                    state.separations.record_ranges_disjoint(left, right);
+                }
+            }
         }
         let derivation = proof.as_ref().and_then(|proof| proof.derivation);
         let ordinal =
@@ -9710,7 +9782,7 @@ impl Analyzer<'_, '_> {
         }
         self.obligations.push(ObligationOutcome {
             node_path: separation.site.clone(),
-            family: ObligationFamily::RangeSeparation,
+            family: ObligationFamily::CallSeparation,
             conjunct: 0,
             canonical_goal: None,
             components: Vec::new(),
@@ -9734,6 +9806,83 @@ impl Analyzer<'_, '_> {
             range_partitions: Vec::new(),
         });
         discharged
+    }
+
+    fn captured_index_term(&mut self, value: CapturedValue) -> Option<TermId> {
+        match value.term {
+            CapturedTerm::Literal(value) => {
+                Some(self.terms.intern(TermKind::Constant(i128::from(value))))
+            }
+            CapturedTerm::Const(declaration) => {
+                Some(self.terms.intern(TermKind::ConstParameter(declaration)))
+            }
+            CapturedTerm::Binding(_) if matches!(value.capture, CaptureId::Source(_)) => {
+                self.terms.interned(&TermKind::IndexCapture {
+                    capture: value.capture,
+                })
+            }
+            CapturedTerm::Binding(_) | CapturedTerm::Opaque => None,
+        }
+    }
+
+    fn prove_index_separation(
+        &mut self,
+        left: CapturedValue,
+        right: CapturedValue,
+        state: &ProofFlowState,
+    ) -> Option<ProofResult> {
+        let left_term = self.captured_index_term(left)?;
+        let right_term = self.captured_index_term(right)?;
+        let relation = if left_term <= right_term {
+            Relation::Distinct {
+                left: left_term,
+                right: right_term,
+                difference: 0,
+            }
+        } else {
+            Relation::Distinct {
+                left: right_term,
+                right: left_term,
+                difference: 0,
+            }
+        };
+        let mut inequalities = Vec::new();
+        if let Some((left_image, right_image)) = state
+            .affine
+            .indices
+            .get(&left.capture)
+            .zip(state.affine.indices.get(&right.capture))
+        {
+            for (lower, upper) in [(left_image, right_image), (right_image, left_image)] {
+                if let Ok(inequality) = AffineInequality::from_bounded_forms(
+                    lower,
+                    upper,
+                    -1,
+                    &mut AffineCheckState::new(),
+                ) {
+                    inequalities.push(inequality);
+                }
+            }
+        }
+        let mut proof = self.prove(
+            ProofContext::new(&state.facts, &state.affine),
+            ProofGoal::Ordering {
+                relation: &relation,
+                affine: (!inequalities.is_empty()).then_some(inequalities.as_slice()),
+            },
+        );
+        if proof.disposition != ProofDisposition::Proved {
+            return None;
+        }
+        let parent = proof
+            .derivation
+            .expect("a proved index separation retains its L0 or affine parent");
+        proof.derivation = Some(self.derivations.intern(DerivationNode::IndexSeparation {
+            left: left.capture,
+            right: right.capture,
+            parent,
+        }));
+        Some(proof)
     }
 
     fn prove_range_separation(
@@ -9855,15 +10004,6 @@ impl Analyzer<'_, '_> {
             });
         }
         retained
-    }
-
-    /// The last range step of a resolved path, which is the step [OWN-7]'s
-    /// range family separates two paths at.
-    fn range_step(place: &ResolvedPlace) -> Option<CapturedRange> {
-        place.path.iter().rev().find_map(|step| match step {
-            PlaceStep::Range(range) => Some(*range),
-            _ => None,
-        })
     }
 
     /// Every pair the checker handed over must be judged once, so a pair no
@@ -10016,6 +10156,7 @@ impl Analyzer<'_, '_> {
             } => Some(self.measure_atom(term, state)),
             TermKind::Place(_, _)
             | TermKind::CountedCapture { .. }
+            | TermKind::IndexCapture { .. }
             | TermKind::CommitValue { .. }
             | TermKind::CallDatum { .. } => None,
         }
@@ -11580,6 +11721,18 @@ impl Analyzer<'_, '_> {
                         .all(|state| state.affine.ranges.get(id) == Some(*range))
                 })
                 .map(|(id, range)| (*id, range.clone()))
+                .collect(),
+            indices: first
+                .affine
+                .indices
+                .iter()
+                .filter(|(id, image)| {
+                    states
+                        .iter()
+                        .skip(1)
+                        .all(|state| state.affine.indices.get(id) == Some(*image))
+                })
+                .map(|(id, image)| (*id, image.clone()))
                 .collect(),
             facts: self.join_affine_facts(states),
             published_invariants: first
@@ -16318,6 +16471,7 @@ impl Analyzer<'_, '_> {
                 CountedCaptureSide::Lower => "<counted lower capture>".to_owned(),
                 CountedCaptureSide::Upper => "<counted upper capture>".to_owned(),
             },
+            TermKind::IndexCapture { .. } => "<captured index>".to_owned(),
             TermKind::CommitValue { .. } => "<assigned value>".to_owned(),
             TermKind::CallDatum { measure, .. } => measure.map_or_else(
                 || "<argument value at the call>".to_owned(),

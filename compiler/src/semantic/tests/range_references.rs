@@ -11,7 +11,7 @@
 //! - [VIEW-2] range separation retires as a judgment of its own. The successor
 //!   is [OWN-7]'s range-step relation, whose four non-strict orderings are
 //!   submitted by [EFF-5] at a call and reported as
-//!   `UndischargedRangeSeparation` citing EFF-5.
+//!   `UndischargedCallSeparation` citing EFF-5.
 //! - [VIEW-4] the slice type and [VIEW-6] the slice return ceiling retire.
 //!   `Slice<T>` and `MutSlice<T>` are not types at all: `&[T]` is a reference
 //!   KIND admitted only in parameter position [TYPE-8, GRAM-2], is never a

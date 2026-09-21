@@ -816,7 +816,7 @@ pub enum SemanticIssueKind {
     },
     /// Two compared range steps have no source proof of disjointness
     /// [OWN-7, EFF-5].
-    UndischargedRangeSeparation {
+    UndischargedCallSeparation {
         residual: String,
         mechanical_fix: &'static str,
     },

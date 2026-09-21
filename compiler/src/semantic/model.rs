@@ -1845,6 +1845,9 @@ pub(crate) enum CheckedExpression {
         call: NodePath,
         argument_nodes: Vec<NodePath>,
         arguments: Vec<CheckedExpression>,
+        /// Immutable occurrence identities of the scalar actual values used
+        /// to substitute indexed effect-row positions [EFF-5].
+        actual_captures: Vec<super::places::CapturedValue>,
         /// Pre-transfer caller images retained for exact GoalTemplate
         /// substitution after the complete concrete function inventory exists.
         goal_arguments: Vec<super::goal::GoalExpression>,
@@ -2543,11 +2546,16 @@ pub(crate) struct CheckedFunction {
 pub(crate) struct CheckedCallSeparation {
     /// The complete `call` the diagnostic is reported at.
     pub(crate) site: NodePath,
-    pub(crate) left: super::places::ResolvedPlace,
-    pub(crate) right: super::places::ResolvedPlace,
+    pub(crate) positions: CheckedCallSeparationPositions,
     /// The two substituted paths as the diagnostic renders them.
     pub(crate) left_spelling: String,
     pub(crate) right_spelling: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedCallSeparationPositions {
+    Indices(super::places::CapturedValue, super::places::CapturedValue),
+    Ranges(super::places::CapturedRange, super::places::CapturedRange),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

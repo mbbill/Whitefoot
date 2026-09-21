@@ -284,6 +284,117 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [EFF-5] may discharge two indexed writes from the values captured for this
+/// call. The strict guard dominates the call, so its disequality is available
+/// for the two occurrence-specific actual captures.
+#[test]
+fn indexed_call_separation_accepts_strict_orderings_and_disequality() {
+    let source = br#"fn write_two(window: &Slots<u8, 2>, first: own u64, second: own u64) -> result: own unit reads(window.len), writes(window[first]), writes(window[second]) {
+  let length = deref(window).len;
+  if first < length {
+    if second < length {
+      set deref(window)[first] = 1_u8;
+      set deref(window)[second] = 2_u8;
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let window = slots_new::<u8, 2>();
+  place_back(window: &window, value: 7_u8);
+  let i = 0_u64;
+  let j = 1_u64;
+  if i < j {
+    write_two(window: &window, first: i, second: j);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+#[test]
+fn indexed_call_separation_does_not_retarget_captured_bindings() {
+    let source = br#"fn write_refs(first: &u8, second: &u8) -> result: own unit writes(first), writes(second) {
+  set deref(first) = 1_u8;
+  set deref(second) = 2_u8;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = array_filled::<u8, 2>(value: 0_u8);
+  let i = 0_u64;
+  let j = 0_u64;
+  let first = &values[i];
+  let second = &values[j];
+  set j = 1_u64;
+  if i < j {
+    write_refs(first: first, second: second);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Eff5, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallSeparation { .. })
+    });
+}
+
+#[test]
+fn indexed_call_separation_keeps_formation_proof_after_source_writes() {
+    let source = br#"fn write_refs(first: &u8, second: &u8) -> result: own unit writes(first), writes(second) {
+  set deref(first) = 1_u8;
+  set deref(second) = 2_u8;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = array_filled::<u8, 2>(value: 0_u8);
+  let i = 0_u64;
+  let j = 1_u64;
+  if i < j {
+    let first = &values[i];
+    let second = &values[j];
+    set j = 0_u64;
+    write_refs(first: first, second: second);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+#[test]
+fn indexed_call_separation_is_unique_per_call_actual() {
+    let source = br#"fn write_two(window: &Slots<u8, 2>, first: own u64, second: own u64) -> result: own unit reads(window.len), writes(window[first]), writes(window[second]) {
+  let length = deref(window).len;
+  if first < length {
+    if second < length {
+      set deref(window)[first] = 1_u8;
+      set deref(window)[second] = 2_u8;
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let window = slots_new::<u8, 2>();
+  place_back(window: &window, value: 7_u8);
+  let i = 0_u64;
+  let j = 1_u64;
+  if i < j {
+    write_two(window: &window, first: i, second: j);
+  }
+  set j = 0_u64;
+  write_two(window: &window, first: i, second: j);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Eff5, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallSeparation { .. })
+    });
+}
+
 /// [EFF-5] clause 3: a live reference outside the call whose path has a proper
 /// prefix among the call's substituted write paths becomes invalid after the
 /// call. The citation is [REF-2]'s, because the rejection is at the later use.

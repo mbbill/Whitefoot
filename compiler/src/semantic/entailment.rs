@@ -286,7 +286,7 @@ pub(crate) enum ObligationFamily {
     RangeFormation,
     /// Two range steps of a compared pair of paths must be disjoint, by the
     /// four non-strict orderings [OWN-7] submits under [ENT-6] [EFF-5].
-    RangeSeparation,
+    CallSeparation,
 }
 
 /// One exact single-binder affine image retained at a discharged OP-4 site.
