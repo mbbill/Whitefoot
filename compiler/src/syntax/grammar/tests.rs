@@ -8,16 +8,15 @@ use crate::syntax::terminal::{ALL_FIXED_TERMINALS, FixedTerminal, TerminalPredic
 
 use super::generated::{DECISIONS, SELECT_ROWS};
 
-/// Pin the complete grammar inventory after capability bounds and explicit
-/// interface imports [GRAM-2]. The two capability-modifier choices and the
-/// optional type bound add three decisions; the interface marker keeps the
-/// type-parameter and group-import arms disjoint without parser priority.
+/// Pin the complete grammar inventory, including the optional call-site
+/// `musttail` marker [GRAM-5, FN-10]. Its presence adds one decision and one
+/// terminal; its expression starts also expand the two-position select rows.
 #[test]
 fn complete_inventory_is_pinned() {
     assert_eq!(productions().len(), 86);
-    assert_eq!(DECISIONS.len(), 122);
-    assert_eq!(SELECT_ROWS.len(), 5_272);
-    assert_eq!(diagnostic_terminal_order().len(), 104);
+    assert_eq!(DECISIONS.len(), 123);
+    assert_eq!(SELECT_ROWS.len(), 5_501);
+    assert_eq!(diagnostic_terminal_order().len(), 105);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[2], Production::HeapDecl);
     assert_eq!(productions()[12], Production::ContractDefine);
@@ -247,14 +246,14 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    // The same 122 decisions `complete_inventory_is_pinned` reads out of the
+    // The same 123 decisions `complete_inventory_is_pinned` reads out of the
     // generated table, counted a second time by walking every production's
     // node tree. `struct_decl`'s `"opaque"?` optional [GRAM-2, TYPE-2] is
     // reachable from `item`, so the walk and the table agree on it; a
     // decision in the table that no production reaches would show up as the
     // two counts disagreeing.
     assert_eq!(decisions, DECISIONS.len());
-    assert_eq!(decisions, 122);
+    assert_eq!(decisions, 123);
 }
 
 #[test]
@@ -311,7 +310,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 122);
+    assert_eq!(DECISIONS.len(), 123);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -357,6 +356,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
     }
     // Count the complete inventory independently by summing each decision's
     // rows, including the explicit interface import arm [FN-3].
-    assert_eq!(total_rows, 5_272);
+    assert_eq!(total_rows, 5_501);
     assert!(saw_atom_only);
 }

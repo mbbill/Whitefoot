@@ -1,7 +1,7 @@
 //! Implementation obligations beyond the source-level FN-10 corpus verdicts.
 
 use super::system::with_mutated_ir_lowering;
-use super::{compile_and_run, emitted_function};
+use super::{build_executable, emitted_function, test_directory};
 use crate::{IrNominalKind, IrTerminator, IrType, OverlapLowering, emit_llvm};
 
 #[test]
@@ -36,7 +36,13 @@ fn musttail_is_a_backedge_before_host_optimization_in_both_worlds() {
             );
             module
         });
-        for name in ["sum", "exchange", "swap_pairs"] {
+        let mut names = vec!["sum", "exchange", "swap_pairs", "accumulate"];
+        if overlap == OverlapLowering::On {
+            // Only functions that can reach an offer need a sequential clone.
+            // Accumulate offers ordinary calls before its self-tail edge.
+            names.push("_par_seq_accumulate");
+        }
+        for name in names {
             let body = emitted_function(&module, name);
             assert_eq!(
                 body.matches(&format!("@wf_{name}(")).count(),
@@ -61,12 +67,20 @@ fn musttail_is_a_backedge_before_host_optimization_in_both_worlds() {
                 "the parallel control must actually offer work"
             );
             assert!(
-                module.contains("@wf__par_seq_rotate$instance$"),
-                "the handed-out tail-recursive function must have a sequential clone"
+                emitted_function(&module, "accumulate").contains("call void @wf__par_publish(ptr ")
             );
-            let output = compile_and_run(&module);
-            assert!(output.status.success(), "{output:?}");
-            assert!(output.stderr.is_empty(), "{output:?}");
+            let directory = test_directory();
+            let executable = build_executable(&module, &directory);
+            for workers in ["0", "2"] {
+                let output = std::process::Command::new(&executable)
+                    .env("WF_WORKERS", workers)
+                    .output()
+                    .expect("run the self-tail transfer in the selected world");
+                assert!(output.status.success(), "WF_WORKERS={workers}: {output:?}");
+                assert!(output.stdout.is_empty(), "{output:?}");
+                assert!(output.stderr.is_empty(), "{output:?}");
+            }
+            std::fs::remove_dir_all(directory).expect("remove self-tail native artifacts");
         }
     }
 }

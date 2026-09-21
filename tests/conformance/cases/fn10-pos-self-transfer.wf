@@ -24,6 +24,18 @@ fn rotate<T: copy>(n: own u64, left: own T, right: own T) -> result: own T pure 
   return musttail rotate::<T>(n: next, left: right, right: left);
 }
 
+fn accumulate(n: own u64, total: own u64) -> result: own u64 pure {
+  if n == 0_u64 {
+    return total;
+  }
+  let left = rotate::<u64>(n: 100_u64, left: 2_u64, right: 5_u64);
+  let right = rotate::<u64>(n: 101_u64, left: 3_u64, right: 7_u64);
+  let subtotal = total +wrap left;
+  let next_total = subtotal +wrap right;
+  let next = n - 1_u64;
+  return musttail accumulate(n: next, total: next_total);
+}
+
 fn sum(bytes: &[u8], total: own u64) -> result: own u64 reads(bytes) {
   let length = deref(bytes).len;
   if length == 0_u64 {
@@ -56,6 +68,10 @@ fn main() -> status: own ExitStatus pure {
   }
   if even != 3_u64 {
     return exit_status(code: 6_u8);
+  }
+  let accumulated = accumulate(n: 4_u64, total: 0_u64);
+  if accumulated != 36_u64 {
+    return exit_status(code: 7_u8);
   }
   let bytes = array_filled::<u8, 4>(value: 3_u8);
   let total = sum(bytes: &bytes[0_u64..4_u64], total: 0_u64);

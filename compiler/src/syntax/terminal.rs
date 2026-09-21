@@ -837,15 +837,17 @@ mod tests {
         // them; in v0.59 it entered through `mode`'s `&uniq`.
         assert_eq!(FixedTerminal::Ampersand as u8, 33);
         assert_eq!(FixedTerminal::DotDot as u8, 49);
-        assert_eq!(FixedTerminal::For as u8, 57);
-        assert_eq!(FixedTerminal::In as u8, 58);
-        assert_eq!(FixedTerminal::Invariant as u8, 59);
-        assert_eq!(FixedTerminal::Use as u8, 60);
-        assert_eq!(FixedTerminal::Times as u8, 61);
-        assert_eq!(FixedTerminal::PercentChecked as u8, 86);
-        assert_eq!(FixedTerminal::Writes as u8, 96);
-        assert_eq!(TerminalPredicate::Identifier.index(), 97);
-        assert_eq!(TerminalPredicate::Digits.index(), 103);
+        // Calls first occur in a return expression, before loop statements.
+        assert_eq!(FixedTerminal::Musttail as u8, 56);
+        assert_eq!(FixedTerminal::For as u8, 58);
+        assert_eq!(FixedTerminal::In as u8, 59);
+        assert_eq!(FixedTerminal::Invariant as u8, 60);
+        assert_eq!(FixedTerminal::Use as u8, 61);
+        assert_eq!(FixedTerminal::Times as u8, 62);
+        assert_eq!(FixedTerminal::PercentChecked as u8, 87);
+        assert_eq!(FixedTerminal::Writes as u8, 97);
+        assert_eq!(TerminalPredicate::Identifier.index(), 98);
+        assert_eq!(TerminalPredicate::Digits.index(), 104);
     }
 
     /// The inventory holds every predicate, once.
