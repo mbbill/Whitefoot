@@ -1,3 +1,4 @@
+use super::super::model::CheckedExpression;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
@@ -290,11 +291,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         kind: SemanticIssueKind::ReturnMismatch,
                     }));
                 }
+                let drops = self.live_affine_drops(bindings, &HashSet::new(), node)?;
+                if let CheckedExpression::UserCall {
+                    musttail: true,
+                    call,
+                    ..
+                } = &value.expression
+                {
+                    self.check_musttail_releases(call, bindings)?;
+                }
                 Ok(StatementResult {
                     statement: CheckedStatement::Return {
                         node_path: self.tree.path(node)?.clone(),
                         value: value.expression,
-                        drops: self.live_affine_drops(bindings, &HashSet::new(), node)?,
+                        drops,
                     },
                     can_continue: false,
                     effects: value.effects,

@@ -12,6 +12,7 @@ pub(crate) mod publication;
 mod references;
 mod requires;
 mod support;
+mod tail_calls;
 mod type_regions;
 mod types;
 
@@ -1169,6 +1170,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn check_program(&mut self) -> Result<CheckedProgramData, CheckStop> {
+        self.check_musttail_positions()?;
         let items = self.item_declarations()?;
         self.collect_behavior_groups(&items)?;
         self.reject_instantiation_cycles(&items)?;
@@ -1706,6 +1708,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // inventory. No deferred REF-2 dependency may cross that namespace
         // boundary.
         self.deferred_loop_reference_uses.borrow_mut().clear();
+        self.check_musttail_callees(signature)?;
         self.check_entry_formers(signature)?;
         let mut bindings = HashMap::new();
         let mut parameters = Vec::with_capacity(signature.parameters.len());

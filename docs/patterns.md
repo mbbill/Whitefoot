@@ -119,6 +119,17 @@ after that event [REF-2]. A loop-carried rebinding may change captured index
 values while keeping the same static path shape; it may not walk recursively
 through itself [REF-1].
 
+Use `return musttail f(...);` for a direct self call whose stack must not grow
+with the number of transfers [FN-10]. The call must be the return's only
+expression. Reference arguments must come from reference parameters, possibly
+through a selected field or subrange; a reference into an owned parameter or
+local cannot survive replacement of that activation. Move owned arguments as
+usual. An unreferenced affine local is released before the transfer; a live
+valid reference to a local with nonempty release prevents that transfer.
+The marker preserves every ordinary call proof and does not prove termination.
+The [consuming linked sequence](../tests/programs/tail_list.wf) demonstrates
+moving the next heap cell into a self transfer while releasing the old one.
+
 Use a range reference for one contiguous run [REF-4]:
 
 ```whitefoot

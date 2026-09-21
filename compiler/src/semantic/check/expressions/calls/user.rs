@@ -127,6 +127,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
         let target = signature.id;
+        let musttail = self.is_musttail_call(node)?;
         let fields = if let Some(list) = self
             .tree
             .first_child_with(node, Production::FieldinitList)?
@@ -308,6 +309,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // allocating prelude row; [OP-11] refuses a `swap` over a copy place.
         self.reject_allocating_call_under_no_heap(node, signature)?;
         self.reject_swap_over_copy(node, signature)?;
+        if musttail {
+            self.check_musttail_arguments(node, function, bindings, &actual_paths, &actual_modes)?;
+        }
         // [EFF-5] substitute, compare pairwise, then project the surviving
         // footprint onto the caller's own row [EFF-2].
         // [EFF-3] a call inherits its callee's allocation fact.
@@ -342,6 +346,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(TypedExpression {
             expression: CheckedExpression::UserCall {
                 function: target,
+                musttail,
                 formal_effects,
                 formal_contract,
                 call,

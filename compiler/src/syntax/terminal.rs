@@ -132,6 +132,8 @@ pub enum FixedTerminal {
     Set,
     /// `return`.
     Return,
+    /// `musttail`.
+    Musttail,
     /// `loop`.
     Loop,
     /// `for`.
@@ -217,7 +219,7 @@ pub enum FixedTerminal {
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 97] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 98] = [
     FixedTerminal::Program,
     FixedTerminal::NoHeap,
     FixedTerminal::Semicolon,
@@ -309,6 +311,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 97] = [
     FixedTerminal::BangEqual,
     FixedTerminal::LessEqual,
     FixedTerminal::GreaterEqual,
+    FixedTerminal::Musttail,
     FixedTerminal::Deref,
     FixedTerminal::Entry,
     FixedTerminal::Dot,
@@ -383,6 +386,7 @@ impl FixedTerminal {
             Self::Propagate => "propagate",
             Self::Set => "set",
             Self::Return => "return",
+            Self::Musttail => "musttail",
             Self::Loop => "loop",
             Self::For => "for",
             Self::In => "in",

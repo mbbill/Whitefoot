@@ -113,6 +113,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// [STOR-3, FN-10] whether the release graph can execute an action.
+    /// The capability class alone is insufficient: a nocopy aggregate of
+    /// scalars and a statically empty run both have empty releases.
+    pub(super) fn has_nonempty_release(&self, ty: CheckedType) -> Result<bool, CheckStop> {
+        let mut pending = vec![ty];
+        let mut visited = HashSet::new();
+        while let Some(current) = pending.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+            match current {
+                CheckedType::Generic(_) if !self.is_copy_type(current)? => return Ok(true),
+                CheckedType::Nominal(id) => {
+                    if matches!(self.nominal(id)?.kind, CheckedNominalKind::Box { .. }) {
+                        return Ok(true);
+                    }
+                    pending.extend(self.owned_components(id)?);
+                }
+                CheckedType::Array { element, length } if length.value() != Some(0) => {
+                    pending.push(self.element_type(element)?);
+                }
+                CheckedType::Window {
+                    element, capacity, ..
+                } if capacity.and_then(super::super::model::CheckedConst::value) != Some(0) => {
+                    pending.push(self.element_type(element)?);
+                }
+                CheckedType::Buffer { element } => pending.push(element.ty()),
+                _ => {}
+            }
+        }
+        Ok(false)
+    }
+
     /// [PROV-6] the nodes of this type's release graph, each visited once.
     ///
     /// A loan-bearing value contributes no node, which is why a view can

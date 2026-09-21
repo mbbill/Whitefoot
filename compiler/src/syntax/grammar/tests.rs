@@ -199,7 +199,11 @@ fn the_retired_atoms_leave_the_inventory_and_the_new_ones_enter() {
         FixedTerminal::from_spelling(b"readonly"),
         Some(FixedTerminal::Readonly)
     );
-    assert_eq!(ALL_FIXED_TERMINALS.len(), 97);
+    assert_eq!(
+        FixedTerminal::from_spelling(b"musttail"),
+        Some(FixedTerminal::Musttail)
+    );
+    assert_eq!(ALL_FIXED_TERMINALS.len(), 98);
     // No fixed atom is capitalized any more, so nothing competes with TYPEID.
     assert!(ALL_FIXED_TERMINALS.iter().all(|terminal| {
         !terminal
