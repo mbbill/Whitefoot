@@ -227,19 +227,26 @@ pub fn compile_programs_with_overlap(names: &[&str]) -> String {
     try_compile_programs_with_overlap(names).expect("program corpus source must compile")
 }
 
-/// Compiles a corpus unit with the ordinary `whitefootc --par` policy.
+/// Compiles named sources with the ordinary `whitefootc --par` policy.
 ///
 /// The CLI suppresses eligible scalar leaves of at most 16 operations, unlike
 /// [`compile_programs_with_overlap`], which intentionally actualizes every
 /// eligible group for tests of the general lowering path.
-pub fn compile_programs_with_cli_parallel_defaults(names: &[&str]) -> String {
-    try_compile_programs_with_overlap_mode(
-        names,
-        OverlapLowering::OnWithoutSmallScalarLeaves {
-            maximum_operations: 16,
-        },
-    )
-    .expect("program corpus source must compile")
+pub fn compile_sources_with_cli_parallel_defaults(sources: &[(&str, &[u8])]) -> String {
+    let inputs = sources
+        .iter()
+        .map(|(name, source)| SourceInput::new(name, source))
+        .collect::<Vec<_>>();
+    crate::support::timed("whitefoot-compile-par", || {
+        compile_with_overlap(
+            &inputs,
+            CompilerLimits::default(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 16,
+            },
+        )
+        .expect("integration sources must compile")
+    })
 }
 
 /// Compiles one corpus program and returns its permission ledger lines.
@@ -263,7 +270,9 @@ pub fn compile_sources(sources: &[(&str, &[u8])]) -> String {
         .iter()
         .map(|(name, source)| SourceInput::new(name, source))
         .collect::<Vec<_>>();
-    compile(&inputs, CompilerLimits::default()).expect("integration source must compile")
+    crate::support::timed("whitefoot-compile", || {
+        compile(&inputs, CompilerLimits::default()).expect("integration sources must compile")
+    })
 }
 
 pub fn compile_and_run(llvm: &str) -> Output {

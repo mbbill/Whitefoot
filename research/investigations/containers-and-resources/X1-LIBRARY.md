@@ -417,9 +417,10 @@ GrowVector implementation, byte for byte, as
 [`lib/containers/grow-vector.wf`](../../../lib/containers/grow-vector.wf).
 Its caller and C allocation observer remain under `tests/programs/containers/`;
 the existing corpus test still builds the same source bundle in sequential
-and parallel modes, then executes each normally and with the observer. Only
-the bundle's library path changes. No separate Makefile, test group, import
-mechanism or library ABI is restored.
+and parallel modes, then executes each normally and with the observer. The
+test reads the relocated source with a separate, valid logical source name;
+filesystem parent components are not source-envelope names. No separate
+Makefile, test group, import mechanism or library ABI is restored.
 
 This ownership split makes the implementation available to user programs
 without making test support or research models library dependencies. Keep
