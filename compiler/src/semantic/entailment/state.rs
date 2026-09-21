@@ -8,7 +8,7 @@
 //! least-closure answer.
 
 use std::collections::{HashMap, HashSet};
-use std::mem::size_of;
+use std::mem::{size_of, size_of_val};
 use std::rc::Rc;
 
 use super::super::goal::{GoalExpression, GoalOperation, GoalProjection};
@@ -17,7 +17,7 @@ use super::super::model::{
 };
 use super::super::places::{CapturedRange, CapturedValue};
 use super::VerifiedPostconditionSummaryRef;
-use super::affine::{AffineCoefficient, AffineForm, AffineInequality};
+use super::affine::{AffineForm, AffineInequality};
 use super::term::{MeasureBound, TermId, TermKind, TermTable, ZERO, type_range};
 use crate::{BuiltinPreludeId, NodePath};
 
@@ -1554,13 +1554,12 @@ impl DerivationLedger {
                                 .as_ref()
                                 .map_or(0, |_| size_of::<IndexCaptureSubstitution>())
                             + detail.affine_target.as_ref().map_or(0, |target| {
-                                size_of::<AffineInequality>()
-                                    + target.terms().len() * size_of::<AffineCoefficient>()
+                                size_of::<AffineInequality>() + size_of_val(target.terms())
                             })
                             + detail.affine_images.as_ref().map_or(0, |images| {
                                 size_of::<(AffineForm, AffineForm)>()
-                                    + images.0.terms().len() * size_of::<AffineCoefficient>()
-                                    + images.1.terms().len() * size_of::<AffineCoefficient>()
+                                    + size_of_val(images.0.terms())
+                                    + size_of_val(images.1.terms())
                             })
                     }
                     _ => 0,
