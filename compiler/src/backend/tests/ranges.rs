@@ -558,6 +558,22 @@ fn stable_scatter_matches_an_independent_oracle_and_hands_out_output_work() {
             .replace("@wf__main_body(", "@wf_scatter_smoke_body(");
         let parallel = overlap == OverlapLowering::On;
         let defines = if parallel {
+            let partition_entry = llvm
+                .lines()
+                .find(|line| line.starts_with("define ") && line.contains(" @wf_write_chunk("))
+                .expect("ordinary input partition entry")
+                .to_owned();
+            llvm = llvm.replace(
+                &partition_entry,
+                &partition_entry.replace("@wf_write_chunk(", "@wf_scatter_original_partition("),
+            );
+            llvm.push_str(
+                "\ndeclare void @wf_scatter_partition_done(i64)\n\
+define i64 @wf_write_chunk({ ptr, i64 } %input, i32 %bit, { ptr, i64 } %output) {\n\
+  %n = call i64 @wf_scatter_original_partition({ ptr, i64 } %input, i32 %bit, { ptr, i64 } %output)\n\
+  call void @wf_scatter_partition_done(i64 %n)\n\
+  ret i64 %n\n}\n",
+            );
             // The count/partition map has already joined before this entry.
             // Wrap only the ordinary parallel entry, leaving its recursive
             // budget family and the pool-off sequential world untouched.
@@ -573,9 +589,9 @@ fn stable_scatter_matches_an_independent_oracle_and_hands_out_output_work() {
             llvm.push_str(
                 "\ndeclare void @wf_scatter_pack_begin()\n\
 declare void @wf_scatter_pack_end()\n\
-define i64 @wf_pack_chunks({ ptr, i64 } %chunks, { ptr, i64 } %low, { ptr, i64 } %high) {\n\
+define i64 @wf_pack_chunks(ptr %chunks, i64 %first, { ptr, i64 } %low, { ptr, i64 } %high) {\n\
   call void @wf_scatter_pack_begin()\n\
-  %r = call i64 @wf_scatter_original_pack({ ptr, i64 } %chunks, { ptr, i64 } %low, { ptr, i64 } %high)\n\
+  %r = call i64 @wf_scatter_original_pack(ptr %chunks, i64 %first, { ptr, i64 } %low, { ptr, i64 } %high)\n\
   call void @wf_scatter_pack_end()\n\
   ret i64 %r\n}\n",
             );
