@@ -1212,9 +1212,9 @@ pub enum IrOperation {
         capacity: IrValueId,
         obligations: IrAllocationObligations,
     },
-    /// [OP-14] the cell of a boxed window proved empty: its own storage is
-    /// freed and nothing inside it is released, because an empty window
-    /// holds no element [WIN-1].
+    /// Release only one cell's own storage. [OP-14] uses this after proving a
+    /// boxed window empty; an owned-path take uses it after the checked cleanup
+    /// plan has accounted for the cell's split content [WIN-3, STOR-3].
     CellFree {
         nominal: IrNominalId,
         value: IrValueId,

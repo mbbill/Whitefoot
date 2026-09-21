@@ -1650,18 +1650,62 @@ impl<'program> IrBuilder<'program> {
             }
             // [TYPE-9, WIN-3] `move b.inner`: the content is loaded out of
             // the cell and the cell's own storage is released with it.
-            CheckedExpression::BoxTake { nominal, value, .. } => {
-                let value = self.expression(value)?;
-                let nominal = self.erased(*nominal);
-                let IrNominalKind::Box { referent, .. } = self
-                    .nominals
-                    .get(nominal.index())
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                    .kind
-                else {
+            CheckedExpression::BoxTake {
+                binding,
+                path,
+                cleanup,
+                referent,
+                ..
+            } => {
+                let root = self
+                    .bindings
+                    .get(binding)
+                    .copied()
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                if !matches!(self.value_type(root)?, IrType::Address(_)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
-                };
-                self.define(referent, IrOperation::BoxTake { nominal, value })
+                }
+                let address = self.project_address_path(root, path)?;
+                let selected = self.load_storage_value(address)?;
+                if self.value_type(selected)? != lower_type(self.erasure, *referent)? {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                for action in cleanup {
+                    match action {
+                        crate::semantic::CheckedOwnedTakeCleanup::Drop { path, ty } => {
+                            let address = self.project_address_path(root, path)?;
+                            let IrType::Address(actual) = self.value_type(address)? else {
+                                return Err(LoweringFailure::InvalidCheckedProgram);
+                            };
+                            let ty = lower_type(self.erasure, *ty)?;
+                            if actual.ty() != ty {
+                                return Err(LoweringFailure::InvalidCheckedProgram);
+                            }
+                            self.append_drops(vec![IrDrop {
+                                subject: IrDropSubject::Place(address),
+                                ty,
+                            }])?;
+                        }
+                        crate::semantic::CheckedOwnedTakeCleanup::BoxShell {
+                            path,
+                            nominal,
+                            referent,
+                        } => {
+                            let address = self.project_address_path(root, path)?;
+                            let owner = self.load_storage_value(address)?;
+                            let nominal = self.erased(*nominal);
+                            let _ = lower_type(self.erasure, *referent)?;
+                            self.define(
+                                IrType::Unit,
+                                IrOperation::CellFree {
+                                    nominal,
+                                    value: owner,
+                                },
+                            )?;
+                        }
+                    }
+                }
+                Ok(selected)
             }
             CheckedExpression::BorrowAddressed { root, .. } => self.lower_place_address(root),
             CheckedExpression::DerefAddressed { binding, ty, .. } => {

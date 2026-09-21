@@ -13,7 +13,9 @@
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
-use super::super::model::{CheckedExpression, CheckedNominalKind, CheckedStatement, CheckedType};
+use super::super::model::{
+    CheckedExpression, CheckedNominalKind, CheckedOwnedTakeCleanup, CheckedStatement, CheckedType,
+};
 use super::{assert_rule, assert_rule_kind, with_semantics};
 
 #[test]
@@ -166,6 +168,72 @@ fn main() -> status: own ExitStatus pure {
             "the yielded content is the struct the cell held: {referent:?}"
         );
     });
+}
+
+#[test]
+fn nested_owned_box_take_carries_an_ordered_cleanup_plan() {
+    let source = br#"nocopy struct Inner { selected: Box<u8>; tail: Box<u8>; }
+struct Outer { before: Box<u8>; head: Box<Inner>; other: Box<u8>; }
+fn take() -> result: own u8 pure {
+  let selected = box_new::<u8>(value: 1_u8);
+  let tail = box_new::<u8>(value: 2_u8);
+  let inner = Inner(selected: move selected, tail: move tail);
+  let head = box_new::<Inner>(value: move inner);
+  let before = box_new::<u8>(value: 0_u8);
+  let other = box_new::<u8>(value: 3_u8);
+  let outer = Outer(before: move before, head: move head, other: move other);
+  let value = move outer.head.inner.selected.inner;
+  return value;
+}
+fn main() -> status: own ExitStatus pure { return exit_status(code: 0_u8); }
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("nested take must check: {outcome:?}");
+        };
+        let take = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "take")
+            .expect("take function");
+        let CheckedStatement::Let {
+            value: CheckedExpression::BoxTake { cleanup, .. },
+            ..
+        } = &take.body.as_deref().expect("WF body")[7]
+        else {
+            panic!("nested move must remain one checked owner take");
+        };
+        assert_eq!(cleanup.len(), 5);
+        assert!(matches!(cleanup[0], CheckedOwnedTakeCleanup::Drop { .. }));
+        assert!(matches!(
+            cleanup[1],
+            CheckedOwnedTakeCleanup::BoxShell { .. }
+        ));
+        assert!(matches!(cleanup[2], CheckedOwnedTakeCleanup::Drop { .. }));
+        assert!(matches!(
+            cleanup[3],
+            CheckedOwnedTakeCleanup::BoxShell { .. }
+        ));
+        assert!(matches!(cleanup[4], CheckedOwnedTakeCleanup::Drop { .. }));
+    });
+}
+
+#[test]
+fn nested_owned_box_take_rejects_a_linear_residual() {
+    assert_rule(
+        br#"nodrop struct Token { value: u8; }
+nocopy struct Inner { selected: Box<u8>; tail: Token; }
+fn take(token: own Token) -> result: own u8 pure {
+  let selected = box_new::<u8>(value: 1_u8);
+  let inner = Inner(selected: move selected, tail: move token);
+  let owner = box_new::<Inner>(value: move inner);
+  return move owner.inner.selected.inner;
+}
+fn main() -> status: own ExitStatus pure { return exit_status(code: 0_u8); }
+"#,
+        SemanticRule::Win3,
+    );
 }
 
 /// The ordinary own-rooted judgments a cell-content target reaches: [WIN-3]

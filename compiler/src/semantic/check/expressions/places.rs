@@ -21,7 +21,7 @@ use crate::{
 
 use super::super::super::model::{
     CheckedContainerRoot, CheckedExpression, CheckedMeasure, CheckedMode, CheckedNominalKind,
-    CheckedType,
+    CheckedOwnedTakeCleanup, CheckedPlaceStep, CheckedType,
 };
 use super::super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
 use super::super::references::{OWN1_ROOTED_CONSUME, WIN3_NO_TAKE};
@@ -181,20 +181,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // ordinary [WIN-3] consume of a field out of its owner: the
                 // owner ceases to exist at this use, which for a cell leaves
                 // no other part to release.
-                if let CheckedExpression::BoxDeref {
-                    nominal,
-                    referent,
-                    value,
-                    ..
-                } = &place.expression
-                    && place.resolved.identity.path.as_slice() == [PlaceStep::Deref]
+                if place
+                    .resolved
+                    .identity
+                    .path
+                    .iter()
+                    .any(|step| matches!(step, PlaceStep::Deref))
                 {
                     return self.check_box_unbox(
                         use_node,
                         place.declaration,
-                        *nominal,
-                        *referent,
-                        value.as_ref().clone(),
+                        place.ty,
+                        &place.resolved.identity.path,
                         bindings,
                     );
                 }
@@ -281,11 +279,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         use_node: NodeId,
         declaration: DeclarationId,
-        nominal: super::super::super::model::NominalId,
         referent: CheckedType,
-        value: CheckedExpression,
+        resolved_path: &[PlaceStep],
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
     ) -> Result<TypedExpression, CheckStop> {
+        let local = bindings
+            .get(&declaration)
+            .cloned()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if matches!(
             referent,
             CheckedType::Buffer { .. } | CheckedType::Window { capacity: None, .. }
@@ -299,10 +300,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let local = bindings
-            .get(&declaration)
-            .cloned()
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let path = self.checked_owned_take_path(local.ty, resolved_path)?;
+        let cleanup = self.owned_take_cleanup(local.ty, &path)?;
+        for action in &cleanup {
+            if let CheckedOwnedTakeCleanup::Drop { ty, .. } = action
+                && let Some(obligation) = self.linear_release_obligation(*ty)?
+            {
+                return self.issue_node(
+                    SemanticRule::Win3,
+                    use_node,
+                    SemanticIssueKind::LinearValuePartiallyConsumed {
+                        obligation,
+                        residual: self.checked_type_name(*ty)?,
+                        mechanical_fix: "take it in the same destructuring: let N(f: a, ..) = move v;",
+                    },
+                );
+            }
+        }
         // [REF-2] a consume is one of the three invalidating actions: every
         // reference into the cell names storage this move has carried away.
         Self::invalidate_references(
@@ -317,9 +331,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(TypedExpression {
             expression: CheckedExpression::BoxTake {
                 carrier: self.tree.path(use_node)?.clone(),
-                nominal,
                 referent,
-                value: Box::new(value),
+                binding: local.binding,
+                path,
+                cleanup,
             },
             mode: CheckedMode::Own,
             reference: None,
@@ -330,6 +345,97 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 selected: true,
             }],
         })
+    }
+
+    fn checked_owned_take_path(
+        &self,
+        mut ty: CheckedType,
+        path: &[PlaceStep],
+    ) -> Result<Vec<CheckedPlaceStep>, CheckStop> {
+        let mut checked = Vec::with_capacity(path.len());
+        for step in path {
+            match (*step, ty) {
+                (PlaceStep::Field(field), CheckedType::Nominal(id)) => {
+                    let CheckedNominalKind::Struct { fields } = &self.nominal(id)?.kind else {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    };
+                    ty = fields
+                        .get(field as usize)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                        .ty;
+                    checked.push(CheckedPlaceStep::Field(field));
+                }
+                (PlaceStep::Deref, CheckedType::Nominal(id)) => {
+                    let CheckedNominalKind::Box { referent, .. } = self.nominal(id)?.kind else {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    };
+                    ty = referent;
+                    checked.push(CheckedPlaceStep::BoxReferent(id));
+                }
+                _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+            }
+        }
+        Ok(checked)
+    }
+
+    fn owned_take_cleanup(
+        &self,
+        root: CheckedType,
+        selected: &[CheckedPlaceStep],
+    ) -> Result<Vec<CheckedOwnedTakeCleanup>, CheckStop> {
+        fn walk<'a, 'b, 'c, 'd>(
+            checker: &Checker<'a, 'b, 'c, 'd>,
+            ty: CheckedType,
+            selected: &[CheckedPlaceStep],
+            path: &mut Vec<CheckedPlaceStep>,
+            out: &mut Vec<CheckedOwnedTakeCleanup>,
+        ) -> Result<(), CheckStop> {
+            let Some(step) = selected.first() else {
+                return Ok(());
+            };
+            match (ty, step) {
+                (CheckedType::Nominal(id), CheckedPlaceStep::Field(selected_field)) => {
+                    let CheckedNominalKind::Struct { fields } = &checker.nominal(id)?.kind else {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    };
+                    for (index, field) in fields.iter().enumerate() {
+                        let index = u32::try_from(index)
+                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                        path.push(CheckedPlaceStep::Field(index));
+                        if index == *selected_field {
+                            walk(checker, field.ty, &selected[1..], path, out)?;
+                        } else if !checker.is_copy_type(field.ty)? {
+                            out.push(CheckedOwnedTakeCleanup::Drop {
+                                path: path.clone(),
+                                ty: field.ty,
+                            });
+                        }
+                        path.pop();
+                    }
+                }
+                (CheckedType::Nominal(id), CheckedPlaceStep::BoxReferent(step_id))
+                    if id == *step_id =>
+                {
+                    let CheckedNominalKind::Box { referent, .. } = checker.nominal(id)?.kind else {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    };
+                    path.push(CheckedPlaceStep::BoxReferent(id));
+                    walk(checker, referent, &selected[1..], path, out)?;
+                    path.pop();
+                    out.push(CheckedOwnedTakeCleanup::BoxShell {
+                        path: path.clone(),
+                        nominal: id,
+                        referent,
+                    });
+                }
+                _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+            }
+            Ok(())
+        }
+
+        let mut out = Vec::new();
+        walk(self, root, selected, &mut Vec::new(), &mut out)?;
+        Ok(out)
     }
 
     /// [GRAM-5, REF-1] the complete written `place`, with every `deref` step

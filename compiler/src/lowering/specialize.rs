@@ -470,6 +470,26 @@ impl FunctionDependencies {
             | CheckedExpression::ProjectValue { nominal, .. } => {
                 self.types.push(CheckedType::Nominal(*nominal));
             }
+            CheckedExpression::BoxTake { path, cleanup, .. } => {
+                self.steps(path);
+                for action in cleanup {
+                    match action {
+                        crate::semantic::CheckedOwnedTakeCleanup::Drop { path, ty } => {
+                            self.types.push(*ty);
+                            self.steps(path);
+                        }
+                        crate::semantic::CheckedOwnedTakeCleanup::BoxShell {
+                            path,
+                            nominal,
+                            referent,
+                        } => {
+                            self.types
+                                .extend([CheckedType::Nominal(*nominal), *referent]);
+                            self.steps(path);
+                        }
+                    }
+                }
+            }
             CheckedExpression::Project { residual_drops, .. } => {
                 self.types.extend(residual_drops.iter().map(|drop| drop.ty));
             }

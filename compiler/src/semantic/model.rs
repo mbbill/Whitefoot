@@ -1925,9 +1925,10 @@ pub(crate) enum CheckedExpression {
     /// expression produces, and the cell is freed with it.
     BoxTake {
         carrier: NodePath,
-        nominal: NominalId,
         referent: CheckedType,
-        value: Box<CheckedExpression>,
+        binding: BindingId,
+        path: Vec<CheckedPlaceStep>,
+        cleanup: Vec<CheckedOwnedTakeCleanup>,
     },
     BufferMeasure {
         measure: CheckedMeasure,
@@ -2174,6 +2175,22 @@ pub(crate) struct CheckedProjectedDrop {
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
     pub(crate) release: CheckedReleaseMode,
+}
+
+/// One action that remains after an owned sub-place has been taken [WIN-3].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedOwnedTakeCleanup {
+    Drop {
+        path: Vec<CheckedPlaceStep>,
+        ty: CheckedType,
+    },
+    /// Release only the traversed cell. Its content has already been split
+    /// between the selected value and the preceding residual actions.
+    BoxShell {
+        path: Vec<CheckedPlaceStep>,
+        nominal: NominalId,
+        referent: CheckedType,
+    },
 }
 
 /// Which release graph one release occurrence walks for static admission.
@@ -2694,8 +2711,8 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         CheckedExpression::NumericConversion { value, .. }
         | CheckedExpression::Reinterpret { value, .. }
         | CheckedExpression::BoxDeref { value, .. }
-        | CheckedExpression::BoxTake { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => vec![value.as_ref()],
+        CheckedExpression::BoxTake { .. } => Vec::new(),
         CheckedExpression::ArrayIndex { offset, .. } => vec![offset.as_ref()],
         CheckedExpression::BufferIndex { offset, .. } => vec![offset.as_ref()],
         CheckedExpression::RangeElementMeasure { place, .. } => {

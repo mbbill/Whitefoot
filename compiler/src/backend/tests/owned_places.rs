@@ -1178,6 +1178,33 @@ fn main() -> status: own ExitStatus pure {
     assert!(output.stderr.is_empty(), "{output:?}");
 }
 
+#[test]
+fn nested_box_content_take_releases_selected_path_and_residuals_in_order() {
+    let module = compile(
+        br#"nocopy struct Inner { selected: Box<u8>; tail: Box<u8>; }
+struct Outer { head: Box<Inner>; other: Box<u8>; }
+fn main() -> status: own ExitStatus pure {
+  let selected = box_new::<u8>(value: 7_u8);
+  let tail = box_new::<u8>(value: 2_u8);
+  let inner = Inner(selected: move selected, tail: move tail);
+  let head = box_new::<Inner>(value: move inner);
+  let other = box_new::<u8>(value: 4_u8);
+  let outer = Outer(head: move head, other: move other);
+  let value = move outer.head.inner.selected.inner;
+  if value != 7_u8 { return exit_status(code: 1_u8); }
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    let observed = retain_calls(&module)
+        .replace("@malloc(", "@wf_test_allocate(")
+        .replace("@free(", "@wf_test_release(");
+    let output = compile_link_and_run(&observed, Some(&allocation_observer(4, 0)), &[]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, b"A1;A2;A3;A4;F1;F2;F3;F4;");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
 /// Observe only source allocations, without changing the host floor allocator.
 /// A duplicate or unknown release aborts instead of allowing a use-after-free
 /// to appear successful because its bytes happened to remain unchanged.

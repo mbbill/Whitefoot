@@ -2460,10 +2460,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::NumericConversion { value, .. }
             | CheckedExpression::Reinterpret { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
-            | CheckedExpression::BoxTake { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.install_expression_call_requirements(value, requirements)?;
             }
+            CheckedExpression::BoxTake { .. } => {}
             CheckedExpression::ReadStorage { root, .. } => {
                 for offset in root.offsets_mut() {
                     self.install_expression_call_requirements(offset, requirements)?;
@@ -2638,10 +2638,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::NumericConversion { value, .. }
             | CheckedExpression::Reinterpret { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
-            | CheckedExpression::BoxTake { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 Self::install_expression_allocation_bounds(value, bounds)?;
             }
+            CheckedExpression::BoxTake { .. } => {}
             CheckedExpression::ReadStorage { root, .. } => {
                 for offset in root.offsets_mut() {
                     Self::install_expression_allocation_bounds(offset, bounds)?;

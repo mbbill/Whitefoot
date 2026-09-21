@@ -166,10 +166,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.collect_expression_release_effects(function, argument, effects)?;
                 }
             }
+            CheckedExpression::BoxTake { cleanup, .. } => {
+                for action in cleanup {
+                    if let super::super::model::CheckedOwnedTakeCleanup::Drop { ty, .. } = action {
+                        for path in self.resolved_provider_writes_for(
+                            function,
+                            *ty,
+                            CheckedReleaseMode::Full,
+                        )? {
+                            effects.add_write(path);
+                        }
+                    }
+                }
+            }
             CheckedExpression::NumericConversion { value, .. }
             | CheckedExpression::Reinterpret { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
-            | CheckedExpression::BoxTake { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.collect_expression_release_effects(function, value, effects)?;
             }
