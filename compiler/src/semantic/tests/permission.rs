@@ -1037,8 +1037,13 @@ fn a_write_over_the_previous_calls_operand_read_is_denied() {
 
 #[test]
 fn an_owned_box_path_take_has_a_complete_root_footprint_and_conflicts_with_an_alias() {
-    let source = br#"nocopy struct Payload { value: u8; }
-nocopy struct Holder { cell: Box<Payload>; }
+    let source = br#"nocopy struct Payload {
+  value: u8;
+}
+
+nocopy struct Holder {
+  cell: Box<Payload>;
+}
 
 fn observe(holder: &Holder) -> result: own u8 reads(holder) {
   return deref(holder).cell.inner.value;

@@ -1181,9 +1181,20 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn nested_box_content_take_releases_selected_path_and_residuals_in_order() {
     let module = compile(
-        br#"nocopy struct Payload { value: u8; }
-nocopy struct Inner { selected: Box<Payload>; tail: Box<u8>; }
-struct Outer { head: Box<Inner>; other: Box<u8>; }
+        br#"nocopy struct Payload {
+  value: u8;
+}
+
+nocopy struct Inner {
+  selected: Box<Payload>;
+  tail: Box<u8>;
+}
+
+struct Outer {
+  head: Box<Inner>;
+  other: Box<u8>;
+}
+
 fn main() -> status: own ExitStatus pure {
   let payload = Payload(value: 7_u8);
   let selected = box_new::<Payload>(value: move payload);
@@ -1193,7 +1204,9 @@ fn main() -> status: own ExitStatus pure {
   let other = box_new::<u8>(value: 4_u8);
   let outer = Outer(head: move head, other: move other);
   let taken = move outer.head.inner.selected.inner;
-  if taken.value != 7_u8 { return exit_status(code: 1_u8); }
+  if taken.value != 7_u8 {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#,
