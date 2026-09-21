@@ -110,6 +110,9 @@ design-lint:
 	@$(PY) -m unittest discover -s design/skill -p 'test_lint.py'
 	@$(PY) design/skill/lint.py --trees language compiler --base "$(DESIGN_REVIEW_BASE)"
 
+design-ready:
+	@$(PY) design/skill/lint.py --trees language compiler --base "$(DESIGN_REVIEW_BASE)" --require-no-amendments
+
 repository-invariants:
 	@$(PY) .github/check-research-inputs.py --self-test
 	@$(PY) .github/check-research-inputs.py
@@ -229,4 +232,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: historical-tool-tests _historical-tool-tests check _check check-groups check-group static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler library-tests performance-instrument conformance-run install-hooks
+.PHONY: historical-tool-tests _historical-tool-tests check _check check-groups check-group static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint design-ready conformance compiler library-tests performance-instrument conformance-run install-hooks

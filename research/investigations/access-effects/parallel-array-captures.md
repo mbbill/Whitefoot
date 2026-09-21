@@ -47,11 +47,12 @@ kernels. Neither diagnostic is being resampled or relabeled as conclusive.
 Their exact protocols and artifact identities remain on the
 [research branch](https://github.com/mbbill/Whitefoot/blob/8579a9b92cf3dfde02d29d126a4963803f2c4e00/research/investigations/access-effects/data-placement-provenance/README.md).
 
-## General compiler candidate and selection criterion
+## General compiler candidate and result
 
-The next experiment implements a reversible, one-word capture encoding for
-promoted `Box<Array<T>>` roots in synthesized range splits. It is a compiler
-candidate to validate, not a causal conclusion from the preceding diagnostics.
+The compiler experiment implemented a reversible, one-word capture encoding
+for promoted `Box<Array<T>>` roots in synthesized range splits. It tests a
+general compiler candidate, not a causal conclusion from the preceding
+diagnostics.
 For allocation base `B`, let `H` be the target-layout offset of its elements:
 
 ```text
@@ -98,20 +99,46 @@ its hypothesized benefit is making the stable element base explicit across
 the outlined task boundary. On x86, the displacement was already folded into
 the store: this is not a claim to remove a dynamic address instruction.
 
-Before any compiler-candidate timing, fix the adoption conditions: the
-complete canonical correctness gate must pass, including native empty,
-aligned-element, mixed measure/access, ownership and sequential/parallel
-controls; the exact published revision must pass all hosted correctness, IO
-and compute checks; and its `records` baseline/candidate wall ratio must be
-at least 0.97 at W1/W2/W4. The unchanged formal null, slowdown, workloads,
-oracles, five-pair schedule and thresholds remain authoritative. Preserve all
-results and report suspects; do not retry a failed measurement until it passes.
-A failure leaves this candidate unselected and requires examining the actual
-generated code or failure, not weakening the criterion.
+Before timing, the adoption conditions were fixed: the complete canonical
+correctness gate had to pass, including native empty, aligned-element, mixed
+measure/access, ownership and sequential/parallel controls; the exact
+published revision had to pass hosted correctness, IO and compute checks; and
+its `records` baseline/candidate wall ratio had to be at least 0.97 at
+W1/W2/W4. The formal null, slowdown, workloads, oracles, five-pair schedule
+and thresholds stayed unchanged.
+
+The compiler candidate met that prospective criterion. PR head `cf6513bb`
+passed local `make check` in 287.45 seconds and hosted
+[correctness](https://github.com/mbbill/Whitefoot/actions/runs/35544999272),
+[IO](https://github.com/mbbill/Whitefoot/actions/runs/35544999274), and
+[formal compute](https://github.com/mbbill/Whitefoot/actions/runs/35545002043).
+The compute run tested synthetic merge `649d70e0` against `c12d6dd1` on an
+AMD EPYC 7763 host with Clang 18.1.3. Every formal kernel passed with no
+comparison suspect. The `records` wall ratios and adverse-pair counts were:
+
+| baseline / candidate | W1 | W2 | W4 |
+|---|---:|---:|---:|
+| Wall ratio | 1.087361 | 1.004834 | 1.060012 |
+| Adverse pairs | 0/5 | 2/5 | 1/5 |
+
+The identical-image control formally passed but retained a visible `records`
+W4 suspect at 0.962815708 with four adverse pairs; it must not be dismissed as
+noise. The deliberate slowdown was detected in all 15 kernel-width rows.
+Retained optimized images show byte-identical 440-byte baseline and candidate
+record chunks, both with a zero-displacement element store. The candidate
+changes its synthesized capture frame while leaving the source Box ABI,
+allocation, header and runtime objects unchanged.
+
+This result selects the bounded compiler experiment provisionally. It does
+not establish why the earlier candidate regressed, why this encoding changed
+the hosted ratios when the optimized hot chunks are identical, or whether the
+remaining null suspect is host, placement or measurement variability. The
+forced-residue and element-base diagnostics above remain inconclusive.
 
 A whole-Box payload-biased ABI would affect allocation, growth, release and
 host adapters without being needed for this experiment. A use-directed
 projected-place capture could avoid reconstructing `B` but needs a larger
 use-analysis and mixed-use rewrite. The reversible synthetic encoding is the
-smaller bounded candidate. Any adoption remains provisional evidence for this
-capture family, not a resolution of all representation or placement costs.
+smaller bounded candidate. Its successful formal comparison is evidence for
+this capture family, not a resolution of all representation, placement or
+measurement costs.

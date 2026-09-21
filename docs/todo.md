@@ -47,10 +47,15 @@ of them is a decision. Remove an item when its fix and test land.
   still fails for `records`: baseline/candidate wall-time ratios are 0.938915
   at two workers and 0.882544 at four, adverse in all five pairs at both
   widths; the other four kernels pass. Identical-image and intentional-slowdown
-  qualification steps pass. This remains a measured regression with unresolved
-  cause; deferring representation research does not turn that result into a pass.
-  Close this item when the source of both observations and the resulting
-  measurement/detection tradeoff are established.
+  qualification steps pass. The subsequent
+  [bounded capture repair](../research/investigations/access-effects/parallel-array-captures.md)
+  passed the unchanged formal comparison at every width: `records` ratios were
+  1.087361, 1.004834 and 1.060012 at W1, W2 and W4, and all five kernels passed.
+  Its identical-image control nevertheless retained a `records` W4 suspect at
+  0.962815708 with four adverse pairs. The concrete PR 70 regression is repaired,
+  while its cause and the earlier and remaining control variation are not
+  attributed. Keep this item until those observations and the resulting
+  measurement/detection tradeoff are explained.
 
 - **Recursive cleanup has no general bounded-stack lowering.** The current
   emitter recursively calls release actions, so machine-stack use can grow
@@ -72,9 +77,11 @@ of them is a decision. Remove an item when its fix and test land.
   capture storage. Neither alternative is established as generally faster.
   Keep the current implementation while separating owner width, measure loads,
   allocation count, copying and linked layout in representative single-thread
-  and parallel comparisons. The unresolved `records` result above is evidence
-  to explain, not proof that any one layout choice caused it. Close this item
-  when the relevant costs and the chosen tradeoffs have discriminating evidence.
+  and parallel comparisons. The successful bounded capture repair above is
+  evidence about the synthesized task ABI; it neither attributes the earlier
+  `records` failure nor proves that any one general layout choice caused it.
+  Keep the deferred general representation study separate, and close this item
+  only when the relevant costs and chosen tradeoffs have discriminating evidence.
 - **Loop reference abstraction needs practical precision and cost evidence.**
   Current loop headers keep possible roots and static path shapes, give
   potentially rebound endpoints finite opaque capture identities, and solve

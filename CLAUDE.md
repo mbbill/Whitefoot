@@ -119,7 +119,8 @@ changes were selected. A version number or PR link does not replace this
 explanation.
 
 Use a PR as the owner's ongoing review surface, including before implementation
-begins. On an existing PR, commit and push coherent progress to the same branch
+begins. Follow `design/skill/SKILL.md` for its Draft-to-ready workflow.
+On an existing PR, commit and push coherent progress to the same branch
 and keep its description and actual validation results current. Opening a PR
 or publishing intermediate progress does not require a completion review.
 Run that review at the checklist's completion triggers, then publish the
