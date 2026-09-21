@@ -228,6 +228,12 @@ struct Row {
   guard: u64;
 }
 
+fn add_to(value: &u64, amount: own u64) -> result: own unit reads(value), writes(value) {
+  let old = deref(value);
+  set deref(value) = old +wrap amount;
+  return unit;
+}
+
 fn main() -> status: own ExitStatus pure {
   let pair = Pair(left: 3_u64, right: 5_u64);
   let seed = Row(pair: pair, guard: 7_u64);
@@ -235,21 +241,24 @@ fn main() -> status: own ExitStatus pure {
   let before = rows.inner[0_u64].pair.left;
   set rows.inner[1_u64].pair.right = 11_u64;
   let selected = &rows.inner[1_u64].pair.right;
-  set deref(selected) = before +wrap 10_u64;
-  if rows.inner[0_u64].pair.left != 3_u64 {
+  add_to(value: selected, amount: before);
+  if rows.inner.len != 2_u64 {
     return exit_status(code: 1_u8);
   }
-  if rows.inner[0_u64].pair.right != 5_u64 {
+  if rows.inner[0_u64].pair.left != 3_u64 {
     return exit_status(code: 2_u8);
   }
-  if rows.inner[1_u64].pair.left != 3_u64 {
+  if rows.inner[0_u64].pair.right != 5_u64 {
     return exit_status(code: 3_u8);
   }
-  if rows.inner[1_u64].pair.right != 13_u64 {
+  if rows.inner[1_u64].pair.left != 3_u64 {
     return exit_status(code: 4_u8);
   }
-  if rows.inner[1_u64].guard != 7_u64 {
+  if rows.inner[1_u64].pair.right != 14_u64 {
     return exit_status(code: 5_u8);
+  }
+  if rows.inner[1_u64].guard != 7_u64 {
+    return exit_status(code: 6_u8);
   }
   return exit_status(code: 0_u8);
 }
