@@ -14868,7 +14868,6 @@ impl Analyzer<'_, '_> {
                 binding,
                 scrutinee,
                 ok_type,
-                error_drops: _,
                 ..
             } => {
                 // The Err edge leaves the function; the normal continuation
