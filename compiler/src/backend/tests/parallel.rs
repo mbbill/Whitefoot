@@ -581,6 +581,8 @@ fn a_call_written_as_an_if_condition_joins_a_compute_overlap_group() {
 /// A group of three sibling calls whose values a loop carries: two members are
 /// handed out, the third runs on this thread, and the loop header's phis name
 /// the label the group's joins actually end at.
+/// An independent scalar statement starts the permission run but cannot be
+/// handed out; it must not hide the three-call subrun that follows it.
 ///
 /// The loop is what makes the exit label observable. `main`'s entry block
 /// reaches the header, so every carried value's phi has to name the label the
@@ -592,6 +594,7 @@ const THREE_MEMBER_GROUP_BEFORE_A_LOOP: &[u8] =
 }
 
 fn main() -> status: own ExitStatus pure {
+  let prefix = 0_u64;
   let a = choose(value: 1_u64);
   let b = choose(value: 2_u64);
   let c = choose(value: 3_u64);

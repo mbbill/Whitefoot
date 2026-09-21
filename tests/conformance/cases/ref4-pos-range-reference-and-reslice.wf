@@ -4,6 +4,15 @@ fn slice_len(part: &[u64]) -> result: own u64 reads(part.len) {
   return n;
 }
 
+fn clear_first_nominal(part: &[Option<Slots<u64, 1>>]) -> result: own u64 writes(part) contract {
+  requires 1_u64 <= deref(part).len;
+} {
+  let count = deref(part).len;
+  let same = &deref(part)[0_u64..count];
+  set deref(same)[0_u64] = None<Slots<u64, 1>>();
+  return deref(same).len;
+}
+
 fn main() -> status: own ExitStatus pure {
   doc "REF-4: &x[lo..hi] forms a range reference under lo <= hi and hi <= x.len, re-slicing &deref(part)[a..b] under a <= b <= deref(part).len is admitted, and the kind's one measure len is hi - lo.";
   let a = array_filled::<u64, 8>(value: 1_u64);
@@ -18,6 +27,23 @@ fn main() -> status: own ExitStatus pure {
   if inner_len == 2_u64 {
   } else {
     return exit_status(code: 2_u8);
+  }
+  let values = slots_new::<Option<Slots<u64, 1>>, 2>();
+  let payload = slots_new::<u64, 1>();
+  let item = Some<Slots<u64, 1>>(value: move payload);
+  place_back(window: &values, value: move item);
+  let nominal_part = &values[0_u64..1_u64];
+  let length = clear_first_nominal(part: nominal_part);
+  if length != 1_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let observed = &values[0_u64];
+  match deref(observed) {
+    None() => {
+    }
+    Some(value: unexpected) => {
+      return exit_status(code: 4_u8);
+    }
   }
   return exit_status(code: 0_u8);
 }
