@@ -120,18 +120,21 @@ fn complete_inventory_is_pinned() {
     assert_eq!(DECISIONS[78].kind(), DecisionKind::Choice);
     assert_eq!(DECISIONS[83].production(), Production::BreakStmt);
     assert_eq!(DECISIONS[83].kind(), DecisionKind::Optional);
+    // The call-site `musttail` optional shifts the later place/effect choices.
+    assert_eq!(DECISIONS[95].production(), Production::Call);
+    assert_eq!(DECISIONS[95].kind(), DecisionKind::Optional);
     // `psuffix` carries the field, payload and index-or-range choice, and the
     // factored `range_tail?` that keeps the index and range steps
     // strong-LL(2) [GRAM-1, GRAM-5].
-    assert_eq!(DECISIONS[106].production(), Production::Psuffix);
-    assert_eq!(DECISIONS[106].kind(), DecisionKind::Choice);
     assert_eq!(DECISIONS[107].production(), Production::Psuffix);
-    assert_eq!(DECISIONS[107].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[107].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[108].production(), Production::Psuffix);
+    assert_eq!(DECISIONS[108].kind(), DecisionKind::Optional);
     // `epsuffix` mirrors it inside an effect row [EFF-1].
-    assert_eq!(DECISIONS[120].production(), Production::Epsuffix);
-    assert_eq!(DECISIONS[120].kind(), DecisionKind::Choice);
     assert_eq!(DECISIONS[121].production(), Production::Epsuffix);
-    assert_eq!(DECISIONS[121].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[121].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[122].production(), Production::Epsuffix);
+    assert_eq!(DECISIONS[122].kind(), DecisionKind::Optional);
 }
 
 /// `borrow_expr` is `"&" place` and owns no decision.
