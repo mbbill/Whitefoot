@@ -3,8 +3,9 @@
 Status: NON-AUTHORITATIVE DETAIL.
 
 This file preserves candidate mechanisms, unresolved research questions, and
-possible experiments. Known compiler defects and open implementation costs
-belong in [todo](todo.md). A selected question belongs in
+possible experiments. Follow-up work found during design or implementation,
+including validation of unverified improvement opportunities, belongs in
+[todo](todo.md). A selected investigation belongs in
 `research/investigations/`, and settled choices in
 `design/`, under the reading and workflow rules in [AGENTS.md](../AGENTS.md).
 Current capabilities are what the conformance report states. An idea here

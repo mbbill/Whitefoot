@@ -1,7 +1,11 @@
-# Known compiler defects and open costs
+# Defects and follow-up work
 
-Defects, capability gaps, and unresolved costs of the current compiler. None
-of them is a decision. Remove an item when its fix and test land.
+Known defects, capability gaps, unresolved costs, and improvement opportunities
+found during design or implementation, including unverified ones. An unverified
+opportunity is a validation task: state its expected benefit, uncertainty, and
+criterion for deciding whether to pursue it. Entries do not select a design.
+Remove an item when its implementation and checks land, or its validation
+concludes with a recorded disposition; retain any selected follow-up work here.
 
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.

@@ -106,19 +106,24 @@ both, newest first.
    is green, mark the PR ready and await the owner's merge. A new pending tree
    revision returns the PR to Draft. Design approval does not authorize merge.
 
-At each code-structure choice, examine responsibilities, interfaces,
-representations and affected consumers: does the change expose an existing
-design gap, and would another implementation or focused refactor serve better?
-Reconsider as implementation reveals new information. Fix concrete gaps within
-scope or record their impact, deferral reason and reopening condition in the
-project's maintained backlog; revisit them when later changes touch or enlarge
-them. Keep this proportional to the change, within the continuous workflow.
+During design and implementation, examine responsibilities, interfaces,
+representations and affected consumers for both design gaps and clear
+opportunities for a better design or greater capability, even when the current
+design is valid. Surface each concrete opportunity in the existing PR or
+investigation, stating its expected benefit, cost, affected scope and uncertainty;
+recommend addressing, deferring or declining it, with reasons. Fix in-scope gaps
+and selected improvements. Record deferred gaps and opportunities in the
+project's maintained TODO, including those whose benefit or feasibility is
+unverified: validation is itself a task. State their impact, uncertainty,
+validation criterion, deferral reason and reopening condition. Reconsider as
+implementation reveals new information or later work touches these opportunities.
+Keep this proportional to the current work.
 
 When discussing implementation choices or handing back work, include a short,
 separate **Design suitability** paragraph in the owner's language. State
-concerns and their fix or deferral; if none were found, say so within the
-assessed scope and give the reason. This does not replace amendment or DCR
-explanations.
+concerns and improvement opportunities, their disposition and reasons; if none
+were found, say so within the assessed scope and give the reason. This does not
+replace amendment or DCR explanations.
 
 ## Design Correspondence Review (DCR)
 
@@ -188,8 +193,10 @@ narrowings, or broken dependencies, naming both sides.
 
 G3. Architectural fit. Check that structural choices received the Workflow
 assessment when made or revised, and that the result is visible to the owner.
-Report concrete gaps left without a fix or maintained backlog entry; do not
-demand speculative generality or reconstruct a missing rationale after coding.
+Report concrete gaps or clear improvement opportunities left without an
+assessment or disposition, including deferred opportunities or their validation
+missing from the maintained TODO. Do not demand speculative generality or
+reconstruct a missing rationale after coding.
 
 ## Correspondence: design and implementation
 

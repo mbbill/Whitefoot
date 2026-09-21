@@ -41,7 +41,7 @@ Read the material that owns the question you are working on:
 | How should I investigate, verify, and maintain documentation? | [Engineering practice](docs/practice.md) |
 | Why was a design chosen? | [Design trees](design/), with reasons and refused alternatives |
 | Which research questions and experiments could be useful? | [Ideas](docs/ideas.md) |
-| What defects and implementation costs are known? | [Todo](docs/todo.md) |
+| What defects and follow-up work remain? | [Todo](docs/todo.md) |
 
 Research and dated essays provide evidence and ideas; they do not add approval
 requirements. The reading and authority rules are in
