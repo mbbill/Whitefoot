@@ -63,7 +63,7 @@ Use `take_back`, `remove_at`, `insert_at`, `append`, `split_off`, `grow`,
 source subscript always owes `index < run.len` [OP-4].
 
 Growth policy can be ordinary source. The maintained
-[grow-vector example](../tests/programs/containers/grow-vector.wf) wraps
+[grow-vector library](../lib/containers/grow-vector.wf) wraps
 `Box<Slots<T>>` in `GrowVector<T, const ceiling: u64>`. The selected ceiling
 supplies each concrete growth call's OP-9 bound; the policy doubles capacity
 while it fits and otherwise saturates at that ceiling. A zero ceiling admits
@@ -241,7 +241,7 @@ The member's full modes, types, effects, requirements, and postconditions are
 the generic caller's boundary. A binding may refine that boundary only as
 [FN-4] permits. Calls retain their ordinary syntax; `interface` and `binding`
 replace the retired group-declaration keywords, not the call form. See
-[grow-vector.wf](../tests/programs/containers/grow-vector.wf) and
+[grow-vector.wf](../lib/containers/grow-vector.wf) and
 [grow-vector-program.wf](../tests/programs/containers/grow-vector-program.wf) for a behavior
 that consumes owned elements while updating an environment.
 

@@ -51,6 +51,8 @@ requirements. The reading and authority rules are in
 
 - [compiler/](compiler/): the Rust compiler, LLVM emission, and native
   runtime support.
+- [lib/containers/](lib/containers/README.md): reusable Whitefoot container
+  source, exercised by callers in the ordinary program corpus.
 - [spec/](spec/): the active language and its immutable version archives.
 - [tests/](tests/): normative conformance evidence, executable programs,
   code-generation evidence, and the separate performance regression suite.
