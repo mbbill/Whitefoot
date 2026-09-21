@@ -9789,11 +9789,15 @@ impl Analyzer<'_, '_> {
             discharged,
             refuted: false,
             contradictory: proof.is_some_and(|proof| proof.route == Some(ProofRoute::Contradiction)),
-            residual: (!discharged).then(|| {
-                format!(
+            residual: (!discharged).then(|| match separation.positions {
+                CheckedCallSeparationPositions::Indices(..) => format!(
+                    "{} and {} require their captured indices to be distinct",
+                    separation.left_spelling, separation.right_spelling
+                ),
+                CheckedCallSeparationPositions::Ranges(..) => format!(
                     "{} and {} select different storage (one ends before the other starts, or one is empty)",
                     separation.left_spelling, separation.right_spelling
-                )
+                ),
             }),
             overlap_targets: Some((
                 separation.left_spelling.clone(),

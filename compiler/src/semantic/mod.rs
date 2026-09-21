@@ -814,8 +814,8 @@ pub enum SemanticIssueKind {
         residual: String,
         mechanical_fix: &'static str,
     },
-    /// Two compared range steps have no source proof of disjointness
-    /// [OWN-7, EFF-5].
+    /// Two compared index or range steps have no source proof of disjointness
+    /// [OWN-7, EFF-5]. The residual names the exact position family.
     UndischargedCallSeparation {
         residual: String,
         mechanical_fix: &'static str,

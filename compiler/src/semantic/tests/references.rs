@@ -336,7 +336,8 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
     assert_rule_kind(source, SemanticRule::Eff5, |kind| {
-        matches!(kind, SemanticIssueKind::UndischargedCallSeparation { .. })
+        matches!(kind, SemanticIssueKind::UndischargedCallSeparation { residual, .. }
+            if residual.contains("captured indices to be distinct"))
     });
 }
 
