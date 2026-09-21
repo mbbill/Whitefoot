@@ -151,6 +151,28 @@ sample and image identity. Choose the next bounded source or lowering
 experiment from this evidence; no new source proof rule, general grain policy,
 or production tracing framework is selected by the diagnostic itself.
 
+The explicit `scatter-phases` target in `research/experiments/compute-bench`
+builds the diagnostic beside the ordinary `radix_scatter` image. Its Rust
+injector recognizes the inspected root in both parallel and sequential worlds,
+rejects missing or reordered boundaries, and inserts nine external callbacks
+around the eight phases. Partition ends after the map joins; packing ends
+after the recursive call joins; final copy ends before any temporary is freed.
+The native chain uses the corresponding source boundaries. Callbacks collect
+clock and successful-steal counters, and the existing `check` callback prints
+them after the whole-call timer stops. The no-overlap and native direct forms
+remain uninstrumented controls. No production compiler/runtime hook or daily
+gate dependency is added. Retire this shape-specific injector when the phase
+experiment no longer uses this source decomposition.
+
+With the usual dependency/compiler overrides and scratch `BUILD`, construct
+`images scatter-phases KERNELS=radix_scatter`. Both images accept the existing
+`verify wf W` and `time wf W PASS CALLS` commands; select widths with
+`WF_WORKERS=W`. The diagnostic adds comment records
+`# scatter_phase CALL PHASE WALL_NS CPU_NS STEALS` (tab-separated), leaving
+the whole-call rows unchanged. Record input grid, variant and pass with each
+invocation. Phase numbers 1 through 8 follow the boundary list above; call 0
+is the verified warm-up and is excluded from statistics.
+
 #### Initial compatibility checkpoint
 
 At `efd6ebc9`, the guarded gate-profile library-test executable construction

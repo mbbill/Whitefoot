@@ -717,6 +717,39 @@ $(BUILD)/$(1): $(BUILD)/$(1)_bench.o $(BUILD)/$(1)-par.o $(BUILD)/$(1)-seq.o \
 endef
 $(foreach k,$(KERNELS),$(eval $(call kernel-image,$(k))))
 
+# Explicit research diagnostic, never a dependency of build/verify or CI.
+# Keep the object order equal to the ordinary image, replacing only the
+# instrumented root module and its callback/phase-reporting kernel object.
+.PHONY: scatter-phases
+scatter-phases: $(BUILD)/radix_scatter-phases
+
+$(BUILD)/radix_scatter_phases: radix_scatter_phases.rs
+	@mkdir -p $(BUILD)
+	rustc --edition=2021 $< -o $@
+
+$(BUILD)/radix_scatter-phases.ll: $(BUILD)/radix_scatter-par.ll $(BUILD)/radix_scatter_phases
+	$(BUILD)/radix_scatter_phases $<.raw $@.raw
+	awk -f $(HOST_ADAPTER) $@.raw $(ROOT)/tests/programs/compute/radix_scatter_host.ll > $@.bound
+	awk -v prefix=wfb_radix_scatter_par -v api=wf_bench_radix_scatter -v mode=par \
+	    -f module-symbols.awk $@.bound > $@
+
+$(BUILD)/radix_scatter-phases.o: $(BUILD)/radix_scatter-phases.ll $(WF_FLAGS_STAMP)
+	$(CC) $(WF_FLAGS) -c $< -o $@
+
+$(BUILD)/radix_scatter_bench-phases.o: radix_scatter_bench.c harness.h backend.h $(ROOT)/tests/programs/compute/radix_scatter_oracle.c
+	$(CC) $(CFLAGS) -DWFB_SCATTER_PHASES -c $< -o $@
+
+$(BUILD)/radix_scatter-phases: $(BUILD)/radix_scatter_bench-phases.o $(BUILD)/radix_scatter-phases.o \
+                             $(BUILD)/radix_scatter-seq.o $(COMMON_OBJS)
+	$(CXX) -pthread -fno-lto \
+	    $(BUILD)/radix_scatter_bench-phases.o $(BUILD)/harness.o $(BUILD)/backend_serial.o \
+	    $(BUILD)/backend_static.o $(BUILD)/backend_tbb.o $(PARLAY_OBJ) \
+	    $(BUILD)/backend_rayon.o $(BUILD)/radix_scatter-phases.o $(BUILD)/radix_scatter-seq.o \
+	    $(RUNTIME_OBJS) $(LINK_LIBS) -o $@
+	@$(call assert-real-runtime,$@)
+	@$(call require-strong,$@,wf__floor_run)
+	@$(call require-strong,$@,wf__par_acquire_lane)
+
 # The twin keeps the same object order and three assertions, with its native
 # units selected by the explicit interface profile. It shares the harness and
 # references. Same-interface twins share seq.o; a command baseline compiles its
