@@ -471,3 +471,64 @@ must not be weakened to obtain a green experiment. Merging PR #70 establishes
 the baseline; it does not by itself complete these libraries or establish
 their performance ceiling. This branch restores the library home and updates
 the evidence and recommendations, without implementing the next slice.
+
+## Vector consumption trial
+
+The first library implementation continues from merged `8c02e875`. Its
+question is whether ordinary prefix-window operations can provide ordered
+consumption, arbitrary removal and complete ownership cleanup at a competitive
+cost, including when the element is large or must be explicitly consumed.
+
+Use the existing `GrowVector<T, ceiling>` and `VectorDrain<T, E>` boundary.
+Ordered truncation takes a retained length, requires it not to exceed the
+current length, and hands the removed suffix to the member in original order.
+Drain is truncation to zero. Both preserve capacity and publish their exit
+length. Unordered removal swaps the selected slot with the last slot and
+takes the last value; OP-11 admits equal indexes, so removing the last element
+needs no special alias branch. Empty-vector destruction consumes its owner
+under the ordinary OP-14 empty-window requirement.
+
+The consuming member's `writes(env)` and the vector helper's
+`writes(values.storage)` must be disjoint at the call under EFF-5. The member
+receives no reference to the vector. Consequently it cannot inspect the
+remaining suffix while the helper is rearranging it. Reverse just that suffix,
+then take from the back: the member observes the original order, the retained
+prefix is unchanged, and no scratch allocation or invalid slot is introduced.
+This is a synchronous operation, not a resumable drain value or an interface
+that lets a callback inspect partial container contents.
+
+The trial compares this composition with two C controls: the same
+reverse-and-take algorithm and a direct ordered consumer over the same
+unobservable backing. Both have the same observable callbacks, retained
+capacity and allocation policy. Their difference isolates the source
+composition's extra element movement instead of charging it to language-call
+overhead. An allocation/free/memmove growth control matches the current
+lowering; it is not evidence against a separately measured realloc policy.
+
+Before measuring, use these discriminators:
+
+- Ordered drain/truncation must have O(removed length) element movement,
+  preserve the exact callback sequence and retained prefix, and allocate
+  nothing. Swap-remove must have O(1) element movement and return the selected
+  owner. Test empty, singleton, same-index, boundary and large-length cases.
+- Extend the existing formal corpus bundle instead of adding another native
+  test framework. Exercise copy, droppable owning and nodrop owning elements
+  through construction, growth, insertion, removal, consuming truncation,
+  drain, reuse and final release. Check every allocated identity is released
+  once and every nodrop payload is explicitly consumed; no synthetic OOM
+  outcome belongs to the global-heap contract.
+- Measure the actual library, not a benchmark-only implementation, for scalar
+  and large owned records, short and long windows, ordinary optimization and
+  retained helpers. Compare complete outputs and allocation bytes before
+  timing; interleave implementations and retain raw samples. Separate
+  construction/growth from a preallocated consumption loop where possible.
+- Count optimized transfers and retained calls to explain a gap. The
+  algorithm-matched control distinguishes lowering cost; the direct control
+  distinguishes the ordinary composition's cost. If a material gap remains,
+  record its concrete operation and size domain before choosing another
+  representation or proposing language support. O(n) alone is not a parity
+  claim, and no percentage threshold is invented for all workloads.
+
+The proposed consumption decision remains in
+[`design/amendments/vector-consumption.md`](../../../design/amendments/vector-consumption.md)
+while implementation and measurement proceed; it has not changed the live tree.
