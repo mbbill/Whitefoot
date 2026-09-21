@@ -1386,9 +1386,17 @@ fn main() -> status: own ExitStatus pure {
 }
 
 const INDEXED_CALL_HELPER: &str = r#"fn write_two(values: &Array<u8, 4>, first: own u64, second: own u64) -> result: own unit writes(values[first]), writes(values[second]) {
-  set deref(values)[first] = 1_u8;
-  set deref(values)[second] = 2_u8;
+  if first < 4_u64 {
+    if second < 4_u64 {
+      set deref(values)[first] = 1_u8;
+      set deref(values)[second] = 2_u8;
+    }
+  }
   return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1445,9 +1453,21 @@ fn indexed_call_separation_requires_every_join_predecessor() {
 #[test]
 fn indexed_call_separation_uses_first_unresolved_nested_position() {
     let helper = r#"fn write_nested(values: &Array<Array<u8, 4>, 4>, ao: own u64, ai: own u64, bo: own u64, bi: own u64) -> result: own unit writes(values[ao][ai]), writes(values[bo][bi]) {
-  set deref(values)[ao][ai] = 1_u8;
-  set deref(values)[bo][bi] = 2_u8;
+  if ao < 4_u64 {
+    if ai < 4_u64 {
+      if bo < 4_u64 {
+        if bi < 4_u64 {
+          set deref(values)[ao][ai] = 1_u8;
+          set deref(values)[bo][bi] = 2_u8;
+        }
+      }
+    }
+  }
   return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outer = format!(
