@@ -1,6 +1,6 @@
 use super::support::{
-    build_program, build_program_with_driver_arguments, compile_programs,
-    compile_programs_with_cli_parallel_defaults,
+    build_program, build_program_with_driver_arguments, compile_sources,
+    compile_sources_with_cli_parallel_defaults,
 };
 #[cfg(unix)]
 use super::support::{build_program_with_driver, compile_program};
@@ -108,15 +108,22 @@ fn maps_leaf_splits_pages_and_compact_owner_regressions_execute() {
 
 #[test]
 fn grow_vector_executes_and_releases_every_allocation_in_both_lowering_modes() {
-    let sources = [
-        "containers/grow-vector.wf",
-        "containers/grow-vector-program.wf",
+    // Filesystem locations and source-envelope logical names are independent.
+    let sources: [(&str, &[u8]); 2] = [
+        (
+            "lib/containers/grow-vector.wf",
+            include_bytes!("../../../lib/containers/grow-vector.wf"),
+        ),
+        (
+            "containers/grow-vector-program.wf",
+            include_bytes!("../../../tests/programs/containers/grow-vector-program.wf"),
+        ),
     ];
     let modes = [
-        ("sequential", compile_programs(&sources)),
+        ("sequential", compile_sources(&sources)),
         (
             "parallel",
-            compile_programs_with_cli_parallel_defaults(&sources),
+            compile_sources_with_cli_parallel_defaults(&sources),
         ),
     ];
 

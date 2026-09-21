@@ -3,7 +3,10 @@ CARGO ?= cargo
 EXE := $(if $(filter Windows_NT,$(OS)),.exe,)
 WHITEFOOTC ?= $(ROOT)/compiler/target/gate/whitefootc$(EXE)
 
-.PHONY: check measure compiler
+.PHONY: check measure compiler x1-observe
+
+x1-observe:
+	$(MAKE) -C x1 observe WHITEFOOTC="$(WHITEFOOTC)"
 
 compiler:
 	$(CARGO) build --manifest-path $(ROOT)/compiler/Cargo.toml --profile gate --bin whitefootc --locked --offline
