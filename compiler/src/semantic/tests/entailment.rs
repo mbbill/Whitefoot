@@ -197,8 +197,8 @@ enum DerivationConclusion {
         ordering: RangeSeparationOrdering,
     },
     IndexSeparation {
-        left: crate::semantic::places::CaptureId,
-        right: crate::semantic::places::CaptureId,
+        left: crate::semantic::places::CapturedValue,
+        right: crate::semantic::places::CapturedValue,
     },
     UnsignedDivisionProduct,
     RequirementAffineImage,
@@ -1282,13 +1282,24 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 right,
                 parent,
             } => {
-                let term_for = |capture| {
+                let term_for = |captured: &crate::semantic::places::CapturedValue| {
+                    use crate::semantic::places::CapturedTerm;
                     summary
                         .inventory
                         .terms
                         .iter()
-                        .position(|term| {
-                            matches!(term, TermKind::IndexCapture { capture: held } if held == capture)
+                        .position(|term| match captured.term {
+                            CapturedTerm::Literal(value) => {
+                                *term == TermKind::Constant(i128::from(value))
+                            }
+                            CapturedTerm::Const(declaration) => {
+                                *term == TermKind::ConstParameter(declaration)
+                            }
+                            CapturedTerm::Binding(_) => matches!(
+                                term,
+                                TermKind::IndexCapture { capture } if *capture == captured.capture
+                            ),
+                            CapturedTerm::Opaque => false,
                         })
                         .map(|term| TermId(u32::try_from(term).expect("term index fits u32")))
                         .expect("an indexed-separation capture has a retained datum term")

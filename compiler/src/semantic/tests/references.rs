@@ -1384,3 +1384,78 @@ fn main() -> status: own ExitStatus pure {
             if event.contains("scope"))
     });
 }
+
+const INDEXED_CALL_HELPER: &str = r#"fn write_two(values: &Array<u8, 4>, first: own u64, second: own u64) -> result: own unit writes(values[first]), writes(values[second]) {
+  set deref(values)[first] = 1_u8;
+  set deref(values)[second] = 2_u8;
+  return unit;
+}
+"#;
+
+#[test]
+fn indexed_call_separation_uses_runtime_order_and_disequality_facts() {
+    for relation in ["i < j", "j < i", "i != j"] {
+        let source = format!(
+            "{INDEXED_CALL_HELPER}\nfn checked(values: &Array<u8, 4>, i: own u64, j: own u64) -> result: own unit writes(values) {{\n  if {relation} {{\n    write_two(values: values, first: i, second: j);\n  }}\n  return unit;\n}}\n"
+        );
+        assert_accepts(source.as_bytes());
+    }
+    let mixed = format!(
+        "{INDEXED_CALL_HELPER}\nfn mixed(values: &Array<u8, 4>, j: own u64) -> result: own unit writes(values) {{\n  if 0_u64 < j {{\n    write_two(values: values, first: 0_u64, second: j);\n  }}\n  return unit;\n}}\n"
+    );
+    assert_accepts(mixed.as_bytes());
+    for (guard, close) in [("", ""), ("  if i == j {\n", "  }\n")] {
+        let source = format!(
+            "{INDEXED_CALL_HELPER}\nfn refused(values: &Array<u8, 4>, i: own u64, j: own u64) -> result: own unit writes(values) {{\n{guard}    write_two(values: values, first: i, second: j);\n{close}  return unit;\n}}\n"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Eff5, |kind| {
+            matches!(kind, SemanticIssueKind::UndischargedCallSeparation { .. })
+        });
+    }
+}
+
+#[test]
+fn indexed_call_separation_obeys_loop_backedges() {
+    let first_visit_only = format!(
+        "{INDEXED_CALL_HELPER}\nfn looped(values: &Array<u8, 4>, i: own u64, j: own u64, stop: own Bool) -> result: own unit writes(values) {{\n  if i < j {{\n  }} else {{\n    return unit;\n  }}\n  loop @again {{\n    write_two(values: values, first: i, second: j);\n    set j = i;\n    if stop {{\n      break @again;\n    }}\n  }}\n  return unit;\n}}\n"
+    );
+    assert_rule_kind(first_visit_only.as_bytes(), SemanticRule::Eff5, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallSeparation { .. })
+    });
+    let every_visit = format!(
+        "{INDEXED_CALL_HELPER}\nfn looped(values: &Array<u8, 4>, i: own u64, j: own u64, stop: own Bool) -> result: own unit writes(values) {{\n  loop @again {{\n    if i < j {{\n      write_two(values: values, first: i, second: j);\n    }}\n    set j = i;\n    if stop {{\n      break @again;\n    }}\n  }}\n  return unit;\n}}\n"
+    );
+    assert_accepts(every_visit.as_bytes());
+}
+
+#[test]
+fn indexed_call_separation_requires_every_join_predecessor() {
+    let one_arm = format!(
+        "{INDEXED_CALL_HELPER}\nfn joined(values: &Array<u8, 4>, i: own u64, j: own u64, choose: own Bool) -> result: own unit writes(values) {{\n  if choose {{\n    if i < j {{\n    }} else {{\n      return unit;\n    }}\n  }} else {{\n  }}\n  write_two(values: values, first: i, second: j);\n  return unit;\n}}\n"
+    );
+    assert_rule_kind(one_arm.as_bytes(), SemanticRule::Eff5, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallSeparation { .. })
+    });
+    let both_arms = format!(
+        "{INDEXED_CALL_HELPER}\nfn joined(values: &Array<u8, 4>, i: own u64, j: own u64, choose: own Bool) -> result: own unit writes(values) {{\n  if choose {{\n    if i < j {{\n    }} else {{\n      return unit;\n    }}\n  }} else {{\n    if i < j {{\n    }} else {{\n      return unit;\n    }}\n  }}\n  write_two(values: values, first: i, second: j);\n  return unit;\n}}\n"
+    );
+    assert_accepts(both_arms.as_bytes());
+}
+
+#[test]
+fn indexed_call_separation_uses_first_unresolved_nested_position() {
+    let helper = r#"fn write_nested(values: &Array<Array<u8, 4>, 4>, ao: own u64, ai: own u64, bo: own u64, bi: own u64) -> result: own unit writes(values[ao][ai]), writes(values[bo][bi]) {
+  set deref(values)[ao][ai] = 1_u8;
+  set deref(values)[bo][bi] = 2_u8;
+  return unit;
+}
+"#;
+    let outer = format!(
+        "{helper}\nfn outer(values: &Array<Array<u8, 4>, 4>, i: own u64, j: own u64, k: own u64) -> result: own unit writes(values) {{\n  if i < j {{\n    write_nested(values: values, ao: i, ai: k, bo: j, bi: k);\n  }}\n  return unit;\n}}\n"
+    );
+    assert_accepts(outer.as_bytes());
+    let inner = format!(
+        "{helper}\nfn inner(values: &Array<Array<u8, 4>, 4>, i: own u64, j: own u64) -> result: own unit writes(values) {{\n  if i < j {{\n    write_nested(values: values, ao: 0_u64, ai: i, bo: 0_u64, bi: j);\n  }}\n  return unit;\n}}\n"
+    );
+    assert_accepts(inner.as_bytes());
+}

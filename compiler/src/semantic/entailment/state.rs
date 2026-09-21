@@ -15,7 +15,7 @@ use super::super::goal::{GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
     BindingId, CheckedBooleanOperation, CheckedLoopId, CheckedMeasure, CheckedValue, IntegerType,
 };
-use super::super::places::CapturedRange;
+use super::super::places::{CapturedRange, CapturedValue};
 use super::VerifiedPostconditionSummaryRef;
 use super::term::{MeasureBound, TermId, TermKind, TermTable, ZERO, type_range};
 use crate::{BuiltinPreludeId, NodePath};
@@ -447,8 +447,8 @@ pub(crate) enum DerivationNode {
     /// One exact EFF-5 indexed-position conclusion and the fixed proof that
     /// established it for these immutable capture occurrences.
     IndexSeparation {
-        left: super::super::places::CaptureId,
-        right: super::super::places::CaptureId,
+        left: CapturedValue,
+        right: CapturedValue,
         parent: DerivationId,
     },
     /// One finite truth-table introduction for an already-interned Boolean

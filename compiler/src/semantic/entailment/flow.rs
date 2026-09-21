@@ -9878,8 +9878,8 @@ impl Analyzer<'_, '_> {
             .derivation
             .expect("a proved index separation retains its L0 or affine parent");
         proof.derivation = Some(self.derivations.intern(DerivationNode::IndexSeparation {
-            left: left.capture,
-            right: right.capture,
+            left,
+            right,
             parent,
         }));
         Some(proof)
