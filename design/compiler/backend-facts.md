@@ -1,5 +1,3 @@
-Node: compiler/backend-facts
-
 Decision: Supply checked facts as target attributes, instruction flags, metadata or assumptions only when retained evidence establishes the complete target contract, because DIAG-2 permits those optimization forms but source rule names alone do not establish their full alias, capture, extent, memory or arithmetic promises. Optional fact emission changes neither source acceptance nor target qualification and adds no runtime checks, instead of withholding all proved information or using optimizer assertions as a new source of proof. No current `llvm.assume` is emitted without such a complete mapping.
 
 Decision: Reference attributes use ordinary EFF-5 call-site disjointness where the target contract needs it, excluding `noalias` for the alias-permitting `swap`; `dereferenceable` uses the selected target's guaranteed referent size, and exact arithmetic alone receives the corresponding no-wrap flags, because the language layout ceiling is an upper bound rather than a guaranteed extent and wrapping operations deliberately admit overflowing operands, instead of uniform attributes across operations with different contracts.
