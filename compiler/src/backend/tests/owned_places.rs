@@ -213,6 +213,54 @@ fn main() -> status: own ExitStatus pure {
     }
 }
 
+/// Runtime-capacity Array elements use the same complete typed address path
+/// for copy reads, stores, and references. Nested fields retain their exact
+/// selected address and do not disturb adjacent fields or elements.
+#[test]
+fn runtime_array_element_suffixes_reach_only_the_selected_field() {
+    let source = br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+struct Row {
+  pair: Pair;
+  guard: u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let pair = Pair(left: 3_u64, right: 5_u64);
+  let seed = Row(pair: pair, guard: 7_u64);
+  let rows = box_array_filled::<Row>(count: 2_u64, value: seed);
+  let before = rows.inner[0_u64].pair.left;
+  set rows.inner[1_u64].pair.right = 11_u64;
+  let selected = &rows.inner[1_u64].pair.right;
+  set deref(selected) = before +wrap 10_u64;
+  if rows.inner[0_u64].pair.left != 3_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if rows.inner[0_u64].pair.right != 5_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if rows.inner[1_u64].pair.left != 3_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if rows.inner[1_u64].pair.right != 13_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if rows.inner[1_u64].guard != 7_u64 {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
+        let module = super::emit_lowered(source, overlap);
+        assert_success(&module);
+        assert_success(&retain_calls(&module));
+    }
+}
+
 #[test]
 fn loop_owner_sources_cover_later_iterations_and_counted_exhaustion() {
     // The two-place exchange retired with [LIV-2]'s multi-target commit; the

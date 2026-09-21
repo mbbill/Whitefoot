@@ -40,7 +40,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     ///
     /// [TYPE-9] admits a runtime-capacity shape only as `Box` content, so the
     /// operand is the address of the block and never a value of it.
-    fn buffer_block(&self, buffer: IrValueId) -> Result<(IrType, IrFlatElement), BackendFailure> {
+    pub(super) fn buffer_block(
+        &self,
+        buffer: IrValueId,
+    ) -> Result<(IrType, IrFlatElement), BackendFailure> {
         match self.value_type(buffer) {
             Some(IrType::Address(IrAddressed::Buffer { element })) => {
                 Ok((IrType::Buffer { element }, element))
@@ -66,7 +69,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
     /// One element's address inside the block, which is the one `inbounds`
     /// step [OP-4]'s discharged subscript needs.
-    fn buffer_element_pointer(
+    pub(super) fn buffer_element_pointer(
         &mut self,
         block: IrType,
         address: &str,

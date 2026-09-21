@@ -96,6 +96,43 @@ fn a_field_step_on_a_scalar_element_selects_no_declared_field() {
     }
 }
 
+/// Runtime-capacity Array element suffixes are ordinary typed place steps.
+/// Resolving the complete suffix preserves TYPE-5 priority over the compiler's
+/// internal flat-buffer representation.
+#[test]
+fn runtime_array_element_suffixes_retain_source_diagnostics() {
+    let invalid_field = br#"struct Row {
+  left: u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let seed = Row(left: 3_u64);
+  let rows = box_array_filled::<Row>(count: 1_u64, value: seed);
+  let bad = rows.inner[0_u64].missing;
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(invalid_field, SemanticRule::Type5, |kind| {
+        matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+    });
+
+    let unproved_bound = br#"struct Row {
+  left: u64;
+}
+
+fn read(rows: &Box<Array<Row>>, index: own u64) -> result: own u64 reads(rows) {
+  return deref(rows).inner[index].left;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(unproved_bound, SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
 /// [WIN-3] assigning over any owned place releases the old value when it is
 /// affine and is a hard error at the target `place` when it is linear: a
 /// linear value has no release, so the writer takes it out and consumes it

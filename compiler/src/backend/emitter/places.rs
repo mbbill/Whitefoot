@@ -426,6 +426,30 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 .map_err(|_| BackendFailure::TextEmission)?;
                 format!("%{pointer}")
             }
+            crate::IrPlaceStep::BufferElement {
+                offset,
+                target_domain,
+            } => {
+                let IrType::Buffer { element } = base.ty() else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if self.program.element(element) != Some(referent.ty())
+                    || *target_domain != IrTargetDomainObligation::ElementAddress
+                    || self.value_type(*offset)
+                        != Some(IrType::Integer {
+                            width: 64,
+                            signed: false,
+                        })
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let (block, _) = self.buffer_block(address)?;
+                self.buffer_element_pointer(
+                    block,
+                    &self.value_name(address),
+                    &self.value_name(*offset),
+                )?
+            }
         };
         writeln!(
             self.output,
