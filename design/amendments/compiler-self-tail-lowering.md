@@ -1,0 +1,7 @@
+Node: compiler/self-tail-lowering
+
+Decision: Retain a checked self-tail marker on the ordinary checked call through proof checking, then lower a marked return to argument capture, its checked releases, and a jump to a parameterized body-entry block, because the existing call judgment must still check requirements and effects while the existing SSA block parameters express simultaneous reassignment without a target ABI dependency, instead of relying on LLVM tail-call optimization or building a second recursive-call checker. The entry block receives fresh values on each transfer, and addressed storage is reused under the same physical-frame rules as an ordinary loop.
+
+Rejected:
+- Lowering self recursion with LLVM `musttail`: rejected because a self transfer needs no inter-function ABI and the compiler's own control-flow lowering guarantees the transfer on every target, including without optimization.
+- Sequentially overwriting source parameters while evaluating the remaining arguments: rejected because swaps and aggregate moves must read the previous activation's values before any replacement.

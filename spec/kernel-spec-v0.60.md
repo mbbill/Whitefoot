@@ -1,4 +1,4 @@
-# Kernel Specification v0.61
+# Kernel Specification v0.60
 
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
@@ -277,7 +277,7 @@ infix_op       := "+" | "+wrap" | "+defined" | "+checked" | "+sat"
                 | "%" | "%defined" | "%checked"
 compare_op     := "==" | "!=" | "<" | "<=" | ">" | ">="
 atom           := literal | "move" place | place | borrow_expr
-call           := "musttail"? callee ("::" targs)? "(" ( atom_list | fieldinit_list )? ")"
+call           := callee ("::" targs)? "(" ( atom_list | fieldinit_list )? ")"
 callee         := IDENT | OPNAME | pack_use ("::" IDENT)?
 fieldinit_list := fieldinit ("," fieldinit)*
 fieldinit      := IDENT ":" atom
@@ -774,7 +774,7 @@ Allocation and release carry no effect entry [EFF-1] and never prevent two state
 A program whose compilation unit carries the no-heap declaration [GRAM-2, PROG-3] cannot name `Box` or the runtime-capacity shapes [TYPE-9] and cannot call an allocating prelude row — `box_new`, `box_array_filled`, `box_slots_new`, `box_ring_new`, and `grow` [OP-13, OP-10]; naming such a type is a hard error citing STOR-8 at the complete `type`, and calling such a row is a hard error citing STOR-8 at the complete `call`, each with the restructuring `use a constant-capacity shape, or withdraw the no-heap declaration`.
 
 [STOR-3] Deallocation and resource release are compiler-derived and explicit in the checked program [DIAG-2]: every release is represented before lowering.
-Release actions run on every source control-flow edge that leaves their owner scope, in reverse declaration order; [FN-10] places a guaranteed self-tail transfer's releases before that transfer.
+Release actions run on every source control-flow edge that leaves their owner scope, in reverse declaration order.
 Host termination caused solely by unavailable external resources under [SCOPE-3] is not a Whitefoot control-flow edge, and this specification makes no source-level cleanup promise for that case.
 No reference counting.
 
@@ -1244,7 +1244,7 @@ Within every recursive component, each edge must forward the caller's complete p
 The diagnostic names the function/nominal cycle and the changed argument, with the restructuring `forward the complete generic argument vector unchanged on the cycle, or move the changing instantiation off the cycle`.
 This criterion deliberately rejects some finite permutation cycles. Acyclic expansion is finite and a cycle creates no new instance key; deterministic checking visits each admitted instance. It assumes no behavior laws and uses no fuel.
 
-[FN-7] Program start selects an ordinary function and supplies ordinary arguments [PROG-3]. Its name, signature, result types, written contracts, and source callers obey FN-1 through FN-10 without an entry-specific restriction.
+[FN-7] Program start selects an ordinary function and supplies ordinary arguments [PROG-3]. Its name, signature, result types, written contracts, and source callers obey FN-1 through FN-9 without an entry-specific restriction.
 The compilation unit need not declare a function with any reserved entry name. Selection, argument construction and binding, and interpretation of a normal result belong to the build invocation and do not select source acceptance.
 
 [FN-8] Every source `fn_decl`, generic or nongeneric, and every `fn_sig` may carry one optional `contract_block`. A function formal's block has the same formation rules and constrains bindings under FN-4. Every supplied definition must satisfy the ordinary declared contract; a Whitefoot body is checked under FN-9 and a PRE-1 declaration is supplied under SCOPE-3.
@@ -1394,16 +1394,6 @@ That list gains the one destination a multi-result contract creates, and only a 
 Neither the arm binder of an own-place `match` whose scrutinee is not the call itself nor the destructuring-consume binder is a destination of its own: each needs a relation to survive a naming event between the call and its destination, and [MSR-3]'s placement table is what carries one across such an event.
 A published [MSR-1] measure of the transferred value reaches both, because the payload and destructuring placements carry exactly that; a measure datum carries nothing else.
 DEFERRED: the same two positions for a published relation that is not one of [MSR-1]'s measures of the transferred value, which names terms no placement mints. Its delta is numbered rules +0 and grammar productions +0.
-
-[FN-10] Guaranteed self-tail calls.
-The optional `musttail` atom on a `call` [GRAM-5] requires that call to transfer to the enclosing function without retaining the current activation or growing the stack for that transfer.
-The marked call is the sole expression of a `return_stmt`, and its callee resolves directly to the enclosing source function at that function's own generic arguments [FN-6].
-Every ordinary call and return judgment still applies, including contracts, effects, ownership, and reference validity; the marker supplies no proof and changes no result shape [FN-1, FN-8, FN-9].
-After evaluating the actual arguments in their declared order, every path in every reference argument's [REF-1] path set is rooted at a reference parameter of the current function, never at storage owned by the current activation.
-Every still-live owned binding, parameters included, must admit its ordinary scope release [PROV-6]. A binding with a nonempty release may be released before the transfer exactly when no live valid reference binding has a path rooted at that owner; a release is nonempty when its type's release graph [STOR-3, PROV-6] can perform an action, with a symbolic type parameter read at its written capability bound [FN-2].
-The checker represents all remaining releases explicitly [DIAG-2]; after capturing all actual values, those releases run in their ordinary order, then all parameters receive the captured arguments together and execution restarts at function entry. No caller continuation, result copy, or release remains after the transfer.
-A failed condition is a hard error citing FN-10 at the marked `call`, naming the failed condition and the offending argument or owner when applicable; a call to another function, including a mutual-recursion edge or a function-kind parameter, fails the direct-self condition.
-An unmarked call carries no tail-transfer guarantee. The guarantee bounds only stack retained by the marked transfer, not the stack or heap used by argument evaluation, release, or the rest of the program, and does not prove termination.
 
 ## 9. Effects
 
