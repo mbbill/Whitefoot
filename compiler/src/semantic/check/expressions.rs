@@ -1343,7 +1343,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // is a partial consume: the residual leaf is abandoned in a
                 // scope that has no derived release to reclaim it.
                 if !copy && !read_out && !fields.is_empty() {
-                    self.reject_partial_consume(local.ty, &fields, bindings, use_node)?;
+                    self.reject_partial_consume(local.ty, &fields, use_node)?;
                 }
                 let residual_drops = if copy || read_out || fields.is_empty() {
                     Vec::new()

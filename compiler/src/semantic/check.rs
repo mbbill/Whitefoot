@@ -1004,18 +1004,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         !self.template_spelling_authority.get()
     }
 
-    pub(in crate::semantic::check) fn region_phrase(
-        &self,
-        region: DeclarationId,
-    ) -> Result<String, CheckStop> {
-        let spelling = self.declaration_spelling(region)?;
-        Ok(if spelling.starts_with("'0_") {
-            "the region this position leaves unwritten".to_owned()
-        } else {
-            spelling
-        })
-    }
-
     pub(in crate::semantic::check) fn declaration_spelling(
         &self,
         declaration: DeclarationId,
@@ -1816,8 +1804,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 kind: SemanticIssueKind::FunctionFallthrough,
             }));
         }
-        let mut exhibited = self.written_body_effects(signature, checked.effects.clone());
-        self.collect_release_effects(signature, &checked.statements, &mut exhibited)?;
+        let exhibited = self.written_body_effects(signature, checked.effects.clone());
+        self.validate_release_graphs(&checked.statements)?;
         // [EFF-1] the row has exactly two categories, and [STOR-8] gives
         // allocation no entry in it, so [EFF-2]'s judgment is over `reads`
         // and `writes` alone. The allocation fact is [EFF-3] checked-program

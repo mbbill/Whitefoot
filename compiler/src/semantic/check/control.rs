@@ -642,7 +642,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .iter()
                 .find(|declaration| declaration.id() == local.declaration)
                 .map_or_else(String::new, |declaration| declaration.spelling().to_owned());
-            self.validate_scope_release(local.ty, &name, bindings, edge)?;
+            self.validate_scope_release(local.ty, &name, edge)?;
         }
         for (_, local) in live {
             if !self.is_copy_type(local.ty)? {
