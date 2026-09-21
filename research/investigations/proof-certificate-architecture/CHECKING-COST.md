@@ -847,3 +847,88 @@ engine. Its index remains allocated until that certificate-premise loop
 finishes, and changing term or goal information requires rebuilding it.
 The fixed word hasher already follows `compiler/fact-map-hashing`; the
 rejected ordinary-query projection changes no live decision.
+
+### Post-x1 selection
+
+The [raw paired rows](../../experiments/proof-use-cost/x1-pairs-2026-09-21.tsv)
+contain four comparisons, each with five alternating warmed pairs per
+fixture. All 340 timed invocations accepted and emitted identical LLVM bytes
+within each fixture/comparison; every arm retains its SHA-256. Both the
+baseline and final compiler also pass the runner's seven accepted fixtures
+(including 4096 uses) and two PRF-1 negative controls. These measurements use
+the gate profile, Rust 1.98.1 and arm64 macOS 26.6.2. No build or profiler ran
+alongside a paired comparison, and every run held the host-wide check guard.
+
+The saved binaries are identified independently of later documentation:
+
+| Arm | Compiler source | Binary SHA-256 |
+|---|---|---|
+| Baseline | `d47fb7c7` | `ffe29d38590308caff2fd311b68405af18fd90690f3db09c8dc337891884bdee` |
+| Reuse only | `a9a6b7db`, with `AffineL0Index.by_terms` reverted to `HashMap` | `dbd7d72a20f7779c5f6bc3235072b42b2b7ca3c899133c8c653e4222b8304cb9` |
+| Reuse and hashing | `a9a6b7db` | `585b340d09f34fac98a7cc6249e9319946c1683a6601f1aec917f1b9e006c3d6` |
+| Fallback experiment | `a9a6b7db` plus `x1-fallback-query.patch` | `af073680d03b6bab3baca76fd23e51016e29cf69e62b15404ce6f6f127c23529` |
+
+Build the baseline and final arms with `make -C compiler build` at their
+source revisions, saving each executable before switching revisions. The
+ordinary runner invocation for the combined selection is:
+
+```sh
+perl .github/run-check.pl proof-cost-compare \
+  make -C research/experiments/proof-use-cost compare \
+  BASELINE="$BASELINE" CANDIDATE="$CANDIDATE" SIZES=16,64,256,4096 \
+  REAL_SOURCES="../../../tests/programs/fixed_run_library.wf ../../../tests/programs/wfgrep.wf ../../../tests/programs/compute/prefix.wf ../../../tests/programs/compute/histogram.wf ../../../tests/programs/compute/radix_scatter.wf"
+```
+
+`BASELINE` and `CANDIDATE` are absolute paths to the saved executables;
+`WORK_ROOT` can select an external scratch directory. The comparison target
+builds only the Rust runner before timing. Reuse isolation uses sizes `64`,
+baseline versus reuse-only, without real-source additions. Hashing isolation
+uses `16,64,256`, reuse-only versus reuse-and-hashing, with fixed-run and
+wfgrep. Fallback isolation uses `16`, reuse-and-hashing versus the fallback
+experiment, with those two real programs. Compiler construction took
+48.07 s for baseline, 51.88 s for reuse, 45.79 s for hashing and 45.49 s for
+the fallback experiment, separately from these checking measurements.
+
+The `reuse` comparison improves growing-64 from 276.538 to 85.589 ms
+(3.23x), with all five pairs favorable. The `hashing` comparison improves
+growing-256 from 3240.237 to 2392.382 ms (1.35x) and control-256 from 397.353
+to 275.185 ms (1.44x), again in all five pairs. Each selected mechanism
+therefore meets the predeclared criterion on its independently measured
+targeted cell. The `fallback` comparison is the rejected alternative above.
+
+The `combined` comparison measures the selected compiler against baseline:
+
+| Fixture | Baseline median | Candidate median | Speedup |
+|---|---:|---:|---:|
+| Fixed context, 16 uses | 18.251 ms | 18.486 ms | 0.99x |
+| Growing context, 16 pairs/uses | 24.348 ms | 20.728 ms | 1.17x |
+| 16-pair context, three uses | 19.939 ms | 19.294 ms | 1.03x |
+| Fixed context, 64 uses | 20.994 ms | 20.625 ms | 1.02x |
+| Growing context, 64 pairs/uses | 274.154 ms | 67.950 ms | 4.03x |
+| 64-pair context, three uses | 44.085 ms | 32.648 ms | 1.35x |
+| Fixed context, 256 uses | 32.560 ms | 30.306 ms | 1.07x |
+| Growing context, 256 pairs/uses | 21688.950 ms | 2337.396 ms | 9.28x |
+| 256-pair context, three uses | 522.199 ms | 263.639 ms | 1.98x |
+| Fixed context, 4096 uses | 407.712 ms | 376.967 ms | 1.08x |
+| Fixed-run library | 130.582 ms | 133.803 ms | 0.98x |
+| Wfgrep | 832.956 ms | 833.954 ms | 1.00x |
+| Prefix | 31.597 ms | 29.914 ms | 1.06x |
+| Histogram | 34.130 ms | 32.201 ms | 1.06x |
+| Radix scatter | 79.692 ms | 74.507 ms | 1.07x |
+
+No protected-cell increase exceeds both 10 percent and 1 ms. In particular,
+the small fixed-run increase is 2.5 percent; the real-program results do not
+establish a general compiler speedup. The final growing-256 still costs
+2.337 s, and its three-use control still costs 0.264 s. Removing repeated
+index construction does not remove complete closure/index preparation or
+the specified long-target AUTO traversal. The separate 512-pair exploratory
+runs establish acceptance and remaining cost, not a paired performance result
+or a total checking-time bound.
+
+A separate final growing-512 invocation also accepted. Starting a two-second
+native sample three seconds into that invocation collected 1,489 driver
+samples, all inside the target's `affine_target_proof`; 1,310 were beneath
+`affine_residual_proof`, with interval evaluation and residual arithmetic
+prominent. No sample in this window was inside certificate-premise admission
+or affine-index construction. This locates a remaining expensive phase after
+reuse; it is a sampled window, not a whole-run percentage or selection timing.
