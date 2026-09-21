@@ -16,7 +16,7 @@ index 2317b2cd..6c5c3a70 100644
 @@ -5619,6 +5617,75 @@ pub(crate) fn materialize_closure_at(
      materialized
  }
- 
+
 +/// Closes the ordinary selection for a query without copying flow origins or
 +/// the candidates closure never reads. This temporary state never enters flow:
 +/// the input retains every independently live candidate for later kills.
