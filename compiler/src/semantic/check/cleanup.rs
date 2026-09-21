@@ -1,8 +1,8 @@
 use crate::SemanticCompilerFailure;
 
 use super::super::model::{
-    CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedSetTarget, CheckedStatement,
-    CheckedType,
+    CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedReleaseMode, CheckedSetTarget,
+    CheckedStatement, CheckedType,
 };
 use super::{CheckStop, Checker, EffectSet};
 

@@ -6957,6 +6957,18 @@ impl Analyzer<'_, '_> {
                     });
                 }
             }
+            CheckedExpression::BoxTake {
+                carrier, binding, ..
+            } => {
+                // [TYPE-9, WIN-3, ENT-5] the selected content leaves through
+                // this expression, but the complete owning root ceases to
+                // exist. The checked take no longer embeds a synthetic
+                // Binding child, so its root consume is explicit here.
+                events.push(KillEvent::Consume {
+                    binding: *binding,
+                    source: carrier.clone(),
+                });
+            }
             // These wrappers are checked reads of one place. Their nested
             // expression preserves source spelling and lowering structure;
             // it is not a second consuming evaluation of an affine holder.

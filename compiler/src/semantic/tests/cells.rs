@@ -250,7 +250,7 @@ fn main() -> status: own ExitStatus pure { return exit_status(code: 0_u8); }
 
 #[test]
 fn nested_owned_box_take_rejects_a_linear_residual() {
-    assert_rule(
+    assert_rule_kind(
         br#"nocopy struct Payload { value: u8; }
 nodrop struct Token { value: u8; }
 nocopy struct Inner { selected: Box<Payload>; tail: Token; }
@@ -265,12 +265,13 @@ fn take(token: own Token) -> result: own u8 pure {
 fn main() -> status: own ExitStatus pure { return exit_status(code: 0_u8); }
 "#,
         SemanticRule::Win3,
+        |kind| matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. }),
     );
 }
 
 #[test]
 fn indexed_box_content_move_remains_a_win3_source_rejection() {
-    assert_rule(
+    assert_rule_kind(
         br#"nocopy struct Payload { value: u8; }
 fn main() -> status: own ExitStatus pure {
   let slots = slots_new::<Box<Payload>, 1>();
@@ -282,6 +283,7 @@ fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Win3,
+        |kind| matches!(kind, SemanticIssueKind::InvalidElementMove { .. }),
     );
 }
 

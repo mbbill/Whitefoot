@@ -1278,7 +1278,7 @@ fn consumes_root(expression: &CheckedExpression) -> bool {
         } | CheckedExpression::Project {
             consume_root: true,
             ..
-        }
+        } | CheckedExpression::BoxTake { .. }
     )
 }
 
@@ -1318,6 +1318,7 @@ pub(super) fn visit_read_bindings(
     match expression {
         CheckedExpression::Binding { binding, .. }
         | CheckedExpression::Project { binding, .. }
+        | CheckedExpression::BoxTake { binding, .. }
         | CheckedExpression::DerefAddressed { binding, .. } => note(*binding),
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ContainerMeasure { root, .. }
@@ -1474,6 +1475,9 @@ fn argument_places(places: &PlaceMap, argument: &CheckedExpression) -> Option<Ve
         CheckedExpression::Project {
             binding, fields, ..
         } => places.resolve(PlaceRoot::Binding(*binding), &field_steps(fields)),
+        CheckedExpression::BoxTake { binding, .. } => {
+            places.resolve(PlaceRoot::Binding(*binding), &[])
+        }
         CheckedExpression::BorrowAddressed { root, .. } => {
             places.resolve(root.root, &container_steps(root))
         }
