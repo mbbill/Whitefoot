@@ -638,7 +638,7 @@ fn main() -> status: own ExitStatus pure {
 "#,
         rule: "EFF-1",
         sentences: &[
-            r#"InvalidEffectRow { reason: "each effect-path suffix selects one statically known field of a source struct, and this prefix is not a source struct", mechanical_fix: "name the parameter itself, which names the complete state it supplies; an enum payload, a subscript, and a `deref` spelling are outside the effect-path grammar" }"#,
+            r#"InvalidEffectRow { reason: "each effect-path suffix must select a field, payload, measure, window part, or indexed position admitted by its prefix type", mechanical_fix: "select a member or position admitted by the prefix type, or name the reference parameter's complete state; use .inner for Box contents" }"#,
         ],
     },
     Probe {
@@ -658,7 +658,7 @@ fn main() -> status: own ExitStatus pure {
 "#,
         rule: "EFF-1",
         sentences: &[
-            r#"InvalidEffectRow { reason: "an effect-path suffix names a field the struct does not declare", mechanical_fix: "name a declared field of that struct, or the parameter itself" }"#,
+            r#"InvalidEffectRow { reason: "an effect-path suffix names a member its selected type does not declare", mechanical_fix: "name a declared member of that type, or the reference parameter itself" }"#,
         ],
     },
     Probe {

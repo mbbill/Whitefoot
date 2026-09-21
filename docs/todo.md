@@ -69,6 +69,15 @@ of them is a decision. Remove an item when its fix and test land.
   aggregates, logical window order, and content-before-Box-free order. Close
   this item when a general implementation and native regressions establish
   those properties, or a different resource tradeoff is selected explicitly.
+- **Retired implicit empty-window release leaves unused proof scaffolding.**
+  No source operation constructs the checked `EmptyRun` release mode, but its
+  release-graph branch, obligation family and derivation plumbing remain.
+  This is maintenance debt, not a promise to restore implicit dropping of
+  linear windows. Remove the unused paths when next changing cleanup or its
+  proof inventory, retaining `free_empty` and its active OP-14 requirement
+  diagnostic; the similarly named diagnostic is not the retired mechanism.
+  The current semantic fixes take precedence over this deletion. Close the
+  item with the normal release and explicit-empty-release regressions intact.
 - **Box/window representation costs remain unqualified.** The current runtime-
   capacity Box is one pointer to one header-first allocation; `grow` uses
   allocation, memmove and free. A one-word owner, one allocation and header

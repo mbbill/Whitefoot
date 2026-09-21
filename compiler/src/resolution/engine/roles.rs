@@ -577,10 +577,8 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        // [EFF-1] `epbase := IDENT | "deref" "(" effect_path ")"`. A direct
-        // IDENT is the row's root; a `deref` base writes no name of its own
-        // and its inner path reaches this arm again through its own `epbase`.
-        Production::Epbase if names.is_empty() => {}
+        // [EFF-1] `epbase := IDENT`: the reference parameter is the row's
+        // root, with no source `deref` wrapper.
         Production::Epbase => add_single(
             classified,
             owner,

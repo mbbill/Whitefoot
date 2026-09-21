@@ -156,9 +156,10 @@ impl CapturedValue {
     /// already decides. The occurrence that evaluated them therefore carries
     /// no identity of its own and is dropped, which is what makes
     /// `rows[0_u64].len` and the bound of `rows[0_u64][i]` one term [MSR-1].
-    /// A binding read and an opaque value keep their occurrence: a binding's
-    /// two reads may straddle a write to it, so they are one term only when
-    /// one evaluation produced both.
+    /// A binding read uses its declaration/spelling identity here, with writes
+    /// invalidating facts supported by that binding. Captured storage identity
+    /// in [`Self::provably_same`] still distinguishes its evaluations. Only an
+    /// opaque offset keeps occurrence identity inside a goal datum.
     pub(crate) const fn goal_identity(self) -> Self {
         match self.term {
             CapturedTerm::Literal(_) | CapturedTerm::Const(_) => {

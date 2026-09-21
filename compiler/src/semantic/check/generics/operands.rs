@@ -8,7 +8,7 @@
 //! construction functions [OP-13] are explicitly excluded and keep [FN-2]'s
 //! written argument list.
 //!
-//! Each of the twelve rows here fixes every type parameter from one designated
+//! Each of the eleven rows here fixes every type parameter from one designated
 //! value parameter's selected type. The window rows take the shape from the
 //! `&W` operand and the element type from that same shape, because [OP-10]
 //! says the parameter's "element type is that shape's own element type"; a
@@ -23,7 +23,8 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
 };
 
-use super::super::super::model::{CheckedNominalKind, CheckedType, WindowShape};
+use super::super::super::model::{CheckedMode, CheckedNominalKind, CheckedType, WindowShape};
+use super::super::types::SelectedPlaceType;
 use super::super::{CheckStop, Checker, FunctionTemplate, LocalBinding};
 use super::{GenericArgument, GenericSubstitution};
 
@@ -88,7 +89,7 @@ const WINDOW_AND_ELEMENT: &[OperandParameter] = &[
     },
 ];
 
-/// The twelve rows [OP-10], [OP-11] and [OP-14] name. Every other [PRE-1]
+/// The eleven rows [OP-10], [OP-11] and [OP-14] name. Every other [PRE-1]
 /// row, the nine construction functions [OP-13] included, writes its
 /// arguments explicitly under [FN-2].
 const OPERAND_ROWS: &[OperandRow] = &[
@@ -192,7 +193,7 @@ const OPERAND_ROWS: &[OperandRow] = &[
 ];
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// Whether this template is one of the twelve rows whose type parameters
+    /// Whether this template is one of the eleven rows whose type parameters
     /// an operand supplies [OP-10, OP-11, OP-14].
     ///
     /// The spelling decides it because [TYPE-6] gives the whole closed unit
@@ -411,6 +412,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<Option<CheckedType>, CheckStop> {
+        Ok(self
+            .place_selected_kind(place, bindings)?
+            .and_then(|selected| match selected {
+                SelectedPlaceType::Value(ty) | SelectedPlaceType::Range(ty) => Some(ty),
+                SelectedPlaceType::UnresolvedWindowElement => None,
+            }))
+    }
+
+    /// The value or range kind selected by one written `place`.
+    ///
+    /// A range binding stores its element in `LocalBinding::ty`, so retaining
+    /// the kind prevents an index from projecting through a composite element
+    /// a second time.
+    fn place_selected_kind(
+        &self,
+        place: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<Option<SelectedPlaceType>, CheckStop> {
         let pbase = self
             .tree
             .first_child_with(place, Production::Pbase)?
@@ -422,8 +441,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(pbase, Production::Place)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            match self.place_selected_type(inner, bindings)? {
-                Some(ty) => ty,
+            match self.place_selected_kind(inner, bindings)? {
+                Some(selected) => selected,
                 None => return Ok(None),
             }
         } else {
@@ -438,14 +457,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration,
                     class: DeclarationClass::Value,
                 } => match bindings.get(&declaration) {
-                    Some(local) => local.ty,
+                    Some(local) if local.mode == CheckedMode::Range => {
+                        SelectedPlaceType::Range(local.ty)
+                    }
+                    Some(local) => SelectedPlaceType::Value(local.ty),
                     None => return Ok(None),
                 },
                 ResolvedTarget::Source {
                     declaration,
                     class: DeclarationClass::NamedConst,
                 } => match self.constants.get(&declaration) {
-                    Some(constant) => self.constant(*constant)?.ty,
+                    Some(constant) => SelectedPlaceType::Value(self.constant(*constant)?.ty),
                     None => return Ok(None),
                 },
                 _ => return Ok(None),
@@ -464,11 +486,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 // [OP-4] a subscript selects the base shape's element type.
                 match ty {
-                    CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
-                        ty = self.element_type(element)?;
+                    SelectedPlaceType::Range(element) => {
+                        ty = SelectedPlaceType::Value(element);
                     }
-                    CheckedType::Buffer { element } => {
-                        ty = element.ty();
+                    SelectedPlaceType::Value(CheckedType::Array { element, .. })
+                    | SelectedPlaceType::Value(CheckedType::Window { element, .. }) => {
+                        ty = SelectedPlaceType::Value(self.element_type(element)?);
+                    }
+                    SelectedPlaceType::Value(CheckedType::Buffer { element }) => {
+                        ty = SelectedPlaceType::Value(element.ty());
                     }
                     // [REF-4] a `&[T]` binding already carries the element
                     // type the dereference selects, so its subscript selects
@@ -492,20 +518,42 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .deferred_use_at(suffix, crate::DeferredUseRole::ProjectedField)?
                 .spelling()
                 .to_owned();
-            // [OP-15, MSR-1] a measure is an `own u64` member and ends the
-            // written path; no row here takes one as its shape operand.
-            if super::super::types::measure_named(&name).is_some() {
+            // [OP-15, MSR-1, TYPE-10] a real measure is an `own u64` member
+            // and ends the written path; no row here takes one as its shape
+            // operand. The spelling reserves nothing, so a type with no such
+            // measure continues through its ordinary field below.
+            if matches!(ty, SelectedPlaceType::Range(_)) && name == "len" {
+                return Ok(None);
+            }
+            let SelectedPlaceType::Value(value_ty) = ty else {
+                return Ok(None);
+            };
+            if super::super::types::measure_named(&name).is_some_and(|measure| {
+                value_ty.measured().is_some_and(|measured| {
+                    !matches!(
+                        measure.cell(measured),
+                        super::super::super::model::MeasureCell::Absent
+                    )
+                })
+            }) {
+                return Ok(None);
+            }
+            // [WIN-2, TYPE-10] parts likewise select only a window. A source
+            // struct may declare a field with the same spelling.
+            if super::super::types::window_part_named(&name).is_some()
+                && matches!(value_ty, CheckedType::Window { .. })
+            {
                 return Ok(None);
             }
             // [TYPE-9] a `Box`'s content is its field `inner`.
-            if let Some(referent) = self.box_content(ty)? {
+            if let Some(referent) = self.box_content(value_ty)? {
                 if name != "inner" {
                     return Ok(None);
                 }
-                ty = referent;
+                ty = SelectedPlaceType::Value(referent);
                 continue;
             }
-            let CheckedType::Nominal(nominal) = ty else {
+            let CheckedType::Nominal(nominal) = value_ty else {
                 return Ok(None);
             };
             let CheckedNominalKind::Struct { fields } = &self.nominal(nominal)?.kind else {
@@ -514,7 +562,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(field) = fields.iter().find(|field| field.name == name) else {
                 return Ok(None);
             };
-            ty = field.ty;
+            ty = SelectedPlaceType::Value(field.ty);
         }
         Ok(Some(ty))
     }

@@ -1,0 +1,7 @@
+fn invalid(values: &Array<u8, 4>) -> result: own unit reads(values.cap) {
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -760,8 +760,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// One `effect_path` in its written spelling [EFF-1]: the parameter's own
-    /// name, wrapped in `deref(...)` at each `deref` step, with every other
-    /// step written as the `epsuffix` that produced it.
+    /// name followed by the suffixes that produced it. An internal `Deref`
+    /// step selects a Box's `.inner`; references add no row wrapper.
     ///
     /// The walk carries the selected type only as far as it can name a step:
     /// a field name needs its containing struct and a payload field needs its
@@ -804,11 +804,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                     }
                 }
-                // `epbase := IDENT | "deref" "(" effect_path ")"` wraps the
-                // path built so far instead of appending to it [EFF-1].
+                // The internal content step retains the referent type so
+                // fields below `.inner` keep their source names [TYPE-9].
                 super::model::CheckedEffectStep::Deref => {
-                    rendered = format!("deref({rendered})");
-                    ty = None;
+                    rendered.push_str(".inner");
+                    ty = match ty {
+                        Some(CheckedType::Nominal(nominal)) => match self.nominal(nominal)?.kind {
+                            CheckedNominalKind::Box { referent, .. } => Some(referent),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
                 }
                 super::model::CheckedEffectStep::Payload { variant, field } => {
                     let selected = match ty {

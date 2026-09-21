@@ -531,14 +531,14 @@ pub(crate) enum CheckedType {
     GenericFloat(DeclarationId),
     Nominal(NominalId),
     /// One constant-capacity `Array<T, N>` [TYPE-9]: `N` slots, every one of
-    /// them always holding a value, so `len` and `cap` are both the type
-    /// constant and are stored nowhere [WIN-1, MSR-1].
+    /// them always holding a value. Its `len` is the type constant and is
+    /// stored nowhere; the type has no `cap` measure [WIN-1, MSR-1].
     Array {
         element: CheckedElement,
         length: CheckedConst,
     },
-    /// One runtime-capacity `Array<T>` [TYPE-9]. Its `len`, which equals its
-    /// `cap` [WIN-1], is the one runtime number its block stores.
+    /// One runtime-capacity `Array<T>` [TYPE-9]. Its `len` is the allocated
+    /// slot count, the one runtime number its block stores [WIN-1, MSR-1].
     Buffer {
         element: CheckedFlatElement,
     },
@@ -647,13 +647,9 @@ pub(crate) enum CheckedMeasure {
 
 /// One cell of [MSR-1]'s measure table.
 ///
-/// This version's table gives every cell of every measured type an exact
-/// value, so `Bounded` has no row yet; the enum states the three cell classes
-/// the rule requires so a later row cannot smuggle in a fourth.
-// [MSR-1] requires every cell of the table to be one of exact, bounded or
-// absent. No row of this version.s table selects bounded or absent, and the
-// two classes stay named here because the rule is what fixes the closed set:
-// a later row that needs one adds the row, not a fourth class.
+/// Exact cells distinguish their value source; `Ring.head` is bounded, and
+/// an undeclared measure is absent. All three classifications come from the
+/// specification's table, independently of a familiar member spelling.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MeasureCell {
@@ -670,7 +666,7 @@ pub(crate) enum MeasureCell {
     /// `cap` [WIN-1].
     ExactRuntime,
     /// The measure is exact but only two-sidedly published by some writing
-    /// operation. A run's `head` is the one cell of this class [BLK-3].
+    /// operation. A Ring's `head` is the one measure of this class [MSR-1].
     Bounded,
     /// The type has no such measure.
     Absent,
@@ -706,9 +702,8 @@ impl CheckedMeasure {
 
     /// [MSR-1]'s measure table, read row by row out of the rule's own fence.
     ///
-    /// The table is data, not a rule: a later version adds a row per measured
-    /// type it adds, and only such a row can introduce a bounded or absent
-    /// cell.
+    /// Each row determines the admitted members and their publication class;
+    /// a member's spelling alone cannot establish either.
     pub(crate) const fn cell(self, measured: MeasuredKind) -> MeasureCell {
         match (measured, self) {
             // `Array<T, N>`: `len` is the type constant and every slot always
