@@ -1815,6 +1815,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration: place.declaration,
                     element_type: element.ty(),
                     resolved: place.resolved,
+                    offsets,
                 }))
             }
             // [OP-4] the indexable bases, reached through `deref` exactly as

@@ -15155,7 +15155,7 @@ impl Analyzer<'_, '_> {
             CheckedStatement::Return {
                 node_path,
                 value,
-                drops,
+                drops: _,
             } => {
                 let affine_result = self.affine_pure_expression_form(value, &mut state.affine);
                 // [FN-9] the relation is queried "immediately before return

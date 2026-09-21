@@ -228,9 +228,19 @@ struct Row {
   guard: u64;
 }
 
-fn add_to(value: &u64, amount: own u64) -> result: own unit reads(value), writes(value) {
+fn add_to(value: &u64, amount: own u64) -> result: own unit writes(value) {
   let old = deref(value);
   set deref(value) = old +wrap amount;
+  return unit;
+}
+
+fn adjust(rows: &Box<Array<Row>>, index: own u64, amount: own u64) -> result: own unit writes(rows) contract {
+  requires index < deref(rows).inner.len;
+} {
+  let old = deref(rows).inner[index].pair.right;
+  set deref(rows).inner[index].pair.right = old +wrap 1_u64;
+  let selected = &deref(rows).inner[index].pair.right;
+  add_to(value: selected, amount: amount);
   return unit;
 }
 
@@ -242,6 +252,7 @@ fn main() -> status: own ExitStatus pure {
   set rows.inner[1_u64].pair.right = 11_u64;
   let selected = &rows.inner[1_u64].pair.right;
   add_to(value: selected, amount: before);
+  adjust(rows: &rows, index: 1_u64, amount: before);
   if rows.inner.len != 2_u64 {
     return exit_status(code: 1_u8);
   }
@@ -254,11 +265,25 @@ fn main() -> status: own ExitStatus pure {
   if rows.inner[1_u64].pair.left != 3_u64 {
     return exit_status(code: 4_u8);
   }
-  if rows.inner[1_u64].pair.right != 14_u64 {
+  if rows.inner[1_u64].pair.right != 18_u64 {
     return exit_status(code: 5_u8);
   }
   if rows.inner[1_u64].guard != 7_u64 {
     return exit_status(code: 6_u8);
+  }
+  let owners = slots_new::<Box<Array<Row>>, 1>();
+  place_back(window: &owners, value: move rows);
+  let nested = slots_into_array::<Box<Array<Row>>, 1>(values: move owners);
+  if nested[0_u64].inner.len != 2_u64 {
+    return exit_status(code: 7_u8);
+  }
+  let nested_value = &nested[0_u64].inner[1_u64].pair.right;
+  add_to(value: nested_value, amount: 2_u64);
+  if nested[0_u64].inner[1_u64].pair.right != 20_u64 {
+    return exit_status(code: 8_u8);
+  }
+  if nested[0_u64].inner[0_u64].pair.right != 5_u64 {
+    return exit_status(code: 9_u8);
   }
   return exit_status(code: 0_u8);
 }

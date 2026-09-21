@@ -69,15 +69,6 @@ of them is a decision. Remove an item when its fix and test land.
   aggregates, logical window order, and content-before-Box-free order. Close
   this item when a general implementation and native regressions establish
   those properties, or a different resource tradeoff is selected explicitly.
-- **Retired implicit empty-window release leaves unused proof scaffolding.**
-  No source operation constructs the checked `EmptyRun` release mode, but its
-  release-graph branch, obligation family and derivation plumbing remain.
-  This is maintenance debt, not a promise to restore implicit dropping of
-  linear windows. Remove the unused paths when next changing cleanup or its
-  proof inventory, retaining `free_empty` and its active OP-14 requirement
-  diagnostic; the similarly named diagnostic is not the retired mechanism.
-  The current semantic fixes take precedence over this deletion. Close the
-  item with the normal release and explicit-empty-release regressions intact.
 - **Box/window representation costs remain unqualified.** The current runtime-
   capacity Box is one pointer to one header-first allocation; `grow` uses
   allocation, memmove and free. A one-word owner, one allocation and header
@@ -102,15 +93,6 @@ of them is a decision. Remove an item when its fix and test land.
   distinct evaluations, dropping possible targets or imposing an acceptance
   budget. Close this item with representative positive and hostile cases,
   cost measurements, and any required precision repair or explicit limitation.
-- **Runtime-capacity Array element suffixes retain a flat-buffer limitation.**
-  A valid field selection such as `values.inner[i].field` on a
-  `Box<Array<CopyStruct>>` can still reach `CompositeValues` instead of the
-  general storage-place path. The checker resolves the suffix before reporting
-  this capability gap; it is not a source-language rejection. Whole-element
-  reads into a copy local and whole-element replacements avoid this path,
-  while range-reference element suffixes already use the general path. Unify
-  the remaining flat-buffer projections with it and cover field reads, writes,
-  and borrows before removing this item.
 - **Pair-scoped parallel proofs need scaling and coverage work.** The current
   PAR-1 planner constructs questions for every ordered source pair in a segment
   and retains range separation only for that pair's first-statement state;
