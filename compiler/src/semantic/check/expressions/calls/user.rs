@@ -706,37 +706,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// Whether the first step at which the two paths disagree is an index or
-    /// a range position, which is the only disagreement an admitted [OWN-7]
-    /// family can still separate.
+    /// The ordered position disagreements an admitted [OWN-7] family can
+    /// still separate. Index suffixes remain candidates; a range divergence
+    /// is the final candidate because its coordinate frames then differ.
     fn separable_by_position(
         left: &ResolvedPlace,
         right: &ResolvedPlace,
-    ) -> Option<super::super::super::super::model::CheckedCallSeparationPositions> {
+    ) -> Option<Vec<super::super::super::super::model::CheckedCallSeparationPositions>> {
         use super::super::super::super::model::CheckedCallSeparationPositions;
-        left.path
-            .iter()
-            .zip(&right.path)
-            .find_map(|(left, right)| match (left, right) {
+        let mut candidates = Vec::new();
+        for (left, right) in left.path.iter().zip(&right.path) {
+            match (left, right) {
                 (PlaceStep::Index(left), PlaceStep::Index(right)) if left.provably_same(*right) => {
-                    None
+                    continue;
                 }
                 (PlaceStep::Range(left), PlaceStep::Range(right))
                     if left.start.provably_same(right.start)
                         && left.end.provably_same(right.end) =>
                 {
-                    None
+                    continue;
                 }
                 (PlaceStep::Index(left), PlaceStep::Index(right)) => {
-                    Some(Some(CheckedCallSeparationPositions::Indices(*left, *right)))
+                    candidates.push(CheckedCallSeparationPositions::Indices(*left, *right));
                 }
                 (PlaceStep::Range(left), PlaceStep::Range(right)) => {
-                    Some(Some(CheckedCallSeparationPositions::Ranges(*left, *right)))
+                    candidates.push(CheckedCallSeparationPositions::Ranges(*left, *right));
+                    break;
                 }
-                (left, right) if left == right => None,
-                _ => Some(None),
-            })
-            .flatten()
+                (left, right) if left == right => continue,
+                _ if candidates.is_empty() => return None,
+                _ => break,
+            }
+        }
+        (!candidates.is_empty()).then_some(candidates)
     }
 
     /// [OP-10] the window operations that end the bound a reference into the

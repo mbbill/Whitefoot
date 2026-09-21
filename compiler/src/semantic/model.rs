@@ -2546,7 +2546,7 @@ pub(crate) struct CheckedFunction {
 pub(crate) struct CheckedCallSeparation {
     /// The complete `call` the diagnostic is reported at.
     pub(crate) site: NodePath,
-    pub(crate) positions: CheckedCallSeparationPositions,
+    pub(crate) positions: Vec<CheckedCallSeparationPositions>,
     /// The two substituted paths as the diagnostic renders them.
     pub(crate) left_spelling: String,
     pub(crate) right_spelling: String,

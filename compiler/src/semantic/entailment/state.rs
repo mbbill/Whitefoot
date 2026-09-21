@@ -17,6 +17,7 @@ use super::super::model::{
 };
 use super::super::places::{CapturedRange, CapturedValue};
 use super::VerifiedPostconditionSummaryRef;
+use super::affine::{AffineCoefficient, AffineForm, AffineInequality};
 use super::term::{MeasureBound, TermId, TermKind, TermTable, ZERO, type_range};
 use crate::{BuiltinPreludeId, NodePath};
 
@@ -447,9 +448,7 @@ pub(crate) enum DerivationNode {
     /// One exact EFF-5 indexed-position conclusion and the fixed proof that
     /// established it for these immutable capture occurrences.
     IndexSeparation {
-        left: CapturedValue,
-        right: CapturedValue,
-        parent: DerivationId,
+        detail: Box<IndexSeparationDetail>,
     },
     /// One finite truth-table introduction for an already-interned Boolean
     /// parent (`band`, `bor`, or `bnot`).
@@ -671,6 +670,24 @@ pub(crate) struct RangeSeparationDetail {
     pub(crate) parent: DerivationId,
 }
 
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct IndexSeparationDetail {
+    pub(crate) left: CapturedValue,
+    pub(crate) right: CapturedValue,
+    pub(crate) parent: DerivationId,
+    pub(crate) affine_target: Option<Box<AffineInequality>>,
+    pub(crate) affine_images: Option<Box<(AffineForm, AffineForm)>>,
+    pub(crate) substitution: Option<Box<IndexCaptureSubstitution>>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct IndexCaptureSubstitution {
+    pub(crate) source_left: TermId,
+    pub(crate) source_right: TermId,
+    pub(crate) left_identity: DerivationId,
+    pub(crate) right_identity: DerivationId,
+}
+
 impl DerivationNode {
     fn for_each_parent(&self, mut visit: impl FnMut(DerivationId)) {
         match self {
@@ -735,7 +752,13 @@ impl DerivationNode {
                 }
             }
             Self::RangeSeparation { detail } => visit(detail.parent),
-            Self::IndexSeparation { parent, .. } => visit(*parent),
+            Self::IndexSeparation { detail } => {
+                visit(detail.parent);
+                if let Some(substitution) = &detail.substitution {
+                    visit(substitution.left_identity);
+                    visit(substitution.right_identity);
+                }
+            }
             Self::ContractCall { parents, .. } => {
                 for parent in parents {
                     visit(*parent);
@@ -805,7 +828,14 @@ impl DerivationNode {
             | Self::GoalNormalization { parents, .. }
             | Self::BooleanIntroduction { parents, .. } => parents.len(),
             Self::PostconditionCall { detail } => detail.parents.len(),
-            Self::RangeSeparation { .. } | Self::IndexSeparation { .. } => 1,
+            Self::RangeSeparation { .. } => 1,
+            Self::IndexSeparation { detail } => {
+                if detail.substitution.is_some() {
+                    3
+                } else {
+                    1
+                }
+            }
             Self::ContractCall { parents, .. } => parents.len(),
             Self::SourceBound { .. }
             | Self::SourceDistinct { .. }
@@ -1517,6 +1547,22 @@ impl DerivationLedger {
                         parents.capacity() * size_of::<DerivationId>()
                     }
                     DerivationNode::RangeSeparation { .. } => size_of::<RangeSeparationDetail>(),
+                    DerivationNode::IndexSeparation { detail } => {
+                        size_of::<IndexSeparationDetail>()
+                            + detail
+                                .substitution
+                                .as_ref()
+                                .map_or(0, |_| size_of::<IndexCaptureSubstitution>())
+                            + detail.affine_target.as_ref().map_or(0, |target| {
+                                size_of::<AffineInequality>()
+                                    + target.terms().len() * size_of::<AffineCoefficient>()
+                            })
+                            + detail.affine_images.as_ref().map_or(0, |images| {
+                                size_of::<(AffineForm, AffineForm)>()
+                                    + images.0.terms().len() * size_of::<AffineCoefficient>()
+                                    + images.1.terms().len() * size_of::<AffineCoefficient>()
+                            })
+                    }
                     _ => 0,
                 })
                 .sum::<usize>()
@@ -1562,19 +1608,11 @@ fn compare_node_ties(left: &DerivationNode, right: &DerivationNode) -> std::cmp:
         return left.cmp(right);
     }
     if let (
-        DerivationNode::IndexSeparation {
-            left: left_a,
-            right: left_b,
-            parent: left_parent,
-        },
-        DerivationNode::IndexSeparation {
-            left: right_a,
-            right: right_b,
-            parent: right_parent,
-        },
+        DerivationNode::IndexSeparation { detail: left },
+        DerivationNode::IndexSeparation { detail: right },
     ) = (left, right)
     {
-        return (left_a, left_b, left_parent).cmp(&(right_a, right_b, right_parent));
+        return left.cmp(right);
     }
     let mut index = 0;
     loop {
@@ -1706,7 +1744,7 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         .get(index)
         .copied(),
         DerivationNode::RangeSeparation { detail } => (index == 0).then_some(detail.parent.0),
-        DerivationNode::IndexSeparation { parent, .. } => (index == 0).then_some(parent.0),
+        DerivationNode::IndexSeparation { detail } => (index == 0).then_some(detail.parent.0),
         DerivationNode::BooleanIntroduction {
             goal,
             sign,
@@ -1998,7 +2036,13 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         DerivationNode::RangeSeparation { detail } => {
             remap_id(&mut detail.parent, remap);
         }
-        DerivationNode::IndexSeparation { parent, .. } => remap_id(parent, remap),
+        DerivationNode::IndexSeparation { detail } => {
+            remap_id(&mut detail.parent, remap);
+            if let Some(substitution) = &mut detail.substitution {
+                remap_id(&mut substitution.left_identity, remap);
+                remap_id(&mut substitution.right_identity, remap);
+            }
+        }
         DerivationNode::SourceBound { .. }
         | DerivationNode::SourceDistinct { .. }
         | DerivationNode::SourceGoal { .. }

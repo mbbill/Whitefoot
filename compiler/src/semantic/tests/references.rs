@@ -26,7 +26,7 @@
 //! exact spelling of each judgment; these tests add the rule and issue kind the
 //! corpus manifest does not pin.
 
-use crate::{SemanticIssueKind, SemanticRule};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::{assert_accepts, assert_rule_kind};
 
@@ -278,8 +278,8 @@ fn main() -> status: own ExitStatus pure {
     assert_rule_kind(source, SemanticRule::Eff5, |kind| {
         matches!(
             kind,
-            SemanticIssueKind::OverlappingCallEffects { first, second, .. }
-                if first == second
+            SemanticIssueKind::UndischargedCallSeparation { residual, .. }
+                if residual.contains("captured indices to be distinct")
         )
     });
 }
@@ -1401,21 +1401,57 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
 
+fn assert_indexed_call_proof(label: &str, source: &[u8], require_affine: bool) {
+    super::with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("indexed call separation {label} must be accepted: {outcome:?}");
+        };
+        let mut found = false;
+        for function in &program.data.functions {
+            super::entailment::validate_derivations(&function.entailment);
+            found |= function.entailment.obligations.iter().any(|outcome| {
+                outcome.family == super::super::entailment::ObligationFamily::CallSeparation
+                    && outcome.discharged
+                    && outcome.derivation.is_some_and(|root| {
+                        let Some(super::super::entailment::DerivationNode::IndexSeparation {
+                            detail,
+                        }) = function.entailment.derivations.nodes.get(root.0 as usize)
+                        else {
+                            return false;
+                        };
+                        !require_affine || detail.affine_target.is_some()
+                    })
+            });
+        }
+        assert!(
+            found,
+            "accepted source must retain one exact indexed call proof"
+        );
+    });
+}
+
 #[test]
 fn indexed_call_separation_uses_runtime_order_and_disequality_facts() {
     for relation in ["i < j", "j < i", "i != j"] {
         let source = format!(
-            "{INDEXED_CALL_HELPER}\nfn checked(values: &Array<u8, 4>, i: own u64, j: own u64) -> result: own unit writes(values) {{\n  if {relation} {{\n    write_two(values: values, first: i, second: j);\n  }}\n  return unit;\n}}\n"
+            "{INDEXED_CALL_HELPER}\nfn ordered(values: &Array<u8, 4>, i: own u64, j: own u64) -> result: own unit writes(values) {{\n  if {relation} {{\n    write_two(values: values, first: i, second: j);\n  }}\n  return unit;\n}}\n"
         );
-        assert_accepts(source.as_bytes());
+        assert_indexed_call_proof(relation, source.as_bytes(), false);
     }
     let mixed = format!(
         "{INDEXED_CALL_HELPER}\nfn mixed(values: &Array<u8, 4>, j: own u64) -> result: own unit writes(values) {{\n  if 0_u64 < j {{\n    write_two(values: values, first: 0_u64, second: j);\n  }}\n  return unit;\n}}\n"
     );
-    assert_accepts(mixed.as_bytes());
-    for (guard, close) in [("", ""), ("  if i == j {\n", "  }\n")] {
+    assert_indexed_call_proof("mixed literal", mixed.as_bytes(), false);
+    let affine = format!(
+        "{INDEXED_CALL_HELPER}\nfn affine(values: &Array<u8, 4>, i: own u64, k: own u64) -> result: own unit writes(values) {{\n  if i < 3_u64 {{\n    if 0_u64 < k {{\n      if k < 3_u64 {{\n        let j = i + k;\n        write_two(values: values, first: i, second: j);\n      }}\n    }}\n  }}\n  return unit;\n}}\n"
+    );
+    assert_indexed_call_proof("affine successor", affine.as_bytes(), true);
+    for body in [
+        "  write_two(values: values, first: i, second: j);\n",
+        "  if i == j {\n    write_two(values: values, first: i, second: j);\n  }\n",
+    ] {
         let source = format!(
-            "{INDEXED_CALL_HELPER}\nfn refused(values: &Array<u8, 4>, i: own u64, j: own u64) -> result: own unit writes(values) {{\n{guard}    write_two(values: values, first: i, second: j);\n{close}  return unit;\n}}\n"
+            "{INDEXED_CALL_HELPER}\nfn refused(values: &Array<u8, 4>, i: own u64, j: own u64) -> result: own unit writes(values) {{\n{body}  return unit;\n}}\n"
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Eff5, |kind| {
             matches!(kind, SemanticIssueKind::UndischargedCallSeparation { .. })
@@ -1434,25 +1470,25 @@ fn indexed_call_separation_obeys_loop_backedges() {
     let every_visit = format!(
         "{INDEXED_CALL_HELPER}\nfn looped(values: &Array<u8, 4>, i: own u64, j: own u64, stop: own Bool) -> result: own unit writes(values) {{\n  loop @again {{\n    if i < j {{\n      write_two(values: values, first: i, second: j);\n    }}\n    set j = i;\n    if stop {{\n      break @again;\n    }}\n  }}\n  return unit;\n}}\n"
     );
-    assert_accepts(every_visit.as_bytes());
+    assert_indexed_call_proof("every loop visit", every_visit.as_bytes(), false);
 }
 
 #[test]
 fn indexed_call_separation_requires_every_join_predecessor() {
     let one_arm = format!(
-        "{INDEXED_CALL_HELPER}\nfn joined(values: &Array<u8, 4>, i: own u64, j: own u64, choose: own Bool) -> result: own unit writes(values) {{\n  if choose {{\n    if i < j {{\n    }} else {{\n      return unit;\n    }}\n  }} else {{\n  }}\n  write_two(values: values, first: i, second: j);\n  return unit;\n}}\n"
+        "{INDEXED_CALL_HELPER}\nfn joined(values: &Array<u8, 4>, i: own u64, j: own u64, choose: own Bool) -> result: own unit writes(values) {{\n  if choose {{\n    let branch_marker = i;\n    if i < j {{\n      let observed = i;\n    }} else {{\n      return unit;\n    }}\n  }} else {{\n    let observed = j;\n  }}\n  write_two(values: values, first: i, second: j);\n  return unit;\n}}\n"
     );
     assert_rule_kind(one_arm.as_bytes(), SemanticRule::Eff5, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedCallSeparation { .. })
     });
     let both_arms = format!(
-        "{INDEXED_CALL_HELPER}\nfn joined(values: &Array<u8, 4>, i: own u64, j: own u64, choose: own Bool) -> result: own unit writes(values) {{\n  if choose {{\n    if i < j {{\n    }} else {{\n      return unit;\n    }}\n  }} else {{\n    if i < j {{\n    }} else {{\n      return unit;\n    }}\n  }}\n  write_two(values: values, first: i, second: j);\n  return unit;\n}}\n"
+        "{INDEXED_CALL_HELPER}\nfn joined(values: &Array<u8, 4>, i: own u64, j: own u64, choose: own Bool) -> result: own unit writes(values) {{\n  if choose {{\n    let branch_marker = i;\n    if i < j {{\n      let observed = i;\n    }} else {{\n      return unit;\n    }}\n  }} else {{\n    let branch_marker = j;\n    if i < j {{\n      let observed = j;\n    }} else {{\n      return unit;\n    }}\n  }}\n  write_two(values: values, first: i, second: j);\n  return unit;\n}}\n"
     );
-    assert_accepts(both_arms.as_bytes());
+    assert_indexed_call_proof("both join arms", both_arms.as_bytes(), false);
 }
 
 #[test]
-fn indexed_call_separation_uses_first_unresolved_nested_position() {
+fn indexed_call_separation_uses_ordered_nested_candidates() {
     let helper = r#"fn write_nested(values: &Array<Array<u8, 4>, 4>, ao: own u64, ai: own u64, bo: own u64, bi: own u64) -> result: own unit writes(values[ao][ai]), writes(values[bo][bi]) {
   if ao < 4_u64 {
     if ai < 4_u64 {
@@ -1474,9 +1510,13 @@ fn main() -> status: own ExitStatus pure {
     let outer = format!(
         "{helper}\nfn outer(values: &Array<Array<u8, 4>, 4>, i: own u64, j: own u64, k: own u64) -> result: own unit writes(values) {{\n  if i < j {{\n    write_nested(values: values, ao: i, ai: k, bo: j, bi: k);\n  }}\n  return unit;\n}}\n"
     );
-    assert_accepts(outer.as_bytes());
+    assert_indexed_call_proof("outer nested index", outer.as_bytes(), false);
     let inner = format!(
         "{helper}\nfn inner(values: &Array<Array<u8, 4>, 4>, i: own u64, j: own u64) -> result: own unit writes(values) {{\n  if i < j {{\n    write_nested(values: values, ao: 0_u64, ai: i, bo: 0_u64, bi: j);\n  }}\n  return unit;\n}}\n"
     );
-    assert_accepts(inner.as_bytes());
+    assert_indexed_call_proof("inner after equal prefix", inner.as_bytes(), false);
+    let later = format!(
+        "{helper}\nfn later(values: &Array<Array<u8, 4>, 4>, i: own u64, j: own u64, k: own u64, l: own u64) -> result: own unit writes(values) {{\n  if k < l {{\n    write_nested(values: values, ao: i, ai: k, bo: j, bi: l);\n  }}\n  return unit;\n}}\n"
+    );
+    assert_indexed_call_proof("later nested candidate", later.as_bytes(), false);
 }

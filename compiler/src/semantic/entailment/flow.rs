@@ -55,11 +55,11 @@ use super::polynomial::{CertificatePolynomial, PolynomialError};
 use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
-    GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
-    PostconditionCallSubstitution, RangeSeparationDetail, RangeSeparationOrdering, Relation,
-    SourceAffineFactRef, SourceLoopInvariantRef, WordHashMap, close, close_excluding_term,
-    closure_is_seeded, contradiction_without_proofs, join_at, materialize_closure_at,
-    materialize_closure_before_kill,
+    GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, IndexCaptureSubstitution,
+    IndexSeparationDetail, JoinParent, OutcomeFact, PostconditionCallSubstitution,
+    RangeSeparationDetail, RangeSeparationOrdering, Relation, SourceAffineFactRef,
+    SourceLoopInvariantRef, WordHashMap, close, close_excluding_term, closure_is_seeded,
+    contradiction_without_proofs, join_at, materialize_closure_at, materialize_closure_before_kill,
 };
 use super::term::{
     CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceRoot, TermId, TermKind, TermTable,
@@ -7195,17 +7195,17 @@ impl Analyzer<'_, '_> {
                         .call_separations
                         .iter()
                         .filter(|separation| separation.site == *call)
-                        .flat_map(|separation| match separation.positions {
+                        .flat_map(|separation| separation.positions.iter())
+                        .flat_map(|positions| match *positions {
                             super::super::model::CheckedCallSeparationPositions::Indices(
                                 left,
                                 right,
-                            ) => [Some(left.capture), Some(right.capture)],
+                            ) => [left.capture, right.capture],
                             super::super::model::CheckedCallSeparationPositions::Ranges(
                                 left,
                                 right,
-                            ) => [Some(left.start.capture), Some(right.start.capture)],
+                            ) => [left.start.capture, right.start.capture],
                         })
-                        .flatten()
                         .collect::<HashSet<_>>();
                     for (argument, captured) in arguments.iter().zip(actual_captures) {
                         if required_captures.contains(&captured.capture) {
@@ -9744,27 +9744,31 @@ impl Analyzer<'_, '_> {
         all_discharged
     }
 
-    /// One pair, by the four non-strict orderings [OWN-7] names for two range
-    /// steps: `left.end <= right.start`, `right.end <= left.start`, and each
-    /// range empty. Either empty-range ordering suffices because formation
-    /// already proved start no greater than end [REF-4].
+    /// One pair, by an ordered unresolved index candidate or by the four
+    /// non-strict orderings [OWN-7] names for two range steps. Either empty-
+    /// range ordering suffices because formation already proved start no
+    /// greater than end [REF-4].
     fn judge_one_separation(
         &mut self,
         separation: &super::super::model::CheckedCallSeparation,
         state: &mut ProofFlowState,
     ) -> bool {
         use super::super::model::CheckedCallSeparationPositions;
-        let proof = match separation.positions {
-            CheckedCallSeparationPositions::Indices(left, right) => {
-                self.prove_index_separation(left, right, state)
-            }
-            CheckedCallSeparationPositions::Ranges(left, right) => {
-                self.prove_range_separation(left, right, state)
-            }
-        };
+        let proved = separation.positions.iter().copied().find_map(|positions| {
+            let proof = match positions {
+                CheckedCallSeparationPositions::Indices(left, right) => {
+                    self.prove_index_separation(left, right, state)
+                }
+                CheckedCallSeparationPositions::Ranges(left, right) => {
+                    self.prove_range_separation(left, right, state)
+                }
+            };
+            proof.map(|proof| (positions, proof))
+        });
+        let proof = proved.as_ref().map(|(_, proof)| proof);
         let discharged = proof.is_some();
-        if discharged {
-            match separation.positions {
+        if let Some((positions, _)) = &proved {
+            match *positions {
                 CheckedCallSeparationPositions::Indices(left, right) => {
                     state.separations.record_indices_distinct(left, right);
                 }
@@ -9773,7 +9777,7 @@ impl Analyzer<'_, '_> {
                 }
             }
         }
-        let derivation = proof.as_ref().and_then(|proof| proof.derivation);
+        let derivation = proof.and_then(|proof| proof.derivation);
         let ordinal =
             u32::try_from(self.obligations.len()).expect("ENT obligation ordinal exceeds u32");
         if let Some(root) = derivation {
@@ -9789,15 +9793,16 @@ impl Analyzer<'_, '_> {
             discharged,
             refuted: false,
             contradictory: proof.is_some_and(|proof| proof.route == Some(ProofRoute::Contradiction)),
-            residual: (!discharged).then(|| match separation.positions {
-                CheckedCallSeparationPositions::Indices(..) => format!(
+            residual: (!discharged).then(|| match separation.positions.first() {
+                Some(CheckedCallSeparationPositions::Indices(..)) => format!(
                     "{} and {} require their captured indices to be distinct",
                     separation.left_spelling, separation.right_spelling
                 ),
-                CheckedCallSeparationPositions::Ranges(..) => format!(
+                Some(CheckedCallSeparationPositions::Ranges(..)) => format!(
                     "{} and {} select different storage (one ends before the other starts, or one is empty)",
                     separation.left_spelling, separation.right_spelling
                 ),
+                None => unreachable!("checker hands off at least one position candidate"),
             }),
             overlap_targets: Some((
                 separation.left_spelling.clone(),
@@ -9850,13 +9855,20 @@ impl Analyzer<'_, '_> {
                 difference: 0,
             }
         };
-        let mut inequalities = Vec::new();
-        if let Some((left_image, right_image)) = state
+        let left_image = state
             .affine
             .indices
             .get(&left.capture)
-            .zip(state.affine.indices.get(&right.capture))
-        {
+            .cloned()
+            .or_else(|| self.affine_term_value(left_term, &state.affine));
+        let right_image = state
+            .affine
+            .indices
+            .get(&right.capture)
+            .cloned()
+            .or_else(|| self.affine_term_value(right_term, &state.affine));
+        let mut inequalities = Vec::new();
+        if let Some((left_image, right_image)) = left_image.as_ref().zip(right_image.as_ref()) {
             for (lower, upper) in [(left_image, right_image), (right_image, left_image)] {
                 if let Ok(inequality) = AffineInequality::from_bounded_forms(
                     lower,
@@ -9868,13 +9880,109 @@ impl Analyzer<'_, '_> {
                 }
             }
         }
+        let mut substitution = None;
         let mut proof = self.prove(
             ProofContext::new(&state.facts, &state.affine),
             ProofGoal::Ordering {
                 relation: &relation,
-                affine: (!inequalities.is_empty()).then_some(inequalities.as_slice()),
+                affine: None,
             },
         );
+        if proof.disposition != ProofDisposition::Proved
+            && let (CapturedTerm::Binding(left_binding), CapturedTerm::Binding(right_binding)) =
+                (left.term, right.term)
+        {
+            let source_left = self.terms.intern(TermKind::Place(
+                ResolvedPlace::spelled(PlaceRoot::Binding(left_binding), false, Vec::new()),
+                super::super::model::IntegerType::U64,
+            ));
+            let source_right = self.terms.intern(TermKind::Place(
+                ResolvedPlace::spelled(PlaceRoot::Binding(right_binding), false, Vec::new()),
+                super::super::model::IntegerType::U64,
+            ));
+            let source_relation = if source_left <= source_right {
+                Relation::Distinct {
+                    left: source_left,
+                    right: source_right,
+                    difference: 0,
+                }
+            } else {
+                Relation::Distinct {
+                    left: source_right,
+                    right: source_left,
+                    difference: 0,
+                }
+            };
+            let left_identity = Relation::Equal {
+                left: left_term,
+                right: source_left,
+                difference: 0,
+            };
+            let right_identity = Relation::Equal {
+                left: right_term,
+                right: source_right,
+                difference: 0,
+            };
+            let closed = ProofContext::new(&state.facts, &state.affine).close(
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+            );
+            if closed.derives(&source_relation)
+                && closed.derives(&left_identity)
+                && closed.derives(&right_identity)
+            {
+                let parent = closed
+                    .relation_proof(&source_relation, &mut self.derivations)
+                    .expect("a proved source disequality retains its proof");
+                let left_identity = closed
+                    .relation_proof(&left_identity, &mut self.derivations)
+                    .expect("a live left capture identity retains its proof");
+                let right_identity = closed
+                    .relation_proof(&right_identity, &mut self.derivations)
+                    .expect("a live right capture identity retains its proof");
+                substitution = Some(Box::new(IndexCaptureSubstitution {
+                    source_left,
+                    source_right,
+                    left_identity,
+                    right_identity,
+                }));
+                proof = ProofResult {
+                    disposition: ProofDisposition::Proved,
+                    route: Some(ProofRoute::L0),
+                    derivation: Some(parent),
+                    numeric_upper_bound: None,
+                    product_interval: None,
+                };
+            }
+        }
+        let mut affine_target = None;
+        let mut affine_images = None;
+        if proof.disposition != ProofDisposition::Proved {
+            for inequality in &inequalities {
+                proof = self.prove(
+                    ProofContext::new(&state.facts, &state.affine),
+                    ProofGoal::Ordering {
+                        relation: &relation,
+                        affine: Some(std::slice::from_ref(inequality)),
+                    },
+                );
+                if proof.disposition == ProofDisposition::Proved {
+                    if proof.route == Some(ProofRoute::Affine) {
+                        affine_target = Some(Box::new(inequality.clone()));
+                        affine_images = Some(Box::new((
+                            left_image
+                                .clone()
+                                .expect("an affine candidate has a left image"),
+                            right_image
+                                .clone()
+                                .expect("an affine candidate has a right image"),
+                        )));
+                    }
+                    break;
+                }
+            }
+        }
         if proof.disposition != ProofDisposition::Proved {
             return None;
         }
@@ -9882,9 +9990,14 @@ impl Analyzer<'_, '_> {
             .derivation
             .expect("a proved index separation retains its L0 or affine parent");
         proof.derivation = Some(self.derivations.intern(DerivationNode::IndexSeparation {
-            left,
-            right,
-            parent,
+            detail: Box::new(IndexSeparationDetail {
+                left,
+                right,
+                parent,
+                affine_target,
+                affine_images,
+                substitution,
+            }),
         }));
         Some(proof)
     }

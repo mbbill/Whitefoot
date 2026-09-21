@@ -10,6 +10,7 @@ use crate::{
     SemanticRule, SourceInput,
 };
 
+use super::super::entailment::affine::{AffineCheckState, AffineInequality};
 use super::super::entailment::{
     CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, CountedAtomicDerivation,
     CountedCaptureSide, CountedDerivationSet, CountedProofPoint, CountedRootAtom, DerivationId,
@@ -1277,11 +1278,10 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ordering: detail.ordering,
                 }
             }
-            DerivationNode::IndexSeparation {
-                left,
-                right,
-                parent,
-            } => {
+            DerivationNode::IndexSeparation { detail } => {
+                let left = &detail.left;
+                let right = &detail.right;
+                let parent = detail.parent;
                 let term_for = |captured: &crate::semantic::places::CapturedValue| {
                     use crate::semantic::places::CapturedTerm;
                     summary
@@ -1290,7 +1290,8 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         .iter()
                         .position(|term| match captured.term {
                             CapturedTerm::Literal(value) => {
-                                *term == TermKind::Constant(i128::from(value))
+                                (*term == TermKind::Zero && value == 0)
+                                    || *term == TermKind::Constant(i128::from(value))
                             }
                             CapturedTerm::Const(declaration) => {
                                 *term == TermKind::ConstParameter(declaration)
@@ -1318,20 +1319,110 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         difference: 0,
                     }
                 };
-                match retained_conclusion(&conclusions, *parent) {
-                    DerivationConclusion::Relation(relation) => assert_eq!(relation, &expected),
-                    DerivationConclusion::AffineConsequence => {
-                        let DerivationNode::AffineConsequence {
-                            relation: Some(relation),
-                            ..
-                        } = &summary.derivations.nodes[parent.0 as usize]
-                        else {
-                            panic!("an indexed affine proof retains its exact L0 conclusion");
-                        };
-                        assert_eq!(relation.as_ref(), &expected);
+                if let Some(substitution) = &detail.substitution {
+                    use crate::semantic::places::{CapturedTerm, PlaceRoot};
+                    let (CapturedTerm::Binding(left_binding), CapturedTerm::Binding(right_binding)) =
+                        (left.term, right.term)
+                    else {
+                        panic!("capture substitution is restricted to direct binding captures");
+                    };
+                    for (source, binding) in [
+                        (substitution.source_left, left_binding),
+                        (substitution.source_right, right_binding),
+                    ] {
+                        assert!(matches!(
+                            retained_term(summary, source),
+                            TermKind::Place(place, IntegerType::U64)
+                                if place.root == PlaceRoot::Binding(binding) && place.path.is_empty()
+                        ));
                     }
-                    DerivationConclusion::Contradiction => {}
-                    other => panic!("invalid indexed-separation parent: {other:?}"),
+                    let source_expected = if substitution.source_left <= substitution.source_right {
+                        Relation::Distinct {
+                            left: substitution.source_left,
+                            right: substitution.source_right,
+                            difference: 0,
+                        }
+                    } else {
+                        Relation::Distinct {
+                            left: substitution.source_right,
+                            right: substitution.source_left,
+                            difference: 0,
+                        }
+                    };
+                    assert_eq!(
+                        retained_conclusion(&conclusions, parent),
+                        &DerivationConclusion::Relation(source_expected)
+                    );
+                    for (identity, capture, source) in [
+                        (
+                            substitution.left_identity,
+                            left_term,
+                            substitution.source_left,
+                        ),
+                        (
+                            substitution.right_identity,
+                            right_term,
+                            substitution.source_right,
+                        ),
+                    ] {
+                        let DerivationConclusion::Relation(Relation::Equal {
+                            left,
+                            right,
+                            difference: 0,
+                        }) = retained_conclusion(&conclusions, identity)
+                        else {
+                            panic!("capture substitution retains an exact identity proof");
+                        };
+                        assert!(
+                            (*left == capture && *right == source)
+                                || (*left == source && *right == capture)
+                        );
+                    }
+                } else {
+                    match retained_conclusion(&conclusions, parent) {
+                        DerivationConclusion::Relation(relation) => assert_eq!(relation, &expected),
+                        DerivationConclusion::AffineConsequence => {
+                            let DerivationNode::AffineConsequence { relation: None, .. } =
+                                &summary.derivations.nodes[parent.0 as usize]
+                            else {
+                                panic!(
+                                    "an indexed affine proof retains its targetless affine parent"
+                                );
+                            };
+                            let target = detail.affine_target.as_deref().expect(
+                                "an indexed affine proof retains its selected strict target",
+                            );
+                            let (left_image, right_image) = detail.affine_images.as_deref().expect(
+                                "an indexed affine proof retains the exact captured images",
+                            );
+                            let expected_targets = [
+                                AffineInequality::from_bounded_forms(
+                                    left_image,
+                                    right_image,
+                                    -1,
+                                    &mut AffineCheckState::new(),
+                                ),
+                                AffineInequality::from_bounded_forms(
+                                    right_image,
+                                    left_image,
+                                    -1,
+                                    &mut AffineCheckState::new(),
+                                ),
+                            ];
+                            assert!(expected_targets.iter().any(|expected| {
+                                expected.as_ref().is_ok_and(|expected| expected == target)
+                            }));
+                        }
+                        DerivationConclusion::Contradiction => {}
+                        other => panic!("invalid indexed-separation parent: {other:?}"),
+                    }
+                }
+                if !matches!(
+                    retained_conclusion(&conclusions, parent),
+                    DerivationConclusion::AffineConsequence
+                ) {
+                    assert!(detail.affine_target.is_none());
+                    assert!(detail.affine_images.is_none());
                 }
                 DerivationConclusion::IndexSeparation {
                     left: *left,
