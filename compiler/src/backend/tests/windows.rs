@@ -766,8 +766,8 @@ fn main() -> status: own ExitStatus pure {
     let llvm = compile(source);
     let update = emitted_function(&llvm, "update");
     // The length read projects the field once for the explicit control. The
-    // target captures that field's block address once before the RHS, and the
-    // store uses the captured address without rereading its parent.
+    // target captures the complete element address once before the RHS, and
+    // the store uses that address without rereading its parent [SET-1].
     //
     // STOR-1 places the descriptor in the one heap object. Capture therefore
     // loads the Box pointer from its field slot, then forms an address into
@@ -800,21 +800,29 @@ fn main() -> status: own ExitStatus pure {
                 .strip_suffix(&format!(" = getelementptr i8, ptr {pointer}, i64 0"))
         })
         .expect("the captured pointer forms the array address before the RHS");
-    let element = update[rhs..store]
+    let element_projection = format!(
+        " = getelementptr inbounds {{ i64, [0 x i16] }}, ptr {address}, i64 0, i32 1, i64 "
+    );
+    assert_eq!(update.matches(&element_projection).count(), 1);
+    let element = update[captured..rhs]
         .lines()
-        .find(|line| {
-            line.contains(&format!(
-                " = getelementptr inbounds {{ i64, [0 x i16] }}, ptr {address}, i64 0, i32 1, i64 "
-            ))
-        })
+        .find(|line| line.contains(&element_projection))
         .and_then(|line| line.trim().split_once(" = ").map(|(result, _)| result))
-        .expect("the post-RHS element address uses exactly the captured array address");
+        .expect("the element address uses the captured array address before the RHS");
+    let target = update[captured..rhs]
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_suffix(&format!(" = getelementptr i8, ptr {element}, i64 0"))
+        })
+        .expect("the complete typed target is captured before the RHS");
+    assert_eq!(update.matches("store i16").count(), 1);
     assert!(
         update[store..]
             .lines()
             .next()
             .unwrap()
-            .ends_with(&format!("ptr {element}"))
+            .ends_with(&format!("ptr {target}"))
     );
     assert!(!update[rhs..store].contains("load ptr, ptr "));
     assert!(!update[rhs..store].contains("getelementptr inbounds %wf.t0,"));
