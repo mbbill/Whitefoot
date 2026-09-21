@@ -106,6 +106,51 @@ recursive-budget realization fixed for that control, and protect small and
 skewed inputs. If the new baseline changes the dominant cost, reconsider the
 hypothesis instead of reviving the old backend patch by ancestry.
 
+#### Joined-phase scatter experiment
+
+This experiment starts from merged `d47fb7c7`, with the reference-reading
+scatter source and compiler held fixed for the initial attribution. Its first
+question is which source phase limits the large mixed-input W8 result, not
+whether another scheduler can make a different algorithm faster. Use W1, W2,
+W4 and W8, then retain small and skewed inputs as adverse controls for any
+selected change. Native chain and direct forms give context; only an
+otherwise matched WF control isolates a source or compiler mechanism.
+
+The competing explanations and discriminating observations are:
+
+- Allocation, initialization or tally can dominate serial wall time while
+  leaving no work for other lanes. A targeted reduction must lower those
+  phases and the unobserved whole-call cost, not merely raise CPU occupancy.
+- The packing continuation may expose too little work or have a long source
+  dependency chain. Relate its wall/CPU/grant observations to the emitted
+  recursion budget and actual continuation shape before changing scheduling.
+- Indexed aggregate expansion may retain avoidable element-transfer work.
+  Reproduce it in current optimized IR before reviving the earlier backend
+  hypothesis; a fixed-source lowering control must remove that work and its
+  measured phase cost without changing the algorithm or proof obligations.
+- The two final copy loops can bound useful parallel width independently of
+  the pool. A change must reduce their span or required copying, rather than
+  claim unused workers alone establish a runtime defect.
+
+Use the eight fully joined phase boundaries above. A separate diagnostic
+image records monotonic wall time, process CPU and cumulative grant deltas;
+it must preserve the ordinary result and source joins. Keep the unobserved
+image authoritative for whole-call comparisons. First qualify an
+identical-image pair, then compare diagnostic and ordinary images in five
+rotating passes, each with one verified warm-up and five verified warm calls.
+The median within-pass wall ratio must remain within three percent of one
+for quantitative phase attribution at that input/width. Retain inconclusive
+controls explicitly; do not subtract the observed overhead from phase costs.
+
+Record compiler and native construction separately from oracle execution and
+timing. Reuse checked dependency builds, keep generated artifacts outside the
+checkout, and run one guarded command at a time with a short stage-specific
+deadline. Qualify the ordinary sequential/parallel WF images and native
+controls against the unchanged stable oracle before timing. Preserve every
+sample and image identity. Choose the next bounded source or lowering
+experiment from this evidence; no new source proof rule, general grain policy,
+or production tracing framework is selected by the diagnostic itself.
+
 #### Initial compatibility checkpoint
 
 At `efd6ebc9`, the guarded gate-profile library-test executable construction
