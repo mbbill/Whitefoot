@@ -4,10 +4,10 @@
 
 #include "backend.h"
 #include "harness.h"
-extern void wf_bench_radix_scatter_par(const uint64_t *, uint64_t, uint32_t, uint64_t **, uint64_t *);
-extern void wf_bench_radix_scatter_seq(const uint64_t *, uint64_t, uint32_t, uint64_t **, uint64_t *);
-extern void wf_bench_radix_scatter_par_release(uint64_t *, uint64_t);
-extern void wf_bench_radix_scatter_seq_release(uint64_t *, uint64_t);
+extern void wf_bench_radix_scatter_par(const uint64_t *, uint64_t, uint32_t, uint64_t **, uint64_t *, void **);
+extern void wf_bench_radix_scatter_seq(const uint64_t *, uint64_t, uint32_t, uint64_t **, uint64_t *, void **);
+extern void wf_bench_radix_scatter_par_release(void *);
+extern void wf_bench_radix_scatter_seq_release(void *);
 
 static const wfb_backend *backend;
 static unsigned width, frontier;
@@ -85,12 +85,13 @@ static void scatter_chunk(void *context, size_t block) {
         else job->output[low++] = value;
     }
 }
-static void native_release(uint64_t *data, uint64_t length) { (void)length; free(data); }
+static void native_release(void *held) { free(held); }
 static void native_entry(const uint64_t *input, uint64_t n, uint32_t bit,
-                          uint64_t **output, uint64_t *length) {
+                          uint64_t **output, uint64_t *length, void **held) {
     if (backend == &wfb_backend_serial) {
         *output = oracle(input, n, bit);
         *length = n;
+        *held = *output;
         return;
     }
     size_t blocks = (size_t)n / BLOCK + 1, capacity = blocks * BLOCK;
@@ -131,11 +132,13 @@ static void native_entry(const uint64_t *input, uint64_t n, uint32_t bit,
         *output = result;
         *length = lows + highs;
     }
+    *held = *output;
 }
 static size_t count = 1048593;
 static unsigned shape;
 static uint32_t selected_bit;
 static uint64_t *input, *expected, *output;
+static void *held_output;
 static scatter_release release_output;
 static char workload[220];
 static void select_backend(const char *form, unsigned workers) {
@@ -166,14 +169,14 @@ static void prepare(unsigned workers) {
 static size_t call(const char *form, unsigned workers) {
     uint64_t length = UINT64_MAX;
     if (!strcmp(form, "wf")) {
-        wf_bench_radix_scatter_par(input, count, selected_bit, &output, &length);
+        wf_bench_radix_scatter_par(input, count, selected_bit, &output, &length, &held_output);
         release_output = wf_bench_radix_scatter_par_release;
     } else if (!strcmp(form, "wf-seq")) {
-        wf_bench_radix_scatter_seq(input, count, selected_bit, &output, &length);
+        wf_bench_radix_scatter_seq(input, count, selected_bit, &output, &length, &held_output);
         release_output = wf_bench_radix_scatter_seq_release;
     } else {
         select_backend(form, workers);
-        native_entry(input, count, selected_bit, &output, &length);
+        native_entry(input, count, selected_bit, &output, &length, &held_output);
         release_output = native_release;
     }
     if (length != count) fail("timed output length");
@@ -183,7 +186,7 @@ static size_t check(void) {
     size_t checked = compare(output, expected, count);
     for (size_t i = 0; i < count; ++i)
         if (input[i] != key_at(i, shape, selected_bit)) fail("timed input modified");
-    release_output(output, count); output = NULL;
+    release_output(held_output); held_output = NULL; output = NULL;
     return checked;
 }
 static size_t verify(const char *form, unsigned workers) {

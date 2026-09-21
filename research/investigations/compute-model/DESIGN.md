@@ -11,6 +11,428 @@ protocol merges. The containers handover added at that revision describes a
 separate, unmerged implementation; it is not this experiment's language or
 compiler. The active specification and executable cases remain authoritative.
 
+## Reference-model scatter investigation
+
+The reference/effect/storage port in PR #70 changes the source mechanisms
+behind the earlier results. This continuation starts at `efd6ebc9`, not at an
+uncommitted port workspace. Later upstream revisions are integrated at named
+checkpoints; correctness and timing observations identify the exact revision
+they describe. The older measurements below remain evidence for their older
+sources and compiler, not measurements of the reference model.
+
+The immediate question is whether temporary references remove the owned
+chunk transfers from stable scatter without losing its independent result
+checks or its useful output parallelism. First reuse the maintained prefix,
+histogram, stencil, sort/graph, and scatter observations in
+`compiler/src/backend/tests/ranges.rs`. Their formal sources and native
+oracles live in `tests/programs/compute/`; this investigation adds no daily
+gate dependency on research. Unrelated port defects are recorded with a
+reproducer and revision for the port's owner, rather than expanding this
+investigation into completion of the entire language migration.
+
+Before selecting an implementation, the discriminating criteria are:
+
+- The unchanged input, stable output, output length, empty/uneven/skewed
+  cases, and runtime bit selection satisfy the existing independent oracle
+  in sequential and overlapping emissions. The overlapping image must still
+  hand out nonempty output work, not just the input partition map.
+- First compare the current take/restore source with reads through references
+  while keeping the block size, chunk representation, packing chain, output
+  allocation, and scheduler fixed. Elimination of aggregate transfers must
+  be visible in generated code; a shorter source alone establishes no cost
+  reduction. Any later algorithm change is a separate comparison.
+- Measure compiler construction, WF analysis/lowering, native construction,
+  and native execution separately. Timing uses bounded, host-locked runs on
+  an otherwise idle host, retaining wall time, process CPU, worker count,
+  input shape, exact sources/build flags, and observer perturbation. Loaded
+  or unverified runs do not select an optimization.
+- Attribute remaining costs to partitioning, count tally, packing, final
+  copies, and allocation/initialization before selecting a scheduler change.
+  Reuse the existing native chain and direct-scatter controls with their
+  different representations stated explicitly. Keep correctness observers
+  separate from timing images.
+
+Reference-based access may remove copies; it does not supply a quantified
+relation between input contents and tight scatter offsets. Padded streams,
+linear packing depth, and final-copy span remain separate questions. This
+continuation does not select a general grain/PGO policy or an I/O mechanism.
+
+#### Post-port attribution boundary (2026-09-21)
+
+The next source comparison uses merged reference-model compiler `36be8784`,
+whose implementation matches the final port at `437ae287`. The September 20
+measurements below remain observations of `b6aef587`, not a speedup claim on
+this new compiler. Keep the reference tally and packing source, independent
+stable oracle, and observations of completed helper work in both phases.
+Reestablish correctness before measuring the new baseline.
+
+The port now owns source-pair separation questions, flow-positioned proofs,
+retained derivations and loop capture identities. It supersedes this
+investigation's earlier optional range-proof transport and its blanket
+reference-rebinding restriction. Use that shared implementation rather than
+reintroducing a second permission proof channel. The port's permission cases
+cover dynamic splits, endpoint rebinding, branch-local evidence, complete
+multi-target conflicts, nonadjacent pairs and loop-carried generations. The
+existing native three-call regression retains the independent scalar prefix,
+and the scatter oracle still checks actual input and output work.
+
+The earlier utilization investigation in [PR #64](https://github.com/mbbill/Whitefoot/pull/64),
+at `70c86e5b`, supplies a hypothesis and an observer prototype, not a validated
+optimization. Its only coarse phase run encountered severe contention;
+ordinary W8 wall time rose from about 4 ms to 96 ms. Those timings cannot
+select a change. Its snapshot-copy candidate targeted the retired owning
+buffer/slice transfer path. Current stores already use `store_value_at`, and
+stored typed-address loads use `load_place_result`; the old fixture and
+replacement syntax no longer describe the current path. Any remaining
+aggregate expansion must first be reproduced in current generated code,
+then compared on identical WF source. Neither shared helper names nor the
+old candidate establish that every indexed aggregate path is optimized.
+
+Preserve the useful attribution boundary from that prototype: chunk
+allocation/initialization, input partitioning, tally, digit-stream allocation,
+packing, result allocation, final copy, and temporary release. Observe wall
+time, process CPU and grants at fully joined boundaries, with correctness
+observations separate from timing images. The old LLVM-text injector names
+retired buffer labels and a two-word return ABI, so do not carry it into the
+new build or formal checks unchanged. Add a current diagnostic only for the
+next concrete attribution question; it remains an explicit research command.
+
+Before selecting another optimization, compare an unobserved image with its
+observed twin to qualify perturbation, then use a fixed-source control whose
+predicted phase or work-supply change would distinguish the proposed cause.
+Coarse CPU/wall ratios cannot distinguish serial span, limited task supply,
+and published work waiting for a worker. Keep the current source shape and
+recursive-budget realization fixed for that control, and protect small and
+skewed inputs. If the new baseline changes the dominant cost, reconsider the
+hypothesis instead of reviving the old backend patch by ancestry.
+
+#### Initial compatibility checkpoint
+
+At `efd6ebc9`, the guarded gate-profile library-test executable construction
+took 72.28 s; constructing the compiler executable separately took 40.03 s.
+These are construction costs, not native program execution. Directly running
+the four existing `backend::tests::ranges` test functions below took 10.66 s
+overall with one test thread. Each function includes its WF analysis/lowering
+and, when reached, native construction and execution; the table does not
+attribute that combined duration to any one of those stages.
+
+| Existing observation | Test-function wall time | Result on the initial checkpoint |
+|---|---:|---|
+| `blocked_compute_matches_independent_oracles_at_runtime_dimensions` | 5.21 s | Prefix and histogram native oracle checks passed. |
+| `stencil_matches_an_independent_dimension_and_step_matrix` | 4.52 s | Native dimension/step oracle checks passed. |
+| `stable_scatter_matches_an_independent_oracle_and_hands_out_output_work` | 0.02 s | Semantic analysis stopped at unsupported `CompositeValues`; no native scatter ran. |
+| `irregular_compute_matches_independent_sort_and_graph_oracles` | 0.33 s | `merge_sort.wf:112` failed FN-8 at the `merge_values(first: a1, second: b1, output: out1)` call: `deref(a1).len <= deref(out1).len` was unproved. The test did not reach BFS. |
+
+The merge-sort observation is a reproducer for PR #70's owner, not a changed
+language expectation or a diagnosis of the underlying proof defect. It is
+outside the immediate scatter repair. The scatter stop is also reproduced by
+an otherwise empty program whose only helper takes `&[Option<Chunk>]` and
+returns `deref(chunks).len`, with `Chunk` owning the same two inline runs. This
+isolates an existing represented nominal element from chunk transfer,
+parallel permission, or native execution.
+
+The first repair uses the storage element domain already represented by
+`buffer_element` for range formation, re-slicing, length reads and indexed
+access. The same minimal helper then emits LLVM successfully; this is not
+yet evidence of native scatter correctness. The next stop is OP-4 at
+`&deref(chunks)[0_u64]`: reference formation treats a range parameter's
+element type as the indexable base. PR #70's owner should complete that
+general reference path. The consumer comparison first uses an equivalent
+storage reference plus an explicit chunk position on both arms, retaining
+the block decomposition, packing continuation, capacities and element work.
+Only after that shared form passes the independent oracle can its owned
+take/restore and reference-read versions select a cost conclusion.
+
+The retained scatter benchmark also needs the formal adapter's current
+output-handle ABI. Its entry returns an element pointer and length for
+checking plus a separate owning Box handle for release. Both WF forms retain
+that handle until the check, while native forms use their allocated pointer
+as the handle. Release remains outside the timed call. This is an interface
+repair, with no change to the native algorithms or timing boundaries; C
+syntax/type checking passed, and full harness execution remains unverified.
+
+The existing `ref4-pos-range-reference-and-reslice` conformance case now also
+forms and re-slices a range of affine `Option<Slots<u64, 1>>` elements, replaces
+an element through that range, and checks the original slot. Its expectation
+is strengthened from acceptance to exit-zero execution, so its existing
+scalar length checks also execute. This adds one native construction/run to
+the same corpus case, not another Rust test executable or duplicate WF case.
+On the repaired compiler, WF analysis plus native construction took 0.57 s
+and process launch/execution took 0.36 s, both exit zero. The initial compiler
+stops on this extended case as unsupported. Changing the replacement offset
+to an unproved `1_u64` still rejects at OP-4; the element-domain repair does
+not waive the subscript bound. `make conformance` passed its 28 runner tests
+and reported 125/125 rules covered.
+
+#### Reference-source and tally probes
+
+The reference-source probe, initially retained beside this investigation,
+keeps the current block decomposition and padded streams. Tally reads a
+chunk in place; packing reads the containing Box through a reference and
+advances an explicit chunk position. The whole-Box form follows the current
+TYPE-9 placement rule. Explicit finite steps carry the same padded-capacity
+argument through that position. The formal scatter fixture was unchanged at
+this initial checkpoint; the integrated comparison below now uses its
+maintained source and removes the temporary research copy.
+
+With compiler sources at `0f9edadd`, the candidate reaches FN-8 at
+`copy_run(values: &deref(payload).low, output: first_low)`: the substituted
+requirement names `deref(chunks).inner[first].len`, losing the payload and
+`low` field. PR #70's in-progress changes already address payload projections
+in `goal_referent_image`; they are not independently applied here. The owned
+control on the same Box/position signature additionally loses the expected
+remaining-range length relation after the output copies. These observations
+must be rechecked on a committed upstream checkpoint before timing.
+
+An isolated code-shape probe extracts the `Chunk` and `tally` definitions
+from `efd6ebc9:tests/programs/compute/radix_scatter.wf` and from the candidate,
+appending the same empty `main` returning exit zero. Both sources emit LLVM
+through `whitefootc --emit-llvm SOURCE -o MODULE.ll`. Apple clang 21.0.0 on
+arm64 Darwin compiles each with
+`clang -O2 -Wno-override-module -S -x ir MODULE.ll -o MODULE.s`. The `_wf_tally`
+body, bounded by its label and `-- End function`, has 954 assembly instruction
+lines in the owned form and 11 in the reference form. The owned form reserves
+4,096 stack bytes plus 64 bytes of saved registers; the reference form has no
+stack frame. Its live path reads the tag and two lengths, adds the prior
+counts and stores two scalars. Although its unoptimized LLVM contains an
+aggregate snapshot, native optimization removes that unused payload copy.
+These are isolated emitted-code observations, not elapsed-time results or
+an end-to-end scatter speedup; caller placement and full consumer correctness
+remain to be checked.
+
+#### Output-overlap checkpoint
+
+A diagnostic compiler snapshot from PR #70, SHA-256
+`32c6f0dfda8c301268406a1cff397fbb47d1ea32a79f5891796925b99b1378f7`,
+preserves remaining-range lengths across the copy calls. This is an
+uncommitted upstream binary, not an integrated compiler revision or a timing
+baseline. A helper taking the payload as an ordinary `&Chunk` avoids the
+remaining nested-payload contract-image defect. Writing each partition result
+through `&Option<Chunk>` also avoids the nominal range-element reference path;
+both source forms still need their general compiler repairs. The Box/position
+entry needs the explicit finite step `256 times (chunks.inner.len <= blocks)`
+to establish the padded capacity requirement. That missing step is a source
+proof requirement, not a compiler defect.
+
+With those source changes, the unchanged native oracle passes all 109
+configurations and 3,466,725 output values sequentially and in the parallel
+image's one-worker fallback. WF emission took 0.07 s, runtime-object construction
+0.39 s, sequential native construction 0.52 s, and oracle launch/execution
+0.37 s. These are diagnostic verification costs, not kernel measurements.
+At two workers the output values still agree, but the required packing observer
+reports no steals or nonempty helper output; the parallel correctness check
+therefore fails. No performance selection follows from this snapshot.
+
+The permission ledger admits the two adjacent `copy_run` calls but denies the
+following recursive pack because `first_high` and `rest_high` are not separated.
+`permission::footprint_conflict` currently uses `UnprovedSeparations`, so it
+cannot use the ordinary arithmetic proof of those sibling ranges. Separately,
+the lowering keeps only the prefix of a permitted run; a preceding non-call
+statement hides even the admitted two-call suffix. The first repair retains
+each contiguous call subrun, ending it at a non-call, unavailable call result,
+block change, or addressed result. The existing native three-call/join-order
+case now includes an independent non-call prefix and passes (1.01 s inside the
+test function; 1.61 s including the guarded process). Constructing its updated
+gate-profile Rust test executable took 68.55 s. No extra WF compilation or
+native executable is added to that test's normal schedule.
+
+The next compiler comparison keeps acceptance and the four fixed range
+separation queries unchanged. Optional PAR-1 separation evidence must belong
+to the argument pair and the state before its earlier statement; a proof
+obtained under one branch must not grant overlap after a join or in another
+branch. Permission composition must still compare every conflicting access
+against the run's accumulated footprint. The discriminating controls are a
+permitted split, an overlapping split, endpoint reassignment, and a
+branch-local separation that cannot escape its branch, followed by the native
+packing observer. Missing evidence remains a sequential permission outcome.
+The payload helper also changes recursive call-graph depth, so its temporary
+shape is not a valid comparison with the old chain's recursion budget; a
+timing comparison must give both arms the same helper boundaries or remove
+that helper after the upstream contract-image repair.
+
+#### Integrated reference checkpoint
+
+At this checkpoint the investigation built on PR #70's committed `206c0cc1`. Its broader
+reference/storage work subsumes the initial nominal-range repair, and its
+overlap lowering includes contiguous call subruns. Those duplicate compiler
+changes are absent from this branch's diff; the strengthened conformance case
+and non-call-prefix regression remain. Constructing the integrated gate-profile
+compiler executable took 42.05 s (41.94 s reported by Cargo).
+
+The new optional permission transport passes a direct ledger probe for a
+split whose scalar endpoint is subsequently assigned, refuses an overlapping
+split formed after endpoint assignment, and permits a conditional split only
+inside its proving branch. These probes exercise the ordinary compiler;
+retained-proof replay and the full native scatter observer are still pending
+at this checkpoint. No acceptance requirement or source rule is changed.
+
+Two upstream limitations remain reproducible on this committed base. Direct
+reference packing stops at the first `copy_run` requirement, now correctly
+spelled `deref(chunks).inner[first].Some.value.low.len <=
+deref(first_low).len` but unproved. Separately, a loop that starts with
+`previous` and `current` both referring to `[0..1]`, then assigns
+`previous = current` and `current = &part[i..i+1]`, stops as unsupported
+`OwnershipJoin`. That loop was an exploratory negative permission control;
+it cannot yet exercise this branch's overlap judgment. Its normative behavior
+has not been changed, and completing reference flow through that loop belongs
+to #70. The permission test uses an ordinary supported rebinding instead.
+
+The complete source comparison uses the same Box/position packing boundary
+and a separate payload helper on both arms. The owned control retains
+take/restore tally and consumes each chunk while packing; the reference arm
+reads both in place. Both have the same two-function recursive component,
+block size, allocations, output copies and scheduling options. This ports the
+formal consumer to an executable control before selecting the reference
+rewrite; the control is preserved by its git revision for reproduction.
+
+On the integrated compiler, both arms pass the unchanged oracle at one, two
+and four workers: 109 configurations and 3,466,725 values per invocation.
+The reference observer reports 27,383 and 41,247 nonempty helper output words
+at two and four workers; the owned control reports 29,734 and 47,068. These
+varying counts establish useful output work, not a performance ranking.
+The reference and owned native observer constructions took 0.65 s and 2.47 s;
+their three-process verification invocations took 0.53 s and 0.64 s. Runtime
+objects were reused after checking that their sources match the integrated
+base. Kernel-only elapsed-time comparisons remain separate.
+
+Before the timing comparison, the attribution arms are owned tally/owned
+packing (the formal source at `2d8ce0d7`), reference tally only, reference
+packing only, and both reference reads. Swap the complete `tally` definition
+and its count-loop call/restore section between the two endpoint sources to
+construct the intermediate arms. Their helper boundaries and recursive
+component remain identical. All arms use the same compiler, native support
+objects, harness and link order, and must pass the independent oracle before
+timing. An identical-reference-image paired control runs first. If its median
+within-pass warm wall-time ratio differs from one by more than three percent
+at a selected worker count, that session is inconclusive for selecting a
+performance claim there. Record five alternating passes of five verified warm
+calls after a verified warm-up, wall and process CPU separately, at 1, 2, 4
+and 8 workers. Use the same comparison on mixed, all-low and skewed inputs;
+the small-input case is a latency control. No result changes the scheduler
+or the language's acceptance rules.
+
+The first source-only comparison at `36acce03` holds the direct chunk-slot
+reference workaround fixed on all four arms. On mixed inputs, one-worker
+median wall time is 11.63 ms owned, 8.09 ms with reference tally, 7.02 ms with
+reference packing, and 3.55 ms with both. All large-input identical-image
+controls pass the stated three-percent condition; the four-worker small-input
+control does not. These results isolate aggregate-transfer costs in that
+intermediate source, not the final parallel program: its partition loop is
+denied PAR-2 because the whole nominal-element reference does not retain an
+admitted element-map witness. The 8-worker reference image therefore has only
+about 1.26 occupied CPUs, despite its useful output offers.
+
+The committed upstream now accepts the original one-element output-range
+form, which restores the partition map without a compiler change. It is
+restored before the final comparison, identically on all four arms. The
+existing native scatter observation now also checks completed nonempty input
+partitions on another thread, resetting the scheduling observer only after
+those maps join and before output packing begins. At two/four workers it
+observes 1,540,096/2,326,528 helper input words and 26,795/37,856 helper output
+words, with all 109 configurations still correct. A diagnostic emitted-code
+control that returns zero from every independent-range split-budget call
+fails specifically with `oracle observed no nonempty helper input partition`.
+No extra native image or configuration is added to the maintained test's
+schedule; the mutation is a one-shot validation of the stronger observer.
+
+The integrated focused suite passes 74 tests in 12.16 s (12.69 s including
+guarded launch): all loop-permission controls, the new source-scoped range
+proof/metadata control, the non-call-prefix native group regression, and the
+existing prefix/histogram, stencil, sort/BFS and scatter native oracles. The
+initial merge-sort failure is fixed by the integrated upstream checkpoint;
+both sort and graph now execute. Rebuilding the gate-profile Rust library-test
+executable for the final input/output observation took 71.83 s. This is a
+construction cost and is separate from the 12.16 s test execution. The broader
+permission-only selection still exposes two unchanged upstream tests,
+`a_scrutinee_call_forms_no_pair` and
+`a_scrutinee_call_written_first_forms_no_pair`, whose expectations predate
+#70's call-rooted match support. They are recorded for its owner, not rewritten
+as part of scatter.
+
+#### Reference-model scatter result (2026-09-20)
+
+The [retained samples](../../experiments/compute-bench/radix-scatter-reference-2026-09-20.tsv)
+identify compiler, source and image hashes, flags, the two source-shape
+checkpoints, every sample and the reductions. The final source is
+`ebd3e4b7:tests/programs/compute/radix_scatter.wf`. Construct its owned control
+from `2d8ce0d7` by restoring the same `write_chunk` range parameter and
+`block..after` destination on both arms; swap the complete tally definition
+and count-loop section to obtain the two intermediate arms. The compiler
+implementation is `b6aef587`, unchanged through these source revisions, on
+PR #70 at `206c0cc1`. The host is an unpinned Apple M1 Pro with eight CPUs,
+with other guarded builds excluded and ordinary background applications still
+present. Apple clang 21 compiles WF and its runtime at `-O2`; the retained
+native controls use the bundle's scalar `-O3` flags. Native support, harness
+objects and link order are shared within each source comparison.
+
+Every final WF image passes sequential emission and the parallel emission at
+1, 2, 4 and 8 workers against 109 configurations / 3,466,725 values. Both
+oneTBB controls pass the same matrix at those widths. Those 28 process
+invocations take 2.46 s, including launches, and contain no timing protocol.
+The reference measurement image's complete construction takes 2.04 s;
+emitting the other three arms in both modes takes 0.75 s, and constructing
+their native objects/images takes 10.50 s with the common objects reused.
+
+The final identical-image session takes 4.71 s and the six-form measurement
+session 19.18 s. These are total session costs, not kernel times. The following
+kernel medians exclude input/oracle preparation and result checking/release,
+but include the kernel's allocations, initialization, temporary releases and
+parallel joins. Each process first executes a verified warm-up and then five
+verified warm calls, over five alternating passes with zero call gap.
+
+For 1,048,593 mixed keys at one worker, the independent source changes show
+where the removed cost was paid:
+
+| Source arm | Warm wall (ms) | Process CPU (ms) |
+|---|---:|---:|
+| Owned tally and packing | 11.575 | 11.563 |
+| Reference tally only | 8.078 | 8.068 |
+| Reference packing only | 7.057 | 7.018 |
+| Both reference reads | 3.531 | 3.523 |
+
+The two reductions are nearly additive here: about 3.5 ms from count
+extraction and 4.5 ms from packing transfers. This is a controlled attribution
+to those source regions, supported by the isolated tally code-shape probe;
+it is not a claim that their reference implementations take zero time.
+
+| Workers | Owned wall / CPU (ms) | Reference wall / CPU (ms) | Paired wall speedup |
+|---|---:|---:|---:|
+| 1 | 11.575 / 11.563 | 3.531 / 3.523 | 3.29x |
+| 2 | 10.933 / 11.973 | 2.740 / 3.692 | 3.96x |
+| 4 | 10.442 / 12.350 | 2.236 / 4.159 | 4.73x |
+| 8 | 10.285 / 13.779 | 2.058 / 5.415 | 4.98x |
+
+Ratios are medians of within-pass ratios, not quotients of the displayed
+medians. At eight workers the all-low and skewed inputs improve by 4.79x and
+4.61x respectively. Large-input identical-image controls all remain within
+the predeclared three-percent wall condition. The 257-key control fails that
+condition at four and eight workers, so those latency comparisons remain
+inconclusive. This is one host and workload family, not a portable speedup
+guarantee or an automatic performance-regression verdict.
+
+The improvement does not finish scatter's cost investigation. At eight
+workers the reference WF image takes 2.058 ms wall / 5.415 ms CPU, versus
+oneTBB chain's 1.489 / 5.894 and direct scatter's 0.437 / 2.021. The chain
+retains the chunk/padded-stream decomposition but has a different callable
+representation and recursive-budget realization: WF currently crosses two
+functions per recursive chunk, while the native control decrements its
+explicit budget once. The direct control also removes local element streams
+and the packing chain, changing the algorithm and storage. Neither is a
+same-source compiler comparison.
+
+CPU divided by wall is about 2.63 occupied CPUs for WF versus 3.96 for the
+native chain, even though WF uses less total CPU. Actual helper input and
+output work are now verified, but these totals do not distinguish serial
+initialization/counting and the packing continuation's span from runnable
+work waiting for a worker. The surviving costs are padded storage and its
+construction, payload construction during partitioning, the linear packing
+continuation, final copies, and remaining scheduling/placement effects.
+Attribute those before choosing a different task shape or scheduler policy.
+The native direct result motivates further investigation of a safe tight
+destination representation; it does not supply the missing content/count
+proof for the current direct WF candidate. General profile/PGO policy and
+I/O remain outside this result.
+
 ## Consumers and discriminating criteria
 
 These criteria are recorded before the new experiments. All source programs
@@ -78,8 +500,8 @@ bounds do not authorize the write. It is not a normative rejection of stable
 distribution or a proof that no other source formulation works.
 
 The executable alternative in
-[`radix_scatter.wf`](../../experiments/compute-bench/programs/radix_scatter.wf)
-first partitions each input block into two `FixedVector<u64, 256>` runs.
+[`radix_scatter.wf`](../../../tests/programs/compute/radix_scatter.wf)
+first partitions each input block into two `Slots<u64, 256>` runs.
 Their ordinary measures bound each stored count without an array-content
 theorem. A scalar prefix phase computes total lengths; a recursive continuation
 forms each run's actual destination range and passes the remaining range to
@@ -94,10 +516,10 @@ established by this instance.
 This representation has linear element work, but it is not a cost-free
 replacement for direct scatter: local runs hold up to two padded inputs,
 two intermediate streams hold another two, and the result holds one actual
-input. Count extraction currently takes and restores an owned chunk because
-the legacy buffer-element borrow path is unsupported. Those transfers,
-initialization, and the continuation's linear depth must be included in the
-cost rather than dismissed as proof work. The native controls compare both
+input. The reference-model continuation above reads counts and payloads in
+place; earlier measurements below include the legacy source's owned
+take/restore transfers. Initialization and the continuation's linear depth
+remain runtime costs rather than proof work. The native controls compare both
 the same block/chain decomposition and direct count/prefix/scatter; the latter
 does not materialize local element streams and is a different algorithmic
 representation, not an isolating compiler A/B.
