@@ -183,50 +183,17 @@ Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
 - **Sparse containers over must-consume linear elements need ownership-visible
-  slot state.** The behavior-map growth witness previously wrote
-  `formal Key<K: linear, ...>` while replacing `progress.held` and disposing
-  the returned `Slot<K>`. That depended on a compiler defect which failed to
-  apply PROV-6 to a symbolic linear bound. The current checker correctly
-  rejects `dispose previous_held`: a numeric phase does not prove that the
-  returned enum is `Vacant`, and an `Occupied` value contains a `K` that must
-  be consumed. The maintained witness is narrowed to `K: affine`, which still
-  covers its scalar and store-branded owning instances. Investigate a state
-  encoding or checked variant-state relation that lets rehash move every
-  must-consume key without an impossible cleanup branch; do not add a discard
-  behavior merely to satisfy the checker.
-
-- **Local region introduction and explicit region blocks.** Revisit whether
-  an ordinary function body should introduce a local region, and which
-  borrows need a writer-spelled `region` block. In the
-  [buffer checksum case](../tests/conformance/cases/x-buffer-mutable-checksum-run.wf),
-  a region encloses allocation and the `place_back` calls that fill the vector.
-  The temporary loans already end at their statement boundaries under OWN-6;
-  their region's formation and storage-validity extent is a different matter
-  under OWN-3 and OWN-10. Compare explicit blocks, function-body regions and
-  implicit regions for non-escaping temporaries without conflating those two
-  boundaries. Cover locals declared partway through a body, bound holders,
-  surviving views, returned borrows, loops and control headers; preserve
-  storage validity and exclusivity with deterministic checking. The owner
-  requested this investigation during PR #30 review; no alternative is selected.
-  Defer bulk cleanup of the repeated per-call region wrappers in migrated
-  tests until this question is settled, preserving each case's intended
-  behavior or rejection reason when the selected spelling is applied.
-- **Last-use endpoints for ordinary borrow holders.** Investigate ending a
-  `let`-bound shared or unique borrow after its last required use instead of
-  retaining it to region-block exit under [OWN-4]. Keep loan liveness separate
-  from region selection and type validity: this need not introduce inference
-  of region arguments from expected result types or later uses. Shared
-  `Slice` values already have last-use endpoints under [OWN-5]/[VIEW-1] in the
-  [current specification](../spec/kernel-spec.md). Cover reference copies,
-  returned borrows, surviving child loans and unique-parent suspension,
-  branches, loops, and statement-scoped temporaries. Compare the current
-  lexical endpoints with deterministic, terminating last-use analysis while
-  preserving storage validity, exclusivity, and signature-only call checking.
-  No change to the ordinary borrow rules is selected.
-- **A view-valued match or if.** [OWN-5] rejects a `match` or `if` expression
-  whose value is a view, rather than joining the arms' origin sets, which the
-  origin machinery could represent. If the join can be admitted it should be;
-  until then the rejection stands without a recorded reason.
+  slot state.** The maintained
+  [owning-map witness](../tests/programs/containers/owning-behavior.wf)
+  uses `interface Key<K: drop, E>`, so it covers copyable and droppable keys,
+  including Box owners, but excludes keys with a must-consume obligation.
+  An unconstrained `K` also admits those linear values under OWN-1 and
+  PROV-6. A numeric phase alone cannot prove that a returned enum slot is
+  vacant; an occupied variant still contains a key that must be consumed.
+  Investigate an ordinary state encoding or checked variant-state relation
+  that lets rehash move every must-consume key without an impossible cleanup
+  branch. Retain occupancy as program data, and do not add an implicit
+  discard merely to satisfy the checker.
 - **The automatic-fact menu is a leftover.** [ENT-3] admits a narrow and
   asymmetric set of arithmetic idioms as automatic facts, each added for one
   proof pattern, with no general criterion and no counterpart for rows it
