@@ -1648,8 +1648,8 @@ impl<'program> IrBuilder<'program> {
                 };
                 self.define(referent, IrOperation::BoxDeref { nominal, value })
             }
-            // [TYPE-9, WIN-3] `move b.inner`: the content is loaded out of
-            // the cell and the cell's own storage is released with it.
+            // [TYPE-9, WIN-3] load the selected value before releasing any
+            // enclosing cell or residual field of the consumed root.
             CheckedExpression::BoxTake {
                 binding,
                 path,

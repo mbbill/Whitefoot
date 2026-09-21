@@ -1920,9 +1920,9 @@ pub(crate) enum CheckedExpression {
         obligation: NodePath,
         target_domain: CheckedTargetDomainObligation,
     },
-    /// [TYPE-9, WIN-3] `move b.inner`: the consume of a cell through its one
-    /// field. The `Box` ceases to exist here, its content is the value this
-    /// expression produces, and the cell is freed with it.
+    /// [TYPE-9, WIN-3] move an owned path through Box content. The whole root
+    /// is consumed; the selected value survives while the ordered cleanup
+    /// releases its residual parts and enclosing cells.
     BoxTake {
         carrier: NodePath,
         referent: CheckedType,

@@ -176,11 +176,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                // [TYPE-9, WIN-3] `let n = move b.inner;` consumes the
-                // `Box`, yields its content, and frees the cell. It is the
-                // ordinary [WIN-3] consume of a field out of its owner: the
-                // owner ceases to exist at this use, which for a cell leaves
-                // no other part to release.
+                // [TYPE-9, WIN-3] an owned path through Box content consumes
+                // its complete root. Keep the selected value separate from
+                // the residual fields and enclosing cells to be released.
                 if place
                     .resolved
                     .identity
