@@ -109,7 +109,7 @@ fn maps_leaf_splits_pages_and_compact_owner_regressions_execute() {
 #[test]
 fn grow_vector_executes_and_releases_every_allocation_in_both_lowering_modes() {
     let sources = [
-        "containers/grow-vector.wf",
+        "../../lib/containers/grow-vector.wf",
         "containers/grow-vector-program.wf",
     ];
     let modes = [

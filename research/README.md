@@ -33,8 +33,8 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
   blocked and irregular algorithm consumers, independent correctness criteria,
   and the runtime costs that test the compute model after range loans.
 - [Containers over x1](investigations/containers-and-resources/X1-LIBRARY.md):
-  complete container operations and representation costs under the owner-decided
-  reference, storage-window and global-heap framework of PR #70.
+  complete container operations and representation costs over merged PR #70,
+  the restored source-library home, and the next implementation trials.
 - [Source certificate checking cost](investigations/proof-certificate-architecture/CHECKING-COST.md):
   separate written-proof length from entering-context size and attribute the
   large `proof_use` cost without changing its accepted rules.

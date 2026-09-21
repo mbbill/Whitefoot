@@ -5,7 +5,7 @@ This dated experiment bundled the reusable vector source with
 Reproduce the v0.58 program and allocation-refusal contract at revision
 `5fcf1ce2`; the sources here retain that historical language and are not a
 current-spec benchmark. The maintained successor is
-[`grow-vector.wf`](../../../../tests/programs/containers/grow-vector.wf),
+[`grow-vector.wf`](../../../../lib/containers/grow-vector.wf),
 executed with its caller and release observer by the ordinary program corpus.
 `measurements.csv` contains the retained samples for the measured revision.
 Measurements ran on 2026-09-14 on arm64 macOS 26.6.2 with

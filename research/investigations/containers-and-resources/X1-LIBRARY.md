@@ -1,10 +1,12 @@
 # Containers over the x1 language
 
-This investigation assumes the owner-decided framework of PR #70 is fully
-implemented. Its pinned rule/source baseline is
-`efd6ebc9efc3012735f4ddedf6979617d321d3a6`, kernel v0.60. Implementation
-failures of that revision are recorded separately from language limits; fixing
-or completing PR #70 is outside this investigation. The active
+This investigation now uses the merged PR #70 baseline,
+`36be8784e84a26d34bc24668babd789e0f4c96fb`, kernel v0.60. The initial study
+used the earlier published snapshot `efd6ebc9`; its dated observations remain
+in the [probe results](../../experiments/container-representation/x1/RESULTS.md).
+The merged-baseline reassessment below supersedes outstanding-work claims
+about that snapshot. Compiler implementation failures are distinguished from
+specified language limits. The active
 [specification](../../../spec/kernel-spec.md) remains the language authority.
 
 The question is whether full system-container operations can be expressed at
@@ -86,7 +88,7 @@ Three different questions must not be collapsed:
 | --- | --- | --- |
 | Library algorithm choice | Repeated `remove_at(0)` versus reverse then `take_back` | A linear-time ordinary alternative exists; no new primitive follows from the quadratic source. |
 | Specified interface limit | A range over a Ring, even an empty/unwrapped one, is refused by REF-4 | A generic two-span API is unavailable on that representation. A fully initialized copy-element Array is a different available representation. |
-| Implementation or migration defect | A reserve helper supplies unrestricted u64 capacity to `grow` | OP-9 requires a size bound. Record the source and correction requirement for PR #70; do not weaken the obligation. |
+| Resolved snapshot defect | The earlier reserve helper supplied unrestricted u64 capacity to `grow` | OP-9 requires a size bound. The merged library supplies one through `ceiling`; the unbounded research negative remains correctly rejected. |
 
 The candidate layouts below are recommendations for implementation trials,
 not changes to language decisions or adopted library interfaces. No live-tree
@@ -147,8 +149,8 @@ smallest possible constant or solve final-slot construction.
 Reserve has a source size ceiling even though heap allocation has no refusal
 arm. A capacity limit is a quantity/representation contract, not an OOM
 protocol. For a concrete u64 backing, `requires count <= 1024_u64` makes the
-count multiplication plainly representable. A generic trial can take an
-explicit const maximum, with each T/maximum instance checked against OP-9.
+count multiplication plainly representable. The merged generic library takes
+an explicit const ceiling, with each T/ceiling instance checked against OP-9.
 This filters supported instances; it is not a target-independent runtime
 `sizeof<T>` query and not a blanket proof for every possible T. The public
 choice between a caller-proved maximum and a genuine application Full outcome
@@ -164,6 +166,12 @@ return, check whether its declared contracts preserve that fact. An explicit
 length reread is a possible validation cost; silently dropping the old owner
 is not. This complete generic growth chain has not been checked here.
 
+The merged append row now also publishes
+`destination.len >= entry(source).len`. That is useful when the destination
+starts empty, but it still neither publishes the two-entry sum nor transports
+the old backing's zero-length fact across a later owner exchange. Reuse the
+stronger existing row before proposing any additional contract mechanism.
+
 The [linear-ring-publish probe](../../experiments/container-representation/x1/linear-ring-publish.wf)
 tests another route: append first, then atomically call an ordinary helper
 that requires the old backing empty, consumes it, and returns the new Box.
@@ -174,8 +182,10 @@ unbounded T nor a nodrop instance qualifies. Thus this route is unavailable
 under the current rules even though no old element would be implicitly dropped.
 This does not prove that every ordinary growth algorithm is impossible.
 
-The candidate and tree describe atomic updates without that class restriction;
-X1-P3 below asks the implementation line to reconcile their intended scope.
+The candidate's atomic paragraph and the tree describe admission without that
+class restriction; the candidate also generally refuses linear assignment.
+X1-P3 below therefore asks the owner to clarify their intended scope, rather
+than treating the omitted qualifier as proof that linear updates were selected.
 No broadened atomic rule is assumed here. A by-value rebase consuming and
 returning a genuinely new backing, or a different deque representation, is a
 separate interface candidate if the restriction is intentional. The first
@@ -378,16 +388,17 @@ chooses whether a remaining runtime validation is material. General concurrent
 reclamation, RCU and lock-free containers are outside these sequential/fork-join
 trials and receive no coverage claim from them.
 
-## PR #70 handoff: record only
+## Findings rechecked against merged PR #70
 
-These observations are pinned to efd6ebc9, not claims about the other agent's
-unpublished fixes. No repair is made on this branch.
+These rows distinguish resolved snapshot findings from actual remaining work.
+The source relocation on this branch changes no container algorithm, contract,
+specification rule or compiler implementation.
 
-| ID | Exact witness/source | Classification and impact | Recommended handoff |
+| ID | Exact witness/source | Status at the merged baseline | Next action |
 | --- | --- | --- | --- |
-| X1-P1 | `grow_vector_drain` in `lib/containers/vector.wf`, loop containing `remove_at(..., index: 0_u64)`; OP-10, `lowering/builder/prelude.rs` RunShift and `backend/emitter/runs.rs` shift loop | Source algorithm has quadratic element movement. | Preserve the drain's order/callback contract and replace its algorithm on the implementation line. The checked reverse-drain probe is an O(n) candidate, not a minimum-transfer claim. |
-| X1-P2 | [unbounded-reserve.wf](../../experiments/container-representation/x1/unbounded-reserve.wf); compare `grow_vector_reserve` with no upper count requirement and the append/insert fallback requesting max(u64) | OP-9 correctly rejects the helper: for u64 it needs `count <= 2305843009213693951`. A safe literal at one caller cannot strengthen the generic helper body. | Add an honest capacity/size contract or application limit and migrate callers. Preserve total heap allocation; do not invent a heap-refusal branch. |
-| X1-P3 | [linear-ring-publish.wf](../../experiments/container-representation/x1/linear-ring-publish.wf):18; OP-12 and WIN-3 versus the atomic-update paragraphs in [CANDIDATE-X1.md](../access-effects/CANDIDATE-X1.md) and [affine-replacement.md](../../../design/language/ownership/affine-replacement.md) | Rule/design scope question, not a compiler misclassification: the spec explicitly restricts atomic update to affine/copy, while the candidate and tree's admission conditions do not state that restriction. A nodrop Ring cannot use this route to publish its grown backing. | Confirm the intended class domain with the owner and reconcile the relevant records on #70. No fix or language widening here; do not claim that this one refusal rules out every deque design. |
+| X1-P1 | `grow_vector_drain` in [grow-vector.wf](../../../lib/containers/grow-vector.wf), loop containing `remove_at(..., index: 0_u64)`; OP-10 | Still present: the source algorithm has quadratic element movement. | First library implementation work: preserve the drain's order/callback contract and implement an O(n) algorithm. The reverse-drain probe is a candidate, not a minimum-transfer claim. |
+| X1-P2 | [unbounded-reserve.wf](../../experiments/container-representation/x1/unbounded-reserve.wf) records the old missing-requirement shape | Resolved in the shipped GrowVector: `const ceiling`, `requires total <= ceiling`, bounded doubling and saturation replace unrestricted growth. MSR-4 now supplies the specified affine-left/L0-right bridge needed by the ordinary caller proof. The deliberately unbounded probe should still reject under OP-9. | Keep the size requirement. A library/application Full outcome may return the offered owner when its selected limit is reached; heap allocation itself has no refusal arm. Do not carry this old finding forward as a compiler or current-library defect. |
+| X1-P3 | [linear-ring-publish.wf](../../experiments/container-representation/x1/linear-ring-publish.wf):18; OP-12 and WIN-3 versus the atomic-update paragraphs in [CANDIDATE-X1.md](../access-effects/CANDIDATE-X1.md) and [affine-replacement.md](../../../design/language/ownership/affine-replacement.md) | The active affine/copy restriction remains. A nodrop Ring cannot use this atomic-publication route; the candidate's general linear-assignment refusal also remains. The broader atomic paragraph alone does not establish a selected linear exception. | Obtain an explicit intended-domain ruling before changing OP-12 or its record. In parallel, test ordinary swap/contract and consuming-rebase alternatives without claiming all deque designs impossible. No language widening is part of this restoration. |
 
 The following are specified limits, not bugs to silently fix in #70:
 
@@ -399,27 +410,63 @@ The following are specified limits, not bugs to silently fix in #70:
 | `set cursor = &deref(cursor).next.Some.value.inner;` carried by a loop (path fragment) | REF-1 static path shape; REF-2 also matters when leaving the Some arm | Pool indexes or ordinary recursive descent. Do not assume wildcard-path or musttail work has already landed. |
 | An `ensures` exporting a returned handle's indexed generation/variant relation | FN-9's relation datums and routes exclude that shape | Return a bounded scalar index, then validate/match locally or inside the consuming callback. Measure repeated checks before widening contracts. |
 
+## Library home and evidence after the merge
+
+The owner selected root `lib/` for reusable WF source. Restore the merged
+GrowVector implementation, byte for byte, as
+[`lib/containers/grow-vector.wf`](../../../lib/containers/grow-vector.wf).
+Its caller and C allocation observer remain under `tests/programs/containers/`;
+the existing corpus test still builds the same source bundle in sequential
+and parallel modes, then executes each normally and with the observer. Only
+the bundle's library path changes. No separate Makefile, test group, import
+mechanism or library ABI is restored.
+
+This ownership split makes the implementation available to user programs
+without making test support or research models library dependencies. Keep
+the other container fixtures as fixtures until they meet a reusable contract:
+`priority.wf` is a u64 heap of capacity 16, `ordered.wf` exercises leaf splits,
+and the behavior map requires droppable keys and fixes the payload to a Box.
+Their useful coverage does not establish the complete generic families.
+
+The existing GrowVector caller covers scalar and owned droppable Box elements,
+zero capacity, doubling, ceiling saturation, insertion, removal and drain.
+Its release observer checks exactly twelve allocations. It does not establish
+must-consume-element construction/cleanup, an order-sensitive drain oracle,
+large-element costs, or native parity of the merged implementation. The
+retained v0.58 experiment has a different storage and allocation-refusal
+contract and must not be used as current performance evidence.
+
 ## Recommended implementation and measurement order
 
-1. **First reusable slice:** Vector, Deque and Slab over the decided framework.
-   Preserve the operation chains above; test zero/one/full capacity, geometric
-   growth, wrapped windows, nodrop cleanup, generation exhaustion and invalid
-   handles. Pick explicitly whether Deque offers only slot visitation or also
-   the copy-element physical-span variant, and close the complete nodrop growth
-   route described above. Add actual native cost attribution
-   rather than importing pre-x1 timing tables.
-2. **Keyed slice:** generic HashMap and PriorityQueue, initially scalar keys
-   plus owning/must-consume payloads and then owning keys. Compare sparse
-   inline versus index/dense layout under the same identity contract. Use the
-   record-index composition to expose reverse-map repair and membership costs.
-3. **Ordered/layout challenge:** full B-tree operations and scans, Box-linked
-   comparison, compact page records and large-value construction. Use the
-   resulting losses to prioritize existing contract, traversal and lowering
+1. **Finish the existing reusable Vector first.** Implement O(n) ordered drain,
+   then the missing selected operations such as swap-remove and consuming
+   truncation. Extend the existing caller with order-sensitive observations,
+   copy/drop/nodrop instances and full construction-to-cleanup chains; avoid
+   duplicating a native harness. Compare the actual merged implementation with
+   a matched C control, separately pricing growth, initialized spare storage,
+   large-element transfers and retained-helper overhead. A proof-erased branch
+   count is not a substitute for those measurements.
+2. **Complete the first slice with Slab and Deque.** Slab trials establish
+   vacancy exchange, generation exhaustion, expiry and the selected membership
+   contract. Deque trials establish both-end operations, wrap, grow/rebase and
+   cleanup; choose explicitly between slot visitation and the copy-element
+   physical-span representation. Resolve the complete nodrop growth route
+   before declaring an unbounded growable Deque. These are independent trials;
+   the unresolved atomic-update domain need not block Slab or Vector work.
+3. **Build the keyed and composite slice.** Generic HashMap and PriorityQueue
+   must run complete chains, including owned keys/values, rehash and reverse-map
+   repair. Compare sparse inline and index/dense layouts at the same identity
+   contract. Run the record-index workload to expose the cost and correctness
+   of retaining one object through more than one index.
+4. **Run the ordered/layout challenge.** Full B-tree operations and scans,
+   a Box-linked comparison, compact page records and large-value construction
+   provide the consumers for existing contract, traversal and lowering
    proposals. No primitive is selected merely because a prototype was awkward.
 
 After each slice, report expressibility, completed operations and measured cost
 separately. A source rejection, unsupported lowering, wrong native result and
 unmeasured candidate are four different outcomes. Required library behavior
-must not be weakened to obtain a green experiment. The research does not
-certify PR #70 or start its repair work, and it does not claim a broad system
-container ceiling has already been reached.
+must not be weakened to obtain a green experiment. Merging PR #70 establishes
+the baseline; it does not by itself complete these libraries or establish
+their performance ceiling. This branch restores the library home and updates
+the evidence and recommendations, without implementing the next slice.

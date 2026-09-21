@@ -4,11 +4,12 @@ These are explicit research probes for
 [X1-LIBRARY.md](../../../investigations/containers-and-resources/X1-LIBRARY.md),
 not conformance cases or a library implementation. They distinguish ordinary
 owned-value operations from source-interface limits under kernel v0.60 at
-`efd6ebc9efc3012735f4ddedf6979617d321d3a6`. No compiler, library or spec fix is
-part of the experiment. The comparison criteria were committed in `619a14cb`
-before these probes were run.
+`efd6ebc9efc3012735f4ddedf6979617d321d3a6`, then replayed unchanged against
+merged PR #70 at `36be8784e84a26d34bc24668babd789e0f4c96fb`. No compiler,
+library algorithm or spec fix is part of the experiment. The comparison
+criteria were committed in `619a14cb` before these probes were run.
 
-## Construction and observations
+## Initial snapshot: construction and observations
 
 The compiler was built once from that pinned revision's unmodified compiler
 with Cargo's optimized `gate` profile, offline and locked, two build jobs,
@@ -46,6 +47,36 @@ rerun in 0.94 seconds wall. These are command durations,
 not steady-state operation timings. The shared guard declined starts while
 PR #70 owned verification; no concurrent build or bypass was started.
 
+## Merged PR #70 replay
+
+On 2026-09-21, the unmodified merged compiler and active specification were
+built with the guarded `make -C compiler build` target, using the optimized
+`gate` profile, offline/locked Cargo and two jobs. The wrapper reported 48.37
+seconds wall; the child reported 48.31 wall, 77.59 user and 1.39 system. The
+compiler SHA-256 is
+`ffe29d38590308caff2fd311b68405af18fd90690f3db09c8dc337891884bdee`.
+The eight probe sources are unchanged from the original study.
+
+The combined `observe native` invocation took 6.45 seconds including the guard
+(child: 6.35 wall, 1.97 user, 0.69 system). All four positives emitted LLVM and
+their four native executables exited zero. The negatives still reject at the
+intended sites: REF-4 `RangeOverRing`, FN-9 `InvalidPostconditionRelation`,
+OP-9 with the same u64 count ceiling, and WIN-3 `LinearAssignmentTarget` at
+linear-ring-publish line 18. No expected verdict or source was changed to get
+these outcomes. Scratch outputs are separated from the first run:
+
+```sh
+perl .github/run-check.pl pr72-merged-container-probes make -C research/experiments/container-representation/x1 observe native OUT=/tmp/whitefoot-x1-merged-main-probes
+```
+
+The negative unbounded-reserve program still demonstrates a missing source
+requirement. The merged GrowVector library now supplies `const ceiling` and
+the corresponding requirements, so X1-P2 is resolved in that library; its
+intentional negative is not evidence that the correction failed. The merged
+append row also publishes the source-entry lower bound, but the two-entry-sum
+postcondition and the linear atomic-update form remain outside the active
+rules. These observations are not steady-state container timings.
+
 ## Interpretation and limits
 
 An empty enum variant is a valid value even when its type can also hold a
@@ -66,11 +97,14 @@ map/deque/slab growth, a complete B-tree or hostile behavior. In particular,
 the Box instantiation's successful execution does not prove exact allocator
 counts. Those observations belong to the next library implementation trials.
 The four rejections agree with the selected rules and are not compiler defects.
-The reserve migration finding concerns library code missing the rule's bound.
+The original reserve migration finding concerned library code missing the
+rule's bound; the merged-baseline correction is described above.
 The Ring publication probe instead exposes a scope question: OP-12 explicitly
 limits atomic updates to affine/copy targets, while the candidate and design
 tree state their admission without that qualifier. This is recorded as X1-P3
-for the owner/#70 agent, without changing either rule or implementation.
+for the owner, without changing either rule or implementation. The candidate
+also generally refuses assignment over linear values; its unqualified atomic
+paragraph alone does not establish that a linear exception was intended.
 No native success or complete nodrop Ring-growth route is claimed from that
 negative probe.
 
