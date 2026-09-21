@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 mod buffers;
 mod loops;
@@ -17,10 +17,9 @@ use crate::CheckedProgram;
 use crate::NodePath;
 use crate::semantic::CheckedSetTarget;
 use crate::semantic::{
-    BindingId, CheckedArrayRoot, CheckedCommitValues, CheckedDrop, CheckedExpression,
-    CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedParameter,
-    CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue, FunctionPermissions,
-    MeasureCell, MeasuredKind,
+    BindingId, CheckedArrayRoot, CheckedDrop, CheckedExpression, CheckedMatchArm, CheckedMeasure,
+    CheckedMode, CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
+    CheckedStatement, CheckedValue, FunctionPermissions, MeasureCell, MeasuredKind,
 };
 
 use super::*;
@@ -341,10 +340,6 @@ fn lower_nominals(
                     referent: lower_type(erasure, *referent)?,
                     release: lower_release_class(*release),
                 },
-                CheckedNominalKind::Arena { content, .. } => IrNominalKind::Arena {
-                    content: lower_type(erasure, *content)?,
-                },
-                CheckedNominalKind::ArenaStorage => IrNominalKind::ArenaStorage,
                 CheckedNominalKind::Opaque => IrNominalKind::Opaque,
             };
             Ok(IrNominal {
@@ -452,16 +447,13 @@ fn lower_source_argument(argument: &CheckedExpression) -> IrSourceArgument {
             consume_root: *consume_root,
         },
         CheckedExpression::BorrowAddressed { .. }
-        | CheckedExpression::BorrowBuffer { .. }
-        | CheckedExpression::BorrowBox { .. }
-        | CheckedExpression::RangeOf { .. }
-        | CheckedExpression::ReborrowAddressed { .. } => IrSourceArgument::Borrow,
+        | CheckedExpression::BorrowRangeIndex { .. }
+        | CheckedExpression::RangeOf { .. } => IrSourceArgument::Borrow,
         CheckedExpression::ReadStorage { .. }
         | CheckedExpression::DerefAddressed { .. }
         | CheckedExpression::ArrayIndex { .. }
         | CheckedExpression::BufferIndex { .. }
-        | CheckedExpression::BoxDeref { .. }
-        | CheckedExpression::ArenaDeref { .. } => IrSourceArgument::PlaceRead,
+        | CheckedExpression::BoxDeref { .. } => IrSourceArgument::PlaceRead,
         _ => IrSourceArgument::Value,
     }
 }
@@ -476,32 +468,15 @@ fn lower_parameter_type(
     // never from the type alone.
     if parameter.mode == CheckedMode::Range {
         return Ok(IrType::Range {
-            element: range_element(erasure, parameter.ty)?,
+            element: lower_element(
+                erasure,
+                parameter
+                    .range_element
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+            )?,
         });
     }
     lower_borrow_mode_type(parameter.mode, lower_type(erasure, parameter.ty)?, nominals)
-}
-
-/// The flat element one range reference names [REF-4, TYPE-2].
-///
-/// A range's element is exactly one flat element: [REF-4] forms a range over
-/// an indexable place, and a run of runs or of descriptors is not one.
-fn range_element(
-    erasure: TypeLowering<'_>,
-    ty: CheckedType,
-) -> Result<IrFlatElement, LoweringFailure> {
-    Ok(match lower_type(erasure, ty)? {
-        IrType::Unit => IrFlatElement::Unit,
-        IrType::Bool => IrFlatElement::Bool,
-        IrType::Integer { width, signed } => IrFlatElement::Integer { width, signed },
-        IrType::Float { width } => IrFlatElement::Float { width },
-        IrType::Nominal(id) => IrFlatElement::Nominal(id),
-        IrType::Buffer { .. }
-        | IrType::Range { .. }
-        | IrType::Array { .. }
-        | IrType::Window { .. }
-        | IrType::Address(_) => return Err(LoweringFailure::InvalidCheckedProgram),
-    })
 }
 
 /// The representation a borrow-mode value carries.
@@ -791,7 +766,7 @@ impl<'program> IrBuilder<'program> {
     ///
     /// The judgment is the checker's; this only narrows it to what the emitted
     /// shape can carry, and every narrowing drops members rather than adding
-    /// any. A group is a prefix of a permitted chain, kept only while
+    /// any. A group is a contiguous part of a permitted chain, kept only while
     ///
     /// - each site's `let` lowered to exactly one call definition, so a chain
     ///   member whose statement lowered to something else (a `propagate`, for
@@ -802,8 +777,9 @@ impl<'program> IrBuilder<'program> {
     ///   reads the call's value at the definition site — between the hand-out
     ///   and the join, where the value does not exist yet.
     ///
-    /// A prefix of a permitted chain is itself permitted: the chain's every
-    /// ordered pair was judged, so every ordered pair of the prefix was too.
+    /// Each contiguous part retains the chain's every-ordered-pair proof.
+    /// Finally, already-proved adjacent pairs recover opportunities across a
+    /// greedy run boundary. A call belongs to at most one emitted group.
     fn overlaps(&self) -> Vec<IrOverlap> {
         if self.overlap != OverlapLowering::On {
             return Vec::new();
@@ -812,37 +788,64 @@ impl<'program> IrBuilder<'program> {
             return Vec::new();
         };
         let mut overlaps = Vec::new();
-        for run in &permissions.runs {
+        let mut claimed = HashSet::new();
+        let finish = |members: &mut Vec<IrValueId>,
+                      claimed: &mut HashSet<IrValueId>,
+                      overlaps: &mut Vec<IrOverlap>| {
+            let members = std::mem::take(members);
+            if members.len() >= 2 {
+                claimed.extend(members.iter().copied());
+                overlaps.push(IrOverlap { members });
+            }
+        };
+        let runs = permissions
+            .runs
+            .iter()
+            .map(|run| run.sites.iter().collect::<Vec<_>>());
+        let pairs = permissions
+            .pairs
+            .iter()
+            .filter(|pair| pair.verdict.is_eligible())
+            .map(|pair| vec![&pair.first, &pair.second]);
+        for sites in runs.chain(pairs) {
             let mut members = Vec::new();
             let mut home = None;
-            for site in &run.sites {
+            for site in sites {
                 // [PAR-1] judges every adjacent statement pair, so a run's
                 // members include statements that are not calls. The hand-out
                 // lowering has no form for one, so a non-call member ends the
-                // group here rather than being silently skipped over — which
-                // would claim an overlap [PAR-1] never judged for the pair
-                // that would then become adjacent.
+                // group here. A later contiguous part can start another
+                // group, but no group bridges this intervening statement.
                 let Some(call) = &site.call else {
-                    break;
+                    finish(&mut members, &mut claimed, &mut overlaps);
+                    home = None;
+                    continue;
                 };
                 let Some((block, value)) = self.call_results.get(call).copied() else {
-                    break;
+                    finish(&mut members, &mut claimed, &mut overlaps);
+                    home = None;
+                    continue;
                 };
-                if *home.get_or_insert(block) != block {
-                    break;
+                if claimed.contains(&value) {
+                    finish(&mut members, &mut claimed, &mut overlaps);
+                    home = None;
+                    continue;
                 }
+                if home.is_some_and(|previous| previous != block) {
+                    finish(&mut members, &mut claimed, &mut overlaps);
+                }
+                home = Some(block);
                 let addressed = site
                     .binding
                     .is_some_and(|binding| self.addressed_bindings.contains(&binding));
                 members.push(value);
                 if addressed {
                     // This member must be the group's last, so it ends it.
-                    break;
+                    finish(&mut members, &mut claimed, &mut overlaps);
+                    home = None;
                 }
             }
-            if members.len() >= 2 {
-                overlaps.push(IrOverlap { members });
-            }
+            finish(&mut members, &mut claimed, &mut overlaps);
         }
         overlaps
     }
@@ -973,38 +976,9 @@ impl<'program> IrBuilder<'program> {
                         self.promote_binding_if_needed(*binding)?;
                     }
                 }
-                CheckedStatement::SetList {
-                    targets, values, ..
-                } => self.set_list(targets, values)?,
                 CheckedStatement::Set { target, value, .. } => self.set(target, value)?,
-                CheckedStatement::Replace {
-                    binding,
-                    target,
-                    value,
-                    ..
-                } => self.replace(*binding, target, value)?,
                 CheckedStatement::Evaluate(expression) => {
                     self.expression(expression)?;
-                }
-                // [PROV-6] `dispose p;` runs exactly the walk the scope exit
-                // would have run for this value, at the point it is written.
-                CheckedStatement::Dispose { value, drops, .. } => {
-                    // Reading a binding solely to release it does not need a
-                    // value snapshot. Computed/proper-part consumes still run
-                    // their checked expression, including residual releases.
-                    let root = if let CheckedExpression::Binding { binding, .. } = value {
-                        self.bindings
-                            .get(binding)
-                            .copied()
-                            .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                    } else {
-                        self.expression(value)?
-                    };
-                    let mut lowered = Vec::with_capacity(drops.len());
-                    for drop in drops {
-                        lowered.push(self.lower_projected_drop(root, drop)?);
-                    }
-                    self.append_drops(lowered)?;
                 }
                 CheckedStatement::DropExpression {
                     value: expression, ..
@@ -1048,6 +1022,7 @@ impl<'program> IrBuilder<'program> {
                     invariants: _,
                     body,
                     backedge_drops,
+                    carried_references: _,
                 } => self.lower_loop(*id, body, backedge_drops, give_target.clone())?,
                 CheckedStatement::CountedRange {
                     id,
@@ -1061,6 +1036,7 @@ impl<'program> IrBuilder<'program> {
                     invariants: _,
                     body,
                     backedge_drops,
+                    carried_references: _,
                 } => self.lower_counted_range(
                     *id,
                     node_path,
@@ -1087,33 +1063,6 @@ impl<'program> IrBuilder<'program> {
                         drops,
                     })?;
                 }
-                CheckedStatement::Region {
-                    arena_list,
-                    body,
-                    fallthrough_drops,
-                } => {
-                    // The region's arena allocation list is materialized at
-                    // region entry; its compiler-derived drop on each normal
-                    // exit edge is the region's storage release [STOR-3].
-                    if let Some(list) = arena_list {
-                        let storage = self
-                            .nominals
-                            .iter()
-                            .find(|nominal| nominal.kind == IrNominalKind::ArenaStorage)
-                            .map(|nominal| nominal.id)
-                            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-                        let value =
-                            self.define(IrType::Nominal(storage), IrOperation::ArenaListNew)?;
-                        if self.bindings.insert(*list, value).is_some() {
-                            return Err(LoweringFailure::InvalidCheckedProgram);
-                        }
-                    }
-                    self.lower_statements(body, give_target.clone())?;
-                    if self.current.is_some() {
-                        let drops = self.lower_drops(fallthrough_drops)?;
-                        self.append_drops(drops)?;
-                    }
-                }
                 CheckedStatement::Match {
                     scrutinee,
                     enum_type,
@@ -1131,22 +1080,36 @@ impl<'program> IrBuilder<'program> {
                     binding,
                     result_type,
                     result_mode,
+                    result_range_element,
                     scrutinee,
                     enum_type,
                     arms,
                     continues,
                     ..
                 } => {
-                    // [REF-1] a binder every arm of which delivers a
-                    // reference is a reference variable: what the join
-                    // carries is the one address the delivering arms
-                    // produced, so the binder's representation is that
-                    // address and not a value of the referent type.
-                    let result = lower_borrow_mode_type(
-                        *result_mode,
-                        lower_type(self.erasure, *result_type)?,
-                        self.nominals,
-                    )?;
+                    // [REF-1, REF-4] a binder every arm of which delivers a
+                    // reference is a reference variable. An addressed join
+                    // carries the selected address; a range join carries the
+                    // selected pointer and count. Neither has the by-value
+                    // representation of its written referent type.
+                    let result = if *result_mode == CheckedMode::Range {
+                        IrType::Range {
+                            element: lower_element(
+                                self.erasure,
+                                result_range_element
+                                    .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                            )?,
+                        }
+                    } else {
+                        if result_range_element.is_some() {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        }
+                        lower_borrow_mode_type(
+                            *result_mode,
+                            lower_type(self.erasure, *result_type)?,
+                            self.nominals,
+                        )?
+                    };
                     self.lower_match(
                         scrutinee,
                         *enum_type,
@@ -1374,10 +1337,7 @@ impl<'program> IrBuilder<'program> {
                         (actual, expected),
                         (IrType::Address(referent), _) if referent.ty() == expected
                     )
-                    && !matches!(
-                        (actual, expected),
-                        (IrType::Range { element }, _) if element.ty() == expected
-                    )
+                    && !matches!(actual, IrType::Range { element } if self.element_type(element)? == expected)
                 {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
@@ -1397,6 +1357,7 @@ impl<'program> IrBuilder<'program> {
                 call,
                 arguments,
                 result_borrow,
+                allocation,
                 ..
             } => {
                 let function = self
@@ -1405,6 +1366,22 @@ impl<'program> IrBuilder<'program> {
                     .find_map(|(site, target)| (site == call).then_some(*target))
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
                 let source_arguments = arguments.iter().map(lower_source_argument).collect();
+                let source_allocation = allocation
+                    .map(|allocation| {
+                        let IrType::Nominal(cell) = lower_type(self.erasure, allocation.cell)?
+                        else {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        };
+                        Ok(IrSourceAllocation {
+                            cell,
+                            count_argument: allocation.count,
+                            layout_ceiling: allocation.layout_ceiling.into(),
+                            source_length_upper_bound: allocation
+                                .source_length_upper_bound()
+                                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                        })
+                    })
+                    .transpose()?;
                 let arguments = arguments
                     .iter()
                     .map(|argument| self.expression(argument))
@@ -1427,6 +1404,7 @@ impl<'program> IrBuilder<'program> {
                     result,
                     arguments: source_arguments,
                     returned_borrow_argument: result_borrow.as_ref().map(|borrow| borrow.argument),
+                    allocation: source_allocation,
                 });
                 Ok(result)
             }
@@ -1537,27 +1515,6 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            CheckedExpression::ArrayFill {
-                ty,
-                value,
-                target_domain,
-                ..
-            } => {
-                let IrType::Array { element, .. } = lower_type(self.erasure, *ty)? else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                };
-                let value = self.expression(value)?;
-                if self.value_type(value)? != self.element_type(element)? {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                self.define(
-                    lower_type(self.erasure, *ty)?,
-                    IrOperation::ArrayFill {
-                        value,
-                        target_domain: (*target_domain).into(),
-                    },
-                )
-            }
             CheckedExpression::ArrayMeasure {
                 measure,
                 root,
@@ -1632,30 +1589,6 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            // v0.59's `buffer_new` and `buffer_vacant` heads have no v0.60
-            // spelling: [OP-1]'s table carries neither row and both
-            // identifiers are free again, so the checker mints neither of
-            // these heads and no accepted program reaches here. A
-            // runtime-capacity `Array<T>` is built by the [OP-13] record
-            // `box_array_filled`, whose compiler-owned body allocates the one
-            // block [TYPE-9] admits.
-            CheckedExpression::BufferFill { .. } | CheckedExpression::BufferVacant { .. } => {
-                Err(LoweringFailure::InvalidCheckedProgram)
-            }
-            CheckedExpression::BufferFits {
-                length,
-                layout_ceiling,
-                ..
-            } => {
-                let length = self.expression(length)?;
-                self.define(
-                    IrType::Bool,
-                    IrOperation::BufferFits {
-                        length,
-                        maximum_length: layout_ceiling.stride.allocation_limit(),
-                    },
-                )
-            }
             CheckedExpression::BufferMeasure { measure, root } => {
                 match fixed_measure(*measure, MeasuredKind::RuntimeArray) {
                     Some(constant) => self.lower_fixed_measure(constant),
@@ -1665,10 +1598,8 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::ContainerMeasure { measure, root } => {
                 self.lower_container_measure(*measure, root)
             }
-            // [FN-9] a clause-only datum: the checker discards it with the
-            // clause's typing, so no checked program carries one here.
-            CheckedExpression::PostconditionResultMeasure { .. } => {
-                Err(LoweringFailure::InvalidCheckedProgram)
+            CheckedExpression::RangeElementMeasure { measure, place, .. } => {
+                self.lower_range_element_measure(*measure, place)
             }
             CheckedExpression::ReadStorage { root, .. } => {
                 let address = self.lower_place_address(root)?;
@@ -1695,20 +1626,15 @@ impl<'program> IrBuilder<'program> {
                     None => self.lower_range_measure(root),
                 }
             }
-            CheckedExpression::RangeIndex {
-                root,
-                offset,
-                target_domain,
-                ..
-            } => self.lower_range_index(root, offset, *target_domain),
-            CheckedExpression::BoxNew { nominal, value, .. } => {
-                let value = self.expression(value)?;
-                let nominal = self.erased(*nominal);
-                self.define(
-                    IrType::Nominal(nominal),
-                    IrOperation::BoxNew { nominal, value },
-                )
+            CheckedExpression::RangeIndex { place, .. } => {
+                self.lower_range_index(&place.root, &place.offset, &place.path, place.target_domain)
             }
+            CheckedExpression::BorrowRangeIndex { place, .. } => self.lower_range_address(
+                &place.root,
+                &place.offset,
+                &place.path,
+                place.target_domain,
+            ),
             CheckedExpression::BoxDeref { nominal, value, .. } => {
                 let value = self.expression(value)?;
                 let nominal = self.erased(*nominal);
@@ -1722,74 +1648,66 @@ impl<'program> IrBuilder<'program> {
                 };
                 self.define(referent, IrOperation::BoxDeref { nominal, value })
             }
-            // [TYPE-9, WIN-3] `move b.inner`: the content is loaded out of
-            // the cell and the cell's own storage is released with it.
-            CheckedExpression::BoxTake { nominal, value, .. } => {
-                let value = self.expression(value)?;
-                let nominal = self.erased(*nominal);
-                let IrNominalKind::Box { referent, .. } = self
-                    .nominals
-                    .get(nominal.index())
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                    .kind
-                else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                };
-                self.define(referent, IrOperation::BoxTake { nominal, value })
-            }
-            CheckedExpression::ArenaNew {
-                nominal,
-                list,
-                value,
+            // [TYPE-9, WIN-3] load the selected value before releasing any
+            // enclosing cell or residual field of the consumed root.
+            CheckedExpression::BoxTake {
+                binding,
+                path,
+                cleanup,
+                referent,
                 ..
             } => {
-                let value = self.expression(value)?;
-                let nominal = self.erased(*nominal);
-                let IrNominalKind::Arena { content } = self
-                    .nominals
-                    .get(nominal.index())
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                    .kind
-                else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                };
-                if self.value_type(value)? != content {
+                let root = self
+                    .bindings
+                    .get(binding)
+                    .copied()
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                if !matches!(self.value_type(root)?, IrType::Address(_)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                let list = self.binding_value(*list)?;
-                self.define(
-                    IrType::Nominal(nominal),
-                    IrOperation::ArenaNew {
-                        nominal,
-                        list,
-                        value,
-                    },
-                )
-            }
-            CheckedExpression::ArenaDeref { nominal, value, .. } => {
-                let value = self.expression(value)?;
-                let nominal = self.erased(*nominal);
-                if self.value_type(value)? != IrType::Nominal(nominal) {
+                let address = self.project_address_path(root, path)?;
+                let selected = self.load_storage_value(address)?;
+                if self.value_type(selected)? != lower_type(self.erasure, *referent)? {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                let IrNominalKind::Arena { content } = self
-                    .nominals
-                    .get(nominal.index())
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                    .kind
-                else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                };
-                self.define(content, IrOperation::ArenaDeref { nominal, value })
+                for action in cleanup {
+                    match action {
+                        crate::semantic::CheckedOwnedTakeCleanup::Drop { path, ty } => {
+                            let address = self.project_address_path(root, path)?;
+                            let IrType::Address(actual) = self.value_type(address)? else {
+                                return Err(LoweringFailure::InvalidCheckedProgram);
+                            };
+                            let ty = lower_type(self.erasure, *ty)?;
+                            if actual.ty() != ty {
+                                return Err(LoweringFailure::InvalidCheckedProgram);
+                            }
+                            self.append_drops(vec![IrDrop {
+                                subject: IrDropSubject::Place(address),
+                                ty,
+                            }])?;
+                        }
+                        crate::semantic::CheckedOwnedTakeCleanup::BoxShell {
+                            path,
+                            nominal,
+                            referent,
+                        } => {
+                            let address = self.project_address_path(root, path)?;
+                            let owner = self.load_storage_value(address)?;
+                            let nominal = self.erased(*nominal);
+                            let _ = lower_type(self.erasure, *referent)?;
+                            self.define(
+                                IrType::Unit,
+                                IrOperation::CellFree {
+                                    nominal,
+                                    value: owner,
+                                },
+                            )?;
+                        }
+                    }
+                }
+                Ok(selected)
             }
-            CheckedExpression::BorrowBuffer { root, .. } => self.lower_buffer_borrow(root),
-            CheckedExpression::BorrowBox {
-                binding, nominal, ..
-            } => self.lower_addressed_borrow(*binding, IrType::Nominal(self.erased(*nominal))),
             CheckedExpression::BorrowAddressed { root, .. } => self.lower_place_address(root),
-            CheckedExpression::ReborrowAddressed { binding, ty, .. } => {
-                self.lower_addressed_borrow(*binding, lower_type(self.erasure, *ty)?)
-            }
             CheckedExpression::DerefAddressed { binding, ty, .. } => {
                 let value = self.binding_value(*binding)?;
                 if self.value_type(value)? != lower_type(self.erasure, *ty)? {
@@ -1924,76 +1842,6 @@ impl<'program> IrBuilder<'program> {
         }
     }
 
-    /// [SET-2] capture the target, evaluate the RHS, then exchange the old
-    /// and new owners at one commit. The old value includes the RHS's effects.
-    fn replace(
-        &mut self,
-        binding: BindingId,
-        target: &CheckedSetTarget,
-        value: &CheckedExpression,
-    ) -> Result<(), LoweringFailure> {
-        let target = self.prepare_target(target)?;
-        let replacement = self.expression(value)?;
-        let previous = self.read_target(&target)?;
-        self.write_target(&target, replacement)?;
-        if self.bindings.insert(binding, previous).is_some() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        self.promote_binding_if_needed(binding)
-    }
-
-    /// [GRAM-4, SET-1, CALL-4] `set (x, y) = f(...);`.
-    ///
-    /// One evaluation of the call, then one projection per result ordinal in
-    /// written order, each committed to its checked target exactly as a
-    /// single-target `set` commits.
-    /// [SET-1] one commit of a target list.
-    ///
-    /// The whole right-hand side is evaluated first — the one call, or every
-    /// written value in order — and only then is any target written, so a
-    /// statement whose targets and values name the same places, the swap
-    /// included, reads every previous value before the first commit.
-    fn set_list(
-        &mut self,
-        targets: &[CheckedSetTarget],
-        values: &CheckedCommitValues,
-    ) -> Result<(), LoweringFailure> {
-        let prepared = targets
-            .iter()
-            .map(|target| self.prepare_target(target))
-            .collect::<Result<Vec<_>, _>>()?;
-        let ordinals = match values {
-            CheckedCommitValues::ResultList { nominal, value } => {
-                let aggregate = self.expression(value)?;
-                self.note_call_result(value, aggregate)?;
-                if self.value_type(aggregate)? != IrType::Nominal(self.erased(*nominal)) {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                let mut ordinals = Vec::with_capacity(targets.len());
-                for ordinal in 0..targets.len() {
-                    let field = u32::try_from(ordinal)
-                        .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
-                    ordinals.push(self.project_struct_path(aggregate, &[field], true)?);
-                }
-                ordinals
-            }
-            CheckedCommitValues::Written(values) => {
-                if values.len() != targets.len() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                let mut ordinals = Vec::with_capacity(values.len());
-                for value in values {
-                    ordinals.push(self.expression(value)?);
-                }
-                ordinals
-            }
-        };
-        for (target, value) in prepared.iter().zip(ordinals) {
-            self.write_target(target, value)?;
-        }
-        Ok(())
-    }
-
     /// One target root's new value, written to the storage that holds it.
     fn commit_root_storage(
         &mut self,
@@ -2067,11 +1915,7 @@ impl<'program> IrBuilder<'program> {
                 }
                 // An opaque system resource has no writer-visible field, so no
                 // struct path reaches through one.
-                IrNominalKind::Enum { .. }
-                | IrNominalKind::Box { .. }
-                | IrNominalKind::Arena { .. }
-                | IrNominalKind::ArenaStorage
-                | IrNominalKind::Opaque => {
+                IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } | IrNominalKind::Opaque => {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
             };
@@ -2114,11 +1958,7 @@ impl<'program> IrBuilder<'program> {
             }
             // An opaque system resource has no writer-visible field, so no
             // struct path reaches through one.
-            IrNominalKind::Enum { .. }
-            | IrNominalKind::Box { .. }
-            | IrNominalKind::Arena { .. }
-            | IrNominalKind::ArenaStorage
-            | IrNominalKind::Opaque => {
+            IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } | IrNominalKind::Opaque => {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
         };

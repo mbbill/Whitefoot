@@ -1,4 +1,4 @@
-use super::support::{compile_and_run, compile_program};
+use super::support::{compile_and_run, compile_program, emitted_function};
 
 /// [WIN-1, OP-10, MSR-1] the ring at execution: a construction row, the four
 /// boundary operations over the back and the front, and the window subscript
@@ -69,9 +69,35 @@ fn a_run_is_viewable_and_a_copy_view_dies_at_its_last_use() {
 #[test]
 fn a_bump_extent_hands_out_runs_and_refuses_the_one_it_cannot_hold() {
     let llvm = compile_program("arena_workspace.wf");
-    // The window is frame-resident with its slots inline, and the carve is
-    // pointer arithmetic inside it: no allocation call is emitted [STOR-1].
-    assert!(llvm.contains("getelementptr inbounds i8, ptr"));
+    let main = emitted_function(&llvm, "main");
+    // The window is frame-resident in the exact header-first u64 layout. The
+    // range descriptor reads its length and selects its first inline slot from
+    // one backing pointer, then indexes that slot with typed u64 arithmetic;
+    // no allocation call is emitted [STOR-1, REF-4].
+    assert!(main.contains("alloca { { i64, [256 x i64] } }, align 8"));
+    let slots_gep = main
+        .lines()
+        .find(|line| {
+            line.contains("getelementptr inbounds { i64, [256 x i64] }, ptr %")
+                && line.ends_with("i64 0, i32 1, i64 0")
+        })
+        .expect("range formation must address the window's first inline u64 slot");
+    fn gep_base(line: &str) -> &str {
+        line.split_once("ptr ")
+            .and_then(|(_, suffix)| suffix.split_once(',').map(|(base, _)| base))
+            .expect("window GEP must carry one base pointer")
+    }
+    let slots_base = gep_base(slots_gep);
+    let length_gep = main
+        .lines()
+        .find(|line| {
+            line.contains("getelementptr inbounds { i64, [256 x i64] }, ptr %")
+                && line.ends_with("i32 0, i32 0")
+                && gep_base(line) == slots_base
+        })
+        .expect("range formation must read the length from the same inline window");
+    assert_eq!(gep_base(length_gep), slots_base);
+    assert!(main.contains("getelementptr inbounds i64, ptr"));
     assert!(!llvm.contains("call ptr @malloc"));
 
     let output = compile_and_run(&llvm);

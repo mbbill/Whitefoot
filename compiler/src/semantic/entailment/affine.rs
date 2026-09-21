@@ -73,7 +73,7 @@ impl Drop for AffineExpression {
 }
 
 /// One nonzero coefficient in a canonical affine left-hand side.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct AffineCoefficient {
     term: AffineTermId,
     coefficient: i128,
@@ -85,7 +85,7 @@ pub(crate) struct AffineCoefficient {
 /// strictly ordered and zero coefficients are absent.  A form records what a
 /// source value equals at the current program point; it is not a proposition
 /// and grants no proof authority by itself.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct AffineForm {
     terms: Box<[AffineCoefficient]>,
     constant: i128,
@@ -187,7 +187,7 @@ impl AffineCoefficient {
 ///
 /// Terms are strictly ordered by identity and zero coefficients are removed.
 /// Private fields ensure all values pass the same checked canonicalization.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct AffineInequality {
     terms: Box<[AffineCoefficient]>,
     upper: i128,

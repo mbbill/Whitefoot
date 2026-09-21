@@ -60,10 +60,7 @@ static void resource_drop(Resource *resource) {
     free(resource);
 }
 
-static void *backing_allocate(size_t bytes, bool force_failure) {
-    if (force_failure) {
-        return NULL;
-    }
+static void *backing_allocate(size_t bytes) {
     void *memory = malloc(bytes == 0 ? 1 : bytes);
     if (memory != NULL) {
         backing_live_bytes += bytes;
@@ -129,12 +126,12 @@ typedef struct ITable {
 } ITable;
 
 
-static bool i_init(ITable *table, size_t capacity, bool force_failure) {
+static bool i_init(ITable *table, size_t capacity) {
     size_t bytes;
     if (capacity == 0 || !checked_mul(capacity, sizeof(ISlot), &bytes)) {
         return false;
     }
-    ISlot *slots = backing_allocate(bytes, force_failure);
+    ISlot *slots = backing_allocate(bytes);
     if (slots == NULL) {
         return false;
     }
@@ -289,10 +286,9 @@ typedef enum Phase { PHASE_SCAN, PHASE_PROBE, PHASE_BLOCKED, PHASE_DONE } Phase;
         }
     }
 
-    static bool i_begin(ITable *source, size_t target_capacity, bool force_failure,
-                          iRehash *rehash) {
+    static bool i_begin(ITable *source, size_t target_capacity, iRehash *rehash) {
         ITable target = {0};
-        if (!i_init(&target, target_capacity, force_failure)) {
+        if (!i_init(&target, target_capacity)) {
             return false;
         }
         *rehash = (iRehash){
@@ -382,26 +378,30 @@ typedef enum Phase { PHASE_SCAN, PHASE_PROBE, PHASE_BLOCKED, PHASE_DONE } Phase;
 #undef free
 #undef malloc
 
-extern uint64_t wf_map_contract(void *, uint64_t, uint64_t, uint64_t);
+extern uint64_t wf_map_contract(uint64_t, uint64_t, uint64_t);
 #ifdef BEHAVIOR_DEMOS
-extern uint8_t wf_behavior_contract(void *, uint64_t);
+extern uint8_t wf_behavior_contract(uint64_t);
 #endif
 
 typedef struct {
     void *pointer;
     uint64_t bytes, id;
+    bool is_resource;
     bool released;
 } ObservedAllocation;
 
 typedef struct {
     ObservedAllocation allocations[16];
-    size_t requests, allocated, released, fail_at, live, peak;
+    size_t requests, allocated, released, live, peak;
 } Observation;
 
 static Observation observation;
 static size_t compared_runs, compared_owners, compared_backings;
 static uint64_t expected_requests[7];
+static bool expected_resources[7];
 static size_t expected_request_count;
+static const uint64_t wf_slots_header_bytes = 16;
+static const uint64_t wf_slot_stride_bytes = 24;
 
 static void require(bool condition, const char *message) {
     if (!condition) {
@@ -412,15 +412,20 @@ static void require(bool condition, const char *message) {
 
 void *wf_observe_allocate(uint64_t bytes) {
     require(observation.requests < expected_request_count, "unexpected allocation request");
-    require(bytes == expected_requests[observation.requests],
+    const size_t request = observation.requests;
+    require(bytes == expected_requests[request],
             "allocation differs from its exact request-position extent");
     ++observation.requests;
-    if (observation.requests == observation.fail_at) return NULL;
     void *pointer = malloc((size_t)bytes);
     require(pointer != NULL, "host allocation failed");
     memset(pointer, 0xcc, (size_t)bytes);
-    observation.allocations[observation.allocated++] =
-        (ObservedAllocation){pointer, bytes, 0, false};
+    observation.allocations[observation.allocated++] = (ObservedAllocation){
+        .pointer = pointer,
+        .bytes = bytes,
+        .id = 0,
+        .is_resource = expected_resources[request],
+        .released = false,
+    };
     observation.live += (size_t)bytes;
     if (observation.live > observation.peak) observation.peak = observation.live;
     return pointer;
@@ -432,7 +437,8 @@ void wf_observe_release(void *pointer) {
         ObservedAllocation *entry = &observation.allocations[i];
         if (entry->pointer != pointer) continue;
         require(!entry->released, "owner released twice");
-        if (entry->bytes == sizeof(Resource)) {
+        if (entry->is_resource) {
+            require(entry->bytes == sizeof(Resource), "resource extent changed");
             Resource resource;
             memcpy(&resource, pointer, sizeof resource);
             entry->id = resource.id;
@@ -455,27 +461,36 @@ void wf_observe_release(void *pointer) {
     require(false, "release did not return the original allocation address");
 }
 
-static void observation_reset(size_t fail_at, uint64_t scenario, bool whitefoot) {
+static void observation_reset(uint64_t scenario, bool whitefoot) {
     require(observation.live == 0, "live allocations before reset");
     for (size_t i = 0; i < observation.allocated; ++i)
         free(observation.allocations[i].pointer);
     memset(&observation, 0, sizeof observation);
-    observation.fail_at = fail_at;
-    /* Source: OP-9 sequences (tag 4, fingerprint 1, key 8, Box ceiling 16)
-     * to 32 bytes; emitted heap allocation uses that ceiling. LLVM's actual
-     * Slot and sparse-owned.c's ISlot both have a 24-byte element stride.
-     * Check each side's exact allocation sequence, not equality of layouts. */
-    const uint64_t stride = whitefoot ? 32 : sizeof(ISlot);
-    expected_requests[0] = (scenario >= 3 ? 1 : 8) * stride;
+    memset(expected_resources, 0, sizeof expected_resources);
+    /* LLVM lays out the Whitefoot Slot and sparse-owned.c's ISlot at the same
+     * 24-byte element stride. The emitted Whitefoot allocation precedes its
+     * payload with the runtime Slots len/cap descriptor. Check each side's
+     * exact allocation sequence, not the larger source OP-9 ceiling. */
+    const uint64_t stride = whitefoot ? wf_slot_stride_bytes : sizeof(ISlot);
+    expected_requests[0] = (whitefoot ? wf_slots_header_bytes : 0) +
+                           (scenario >= 3 ? 1 : 8) * stride;
     const size_t resources = scenario >= 3 ? 1 : scenario == 0 ? 5 : 3;
-    for (size_t i = 1; i <= resources; ++i) expected_requests[i] = sizeof(Resource);
+    for (size_t i = 1; i <= resources; ++i) {
+        expected_requests[i] = sizeof(Resource);
+        expected_resources[i] = true;
+    }
     expected_request_count = resources + 1;
     if (scenario == 4) {
-        expected_requests[expected_request_count++] = sizeof(Resource);
+        expected_requests[expected_request_count] = sizeof(Resource);
+        expected_resources[expected_request_count++] = true;
     } else {
         expected_requests[expected_request_count++] =
+            (whitefoot ? wf_slots_header_bytes : 0) +
             (scenario == 0 ? 16 : scenario == 3 ? 1 : 8) * stride;
-        if (scenario == 3) expected_requests[expected_request_count++] = sizeof(Resource);
+        if (scenario == 3) {
+            expected_requests[expected_request_count] = sizeof(Resource);
+            expected_resources[expected_request_count++] = true;
+        }
     }
     reset_ledger();
     require(backing_live_bytes == 0 && backing_live_allocations == 0,
@@ -486,12 +501,8 @@ static void observation_reset(size_t fail_at, uint64_t scenario, bool whitefoot)
 static Observation completed_observation(void) {
     require(observation.allocated == observation.released && observation.live == 0,
             "not every admitted owner was returned exactly once");
-    if (observation.fail_at != 0)
-        require(observation.requests == observation.fail_at,
-                "execution continued allocating after refusal");
-    else
-        require(observation.requests == expected_request_count,
-                "successful execution omitted a required allocation");
+    require(observation.requests == expected_request_count,
+            "execution omitted a required allocation");
     return observation;
 }
 
@@ -529,7 +540,7 @@ static uint64_t native_contract(uint64_t seed, uint64_t scenario, size_t budget)
     size_t entries = scenario >= 3 ? 1 : scenario == 0 ? 5 : 3;
     uint64_t base = seed * 100;
     ITable source = {0};
-    if (!i_init(&source, initial, false)) return 70;
+    if (!i_init(&source, initial)) return 70;
     for (size_t ordinal = 0; ordinal < entries; ++ordinal) {
         uint64_t offset = ordinal * 8, kind = 1, expected = 0;
         if (scenario == 0) {
@@ -574,8 +585,8 @@ static uint64_t native_contract(uint64_t seed, uint64_t scenario, size_t budget)
     size_t target_capacity = scenario == 0 ? 16 : scenario == 3 ? 1 : 8;
     iRehash migration;
     uint64_t before = i_digest(&source);
-    if (!i_begin(&source, target_capacity, false, &migration)) {
-        require(i_digest(&source) == before, "native refusal changed source");
+    if (!i_begin(&source, target_capacity, &migration)) {
+        require(i_digest(&source) == before, "native allocation changed source");
         drop_table(&source);
         return 70;
     }
@@ -614,16 +625,16 @@ static uint64_t native_contract(uint64_t seed, uint64_t scenario, size_t budget)
     return result;
 }
 
-static void compare(uint64_t seed, uint64_t scenario, size_t budget, size_t fail_at) {
-    observation_reset(fail_at, scenario, false);
+static void compare(uint64_t seed, uint64_t scenario, size_t budget) {
+    observation_reset(scenario, false);
     uint64_t expected = native_contract(seed, scenario, budget);
     Observation native = completed_observation();
-    observation_reset(fail_at, scenario, true);
-    uint64_t actual = wf_map_contract(NULL, seed, scenario, budget);
+    observation_reset(scenario, true);
+    uint64_t actual = wf_map_contract(seed, scenario, budget);
     if (actual != expected) {
-        fprintf(stderr, "seed=%" PRIu64 " scenario=%" PRIu64 " budget=%zu refusal=%zu"
+        fprintf(stderr, "seed=%" PRIu64 " scenario=%" PRIu64 " budget=%zu"
                         " expected=%" PRIu64 " actual=%" PRIu64 "\n",
-                seed, scenario, budget, fail_at, expected, actual);
+                seed, scenario, budget, expected, actual);
         exit(1);
     }
     Observation wf = completed_observation();
@@ -632,11 +643,21 @@ static void compare(uint64_t seed, uint64_t scenario, size_t budget, size_t fail
     for (size_t i = 0; i < wf.allocated; ++i) {
         require(wf.allocations[i].id == native.allocations[i].id,
                 "exact owner release ledger differs from native control");
-        if (native.allocations[i].bytes == sizeof(Resource)) {
+        require(wf.allocations[i].is_resource == native.allocations[i].is_resource,
+                "allocation role differs from native control");
+        if (native.allocations[i].is_resource) {
             require(wf.allocations[i].bytes == sizeof(Resource), "resource extent changed");
             ++compared_owners;
         } else {
-            require(wf.allocations[i].bytes / 32 == native.allocations[i].bytes / sizeof(ISlot),
+            require(wf.allocations[i].bytes >= wf_slots_header_bytes,
+                    "released backing is smaller than its Slots descriptor");
+            uint64_t wf_payload = wf.allocations[i].bytes - wf_slots_header_bytes;
+            require(wf_payload % wf_slot_stride_bytes == 0,
+                    "released Whitefoot backing has a partial slot payload");
+            require(native.allocations[i].bytes % sizeof(ISlot) == 0,
+                    "released native backing has a partial slot payload");
+            require(wf_payload / wf_slot_stride_bytes ==
+                        native.allocations[i].bytes / sizeof(ISlot),
                     "released backing capacity differs from native control");
             ++compared_backings;
         }
@@ -646,33 +667,36 @@ static void compare(uint64_t seed, uint64_t scenario, size_t budget, size_t fail
 
 #ifdef BEHAVIOR_DEMOS
 static void check_behavior_demos(void) {
-    /* OP-9 request ceilings, independently stated by source layout:
-     * scalar Slot 32, Slot containing Branded<Box<u64>> 48; payload 40.
-     * Actual LLVM slot strides are not substituted for allocation ceilings. */
-    const uint64_t extents[3][4] = {{128, 40, 0, 0}, {192, 8, 8, 40}, {64, 40, 40, 0}};
+    /* Both concrete Slot instances have a 24-byte target stride. Each first
+     * request includes the 16-byte runtime Slots descriptor; later requests
+     * are scalar Box allocations with their exact content extents. */
+    const uint64_t extents[3][4] = {{112, 40, 0, 0}, {112, 8, 8, 40}, {64, 40, 40, 0}};
+    const bool resources[3][4] = {
+        {false, true, false, false},
+        {false, false, false, true},
+        {false, true, true, false},
+    };
     const uint64_t owners[3][4] = {{0, 81, 0, 0}, {0, 9, 9, 81}, {0, 81, 82, 0}};
     const size_t counts[3] = {2, 4, 3};
     size_t executions = 0;
     for (size_t variant = 0; variant < 3; ++variant) {
-        for (size_t failure = 0; failure <= counts[variant]; ++failure) {
-            observation_reset(failure, 0, true);
-            expected_request_count = counts[variant];
-            memcpy(expected_requests, extents[variant], sizeof extents[variant]);
-            uint8_t result = wf_behavior_contract(NULL, variant);
-            Observation done = completed_observation();
-            require(result == (failure ? 70 : 0), "behavior result or refusal mismatch");
-            require(done.requests == (failure ? failure : counts[variant]),
-                    "behavior allocation path changed");
-            require(done.allocated == (failure ? failure - 1 : counts[variant]),
-                    "behavior did not return every earlier owner");
-            for (size_t i = 0; i < done.allocated; ++i)
-                require(done.allocations[i].id == owners[variant][i],
-                        "behavior exact release ledger changed");
-            ++executions;
-        }
+        observation_reset(0, true);
+        expected_request_count = counts[variant];
+        memcpy(expected_requests, extents[variant], sizeof extents[variant]);
+        memcpy(expected_resources, resources[variant], sizeof resources[variant]);
+        uint8_t result = wf_behavior_contract(variant);
+        Observation done = completed_observation();
+        require(result == 0, "behavior result changed");
+        require(done.requests == counts[variant], "behavior allocation path changed");
+        require(done.allocated == counts[variant],
+                "behavior did not return every owner");
+        for (size_t i = 0; i < done.allocated; ++i)
+            require(done.allocations[i].id == owners[variant][i],
+                    "behavior exact release ledger changed");
+        ++executions;
     }
-    observation_reset(0, 0, false);
-    printf("behavior: %zu stateful, branded-key and hostile-equality executions; every refusal and release checked\n", executions);
+    observation_reset(0, false);
+    printf("behavior: %zu stateful, branded-key and hostile-equality executions; every owner and release checked\n", executions);
 }
 #endif
 
@@ -683,14 +707,11 @@ int wf__main_body(int argc, char **argv) {
             size_t stops = scenario == 1 ? 15 : 1;
             for (size_t stop = 0; stop < stops; ++stop) {
                 size_t budget = scenario == 0 ? 100 : scenario == 3 ? 3 : stop;
-                compare(seed, scenario, budget, 0);
-                size_t requests = observation.requests;
-                for (size_t fail_at = 1; fail_at <= requests; ++fail_at)
-                    compare(seed, scenario, budget, fail_at);
+                compare(seed, scenario, budget);
             }
         }
     }
-    observation_reset(0, 0, false);
+    observation_reset(0, false);
     printf("owning-growth: %zu matched executions; %zu resource releases; %zu backing releases\n",
            compared_runs, compared_owners, compared_backings);
 #ifdef BEHAVIOR_DEMOS

@@ -10,12 +10,13 @@ use super::super::super::super::goal::{
     EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalOperation, GoalProjection,
 };
 use super::super::super::super::model::{
-    CheckedCallSeparation, CheckedEffectStep, CheckedExpression, CheckedMode, CheckedNominalKind,
-    CheckedStatePath, CheckedType,
+    CheckedCallContract, CheckedCallSeparation, CheckedEffectStep, CheckedEffects,
+    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedStatePath, CheckedType,
 };
 use super::super::super::super::places::{
     CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations, places_overlap,
 };
+use super::super::super::generics::HEAP_ALLOCATING_PRELUDE_FUNCTIONS;
 use super::super::super::references::InvalidationEvent;
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
@@ -49,6 +50,13 @@ struct SubstitutedEntry {
     origin: usize,
     /// The rendered path the [EFF-5] diagnostic carries.
     spelling: String,
+}
+
+/// A bound call's row and contract come from the same instantiated formal.
+/// Direct calls carry neither override.
+struct FormalCallBoundary {
+    effects: CheckedEffects,
+    contract: CheckedCallContract,
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -94,20 +102,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let formal = self.formal_signature(key, &function.substitution, target)?;
         let binding_site = self.behavior_binding_site(node, key, &function.substitution)?;
-        let effective = self.behavior_call_signature(binding_site, &formal, actual)?;
-        let effects = Some(super::super::super::super::model::CheckedEffects {
-            reads: effective.declared_effects.reads.clone(),
-            writes: effective.declared_effects.writes.clone(),
-            allocates: effective.declared_effects.allocates,
-        });
-        self.check_selected_user_call(node, &effective, effects, function, bindings, loop_depth)
+        let (effective, formal_effects, formal_contract) =
+            self.behavior_call_signature(binding_site, Some(function.id), &formal, actual)?;
+        self.check_selected_user_call(
+            node,
+            &effective,
+            Some(FormalCallBoundary {
+                effects: formal_effects,
+                contract: formal_contract,
+            }),
+            function,
+            bindings,
+            loop_depth,
+        )
     }
 
     fn check_selected_user_call(
         &self,
         node: NodeId,
         signature: &FunctionSignature,
-        formal_effects: Option<super::super::super::super::model::CheckedEffects>,
+        formal: Option<FormalCallBoundary>,
         function: &FunctionSignature,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
@@ -144,6 +158,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut actual_captures = Vec::with_capacity(fields.len());
         let mut actual_modes = Vec::with_capacity(fields.len());
         let call = self.tree.path(node)?.clone();
+        self.prepare_atomic_update_call(&call, signature)?;
         let mut effects = EffectSet::NONE;
         for (ordinal, (field, parameter)) in
             fields.into_iter().zip(&signature.parameters).enumerate()
@@ -159,12 +174,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(field, Production::Atom)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            self.enter_atomic_update_argument(&call, ordinal);
             let argument = self.check_call_argument_atom(function, atom, bindings, loop_depth)?;
-            // [TYPE-2] an argument naming a path that ends at or passes
-            // through a readonly field, at a reference parameter whose callee
-            // row writes that parameter, is a hard error at the complete
-            // argument `atom`. The checked argument supplies the resolved
-            // origin path through aliases and reborrows [REF-1].
+            self.reject_failed_atomic_update_argument(atom)?;
+            // [CONST-2, OWN-11, TYPE-2] every possible origin of a written
+            // reference argument must be writable. The checked argument
+            // retains those paths through aliases and control-flow joins.
             if parameter.mode.is_reference()
                 && signature
                     .declared_effects
@@ -172,7 +187,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .iter()
                     .any(|entry| entry.root == parameter.declaration)
             {
-                self.reject_readonly_written_argument(atom, &argument, bindings)?;
+                self.check_written_reference_argument(atom, &argument, bindings)?;
             }
             // [TYPE-8] `&[T]` is a kind, so a checked range value carries the
             // element type T beside its `Range` mode. Comparing that element
@@ -310,26 +325,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // about the callee's row reaching the updated place, and the target
         // argument's own by-value contribution is exactly the overlap
         // [EFF-5] would otherwise report against that row.
-        self.check_atomic_update_row(node, signature, &actual_paths, &substituted)?;
+        let atomic_target = self.check_atomic_update_row(node, &actual_paths, &substituted)?;
         self.check_call_pairwise_disjointness(node, signature, &substituted)?;
-        self.invalidate_call_bystanders(&substituted, &call, bindings);
+        self.invalidate_call_bystanders(&substituted, atomic_target.as_ref(), &call, bindings);
         Self::invalidate_window_operation_references(signature, &substituted, bindings);
         self.project_call_effects(node, function, &substituted, bindings, &mut effects)?;
         let result = signature.result;
         let result_mode = signature.result_mode;
+        let (formal_effects, formal_contract) = match formal {
+            Some(boundary) => (
+                Some(Box::new(boundary.effects)),
+                Some(Box::new(boundary.contract)),
+            ),
+            None => (None, None),
+        };
         Ok(TypedExpression {
             expression: CheckedExpression::UserCall {
                 function: target,
-                formal_effects: formal_effects.map(Box::new),
+                formal_effects,
+                formal_contract,
                 call,
                 argument_nodes,
                 arguments,
+                actual_captures,
                 goal_arguments,
                 goal_regions: Vec::new(),
                 requirements: Vec::new(),
                 result,
                 result_borrow: None,
-                allocation: self.allocation_fit_of_call(node, function, signature)?,
+                allocation: self.allocation_fit_of_call(function, signature)?,
             },
             mode: result_mode,
             // [REF-3] no call delivers a reference: FN-1 returns owned values
@@ -355,19 +379,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// obligation.
     fn allocation_fit_of_call(
         &self,
-        node: NodeId,
         caller: &FunctionSignature,
         signature: &FunctionSignature,
     ) -> Result<Option<super::super::super::super::model::CheckedAllocationFit>, CheckStop> {
-        // [OP-9] the ceiling is `stride_ceiling(T)` of the operation's own
-        // stored type, and a symbolic type parameter fixes no stride. [FN-2]
-        // checks every concrete instance again with that instance's exact
-        // ceiling, so the obligation is carried there; the symbolic schema
-        // instance, which is never lowered and allocates nothing, carries
-        // none rather than one against an unknown ceiling.
-        if caller.substitution.is_symbolic() {
-            return Ok(None);
-        }
         let (count, cell) = match signature.name.as_str() {
             "box_array_filled" | "box_slots_new" | "box_ring_new" => (0, signature.result),
             "grow" => {
@@ -381,11 +395,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(element) = self.runtime_capacity_content_element(cell)? else {
             return Ok(None);
         };
+        let layout_ceiling = match self.instantiated_layout_ceiling(element) {
+            Some(ceiling) => ceiling,
+            None if !caller.substitution.is_concrete(&self.elements.borrow()) => {
+                // [ENT-1, FN-2] only a layout depending on an unresolved
+                // type or const parameter may defer the schema obligation.
+                // This includes an opaque parameter inside an aggregate,
+                // but not a fixed-layout Box shell or a known AboveU64
+                // ceiling. No deferred record grants proof or lowering
+                // authority; every concrete replay recomputes its bound.
+                return Ok(None);
+            }
+            None => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+        };
         Ok(Some(
             super::super::super::super::model::CheckedAllocationFit {
+                cell,
                 element,
-                layout_ceiling: self.layout_ceiling(element, node)?,
+                layout_ceiling,
                 count,
+                source_length_upper_bound: None,
             },
         ))
     }
@@ -586,22 +615,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn check_atomic_update_row(
         &self,
         node: NodeId,
-        signature: &FunctionSignature,
         actual_paths: &[Vec<ResolvedPlace>],
         entries: &[SubstitutedEntry],
-    ) -> Result<(), CheckStop> {
-        let Some(target) = self.atomic_update_target(signature.result, signature.result_mode)
-        else {
-            return Ok(());
+    ) -> Result<Option<ResolvedPlace>, CheckStop> {
+        let Some(target) = self.atomic_update_target(self.tree.path(node)?) else {
+            return Ok(None);
         };
         // "where the first argument of the call is the target place itself":
         // the target enters `f` by value, so its actual names exactly one
         // place and that place is the target.
         let Some([first]) = actual_paths.first().map(Vec::as_slice) else {
-            return Ok(());
+            return Ok(None);
         };
         if *first != target {
-            return Ok(());
+            return Ok(None);
         }
         for entry in entries {
             // The target argument's own by-value contribution is the update's
@@ -621,7 +648,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        Ok(())
+        Ok(Some(target))
     }
 
     /// [EFF-5] clause 1: two effects on overlapping paths where at least one
@@ -654,13 +681,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // A pair whose only unseparated steps are index or range
                 // positions is the fixed families' question; every other
                 // overlap is refused here and now.
-                if Self::separable_by_position(&left.place, &right.place) {
+                if let Some(positions) = Self::separable_by_position(&left.place, &right.place) {
                     self.call_separations
                         .borrow_mut()
                         .push(CheckedCallSeparation {
                             site: self.tree.path(node)?.clone(),
-                            left: left.place.clone(),
-                            right: right.place.clone(),
+                            positions,
                             left_spelling: left.spelling.clone(),
                             right_spelling: right.spelling.clone(),
                         });
@@ -680,21 +706,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// Whether the first step at which the two paths disagree is an index or
-    /// a range position, which is the only disagreement an admitted [OWN-7]
-    /// family can still separate.
-    fn separable_by_position(left: &ResolvedPlace, right: &ResolvedPlace) -> bool {
-        left.path
-            .iter()
-            .zip(&right.path)
-            .find(|(left, right)| left != right)
-            .is_some_and(|(left, right)| {
-                matches!(
-                    (left, right),
-                    (PlaceStep::Index(_), PlaceStep::Index(_))
-                        | (PlaceStep::Range(_), PlaceStep::Range(_))
-                )
-            })
+    /// The ordered position disagreements an admitted [OWN-7] family can
+    /// still separate. Index suffixes remain candidates; a range divergence
+    /// is the final candidate because its coordinate frames then differ.
+    fn separable_by_position(
+        left: &ResolvedPlace,
+        right: &ResolvedPlace,
+    ) -> Option<Vec<super::super::super::super::model::CheckedCallSeparationPositions>> {
+        use super::super::super::super::model::CheckedCallSeparationPositions;
+        let mut candidates = Vec::new();
+        for (left, right) in left.path.iter().zip(&right.path) {
+            match (left, right) {
+                (PlaceStep::Index(left), PlaceStep::Index(right)) if left.provably_same(*right) => {
+                    continue;
+                }
+                (PlaceStep::Range(left), PlaceStep::Range(right))
+                    if left.start.provably_same(right.start)
+                        && left.end.provably_same(right.end) =>
+                {
+                    continue;
+                }
+                (PlaceStep::Index(left), PlaceStep::Index(right)) => {
+                    candidates.push(CheckedCallSeparationPositions::Indices(*left, *right));
+                }
+                (PlaceStep::Range(left), PlaceStep::Range(right)) => {
+                    candidates.push(CheckedCallSeparationPositions::Ranges(*left, *right));
+                    break;
+                }
+                (left, right) if left == right => continue,
+                _ if candidates.is_empty() => return None,
+                _ => break,
+            }
+        }
+        (!candidates.is_empty()).then_some(candidates)
     }
 
     /// [OP-10] the window operations that end the bound a reference into the
@@ -752,14 +796,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         signature: &FunctionSignature,
     ) -> Result<(), CheckStop> {
-        const HEAP_ROWS: [&str; 5] = [
-            "box_new",
-            "box_array_filled",
-            "box_slots_new",
-            "box_ring_new",
-            "grow",
-        ];
-        if !self.no_heap || !HEAP_ROWS.contains(&signature.name.as_str()) {
+        if !self.no_heap || !HEAP_ALLOCATING_PRELUDE_FUNCTIONS.contains(&signature.name.as_str()) {
             return Ok(());
         }
         self.issue_node(
@@ -824,13 +861,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn invalidate_call_bystanders(
         &self,
         entries: &[SubstitutedEntry],
+        atomic_target: Option<&ResolvedPlace>,
         call: &crate::NodePath,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
     ) {
         let _ = call;
         for entry in entries.iter().filter(|entry| entry.write) {
             let event = if entry.consuming {
-                InvalidationEvent::PrefixMoved
+                // [OP-12] the recognized first argument is not an ordinary
+                // move out of `p`: its old value enters the call and its
+                // result replaces `p` at one atomic commit, whose effect is
+                // `writes(p)`. Equal-path references therefore remain valid
+                // while references below `p` still die under [REF-2]'s
+                // proper-prefix write rule. Every other consuming argument
+                // retains the ordinary move invalidation, including equality.
+                if entry.argument == 0 && atomic_target.is_some_and(|target| entry.place == *target)
+                {
+                    InvalidationEvent::CallWrite
+                } else {
+                    InvalidationEvent::PrefixMoved
+                }
             } else {
                 InvalidationEvent::CallWrite
             };
@@ -915,7 +965,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     })
                 }
                 _ => match passed_place {
-                    Some(place) => self.goal_referent_image(place, expected_type, bindings)?,
+                    Some(place) => self.goal_referent_image(place, expected_type, atom)?,
                     None => GoalExpression::Datum(GoalDatum::EvaluatedValue {
                         function: caller,
                         occurrence: EvaluatedValueOccurrence::CallArgument {
@@ -931,7 +981,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if expected_mode != CheckedMode::Own {
             if let Some(place) = passed_place {
-                return self.goal_referent_image(place, expected_type, bindings);
+                return self.goal_referent_image(place, expected_type, atom);
             }
             // FN-1's candidate protects every mutable origin a returned
             // borrow may reach, including when the delivered value is a
@@ -964,14 +1014,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(image);
         }
 
-        if self
-            .tree
-            .direct_token_with(atom, crate::TerminalPredicate::Literal)?
-            .is_some()
-        {
-            let CheckedExpression::Constant(value) = &argument.expression else {
-                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-            };
+        // [MSR-6, ENT-2] a const generic read is already the canonical
+        // symbolic constant, or its supplied concrete integer. Preserve that
+        // checked value just as for a written literal; re-reading the source
+        // place would lose both its value class and its substitution.
+        // Named constants retain their separate declaration image below.
+        if let CheckedExpression::Constant(value) = &argument.expression {
             return Ok(GoalExpression::Datum(GoalDatum::Literal(value.clone())));
         }
 
@@ -1010,18 +1058,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         path: root.place_path(),
                     },
                     root.ty,
-                    bindings,
+                    atom,
                 )?,
             )),
             CheckedExpression::RangeMeasure { measure, root } => Some((
-                GoalOperation::RangeMeasure {
+                GoalOperation::ContainerMeasure {
                     measure: *measure,
-                    element: root.element,
+                    measured: super::super::super::super::model::MeasuredKind::Range,
+                    element: Some(root.element),
+                    constant: None,
                 },
                 GoalExpression::Datum(GoalDatum::Place {
                     root: root.binding,
                     projections: Vec::new(),
-                    ty: root.element.ty(),
+                    ty: root.element_type,
+                }),
+            )),
+            CheckedExpression::RangeElementMeasure { measure, place, .. } => Some((
+                GoalOperation::ContainerMeasure {
+                    measure: *measure,
+                    measured: place
+                        .measured()
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                    element: place.element(),
+                    constant: place.type_constant(),
+                },
+                GoalExpression::Datum(GoalDatum::Place {
+                    root: place.root.binding,
+                    projections: place.goal_projections(),
+                    ty: place.ty,
                 }),
             )),
             _ => None,
@@ -1072,12 +1137,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         place: &ResolvedPlace,
         ty: CheckedType,
-        bindings: &HashMap<DeclarationId, LocalBinding>,
+        node: NodeId,
     ) -> Result<GoalExpression, CheckStop> {
         let mut projections = Vec::new();
         for step in &place.path {
             match step {
                 PlaceStep::Field(field) => projections.push(GoalProjection::Field(*field)),
+                PlaceStep::Payload { variant, field } => {
+                    projections.push(GoalProjection::Payload {
+                        variant: *variant,
+                        field: *field,
+                    });
+                }
                 PlaceStep::Deref => projections.push(GoalProjection::Deref),
                 PlaceStep::Index(index) => {
                     projections.push(GoalProjection::Subscript(index.goal_identity()));
@@ -1090,13 +1161,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 PlaceStep::Range(range) => {
                     projections.push(GoalProjection::Range(*range));
                 }
-                // [ENT-2] a goal datum's place carries field selections,
-                // `deref` wrappings and subscripts; a payload, part or
-                // measure step is no datum spelling, so the image stops here.
-                PlaceStep::Payload { .. } | PlaceStep::Part(_) | PlaceStep::Measure(_) => break,
+                // A window-part effect is not a value projection. Failing
+                // to represent a value must not substitute its parent.
+                PlaceStep::Part(_) | PlaceStep::Measure(_) => {
+                    return self.unsupported(
+                        super::super::super::super::UnsupportedSemanticFeature::CompositeValues,
+                        node,
+                    );
+                }
             }
         }
-        let _ = bindings;
         let datum = match place.root {
             PlaceRoot::Constant(constant) => GoalDatum::NamedConst {
                 declaration: self
@@ -1166,7 +1240,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     if let Some(reference) = &local.reference {
                         (
                             match reference.paths.as_slice() {
-                                [path] => self.goal_referent_image(path, local.ty, bindings)?,
+                                [path] => self.goal_referent_image(path, local.ty, place)?,
                                 // [REF-1] a joined reference still denotes
                                 // one selected referent, but no member of its
                                 // possible-target set is its unconditional

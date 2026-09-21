@@ -117,6 +117,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         loop_depth: scope.loops.len(),
                         compiler_updated: false,
                         reference: None,
+                        refinement_witnesses: Vec::new(),
                     },
                 )
                 .is_some()
@@ -284,6 +285,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         loop_depth: scope.loops.len(),
                         compiler_updated: false,
                         reference: None,
+                        refinement_witnesses: Vec::new(),
                     },
                 )
                 .is_some()
@@ -536,6 +538,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     loop_depth: scope.loops.len(),
                     compiler_updated: false,
                     reference: None,
+                    refinement_witnesses: Vec::new(),
                 },
             )
             .is_some()
@@ -575,7 +578,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         };
         self.has_fixed(pbase, crate::FixedTerminal::Deref)
-            .map_err(CheckStop::from)
     }
 
     fn invalid_propagation<ResultValue>(&self, node: NodeId) -> Result<ResultValue, CheckStop> {

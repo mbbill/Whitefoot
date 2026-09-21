@@ -10,14 +10,16 @@ use crate::{
     SemanticRule, SourceInput,
 };
 
+use super::super::entailment::affine::{AffineCheckState, AffineInequality};
 use super::super::entailment::{
     CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, CountedAtomicDerivation,
     CountedCaptureSide, CountedDerivationSet, CountedProofPoint, CountedRootAtom, DerivationId,
     DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind, FunctionEntailment,
     GoalId, GoalSign, ImplicitBoundKind, JoinParent, MeasureBound, ObligationFamily,
     ObligationOutcome, PlaceRoot, PostconditionCallDetail, PostconditionDeliveryJoinDetail,
-    PostconditionDisposition, Relation, RemainderEndpoint, S7Derivation, S7DerivationKind,
-    S7Subject, ShiftOneIdentity, SourceAffineFactRef, TermId, TermKind, ZERO, type_range,
+    PostconditionDisposition, RangeSeparationOrdering, Relation, RemainderEndpoint, S7Derivation,
+    S7DerivationKind, S7Subject, ShiftOneIdentity, SourceAffineFactRef, TermId, TermKind, ZERO,
+    type_range,
 };
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
@@ -27,7 +29,7 @@ use super::super::model::{
 // [REF-1] the v0.59 `PlaceProjection` is retired; one resolved path step is a
 // `PlaceStep`, and a term's place carries the whole resolved path rather than
 // a separate deref flag and field list.
-use super::super::places::PlaceStep;
+use super::super::places::{CapturedRange, PlaceStep};
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
@@ -135,16 +137,9 @@ fn collect_direct_calls<'checked>(
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Set { value, .. }
-            | CheckedStatement::Replace { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. }
-            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. } => record(value, callee, calls),
-            CheckedStatement::SetList { values, .. } => {
-                for value in values.expressions() {
-                    record(value, callee, calls);
-                }
-            }
             CheckedStatement::PropagateLet { scrutinee, .. } => record(scrutinee, callee, calls),
             CheckedStatement::Evaluate(expression) => record(expression, callee, calls),
             CheckedStatement::Match {
@@ -158,7 +153,7 @@ fn collect_direct_calls<'checked>(
                     collect_direct_calls(&arm.body, callee, calls);
                 }
             }
-            CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+            CheckedStatement::Loop { body, .. } => {
                 collect_direct_calls(body, callee, calls);
             }
             CheckedStatement::CountedRange {
@@ -191,11 +186,24 @@ fn accepted_discharge_flags(source: &[u8], function: &str) -> Vec<bool> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum DerivationConclusion {
     Relation(Relation),
-    Goal { goal: GoalId, sign: GoalSign },
+    Goal {
+        goal: GoalId,
+        sign: GoalSign,
+    },
     IntegerDomain(Option<GoalId>),
     AffineConsequence,
+    RangeSeparation {
+        left: CapturedRange,
+        right: CapturedRange,
+        ordering: RangeSeparationOrdering,
+    },
+    IndexSeparation {
+        left: crate::semantic::places::CapturedValue,
+        right: crate::semantic::places::CapturedValue,
+    },
     UnsignedDivisionProduct,
     RequirementAffineImage,
+    ContractCall,
     Contradiction,
     PostconditionAggregate,
 }
@@ -476,6 +484,7 @@ fn term_integer_range(kind: &TermKind) -> Option<(i128, i128)> {
         TermKind::Place(_, ty) => Some(type_range(*ty)),
         TermKind::Measure(..)
         | TermKind::CountedCapture { .. }
+        | TermKind::IndexCapture { .. }
         | TermKind::EntryDatum { .. }
         | TermKind::MeasureDatum { .. } => Some(type_range(IntegerType::U64)),
         TermKind::CommitValue { ty, .. } | TermKind::CallDatum { ty, .. } => Some(type_range(*ty)),
@@ -1074,6 +1083,10 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                             || (parent_left == right && parent_right == left),
                         "disequality parents use unordered fact identity"
                     ),
+                    (_, Relation::Bound { left, right, bound }) => assert!(
+                        retained_bound(&conclusions, *parent, *left, *right) <= *bound,
+                        "a projected bound's parent must imply it in the requested direction"
+                    ),
                     _ => assert_eq!(parent_relation, relation),
                 }
                 let retained_goal = summary
@@ -1252,6 +1265,168 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 DerivationConclusion::Goal {
                     goal: *goal,
                     sign: *sign,
+                }
+            }
+            DerivationNode::RangeSeparation { detail } => {
+                assert!(matches!(
+                    retained_conclusion(&conclusions, detail.parent),
+                    DerivationConclusion::AffineConsequence | DerivationConclusion::Contradiction
+                ));
+                DerivationConclusion::RangeSeparation {
+                    left: detail.left,
+                    right: detail.right,
+                    ordering: detail.ordering,
+                }
+            }
+            DerivationNode::IndexSeparation { detail } => {
+                let left = &detail.left;
+                let right = &detail.right;
+                let parent = detail.parent;
+                let term_for = |captured: &crate::semantic::places::CapturedValue| {
+                    use crate::semantic::places::CapturedTerm;
+                    summary
+                        .inventory
+                        .terms
+                        .iter()
+                        .position(|term| match captured.term {
+                            CapturedTerm::Literal(value) => {
+                                (*term == TermKind::Zero && value == 0)
+                                    || *term == TermKind::Constant(i128::from(value))
+                            }
+                            CapturedTerm::Const(declaration) => {
+                                *term == TermKind::ConstParameter(declaration)
+                            }
+                            CapturedTerm::Binding(_) => matches!(
+                                term,
+                                TermKind::IndexCapture { capture } if *capture == captured.capture
+                            ),
+                            CapturedTerm::Opaque => false,
+                        })
+                        .map(|term| TermId(u32::try_from(term).expect("term index fits u32")))
+                        .expect("an indexed-separation capture has a retained datum term")
+                };
+                let (left_term, right_term) = (term_for(left), term_for(right));
+                let expected = if left_term <= right_term {
+                    Relation::Distinct {
+                        left: left_term,
+                        right: right_term,
+                        difference: 0,
+                    }
+                } else {
+                    Relation::Distinct {
+                        left: right_term,
+                        right: left_term,
+                        difference: 0,
+                    }
+                };
+                if let Some(substitution) = &detail.substitution {
+                    use crate::semantic::places::{CapturedTerm, PlaceRoot};
+                    let (CapturedTerm::Binding(left_binding), CapturedTerm::Binding(right_binding)) =
+                        (left.term, right.term)
+                    else {
+                        panic!("capture substitution is restricted to direct binding captures");
+                    };
+                    for (source, binding) in [
+                        (substitution.source_left, left_binding),
+                        (substitution.source_right, right_binding),
+                    ] {
+                        assert!(matches!(
+                            retained_term(summary, source),
+                            TermKind::Place(place, IntegerType::U64)
+                                if place.root == PlaceRoot::Binding(binding) && place.path.is_empty()
+                        ));
+                    }
+                    let source_expected = if substitution.source_left <= substitution.source_right {
+                        Relation::Distinct {
+                            left: substitution.source_left,
+                            right: substitution.source_right,
+                            difference: 0,
+                        }
+                    } else {
+                        Relation::Distinct {
+                            left: substitution.source_right,
+                            right: substitution.source_left,
+                            difference: 0,
+                        }
+                    };
+                    assert_eq!(
+                        retained_conclusion(&conclusions, parent),
+                        &DerivationConclusion::Relation(source_expected)
+                    );
+                    for (identity, capture, source) in [
+                        (
+                            substitution.left_identity,
+                            left_term,
+                            substitution.source_left,
+                        ),
+                        (
+                            substitution.right_identity,
+                            right_term,
+                            substitution.source_right,
+                        ),
+                    ] {
+                        let DerivationConclusion::Relation(Relation::Equal {
+                            left,
+                            right,
+                            difference: 0,
+                        }) = retained_conclusion(&conclusions, identity)
+                        else {
+                            panic!("capture substitution retains an exact identity proof");
+                        };
+                        assert!(
+                            (*left == capture && *right == source)
+                                || (*left == source && *right == capture)
+                        );
+                    }
+                } else {
+                    match retained_conclusion(&conclusions, parent) {
+                        DerivationConclusion::Relation(relation) => assert_eq!(relation, &expected),
+                        DerivationConclusion::AffineConsequence => {
+                            let DerivationNode::AffineConsequence { relation: None, .. } =
+                                &summary.derivations.nodes[parent.0 as usize]
+                            else {
+                                panic!(
+                                    "an indexed affine proof retains its targetless affine parent"
+                                );
+                            };
+                            let target = detail.affine_target.as_deref().expect(
+                                "an indexed affine proof retains its selected strict target",
+                            );
+                            let (left_image, right_image) = detail.affine_images.as_deref().expect(
+                                "an indexed affine proof retains the exact captured images",
+                            );
+                            let expected_targets = [
+                                AffineInequality::from_bounded_forms(
+                                    left_image,
+                                    right_image,
+                                    -1,
+                                    &mut AffineCheckState::new(),
+                                ),
+                                AffineInequality::from_bounded_forms(
+                                    right_image,
+                                    left_image,
+                                    -1,
+                                    &mut AffineCheckState::new(),
+                                ),
+                            ];
+                            assert!(expected_targets.iter().any(|expected| {
+                                expected.as_ref().is_ok_and(|expected| expected == target)
+                            }));
+                        }
+                        DerivationConclusion::Contradiction => {}
+                        other => panic!("invalid indexed-separation parent: {other:?}"),
+                    }
+                }
+                if !matches!(
+                    retained_conclusion(&conclusions, parent),
+                    DerivationConclusion::AffineConsequence
+                ) {
+                    assert!(detail.affine_target.is_none());
+                    assert!(detail.affine_images.is_none());
+                }
+                DerivationConclusion::IndexSeparation {
+                    left: *left,
+                    right: *right,
                 }
             }
             DerivationNode::BooleanIntroduction {
@@ -1491,18 +1666,19 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ..
                 } = detail.as_ref();
                 assert_relation_terms_resolve(summary, relation);
-                // A source callee publishes a verified summary and a
-                // kernel-domain row publishes its own declaration data
-                // [ENT-3.S13, CALL-6]; both reach this node, and B7c4b-1 is
-                // where the second one does, because these frozen sources now
-                // take their runs from a store or an extent rather than from
-                // an [OP-1] `buffer_new`.
                 match &reference.summary {
                     crate::semantic::entailment::RelationProvenance::Verified(published) => {
                         assert!(!published.block.components().is_empty());
                     }
-                    crate::semantic::entailment::RelationProvenance::Kernel { .. } => {
-                        assert!(substitutions.is_empty());
+                    crate::semantic::entailment::RelationProvenance::FormalBoundary {
+                        premises,
+                        ..
+                    } => {
+                        assert!(
+                            premises
+                                .iter()
+                                .all(|premise| { !premise.block.components().is_empty() })
+                        );
                     }
                 }
                 for parent in parents {
@@ -1521,6 +1697,16 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ));
                 }
                 DerivationConclusion::Relation(relation.clone())
+            }
+            DerivationNode::ContractCall { parents, .. } => {
+                assert!(
+                    parents.iter().all(|parent| summary
+                        .derivations
+                        .nodes
+                        .get(parent.0 as usize)
+                        .is_some())
+                );
+                DerivationConclusion::ContractCall
             }
             DerivationNode::PostconditionDirectResult {
                 relation, parent, ..
@@ -1675,6 +1861,9 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         | DerivationConclusion::AffineConsequence
                         | DerivationConclusion::UnsignedDivisionProduct
                         | DerivationConclusion::RequirementAffineImage
+                        | DerivationConclusion::ContractCall
+                        | DerivationConclusion::RangeSeparation { .. }
+                        | DerivationConclusion::IndexSeparation { .. }
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("delivery join parent must be a relation or contradiction")
                         }
@@ -1733,6 +1922,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
 
     let mut seen_obligations = vec![false; summary.obligations.len()];
     let mut seen_calls = vec![false; summary.call_goals.len()];
+    let mut seen_contracts = vec![false; summary.contract_goals.len()];
     let mut seen_counted = vec![[false; 8]; summary.counted_derivations.len()];
     let mut seen_s7 = vec![false; summary.s7_derivations.len()];
     let mut seen_postcondition_exits = summary
@@ -1771,14 +1961,16 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 seen_obligations[ordinal] = true;
                 assert!(outcome.discharged);
                 // Retired with [BLK-0]: the KernelRequirement obligation family had the kernel declaration domain as its subject and has no v0.60 one; its successor is the ordinary PRE-1 record call and the UndischargedCallRequirement it submits under FN-8.
-                // Retired with [LIV-2]: the IndexSeparation obligation family judged one multi-target commit's element positions and has no v0.60 subject; its successor is SET-1's one written place per `set` together with EFF-5's RangeSeparation at a call.
+                // Retired with [LIV-2]: the former multi-target-commit
+                // IndexSeparation family has no v0.60 subject; indexed and
+                // ranged EFF-5 pairs now share CallSeparation at a call.
                 match outcome.family {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::EmptyRunRelease => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
                     // [EFF-5] a range separation submits its four orderings as
                     // one occurrence and never carries a conjunct of its own.
-                    ObligationFamily::RangeSeparation => assert_eq!(outcome.conjunct, 0),
+                    ObligationFamily::CallSeparation => assert_eq!(outcome.conjunct, 0),
                     // [REF-4] the two formation goals `lo <= hi` and
                     // `hi <= x.len` are conjuncts zero and one.
                     ObligationFamily::RangeFormation => {
@@ -1790,17 +1982,53 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 }
                 assert_eq!(outcome.derivation, Some(root.node));
                 assert!(!outcome.node_path.components().is_empty());
-                // [EFF-5] a range separation is discharged by one of the four
-                // non-strict orderings and retains no single normalized
-                // component of its own, so it is the one live family whose
-                // component list is empty; every other family normalizes to
-                // exactly one requested relation.
-                if outcome.components.is_empty() {
-                    assert_eq!(outcome.family, ObligationFamily::RangeSeparation);
+                // [EFF-5] a range separation has no canonical goal or single
+                // normalized component; its retained wrapper names the exact
+                // pair and selected ordering. Another family may lack an L0
+                // component when its source operands have only the canonical
+                // goal plus an affine normalization. That root must conclude
+                // the exact retained positive goal (or the actual entering
+                // contradiction), rather than being accepted by shape alone.
+                if outcome.family == ObligationFamily::CallSeparation {
+                    assert!(outcome.components.is_empty());
+                    assert!(outcome.canonical_goal.is_none());
                     assert!(matches!(
                         conclusion,
-                        DerivationConclusion::Relation(_) | DerivationConclusion::Contradiction
+                        DerivationConclusion::RangeSeparation { .. }
+                            | DerivationConclusion::IndexSeparation { .. }
                     ));
+                } else if outcome.components.is_empty() {
+                    let canonical = outcome
+                        .canonical_goal
+                        .as_ref()
+                        .expect("an affine-only bounds obligation retains its canonical goal");
+                    match conclusion {
+                        DerivationConclusion::Goal {
+                            goal,
+                            sign: GoalSign::Positive,
+                        } => {
+                            let retained = summary
+                                .inventory
+                                .goals
+                                .get(goal.0 as usize)
+                                .expect("affine-only bounds goal ID must resolve");
+                            assert_eq!(&retained.expression, canonical);
+                            assert!(!outcome.contradictory);
+                        }
+                        DerivationConclusion::Contradiction => assert!(outcome.contradictory),
+                        DerivationConclusion::Relation(_)
+                        | DerivationConclusion::Goal { .. }
+                        | DerivationConclusion::IntegerDomain(_)
+                        | DerivationConclusion::AffineConsequence
+                        | DerivationConclusion::UnsignedDivisionProduct
+                        | DerivationConclusion::RequirementAffineImage
+                        | DerivationConclusion::ContractCall
+                        | DerivationConclusion::RangeSeparation { .. }
+                        | DerivationConclusion::IndexSeparation { .. }
+                        | DerivationConclusion::PostconditionAggregate => {
+                            panic!("an affine-only bounds root must conclude its exact goal")
+                        }
+                    }
                 } else {
                     let [requested] = outcome.components.as_slice() else {
                         panic!("a bounds obligation has one normalized relation");
@@ -1837,7 +2065,12 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                             ObligationFamily::AllocationFit | ObligationFamily::RangeFormation
                         ) =>
                         {
-                            assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                            let retained = summary
+                                .inventory
+                                .goals
+                                .get(goal.0 as usize)
+                                .expect("bounds goal ID must resolve");
+                            assert_eq!(Some(&retained.expression), outcome.canonical_goal.as_ref());
                             assert!(!outcome.contradictory);
                         }
                         DerivationConclusion::Goal { .. }
@@ -1845,6 +2078,9 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         | DerivationConclusion::AffineConsequence
                         | DerivationConclusion::UnsignedDivisionProduct
                         | DerivationConclusion::RequirementAffineImage
+                        | DerivationConclusion::ContractCall
+                        | DerivationConclusion::RangeSeparation { .. }
+                        | DerivationConclusion::IndexSeparation { .. }
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("this obligation root cannot conclude that goal")
                         }
@@ -1950,10 +2186,62 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     | DerivationConclusion::AffineConsequence
                     | DerivationConclusion::UnsignedDivisionProduct
                     | DerivationConclusion::RequirementAffineImage
-                    | DerivationConclusion::PostconditionAggregate => {
+                    | DerivationConclusion::PostconditionAggregate
+                    | DerivationConclusion::RangeSeparation { .. }
+                    | DerivationConclusion::IndexSeparation { .. }
+                    | DerivationConclusion::ContractCall => {
                         panic!("a discharged call root cannot be a postcondition aggregate")
                     }
                 }
+            }
+            DerivationRootKind::CallContract(_) => {
+                assert_eq!(conclusion, &DerivationConclusion::ContractCall);
+                assert!(matches!(
+                    &summary.derivations.nodes[root.node.0 as usize],
+                    DerivationNode::ContractCall { .. }
+                ));
+            }
+            DerivationRootKind::ContractGoal(ordinal) => {
+                let ordinal = ordinal as usize;
+                let outcome = summary
+                    .contract_goals
+                    .get(ordinal)
+                    .expect("contract-root ordinal must resolve");
+                assert!(!seen_contracts[ordinal], "one exact root per FN-4 query");
+                seen_contracts[ordinal] = true;
+                assert_eq!(outcome.disposition, CallGoalDisposition::Discharged);
+                assert_eq!(outcome.derivation, Some(root.node));
+                match conclusion {
+                    DerivationConclusion::Goal {
+                        goal,
+                        sign: GoalSign::Positive,
+                    } => {
+                        let retained_goal = summary
+                            .inventory
+                            .goals
+                            .get(goal.0 as usize)
+                            .expect("contract goal ID must resolve");
+                        assert_eq!(retained_goal.expression, outcome.goal.root);
+                    }
+                    DerivationConclusion::Contradiction => {}
+                    _ => panic!("a discharged FN-4 root must be positive or contradictory"),
+                }
+            }
+            DerivationRootKind::PermissionSeparation { query, occurrence } => {
+                let proof = summary
+                    .permission_separations
+                    .get(query as usize)
+                    .expect("PAR-1 range-query root ordinal must resolve");
+                assert!(proof.discharged);
+                assert_eq!(
+                    proof.derivations.get(occurrence as usize),
+                    Some(&root.node),
+                    "each successful query visit retains its exact root"
+                );
+                let DerivationConclusion::RangeSeparation { left, right, .. } = conclusion else {
+                    panic!("a discharged PAR-1 range query retains its exact conclusion");
+                };
+                assert_eq!((*left, *right), (proof.query.left, proof.query.right));
             }
             DerivationRootKind::CountedS11 { occurrence, atom } => {
                 counted_root_order.push((occurrence, atom));
@@ -2251,7 +2539,8 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
             DerivationNode::SourceGoal { .. }
             | DerivationNode::JoinGoal { .. }
             | DerivationNode::MaterializedGoal { .. } => class_counts[1] += 1,
-            DerivationNode::GoalProjection { .. } => class_counts[2] += 1,
+            DerivationNode::GoalProjection { .. }
+            | DerivationNode::GoalAffineConsequence { .. } => class_counts[2] += 1,
             DerivationNode::L0Contradiction { .. }
             | DerivationNode::GoalContradiction { .. }
             | DerivationNode::JoinContradiction { .. }
@@ -2315,6 +2604,11 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
         let discharged = outcome.disposition == CallGoalDisposition::Discharged;
         assert_eq!(outcome.derivation.is_some(), discharged);
         assert_eq!(seen_calls[ordinal], discharged);
+    }
+    for (ordinal, outcome) in summary.contract_goals.iter().enumerate() {
+        let discharged = outcome.disposition == CallGoalDisposition::Discharged;
+        assert_eq!(outcome.derivation.is_some(), discharged);
+        assert_eq!(seen_contracts[ordinal], discharged);
     }
     assert!(
         seen_counted
@@ -3352,6 +3646,8 @@ fn main() -> status: own ExitStatus pure {
     assert!(outcomes[2].evidence.is_empty());
     let mut counts = DistinctGroundCounts::default();
     collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
+    // Each strict-derived disequality first becomes independently live at
+    // its one-edge join; the merging join retains both of those boundaries.
     assert_eq!(
         counts,
         DistinctGroundCounts {
@@ -3424,6 +3720,8 @@ fn main() -> status: own ExitStatus pure {
     let mut counts = DistinctGroundCounts::default();
     collect_distinct_grounds(&summary, distinct, &mut counts);
     assert_eq!(counts.strict, 2);
+    // Keep the two strict-derived facts' independence boundaries as well as
+    // the join that combines their paths.
     assert_eq!(counts.joins, 3);
     assert_eq!(counts.join_edges, 4);
 }
@@ -3483,6 +3781,7 @@ fn main() -> status: own ExitStatus pure {
         &mut kept_counts,
     );
     assert_eq!(kept_counts.strict, 2);
+    // The derived facts retain their one-edge independence boundaries.
     assert_eq!(kept_counts.join_edges, 4);
 
     let killed_summary = entailment(source, "killed");
@@ -3571,12 +3870,14 @@ fn main() -> status: own ExitStatus pure {
             collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
             assert_eq!(
                 counts,
+                // The source fact is already live; only the strict-derived
+                // fact needs its one-edge independence boundary.
                 DistinctGroundCounts {
                     source: 1,
                     strict: 1,
-                    joins: 3,
-                    join_edges: 4,
-                    join_parent_counts: vec![2, 1, 1],
+                    joins: 2,
+                    join_edges: 3,
+                    join_parent_counts: vec![2, 1],
                     ..DistinctGroundCounts::default()
                 },
                 "the mixed join names its explicit and strict-derived predecessor roots"
@@ -3635,11 +3936,13 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(counts.source, 1);
     assert_eq!(counts.strict, 2);
     assert_eq!(counts.contradiction, 1);
-    assert_eq!(counts.joins, 6);
+    // The two strict-derived inputs need independence boundaries; the
+    // explicit source input can be reused directly.
+    assert_eq!(counts.joins, 5);
     counts.join_parent_counts.sort_unstable();
-    assert_eq!(counts.join_parent_counts, vec![1, 1, 1, 2, 2, 2]);
+    assert_eq!(counts.join_parent_counts, vec![1, 1, 2, 2, 2]);
     assert_eq!(
-        counts.join_edges, 9,
+        counts.join_edges, 8,
         "the guarded inputs retain all four reaching grounds through the nested joins"
     );
 }
@@ -4174,6 +4477,93 @@ fn main() -> status: own ExitStatus pure {
             _ => true,
         }),
         "the fresh receiver contributes no reflexive source fact"
+    );
+}
+
+#[test]
+fn value_if_delivery_retains_the_ordinary_fallback_and_shared_give_root() {
+    // Acceptance alone does not observe the fallback. Inspect both retained
+    // derivations: a later candidate kill must be able to expose the ordinary
+    // bound even when the selected full bound came from an S12 call.
+    let source = br#"fn limit(value: own i32) -> result: own i32 pure contract {
+  requires value < 8_i32;
+  ensures result < 8_i32;
+} {
+  return value;
+}
+
+fn guard(value: own i32) -> result: own unit pure contract {
+  requires value < 32_i32;
+} {
+  return unit;
+}
+
+fn choose(value: own i32, narrow: own Bool) -> result: own unit pure contract {
+  requires value < 8_i32;
+} {
+  let picked = if narrow {
+    let bounded = limit(value: value);
+    if bounded < 16_i32 {
+      give bounded;
+    } else {
+      return unit;
+    }
+  } else if value < 32_i32 {
+    give value;
+  } else {
+    return unit;
+  }
+  guard(value: picked);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "choose");
+    validate_derivations(&summary);
+    let mut call_dependent = Vec::new();
+    for node in &summary.derivations.nodes {
+        call_dependent.push(
+            matches!(node, DerivationNode::PostconditionCall { .. })
+                || node
+                    .parent_ids()
+                    .iter()
+                    .any(|parent| call_dependent[parent.0 as usize]),
+        );
+    }
+    let joins = summary
+        .derivations
+        .nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, node)| {
+            let DerivationNode::PostconditionDeliveryJoin { detail } = node else {
+                return None;
+            };
+            let Relation::Bound {
+                right: ZERO, bound, ..
+            } = detail.relation
+            else {
+                return None;
+            };
+            Some((bound, call_dependent[index], &detail.parents))
+        })
+        .collect::<Vec<_>>();
+    let full = joins
+        .iter()
+        .find(|(bound, call, _)| *bound == 7 && *call)
+        .expect("delivery keeps the strongest call-dependent bound");
+    let ordinary = joins
+        .iter()
+        .find(|(bound, call, _)| *bound == 15 && !*call)
+        .expect("delivery keeps the weaker ordinary fallback");
+    assert_eq!(full.2.len(), 2);
+    assert_eq!(ordinary.2.len(), 2);
+    assert_eq!(
+        full.2[1].parent, ordinary.2[1].parent,
+        "both layers reuse the ordinary second edge, with one required Give root"
     );
 }
 
@@ -5054,6 +5444,11 @@ fn main() -> status: own ExitStatus pure {
         vec![true],
         "the ordinary write projects i < 4 before killing the mutable middle upper"
     );
+    // The survivor consequence must be derived through the killed middle
+    // `upper`. Which closed endpoint the step reaches — the constant four or Z
+    // through that constant's implicit bound — is an equal-bound derivation
+    // choice [ENT-4] leaves open, and a seeded closure retains whichever it
+    // reaches first.
     assert_root_contains(
         &ordinary,
         obligation_root(&ordinary, 0),
@@ -5062,7 +5457,6 @@ fn main() -> status: own ExitStatus pure {
                 left,
                 middle,
                 right,
-                bound: -1,
                 ..
             } => {
                 matches!(
@@ -5074,14 +5468,14 @@ fn main() -> status: own ExitStatus pure {
                     (
                         TermKind::Place(i, IntegerType::U64),
                         TermKind::Place(upper, IntegerType::U64),
-                        TermKind::Constant(4),
+                        TermKind::Constant(4) | TermKind::Zero,
                     ) if i.root == PlaceRoot::Binding(BindingId(0))
                         && upper.root == PlaceRoot::Binding(BindingId(1))
                 )
             }
             _ => false,
         },
-        "the exact i - upper <= -1 plus upper - 4 <= 0 projection",
+        "a projection of i - upper <= -1 through the killed middle upper",
     );
 }
 
@@ -5904,7 +6298,8 @@ fn a_declared_construction_length_proves_a_constant_offset_and_an_unknown_one_do
     // [ENT-3.S6] carries no construction row in v0.60: a construction
     // function's length and capacity facts are the `ensures` of its [PRE-1]
     // record and reach the caller through [ENT-3.S12] like any other declared
-    // relation, so the proving half now descends from that call's S13 event.
+    // relation. Its length is the const-generic n, so the proving half must
+    // retain S12 publication; no runtime argument datum is needed for n.
     let source = br#"fn sized() -> result: own u8 pure {
   let filled = array_filled::<u8, 4>(value: 0_u8);
   let b = slots_from_array::<u8, 4>(values: filled);
@@ -5936,10 +6331,11 @@ fn main() -> status: own ExitStatus pure {
         .iter()
         .position(|outcome| outcome.family == ObligationFamily::Bounds)
         .expect("the subscript carries one bounds obligation");
-    assert_root_has_event_kind(
+    assert_root_contains(
         &sized,
         obligation_root(&sized, sized_bounds),
-        FlowEventKind::S13,
+        |node| matches!(node, DerivationNode::PostconditionDirectResult { .. }),
+        "the constructor's S12 result publication",
     );
     let unknown = obligations(source, "unknown");
     let unknown_bounds = unknown
@@ -7746,7 +8142,8 @@ fn indexed_guards_discharge_structurally_identical_signature_ranges() {
     assert!(
         ranges
             .iter()
-            .all(|range| range.disposition == CallGoalDisposition::Discharged)
+            .all(|range| range.disposition == CallGoalDisposition::Discharged),
+        "the indexed guards and actual values must retain the same goals: {ranges:#?}"
     );
     let GoalExpression::Operation {
         arguments: first, ..
@@ -8608,44 +9005,99 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
             .count(),
         13
     );
-    // The boundary driver's `assemble_reason` publishes `result <= capacity`
-    // over its own declared result, which is the direct-result route. It came
-    // in with B3: a helper handed a view cannot form the shared child a
-    // `write_once` source needs [VIEW-2], so it hands its assembled length back
-    // and its caller publishes, and the caller proves the publish bound from
-    // that clause. Five call sites and the two returns of the clause's own
-    // proof were the seven B3 counted; B7c4b-1 made a `set` target the same
-    // [ENT-3.S12] destination a `let` binder is, so every `set x = helper(...)`
-    // of these sources publishes on this route too. The raw DEFLATE chain's
-    // migration off `buffer<T>` (B7c4b) then made every helper hand its run
-    // back by value under an `ensures` over that result, and every caller
-    // commits it with `set`. Under the exclusive boundary rows the kernel
-    // state relations publish at call completion, without a result binder;
-    // those roots move from DirectResult to PostconditionState. Source
-    // helper results and view/conversion results keep their original route.
-    // `give` and delivery-join routes stay absent.
-    assert_eq!(
-        program
+    // Check every source call, rather than retaining totals from the retired
+    // owned-view API. PRE-1 gives slots_new two result clauses (len and cap),
+    // and place_back one exit-state clause. The two source helpers each
+    // declare result <= capacity. Reference formation has no call contract.
+    // The site counts below come from the maintained WF sources; the clause
+    // counts come from those declarations, independently of the proof DAG.
+    let mut expected_results = 0;
+    let mut expected_states = 0;
+    for (caller_name, callee_name, sites_expected, clauses, is_result) in [
+        ("build_huffman_table", "slots_new", 3, 2, true),
+        ("decode_dynamic", "slots_new", 3, 2, true),
+        ("assemble_reason", "append_slice", 8, 1, true),
+        ("exercise", "slots_new", 4, 2, true),
+        ("exercise", "assemble_reason", 7, 1, true),
+        ("build_huffman_table", "place_back", 3, 1, false),
+        ("decode_dynamic", "place_back", 3, 1, false),
+        ("exercise", "place_back", 4, 1, false),
+    ] {
+        let caller = program
+            .functions
+            .iter()
+            .find(|function| function.name == caller_name)
+            .expect("source caller");
+        let mut sites = Vec::new();
+        // Type/const arguments select distinct ordinary function instances.
+        // Count source sites across every instance of the named declaration.
+        for callee in program
+            .functions
+            .iter()
+            .filter(|function| function.name == callee_name)
+        {
+            collect_direct_calls(
+                caller.body.as_deref().expect("WF body"),
+                callee.id,
+                &mut sites,
+            );
+        }
+        assert_eq!(sites.len(), sites_expected, "{caller_name}: {callee_name}");
+        let derivations = &caller.entailment.derivations;
+        for (path, _) in sites {
+            let publications = derivations
+                .roots
+                .iter()
+                .filter_map(|root| {
+                    let call_node = match (is_result, root.kind) {
+                        (true, DerivationRootKind::PostconditionDirectResult { .. }) => {
+                            let DerivationNode::PostconditionDirectResult { parent, .. } =
+                                &derivations.nodes[root.node.0 as usize]
+                            else {
+                                panic!("direct-result root must retain its publication route");
+                            };
+                            &derivations.nodes[parent.0 as usize]
+                        }
+                        (false, DerivationRootKind::PostconditionState { .. }) => {
+                            &derivations.nodes[root.node.0 as usize]
+                        }
+                        _ => return None,
+                    };
+                    let DerivationNode::PostconditionCall { detail } = call_node else {
+                        panic!("publication must name its source call");
+                    };
+                    (detail.call == *path).then_some(())
+                })
+                .count();
+            assert_eq!(
+                publications, clauses,
+                "{caller_name}: every {callee_name} call publishes each declared clause"
+            );
+        }
+        if is_result {
+            expected_results += sites_expected * clauses;
+        } else {
+            expected_states += sites_expected * clauses;
+        }
+    }
+    for (is_result, expected) in [(true, expected_results), (false, expected_states)] {
+        let actual = program
             .functions
             .iter()
             .flat_map(|function| &function.entailment.derivations.roots)
-            .filter(|root| matches!(
-                root.kind,
-                DerivationRootKind::PostconditionDirectResult { .. }
-            ))
-            .count(),
-        107
-    );
-    assert_eq!(
-        program
-            .functions
-            .iter()
-            .flat_map(|function| &function.entailment.derivations.roots)
-            .filter(|root| matches!(root.kind, DerivationRootKind::PostconditionState { .. }))
-            .count(),
-        108,
-        "each exclusive kernel state clause publishes once at its call"
-    );
+            .filter(|root| {
+                matches!(
+                    (is_result, root.kind),
+                    (true, DerivationRootKind::PostconditionDirectResult { .. })
+                        | (false, DerivationRootKind::PostconditionState { .. })
+                )
+            })
+            .count();
+        assert_eq!(
+            actual, expected,
+            "no publication escapes the source inventory"
+        );
+    }
     assert!(program.functions.iter().all(|function| {
         function.entailment.derivations.roots.iter().all(|root| {
             !matches!(
@@ -9034,7 +9486,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn counted_range_restores_a_reference_deref_before_nested_box_content_steps() {
+fn counted_range_keeps_nested_box_steps_without_a_reference_wrapper_step() {
     let source = br#"fn probe(holder: &Box<Box<u64>>) -> result: own unit reads(holder) {
   for @items (i in deref(holder).inner.inner..1_u64) {
   }
@@ -9053,12 +9505,9 @@ fn main() -> status: own ExitStatus pure {
         panic!("the lower capture identity must be an equality");
     };
     let TermKind::Place(endpoint, IntegerType::U64) = retained_term(&summary, right) else {
-        panic!("the referenced nested endpoint must keep all three content steps");
+        panic!("the referenced nested endpoint must keep both Box content steps");
     };
-    assert_eq!(
-        endpoint.path,
-        vec![PlaceStep::Deref, PlaceStep::Deref, PlaceStep::Deref]
-    );
+    assert_eq!(endpoint.path, vec![PlaceStep::Deref, PlaceStep::Deref]);
 }
 
 #[test]

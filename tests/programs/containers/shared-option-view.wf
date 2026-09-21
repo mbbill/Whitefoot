@@ -1,4 +1,4 @@
-struct Entry {
+nocopy struct Entry {
   value: u64;
 }
 
@@ -25,6 +25,7 @@ fn lookup(slots: &Slots<Slot, 1>) -> result: own u64 reads(slots) contract {
 }
 
 fn main() -> status: own ExitStatus pure {
+  doc "Exercise a shared enum view without copying its payload. Entry is explicitly affine under OWN-1; a scalar-only struct would otherwise be copy in this version.";
   let present = Entry(value: 37_u64);
   let some = Some<Entry>(value: move present);
   let none = None<Entry>();

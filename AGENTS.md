@@ -119,7 +119,8 @@ changes were selected. A version number or PR link does not replace this
 explanation.
 
 Use a PR as the owner's ongoing review surface, including before implementation
-begins. On an existing PR, commit and push coherent progress to the same branch
+begins. Follow `design/skill/SKILL.md` for its Draft-to-ready workflow.
+On an existing PR, commit and push coherent progress to the same branch
 and keep its description and actual validation results current. Opening a PR
 or publishing intermediate progress does not require a completion review.
 Run that review at the checklist's completion triggers, then publish the
@@ -135,8 +136,9 @@ These are the complete approval and merge rules:
 
 1. Work-branch changes need no approval, including plans, repository layout,
    specifications, conformance evidence, gate wiring, code, tests, and
-   documentation, except that changes to the live design tree require the
-   owner's ruling under `design/skill/SKILL.md`. Unapproved design choices
+   documentation, except that new repository-root entries require owner
+   approval and changes to the live design tree require the owner's ruling
+   under `design/skill/SKILL.md`. Unapproved design choices
    remain amendments while implementation continues. DCR findings require
    owner direction before follow-up changes under that skill's response rule.
 2. Every change merged into `main` requires owner approval of the exact
@@ -153,9 +155,9 @@ What the four rules mean exactly:
 
 - **Work branch** is any branch other than `main`. Branch implementation
   proceeds without approval, including edits to a specification, conformance
-  evidence, or these rules, subject to rule 1's live-tree and DCR response
-  boundaries. Keep unapproved tree revisions as amendments while continuing
-  authorized work.
+  evidence, or these rules, subject to rule 1's root-entry, live-tree and DCR
+  response boundaries. Keep unapproved tree revisions as amendments while
+  continuing authorized work.
 - **Exact revision** is the complete tree that will enter `main`. If that tree
   changes after approval or after its successful test run, rules 2 and 3 apply
   to the new revision.
@@ -187,7 +189,7 @@ a branch carrying an amendment is merge-ready when its gate is green.
 No plan status, branch charter, batch record, worktree arrangement, audit,
 packet, rebase method, commit shape, or other workflow step is an additional
 approval or merge precondition. The technical rules below define correct
-content; they do not create another approval point.
+content within the explicit approval boundaries above; they add no others.
 
 Terms such as *validation*, *ratification*, or *approved implementation* in
 language and design artifacts describe technical evidence or trust state. They
@@ -201,11 +203,10 @@ the `compiler/`, and the guidance in `docs/` — and supporting material stays
 where a reader expects it. Keeping that legible is a standing obligation, not a
 one-time cleanup.
 
-- A new top-level entry — a directory or file at the repository root — is a
-  structural decision, not an implementation detail. Put new material in the
-  existing directory that already owns its kind; create a root entry only when
-  no existing home fits and it directly serves a current compiler capability
-  or experiment.
+- Do not add a new top-level entry — a directory or file at the repository
+  root — without owner approval. A new root entry is a structural decision,
+  not an implementation detail. Put new material in the existing directory
+  that already owns its kind; if none fits, ask rather than invent a folder.
 - Every new file, directory, script, or document earns its place before it is
   created. Be able to state what compiler capability or experiment it serves,
   which existing home it belongs in, and the condition under which it is
@@ -288,6 +289,10 @@ The compiler's implementation rules are its design decisions and live in
 the subtree you are changing and its ancestors; a decision the tree does not
 cover is an amendment, never an edit to the tree, as `design/skill/SKILL.md`
 prescribes.
+
+Apply the [design skill's structural-choice assessment](design/skill/SKILL.md#workflow)
+when choosing or revising compiler code structure, including during
+implementation. Record deferred compiler design defects in `docs/todo.md`.
 
 ## Data safety
 

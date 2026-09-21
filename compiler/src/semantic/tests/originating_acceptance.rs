@@ -179,7 +179,7 @@ fn main(output: own OutputStream) -> status: own ExitStatus pure {
 fn an_external_index_needs_a_real_control_flow_fact() {
     let direct = br#"const bytes: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main(args: own Args) -> status: own ExitStatus reads(args) {
+fn main(args: own Args) -> status: own ExitStatus pure {
   let index = args_count(args: &args);
   let value = bytes[index];
   return exit_status(code: value);
@@ -191,7 +191,7 @@ fn main(args: own Args) -> status: own ExitStatus reads(args) {
 
     let guarded = br#"const bytes: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main(args: own Args) -> status: own ExitStatus reads(args) {
+fn main(args: own Args) -> status: own ExitStatus pure {
   let index = args_count(args: &args);
   let spare = bytes.len;
   if index < spare {
@@ -219,14 +219,14 @@ fn an_external_call_actual_needs_a_real_control_flow_fact() {
 
 "#;
     let direct = format!(
-        "{function}fn main(args: own Args) -> status: own ExitStatus reads(args) {{\n  let index = args_count(args: &args);\n  let bytes = array_filled::<u8, 4>(value: 0_u8);\n  let value = read_at_index(bytes: move bytes, index: index);\n  return exit_status(code: value);\n}}\n"
+        "{function}fn main(args: own Args) -> status: own ExitStatus pure {{\n  let index = args_count(args: &args);\n  let bytes = array_filled::<u8, 4>(value: 0_u8);\n  let value = read_at_index(bytes: bytes, index: index);\n  return exit_status(code: value);\n}}\n"
     );
     rejects_as(direct.as_bytes(), SemanticRule::Fn8, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
     });
 
     let guarded = format!(
-        "{function}fn main(args: own Args) -> status: own ExitStatus reads(args) {{\n  let index = args_count(args: &args);\n  let bytes = array_filled::<u8, 4>(value: 0_u8);\n  let spare = bytes.len;\n  if index < spare {{\n    let value = read_at_index(bytes: move bytes, index: index);\n    return exit_status(code: value);\n  }} else {{\n    return exit_status(code: 0_u8);\n  }}\n}}\n"
+        "{function}fn main(args: own Args) -> status: own ExitStatus pure {{\n  let index = args_count(args: &args);\n  let bytes = array_filled::<u8, 4>(value: 0_u8);\n  let spare = bytes.len;\n  if index < spare {{\n    let value = read_at_index(bytes: bytes, index: index);\n    return exit_status(code: value);\n  }} else {{\n    return exit_status(code: 0_u8);\n  }}\n}}\n"
     );
     accepts(guarded.as_bytes());
 }

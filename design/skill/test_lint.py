@@ -70,9 +70,15 @@ Nodes: {nodes}
 
 {BASE_ENTRY}""")
 
-    def lint(self, base):
+    def lint(self, base, require_no_amendments=False):
+        command = [
+            sys.executable, "-B", str(LINT), "--root", "design",
+            "--trees", "language", "--base", base,
+        ]
+        if require_no_amendments:
+            command.append("--require-no-amendments")
         return subprocess.run(
-            [sys.executable, "-B", str(LINT), "--root", "design", "--trees", "language", "--base", base],
+            command,
             cwd=self.root, text=True, capture_output=True,
         )
 
@@ -90,6 +96,39 @@ Nodes: {nodes}
         self.write("design/amendments/proposal.md", "Node: language/proposal\n\n" + DECISION)
         result = self.lint(self.base)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_readiness_passes_without_an_amendments_path(self):
+        result = self.lint(self.base, require_no_amendments=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_readiness_rejects_a_nonempty_amendments_path(self):
+        self.write("design/amendments/proposal.md", "Node: language/proposal\n\n" + DECISION)
+        self.assert_rejected(
+            self.lint(self.base, require_no_amendments=True),
+            "amendments: path exists",
+        )
+
+    def test_readiness_rejects_an_empty_amendments_path(self):
+        (self.root / "design/amendments").mkdir()
+        self.assertEqual(self.lint(self.base).returncode, 0)
+        self.assert_rejected(
+            self.lint(self.base, require_no_amendments=True),
+            "amendments: path exists",
+        )
+
+    def test_readiness_does_not_hide_form_log_or_approval_checks(self):
+        self.write("design/amendments/proposal.md", DECISION)
+        self.change_tree()
+        result = self.lint(self.base, require_no_amendments=True)
+        self.assert_rejected(result, "amendments: path exists")
+        self.assertIn("an amendment starts with 'Node: <tree path>'", result.stderr)
+        self.assertIn("change log did not", result.stderr)
+
+        self.log_change(approval=None)
+        result = self.lint(self.base, require_no_amendments=True)
+        self.assert_rejected(result, "amendments: path exists")
+        self.assertIn("an amendment starts with 'Node: <tree path>'", result.stderr)
+        self.assertIn("nonempty Owner-approved:", result.stderr)
 
     def test_direct_tree_edit_without_a_new_log_is_rejected(self):
         self.change_tree()

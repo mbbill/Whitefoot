@@ -168,6 +168,10 @@ class Lint:
                 continue
             self.check_node(where, [""] * 2 + lines[2:], set(), count=False)
 
+    def check_no_amendments(self):
+        if os.path.lexists(os.path.join(self.root, "amendments")):
+            self.err("amendments", "path exists; design readiness requires its removal")
+
     # ---- log -----------------------------------------------------------
 
     def check_log(self):
@@ -294,11 +298,15 @@ def main():
     parser.add_argument("--trees", nargs="+", required=True,
                         help="top-level concept names to check")
     parser.add_argument("--base", default=None)
+    parser.add_argument("--require-no-amendments", action="store_true",
+                        help="fail when the amendments path exists")
     args = parser.parse_args()
     lint = Lint(args.root, args.trees)
     lint.discover()
     lint.check_nodes()
     lint.check_amendments()
+    if args.require_no_amendments:
+        lint.check_no_amendments()
     entries = lint.check_log()
     if args.base is not None:
         if lint.base_exists(args.base):

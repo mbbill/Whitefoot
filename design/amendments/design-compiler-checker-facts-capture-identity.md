@@ -1,8 +1,0 @@
-Node: compiler/checker-facts
-
-Decision: The source occurrence that names a captured index or range endpoint [REF-1] is the index of the syntax node of the offset atom that produced it, so two path steps hold one value exactly when they were evaluated at one written occurrence, because the pending compiler/checker-facts captured-values decision fixes that a captured value is identified by its evaluation and not by the binding it read, and the offset atom is the only artifact the checker holds that is one-to-one with an evaluation site and is stable for the whole function, which is what makes the per-function overlap memo's key stable, instead of a counter minted as the walk proceeds, which would give one written occurrence two identities on two walks over one statement and so lose every memo hit that reached it twice.
-
-Decision: One written occurrence inside a loop body, whose evaluations across iterations produce different values, is still one capture identity, because every judgment that compares two captured values compares two places live at one program point, where one written occurrence has had one evaluation, and the cross-iteration question is [REF-1]'s static-shape rule, which compares path *shapes* and lets the index values move, instead of minting a capture per iteration, which the checker cannot do because it does not unroll, or refusing a loop-carried path, which [REF-1] admits.
-
-Rejected:
-- A monotonically increasing counter over the checker's walk: rejected because the same written offset is walked more than once -- a commit target is resolved before its right-hand side and re-read at the commit -- and two identities for one evaluation would make a place fail to compare equal to itself.

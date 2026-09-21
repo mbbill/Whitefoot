@@ -1,5 +1,5 @@
 fn measures(window: &Ring<u64, 4>) -> (length: own u64, capacity: own u64, spare: own u64, origin: own u64) reads(window.len), reads(window.cap), reads(window.head) {
-  doc "OP-15: reading a measure performs no operation, allocates nothing, and reads only the descriptor storage; read through a reference parameter it still exhibits reads of those four measure paths, and the declared row states exactly that.";
+  doc "OP-15: reading a measure performs no operation, allocates nothing, and reads only descriptor storage; through a reference parameter the three measure paths are len, cap and head, while spare is the ordinary expression cap - len and needs no fourth row member.";
   let l = deref(window).len;
   let c = deref(window).cap;
   let s = deref(window).cap - deref(window).len;

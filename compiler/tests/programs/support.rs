@@ -106,12 +106,23 @@ fn invocation_argument(bytes: &[u8]) -> OsString {
 
 /// Links one emitted module with the same ordinary library as the driver.
 fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
+    link_module_with_driver_arguments(module, executable, llvm, directory, &[]);
+}
+
+fn link_module_with_driver_arguments(
+    module: &Path,
+    executable: &Path,
+    llvm: &str,
+    directory: &Path,
+    driver_arguments: &[&str],
+) {
     let mut command = Command::new(CLANG);
     command.arg("-x").arg("ir").arg(module);
     command.args(COMPILE_ARGUMENTS);
     let driver = directory.join("driver.c");
     if driver.exists() {
         command
+            .args(driver_arguments)
             .arg("-x")
             .arg("c")
             .arg(&driver)
@@ -174,6 +185,13 @@ pub fn compile_programs(names: &[&str]) -> String {
 /// caller. Multi-file program cases report the compiler failure at their
 /// own functional boundary.
 pub fn try_compile_programs_with_overlap(names: &[&str]) -> Result<String, CompilationFailure> {
+    try_compile_programs_with_overlap_mode(names, OverlapLowering::On)
+}
+
+fn try_compile_programs_with_overlap_mode(
+    names: &[&str],
+    overlap: OverlapLowering,
+) -> Result<String, CompilationFailure> {
     let sources = names
         .iter()
         .map(|name| read_program(name))
@@ -184,7 +202,7 @@ pub fn try_compile_programs_with_overlap(names: &[&str]) -> Result<String, Compi
         .map(|(name, source)| SourceInput::new(name, source))
         .collect::<Vec<_>>();
     crate::support::timed("whitefoot-compile-par", || {
-        compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::On)
+        compile_with_overlap(&inputs, CompilerLimits::default(), overlap)
     })
 }
 
@@ -207,6 +225,21 @@ pub fn compile_program_with_overlap(name: &str) -> String {
 /// lowering.
 pub fn compile_programs_with_overlap(names: &[&str]) -> String {
     try_compile_programs_with_overlap(names).expect("program corpus source must compile")
+}
+
+/// Compiles a corpus unit with the ordinary `whitefootc --par` policy.
+///
+/// The CLI suppresses eligible scalar leaves of at most 16 operations, unlike
+/// [`compile_programs_with_overlap`], which intentionally actualizes every
+/// eligible group for tests of the general lowering path.
+pub fn compile_programs_with_cli_parallel_defaults(names: &[&str]) -> String {
+    try_compile_programs_with_overlap_mode(
+        names,
+        OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 16,
+        },
+    )
+    .expect("program corpus source must compile")
 }
 
 /// Compiles one corpus program and returns its permission ledger lines.
@@ -273,6 +306,17 @@ pub fn build_program(llvm: &str) -> CompiledProgram {
 /// is checked by the program case's independent oracle; it shares the ordinary
 /// runtime and the same bounded child handling as source-entry programs.
 pub fn build_program_with_driver(llvm: &str, driver: Option<&str>) -> CompiledProgram {
+    build_program_with_driver_arguments(llvm, driver, &[])
+}
+
+/// Builds a program with compiler arguments for its optional host driver.
+/// This retains fixture-specific C dialect and warning contracts while
+/// sharing the ordinary module and runtime link path.
+pub fn build_program_with_driver_arguments(
+    llvm: &str,
+    driver: Option<&str>,
+    driver_arguments: &[&str],
+) -> CompiledProgram {
     let sequence = NEXT_EXECUTION.fetch_add(1, Ordering::Relaxed);
     let directory = std::env::temp_dir().join(format!(
         "whitefoot-program-{}-{sequence}",
@@ -286,7 +330,7 @@ pub fn build_program_with_driver(llvm: &str, driver: Option<&str>) -> CompiledPr
         std::fs::write(directory.join("driver.c"), driver).expect("write program host driver");
     }
     crate::support::timed("native-build", || {
-        link_module(&module, &executable, llvm, &directory);
+        link_module_with_driver_arguments(&module, &executable, llvm, &directory, driver_arguments);
     });
     CompiledProgram {
         directory,

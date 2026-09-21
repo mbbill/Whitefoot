@@ -1,5 +1,5 @@
 use crate::lowering::{OverlapLowering, lower_checked};
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
+use crate::{DeclarationRole, SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::super::entailment::{CallGoalDisposition, CallGoalEvidence};
 use super::super::goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
@@ -176,16 +176,6 @@ fn instantiated_call_goal_arguments(call: &CheckedExpression) -> &[GoalExpressio
     arguments
 }
 
-fn contains_array_fill(expression: &GoalExpression) -> bool {
-    match expression {
-        GoalExpression::Operation { row, arguments, .. } => {
-            matches!(row, GoalOperation::ArrayFill { .. })
-                || arguments.iter().any(contains_array_fill)
-        }
-        GoalExpression::Datum(_) => false,
-    }
-}
-
 #[test]
 fn requires_retains_one_static_goal_without_a_second_expression_tree() {
     let source = br#"fn bounded(x: own i32) -> result: own i32 pure contract {
@@ -317,16 +307,20 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
     );
-    // An initializer is a computation, so a bare atom is not one.
-    assert_rule(
+    // A non-consuming datum is itself an admitted definition expression;
+    // alpha-expansion substitutes the parameter datum into the requirement.
+    with_semantics(
         b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
           define candidate = x;\n  \
           requires candidate > 0_i32;\n} {\n  \
           return x;\n}\n\n\
           fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Fn8,
-        SemanticIssueKind::InvalidRequires,
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("a non-consuming datum definition is admitted: {outcome:?}");
+            };
+        },
     );
 }
 
@@ -404,10 +398,23 @@ fn main() -> status: own ExitStatus pure {
                 .requirements
                 .first()
                 .expect("f carries its admitted requirement");
-            assert!(
-                !contains_array_fill(&requirement.template.root),
-                "ArrayFill is a body-origin operation, never an admitted GoalTemplate row"
-            );
+            let GoalExpression::Operation {
+                row:
+                    GoalOperation::Integer {
+                        operation: CheckedIntegerOperation::Less,
+                        operand_type: CheckedType::Integer(IntegerType::U64),
+                    },
+                arguments,
+                result: CheckedType::Bool,
+                ..
+            } = &requirement.template.root
+            else {
+                panic!(
+                    "the admitted template must retain exactly the written comparison: {:?}",
+                    requirement.template.root
+                );
+            };
+            assert_eq!(arguments.len(), 2);
         },
     );
 }
@@ -745,8 +752,27 @@ fn main() -> status: own ExitStatus pure {
             1
         );
         assert_eq!(checked.data.functions[0].name, "main");
-        assert_eq!(checked.data.generic_requirements.len(), 1);
-        let symbolic = &checked.data.generic_requirements[0];
+        let positive = checked
+            ._resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Function
+                    && declaration.spelling() == "positive"
+            })
+            .expect("positive source declaration")
+            .id();
+        let user_requirements = checked
+            .data
+            .generic_requirements
+            .iter()
+            .filter(|symbolic| symbolic.declaration == positive)
+            .collect::<Vec<_>>();
+        let [symbolic] = user_requirements.as_slice() else {
+            panic!(
+                "exactly one user GenericInt requirement must remain symbolic: {user_requirements:#?}"
+            );
+        };
         let GoalExpression::Operation {
             row:
                 GoalOperation::Integer {
@@ -765,15 +791,15 @@ fn main() -> status: own ExitStatus pure {
 fn a_nominal_bearing_generic_requirement_survives_the_symbolic_checkpoint_as_metadata() {
     // v0.59 reached the symbolic nominal through `buffer_fits::<Pair<T>>(n)`.
     // [OP-9]'s allocation-size predicate "has no writer-callable spelling" in
-    // v0.60, so the requirement reaches `Pair<T>` the way any other clause
-    // reaches a nominal: as the parameter whose fields it projects.
+    // v0.60, so a measure over `Slots<Pair<T>, 1>` retains the nominal as the
+    // exact element type of its ContainerMeasure row.
     let source = br#"struct Pair<T: Int> {
   left: T;
   right: T;
 }
 
-fn need<T: Int>(pair: own Pair<T>) -> result: own unit pure contract {
-  requires pair.left < pair.right;
+fn need<T: Int>(pairs: own Slots<Pair<T>, 1>) -> result: own unit pure contract {
+  requires pairs.len <= 1_u64;
 } {
   return unit;
 }
@@ -786,13 +812,32 @@ fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("symbolic nominal requirements must remain valid metadata: {outcome:?}");
         };
-        assert_eq!(checked.data.generic_requirements.len(), 1);
-        let requirement = &checked.data.generic_requirements[0].requirement;
+        let need = checked
+            ._resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Function && declaration.spelling() == "need"
+            })
+            .expect("need source declaration")
+            .id();
+        let user_requirements = checked
+            .data
+            .generic_requirements
+            .iter()
+            .filter(|symbolic| symbolic.declaration == need)
+            .collect::<Vec<_>>();
+        let [symbolic] = user_requirements.as_slice() else {
+            panic!(
+                "exactly one nominal-bearing user requirement must remain symbolic: {user_requirements:#?}"
+            );
+        };
+        let requirement = &symbolic.requirement;
         let GoalExpression::Operation {
             row:
                 GoalOperation::Integer {
-                    operand_type: CheckedType::GenericInt(_),
-                    ..
+                    operation: CheckedIntegerOperation::LessEqual,
+                    operand_type: CheckedType::Integer(IntegerType::U64),
                 },
             arguments,
             ..
@@ -800,17 +845,42 @@ fn main() -> status: own ExitStatus pure {
         else {
             panic!("the retained requirement must preserve its exact symbolic goal");
         };
-        let GoalExpression::Datum(GoalDatum::Parameter { projections, .. }) = &arguments[0] else {
-            panic!("the projected field must remain the formal datum");
+        let GoalExpression::Operation {
+            row:
+                GoalOperation::ContainerMeasure {
+                    measure: super::super::model::CheckedMeasure::Length,
+                    measured: MeasuredKind::ConstantSlots,
+                    element: Some(element),
+                    constant: Some(CheckedConst::Value(1)),
+                },
+            arguments: measure_arguments,
+            ..
+        } = &arguments[0]
+        else {
+            panic!("the left operand must retain the exact Slots measure row");
         };
-        assert_eq!(projections, &[GoalProjection::Field(0)]);
-        let (index, retained) = checked
+        assert!(matches!(
+            measure_arguments.as_slice(),
+            [GoalExpression::Datum(GoalDatum::Parameter { projections, .. })]
+                if projections.is_empty()
+        ));
+        assert!(matches!(
+            &arguments[1],
+            GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Integer {
+                ty: IntegerType::U64,
+                bits: 1,
+            }))
+        ));
+        let CheckedType::Nominal(nominal) = checked.data.elements[element.index()] else {
+            panic!("the Slots element must retain Pair<T>'s nominal identity");
+        };
+        let index = nominal.0 as usize;
+        let retained = checked
             .data
             .nominals
-            .iter()
-            .enumerate()
-            .find(|(_, nominal)| nominal.name.starts_with("Pair<"))
-            .expect("Pair<T> remains a symbolic nominal of the checked program");
+            .get(index)
+            .expect("Pair<T>'s nominal identity must address checked metadata");
+        assert!(retained.name.starts_with("Pair<"));
         assert!(
             index >= checked.data.executable_nominal_count,
             "metadata-only symbolic nominals must follow the executable prefix"
@@ -846,18 +916,31 @@ fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("the symbolic const requirement must be retained: {outcome:?}");
         };
-        assert_eq!(checked.data.generic_requirements.len(), 1);
         assert_eq!(checked.data.derived_consts.len(), 1);
         let derived = checked.data.derived_consts[0];
         assert!(matches!(derived.left, CheckedConst::Parameter(_)));
         assert_eq!(derived.right, CheckedConst::Value(1));
-        let rendered = format!(
-            "{:#?}",
-            checked.data.generic_requirements[0]
-                .requirement
-                .template
-                .root
-        );
+        let need = checked
+            ._resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Function && declaration.spelling() == "need"
+            })
+            .expect("need source declaration")
+            .id();
+        let user_requirements = checked
+            .data
+            .generic_requirements
+            .iter()
+            .filter(|symbolic| symbolic.declaration == need)
+            .collect::<Vec<_>>();
+        let [symbolic] = user_requirements.as_slice() else {
+            panic!(
+                "exactly one user requirement must retain a derived const: {user_requirements:#?}"
+            );
+        };
+        let rendered = format!("{:#?}", symbolic.requirement.template.root);
         assert!(
             rendered.contains("DerivedConstId") && rendered.contains("0,"),
             "the retained goal must name the checked-program-owned table entry: {rendered}"
@@ -894,11 +977,18 @@ fn main() -> status: own ExitStatus pure {
             .filter(|function| function.name == "positive")
             .collect::<Vec<_>>();
         assert_eq!(concrete.len(), 2);
-        assert_eq!(checked.data.generic_requirements.len(), 1);
-        assert_eq!(
-            checked.data.generic_requirements[0].declaration,
-            concrete[0].declaration
-        );
+        let user_requirements = checked
+            .data
+            .generic_requirements
+            .iter()
+            .filter(|requirement| requirement.declaration == concrete[0].declaration)
+            .collect::<Vec<_>>();
+        let [symbolic] = user_requirements.as_slice() else {
+            panic!(
+                "the called user generic must retain exactly one symbolic requirement: {user_requirements:#?}"
+            );
+        };
+        assert_eq!(symbolic.declaration, concrete[0].declaration);
         assert!(concrete.iter().all(|function| {
             function
                 .requirements
@@ -939,10 +1029,278 @@ fn main() -> status: own ExitStatus pure {
                 .count(),
             1
         );
-        assert_eq!(checked.data.generic_requirements.len(), 2);
-        assert_ne!(
-            checked.data.generic_requirements[0].declaration,
-            checked.data.generic_requirements[1].declaration
+        let inner = checked
+            ._resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Function && declaration.spelling() == "inner"
+            })
+            .expect("inner source declaration")
+            .id();
+        let outer = checked
+            ._resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::Function && declaration.spelling() == "outer"
+            })
+            .expect("outer source declaration")
+            .id();
+        let user_requirements = checked
+            .data
+            .generic_requirements
+            .iter()
+            .filter(|symbolic| symbolic.declaration == inner || symbolic.declaration == outer)
+            .collect::<Vec<_>>();
+        assert_eq!(user_requirements.len(), 2, "{user_requirements:#?}");
+        assert_eq!(
+            user_requirements
+                .iter()
+                .filter(|requirement| requirement.declaration == inner)
+                .count(),
+            1
+        );
+        assert_eq!(
+            user_requirements
+                .iter()
+                .filter(|requirement| requirement.declaration == outer)
+                .count(),
+            1
+        );
+    });
+}
+
+/// [MSR-6, FN-2, FN-8] a const generic used as an ordinary value actual is
+/// the same symbolic constant that selects the callee instance. The source
+/// schema must preserve that identity through an alpha-renamed generic call,
+/// while the concrete replay folds both occurrences to the selected integer.
+#[test]
+fn const_generic_values_discharge_requirements_through_transitive_forwarding() {
+    let source =
+        br#"fn accept<const expected: u64>(value: own u64) -> result: own unit pure contract {
+  requires value == expected;
+} {
+  return unit;
+}
+
+fn relay<const forwarded: u64>() -> result: own unit pure {
+  let accepted = accept::<forwarded>(value: forwarded);
+  return unit;
+}
+
+fn outer<const ceiling: u64>() -> result: own unit pure {
+  let relayed = relay::<ceiling>();
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let completed = outer::<7>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("symbolic and concrete const forwarding must both check: {outcome:?}");
+        };
+        let relay = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "relay")
+            .expect("concrete relay instance");
+        let CheckedStatement::Let {
+            value: call @ CheckedExpression::UserCall { arguments, .. },
+            ..
+        } = &relay.body.as_deref().expect("relay body")[0]
+        else {
+            panic!("relay must retain the checked accept call");
+        };
+        assert!(matches!(
+            &arguments[0],
+            CheckedExpression::Constant(CheckedValue::Integer {
+                ty: IntegerType::U64,
+                bits: 7,
+            })
+        ));
+        let goal_arguments = instantiated_call_goal_arguments(call);
+        assert_eq!(goal_arguments[0], goal_arguments[1]);
+        assert!(matches!(
+            &goal_arguments[0],
+            GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Integer {
+                ty: IntegerType::U64,
+                bits: 7,
+            }))
+        ));
+    });
+}
+
+/// Two const parameters are separate [ENT-2] terms. Treating any checked
+/// const-generic value actual as the callee's selected const would make this
+/// requirement spuriously true; with no written relation it remains FN-8
+/// unproved in the symbolic schema.
+#[test]
+fn independent_const_generic_values_do_not_become_equal_call_datums() {
+    let source =
+        br#"fn accept<const expected: u64>(value: own u64) -> result: own unit pure contract {
+  requires value == expected;
+} {
+  return unit;
+}
+
+fn invalid<const actual: u64, const expected: u64>() -> result: own unit pure {
+  let denied = accept::<expected>(value: actual);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    super::assert_rule_kind(source, SemanticRule::Fn8, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedCallRequirement(detail)
+                if detail.disposition == crate::CallRequirementDisposition::Unproved
+        )
+    });
+}
+
+/// [MSR-4] applies its affine-left/L0-right bridge to an FN-8 numeric goal.
+/// Here `larger` publishes `doubled <= widened`, while the caller's entry
+/// requirement and nonzero edge prove `length < doubled`. Neither half alone
+/// proves the call requirement.
+fn scalar_growth_bridge_program(
+    length_requirement: bool,
+    nonzero_guard: bool,
+    total_postcondition: bool,
+    nested_requirement: bool,
+) -> String {
+    let length_contract = if length_requirement {
+        " contract {\n  requires length <= capacity;\n}"
+    } else {
+        ""
+    };
+    let nonzero_guard = if nonzero_guard {
+        "  if capacity == 0_u64 {\n    return unit;\n  }\n"
+    } else {
+        ""
+    };
+    let total_postcondition = if total_postcondition {
+        "  ensures result >= total;\n"
+    } else {
+        ""
+    };
+    let room_contract = if nested_requirement {
+        "  define room = length < capacity;\n  define positive = capacity > 0_u64;\n  define complete = band(room, positive);\n  requires complete;"
+    } else {
+        "  requires length < capacity;"
+    };
+    format!(
+        r#"fn larger(current: own u64, total: own u64) -> result: own u64 pure contract {{
+  ensures result >= current;
+{total_postcondition}}} {{
+  if current >= total {{
+    return current;
+  }}
+  return total;
+}}
+
+fn require_room(length: own u64, capacity: own u64) -> result: own unit pure contract {{
+{room_contract}
+}} {{
+  return unit;
+}}
+
+fn prove_growth(length: own u64, capacity: own u64) -> result: own unit pure{length_contract} {{
+{nonzero_guard}  if capacity <= 9223372036854775807_u64 {{
+    let doubled = capacity + capacity;
+    let widened = larger(current: capacity, total: doubled);
+    require_room(length: length, capacity: widened);
+  }}
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+    )
+}
+
+#[test]
+fn fn8_uses_the_affine_left_l0_right_bridge_for_scalar_growth() {
+    for nested_requirement in [false, true] {
+        let source = scalar_growth_bridge_program(true, true, true, nested_requirement);
+        with_semantics(source.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "the complete scalar growth proof must discharge FN-8: {outcome:?}"
+            );
+        });
+    }
+}
+
+#[test]
+fn fn8_growth_bridge_requires_each_written_source_fact() {
+    for source in [
+        scalar_growth_bridge_program(false, true, true, false),
+        scalar_growth_bridge_program(true, false, true, false),
+        scalar_growth_bridge_program(true, true, false, false),
+    ] {
+        super::assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::UndischargedCallRequirement(detail)
+                    if detail.disposition == crate::CallRequirementDisposition::Unproved
+            )
+        });
+    }
+}
+
+/// The right bridge may be a live measure rather than a scalar binding. The
+/// nonzero-start range captures `3 * capacity - capacity`, so its length has
+/// no L0 equality to `doubled`, `tripled`, or another scalar binding. Proving
+/// `length < ceiling` therefore needs the live `part.len` candidate and the
+/// callee's `part.len <= ceiling` bridge.
+#[test]
+fn fn8_bridge_visits_a_live_measure_before_scalar_bindings() {
+    let source = br#"fn range_ceiling(part: &[u8]) -> ceiling: own u64 reads(part.len) contract {
+  ensures ceiling >= deref(part).len;
+} {
+  return deref(part).len;
+}
+
+fn require_room(length: own u64, ceiling: own u64) -> result: own unit pure contract {
+  requires length < ceiling;
+} {
+  return unit;
+}
+
+fn caller(length: own u64, capacity: own u64) -> result: own unit pure contract {
+  requires length <= capacity;
+  requires capacity <= 2_u64;
+} {
+  if capacity == 0_u64 {
+    return unit;
+  }
+  let doubled = capacity + capacity;
+  let tripled = doubled + capacity;
+  let storage = array_filled::<u8, 6>(value: 0_u8);
+  let part = &storage[capacity..tripled];
+  let ceiling = range_ceiling(part: part);
+  require_room(length: length, ceiling: ceiling);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the live range measure must be available to the shared MSR-4 bridge: {outcome:?}"
         );
     });
 }
@@ -1240,8 +1598,11 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// A concrete reference-root datum already denotes its referent. Substituting
+/// `&deref(value)` therefore removes the callee wrapper and retains the
+/// caller's reference binding as the root with no projection step.
 #[test]
-fn borrow_substitution_removes_callee_deref_and_retains_caller_opaque_deref() {
+fn borrow_substitution_normalizes_a_reborrow_to_the_caller_reference_root() {
     let source = br#"fn observe(value: &u64) -> result: own unit reads(value) contract {
   requires deref(value) > 0_u64;
 } {
@@ -1285,7 +1646,7 @@ fn main() -> status: own ExitStatus pure {
             &arguments[0],
             GoalExpression::Datum(GoalDatum::Place { root, projections, .. })
                 if *root == proxy.parameters[0].binding
-                    && projections == &[GoalProjection::Deref]
+                    && projections.is_empty()
         ));
         assert_eq!(proxy.entailment.call_goals.len(), 1);
         assert_eq!(
@@ -1461,8 +1822,8 @@ fn requires_clause_bare_affine_use_carries_the_static_repair() {
     let expected_fix =
         "restate the definition or clause over copy operands or non-consuming admitted reads";
     assert_rule(
-        br#"enum Holder {
-  Value(content: u64);
+        br#"nocopy enum Holder {
+  Value();
 }
 
 fn inspect(holder: own Holder) -> result: own unit pure contract {
@@ -1472,7 +1833,7 @@ fn inspect(holder: own Holder) -> result: own unit pure contract {
 }
 
 fn main() -> status: own ExitStatus pure {
-  let holder = Value(content: 4_u64);
+  let holder = Value();
   let held = inspect(holder: move holder);
   return exit_status(code: 0_u8);
 }

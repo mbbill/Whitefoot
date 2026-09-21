@@ -127,10 +127,6 @@ enum StableCheckedType {
         region: Option<DeclarationId>,
         referent: Box<StableCheckedType>,
     },
-    Arena {
-        region: DeclarationId,
-        content: Box<StableCheckedType>,
-    },
     Array {
         element: StableElement,
         length: CheckedConst,
@@ -211,14 +207,6 @@ impl GenericSubstitution {
 
     pub(super) fn len(&self) -> usize {
         self.bindings.len()
-    }
-
-    /// The actual region one formal region parameter of the owning nominal
-    /// denotes in this instance [S20, PROV-1].
-    pub(super) fn region_argument(&self, declaration: DeclarationId) -> Option<DeclarationId> {
-        self.regions
-            .iter()
-            .find_map(|(formal, actual)| (*formal == declaration).then_some(*actual))
     }
 
     pub(super) fn region_arguments(&self) -> &[(DeclarationId, DeclarationId)] {
@@ -303,23 +291,19 @@ impl GenericSubstitution {
     }
 }
 
-/// [OP-13, OP-10] the [PRE-1] records that take from the heap.
+/// [OP-13, OP-10] the [PRE-1] records that take from the heap [STOR-1].
 ///
 /// [EFF-3]'s licence excepts a call that allocates from deduplication and
 /// reordering, on the ground that the heap is finite and a duplicated take is
 /// a different program [STOR-8]. Allocation carries no effect entry, so the
 /// base case of that fact is this list and every other boundary's fact is the
-/// union of the facts of the calls its body exhibits.
-const ALLOCATING_PRELUDE_FUNCTIONS: [&str; 10] = [
+/// union of the facts of the calls its body exhibits. Frame-resident
+/// construction and conversion rows are not allocations [EFF-1].
+pub(in crate::semantic::check) const HEAP_ALLOCATING_PRELUDE_FUNCTIONS: [&str; 5] = [
     "box_new",
-    "slots_new",
-    "ring_new",
-    "array_filled",
     "box_array_filled",
     "box_slots_new",
     "box_ring_new",
-    "slots_from_array",
-    "slots_into_array",
     "grow",
 ];
 
@@ -375,10 +359,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     *region = Self::substituted_region(regions, *region);
                 }
                 self.substitute_stable_type_regions(referent, regions)?;
-            }
-            StableCheckedType::Arena { region, content } => {
-                *region = Self::substituted_region(regions, *region);
-                self.substitute_stable_type_regions(content, regions)?;
             }
             StableCheckedType::Array { element, .. }
             | StableCheckedType::Window { element, .. } => {
@@ -1094,7 +1074,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // v0.60: a reference is a name for a path [REF-1] and its validity is
         // the [REF-2] flow fact, not a brand on the signature.
         let region_parameters = Vec::new();
-        let written_regions = 0;
         let parameters = self.parse_parameters_with(template.node, &substitution)?;
         // [GRAM-2] the declaration writes one result or an ordered result
         // list. Every ordinal is judged by the ordinary result rules below;
@@ -1178,13 +1157,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .first_child_with(template.node, Production::Effects)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let mut declared_effects = self.parse_effects(effects, &parameters)?;
-        // [EFF-3] the allocation fact of a boundary that allocates by
-        // definition: the [OP-13] construction functions and [OP-10]'s
-        // `grow`. It is not a row category [EFF-1, STOR-8], so it is set here
-        // from the declaration's own identity and unioned along the call
-        // graph by the ordinary effect walk.
+        // [EFF-3] the allocation fact of a boundary that takes from the heap
+        // by definition: the boxed [OP-13] construction functions and
+        // [OP-10]'s `grow`. It is not a row category [EFF-1, STOR-8], so it is
+        // set here from the declaration's own identity and unioned along the
+        // call graph by the ordinary effect walk.
         declared_effects.allocates |=
-            ALLOCATING_PRELUDE_FUNCTIONS.contains(&template.name.as_str());
+            HEAP_ALLOCATING_PRELUDE_FUNCTIONS.contains(&template.name.as_str());
         let symbol = if template.generic_parameters.is_empty() {
             template.name.clone()
         } else {
@@ -1197,7 +1176,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             name: template.name.clone(),
             symbol,
             region_parameters,
-            written_regions,
             parameters,
             result_mode,
             result,
@@ -1230,6 +1208,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let concrete_signatures = std::mem::take(&mut self.signatures);
         let concrete_functions_by_declaration = std::mem::take(&mut self.functions_by_declaration);
         let concrete_postcondition_selectors = std::mem::take(&mut self.postcondition_selectors);
+        // Bound calls checked in the scratch symbolic FunctionId inventory
+        // retain exact FN-4 queries for that pass only. Preserve any earlier
+        // declaration-level records, then discard the scratch suffix before
+        // concrete replay assigns checked-program identities.
+        let contract_query_checkpoint = self.contract_queries.borrow().len();
         let nominal_checkpoint = self.nominal_checkpoint();
         // Record only the initial source-canonical symbolic instance for each
         // generic. Transitive discovery below may instantiate another
@@ -1287,6 +1270,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .checked_add(1)
                 .ok_or(SemanticCompilerFailure::CounterOverflow)?;
         }
+        // The retry loop above has consumed every scratch signature appended
+        // during symbolic body checking. Close allocation only at that exact
+        // equal-length checkpoint; restoring the concrete signature snapshot
+        // below discards every scratch identity and fact together.
+        self.close_allocation_metadata(&mut phase_a)?;
         for (canonical, declaration) in &canonical_generic_signatures {
             let checked = phase_a
                 .get(*canonical)
@@ -1308,6 +1296,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &canonical_generic_signatures,
             &callees,
         )?;
+        self.contract_queries
+            .borrow_mut()
+            .truncate(contract_query_checkpoint);
         self.signatures.clear();
         self.functions_by_declaration.clear();
         self.postcondition_selectors.clear();
@@ -1586,28 +1577,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 referent: Box::new(referent),
                             }
                         }
-                        CheckedNominalKind::Arena { region, content } => {
-                            let Some(content) = self.stabilize_type(
-                                content,
-                                nominal_checkpoint,
-                                visiting,
-                                allow_symbolic,
-                            )?
-                            else {
-                                visiting.remove(&id);
-                                return Ok(None);
-                            };
-                            StableCheckedType::Arena {
-                                region,
-                                content: Box::new(content),
-                            }
-                        }
                         CheckedNominalKind::Opaque => {
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }
-                        CheckedNominalKind::Struct { .. }
-                        | CheckedNominalKind::Enum { .. }
-                        | CheckedNominalKind::ArenaStorage => {
+                        CheckedNominalKind::Struct { .. } | CheckedNominalKind::Enum { .. } => {
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }
                     }
@@ -1838,10 +1811,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // [STOR-8], so one referent is one cell nominal.
                 let _ = region;
                 CheckedType::Nominal(self.intern_box_nominal(referent)?)
-            }
-            StableCheckedType::Arena { region, content } => {
-                let content = self.reify_concrete_type(content)?;
-                CheckedType::Nominal(self.intern_arena_nominal(*region, content)?)
             }
             StableCheckedType::Array { element, length } => CheckedType::Array {
                 element: self.reify_element(element)?,
@@ -2476,13 +2445,10 @@ impl Checker<'_, '_, '_, '_> {
                 ..
             } => self.collect_type_nominals(operand_type, output)?,
             GoalOperation::BufferMeasure { element, .. }
-            | GoalOperation::BufferIndex { element }
-            | GoalOperation::RangeMeasure { element, .. }
-            | GoalOperation::RangeIndex { element, .. } => {
+            | GoalOperation::BufferIndex { element } => {
                 self.collect_flat_element_nominals(element, output)?;
             }
-            GoalOperation::ArrayFill { element, .. }
-            | GoalOperation::ArrayMeasure { element, .. }
+            GoalOperation::ArrayMeasure { element, .. }
             | GoalOperation::ArrayIndex { element, .. }
             | GoalOperation::RunIndex { element, .. } => {
                 self.collect_element_nominals(element, output)?
@@ -2637,13 +2603,10 @@ impl Checker<'_, '_, '_, '_> {
                 ..
             } => self.rewrite_type_nominals(operand_type, checkpoint, replacements)?,
             GoalOperation::BufferMeasure { element, .. }
-            | GoalOperation::BufferIndex { element }
-            | GoalOperation::RangeMeasure { element, .. }
-            | GoalOperation::RangeIndex { element, .. } => {
+            | GoalOperation::BufferIndex { element } => {
                 self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
             }
-            GoalOperation::ArrayFill { element, .. }
-            | GoalOperation::ArrayMeasure { element, .. }
+            GoalOperation::ArrayMeasure { element, .. }
             | GoalOperation::ArrayIndex { element, .. }
             | GoalOperation::RunIndex { element, .. } => {
                 self.rewrite_element_nominals(element, checkpoint, replacements)?;

@@ -82,6 +82,58 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         Ok(format!("%{pointer}"))
     }
 
+    /// Projects the first-element address carried by a synthesized task
+    /// capture. This changes only the compiler's internal capture ABI; the
+    /// source Box value remains the allocation-base pointer.
+    pub(super) fn emit_runtime_box_payload(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        nominal: IrNominalId,
+        owner: IrValueId,
+    ) -> Result<(), BackendFailure> {
+        if ty != (IrType::RuntimeBoxPayload { nominal })
+            || self.value_type(owner) != Some(IrType::Nominal(nominal))
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let block = self.buffer_block_type(nominal)?;
+        writeln!(
+            self.output,
+            "  {} = getelementptr inbounds {}, ptr {}, i64 0, i32 {ELEMENTS_FIELD}, i64 0",
+            self.value_name(result),
+            llvm_type(self.program, block)?,
+            self.value_name(owner),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    /// Reverses [`Self::emit_runtime_box_payload`] before ordinary chunk
+    /// lowering rebuilds its borrowed local Box slot.
+    pub(super) fn emit_runtime_box_owner(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        nominal: IrNominalId,
+        payload: IrValueId,
+    ) -> Result<(), BackendFailure> {
+        if ty != IrType::Nominal(nominal)
+            || self.value_type(payload) != Some(IrType::RuntimeBoxPayload { nominal })
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let block = self.buffer_block_type(nominal)?;
+        let negative_header = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{negative_header} = sub i64 0, {}\n  {} = getelementptr inbounds i8, ptr {}, i64 %{negative_header}",
+            self.buffer_header_size(block)?,
+            self.value_name(result),
+            self.value_name(payload),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
     /// [OP-13] `box_array_filled`: one block `[len | elements]`, every
     /// element holding the supplied copy value, and the cell that owns it,
     /// which is that same pointer.
@@ -92,10 +144,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         nominal: IrNominalId,
         length: IrValueId,
         value: IrValueId,
-        _layout_ceiling: IrLayoutCeiling,
-        target_domains: IrRuntimeTargetObligations,
+        obligations: IrAllocationObligations,
     ) -> Result<(), BackendFailure> {
-        if !target_domains.is_complete() || ty != IrType::Nominal(nominal) {
+        if !obligations.target_domains.is_complete() || ty != IrType::Nominal(nominal) {
             return Err(BackendFailure::InvalidIr);
         }
         let block = self.buffer_block_type(nominal)?;
@@ -110,49 +161,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         {
             return Err(BackendFailure::InvalidIr);
         }
-        let stored = self.value_name(value);
-        self.emit_buffer_block(result, block, element, length, Some(&stored))
-    }
-
-    /// The same block with every element at its element type's
-    /// `zeroinitializer` [OP-9].
-    ///
-    /// v0.59's `buffer_vacant::<T>(n)` built an all-`None` run of an
-    /// `Option<T>` instance, whose tag-zero variant is exactly that pattern.
-    /// [OP-1]'s v0.60 table carries no such row, so no accepted source
-    /// reaches here; the block below is the one a vacant-element
-    /// construction row would allocate.
-    pub(super) fn emit_buffer_vacant(
-        &mut self,
-        result: IrValueId,
-        ty: IrType,
-        nominal: IrNominalId,
-        length: IrValueId,
-        _layout_ceiling: IrLayoutCeiling,
-        target_domains: IrRuntimeTargetObligations,
-    ) -> Result<(), BackendFailure> {
-        if !target_domains.is_complete() || ty != IrType::Nominal(nominal) {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let block = self.buffer_block_type(nominal)?;
-        let IrType::Buffer { element } = block else {
-            return Err(BackendFailure::InvalidIr);
-        };
-        let IrFlatElement::Nominal(id) = element else {
-            return Err(BackendFailure::InvalidIr);
-        };
-        if self.nominal(id)?.is_tag_only_enum() {
-            return Err(BackendFailure::InvalidIr);
-        }
-        if self.value_type(length)
-            != Some(IrType::Integer {
-                width: 64,
-                signed: false,
-            })
-        {
-            return Err(BackendFailure::InvalidIr);
-        }
-        self.emit_buffer_block(result, block, element, length, None)
+        self.emit_buffer_block(result, block, element, length, Some(value))
     }
 
     /// One allocation of `header + count * stride` bytes, the `len` word, and
@@ -168,7 +177,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         block: IrType,
         element: IrFlatElement,
         length: IrValueId,
-        stored: Option<&str>,
+        stored: Option<IrValueId>,
     ) -> Result<(), BackendFailure> {
         let element_type = llvm_type(self.program, element.ty())?;
         let stride = self.buffer_element_stride(element)?;
@@ -200,10 +209,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)?;
         let offset = format!("%{index}");
         let element_pointer = self.buffer_element_pointer(block, &address, &offset)?;
+        if let Some(value) = stored {
+            self.store_value_at(value, &element_pointer)?;
+        } else {
+            writeln!(
+                self.output,
+                "  store {element_type} zeroinitializer, ptr {element_pointer}"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
         writeln!(
             self.output,
-            "  store {element_type} {}, ptr {element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  br label %{head}\n{done}:",
-            stored.unwrap_or("zeroinitializer"),
+            "  %{next_index} = add i64 %{index}, 1\n  br label %{head}\n{done}:"
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -231,29 +248,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.output,
             "  {} = load i64, ptr {length_address}",
             self.value_name(result),
-        )
-        .map_err(|_| BackendFailure::TextEmission)
-    }
-
-    pub(super) fn emit_buffer_fits(
-        &mut self,
-        result: IrValueId,
-        ty: IrType,
-        length: IrValueId,
-        maximum_length: u64,
-    ) -> Result<(), BackendFailure> {
-        let u64_type = IrType::Integer {
-            width: 64,
-            signed: false,
-        };
-        if ty != IrType::Bool || self.value_type(length) != Some(u64_type) {
-            return Err(BackendFailure::InvalidIr);
-        }
-        writeln!(
-            self.output,
-            "  {} = icmp ule i64 {}, {maximum_length}",
-            self.value_name(result),
-            self.value_name(length),
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -316,13 +310,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let address = self.value_name(buffer);
         let offset = self.value_name(index);
         let element_pointer = self.buffer_element_pointer(block, &address, &offset)?;
-        let element_type = llvm_type(self.program, element.ty())?;
-        writeln!(
-            self.output,
-            "  store {element_type} {}, ptr {element_pointer}",
-            self.value_name(value),
-        )
-        .map_err(|_| BackendFailure::TextEmission)
+        self.store_value_at(value, &element_pointer)
     }
 
     /// Emits the proof-preserving wide probe: how many upcoming byte-walk

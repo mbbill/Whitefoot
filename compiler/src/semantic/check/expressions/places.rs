@@ -21,16 +21,16 @@ use crate::{
 
 use super::super::super::model::{
     CheckedContainerRoot, CheckedExpression, CheckedMeasure, CheckedMode, CheckedNominalKind,
-    CheckedType,
+    CheckedOwnedTakeCleanup, CheckedPlaceStep, CheckedType,
 };
-use super::super::super::places::{CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace};
-use super::super::references::{AccessKind, OWN1_ROOTED_CONSUME, WIN3_NO_TAKE};
+use super::super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
+use super::super::references::{OWN1_ROOTED_CONSUME, WIN3_NO_TAKE};
 
 /// [TYPE-9] the restructuring a `move` of a runtime-capacity content names.
 const TYPE9_NO_CONTENT_MOVE: &str =
     "let the Box release it at scope exit, or empty it and call free_empty(move b) [OP-14]";
 use super::super::{CheckStop, Checker, EffectSet, LocalBinding, PlaceAccess, TypedExpression};
-use super::{PlaceUseContext, PlaceUseOptions};
+use super::{PlaceUseContext, PlaceUseOptions, ResolvedPlaceSet};
 
 /// One place resolved through an explicit `deref` chain.
 ///
@@ -46,7 +46,7 @@ pub(super) struct ExplicitPlace {
     pub(super) ty: CheckedType,
     pub(super) mode: CheckedMode,
     pub(super) expression: CheckedExpression,
-    pub(super) resolved: ResolvedPlace,
+    pub(super) resolved: ResolvedPlaceSet,
     /// [OP-15, MSR-1] the measure a trailing `.len`, `.cap` or
     /// `.head` reads. A measure selects no storage below itself, so it is
     /// always the last written suffix and the place it is read over is the
@@ -70,17 +70,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         options: PlaceUseOptions,
     ) -> Result<TypedExpression, CheckStop> {
         let place = self.resolve_explicit_place(use_node, node, bindings)?;
-        self.check_commit_place_live(&place.resolved, use_node, false)?;
+        for member in &place.resolved.members {
+            self.check_commit_place_live(member, use_node, false)?;
+        }
         // [OP-15, MSR-1] a measure is a read-only `own u64` member of the
         // measured place: it reads that place's descriptor storage and
         // nothing below it, so it is neither a copy nor an affine use of the
         // value itself.
         if let Some(measure) = place.measure {
             let mut effects = EffectSet::NONE;
-            for path in
-                self.effect_paths_for_descriptor(use_node, &place.resolved, bindings, measure)?
-            {
-                effects.add_read(path);
+            for member in &place.resolved.members {
+                for path in self.effect_paths_for_descriptor(use_node, member, bindings, measure)? {
+                    effects.add_read(path);
+                }
             }
             let (binding, path) = self.explicit_container_path(&place.expression, node)?;
             // [REF-4, MSR-1] a range reference's one measure is its element
@@ -90,22 +92,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if !path.is_empty() {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
-                let Some(element) = self.flat_element(place.ty)? else {
-                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, use_node);
-                };
+                let element = self.intern_element(place.ty)?;
                 return Ok(TypedExpression {
                     expression: CheckedExpression::RangeMeasure {
                         measure,
-                        root: super::super::super::model::CheckedRangeRoot { binding, element },
+                        root: super::super::super::model::CheckedRangeRoot {
+                            binding,
+                            element,
+                            element_type: place.ty,
+                        },
                     },
                     mode: CheckedMode::Own,
                     reference: None,
                     reference_value: false,
                     effects,
-                    accesses: vec![PlaceAccess {
-                        place: place.resolved,
-                        kind: AccessKind::Read,
-                    }],
+                    accesses: place
+                        .resolved
+                        .members
+                        .into_iter()
+                        .map(|place| PlaceAccess {
+                            place,
+                            selected: true,
+                        })
+                        .collect(),
                 });
             }
             return Ok(TypedExpression {
@@ -121,10 +130,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 reference: None,
                 reference_value: false,
                 effects,
-                accesses: vec![PlaceAccess {
-                    place: place.resolved,
-                    kind: AccessKind::Read,
-                }],
+                accesses: place
+                    .resolved
+                    .members
+                    .into_iter()
+                    .map(|place| PlaceAccess {
+                        place,
+                        selected: true,
+                    })
+                    .collect(),
             });
         }
         // [TYPE-8] `&[T]` is a reference kind and not a type, so `deref(p)`
@@ -143,7 +157,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let copy = self.is_copy_type(place.ty)?;
-        let read_out = !copy && options.explicit_move && self.take_commit_read_out(&place.resolved);
+        let read_out =
+            !copy && options.explicit_move && self.take_commit_read_out(&place.resolved.identity);
         if !copy && !read_out {
             if options.explicit_move {
                 // [OWN-1] a consume is admitted only for a place rooted in a
@@ -161,25 +176,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                // [TYPE-9, WIN-3] `let n = move b.inner;` consumes the
-                // `Box`, yields its content, and frees the cell. It is the
-                // ordinary [WIN-3] consume of a field out of its owner: the
-                // owner ceases to exist at this use, which for a cell leaves
-                // no other part to release.
-                if let CheckedExpression::BoxDeref {
-                    nominal,
-                    referent,
-                    value,
-                    ..
-                } = &place.expression
-                    && place.resolved.path.as_slice() == [PlaceStep::Deref]
+                // [TYPE-9, WIN-3] an owned path through Box content consumes
+                // its complete root. Keep the selected value separate from
+                // the residual fields and enclosing cells to be released.
+                if place
+                    .resolved
+                    .identity
+                    .path
+                    .iter()
+                    .any(|step| matches!(step, PlaceStep::Deref))
+                    && place
+                        .resolved
+                        .identity
+                        .path
+                        .iter()
+                        .all(|step| matches!(step, PlaceStep::Field(_) | PlaceStep::Deref))
                 {
                     return self.check_box_unbox(
                         use_node,
                         place.declaration,
-                        *nominal,
-                        *referent,
-                        value.as_ref().clone(),
+                        place.ty,
+                        &place.resolved.identity.path,
                         bindings,
                     );
                 }
@@ -214,8 +231,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(use_node, &place.resolved, bindings)? {
-            effects.add_read(path);
+        for member in &place.resolved.members {
+            for path in self.effect_paths_for_place(use_node, member, bindings)? {
+                effects.add_read(path);
+            }
         }
         let expression = if read_out {
             let (binding, path) = self.explicit_container_path(&place.expression, node)?;
@@ -236,10 +255,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             reference: None,
             reference_value: false,
             effects,
-            accesses: vec![PlaceAccess {
-                place: place.resolved,
-                kind: AccessKind::Read,
-            }],
+            accesses: place
+                .resolved
+                .members
+                .into_iter()
+                .map(|place| PlaceAccess {
+                    place,
+                    selected: true,
+                })
+                .collect(),
         })
     }
 
@@ -259,11 +283,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         use_node: NodeId,
         declaration: DeclarationId,
-        nominal: super::super::super::model::NominalId,
         referent: CheckedType,
-        value: CheckedExpression,
+        resolved_path: &[PlaceStep],
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
     ) -> Result<TypedExpression, CheckStop> {
+        let local = bindings
+            .get(&declaration)
+            .cloned()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if matches!(
             referent,
             CheckedType::Buffer { .. } | CheckedType::Window { capacity: None, .. }
@@ -277,10 +304,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let local = bindings
-            .get(&declaration)
-            .cloned()
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let path = self.checked_owned_take_path(local.ty, resolved_path)?;
+        let cleanup = self.owned_take_cleanup(local.ty, &path)?;
+        for action in &cleanup {
+            if let CheckedOwnedTakeCleanup::Drop { ty, .. } = action
+                && let Some(obligation) = self.linear_release_obligation(*ty)?
+            {
+                return self.issue_node(
+                    SemanticRule::Win3,
+                    use_node,
+                    SemanticIssueKind::LinearValuePartiallyConsumed {
+                        obligation,
+                        residual: self.checked_type_name(*ty)?,
+                        mechanical_fix: "take it in the same destructuring: let N(f: a, ..) = move v;",
+                    },
+                );
+            }
+        }
         // [REF-2] a consume is one of the three invalidating actions: every
         // reference into the cell names storage this move has carried away.
         Self::invalidate_references(
@@ -295,9 +335,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(TypedExpression {
             expression: CheckedExpression::BoxTake {
                 carrier: self.tree.path(use_node)?.clone(),
-                nominal,
                 referent,
-                value: Box::new(value),
+                binding: local.binding,
+                path,
+                cleanup,
             },
             mode: CheckedMode::Own,
             reference: None,
@@ -305,9 +346,100 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             effects: EffectSet::NONE,
             accesses: vec![PlaceAccess {
                 place: ResolvedPlace::binding(local.binding),
-                kind: AccessKind::Move,
+                selected: true,
             }],
         })
+    }
+
+    fn checked_owned_take_path(
+        &self,
+        mut ty: CheckedType,
+        path: &[PlaceStep],
+    ) -> Result<Vec<CheckedPlaceStep>, CheckStop> {
+        let mut checked = Vec::with_capacity(path.len());
+        for step in path {
+            match (*step, ty) {
+                (PlaceStep::Field(field), CheckedType::Nominal(id)) => {
+                    let CheckedNominalKind::Struct { fields } = &self.nominal(id)?.kind else {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    };
+                    ty = fields
+                        .get(field as usize)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                        .ty;
+                    checked.push(CheckedPlaceStep::Field(field));
+                }
+                (PlaceStep::Deref, CheckedType::Nominal(id)) => {
+                    let CheckedNominalKind::Box { referent, .. } = self.nominal(id)?.kind else {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    };
+                    ty = referent;
+                    checked.push(CheckedPlaceStep::BoxReferent(id));
+                }
+                _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+            }
+        }
+        Ok(checked)
+    }
+
+    fn owned_take_cleanup(
+        &self,
+        root: CheckedType,
+        selected: &[CheckedPlaceStep],
+    ) -> Result<Vec<CheckedOwnedTakeCleanup>, CheckStop> {
+        fn walk<'a, 'b, 'c, 'd>(
+            checker: &Checker<'a, 'b, 'c, 'd>,
+            ty: CheckedType,
+            selected: &[CheckedPlaceStep],
+            path: &mut Vec<CheckedPlaceStep>,
+            out: &mut Vec<CheckedOwnedTakeCleanup>,
+        ) -> Result<(), CheckStop> {
+            let Some(step) = selected.first() else {
+                return Ok(());
+            };
+            match (ty, step) {
+                (CheckedType::Nominal(id), CheckedPlaceStep::Field(selected_field)) => {
+                    let CheckedNominalKind::Struct { fields } = &checker.nominal(id)?.kind else {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    };
+                    for (index, field) in fields.iter().enumerate() {
+                        let index = u32::try_from(index)
+                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                        path.push(CheckedPlaceStep::Field(index));
+                        if index == *selected_field {
+                            walk(checker, field.ty, &selected[1..], path, out)?;
+                        } else if !checker.is_copy_type(field.ty)? {
+                            out.push(CheckedOwnedTakeCleanup::Drop {
+                                path: path.clone(),
+                                ty: field.ty,
+                            });
+                        }
+                        path.pop();
+                    }
+                }
+                (CheckedType::Nominal(id), CheckedPlaceStep::BoxReferent(step_id))
+                    if id == *step_id =>
+                {
+                    let CheckedNominalKind::Box { referent, .. } = checker.nominal(id)?.kind else {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    };
+                    path.push(CheckedPlaceStep::BoxReferent(id));
+                    walk(checker, referent, &selected[1..], path, out)?;
+                    path.pop();
+                    out.push(CheckedOwnedTakeCleanup::BoxShell {
+                        path: path.clone(),
+                        nominal: id,
+                        referent,
+                    });
+                }
+                _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+            }
+            Ok(())
+        }
+
+        let mut out = Vec::new();
+        walk(self, root, selected, &mut Vec::new(), &mut out)?;
+        Ok(out)
     }
 
     /// [GRAM-5, REF-1] the complete written `place`, with every `deref` step
@@ -364,7 +496,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ty: local.ty,
                     consume_root: false,
                 },
-                resolved: ResolvedPlace::binding(local.binding),
+                resolved: ResolvedPlaceSet::one(ResolvedPlace::binding(local.binding)),
                 measure: None,
                 range_referent: false,
             }
@@ -438,7 +570,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         value: Box::new(place.expression),
                     };
                     place.ty = referent;
-                    place.resolved.path.push(PlaceStep::Deref);
+                    place.resolved.append_step(PlaceStep::Deref);
                 }
                 let measured = if place.range_referent {
                     Some(super::super::super::model::MeasuredKind::Range)
@@ -491,7 +623,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     value: Box::new(place.expression),
                 };
                 place.ty = referent;
-                place.resolved.path.push(PlaceStep::Deref);
+                place.resolved.append_step(PlaceStep::Deref);
                 continue;
             }
             let CheckedType::Nominal(nominal) = place.ty else {
@@ -574,20 +706,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_reference_valid(local, pbase)?;
         let binding = local.binding;
         let named = self.resolve_reference_root(inner.declaration, bindings)?;
-        // [REF-1] a reference whose incoming edges name different paths
-        // carries the union of their sets, and every check on it must hold
-        // for every member. A checked place names one path, so the union
-        // travels as the one place that contains every member: their common
-        // prefix, closed at a disagreeing subscript by the offset this
-        // version cannot name. That is exactly what [EFF-2] does with a
-        // dynamic element -- "a dynamic element or range maps to its nearest
-        // statically nameable enclosing path" -- and the unknown offset is
-        // [MSR-3]'s own, which compares as one storage with every other, so a
-        // prefix test over it invalidates rather than spares and [OWN-7]
-        // separates it from nothing. Reading through the reference at run
-        // time needs no such merge: the join already produced one address.
-        let Some(path) = Self::joined_reference_place(&named) else {
-            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, pbase);
+        if named.is_empty() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        // [REF-1, OP-12] one resolved member is an exact static place even
+        // when two different reference holders name it. A true union has no
+        // selected member until run time, so its exact identity remains the
+        // holder and no overlapping candidate is chosen on its behalf.
+        let identity = match named.as_slice() {
+            [unique] => unique.clone(),
+            _ => ResolvedPlace::binding(binding),
         };
         // The referent is read through the reference; the reference itself
         // stays a distinct expression so lowering never has to guess whether
@@ -599,41 +727,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         inner.range_referent = inner.mode == CheckedMode::Range;
         inner.mode = CheckedMode::Own;
-        inner.resolved = path;
+        inner.resolved = ResolvedPlaceSet {
+            identity,
+            members: named,
+        };
         Ok(inner)
-    }
-
-    /// The one place that contains every member of a joined reference's path
-    /// set [REF-1], or `None` where the members are not rooted together.
-    ///
-    /// Two members agree step for step until they disagree; the result keeps
-    /// that common prefix. Where the disagreement is two subscripts of one
-    /// run, the result keeps one subscript at the unknown offset, which is
-    /// the element position of that run and contains both written ones. Where
-    /// it is anything else -- two fields, two payload steps, a step against
-    /// the end of the other path -- the result stops at the prefix, which is
-    /// the enclosing storage both members lie in.
-    fn joined_reference_place(named: &[ResolvedPlace]) -> Option<ResolvedPlace> {
-        let (first, rest) = named.split_first()?;
-        let mut merged = first.clone();
-        for other in rest {
-            if other.root != merged.root {
-                return None;
-            }
-            let mut path = Vec::with_capacity(merged.path.len().min(other.path.len()));
-            for (left, right) in merged.path.iter().zip(&other.path) {
-                if left == right {
-                    path.push(*left);
-                    continue;
-                }
-                if let (PlaceStep::Index(_), PlaceStep::Index(_)) = (left, right) {
-                    path.push(PlaceStep::Index(CapturedValue::unknown()));
-                }
-                break;
-            }
-            merged.path = path;
-        }
-        Some(merged)
     }
 
     /// The measure a written `psuffix` run ends with [OP-15, MSR-1], if any.
@@ -691,16 +789,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(false)
     }
 
-    /// [TYPE-2] refuses an argument naming a path that ends at or passes
-    /// through a readonly field, at a reference parameter whose callee row
-    /// writes that parameter.
+    /// [CONST-2, OWN-11, TYPE-2] a callee's declared write requires writable
+    /// actual storage. A reference cannot grant write access to a named const,
+    /// a compiler-updated counted binder, or a readonly field.
     ///
     /// The checked reference carries the resolved origin path through local
     /// aliases, reborrows and reference-root projections [REF-1]. Walking
     /// that path, rather than the immediate argument syntax, therefore keeps
     /// the readonly provenance that the reference spelling itself no longer
     /// exposes.
-    pub(in crate::semantic::check) fn reject_readonly_written_argument(
+    pub(in crate::semantic::check) fn check_written_reference_argument(
         &self,
         atom: NodeId,
         argument: &TypedExpression,
@@ -710,6 +808,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(());
         };
         for path in &reference.paths {
+            let immutable = match path.root {
+                PlaceRoot::Constant(id) => {
+                    Some((SemanticRule::Const2, self.constant(id)?.name.clone()))
+                }
+                PlaceRoot::Binding(binding) => bindings
+                    .values()
+                    .find(|local| local.binding == binding && local.compiler_updated)
+                    .map(|local| {
+                        self.declaration_spelling(local.declaration)
+                            .map(|name| (SemanticRule::Own11, name))
+                    })
+                    .transpose()?,
+            };
+            if let Some((rule, binding)) = immutable {
+                return self.issue_node(
+                    rule,
+                    atom,
+                    SemanticIssueKind::ImmutableWrittenArgument {
+                        binding,
+                        mechanical_fix: "copy the value into a local binding and pass a reference \
+                                         to that writable copy",
+                    },
+                );
+            }
             self.reject_readonly_resolved_write(atom, path, bindings)?;
         }
         Ok(())
@@ -849,7 +971,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// [TYPE-10] a window part is effect-row vocabulary and never a place.
-
     ///
     /// x1 makes the four spellings reserve nothing: they are "selected by the
     /// window type of the place they follow", so `node.next` on a source

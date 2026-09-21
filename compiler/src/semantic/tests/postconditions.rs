@@ -3,12 +3,16 @@ use crate::{
     SemanticLocation, SemanticOutcome, SemanticRule,
 };
 
-use super::{assert_rule, assert_rule_at, with_resolution, with_semantics, with_semantics_dark};
+use super::{
+    assert_rule, assert_rule_at, assert_rule_kind, with_resolution, with_semantics,
+    with_semantics_dark,
+};
 use crate::semantic::entailment::{
     CallGoalDisposition, DerivationNode, FlowEventKind, FunctionPostconditionProof,
-    PostconditionDisposition,
+    PostconditionDisposition, TermKind,
 };
 use crate::semantic::model::{CheckedBodyDisposition, CheckedExpression, CheckedStatement};
+use crate::semantic::places::PlaceStep;
 
 fn assert_complete(source: &[u8]) {
     with_semantics(source, |outcome| {
@@ -86,6 +90,144 @@ fn direct_range_measure_returns_prove_only_the_matching_postcondition() {
     );
 }
 
+/// [FN-9, ENT-2(b), TYPE-9] a direct scalar return may be the measure of the
+/// complete place below its owner. Box content and ordinary fields remain
+/// distinct projections of that place; introducing a local binding must not
+/// change which relation the selected return can prove.
+#[test]
+fn direct_box_content_measure_returns_preserve_the_complete_place() {
+    assert_complete(
+        br#"struct Holder {
+  value: u64;
+}
+
+struct Wrapped {
+  cells: Box<Slots<u8>>;
+}
+
+fn slots(owner: own Box<Slots<u8>>) -> result: own u64 pure contract {
+  ensures result == owner.inner.len;
+} {
+  return owner.inner.len;
+}
+
+fn array(owner: own Box<Array<u8>>) -> result: own u64 pure contract {
+  ensures result == owner.inner.len;
+} {
+  return owner.inner.len;
+}
+
+fn nested(owner: own Box<Box<Slots<u8>>>) -> result: own u64 pure contract {
+  ensures result == owner.inner.inner.len;
+} {
+  return owner.inner.inner.len;
+}
+
+fn referenced(owner: &Box<Slots<u8>>) -> result: own u64 reads(owner.inner) contract {
+  ensures result == deref(owner).inner.len;
+} {
+  return deref(owner).inner.len;
+}
+
+fn boxed_indexed(owner: own Box<Array<Slots<u8, 2>, 2>>) -> result: own u64 pure contract {
+  ensures result == owner.inner[0_u64].len;
+} {
+  return owner.inner[0_u64].len;
+}
+
+fn wrapped(owner: own Wrapped) -> result: own u64 pure contract {
+  ensures result == owner.cells.inner.len;
+} {
+  return owner.cells.inner.len;
+}
+
+fn through_local(owner: own Box<Slots<u8>>) -> result: own u64 pure contract {
+  ensures result == owner.inner.len;
+} {
+  let length = owner.inner.len;
+  return length;
+}
+
+fn inline(owner: own Slots<u8, 4>) -> result: own u64 pure contract {
+  ensures result == owner.len;
+} {
+  return owner.len;
+}
+
+fn indexed(owner: own Array<Slots<u8, 2>, 2>) -> result: own u64 pure contract {
+  ensures result == owner[0_u64].len;
+} {
+  return owner[0_u64].len;
+}
+
+fn field(owner: own Holder) -> result: own u64 pure contract {
+  ensures result == owner.value;
+} {
+  return owner.value;
+}
+"#,
+    );
+
+    assert_fn9_refuted(
+        br#"fn wrong(owner: own Box<Slots<u8>>) -> result: own u64 pure contract {
+  requires owner.inner.len <= 18446744073709551614_u64;
+  ensures result == owner.inner.len + 1_u64;
+} {
+  return owner.inner.len;
+}
+"#,
+    );
+
+    assert_fn9_refuted(
+        br#"fn distinct(left: own Box<Slots<u8>>, right: own Box<Slots<u8>>) -> result: own u64 pure contract {
+  requires left.inner.len == 0_u64;
+  requires right.inner.len == 1_u64;
+  ensures result == right.inner.len;
+} {
+  return left.inner.len;
+}
+"#,
+    );
+
+    assert_fn9_refuted(
+        br#"fn distinct_references(left: &Box<Slots<u8>>, right: &Box<Slots<u8>>) -> result: own u64 reads(left.inner) contract {
+  requires deref(left).inner.len == 0_u64;
+  requires deref(right).inner.len == 1_u64;
+  ensures result == deref(right).inner.len;
+} {
+  return deref(left).inner.len;
+}
+"#,
+    );
+
+    assert_fn9_refuted(
+        br#"fn distinct_indices(owner: own Array<Slots<u8, 2>, 2>) -> result: own u64 pure contract {
+  requires owner[0_u64].len == 0_u64;
+  requires owner[1_u64].len == 1_u64;
+  ensures result == owner[1_u64].len;
+} {
+  return owner[0_u64].len;
+}
+"#,
+    );
+
+    assert_fn9_refuted(
+        br#"struct Pair {
+  left: Box<Slots<u8>>;
+  right: Box<Slots<u8>>;
+}
+
+fn distinct_fields(owner: own Pair) -> result: own u64 pure contract {
+  requires owner.left.inner.len == 0_u64;
+  requires owner.right.inner.len == 1_u64;
+  ensures result == owner.right.inner.len;
+} {
+  return owner.left.inner.len;
+}
+"#,
+    );
+}
+
 /// A declared postcondition over a reference parameter substitutes through a
 /// Box content projection written as `&deref(boxed).inner` at the call. The
 /// wrapper publishes the resulting concrete `.inner.len` relation.
@@ -110,6 +252,56 @@ fn through_box(slots: &Box<Slots<u8, 4>>) -> result: own unit writes(slots.inner
 }
 
 fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
+/// A generic wrapper around `grow` publishes its ordinary integer result
+/// relation together with the two measured relations it derives from the
+/// supplied row. A second generic caller retains that relation after replacing
+/// both the stored type and const ceiling; the measured relations cannot hide
+/// the ordinary result relation from [S12]'s concrete summary.
+#[test]
+fn a_generic_grow_wrapper_publishes_its_integer_result_relation() {
+    let source = br#"struct Holder<T, const ceiling: u64> {
+  storage: Box<Slots<T>>;
+}
+
+fn reserve<T, const ceiling: u64>(values: &Holder<T, ceiling>, total: own u64) -> capacity: own u64 writes(values.storage) contract {
+  requires total <= ceiling;
+  ensures capacity == deref(values).storage.inner.cap;
+  ensures capacity >= total;
+  ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len;
+} {
+  let current = deref(values).storage.inner.cap;
+  if current >= total {
+    return current;
+  }
+  grow(cell: &deref(values).storage, capacity: total);
+  return total;
+}
+
+fn forward<T, const ceiling: u64>(values: &Holder<T, ceiling>) -> capacity: own u64 writes(values.storage) contract {
+  requires 1_u64 <= ceiling;
+  ensures capacity >= 1_u64;
+} {
+  let capacity = reserve::<T, ceiling>(values: values, total: 1_u64);
+  return capacity;
+}
+
+fn needs_one(value: own u64) -> result: own unit pure contract {
+  requires value >= 1_u64;
+} {
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let storage = box_slots_new::<u64>(capacity: 0_u64);
+  let holder = Holder<u64, 3>(storage: move storage);
+  let opened = forward::<u64, 3>(values: &holder);
+  needs_one(value: opened);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1057,17 +1249,13 @@ fn main() -> status: own ExitStatus pure {
     assert_complete(source);
 }
 
-/// [FN-9] `M(c,q)` holds only when every referenced formal substitutes to a
-/// live [ENT-2] term after ordinary kills, so a relation whose support the
-/// call's own consume removes reaches no caller destination, and the caller's
-/// own clause over the same killed entry image is unproved.
-///
-/// v0.59 wrote the killing consume as `touch(pair: move holder)` over a
-/// `&uniq Pair` holder. A reference is not storage a `move` can consume
-/// [REF-1], so the consume is the ordinary one an affine own actual carries
-/// [OWN-1] and the killed support is the same.
+/// [MSR-3, CALL-2] consuming an own actual leaves its immutable pre-transfer
+/// call datum alive, so the direct-result relation must publish. It does not
+/// restore the caller's non-measure entry image: [FN-9] still requires that
+/// place to remain stable. The former no-route assertion came from a moved
+/// reference holder, which is not the own-argument transport tested here.
 #[test]
-fn a_consumed_actual_cannot_publish_a_stale_postcondition_relation() {
+fn a_consumed_actual_preserves_its_call_datum_but_not_its_entry_image() {
     let source = br#"nocopy struct Pair {
   kept: i32;
   changed: i32;
@@ -1115,30 +1303,34 @@ fn main() -> status: own ExitStatus pure {
             .iter()
             .find(|function| function.name == "caller")
             .expect("caller function");
-        assert!(caller.entailment.derivations.nodes.iter().all(|node| {
-            !matches!(
-                node,
-                DerivationNode::PostconditionDirectResult { .. }
-                    | DerivationNode::PostconditionDirectMatch { .. }
-            )
-        }));
+        assert!(
+            caller.entailment.derivations.nodes.iter().any(|node| {
+                let DerivationNode::PostconditionDirectResult { relation, .. } = node else {
+                    return false;
+                };
+                relation.terms().iter().any(|term| {
+                    matches!(
+                        &caller.entailment.inventory.terms[term.0 as usize],
+                        TermKind::CallDatum {
+                            formal: 0,
+                            projections,
+                            measure: None,
+                            ..
+                        } if projections.as_slice() == [PlaceStep::Field(0)]
+                    )
+                })
+            }),
+            "the direct result is related to pair.kept's immutable call datum"
+        );
     });
 }
 
-/// [MSR-3] an `own` operand of a published relation denotes that call's call
-/// datum — the operand's value at the pre-transfer point — so the relation
-/// means what it reads as even when the same statement consumes the holder
-/// the actual was reached through.
-///
-/// Until v0.44 this program was rejected: the relation's operand was the
-/// place `deref(owner)`, `owner: move owner` consumed its holder in the same
-/// statement, and `M(c,q)` failed. That refusal was conservative and not
-/// sound-critical — the value `observe` received is 1 whatever later happens
-/// to the box — and the datum is exactly the term that says so. The test is
-/// kept as the positive it became, so the change is pinned rather than
-/// silently absorbed.
+/// [MSR-3] an own operand's call datum survives consumption of the object
+/// from which it was copied. The copy precedes the call: [EFF-5] now rejects
+/// a content read alongside a consume of its owner in the same call, as the
+/// separate negative case below checks.
 #[test]
-fn a_cell_deref_actual_survives_a_cross_formal_owner_move_as_a_call_datum() {
+fn a_copied_content_actual_survives_a_cross_formal_owner_move_as_a_call_datum() {
     // [STOR-8] allocation is total, so the cell arrives from `box_new` with no
     // failure arm, no store provider and no region; [TYPE-9] spells its
     // content as the field `inner`.
@@ -1153,7 +1345,8 @@ fn caller() -> result: own i32 pure contract {
   ensures result == 1_i32;
 } {
   let owner = box_new::<i32>(value: 1_i32);
-  let observed = observe(value: owner.inner, owner: move owner);
+  let copied = owner.inner;
+  let observed = observe(value: copied, owner: move owner);
   return observed;
 }
 
@@ -1186,6 +1379,20 @@ fn main() -> status: own ExitStatus pure {
             "the call datum publishes the relation the consumed holder used to delete"
         );
     });
+}
+
+#[test]
+fn an_inline_content_read_conflicts_with_consuming_its_owner() {
+    let source = br#"fn observe(value: own i32, owner: own Box<i32>) -> result: own i32 pure {
+  return value;
+}
+
+fn caller() -> result: own i32 pure {
+  let owner = box_new::<i32>(value: 1_i32);
+  return observe(value: owner.inner, owner: move owner);
+}
+"#;
+    super::assert_rule_kind(source, SemanticRule::Eff5, |_| true);
 }
 
 /// P0 closes the two pre-move equalities while their common box referent is
@@ -1596,7 +1803,7 @@ fn call_actual(outer: own i32) -> result: own unit pure {
   return unit;
 }
 
-fn projected(cell: own Cell, replacement: own i32) -> result: own unit writes(cell.value) {
+fn projected(cell: own Cell, replacement: own i32) -> result: own unit pure {
   match selected(value: replacement) {
     Ok(value: payload) => {
       set cell.value = payload;
@@ -1842,6 +2049,40 @@ fn a_bound_measured_call_return_preserves_the_kernel_result_relation() {
     }
 }
 
+/// [CALL-4, FN-9] an unnamed affine result ordinal imposes no condition on a
+/// generic schema relation over a different, measured ordinal. The published
+/// length must therefore reach a destructuring-let binder in the generic
+/// caller even though its sibling result contains the symbolic element type.
+#[test]
+fn an_unnamed_generic_result_does_not_suppress_a_named_measure_summary() {
+    let source = br#"struct Entry<T> {
+  payload: Box<T>;
+}
+
+fn build<T>(first: own Box<T>, replacement: own Box<T>) -> (slots: own Slots<Option<Entry<T>>, 1>, returned: own Box<T>) pure contract {
+  ensures slots.len == 1_u64;
+} {
+  let stored = Entry<T>(payload: move first);
+  let occupied = Some<Entry<T>>(value: move stored);
+  let slots = slots_new::<Option<Entry<T>>, 1>();
+  place_back(window: &slots, value: move occupied);
+  return move slots, move replacement;
+}
+
+fn compose<T>(first: own Box<T>, replacement: own Box<T>) -> (slots: own Slots<Option<Entry<T>>, 1>, returned: own Box<T>) pure contract {
+  ensures slots.len >= 1_u64;
+} {
+  let (slots, returned) = build::<T>(first: move first, replacement: move replacement);
+  return move slots, move returned;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
 #[test]
 fn a_measured_postcondition_cannot_omit_a_direct_call_return() {
     for returned in ["slots_new::<u8, 1>()", "empty()"] {
@@ -1996,7 +2237,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn an_actual_with_a_different_ensures_is_fn4_before_proof() {
+fn an_actual_may_publish_an_additional_ensures() {
     let source = br#"interface Maker {
   fn make() -> result: own i32 pure;
 }
@@ -2013,6 +2254,29 @@ binding Made : Maker {
 
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
+}
+"#;
+    // [FN-4] permits stronger actual postconditions. The former equality-only
+    // signature test rejected this legal refinement.
+    assert_complete(source);
+}
+
+#[test]
+fn an_actual_that_does_not_establish_the_promised_ensures_is_fn4() {
+    let source = br#"interface Maker {
+  fn make() -> result: own i32 pure contract {
+    ensures result == 1_i32;
+  };
+}
+
+fn make() -> result: own i32 pure contract {
+  ensures result == 2_i32;
+} {
+  return 2_i32;
+}
+
+binding Made : Maker {
+  make = make;
 }
 "#;
     assert_rule_at(source, SemanticRule::Fn4, "make = make;");
@@ -2997,6 +3261,54 @@ fn main() -> status: own ExitStatus pure {
     assert_complete(source);
 }
 
+/// [OP-10, PRE-1, ENT-3.S12] `append` publishes the destination's exit
+/// length above the source's captured entry length. A known nonempty source
+/// therefore proves a later positive-length requirement after `append` has
+/// reset that source to empty.
+#[test]
+fn append_transfers_a_known_source_entry_length_to_the_destination() {
+    let source = br#"fn take_after_append() -> result: own u8 pure {
+  let source = slots_new::<u8, 4>();
+  place_back(window: &source, value: 7_u8);
+  let destination = slots_new::<u8, 4>();
+  append(destination: &destination, source: &source);
+  return take_back(window: &destination);
+}
+"#;
+    assert_complete(source);
+}
+
+/// The cross-window relation is a lower bound, not a claim that every append
+/// makes its destination nonempty. An empty or conditionally filled source
+/// supplies no proof of `take_back`'s positive-length requirement.
+#[test]
+fn append_does_not_invent_a_positive_destination_length() {
+    let empty = br#"fn take_after_empty_append() -> result: own u8 pure {
+  let source = slots_new::<u8, 4>();
+  let destination = slots_new::<u8, 4>();
+  append(destination: &destination, source: &source);
+  return take_back(window: &destination);
+}
+"#;
+    assert_rule_kind(empty, SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
+
+    let unknown = br#"fn take_after_unknown_append(fill: own Bool) -> result: own u8 pure {
+  let source = slots_new::<u8, 4>();
+  if fill {
+    place_back(window: &source, value: 7_u8);
+  }
+  let destination = slots_new::<u8, 4>();
+  append(destination: &destination, source: &source);
+  return take_back(window: &destination);
+}
+"#;
+    assert_rule_kind(unknown, SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
+}
+
 #[test]
 fn a_conditional_unique_call_keeps_the_other_branch_measure_image() {
     // [MSR-3] the callee's exit measure is `deref(values).len` and its entry
@@ -3151,4 +3463,107 @@ fn main() -> status: own ExitStatus pure {{
         assert_complete(program("deref(free).len == 1_u64", body).as_bytes());
         assert_fn9_rejects(program("deref(free).len == 2_u64", body).as_bytes());
     }
+}
+
+/// [MSR-2, MSR-3] a postcondition over a window descriptor survives a write
+/// to one element reached through the same reference holder. Writes that can
+/// change the descriptor, replace the whole referent, or reach it through a
+/// joined holder still invalidate the relation, as does rebinding the holder
+/// on which the substitution itself depends.
+#[test]
+fn postcondition_measure_candidates_distinguish_holder_rebinding_from_descendant_writes() {
+    let descendant_write = br#"fn take_at(window: &Ring<Box<u64>, 4>, at: own u64) -> taken: own Box<u64> writes(window) contract {
+  requires at + 2_u64 <= deref(window).len;
+  ensures deref(window).len + 1_u64 == deref(entry(window)).len;
+} {
+  let end = take_back(window: window);
+  swap(first: &deref(window)[at], second: &end);
+  return move end;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(descendant_write);
+
+    let descriptor_write =
+        br#"fn take_twice(window: &Ring<u64, 4>) -> taken: own u64 writes(window) contract {
+  requires deref(window).len >= 2_u64;
+  ensures deref(window).len + 1_u64 == deref(entry(window)).len;
+} {
+  let taken = take_back(window: window);
+  let extra = take_back(window: window);
+  return taken;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_fn9_rejects(descriptor_write);
+
+    let whole_replacement =
+        br#"fn clear(window: &Ring<u64, 4>) -> result: own unit writes(window) {
+  let empty = ring_new::<u64, 4>();
+  set deref(window) = move empty;
+  return unit;
+}
+
+fn replace_after_take(window: &Ring<u64, 4>) -> taken: own u64 writes(window) contract {
+  requires deref(window).len >= 2_u64;
+  ensures deref(window).len + 1_u64 == deref(entry(window)).len;
+} {
+  let taken = take_back(window: window);
+  clear(window: window);
+  return taken;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_fn9_rejects(whole_replacement);
+
+    let joined_write = br#"fn clear(window: &Ring<u64, 4>) -> result: own unit writes(window) {
+  let empty = ring_new::<u64, 4>();
+  set deref(window) = move empty;
+  return unit;
+}
+
+fn maybe_replace(first: &Ring<u64, 4>, second: &Ring<u64, 4>, choose: own Bool) -> taken: own u64 writes(first), writes(second) contract {
+  requires deref(first).len >= 2_u64;
+  ensures deref(first).len + 1_u64 == deref(entry(first)).len;
+} {
+  let taken = take_back(window: first);
+  let selected = if choose {
+    give first;
+  } else {
+    give second;
+  }
+  clear(window: selected);
+  return taken;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_fn9_rejects(joined_write);
+
+    let holder_rebinding = br#"fn rebind_after_take(first: &Ring<u64, 4>, second: &Ring<u64, 4>) -> taken: own u64 writes(first) contract {
+  requires deref(first).len >= 2_u64;
+  ensures deref(first).len + 1_u64 == deref(entry(first)).len;
+} {
+  let selected = first;
+  let taken = take_back(window: selected);
+  set selected = &deref(second);
+  return taken;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_fn9_rejects(holder_rebinding);
 }

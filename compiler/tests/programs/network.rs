@@ -303,7 +303,7 @@ fn the_fanout_loop_has_only_ordinary_counted_permission() {
     assert!(
         ledger.iter().any(|line| line.starts_with("PAR loop")
             && line.contains("denied")
-            && line.contains("condition 2: the body contains a discarded expression statement")),
+            && line.contains("condition 2: the body contains an expression statement")),
         "{ledger:?}"
     );
     assert!(

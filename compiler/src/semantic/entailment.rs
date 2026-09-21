@@ -40,7 +40,7 @@ use term::TermId;
 pub(crate) use state::{
     CountedRootAtom, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind,
     GoalSign, ImplicitBoundKind, JoinParent, PostconditionCallDetail,
-    PostconditionDeliveryJoinDetail, Relation,
+    PostconditionDeliveryJoinDetail, RangeSeparationOrdering, Relation,
 };
 #[cfg(test)]
 pub(crate) use term::{
@@ -187,6 +187,10 @@ pub(crate) struct EntailmentContext<'check> {
     pub(crate) constant_ids: &'check HashMap<DeclarationId, CheckedConstantId>,
     pub(crate) nominals: &'check [CheckedNominal],
     pub(crate) elements: &'check [CheckedType],
+    /// Accepted instantiated FN-4 implications. Bound-call evidence refers
+    /// to these records by checked-program-private index and never imports a
+    /// query-local term, goal, or derivation identity.
+    pub(crate) contract_queries: &'check [super::model::CheckedContractQuery],
     /// Published earlier-component FN-9 declarations and proofs, indexed by
     /// concrete [`FunctionId`]. Same-component entries remain absent until
     /// the component's atomic publication boundary.
@@ -205,6 +209,13 @@ impl EntailmentContext<'_> {
     pub(crate) fn constant(&self, declaration: DeclarationId) -> Option<&CheckedConstant> {
         let id = self.constant_ids.get(&declaration)?;
         self.constants.get(id.0 as usize)
+    }
+
+    pub(crate) fn contract_query(
+        &self,
+        query: super::model::ContractQueryId,
+    ) -> Option<&super::model::CheckedContractQuery> {
+        self.contract_queries.get(query.0 as usize)
     }
 
     pub(crate) fn constant_declaration(
@@ -240,6 +251,20 @@ impl EntailmentContext<'_> {
             })
             .collect()
     }
+
+    pub(crate) fn verified_postcondition(
+        &self,
+        function: FunctionId,
+        relation_ordinal: u32,
+    ) -> Option<(&CheckedPostcondition, &FunctionPostconditionProof)> {
+        self.verified_postconditions(function)?
+            .into_iter()
+            .find(|(_, proof)| {
+                proof.summary.as_ref().is_some_and(|summary| {
+                    summary.function == function && summary.relation_ordinal == relation_ordinal
+                })
+            })
+    }
 }
 
 /// The [ENT-6] obligation family one outcome belongs to.
@@ -261,7 +286,7 @@ pub(crate) enum ObligationFamily {
     RangeFormation,
     /// Two range steps of a compared pair of paths must be disjoint, by the
     /// four non-strict orderings [OWN-7] submits under [ENT-6] [EFF-5].
-    RangeSeparation,
+    CallSeparation,
 }
 
 /// One exact single-binder affine image retained at a discharged OP-4 site.
@@ -923,37 +948,55 @@ pub(crate) struct VerifiedPostconditionSummary {
 
 /// Where one published relation comes from [CALL-6].
 ///
-/// [ENT-3.S13]'s population is every callee whose declared relation list is
-/// published data: a source `fn_decl` with a verified [FN-9] summary, and
-/// every kernel-domain row [BLK-0], whose relations are declaration data
-/// rather than a body's proved consequence. A record has no source node, so
-/// its provenance names the row and the relation's position in that row's own
-/// declared list, exactly as an [OP-1] diagnostic names its family.
+/// [ENT-3.S13]'s population is every source `fn_decl` whose declared relation
+/// list has a verified [FN-9] summary.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum RelationProvenance {
     Verified(VerifiedPostconditionSummary),
-    Kernel {
-        operation: u8,
-        relation_ordinal: u32,
+    /// One formal relation exported through a bound call. The isolated FN-4
+    /// query proves the implication; every non-hypothetical premise is named
+    /// by its independently verified actual FN-9 summary. No query-local DAG
+    /// identity crosses into the caller.
+    FormalBoundary {
+        query: super::model::ContractQueryId,
+        actual: FunctionId,
+        premises: Vec<VerifiedPostconditionSummary>,
     },
 }
 
 impl RelationProvenance {
-    /// The stable identity pair this provenance contributes to a derivation
-    /// node's structural key.
-    pub(crate) const fn identity(&self) -> [u32; 2] {
+    /// Stable checked-program identities this provenance contributes to
+    /// deterministic proof-choice ordering. The complete provenance remains
+    /// part of the derivation node's equality and hash identity. These are
+    /// external record identities, never caller- or query-local derivation IDs.
+    pub(crate) fn identity(&self) -> Vec<u32> {
         match self {
-            Self::Verified(summary) => [summary.function.0, summary.component],
-            Self::Kernel {
-                operation,
-                relation_ordinal,
-            } => [*operation as u32, *relation_ordinal],
+            Self::Verified(summary) => vec![0, summary.function.0, summary.component],
+            Self::FormalBoundary {
+                query,
+                actual,
+                premises,
+            } => {
+                let premise_count = u32::try_from(premises.len())
+                    .expect("formal-boundary premise count exceeds the u32 identity space");
+                let mut identity = vec![1, query.0, actual.0, premise_count];
+                for premise in premises {
+                    identity.extend([
+                        premise.function.0,
+                        premise.relation_ordinal,
+                        premise.component,
+                    ]);
+                }
+                identity
+            }
         }
     }
 }
 
-/// Caller-local reference to an earlier-component verified
-/// summary. It intentionally carries no callee-local [`DerivationId`].
+/// Caller-local reference to one authorized S12 publication. Direct
+/// provenance names an earlier-component verified summary; formal-boundary
+/// provenance additionally names the retained FN-4 query and its verified
+/// actual premises. It carries no callee- or query-local [`DerivationId`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct VerifiedPostconditionSummaryRef {
     pub(crate) summary: RelationProvenance,
@@ -1022,7 +1065,9 @@ pub(crate) struct CallGoalOutcome {
     /// Exact source `call` occurrence.
     pub(crate) node_path: NodePath,
     pub(crate) callee: FunctionId,
-    /// Exact `requires_clause` occurrence in the concrete callee.
+    /// Exact authoritative `requires_clause` occurrence: the concrete
+    /// callee for a direct call and the instantiated formal for a bound call
+    /// [FN-5].
     pub(crate) requires_clause: NodePath,
     pub(crate) goal: ConcreteGoal,
     /// The same goal in the terms the source wrote it in, rendered here
@@ -1042,6 +1087,17 @@ pub(crate) struct CallGoalOutcome {
     pub(crate) evidence: Vec<CallGoalEvidence>,
     /// One exact positive or contradiction root for a discharged call.
     /// Refuted and unproved calls carry none.
+    pub(crate) derivation: Option<DerivationId>,
+}
+
+/// One retained declaration-only [FN-4] implication result. Its enclosing
+/// [`FunctionEntailment`] is an isolated proof namespace, not a source
+/// function summary and not a premise published to either callable body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ContractGoalOutcome {
+    pub(crate) goal: ConcreteGoal,
+    pub(crate) disposition: CallGoalDisposition,
+    pub(crate) evidence: Vec<CallGoalEvidence>,
     pub(crate) derivation: Option<DerivationId>,
 }
 
@@ -1065,6 +1121,10 @@ pub(crate) struct FunctionEntailment {
     pub(crate) obligations: Vec<ObligationOutcome>,
     /// Ordinary call-goal judgments in deterministic checked-tree walk order.
     pub(crate) call_goals: Vec<CallGoalOutcome>,
+    /// Declaration-only FN-4 queries. Ordinary function summaries leave this
+    /// empty; each retained contract query owns one isolated summary with one
+    /// entry here.
+    pub(crate) contract_goals: Vec<ContractGoalOutcome>,
     /// One complete five-relation/eight-atomic S11 group per counted
     /// statement, in deterministic statement-walk order.
     pub(crate) counted_derivations: Vec<CountedDerivationSet>,
@@ -1083,6 +1143,10 @@ pub(crate) struct FunctionEntailment {
     /// O11 candidate decomposition sets recorded at the signed-goal
     /// establishments; never an acceptance input in this version.
     pub(crate) boolean_decompositions: Vec<BooleanGoalDecomposition>,
+    /// Optional [PAR-1] range-separation proofs, keyed by the exact ordered
+    /// statement pair and captured ranges whose first-point state proved
+    /// them. Absence or an undischarged entry retains sequential lowering.
+    pub(crate) permission_separations: Vec<super::permission::PermissionSeparationProof>,
     /// Function-local, lifetime-bound derivations for mandatory DIAG-2 roots.
     pub(crate) derivations: DerivationLedger,
     /// Canonical term and goal identities moved from the analyzer so every
@@ -1109,6 +1173,19 @@ pub(crate) fn analyze_function_candidate(
     context: &EntailmentContext<'_>,
 ) -> FunctionEntailment {
     flow::analyze_candidate(function, context)
+}
+
+/// Checks one [FN-4] contract implication in a declaration-only proof
+/// context. The supplied function carries only alpha-renamed contract
+/// variables and the hypothetical premise set; [`flow`] submits both the
+/// premises and goal through the ordinary S4/AUTO path. The caller finalizes
+/// the returned ledger only after the query discharges.
+pub(crate) fn contract_implies(
+    function: &CheckedFunction,
+    context: &EntailmentContext<'_>,
+    goal: &super::goal::GoalExpression,
+) -> FunctionEntailment {
+    flow::contract_implies(function, context, goal)
 }
 
 /// Performs the sole root retention and dense-ID remap for one accepted
@@ -1288,7 +1365,6 @@ pub(super) fn collect_statement_calls(
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
-            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. } => {
@@ -1297,34 +1373,7 @@ pub(super) fn collect_statement_calls(
             CheckedStatement::PropagateLet { scrutinee, .. } => {
                 collect_expression_calls(caller, scrutinee, calls);
             }
-            CheckedStatement::SetList {
-                targets, values, ..
-            } => {
-                for target in targets {
-                    match target {
-                        CheckedSetTarget::Place(_) => {}
-                        CheckedSetTarget::ArrayIndex(target) => {
-                            collect_expression_calls(caller, &target.offset, calls);
-                        }
-                        CheckedSetTarget::BufferIndex(target) => {
-                            collect_expression_calls(caller, &target.offset, calls);
-                        }
-                        CheckedSetTarget::RangeIndex(target) => {
-                            collect_expression_calls(caller, &target.offset, calls);
-                        }
-                        CheckedSetTarget::Storage(target) => {
-                            for offset in target.offsets() {
-                                collect_expression_calls(caller, offset, calls);
-                            }
-                        }
-                    }
-                }
-                for value in values.expressions() {
-                    collect_expression_calls(caller, value, calls);
-                }
-            }
-            CheckedStatement::Set { target, value, .. }
-            | CheckedStatement::Replace { target, value, .. } => {
+            CheckedStatement::Set { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
                     CheckedSetTarget::ArrayIndex(target) => {
@@ -1334,7 +1383,9 @@ pub(super) fn collect_statement_calls(
                         collect_expression_calls(caller, &target.offset, calls);
                     }
                     CheckedSetTarget::RangeIndex(target) => {
-                        collect_expression_calls(caller, &target.offset, calls);
+                        for offset in target.offsets() {
+                            collect_expression_calls(caller, offset, calls);
+                        }
                     }
                     CheckedSetTarget::Storage(target) => {
                         for offset in target.offsets() {
@@ -1355,7 +1406,7 @@ pub(super) fn collect_statement_calls(
                     collect_statement_calls(caller, &arm.body, calls);
                 }
             }
-            CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+            CheckedStatement::Loop { body, .. } => {
                 collect_statement_calls(caller, body, calls);
             }
             CheckedStatement::CountedRange {

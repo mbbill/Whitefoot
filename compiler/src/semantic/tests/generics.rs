@@ -1457,3 +1457,62 @@ fn rebuild(values: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure {
         );
     });
 }
+
+/// The constructor's S12 result relation and a header invariant must name
+/// the same boxed content descriptor, including in the symbolic instance.
+#[test]
+fn a_generic_boxed_window_constructor_establishes_its_loop_preheader() {
+    let source = br#"fn build<T: Int>(count: own u64, value: own T) -> result: own Box<Slots<T>> pure contract {
+  requires count <= 4_u64;
+  ensures result.inner.len >= count;
+} {
+  let built = box_slots_new::<T>(capacity: count);
+  for (
+    at in 0_u64..count,
+    invariant grown: built.inner.len >= at,
+    invariant bounded: built.inner.len <= at,
+    invariant spare: built.inner.cap - built.inner.len + at >= count
+  ) {
+    place_back(window: &built.inner, value: value);
+  }
+  return move built;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let built = build::<u8>(count: 4_u64, value: 7_u8);
+  return exit_status(code: 0_u8);
+}
+"#;
+    // The ordinary path checks the symbolic body as well as the concrete
+    // instance; the dark hook below exposes only the latter's retained proof.
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    super::with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("boxed window source must form: {outcome:?}");
+        };
+        let functions = checked
+            .data
+            .functions
+            .iter()
+            .filter(|function| function.name == "build")
+            .collect::<Vec<_>>();
+        assert!(!functions.is_empty());
+        for function in functions {
+            assert_eq!(function.entailment.loop_invariants.len(), 3);
+            assert!(
+                function
+                    .entailment
+                    .loop_invariants
+                    .iter()
+                    .all(|invariant| invariant.proof.base && invariant.proof.step == Some(true)),
+                "constructor and invariant descriptor identities must agree: {:?}",
+                function.entailment
+            );
+        }
+    });
+}

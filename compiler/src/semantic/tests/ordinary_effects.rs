@@ -28,6 +28,33 @@ fn memory_reclamation_contributes_no_release_row() {
     );
 }
 
+#[test]
+fn an_effect_repair_keeps_box_contents_and_nested_field_names() {
+    assert_rule_kind(
+        br#"struct Inner {
+  len: u64;
+}
+
+struct Outer {
+  next: Inner;
+}
+
+fn read_nested(cell: &Box<Outer>) -> result: own u64 pure {
+  return deref(cell).inner.next.len;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Eff2,
+        |kind| {
+            matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+                if missing == &["reads(cell.inner.next.len)"])
+        },
+    );
+}
+
 /// [WIN-3, OP-14] a linear window has no compiler-derived release at all,
 /// proved empty or not.
 ///

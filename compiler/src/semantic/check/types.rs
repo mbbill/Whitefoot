@@ -50,11 +50,27 @@ const EFF1_REPEATED_PATH: &str =
 const EFF1_REPEATED_PATH_FIX: &str = "delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path";
 const EFF1_NON_PARAMETER_ROOT: &str = "every effect path is rooted at one formal value parameter of the same callable, and this root is not one";
 const EFF1_NON_PARAMETER_ROOT_FIX: &str = "root the path at a parameter of this function; a local, a result binder, a region, and an unrelated declaration are never effect roots";
-const EFF1_FIELD_OF_NON_STRUCT: &str = "each effect-path suffix selects one statically known field of a source struct, and this prefix is not a source struct";
-const EFF1_FIELD_OF_NON_STRUCT_FIX: &str = "name the parameter itself, which names the complete state it supplies; an enum payload, a subscript, and a `deref` spelling are outside the effect-path grammar";
-const EFF1_UNKNOWN_FIELD: &str = "an effect-path suffix names a field the struct does not declare";
+const EFF1_FIELD_OF_NON_STRUCT: &str = "each effect-path suffix must select a field, payload, measure, window part, or indexed position admitted by its prefix type";
+const EFF1_FIELD_OF_NON_STRUCT_FIX: &str = "select a member or position admitted by the prefix type, or name the reference parameter's complete state; use .inner for Box contents";
+const EFF1_UNKNOWN_FIELD: &str =
+    "an effect-path suffix names a member its selected type does not declare";
 const EFF1_UNKNOWN_FIELD_FIX: &str =
-    "name a declared field of that struct, or the parameter itself";
+    "name a declared member of that type, or the reference parameter itself";
+
+/// The kind selected at one point in an effect path.
+///
+/// A range reference carries its element type in [`ParameterSignature::ty`],
+/// so that type alone cannot distinguish the range's own `len` from a field
+/// or measure of its element. Keep the distinction through the row walk and
+/// discard it exactly when an index selects one element.
+#[derive(Clone, Copy)]
+pub(super) enum SelectedPlaceType {
+    Value(CheckedType),
+    Range(CheckedType),
+    /// A symbolic PRE-1 window part whose element type awaits its operand.
+    /// It carries a path identity but admits no further typed projection.
+    UnresolvedWindowElement,
+}
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// [TYPE-9] a runtime-capacity shape may appear only as the content of a
@@ -680,41 +696,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// One `effect_path := epbase epsuffix*` [EFF-1], with the type its last
     /// step selects.
     ///
-    /// `epbase := IDENT | "deref" "(" effect_path ")"`, so a `deref` base
-    /// reaches this function again and appends its own step to the path the
-    /// inner base built.
+    /// `epbase := IDENT` names the reference parameter's selected storage;
+    /// the row has no source `deref` wrapper.
     fn effect_path(
         &self,
         effect: NodeId,
         path_node: NodeId,
         parameters: &[ParameterSignature],
-    ) -> Result<(CheckedStatePath, CheckedType), CheckStop> {
+    ) -> Result<(CheckedStatePath, SelectedPlaceType), CheckStop> {
         let base = self
             .tree
             .first_child_with(path_node, Production::Epbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let (mut path, mut ty) =
-            if let Some(inner) = self.tree.first_child_with(base, Production::EffectPath)? {
-                let (mut path, ty) = self.effect_path(effect, inner, parameters)?;
-                path.steps.push(CheckedEffectStep::Deref);
-                // `deref` of a `Box` selects its content [TYPE-7]; `deref` of
-                // a reference parameter selects the referent that parameter's
-                // written type already names [REF-1].
-                let referent = match ty {
-                    CheckedType::Nominal(nominal) => match &self.nominal(nominal)?.kind {
-                        CheckedNominalKind::Box { referent, .. } => *referent,
-                        _ => ty,
-                    },
-                    _ => ty,
-                };
-                (path, referent)
-            } else {
-                self.effect_root(effect, base, parameters)?
-            };
+        let (mut path, mut ty) = self.effect_root(effect, base, parameters)?;
         for suffix in self.tree.children_with(path_node, Production::Epsuffix)? {
-            let (step, selected) = self.effect_step(effect, path_node, suffix, ty, parameters)?;
+            let (step, next) = self.effect_step(effect, path_node, suffix, ty, parameters)?;
             path.steps.push(step);
-            ty = selected;
+            ty = next;
         }
         Ok((path, ty))
     }
@@ -726,7 +724,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         effect: NodeId,
         base: NodeId,
         parameters: &[ParameterSignature],
-    ) -> Result<(CheckedStatePath, CheckedType), CheckStop> {
+    ) -> Result<(CheckedStatePath, SelectedPlaceType), CheckStop> {
         let origin = self.tree.path(base)?;
         let usage = self
             .resolved
@@ -766,7 +764,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 root: declaration,
                 steps: Vec::new(),
             },
-            parameter.ty,
+            if parameter.mode == CheckedMode::Range {
+                SelectedPlaceType::Range(parameter.ty)
+            } else {
+                SelectedPlaceType::Value(parameter.ty)
+            },
         ))
     }
 
@@ -774,19 +776,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [EFF-1], with the type it selects.
     ///
     /// A one-name `.IDENT` suffix is a struct field, a measure, or a window
-    /// part [TYPE-10, WIN-2]: the eight measure and part spellings occupy no
-    /// declaration domain and are reserved from field names [FORM-3], so the
-    /// spelling decides which without ambiguity.
+    /// part [TYPE-10, WIN-2]. The spelling reserves nothing: the type selected
+    /// by the preceding path decides whether the measure/part vocabulary
+    /// applies, and every other type takes the ordinary field walk.
     fn effect_step(
         &self,
         effect: NodeId,
         path_node: NodeId,
         suffix: NodeId,
-        ty: CheckedType,
+        selected: SelectedPlaceType,
         parameters: &[ParameterSignature],
-    ) -> Result<(CheckedEffectStep, CheckedType), CheckStop> {
+    ) -> Result<(CheckedEffectStep, SelectedPlaceType), CheckStop> {
         if self.has_fixed(suffix, FixedTerminal::LeftBracket)? {
-            return self.effect_index_step(suffix, ty, parameters);
+            return self.effect_index_step(suffix, selected, parameters);
         }
         let origin = self.tree.path(suffix)?;
         let mut names = self
@@ -804,6 +806,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         match names.as_slice() {
             // `.TYPEID.IDENT`: one enum payload step [GRAM-5].
             [variant_use, field_use] => {
+                let SelectedPlaceType::Value(ty) = selected else {
+                    return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
+                };
                 let CheckedType::Nominal(nominal) = ty else {
                     return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
                 };
@@ -832,24 +837,65 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         field: u32::try_from(field_ordinal)
                             .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
                     },
-                    field.ty,
+                    SelectedPlaceType::Value(field.ty),
                 ))
             }
             [field_use] => {
                 let spelling = field_use.spelling();
-                if let Some(measure) = measure_named(spelling) {
+                // [OP-10] PRE-1's W/X parameters carry a window identity
+                // before an operand supplies their shape. Their declaration
+                // origin distinguishes them from an ordinary source generic
+                // with the same name; concrete rows are checked again below.
+                let symbolic_window = match selected {
+                    SelectedPlaceType::Value(CheckedType::Generic(declaration)) => {
+                        self.is_window_type_parameter(declaration)?
+                    }
+                    _ => false,
+                };
+                let selected_measure = match selected {
+                    SelectedPlaceType::Range(_) => {
+                        (spelling == "len").then_some(CheckedMeasure::Length)
+                    }
+                    SelectedPlaceType::Value(ty) => measure_named(spelling).filter(|measure| {
+                        (symbolic_window && *measure != CheckedMeasure::Head)
+                            || ty.measured().is_some_and(|measured| {
+                                !matches!(
+                                    measure.cell(measured),
+                                    super::super::model::MeasureCell::Absent
+                                )
+                            })
+                    }),
+                    SelectedPlaceType::UnresolvedWindowElement => None,
+                };
+                if let Some(measure) = selected_measure {
                     // A measure is a u64 pseudo-field of the measured place
-                    // and selects no storage below itself [MSR-1, TYPE-10].
+                    // and selects no storage below itself [MSR-1, TYPE-10]. A
+                    // missing row falls through: the same spelling may be an
+                    // ordinary field of another type.
                     return Ok((
                         CheckedEffectStep::Measure(measure),
-                        CheckedType::Integer(IntegerType::U64),
+                        SelectedPlaceType::Value(CheckedType::Integer(IntegerType::U64)),
                     ));
                 }
-                if let Some(part) = window_part_named(spelling) {
+                let SelectedPlaceType::Value(ty) = selected else {
+                    // A range has only its own `len`; its element's fields,
+                    // measures and parts require an intervening index.
+                    return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
+                };
+                if let Some(part) = window_part_named(spelling)
+                    && (symbolic_window || matches!(ty, CheckedType::Window { .. }))
+                {
                     // A window part names slots of the window it belongs to,
                     // so the selected type stays the element type [WIN-2].
                     let element = self.container_element_type(ty)?.unwrap_or(ty);
-                    return Ok((CheckedEffectStep::Part(part), element));
+                    return Ok((
+                        CheckedEffectStep::Part(part),
+                        if symbolic_window {
+                            SelectedPlaceType::UnresolvedWindowElement
+                        } else {
+                            SelectedPlaceType::Value(element)
+                        },
+                    ));
                 }
                 let CheckedType::Nominal(nominal) = ty else {
                     return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
@@ -863,7 +909,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     if spelling != "inner" {
                         return self.invalid_effect_row(path_node, EFF1_UNKNOWN_FIELD);
                     }
-                    return Ok((CheckedEffectStep::Deref, referent));
+                    return Ok((CheckedEffectStep::Deref, SelectedPlaceType::Value(referent)));
                 }
                 let CheckedNominalKind::Struct { fields } = &self.nominal(nominal)?.kind else {
                     return self.invalid_effect_row(path_node, EFF1_FIELD_OF_NON_STRUCT);
@@ -880,7 +926,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         u32::try_from(ordinal)
                             .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
                     ),
-                    field.ty,
+                    SelectedPlaceType::Value(field.ty),
                 ))
             }
             _ => {
@@ -897,9 +943,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn effect_index_step(
         &self,
         suffix: NodeId,
-        ty: CheckedType,
+        selected: SelectedPlaceType,
         parameters: &[ParameterSignature],
-    ) -> Result<(CheckedEffectStep, CheckedType), CheckStop> {
+    ) -> Result<(CheckedEffectStep, SelectedPlaceType), CheckStop> {
         let origin = self.tree.path(suffix)?;
         let range = self.tree.first_child_with(suffix, Production::Erange)?;
         let range_origin = range.map(|node| self.tree.path(node)).transpose()?;
@@ -938,9 +984,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             endpoints.push(declaration);
         }
-        let element = self.container_element_type(ty)?.unwrap_or(ty);
+        let element = match selected {
+            // An index into a range selects the range's element itself. It
+            // must not project through that element again when T is Array or
+            // another container.
+            SelectedPlaceType::Range(element) => element,
+            SelectedPlaceType::Value(ty) => self.container_element_type(ty)?.unwrap_or(ty),
+            SelectedPlaceType::UnresolvedWindowElement => {
+                return self.invalid_effect_row(suffix, EFF1_FIELD_OF_NON_STRUCT);
+            }
+        };
         match endpoints.as_slice() {
-            [index] => Ok((CheckedEffectStep::Index(*index), element)),
+            [index] => Ok((
+                CheckedEffectStep::Index(*index),
+                SelectedPlaceType::Value(element),
+            )),
             // A range position names a run of elements [REF-4], so every step
             // below it is relative to that run and reads the element type.
             [start, end] => Ok((
@@ -948,7 +1006,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     start: *start,
                     end: *end,
                 },
-                element,
+                SelectedPlaceType::Range(element),
             )),
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
@@ -1552,13 +1610,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(Some(element));
         }
         Ok(match ty {
-            CheckedType::Nominal(id) => match self.nominal(id)?.kind {
-                // An arena is region-bearing [STOR-5] and the region
-                // allocation list is compiler-owned; neither is an element.
-                super::super::model::CheckedNominalKind::Arena { .. }
-                | super::super::model::CheckedNominalKind::ArenaStorage => None,
-                _ => Some(CheckedFlatElement::Nominal(id)),
-            },
+            CheckedType::Nominal(id) => Some(CheckedFlatElement::Nominal(id)),
             // [FN-2] the one source-canonical symbolic instance of a generic
             // record carries its unsubstituted element; every concrete
             // instance re-reads this position with its own substitution, so
@@ -1669,11 +1721,9 @@ fn parse_integer(bytes: &[u8]) -> Option<CheckedValue> {
     Some(CheckedValue::Integer { ty, bits })
 }
 
-/// The measure one `.IDENT` spelling names [MSR-1, TYPE-10], or `None` when
-/// the spelling is an ordinary field name.
-///
-/// [FORM-3] reserves these four spellings from every field, parameter, binder
-/// and result binding, so the spelling decides this without a type.
+/// The measure-vocabulary candidate for one `.IDENT` spelling [MSR-1,
+/// TYPE-10]. A consumer still checks the type the suffix follows: these names
+/// reserve nothing and remain ordinary fields of types with no matching row.
 pub(super) fn measure_named(spelling: &str) -> Option<CheckedMeasure> {
     match spelling {
         "len" => Some(CheckedMeasure::Length),
@@ -1683,8 +1733,8 @@ pub(super) fn measure_named(spelling: &str) -> Option<CheckedMeasure> {
     }
 }
 
-/// The window part one `.IDENT` spelling names [WIN-2, TYPE-10], or `None`
-/// when the spelling is an ordinary field name.
+/// The window-part-vocabulary candidate for one `.IDENT` spelling [WIN-2,
+/// TYPE-10]. A consumer still checks that the suffix follows a window.
 pub(super) fn window_part_named(spelling: &str) -> Option<WindowPart> {
     match spelling {
         "next" => Some(WindowPart::Next),

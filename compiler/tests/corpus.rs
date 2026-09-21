@@ -16,7 +16,6 @@ mod conformance {
 mod programs {
     #[cfg(unix)]
     mod binary;
-    #[cfg(unix)]
     mod containers;
     #[cfg(unix)]
     mod hashing;

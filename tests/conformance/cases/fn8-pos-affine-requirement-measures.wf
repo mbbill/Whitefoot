@@ -1,9 +1,9 @@
-fn fill(first: &[u64], second: &[u64], output: &[u64]) -> result: own u64 writes(output) contract {
+fn fill(first: &[u64], second: &[u64], output: &[u64]) -> result: own u64 reads(first.len), reads(second.len), writes(output) contract {
   requires deref(first).len <= 16_u64;
   requires deref(second).len <= 16_u64;
   requires deref(first).len + deref(second).len <= deref(output).len;
 } {
-  doc "Two length observations are read as place forms rather than calls [OP-15], so the affine requirement constrains their images directly; their sum bounds the one write into the caller-provided output. A measure read carries the empty effect row, so only the write appears in the row.";
+  doc "Two length observations are read as place forms rather than calls [OP-15], so the affine requirement constrains their images directly; their sum bounds the one write into the caller-provided output. The whole-output write subsumes its descriptor read [EFF-1], while the two input measure reads remain explicit.";
   let a = deref(first).len;
   let b = deref(second).len;
   let capacity = deref(output).len;

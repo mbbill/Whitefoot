@@ -34,10 +34,8 @@ its previous form with the requested change rather than judging only against
 the newly edited rule.
 
 Put a compact report in the existing PR, or the task reply when there is no PR.
-Also check the conversation handoff required by `design/skill/SKILL.md`:
-the reply explains each outstanding amendment and presents the DCR results
-with the primary agent's assessment. Publishing the report in the PR does
-not replace that explanation to the owner.
+Also check the conversation handoff required by `design/skill/SKILL.md`.
+Publishing the report in the PR does not replace that handoff to the owner.
 Use the [PR template](../.github/pull_request_template.md)'s three bullets:
 
 - **Scope:** reviewer/model, base and head, checked groups and any skipped
@@ -166,6 +164,10 @@ Source: [compiler rules](../AGENTS.md#compiler-rules) and
   relevant evidence is supplied when those paths change. If a semantic safety
   question cannot be settled by local inspection and cases, flag it for deeper
   review rather than certifying soundness.
+- [ ] **C5 — Architectural fit.** Apply the design skill's
+  [G3](../design/skill/SKILL.md#design-checks) to structural choices. Check that
+  assessment occurred when making or revising the choice and was explained
+  to the owner, rather than supplied retrospectively at completion.
 
 ## T. Specification and checks — changed language rules, design premises, tests or gate wiring
 
@@ -247,40 +249,20 @@ inapplicable.
   rules, cited sources, or evidence meeting a reopening condition, use the diff
   and direct references to check the named affected set. The explanation says
   which choices still stand, stand on different grounds, or need replacement.
-  Their current owners agree with the design tree or the explicitly recorded
-  pending amendments that revise it. Remaining questions have a concrete
-  source; a log entry does not supersede contradictory standing guidance.
+  Their current owners agree with the design record maintained under the
+  design skill. Remaining questions have a concrete source; a log entry does
+  not supersede contradictory standing guidance.
   Do not require an unrelated project-wide sweep.
 - [ ] **R4 — Maintained tree.** Added, changed, or retired rules and changed
-  grounds have corresponding design-tree updates under M1 to M3, and the
+  grounds have corresponding design records under the design skill, and the
   sources a decision cites resolve and support the stated scope. A log entry
   or a lint success is not proof that a cited argument is true.
 
-## M. Design tree — changed decisions or tree nodes
+## M. Design review
 
-Use `design/skill/SKILL.md`; this section does not replace it.
-
-- [ ] **M1 — Design, tree, and amendments.** The design and proposed tree
-  revision explain the choices and their differences from the current tree.
-  The owner-facing reply explains each outstanding amendment as the skill's
-  Workflow section requires.
-  Every live-tree change follows the owner's approval of that revision,
-  whenever it occurs during the work, and has a concise traceability log.
-  Decisions the agent makes on its own remain amendments under
-  `design/amendments/`; none is only in code, and a refused one leaves its
-  log entry. Design and implementation can evolve together without separate
-  phases or submissions.
-- [ ] **M2 — DCR.** Design Correspondence Review applies the procedure's
-  design checks to changed decisions and its correspondence checks in both
-  directions across the agreed delivery scope. Include relevant existing
-  commitments and pending revisions, not just changed tree nodes. Check for
-  missing or partial implementation as well as unrecorded or contradictory
-  choices. The owner receives the results and primary agent's assessment
-  in the conversation before any action on findings, as the skill's DCR
-  handoff requires. Pending rulings remain explicit; an amendment
-  alone does not establish correctness. Ongoing discussion needs neither a
-  finished implementation nor a separate completion review.
-- [ ] **M3 — Form.** `make design-lint` passes on the head revision.
+- [ ] **M1 — Design procedure.** Apply `design/skill/SKILL.md` to the reviewed
+  scope, including its DCR, structural validation and owner handoff. That skill
+  owns the procedure; include its actual results in this completion review.
 
 ## V. Validation and handoff — every change
 
@@ -316,4 +298,4 @@ references; `make -C compiler format lint` and the
 code. `make static` does not check document purpose or all links, and compiler
 `docs` builds Rust API documentation, not this prose checklist. The root
 [Makefile](../Makefile) owns the full gate inventory; the design-tree checks
-follow `design/skill/SKILL.md` and are covered by M1-M3.
+follow `design/skill/SKILL.md` and are covered by M1.

@@ -1,11 +1,10 @@
 # Specification amendment map: candidate x1 into the next kernel specification
 
-Basis. Candidate x1 is `research/investigations/access-effects/CANDIDATE-X1.md` (revision 5,
+Basis. This historical pre-port map uses `research/investigations/access-effects/CANDIDATE-X1.md` (revision 5,
 Rules 1-16, plus the "Not in this candidate" list, which this map treats as deciding deletions
-exactly as a numbered rule does). The active specification read is
-`/private/tmp/whitefoot-spec-x1/spec/kernel-spec.md`, 3599 lines. Nothing in that worktree was
-modified. Fourteen section maps sit beside this file in the same directory, one per specification
-range, and 32 drafted design amendments sit in `amendments/`.
+exactly as a numbered rule does). The specification snapshot examined had 3599 lines.
+Fourteen section maps sit beside this file, one per specification range. The 32 amendment
+filenames below identify the proposals at that time, not outstanding revisions of the live tree.
 
 How to read the counts. A "rule entry" is one row of a section map: a long rule such as `[FORM-2]`
 or `[DIAG-1]` is counted once as a whole and again per clause where its clauses have different
@@ -219,7 +218,7 @@ readers disagreed or gave none, the row says so.
 
 ## 5. Design amendments drafted
 
-Thirty-two files in `amendments/`, one per node.
+The mapping produced thirty-two temporary proposal files, one per node.
 
 | File | Node | What changes |
 |---|---|---|

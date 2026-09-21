@@ -62,6 +62,17 @@ Use `take_back`, `remove_at`, `insert_at`, `append`, `split_off`, `grow`,
 `place_front`, and `take_front` for their declared transformations [OP-10]. A
 source subscript always owes `index < run.len` [OP-4].
 
+Growth policy can be ordinary source. The maintained
+[grow-vector example](../tests/programs/containers/grow-vector.wf) wraps
+`Box<Slots<T>>` in `GrowVector<T, const ceiling: u64>`. The selected ceiling
+supplies each concrete growth call's OP-9 bound; the policy doubles capacity
+while it fits and otherwise saturates at that ceiling. A zero ceiling admits
+an empty vector but no append. Reference-parameter contracts publish each
+operation's length and capacity relationships. FN-9 does not publish the
+constructor's measure through its aggregate result field. Its caller first
+establishes that nested measure through ordinary control flow, as the
+[program](../tests/programs/containers/grow-vector-program.wf) shows.
+
 ## P3. Reach heap content through `Box.inner`
 
 `Box<T>` owns one heap cell. Its content is the ordinary field `inner`;
@@ -230,8 +241,8 @@ The member's full modes, types, effects, requirements, and postconditions are
 the generic caller's boundary. A binding may refine that boundary only as
 [FN-4] permits. Calls retain their ordinary syntax; `interface` and `binding`
 replace the retired group-declaration keywords, not the call form. See
-[vector.wf](../lib/containers/vector.wf) and
-[vector_program.wf](../lib/containers/tests/vector_program.wf) for a behavior
+[grow-vector.wf](../tests/programs/containers/grow-vector.wf) and
+[grow-vector-program.wf](../tests/programs/containers/grow-vector-program.wf) for a behavior
 that consumes owned elements while updating an environment.
 
 ## P8. State maintained arithmetic at its boundary

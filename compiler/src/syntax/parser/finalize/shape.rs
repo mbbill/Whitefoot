@@ -222,8 +222,8 @@ fn verify(
     .map_err(|_| FinalizeCompilerFailure::CounterOverflow)?;
     let mut child_cursor = 0_usize;
     tasks.clear();
-    // One [PRE-1] record is `fn_sig` with a generic header the production
-    // itself has no node for; see `grammar::prelude_signature_children`.
+    // A [PRE-1] declaration head uses an internal `fn_sig` node with the
+    // `fn_decl` header; see `grammar::prelude_signature_children`.
     if prelude_signature {
         let spliced = crate::syntax::grammar::prelude_signature_children()
             .ok_or(FinalizeCompilerFailure::InvalidGrammarData)?;

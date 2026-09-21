@@ -4,7 +4,6 @@
 //! check, emits no overflow or alias promises, initializes complete aggregate
 //! representations, and keeps a defensive abort edge for enum discriminants.
 
-mod arena;
 mod array;
 mod boxes;
 mod buffer;
@@ -26,18 +25,17 @@ use std::fmt::Write;
 
 use super::abi::FunctionAbi;
 pub use super::runtime::*;
-use super::storage::{FunctionStoragePlan, operation_operands};
+use super::storage::{FunctionStoragePlan, is_stored_aggregate, operation_operands};
 use super::target::{
     TargetAggregateLayout, TargetFramePlan, TargetFrameSlot, TargetLayout, TargetLayoutFailure,
     TargetStorageType, parallel_lane_frame_layout, plan_target_frame, validate_program,
     validate_static_storage,
 };
 use crate::{
-    IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop,
-    IrDropSubject, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction,
-    IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind, IrOperation,
-    IrOverlap, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator,
-    IrType, IrValueId, IrWindowShape,
+    IrAddressed, IrAllocationObligations, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation,
+    IrConstant, IrDrop, IrDropSubject, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue,
+    IrInstruction, IrIntegerOperation, IrNominal, IrNominalId, IrNominalKind, IrOperation,
+    IrOverlap, IrProgram, IrTargetDomainObligation, IrTerminator, IrType, IrValueId, IrWindowShape,
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
@@ -247,19 +245,12 @@ pub(super) fn emit_llvm_with_layout(
             .any(|block| matches!(block.terminator(), IrTerminator::Match { .. }))
     });
     let drop_helpers = emit_resource_drop_helpers(program, target)?;
-    let has_arena_storage = program
-        .nominals()
-        .iter()
-        .any(|nominal| matches!(nominal.kind(), IrNominalKind::ArenaStorage));
     let has_heap_storage = !drop_helpers.is_empty()
-        || has_arena_storage
         || program.functions().iter().any(IrFunction::contains_buffer)
-        || program.nominals().iter().any(|nominal| {
-            matches!(
-                nominal.kind(),
-                IrNominalKind::Box { .. } | IrNominalKind::Arena { .. }
-            )
-        });
+        || program
+            .nominals()
+            .iter()
+            .any(|nominal| matches!(nominal.kind(), IrNominalKind::Box { .. }));
     let heap_record_type = TargetStorageType::bytes(
         u64::try_from(HEAP_RECORD.len()).map_err(|_| BackendFailure::CounterOverflow)?,
     );
@@ -339,10 +330,6 @@ pub(super) fn emit_llvm_with_layout(
             HEAP_RECORD.len()
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-    }
-    if has_arena_storage {
-        text.push('\n');
-        text.push_str(arena::ARENA_RELEASE_HELPER);
     }
     text.push_str(&drop_helpers);
     for intrinsic in intrinsics {
@@ -709,10 +696,7 @@ fn emit_nominal_declarations(
         if nominal.is_tag_only_enum()
             || matches!(
                 nominal.kind(),
-                IrNominalKind::Box { .. }
-                    | IrNominalKind::Arena { .. }
-                    | IrNominalKind::ArenaStorage
-                    | IrNominalKind::Opaque
+                IrNominalKind::Box { .. } | IrNominalKind::Opaque
             )
         {
             continue;
@@ -738,10 +722,7 @@ fn emit_nominal_declarations(
                     }
                 }
             }
-            IrNominalKind::Box { .. }
-            | IrNominalKind::Arena { .. }
-            | IrNominalKind::ArenaStorage
-            | IrNominalKind::Opaque => {
+            IrNominalKind::Box { .. } | IrNominalKind::Opaque => {
                 return Err(BackendFailure::InvalidIr);
             }
         }
@@ -796,7 +777,6 @@ enum FunctionSlot {
     OwnedValue(usize),
     ArrayFillIndex(IrValueId),
     Address(IrValueId),
-    ArenaList(IrValueId),
 }
 
 struct PlannedFunctionSlot {
@@ -872,13 +852,6 @@ impl FunctionFramePlan {
                         let key = FunctionSlot::Address(*result);
                         push_function_slot(&mut specifications, &mut ordered, key, storage, None)?;
                     }
-                    IrOperation::ArenaListNew => push_function_slot(
-                        &mut specifications,
-                        &mut ordered,
-                        FunctionSlot::ArenaList(*result),
-                        TargetStorageType::pointer(),
-                        None,
-                    )?,
                     _ => {}
                 }
             }
@@ -888,9 +861,7 @@ impl FunctionFramePlan {
         let mut slots = HashMap::with_capacity(ordered.len());
         for (logical_index, key) in ordered.iter().copied().enumerate() {
             let pointer = match key {
-                FunctionSlot::Address(result) | FunctionSlot::ArenaList(result) => {
-                    value_name(result)
-                }
+                FunctionSlot::Address(result) => value_name(result),
                 _ => format!("%wf.slot.{logical_index}"),
             };
             if slots
@@ -1540,19 +1511,24 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrInstruction::StoreBuffer {
                 buffer,
                 index,
-                value,
+                value: _,
             } => {
-                self.materialize_operands([*buffer, *index, *value])?;
+                self.materialize_operands([*buffer, *index])?;
             }
             IrInstruction::StoreSlice {
                 slice,
                 index,
-                value,
+                value: _,
             } => {
-                self.materialize_operands([*slice, *index, *value])?;
+                self.materialize_operands([*slice, *index])?;
             }
-            IrInstruction::Store { address, value, .. } => {
-                self.materialize_operands([*address, *value])?;
+            IrInstruction::Store { address, .. } => {
+                // A stored aggregate is transferred from its backing below.
+                // Loading it into SSA first lets SROA expand a large array
+                // into one load/store pair per element before the copy site
+                // can be recovered. Scalar and descriptor values have no
+                // backing slot and continue through their ordinary operand.
+                self.materialize_operands([*address])?;
             }
             IrInstruction::Drops(_) => {}
             IrInstruction::Define { .. } => {}
@@ -1623,7 +1599,20 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if self.emit_place_definition(result, ty, operation)? {
             return Ok(());
         }
-        self.materialize_operands(operation_operands(operation))?;
+        match operation {
+            // These operations transfer their payload from storage when its
+            // representation is stored. Materializing that payload as an SSA
+            // aggregate first lets SROA scalarize large arrays before the
+            // typed storage copy can be emitted.
+            IrOperation::BoxNew { .. } => {}
+            IrOperation::BufferFill { length, .. } => {
+                self.materialize_operands([*length])?;
+            }
+            IrOperation::RunInsert { run, index, .. } => {
+                self.materialize_operands([*run, *index])?;
+            }
+            _ => self.materialize_operands(operation_operands(operation))?,
+        }
         self.emit_value_definition(result, ty, operation)?;
         if !self.overlap_handed_out.contains(&result) {
             self.save_value_result(result)?;
@@ -1728,26 +1717,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 *nominal,
                 *length,
                 *value,
-                *layout_ceiling,
-                *target_domains,
+                IrAllocationObligations {
+                    layout_ceiling: *layout_ceiling,
+                    target_domains: *target_domains,
+                },
             ),
-            IrOperation::BufferVacant {
-                nominal,
-                length,
-                layout_ceiling,
-                target_domains,
-            } => self.emit_buffer_vacant(
-                result,
-                ty,
-                *nominal,
-                *length,
-                *layout_ceiling,
-                *target_domains,
-            ),
-            IrOperation::BufferFits {
-                length,
-                maximum_length,
-            } => self.emit_buffer_fits(result, ty, *length, *maximum_length),
             IrOperation::BufferMeasure { buffer } => self.emit_buffer_length(result, ty, *buffer),
             IrOperation::Window => self.emit_fixed_vector(result, ty),
             IrOperation::ContainerMeasure { measure, container } => {
@@ -1798,7 +1772,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 limit,
                 needles,
             } => self.emit_buffer_probe_skip(result, ty, *buffer, *index, *limit, needles),
-            IrOperation::SliceFromArray { array } => self.emit_slice_from_array(result, ty, *array),
             IrOperation::SliceFromBuffer { buffer } => {
                 self.emit_slice_from_buffer(result, ty, *buffer)
             }
@@ -1812,6 +1785,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 offset,
                 target_domain,
             } => self.emit_slice_index(result, ty, *slice, *offset, *target_domain),
+            IrOperation::SliceAddress {
+                slice,
+                offset,
+                target_domain,
+            } => self.emit_slice_address(result, ty, *slice, *offset, *target_domain),
             IrOperation::BoxNew { nominal, value } => {
                 self.emit_box_new(result, ty, *nominal, *value)
             }
@@ -1821,14 +1799,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::BoxDeref { nominal, value } => {
                 self.emit_box_deref(result, ty, *nominal, *value)
             }
-            IrOperation::ArenaListNew => self.emit_arena_list_new(result, ty),
-            IrOperation::ArenaNew {
-                nominal,
-                list,
-                value,
-            } => self.emit_arena_new(result, ty, *nominal, *list, *value),
-            IrOperation::ArenaDeref { nominal, value } => {
-                self.emit_arena_deref(result, ty, *nominal, *value)
+            IrOperation::RuntimeBoxPayload { nominal, owner } => {
+                self.emit_runtime_box_payload(result, ty, *nominal, *owner)
+            }
+            IrOperation::RuntimeBoxOwner { nominal, payload } => {
+                self.emit_runtime_box_owner(result, ty, *nominal, *payload)
             }
             IrOperation::ConstructStruct { nominal, fields } => {
                 self.emit_struct(result, ty, *nominal, fields)
@@ -2069,8 +2044,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 match self.nominal(nominal)?.kind() {
                     // The checker supplied separate component records. The
                     // struct node must not recursively release them again.
-                    IrNominalKind::Struct { .. } | IrNominalKind::Arena { .. } => false,
-                    IrNominalKind::ArenaStorage => true,
+                    IrNominalKind::Struct { .. } => false,
                     IrNominalKind::Opaque => false,
                     IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } => {
                         type_requires_cleanup(self.program, drop.ty())?
@@ -2201,7 +2175,6 @@ fn llvm_storage_type(
 ) -> Result<String, BackendFailure> {
     match ty {
         TargetStorageType::Source(ty) => llvm_type(program, *ty),
-        TargetStorageType::Pointer => Ok("ptr".to_owned()),
         TargetStorageType::Integer(width) if matches!(width, 1 | 8 | 16 | 32 | 64) => {
             Ok(format!("i{width}"))
         }
@@ -2283,15 +2256,10 @@ pub(crate) fn llvm_type(
                 IrWindowShape::Ring => format!("{{ i64, i64, i64, [0 x {element}] }}"),
             })
         }
-        IrType::Address(_) => Ok("ptr".to_owned()),
+        IrType::Address(_) | IrType::RuntimeBoxPayload { .. } => Ok("ptr".to_owned()),
         IrType::Nominal(id) => {
             let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
-            if matches!(
-                nominal.kind(),
-                IrNominalKind::Box { .. }
-                    | IrNominalKind::Arena { .. }
-                    | IrNominalKind::ArenaStorage
-            ) {
+            if matches!(nominal.kind(), IrNominalKind::Box { .. }) {
                 return Ok("ptr".to_owned());
             }
             if matches!(nominal.kind(), IrNominalKind::Opaque) {
@@ -2412,7 +2380,6 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock, overlaps: &[IrOverlap]
 
 /// The label one ordinary instruction's own emission leaves the block at, for
 /// the operations whose lowering opens a further LLVM block.
-
 fn definition_exit_label(
     _block_id: IrBlockId,
     _index: usize,
@@ -2442,12 +2409,7 @@ fn definition_exit_label(
         } => *label = box_new_ready_label(*result),
         IrInstruction::Define {
             result,
-            operation: IrOperation::ArenaNew { .. },
-            ..
-        } => *label = arena_new_ready_label(*result),
-        IrInstruction::Define {
-            result,
-            operation: IrOperation::BufferFill { .. } | IrOperation::BufferVacant { .. },
+            operation: IrOperation::BufferFill { .. },
             ..
         } => *label = buffer_fill_done_label(*result),
         IrInstruction::Define {
@@ -2508,10 +2470,6 @@ fn integer_continue_label(value: IrValueId) -> String {
 
 fn box_new_ready_label(value: IrValueId) -> String {
     format!("box.new.ready.v{}", value.ordinal())
-}
-
-fn arena_new_ready_label(value: IrValueId) -> String {
-    format!("arena.new.ready.v{}", value.ordinal())
 }
 
 fn array_fill_head_label(value: IrValueId) -> String {

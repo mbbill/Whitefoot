@@ -253,15 +253,13 @@ impl IrBuilder<'_> {
     ) -> Result<crate::IrAllocationObligations, LoweringFailure> {
         let ceiling = layout_ceiling(self.nominals, self.elements, element)
             .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        let stride = match ceiling.stride {
-            crate::IrLayoutMagnitude::Finite(stride) => stride.max(1),
-            crate::IrLayoutMagnitude::AboveU64 => {
-                return Err(LoweringFailure::InvalidCheckedProgram);
-            }
+        let maximum_count = match ceiling.stride {
+            crate::IrLayoutMagnitude::Finite(stride) => u64::MAX / stride.max(1),
+            crate::IrLayoutMagnitude::AboveU64 => 0,
         };
         Ok(crate::IrAllocationObligations {
             layout_ceiling: ceiling,
-            target_domains: IrRuntimeTargetObligations::from_language_ceiling(u64::MAX / stride),
+            target_domains: IrRuntimeTargetObligations::from_language_ceiling(maximum_count),
         })
     }
 
@@ -534,11 +532,14 @@ pub(crate) fn layout_ceiling(
     elements: &[IrType],
     ty: IrType,
 ) -> Option<IrLayoutCeiling> {
-    let (size, align) = ceiling_pair(nominals, elements, ty, 0)?;
+    let (size, align) = ceiling_pair(nominals, elements, ty, &mut HashSet::new())?;
     Some(IrLayoutCeiling {
-        size: crate::IrLayoutMagnitude::Finite(size),
+        size,
         align,
-        stride: crate::IrLayoutMagnitude::Finite(size.max(1)),
+        stride: match size {
+            crate::IrLayoutMagnitude::Finite(0) => crate::IrLayoutMagnitude::Finite(1),
+            size => size,
+        },
     })
 }
 
@@ -547,31 +548,37 @@ fn ceiling_pair(
     nominals: &[IrNominal],
     elements: &[IrType],
     ty: IrType,
-    depth: u32,
-) -> Option<(u64, u64)> {
-    // The recursive-type rejection is the checker's; this bound only keeps a
-    // malformed table from looping.
-    if depth > 64 {
-        return None;
-    }
+    visiting: &mut HashSet<IrNominalId>,
+) -> Option<(crate::IrLayoutMagnitude, u64)> {
+    use crate::IrLayoutMagnitude::{AboveU64, Finite};
+
     Some(match ty {
-        IrType::Unit | IrType::Bool | IrType::Integer { width: 8, .. } => (1, 1),
-        IrType::Integer { width: 16, .. } => (2, 2),
-        IrType::Integer { width: 32, .. } | IrType::Float { width: 32 } => (4, 4),
-        IrType::Integer { width: 64, .. } | IrType::Float { width: 64 } => (8, 8),
+        IrType::Unit | IrType::Bool | IrType::Integer { width: 8, .. } => (Finite(1), 1),
+        IrType::Integer { width: 16, .. } => (Finite(2), 2),
+        IrType::Integer { width: 32, .. } | IrType::Float { width: 32 } => (Finite(4), 4),
+        IrType::Integer { width: 64, .. } | IrType::Float { width: 64 } => (Finite(8), 8),
         IrType::Integer { .. } | IrType::Float { .. } => return None,
         // A range reference is not a stored type [TYPE-8]; a runtime-capacity
         // `Array<T>` is a pointer and a length.
-        IrType::Buffer { .. } | IrType::Range { .. } => (16, 8),
-        IrType::Address(_) => (8, 8),
+        IrType::Buffer { .. } | IrType::Range { .. } => (Finite(16), 8),
+        IrType::Address(_) => (Finite(8), 8),
+        // This compiler-only task capture has no source layout ceiling.
+        IrType::RuntimeBoxPayload { .. } => return None,
         IrType::Array { element, length } => {
+            if length == 0 {
+                return Some((Finite(0), 1));
+            }
             let (size, align) = ceiling_pair(
                 nominals,
                 elements,
                 *elements.get(element.index())?,
-                depth + 1,
+                visiting,
             )?;
-            (size.checked_mul(length)?, align)
+            let size = match size {
+                Finite(size) => size.checked_mul(length).map_or(AboveU64, Finite),
+                AboveU64 => AboveU64,
+            };
+            (size, align)
         }
         IrType::Window {
             shape,
@@ -579,43 +586,55 @@ fn ceiling_pair(
             capacity,
         } => {
             let words = u64::from(shape == IrWindowShape::Ring) + 1;
-            let (size, align) = ceiling_pair(
-                nominals,
-                elements,
-                *elements.get(element.index())?,
-                depth + 1,
-            )?;
             match capacity {
                 // A runtime-capacity `Slots<T>` is a pointer, a capacity and
                 // a length; a `Ring<T>` adds a window origin.
-                None => (8 * (words + 2), 8),
+                None => (Finite(8 * (words + 2)), 8),
+                Some(0) => (Finite(8 * words), 8),
                 Some(length) => {
-                    let slots = size.checked_mul(length)?;
+                    let (size, align) = ceiling_pair(
+                        nominals,
+                        elements,
+                        *elements.get(element.index())?,
+                        visiting,
+                    )?;
+                    let slots = match size {
+                        Finite(size) => size.checked_mul(length).map_or(AboveU64, Finite),
+                        AboveU64 => AboveU64,
+                    };
                     let align = align.max(8);
-                    (round_up(slots, 8)?.checked_add(8 * words)?, align)
+                    (
+                        round_up(add_ceiling(round_up(slots, 8)?, Finite(8 * words)), align)?,
+                        align,
+                    )
                 }
             }
         }
         IrType::Nominal(id) => {
+            // The checked table rejects inline cycles. Track the actual
+            // expansion path rather than imposing a layout nesting limit;
+            // Box and runtime-capacity shells do not expand their content.
+            if !visiting.insert(id) {
+                return None;
+            }
             let nominal = nominals.get(id.index())?;
-            match nominal.kind() {
+            let pair = match nominal.kind() {
                 // One pointer; the content lives in the heap object and
                 // enters no sequence.
-                IrNominalKind::Box { .. }
-                | IrNominalKind::Arena { .. }
-                | IrNominalKind::ArenaStorage => (8, 8),
+                IrNominalKind::Box { .. } => (Finite(8), 8),
                 // Every fieldless opaque struct carries the host handles'
                 // host-supplied representation.
-                IrNominalKind::Opaque => (32, 16),
-                IrNominalKind::Struct { fields } => sequence(
-                    nominals,
-                    elements,
-                    fields.iter().map(IrField::ty),
-                    depth + 1,
-                )?,
+                IrNominalKind::Opaque => (Finite(32), 16),
+                IrNominalKind::Struct { fields } => {
+                    sequence(nominals, elements, fields.iter().map(IrField::ty), visiting)?
+                }
                 IrNominalKind::Enum { variants } => {
                     if variants.iter().all(|variant| variant.fields().is_empty()) {
-                        if variants.len() <= 2 { (1, 1) } else { (4, 4) }
+                        if variants.len() <= 2 {
+                            (Finite(1), 1)
+                        } else {
+                            (Finite(4), 4)
+                        }
                     } else {
                         let payload = variants
                             .iter()
@@ -629,11 +648,13 @@ fn ceiling_pair(
                                 signed: false,
                             })
                             .chain(payload),
-                            depth + 1,
+                            visiting,
                         )?
                     }
                 }
-            }
+            };
+            visiting.remove(&id);
+            pair
         }
     })
 }
@@ -643,23 +664,40 @@ fn sequence(
     nominals: &[IrNominal],
     elements: &[IrType],
     fields: impl Iterator<Item = IrType>,
-    depth: u32,
-) -> Option<(u64, u64)> {
-    let mut offset = 0_u64;
+    visiting: &mut HashSet<IrNominalId>,
+) -> Option<(crate::IrLayoutMagnitude, u64)> {
+    let mut offset = crate::IrLayoutMagnitude::Finite(0);
     let mut alignment = 1_u64;
     for field in fields {
-        let (size, align) = ceiling_pair(nominals, elements, field, depth)?;
-        offset = round_up(offset, align)?.checked_add(size)?;
+        let (size, align) = ceiling_pair(nominals, elements, field, visiting)?;
+        offset = add_ceiling(round_up(offset, align)?, size);
         alignment = alignment.max(align);
     }
     Some((round_up(offset, alignment)?, alignment))
 }
 
-fn round_up(value: u64, alignment: u64) -> Option<u64> {
+fn add_ceiling(
+    left: crate::IrLayoutMagnitude,
+    right: crate::IrLayoutMagnitude,
+) -> crate::IrLayoutMagnitude {
+    use crate::IrLayoutMagnitude::{AboveU64, Finite};
+
+    match (left, right) {
+        (Finite(left), Finite(right)) => left.checked_add(right).map_or(AboveU64, Finite),
+        _ => AboveU64,
+    }
+}
+
+fn round_up(value: crate::IrLayoutMagnitude, alignment: u64) -> Option<crate::IrLayoutMagnitude> {
+    use crate::IrLayoutMagnitude::{AboveU64, Finite};
+
     if alignment == 0 {
         return None;
     }
-    value
-        .checked_add(alignment - 1)
-        .map(|raised| raised / alignment * alignment)
+    Some(match value {
+        Finite(value) => value
+            .checked_add(alignment - 1)
+            .map_or(AboveU64, |raised| Finite(raised / alignment * alignment)),
+        AboveU64 => AboveU64,
+    })
 }

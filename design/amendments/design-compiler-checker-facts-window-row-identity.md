@@ -1,8 +1,0 @@
-Node: compiler/checker-facts
-
-Decision: The window operations whose call ends the bound a reference into the operand was formed under are recognized by the [PRE-1] record's name -- `take_back`, `remove_at`, `append`, `split_off`, `place_front`, `take_front` and `grow` -- and every reference whose path the operand's resolved path contains is invalidated there [OP-10, REF-2, REF-4], because [OP-10] states which part of the window each operation moves in prose and gives the rows no declared property a checker can read, the declared effect row alone being insufficient: `take_back` writes `r.len`, which is no prefix of `r[i]`, so [EFF-5]'s prefix rule would leave a dead reference live, instead of deriving the fact from the row, which does not carry it, or invalidating on every window write, which would kill the references `place_back`'s `ensures` explicitly carries across its call.
-
-Decision: `place_back` and `insert_at` are excluded from that set, because [OP-10] states that `place_back`'s `ensures` carries the bound across the call, and that `insert_at` is a content write of `r.filled` after which a surviving slot reference still names its slot with a possibly changed occupant, which is a value change and not an invalidation, instead of a conservative rule that invalidates at every operation and so denies the two cases the rule spends a sentence admitting.
-
-Rejected:
-- Recognizing the rows by a declared marker on the [PRE-1] record: rejected because [PRE-1] declares no such marker and [SCOPE-3] lets any record be supplied by linking, so there is nothing to read; this is the same gap [OP-11]'s `swap` exemption has, and both should be stated over a property of the record rather than over its spelling.

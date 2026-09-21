@@ -5,8 +5,9 @@ Each case is a canonical `.wf` source (tests/conformance/cases/<id>.wf) plus a
 manifest entry (tests/conformance/manifest.jsonl) declaring the rule id(s) it
 exercises and the expected verdict. Cases are driven through a named toolchain
 adapter. The active adapter is native, not Python: `compiler/tests/corpus.rs`
-compiles each case through the ordinary compiler path, realizes the ARRANGE
-below as a real invocation, and reduces the outcome to one verdict below
+checks `accept` and `reject` through the ordinary compiler's complete source
+front end, compiles `run` and `unsupported` through the complete target path,
+realizes the ARRANGE below as a real invocation, and reduces the outcome to one verdict below
 (`make conformance-run`, included by root `make check`). This file stays on the other side of that boundary —
 identity, corpus structure, declared rule coverage, and schema validity — so
 the corpus keeps outliving any one compiler and no compiler behaviour is
@@ -33,10 +34,12 @@ Manifest line (JSON):
 `expect` is the verdict the SPECIFICATION requires. An unimplemented compiler
 capability never rewrites `expect` and never excuses a case from running.
 
-The `unsupported` outcome belongs only to build/link or invocation failure, never
-to source-language rejection. No target qualification or host-specific acceptance
-class exists. An unimplemented compiler capability remains a toolchain readiness
-fact and cannot replace an ordinary source verdict.
+The `unsupported` outcome belongs only to a compiler, build/link or invocation
+capability failure, never to source-language rejection. No target qualification
+or host-specific acceptance class exists. An unimplemented compiler capability
+remains a toolchain readiness fact and cannot replace an ordinary source
+verdict. A target-layout stop likewise cannot replace `accept`: target
+qualification begins after complete source-semantic acceptance [STOR-6].
 
 ARRANGE describes the invocation a `run` case needs; a case that is
 never executed must not carry one. Every byte string is lowercase hex so the

@@ -244,9 +244,8 @@ fn main() -> status: own ExitStatus pure {
 }
 
 /// Two range references of one origin carrying different bases. Their
-/// per-iteration extents interleave across iterations, and "all proved range
-/// references whose resolved origins overlap must name the same origin place
-/// and carry identical s and b images", so the second one denies.
+/// per-iteration writes interleave across iterations, so the two written
+/// partitions on one origin cannot have different maps.
 #[test]
 fn disjoint_siblings_with_shifted_partitions_can_cross_between_iterations() {
     let source = RUNTIME_PARTITION_SOURCE.replace(
@@ -257,6 +256,44 @@ fn disjoint_siblings_with_shifted_partitions_can_cross_between_iterations() {
         denied(source.as_bytes(), "partition", 2),
         LoopDenial::SharedWrite { .. }
     ));
+}
+
+#[test]
+fn a_shifted_read_of_a_written_origin_can_cross_between_iterations() {
+    let source = RUNTIME_PARTITION_SOURCE.replace(
+        "    let painted = paint(output: row);",
+        "    let painted = paint(output: row);\n    let shifted = end + stride;\n    invariant room: shifted <= total {\n      use stride times (i + 2_u64 <= 6_u64);\n    }\n    let other = &values.inner[end..shifted];\n    let size = deref(other).len;\n    if 0_u64 < size {\n      let observed = deref(other)[0_u64];\n    }",
+    );
+    assert!(matches!(
+        denied(source.as_bytes(), "partition", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+}
+
+#[test]
+fn forming_an_unused_shifted_reference_reads_no_written_elements() {
+    let source = RUNTIME_PARTITION_SOURCE.replace(
+        "    let painted = paint(output: row);",
+        "    let painted = paint(output: row);\n    let shifted = end + stride;\n    invariant room: shifted <= total {\n      use stride times (i + 2_u64 <= 6_u64);\n    }\n    let other = &values.inner[end..shifted];",
+    );
+    assert_eq!(
+        permitted(source.as_bytes(), "partition").actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+}
+
+#[test]
+fn read_only_range_work_does_not_fabricate_an_independent_write_map() {
+    let source = RUNTIME_PARTITION_SOURCE
+        .replace("writes(output)", "reads(output)")
+        .replace(
+            "    set deref(output)[x] = 1_u64;",
+            "    let observed = deref(output)[x];",
+        );
+    assert_eq!(
+        permitted(source.as_bytes(), "partition").actualization,
+        None
+    );
 }
 
 /// "A whole-origin access ... denies." The guarded element read reaches the
@@ -973,6 +1010,42 @@ fn a_proven_counted_binder_element_map_is_permitted() {
     );
 }
 
+/// Slots use direct logical-to-physical offsets, while a Ring adds its
+/// runtime head and wraps modulo capacity [WIN-1]. The same proved counted
+/// index is therefore an independent element map only for Slots [PAR-2].
+#[test]
+fn a_ring_subscript_is_not_an_affine_element_map() {
+    let source = b"fn slots_map() -> result: own u64 pure {
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  let slots = slots_from_array::<u64, 4>(values: values);
+  for @fill (i in 0_u64..4_u64) {
+    set slots[i] = i;
+  }
+  return slots[0_u64];
+}
+
+fn ring_map() -> result: own u64 pure {
+  let ring = ring_new::<u64, 4>();
+  place_back(window: &ring, value: 0_u64);
+  place_back(window: &ring, value: 0_u64);
+  place_back(window: &ring, value: 0_u64);
+  place_back(window: &ring, value: 0_u64);
+  for @fill (i in 0_u64..4_u64) {
+    set ring[i] = i;
+  }
+  return ring[0_u64];
+}
+";
+    let table = permission_of(source);
+    assert_eq!(
+        only_loop(&table, "slots_map").verdict,
+        LoopVerdict::PermittedEligible
+    );
+    let ring = only_loop(&table, "ring_map");
+    assert!(matches!(denial(ring, 2), LoopDenial::SharedWrite { .. }));
+    assert_eq!(ring.actualization, None);
+}
+
 /// Permission consumes the offset's exact checked value rather than its
 /// spelling. Copying the binder and applying one proved affine transform keeps
 /// the nonzero coefficient, so distinct iterations still select distinct
@@ -1052,6 +1125,46 @@ fn a_zero_coefficient_element_map_is_denied() {
 ";
     assert!(matches!(
         denied(source, "main", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+}
+
+/// Snapshotting the thin pointer for an admitted element map never grants a
+/// whole-owner update. Direct replacement is not a reduction and is therefore
+/// refused by condition one. Remaking runtime-capacity content through a
+/// declared write reaches condition two's shared-write refusal. Both happen
+/// before lowering chooses a capture representation.
+#[test]
+fn whole_box_replacement_and_growth_remain_denied() {
+    let source = br#"fn replace_owner() -> result: own unit pure {
+  let owner = box_array_filled::<u8>(count: 4_u64, value: 0_u8);
+  for @replace (i in 0_u64..4_u64) {
+    let replacement = box_array_filled::<u8>(count: 4_u64, value: 0_u8);
+    set owner = move replacement;
+  }
+  return unit;
+}
+
+fn grow_owner(owner: &Box<Slots<u8>>) -> result: own unit writes(owner) contract {
+  requires deref(owner).inner.cap <= 4_u64;
+} {
+  for @remake (i in 0_u64..4_u64) {
+    let current = deref(owner).inner.cap;
+    let done = grow(cell: owner, capacity: current);
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert!(matches!(
+        denied(source, "replace_owner", 1),
+        LoopDenial::NotAReduction { .. }
+    ));
+    assert!(matches!(
+        denied(source, "grow_owner", 2),
         LoopDenial::SharedWrite { .. }
     ));
 }
@@ -1174,6 +1287,42 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
+/// A range-selected composite element keeps the affine map of its innermost
+/// subscript. Reading and writing the same nested element is an independent
+/// per-iteration update; shifting only the read by one cell creates a real
+/// cross-iteration dependence and must lose that permission.
+#[test]
+fn a_nested_range_element_map_requires_matching_read_and_write_indices() {
+    let source = r#"fn update(rows: &[Array<u64, 3>]) -> result: own unit writes(rows) contract {
+  requires 0_u64 < deref(rows).len;
+} {
+  for @update (i in 0_u64..3_u64) {
+    let old = deref(rows)[0_u64][i];
+    set deref(rows)[0_u64][i] = old +wrap 1_u64;
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let judged = permitted(source.as_bytes(), "update");
+    assert_eq!(
+        judged.actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+
+    let shifted = source.replace(
+        "for @update (i in 0_u64..3_u64) {\n    let old = deref(rows)[0_u64][i];",
+        "for @update (i in 1_u64..3_u64) {\n    let prior = i -wrap 1_u64;\n    let old = deref(rows)[0_u64][prior];",
+    );
+    let table = permission_of(shifted.as_bytes());
+    let judged = only_loop(&table, "update");
+    assert!(matches!(denial(judged, 2), LoopDenial::SharedWrite { .. }));
+    assert_eq!(judged.actualization, None);
+}
+
 /// The common-map requirement is per resolved collection. Ownership keeps two
 /// distinct roots disjoint, so each may use its own injective affine image.
 #[test]
@@ -1267,12 +1416,12 @@ fn an_unproved_source_premise_is_rejected_before_affine_map_permission() {
   for @fill (i in 0_u64..limit) {
     set output[i] = i;
   }
-  return move output;
+  return output;
 }
 
 fn main() -> status: own ExitStatus pure {
   let output = array_filled::<u64, 64>(value: 0_u64);
-  let filled = fill(output: move output, limit: 64_u64);
+  let filled = fill(output: output, limit: 64_u64);
   return exit_status(code: 0_u8);
 }
 "#;

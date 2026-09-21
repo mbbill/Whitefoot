@@ -1,4 +1,4 @@
-enum StepError {
+nocopy enum StepError {
   Failed();
 }
 

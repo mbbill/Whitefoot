@@ -131,23 +131,26 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
 
         let array_type = llvm_type(self.program, ty)?;
-        let llvm_element_type = llvm_type(self.program, element_type)?;
         let array_slot = self.value_place(result)?;
         let index_slot = self.entry_slot(FunctionSlot::ArrayFillIndex(result))?;
         let index = self.next_temporary()?;
         let in_range = self.next_temporary()?;
         let element_pointer = self.next_temporary()?;
         let next_index = self.next_temporary()?;
-        let operand = self.value_operand(value)?;
-
         writeln!(
             self.output,
-            "  store i64 0, ptr {index_slot}\n  br label %{}\n{}:\n  %{index} = load i64, ptr {index_slot}\n  %{in_range} = icmp ult i64 %{index}, {length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {array_type}, ptr {array_slot}, i64 0, i64 %{index}\n  store {llvm_element_type} {operand}, ptr %{element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  store i64 %{next_index}, ptr {index_slot}\n  br label %{}\n{}:",
+            "  store i64 0, ptr {index_slot}\n  br label %{}\n{}:\n  %{index} = load i64, ptr {index_slot}\n  %{in_range} = icmp ult i64 %{index}, {length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {array_type}, ptr {array_slot}, i64 0, i64 %{index}",
             array_fill_head_label(result),
             array_fill_head_label(result),
             array_fill_body_label(result),
             array_fill_done_label(result),
             array_fill_body_label(result),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.store_value_at(value, &format!("%{element_pointer}"))?;
+        writeln!(
+            self.output,
+            "  %{next_index} = add i64 %{index}, 1\n  store i64 %{next_index}, ptr {index_slot}\n  br label %{}\n{}:",
             array_fill_head_label(result),
             array_fill_done_label(result),
         )

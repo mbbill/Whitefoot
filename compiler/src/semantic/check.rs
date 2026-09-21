@@ -22,13 +22,13 @@ use crate::syntax::NodeId;
 use crate::{
     DeclarationId, DeclarationRole, NodePath, Production, ResolvedSyntaxUnit,
     SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome,
-    SemanticRule, StaticObligationDisposition, UnsupportedSemanticFeature,
+    SemanticRule, StaticObligationDisposition,
 };
 
 use super::entailment::{
     CallGoalDisposition, EntailmentCallee, EntailmentContext, PostconditionSchedule,
     VerifiedPostconditionSummary, analyze_function, analyze_function_candidate,
-    finalize_function_entailment, postcondition_schedule,
+    collect_statement_calls, finalize_function_entailment, postcondition_schedule,
 };
 use super::goal::{
     CheckedCallRequirement, CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression,
@@ -41,7 +41,7 @@ use super::model::{
     CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId,
     ValueInitializerKind, evaluate_const_operation,
 };
-use super::permission::{PermissionSignature, analyze_permission};
+use super::permission::{PermissionSignature, analyze_permission, plan_permission_separations};
 use super::permission_ledger::{LedgerSource, render_ledger};
 use super::places::ResolvedPlace;
 use super::postcondition::CheckedPostconditionSelector;
@@ -49,7 +49,7 @@ use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
 use control::{ControlCounters, ControlScope};
 use generics::{GenericParameter, GenericSubstitution, PendingGenericRequirement};
-use references::{AccessKind, ReferenceInfo};
+use references::ReferenceInfo;
 
 /// The syntax tree, as the permission ledger's citations reach it.
 struct PermissionLedgerSource<'view, 'unit, 'classified, 'lexed, 'source> {
@@ -93,12 +93,8 @@ struct FunctionSignature {
     node: NodeId,
     name: String,
     symbol: String,
-    /// Every formal region of the callable: the written `region_params`
-    /// first, in their written order, then the regions [FORM-8] leaves
-    /// unwritten at a parameter position, in parameter order.
+    /// Every formal region of the callable.
     region_parameters: Vec<DeclarationId>,
-    /// How many leading `region_parameters` entries the declaration writes.
-    written_regions: usize,
     parameters: Vec<ParameterSignature>,
     /// The callable result [FN-1]: the written result of a single-result
     /// declaration, and the compiler-owned result-list value of a declaration
@@ -200,7 +196,6 @@ struct ConstructorShape {
     /// of this constructor does, which is exactly the region argument the
     /// construct writes.
     determining_field: Vec<Option<usize>>,
-    field_regions: Vec<type_regions::TypeRegionShape>,
 }
 
 /// A nominal instance a derived type named, awaiting interning.
@@ -212,10 +207,6 @@ enum PendingNominal {
     /// an ordered result list [CALL-4]. A row's list is fixed by its own
     /// instance and has no written form for the interning pass to find.
     ResultList(Vec<(String, CheckedType)>),
-    /// [STOR-2] an `arena<'r, T>` instance over this region and content.
-    Arena(DeclarationId, CheckedType),
-    /// The one compiler-owned region allocation-list nominal [STOR-3].
-    ArenaStorage,
     /// A prelude instance, such as the `Result<T, E>` a checked row produces.
     Prelude(PreludeType),
     /// [S20, FN-2] one source nominal instance at a region a call determined.
@@ -266,6 +257,25 @@ struct LocalBinding {
     /// was the loan apparatus's way of stating what [REF-2] now states
     /// directly as a validity fact.
     reference: Option<ReferenceInfo>,
+    /// [REF-2, ENT-3.S15] the borrowed-match refinement occurrences this
+    /// binding witnesses. The occurrence identity is immutable even when a
+    /// reference binding is rebound; only its flow-sensitive validity meets
+    /// at joins.
+    refinement_witnesses: Vec<RefinementWitness>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RefinementWitness {
+    origin: NodePath,
+    place: ResolvedPlace,
+    variant: u32,
+    valid: bool,
+}
+
+impl RefinementWitness {
+    fn same_occurrence(&self, other: &Self) -> bool {
+        self.origin == other.origin && self.place == other.place && self.variant == other.variant
+    }
 }
 
 impl LocalBinding {
@@ -280,16 +290,35 @@ impl LocalBinding {
         if let (Some(left), Some(right)) = (&mut self.reference, &other.reference) {
             left.join(right);
         }
+        for witness in &mut self.refinement_witnesses {
+            witness.valid &= other
+                .refinement_witnesses
+                .iter()
+                .find(|candidate| witness.same_occurrence(candidate))
+                .is_some_and(|candidate| candidate.valid);
+        }
+        for witness in &other.refinement_witnesses {
+            if !self
+                .refinement_witnesses
+                .iter()
+                .any(|candidate| candidate.same_occurrence(witness))
+            {
+                let mut absent_on_left = witness.clone();
+                absent_on_left.valid = false;
+                self.refinement_witnesses.push(absent_on_left);
+            }
+        }
     }
 
-    /// Whether two joined states agree on everything [LIV-1] compares.
+    /// Whether two joined states agree on everything [LIV-1] compares before
+    /// `join_from` meets their flow facts.
     ///
     /// A reference's path set is deliberately excluded: [REF-1] states that
     /// at a join a reference variable's target is the *union* of the incoming
     /// sets, so two different sets are the joined state rather than a
-    /// disagreement. Validity is compared, because a reference valid on one
-    /// edge and invalid on the other is invalid after the join and every
-    /// check on it must hold for every member of the set.
+    /// disagreement. Reference validity and refinement witnesses are likewise
+    /// excluded here because `join_from` meets them after this structural
+    /// comparison.
     fn agrees_with(&self, other: &Self) -> bool {
         self.binding == other.binding
             && self.declaration == other.declaration
@@ -303,6 +332,14 @@ impl LocalBinding {
                 (None, None) => true,
                 _ => false,
             }
+    }
+
+    /// A loop header is checked once rather than materialized by `join_from`.
+    /// Its reference validity has a separate finite equation, but every
+    /// non-reference refinement witness must therefore still agree exactly
+    /// with the backedge as it did before loop-header widening.
+    fn loop_agrees_with(&self, other: &Self) -> bool {
+        self.agrees_with(other) && self.refinement_witnesses == other.refinement_witnesses
     }
 }
 
@@ -339,7 +376,18 @@ struct TypedExpression {
 #[derive(Clone)]
 struct PlaceAccess {
     place: ResolvedPlace,
-    kind: AccessKind,
+    /// This place is the storage selected by the enclosing place expression,
+    /// rather than storage read while evaluating one of its offsets or other
+    /// operands. Effects retain both; borrowed-match path recovery needs only
+    /// the selected members [REF-1, OWN-13].
+    selected: bool,
+}
+
+impl PlaceAccess {
+    fn operand(mut self) -> Self {
+        self.selected = false;
+        self
+    }
 }
 
 impl TypedExpression {
@@ -358,7 +406,6 @@ impl TypedExpression {
         expression: CheckedExpression,
         effects: EffectSet,
         place: ResolvedPlace,
-        kind: AccessKind,
     ) -> Self {
         Self {
             expression,
@@ -366,7 +413,10 @@ impl TypedExpression {
             reference: None,
             reference_value: false,
             effects,
-            accesses: vec![PlaceAccess { place, kind }],
+            accesses: vec![PlaceAccess {
+                place,
+                selected: true,
+            }],
         }
     }
 }
@@ -466,19 +516,12 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     nominal_states: Vec<u8>,
     source_nominal_instances: Vec<Option<(usize, GenericSubstitution)>>,
     box_nominals: HashMap<CheckedType, NominalId>,
-    /// S39 one `Box<'s, T>` nominal per (store region, referent).
-    /// `arena<'r, T>` instances by (region declaration, content type): the
-    /// region is part of the type's identity [OWN-3, STOR-4].
-    arena_nominals: HashMap<(DeclarationId, CheckedType), NominalId>,
     /// The compiler-owned result-list nominal of a `fn_decl` that declares an
     /// ordered result list [GRAM-2, CALL-4], keyed by the ordered result
     /// binder spellings and types. Two declarations whose result lists agree
     /// share one nominal; the value a multi-result callable hands back is one
     /// value of it, and a destructuring binder list is its projection.
     result_list_nominals: HashMap<Vec<(String, CheckedType)>, NominalId>,
-    /// The one compiler-owned region allocation-list nominal, interned on
-    /// first use [STOR-3].
-    arena_storage_nominal: Option<NominalId>,
     /// Nominal instances a derived type named that were not interned yet.
     /// Written by the `&self` checking path and drained by the `&mut self`
     /// driver between attempts at one function.
@@ -520,10 +563,14 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// syntax could not settle, handed to the entailment fragment with the
     /// finished body.
     call_separations: RefCell<Vec<super::model::CheckedCallSeparation>>,
-    /// Complete target-ordinal pairs whose distinctness is deferred to the
-    /// statement's index-separation entailment obligation. Candidate index
-    /// pairs are never facts in the RHS ownership check.
-    commit_separation_targets: RefCell<std::collections::HashSet<(usize, usize)>>,
+    /// [REF-2] uses reached under loop-header validity variables. Every
+    /// owning loop resolves its variables before the function is published;
+    /// the function driver clears this scratch state on every retry.
+    deferred_loop_reference_uses: RefCell<Vec<references::DeferredLoopReferenceUse>>,
+    /// Successful declaration-only FN-4 queries. A complete member check
+    /// stages its batch before publishing here, and the whole checker remains
+    /// failure-atomic with the prospective checked program [DIAG-2].
+    contract_queries: RefCell<Vec<super::model::CheckedContractQuery>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
     nominal_templates: Vec<NominalTemplate>,
@@ -713,8 +760,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// One `effect_path` in its written spelling [EFF-1]: the parameter's own
-    /// name, wrapped in `deref(...)` at each `deref` step, with every other
-    /// step written as the `epsuffix` that produced it.
+    /// name followed by the suffixes that produced it. An internal `Deref`
+    /// step selects a Box's `.inner`; references add no row wrapper.
     ///
     /// The walk carries the selected type only as far as it can name a step:
     /// a field name needs its containing struct and a payload field needs its
@@ -757,11 +804,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                     }
                 }
-                // `epbase := IDENT | "deref" "(" effect_path ")"` wraps the
-                // path built so far instead of appending to it [EFF-1].
+                // The internal content step retains the referent type so
+                // fields below `.inner` keep their source names [TYPE-9].
                 super::model::CheckedEffectStep::Deref => {
-                    rendered = format!("deref({rendered})");
-                    ty = None;
+                    rendered.push_str(".inner");
+                    ty = match ty {
+                        Some(CheckedType::Nominal(nominal)) => match self.nominal(nominal)?.kind {
+                            CheckedNominalKind::Box { referent, .. } => Some(referent),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
                 }
                 super::model::CheckedEffectStep::Payload { variant, field } => {
                     let selected = match ty {
@@ -936,16 +989,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok((missing, extra))
     }
 
-    /// The source spelling of one region, or `None` where [FORM-8] leaves it
-    /// unwritten and no name exists to quote.
-    pub(in crate::semantic::check) fn written_region_name(
-        &self,
-        region: DeclarationId,
-    ) -> Result<Option<String>, CheckStop> {
-        let spelling = self.declaration_spelling(region)?;
-        Ok((!spelling.starts_with("'0_")).then_some(spelling))
-    }
-
     /// [OWN-1, FORM-1, FN-2] whether this body is the authority on the one
     /// spelling [FORM-1] keys on a value's copy/affine class.
     ///
@@ -1026,11 +1069,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if signature.substitution.len() == 0 {
             return syntactic;
         }
-        self.written_body_effect_rows
+        let mut written = self
+            .written_body_effect_rows
             .borrow()
             .get(&signature.declaration)
             .cloned()
-            .unwrap_or(syntactic)
+            .unwrap_or_else(|| syntactic.clone());
+        // [EFF-3, FN-2] the cached symbolic body fixes the source-written
+        // path row for every instance, but allocation has no source entry and
+        // can become known only after a function argument is concrete. Keep
+        // that instance fact instead of replacing it with the symbolic
+        // schema's necessarily absent metadata.
+        written.allocates |= syntactic.allocates;
+        written
     }
 
     /// [GRAM-2, STOR-8] whether this unit wrote `program no_heap;`.
@@ -1084,16 +1135,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             nominal_states: Vec::new(),
             source_nominal_instances: Vec::new(),
             box_nominals: HashMap::new(),
-            arena_nominals: HashMap::new(),
             result_list_nominals: HashMap::new(),
-            arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
             pending_instances: RefCell::new(Vec::new()),
             elided_store_brand: std::cell::Cell::new(None),
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
             call_separations: RefCell::new(Vec::new()),
-            commit_separation_targets: RefCell::new(std::collections::HashSet::new()),
+            deferred_loop_reference_uses: RefCell::new(Vec::new()),
+            contract_queries: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             prelude_types: Vec::new(),
             nominal_templates: Vec::new(),
@@ -1159,6 +1209,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // each discovered instance. Lowering reads this completed inventory;
         // no hidden entry-store instance is required to seed a representation.
 
+        // The cursor loop above closes over every signature appended while a
+        // body is checked, so the dense function and signature inventories
+        // have equal length at this completion boundary.
+        self.close_allocation_metadata(&mut function_inventory)?;
+
         self.check_behavior_bindings()?;
 
         // Phase B reads only the completed inventory. Kill-relevant [EFF-2]
@@ -1166,6 +1221,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // program-level goal summaries extend this same complete context.
         let callees = self.entailment_callees()?;
         self.install_call_requirements(&mut function_inventory)?;
+        let permission_signatures = self
+            .signatures
+            .iter()
+            .map(|signature| PermissionSignature {
+                name: signature.name.clone(),
+                parameter_declarations: signature
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.declaration)
+                    .collect(),
+                parameter_modes: signature
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.mode)
+                    .collect(),
+                reads: signature.declared_effects.reads.clone(),
+                writes: signature.declared_effects.writes.clone(),
+            })
+            .collect::<Vec<_>>();
+        for checked in &mut function_inventory {
+            checked.function.permission_separation_queries =
+                plan_permission_separations(&checked.function, &permission_signatures);
+        }
         let optimistic_batch = function_inventory.iter().any(|checked| {
             !checked.function.postconditions.is_empty()
                 || Self::statements_contain_value_if(
@@ -1173,8 +1251,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
         });
 
-        let postcondition_schedule =
-            self.analyze_function_inventory(&mut function_inventory, &callees, optimistic_batch)?;
+        let postcondition_schedule = self.analyze_function_inventory(
+            &mut function_inventory,
+            &callees,
+            optimistic_batch,
+            None,
+        )?;
         let baseline_functions = function_inventory
             .iter()
             .map(|checked| &checked.function)
@@ -1240,14 +1322,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // program. The affine-map rule consumes a successful OP-4 disposition
         // and exact value image retained on that program; no permission rule
         // repeats a local invariant or changes source acceptance.
-        let permission_signatures = self
-            .signatures
-            .iter()
-            .map(|signature| PermissionSignature {
-                reads: signature.declared_effects.reads.clone(),
-                writes: signature.declared_effects.writes.clone(),
-            })
-            .collect::<Vec<_>>();
         let permission = analyze_permission(&functions, &permission_signatures);
         // The ledger is rendered here because only the checker still holds the
         // syntax tree the citations name. It is pure presentation over the
@@ -1276,6 +1350,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             constants: self.checked_constants.clone(),
             derived_consts,
             functions,
+            contract_queries: self.contract_queries.borrow().clone(),
             postcondition_schedule,
             generic_requirements: self.generic_requirements.clone(),
             permission,
@@ -1535,12 +1610,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             PendingNominal::ResultList(results) => {
                                 self.intern_result_list_nominal(&results)?;
                             }
-                            PendingNominal::Arena(region, content) => {
-                                self.intern_arena_nominal(region, content)?;
-                            }
-                            PendingNominal::ArenaStorage => {
-                                self.intern_arena_storage_nominal()?;
-                            }
                             PendingNominal::Prelude(ty) => {
                                 self.intern_prelude_nominal(ty)?;
                             }
@@ -1632,6 +1701,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         signature: &FunctionSignature,
     ) -> Result<CheckedFunctionInventory, CheckStop> {
+        // Function-local loop and binding ids restart for every inventory
+        // attempt, including a DeferredNominal retry and the generic scratch
+        // inventory. No deferred REF-2 dependency may cross that namespace
+        // boundary.
+        self.deferred_loop_reference_uses.borrow_mut().clear();
         self.check_entry_formers(signature)?;
         let mut bindings = HashMap::new();
         let mut parameters = Vec::with_capacity(signature.parameters.len());
@@ -1658,6 +1732,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 binding,
                 mode: parameter.mode,
                 ty: parameter.ty,
+                range_element: (parameter.mode == CheckedMode::Range)
+                    .then(|| self.intern_element(parameter.ty))
+                    .transpose()?,
             });
         }
 
@@ -1721,6 +1798,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 give_context: None,
             },
         )?;
+        if !self.deferred_loop_reference_uses.borrow().is_empty() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
         let declaration_only = self.tree.production(signature.node)? == Production::FnSig;
         if declaration_only {
             checked.can_continue = false;
@@ -1794,22 +1874,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .flatten()
                 .collect()
         };
-        // TEMPORARY capability stop, judged only after every source rejection
-        // above had its chance: arena-typed parameters check under their
-        // ownership and [STOR-4] confinement rules, but the region-tied
-        // allocation and release lowering is not implemented yet, so a clean
-        // function that would carry an arena value to execution stops as an
-        // explicit unsupported capability rather than lowering wrong code.
-        for parameter in &signature.parameters {
-            if self.arena_instance(parameter.ty)?.is_some() {
-                return self.unsupported(
-                    UnsupportedSemanticFeature::ArenaRuntime,
-                    self.tree
-                        .node_with_path(&parameter.node_path)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                );
-            }
-        }
         let function = CheckedFunction {
             formal_hypothesis: signature.formal_parameter.is_some(),
             id: signature.id,
@@ -1836,6 +1900,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 separations.sort_by_key(|separation| separation.site.components().to_vec());
                 separations
             },
+            permission_separation_queries: Vec::new(),
             entailment: super::entailment::FunctionEntailment::default(),
         };
         Ok(CheckedFunctionInventory {
@@ -1855,17 +1920,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedStatement::Match { arms, .. } => arms
                 .iter()
                 .any(|arm| Self::statements_contain_value_if(&arm.body)),
-            CheckedStatement::Loop { body, .. }
-            | CheckedStatement::CountedRange { body, .. }
-            | CheckedStatement::Region { body, .. } => Self::statements_contain_value_if(body),
+            CheckedStatement::Loop { body, .. } | CheckedStatement::CountedRange { body, .. } => {
+                Self::statements_contain_value_if(body)
+            }
             CheckedStatement::Let { .. }
             | CheckedStatement::DestructuringLet { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
-            | CheckedStatement::SetList { .. }
-            | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
-            | CheckedStatement::Dispose { .. }
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Proof(_)
             | CheckedStatement::Return { .. }
@@ -1922,6 +1984,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ResolvedPlace::binding(binding),
                 )
             }),
+            refinement_witnesses: Vec::new(),
         })
     }
 
@@ -1944,10 +2007,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     checked.function.body.as_deref().unwrap_or_default(),
                 )
         });
-        self.analyze_function_inventory(functions, callees, optimistic_batch)?;
+        // Only the canonical instances are judged below, and a judged body
+        // reads another function's analysis solely through the postcondition
+        // summaries of its callees. The other bodies of this scratch
+        // inventory — every nongeneric function among them — are analyzed
+        // again by the concrete phase, so analyzing them here would repeat
+        // that whole cost for a result nothing reads.
+        let analyzed = Self::generic_validation_scope(functions, canonical)?;
+        self.analyze_function_inventory(functions, callees, optimistic_batch, Some(&analyzed))?;
         if optimistic_batch {
-            for checked in functions.iter_mut() {
-                finalize_function_entailment(&mut checked.function.entailment);
+            for (checked, analyzed) in functions.iter_mut().zip(&analyzed) {
+                if *analyzed {
+                    finalize_function_entailment(&mut checked.function.entailment);
+                }
             }
         }
         if !self.reject_entailment {
@@ -1962,25 +2034,70 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(())
     }
+    /// The functions whose bodies symbolic validation must analyze: the
+    /// canonical instances and everything their calls reach, by the same
+    /// call-graph shape the postcondition schedule is built from.
+    ///
+    /// The set is closed under callees, so a strongly connected component is
+    /// either wholly inside it or wholly outside, and every summary an
+    /// analyzed body can consume is published by an analyzed component.
+    fn generic_validation_scope(
+        functions: &[CheckedFunctionInventory],
+        canonical: &[(usize, DeclarationId)],
+    ) -> Result<Vec<bool>, CheckStop> {
+        let mut analyzed = vec![false; functions.len()];
+        let mut pending = canonical
+            .iter()
+            .map(|(index, _)| *index)
+            .collect::<Vec<_>>();
+        let mut calls = Vec::new();
+        while let Some(index) = pending.pop() {
+            let slot = analyzed
+                .get_mut(index)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            if std::mem::replace(slot, true) {
+                continue;
+            }
+            let function = &functions[index].function;
+            calls.clear();
+            collect_statement_calls(
+                function.id,
+                function.body.as_deref().unwrap_or_default(),
+                &mut calls,
+            );
+            pending.extend(calls.iter().map(|call| call.callee.0 as usize));
+        }
+        Ok(analyzed)
+    }
+
+    /// Analyzes every function of the inventory, or only those `analyzed`
+    /// marks. A caller that restricts the set must close it under callees.
     fn analyze_function_inventory(
         &self,
         functions: &mut [CheckedFunctionInventory],
         callees: &[EntailmentCallee],
         optimistic_batch: bool,
+        analyzed: Option<&[bool]>,
     ) -> Result<PostconditionSchedule, CheckStop> {
+        let selected = |index: usize| analyzed.is_none_or(|analyzed| analyzed[index]);
+        let contract_queries = self.contract_queries.borrow().clone();
         // ENT is the single acceptance-bearing proof path for ordinary
         // obligations, call requirements, invariants and postconditions.
         let mut schedule =
             postcondition_schedule(functions.iter().map(|checked| &checked.function))
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if schedule.components.is_empty() {
-            for checked in functions.iter_mut() {
+            for (index, checked) in functions.iter_mut().enumerate() {
+                if !selected(index) {
+                    continue;
+                }
                 let context = EntailmentContext {
                     callees,
                     constants: &self.checked_constants,
                     constant_ids: &self.constants,
                     nominals: &self.nominals,
                     elements: &self.elements.borrow(),
+                    contract_queries: &contract_queries,
                     verified_postconditions: &[],
                     verified_postcondition_proofs: &[],
                     binding_names: &checked.binding_names,
@@ -1993,6 +2110,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         } else {
             for component in &mut schedule.components {
+                // Callee closure keeps components whole: skipping one skips
+                // both its analysis and the summaries no analyzed body reads.
+                if !component
+                    .functions
+                    .iter()
+                    .any(|function| selected(function.0 as usize))
+                {
+                    continue;
+                }
                 for function in &component.functions {
                     let function_index = function.0 as usize;
                     let verified_postconditions = functions
@@ -2043,6 +2169,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         constant_ids: &self.constants,
                         nominals: &self.nominals,
                         elements: &self.elements.borrow(),
+                        contract_queries: &contract_queries,
                         verified_postconditions: &verified_postconditions,
                         verified_postcondition_proofs: &verified_postcondition_proofs,
                         binding_names: &checked.binding_names,
@@ -2133,6 +2260,70 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
+    /// Completes [EFF-3]'s finite allocation fact over the checked call graph.
+    ///
+    /// Phase A has already checked every reachable body, so each function's
+    /// current bit is the directly exhibited base fact. Propagating from an
+    /// allocating callee to its callers closes forward and recursive edges
+    /// without replaying a body or depending on source order. Each bit changes
+    /// at most once. The matching signature copy is refreshed for the retained
+    /// formal-boundary metadata installed by [`Self::install_call_requirements`].
+    fn close_allocation_metadata(
+        &mut self,
+        functions: &mut [CheckedFunctionInventory],
+    ) -> Result<(), CheckStop> {
+        if functions.len() != self.signatures.len() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        let mut callers = vec![Vec::new(); functions.len()];
+        let mut allocates = Vec::with_capacity(functions.len());
+        let mut calls = Vec::new();
+        for (index, checked) in functions.iter().enumerate() {
+            if checked.function.id.0 as usize != index {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            allocates.push(checked.function.allocates);
+            calls.clear();
+            collect_statement_calls(
+                checked.function.id,
+                checked.function.body.as_deref().unwrap_or_default(),
+                &mut calls,
+            );
+            for call in &calls {
+                let callee = call.callee.0 as usize;
+                let Some(callee_callers) = callers.get_mut(callee) else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                callee_callers.push(index);
+            }
+        }
+
+        let mut pending = allocates
+            .iter()
+            .enumerate()
+            .filter_map(|(index, allocates)| allocates.then_some(index))
+            .collect::<Vec<_>>();
+        while let Some(callee) = pending.pop() {
+            for caller in &callers[callee] {
+                if !allocates[*caller] {
+                    allocates[*caller] = true;
+                    pending.push(*caller);
+                }
+            }
+        }
+
+        for (index, allocates) in allocates.into_iter().enumerate() {
+            functions[index].function.allocates = allocates;
+            let signature = self
+                .signatures
+                .get_mut(index)
+                .filter(|signature| signature.id == functions[index].function.id)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            signature.declared_effects.allocates = allocates;
+        }
+        Ok(())
+    }
+
     fn install_statement_call_requirements(
         &self,
         statements: &mut [CheckedStatement],
@@ -2143,7 +2334,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Let { value, .. }
                 | CheckedStatement::DestructuringLet { value, .. }
                 | CheckedStatement::Evaluate(value)
-                | CheckedStatement::Dispose { value, .. }
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Return { value, .. }
                 | CheckedStatement::Give { value, .. } => {
@@ -2152,43 +2342,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::PropagateLet { scrutinee, .. } => {
                     self.install_expression_call_requirements(scrutinee, requirements)?;
                 }
-                CheckedStatement::SetList {
-                    targets, values, ..
-                } => {
-                    for target in targets {
-                        match target {
-                            CheckedSetTarget::Place(_) => {}
-                            CheckedSetTarget::ArrayIndex(target) => self
-                                .install_expression_call_requirements(
-                                    &mut target.offset,
-                                    requirements,
-                                )?,
-                            CheckedSetTarget::BufferIndex(target) => self
-                                .install_expression_call_requirements(
-                                    &mut target.offset,
-                                    requirements,
-                                )?,
-                            CheckedSetTarget::RangeIndex(target) => self
-                                .install_expression_call_requirements(
-                                    &mut target.offset,
-                                    requirements,
-                                )?,
-                            CheckedSetTarget::Storage(target) => {
-                                for offset in target.offsets_mut() {
-                                    self.install_expression_call_requirements(
-                                        offset,
-                                        requirements,
-                                    )?;
-                                }
-                            }
-                        }
-                    }
-                    for value in values.expressions_mut() {
-                        self.install_expression_call_requirements(value, requirements)?;
-                    }
-                }
-                CheckedStatement::Set { target, value, .. }
-                | CheckedStatement::Replace { target, value, .. } => {
+                CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => self
@@ -2201,11 +2355,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 &mut target.offset,
                                 requirements,
                             )?,
-                        CheckedSetTarget::RangeIndex(target) => self
-                            .install_expression_call_requirements(
-                                &mut target.offset,
-                                requirements,
-                            )?,
+                        CheckedSetTarget::RangeIndex(target) => {
+                            for offset in target.offsets_mut() {
+                                self.install_expression_call_requirements(offset, requirements)?;
+                            }
+                        }
                         CheckedSetTarget::Storage(target) => {
                             for offset in target.offsets_mut() {
                                 self.install_expression_call_requirements(offset, requirements)?;
@@ -2225,7 +2379,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         self.install_statement_call_requirements(&mut arm.body, requirements)?;
                     }
                 }
-                CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+                CheckedStatement::Loop { body, .. } => {
                     self.install_statement_call_requirements(body, requirements)?;
                 }
                 CheckedStatement::CountedRange {
@@ -2250,9 +2404,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         match expression {
             CheckedExpression::UserCall {
                 function,
+                formal_effects,
                 arguments,
                 goal_arguments,
                 goal_regions,
+                formal_contract,
                 requirements: call_requirements,
                 ..
             } => {
@@ -2263,9 +2419,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .signatures
                     .get(function.0 as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let boundary = requirements
-                    .get(function.0 as usize)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                if let Some(effects) = formal_effects {
+                    effects.allocates = signature.declared_effects.allocates;
+                }
+                let boundary = match formal_contract {
+                    Some(boundary) => boundary.requirements.as_slice(),
+                    None => requirements
+                        .get(function.0 as usize)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                };
                 *call_requirements = boundary
                     .iter()
                     .map(|boundary| {
@@ -2297,24 +2459,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::NumericConversion { value, .. }
             | CheckedExpression::Reinterpret { value, .. }
-            | CheckedExpression::ArrayFill { value, .. }
-            | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
-            | CheckedExpression::BoxTake { value, .. }
-            | CheckedExpression::ArenaNew { value, .. }
-            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.install_expression_call_requirements(value, requirements)?;
             }
+            CheckedExpression::BoxTake { .. } => {}
             CheckedExpression::ReadStorage { root, .. } => {
                 for offset in root.offsets_mut() {
                     self.install_expression_call_requirements(offset, requirements)?;
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
-            | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::RangeIndex { offset, .. } => {
+            | CheckedExpression::BufferIndex { offset, .. } => {
                 self.install_expression_call_requirements(offset, requirements)?;
+            }
+            CheckedExpression::RangeElementMeasure { place, .. }
+            | CheckedExpression::RangeIndex { place, .. }
+            | CheckedExpression::BorrowRangeIndex { place, .. } => {
+                for offset in place.offsets_mut() {
+                    self.install_expression_call_requirements(offset, requirements)?;
+                }
             }
             // [REF-4] both endpoints are ordinary operands evaluated at the
             // formation, and a storage source carries its own offsets.
@@ -2329,14 +2493,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.install_expression_call_requirements(start, requirements)?;
                 self.install_expression_call_requirements(end, requirements)?;
             }
-            CheckedExpression::BufferFill { length, value, .. } => {
-                self.install_expression_call_requirements(length, requirements)?;
-                self.install_expression_call_requirements(value, requirements)?;
-            }
-            CheckedExpression::BufferVacant { length, .. }
-            | CheckedExpression::BufferFits { length, .. } => {
-                self.install_expression_call_requirements(length, requirements)?;
-            }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
@@ -2344,11 +2500,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::RangeMeasure { .. }
-            | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
-            | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::DerefAddressed { .. }
             | CheckedExpression::Project { .. } => {}
         }
@@ -2391,7 +2543,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Let { value, .. }
                 | CheckedStatement::DestructuringLet { value, .. }
                 | CheckedStatement::Evaluate(value)
-                | CheckedStatement::Dispose { value, .. }
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Return { value, .. }
                 | CheckedStatement::Give { value, .. } => {
@@ -2400,43 +2551,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::PropagateLet { scrutinee, .. } => {
                     Self::install_expression_allocation_bounds(scrutinee, bounds)?;
                 }
-                CheckedStatement::SetList {
-                    targets, values, ..
-                } => {
-                    for target in targets {
-                        match target {
-                            CheckedSetTarget::Place(_) => {}
-                            CheckedSetTarget::ArrayIndex(target) => {
-                                Self::install_expression_allocation_bounds(
-                                    &mut target.offset,
-                                    bounds,
-                                )?;
-                            }
-                            CheckedSetTarget::BufferIndex(target) => {
-                                Self::install_expression_allocation_bounds(
-                                    &mut target.offset,
-                                    bounds,
-                                )?;
-                            }
-                            CheckedSetTarget::RangeIndex(target) => {
-                                Self::install_expression_allocation_bounds(
-                                    &mut target.offset,
-                                    bounds,
-                                )?;
-                            }
-                            CheckedSetTarget::Storage(target) => {
-                                for offset in target.offsets_mut() {
-                                    Self::install_expression_allocation_bounds(offset, bounds)?;
-                                }
-                            }
-                        }
-                    }
-                    for value in values.expressions_mut() {
-                        Self::install_expression_allocation_bounds(value, bounds)?;
-                    }
-                }
-                CheckedStatement::Set { target, value, .. }
-                | CheckedStatement::Replace { target, value, .. } => {
+                CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => {
@@ -2446,7 +2561,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
                         }
                         CheckedSetTarget::RangeIndex(target) => {
-                            Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
+                            for offset in target.offsets_mut() {
+                                Self::install_expression_allocation_bounds(offset, bounds)?;
+                            }
                         }
                         CheckedSetTarget::Storage(target) => {
                             for offset in target.offsets_mut() {
@@ -2467,7 +2584,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         Self::install_statement_allocation_bounds(&mut arm.body, bounds)?;
                     }
                 }
-                CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+                CheckedStatement::Loop { body, .. } => {
                     Self::install_statement_allocation_bounds(body, bounds)?;
                 }
                 CheckedStatement::CountedRange {
@@ -2489,35 +2606,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bounds: &HashMap<NodePath, u64>,
     ) -> Result<(), SemanticCompilerFailure> {
         match expression {
-            CheckedExpression::BufferFill {
-                carrier,
-                length,
-                value,
-                target_domains,
+            CheckedExpression::UserCall {
+                call,
+                arguments,
+                allocation,
                 ..
             } => {
-                // Acceptance-dark test hooks deliberately retain failed OP-9
-                // sites. They keep the pending None value and never lower;
-                // an accepted ordinary program has a bound for every site.
-                if let Some(upper) = bounds.get(carrier).copied() {
-                    target_domains.install_source_length_upper_bound(upper);
+                if let Some(allocation) = allocation
+                    && let Some(upper) = bounds.get(call).copied()
+                {
+                    allocation.install_source_length_upper_bound(upper);
                 }
-                Self::install_expression_allocation_bounds(length, bounds)?;
-                Self::install_expression_allocation_bounds(value, bounds)?;
-            }
-            CheckedExpression::BufferVacant {
-                carrier,
-                length,
-                target_domains,
-                ..
-            } => {
-                if let Some(upper) = bounds.get(carrier).copied() {
-                    target_domains.install_source_length_upper_bound(upper);
+                for argument in arguments {
+                    Self::install_expression_allocation_bounds(argument, bounds)?;
                 }
-                Self::install_expression_allocation_bounds(length, bounds)?;
             }
-            CheckedExpression::UserCall { arguments, .. }
-            | CheckedExpression::IntegerOperation { arguments, .. }
+            CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
             | CheckedExpression::BooleanOperation { arguments, .. }
             | CheckedExpression::EnumEquality { arguments, .. }
@@ -2533,24 +2637,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::NumericConversion { value, .. }
             | CheckedExpression::Reinterpret { value, .. }
-            | CheckedExpression::ArrayFill { value, .. }
-            | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
-            | CheckedExpression::BoxTake { value, .. }
-            | CheckedExpression::ArenaNew { value, .. }
-            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 Self::install_expression_allocation_bounds(value, bounds)?;
             }
+            CheckedExpression::BoxTake { .. } => {}
             CheckedExpression::ReadStorage { root, .. } => {
                 for offset in root.offsets_mut() {
                     Self::install_expression_allocation_bounds(offset, bounds)?;
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
-            | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::RangeIndex { offset, .. } => {
+            | CheckedExpression::BufferIndex { offset, .. } => {
                 Self::install_expression_allocation_bounds(offset, bounds)?;
+            }
+            CheckedExpression::RangeElementMeasure { place, .. }
+            | CheckedExpression::RangeIndex { place, .. }
+            | CheckedExpression::BorrowRangeIndex { place, .. } => {
+                for offset in place.offsets_mut() {
+                    Self::install_expression_allocation_bounds(offset, bounds)?;
+                }
             }
             CheckedExpression::RangeOf {
                 source, start, end, ..
@@ -2563,9 +2669,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Self::install_expression_allocation_bounds(start, bounds)?;
                 Self::install_expression_allocation_bounds(end, bounds)?;
             }
-            CheckedExpression::BufferFits { length, .. } => {
-                Self::install_expression_allocation_bounds(length, bounds)?;
-            }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
@@ -2573,11 +2676,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::RangeMeasure { .. }
-            | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
-            | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::DerefAddressed { .. }
             | CheckedExpression::Project { .. } => {}
         }
@@ -2759,10 +2858,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 equal,
                 operand_type: self.instantiate_goal_type(operand_type, signature, regions)?,
             },
-            GoalOperation::ArrayFill { element, length } => GoalOperation::ArrayFill {
-                element: self.instantiate_goal_element(element, signature, regions)?,
-                length: self.instantiate_goal_const(length, signature)?,
-            },
             GoalOperation::ArrayMeasure {
                 measure,
                 element,
@@ -2798,10 +2893,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     maximum_length,
                 }
             }
-            GoalOperation::RangeMeasure { measure, element } => GoalOperation::RangeMeasure {
-                measure,
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
-            },
             GoalOperation::ContainerMeasure {
                 measure,
                 measured,
@@ -2827,9 +2918,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 constant: constant
                     .map(|constant| self.instantiate_goal_const(constant, signature))
                     .transpose()?,
-            },
-            GoalOperation::RangeIndex { element } => GoalOperation::RangeIndex {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
         })
     }
@@ -3012,25 +3100,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .map(|index| CheckedConst::Derived(DerivedConstId(index)))
     }
 
-    fn instantiate_goal_region(
-        &self,
-        region: DeclarationId,
-        signature: &FunctionSignature,
-        regions: &[DeclarationId],
-    ) -> Result<DeclarationId, CheckStop> {
-        let Some(index) = signature
-            .region_parameters
-            .iter()
-            .position(|formal| *formal == region)
-        else {
-            return Ok(region);
-        };
-        regions
-            .get(index)
-            .copied()
-            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
-    }
-
     fn instantiate_goal_value(
         &self,
         value: &CheckedValue,
@@ -3174,7 +3243,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::RangeFormation => SemanticRule::Ref4,
-                        super::entailment::ObligationFamily::RangeSeparation => SemanticRule::Eff5,
+                        super::entailment::ObligationFamily::CallSeparation => SemanticRule::Eff5,
                     },
                     Self::Call(_) => SemanticRule::Fn8,
                 }
@@ -3494,12 +3563,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix: "the allocation's own size arithmetic must stay inside u64: bound the count with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when the refusal is intended program behavior; otherwise restructure the allocation",
                             },
                         },
-                        super::entailment::ObligationFamily::RangeSeparation => SemanticIssue {
+                        super::entailment::ObligationFamily::CallSeparation => SemanticIssue {
                             rule: SemanticRule::Eff5,
                             location,
-                            kind: SemanticIssueKind::UndischargedRangeSeparation {
+                            kind: SemanticIssueKind::UndischargedCallSeparation {
                                 residual,
-                                mechanical_fix: "prove the two ranges disjoint by one of OWN-7's four non-strict orderings before this call, or name one range in place of the pair",
+                                mechanical_fix: "prove the two positions distinct before this call, or pass one of them",
                             },
                         },
                         super::entailment::ObligationFamily::RangeFormation => SemanticIssue {

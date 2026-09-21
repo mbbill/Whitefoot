@@ -1,8 +1,8 @@
 use crate::SemanticCompilerFailure;
 
 use super::super::model::{
-    CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedSetTarget, CheckedStatement,
-    CheckedType,
+    CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedReleaseMode, CheckedSetTarget,
+    CheckedStatement, CheckedType,
 };
 use super::{CheckStop, Checker, EffectSet};
 
@@ -21,52 +21,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedStatement::DestructuringLet { value, .. } => {
                     self.collect_expression_release_effects(function, value, effects)?;
                 }
-                // [PROV-6, EFF-2] `dispose p;` is a written statement, so the
-                // walk it runs contributes to the body-syntactic row where
-                // the checker formed it, not to the release contribution.
-                CheckedStatement::Dispose { value, .. } => {
-                    self.collect_expression_release_effects(function, value, effects)?;
-                }
-                CheckedStatement::SetList {
-                    targets, values, ..
-                } => {
-                    for target in targets {
-                        match target {
-                            CheckedSetTarget::Place(_) => {}
-                            CheckedSetTarget::ArrayIndex(target) => {
-                                self.collect_expression_release_effects(
-                                    function,
-                                    &target.offset,
-                                    effects,
-                                )?;
-                            }
-                            CheckedSetTarget::BufferIndex(target) => {
-                                self.collect_expression_release_effects(
-                                    function,
-                                    &target.offset,
-                                    effects,
-                                )?;
-                            }
-                            CheckedSetTarget::RangeIndex(target) => {
-                                self.collect_expression_release_effects(
-                                    function,
-                                    &target.offset,
-                                    effects,
-                                )?;
-                            }
-                            CheckedSetTarget::Storage(target) => {
-                                for offset in target.offsets() {
-                                    self.collect_expression_release_effects(
-                                        function, offset, effects,
-                                    )?;
-                                }
-                            }
-                        }
-                    }
-                    for value in values.expressions() {
-                        self.collect_expression_release_effects(function, value, effects)?;
-                    }
-                }
                 CheckedStatement::PropagateLet {
                     scrutinee,
                     error_drops,
@@ -75,11 +29,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.collect_expression_release_effects(function, scrutinee, effects)?;
                     self.collect_drop_release_effects(function, error_drops, effects)?;
                 }
-                CheckedStatement::Set { target, value, .. }
-                | CheckedStatement::Replace { target, value, .. } => {
-                    // A [SET-2] commit derives no release of its own
-                    // [STOR-3]; only its offset and right-hand side can
-                    // carry release sites, exactly as for a Set commit.
+                CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => {
@@ -97,11 +47,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             )?;
                         }
                         CheckedSetTarget::RangeIndex(target) => {
-                            self.collect_expression_release_effects(
-                                function,
-                                &target.offset,
-                                effects,
-                            )?;
+                            for offset in target.offsets() {
+                                self.collect_expression_release_effects(function, offset, effects)?;
+                            }
                         }
                         CheckedSetTarget::Storage(target) => {
                             for offset in target.offsets() {
@@ -168,14 +116,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Break { drops, .. } => {
                     self.collect_drop_release_effects(function, drops, effects)?;
                 }
-                CheckedStatement::Region {
-                    body,
-                    fallthrough_drops,
-                    ..
-                } => {
-                    self.collect_release_effects(function, body, effects)?;
-                    self.collect_drop_release_effects(function, fallthrough_drops, effects)?;
-                }
             }
         }
         Ok(())
@@ -226,14 +166,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.collect_expression_release_effects(function, argument, effects)?;
                 }
             }
+            CheckedExpression::BoxTake { cleanup, .. } => {
+                for action in cleanup {
+                    if let super::super::model::CheckedOwnedTakeCleanup::Drop { ty, .. } = action {
+                        for path in self.resolved_provider_writes_for(
+                            function,
+                            *ty,
+                            CheckedReleaseMode::Full,
+                        )? {
+                            effects.add_write(path);
+                        }
+                    }
+                }
+            }
             CheckedExpression::NumericConversion { value, .. }
             | CheckedExpression::Reinterpret { value, .. }
-            | CheckedExpression::ArrayFill { value, .. }
-            | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
-            | CheckedExpression::BoxTake { value, .. }
-            | CheckedExpression::ArenaNew { value, .. }
-            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.collect_expression_release_effects(function, value, effects)?;
             }
@@ -243,9 +191,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
-            | CheckedExpression::BufferIndex { offset, .. }
-            | CheckedExpression::RangeIndex { offset, .. } => {
+            | CheckedExpression::BufferIndex { offset, .. } => {
                 self.collect_expression_release_effects(function, offset, effects)?;
+            }
+            CheckedExpression::RangeElementMeasure { place, .. }
+            | CheckedExpression::RangeIndex { place, .. }
+            | CheckedExpression::BorrowRangeIndex { place, .. } => {
+                for offset in place.offsets() {
+                    self.collect_expression_release_effects(function, offset, effects)?;
+                }
             }
             CheckedExpression::RangeOf {
                 source, start, end, ..
@@ -258,14 +212,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.collect_expression_release_effects(function, start, effects)?;
                 self.collect_expression_release_effects(function, end, effects)?;
             }
-            CheckedExpression::BufferFill { length, value, .. } => {
-                self.collect_expression_release_effects(function, length, effects)?;
-                self.collect_expression_release_effects(function, value, effects)?;
-            }
-            CheckedExpression::BufferVacant { length, .. }
-            | CheckedExpression::BufferFits { length, .. } => {
-                self.collect_expression_release_effects(function, length, effects)?;
-            }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
@@ -273,11 +219,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::RangeMeasure { .. }
-            | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
-            | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::DerefAddressed { .. } => {}
         }
         Ok(())
@@ -340,17 +282,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                         CheckedNominalKind::Enum { .. }
                         | CheckedNominalKind::Box { .. }
-                        | CheckedNominalKind::Opaque
-                        // The region's allocation list drops at the region
-                        // block's exits, and that drop IS the region's
-                        // storage release [STOR-3].
-                        | CheckedNominalKind::ArenaStorage => {
+                        | CheckedNominalKind::Opaque => {
                             drops.push((path, current));
                         }
-                        // An arena value's storage is released with its
-                        // region, never with an owner scope [STOR-3, STOR-4],
-                        // so the value derives no drop here.
-                        CheckedNominalKind::Arena { .. } => {}
                     }
                 }
             }

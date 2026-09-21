@@ -809,6 +809,367 @@ fn main() -> status: own ExitStatus pure {
     }
 }
 
+/// [REF-4, TYPE-9] carries the complete stored element type through a range:
+/// the descriptor ABI stays `{ptr, len}` while element addressing uses the
+/// nominal's full layout, including an owned Box nested inside it.
+#[test]
+fn composite_range_elements_keep_nested_box_storage_and_descriptor_abi() {
+    let source = br#"struct Record {
+  cell: Box<u64>;
+  marker: u64;
+}
+
+fn rewrite(records: &[Record]) -> previous: own u64 writes(records) contract {
+  requires 1_u64 <= deref(records).len;
+} {
+  let old = deref(records)[0_u64].cell.inner;
+  set deref(records)[0_u64].cell.inner = 99_u64;
+  set deref(records)[0_u64].marker = 23_u64;
+  return old;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let records = slots_new::<Record, 1>();
+  let cell = box_new::<u64>(value: 41_u64);
+  let record = Record(cell: move cell, marker: 17_u64);
+  place_back(window: &records, value: move record);
+  let part = &records[0_u64..1_u64];
+  let previous = rewrite(records: part);
+  if previous != 41_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if records[0_u64].cell.inner != 99_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if records[0_u64].marker != 23_u64 {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    let rewrite = emitted_function(&llvm, "rewrite");
+    assert!(
+        rewrite.contains("extractvalue { ptr, i64 }") && rewrite.contains("getelementptr inbounds"),
+        "the range keeps its two-word ABI and addresses the full Record layout: {rewrite}"
+    );
+    let output = compile_and_run(&llvm);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+/// [REF-4, TYPE-5, OP-4] keeps the complete element type after selecting an
+/// element of a range. A second subscript therefore addresses the selected
+/// inner Array for reads, writes and references; it does not flatten the two
+/// logical indices or address the corresponding column of another row.
+#[test]
+fn nested_range_elements_read_write_and_borrow_the_selected_inner_array() {
+    let source = br#"fn touch(rows: &[Array<u64, 2>], outer: own u64, inner: own u64, value: own u64) -> result: own u64 writes(rows) contract {
+  requires outer < deref(rows).len;
+  requires inner < 2_u64;
+} {
+  let before = deref(rows)[outer][inner];
+  set deref(rows)[outer][inner] = value;
+  let cell = &deref(rows)[outer][inner];
+  let after = deref(cell);
+  let scaled = before *wrap 100_u64;
+  return scaled +wrap after;
+}
+
+fn nested_range_checksum() -> result: own u64 pure {
+  let seed = array_filled::<u64, 2>(value: 0_u64);
+  let rows = array_filled::<Array<u64, 2>, 2>(value: seed);
+  set rows[0_u64][0_u64] = 11_u64;
+  set rows[0_u64][1_u64] = 13_u64;
+  set rows[1_u64][0_u64] = 17_u64;
+  set rows[1_u64][1_u64] = 19_u64;
+  let part = &rows[0_u64..2_u64];
+  let first = touch(rows: part, outer: 1_u64, inner: 0_u64, value: 71_u64);
+  let second = touch(rows: part, outer: 0_u64, inner: 1_u64, value: 83_u64);
+  let first_row_first = deref(part)[0_u64][0_u64] *wrap 100000000_u64;
+  let first_row_second = deref(part)[0_u64][1_u64] *wrap 10000000000_u64;
+  let second_row_first = deref(part)[1_u64][0_u64] *wrap 1000000000000_u64;
+  let second_row_second = deref(part)[1_u64][1_u64] *wrap 100000000000000_u64;
+  let second_observation = second *wrap 10000_u64;
+  let checksum0 = first +wrap second_observation;
+  let checksum1 = checksum0 +wrap first_row_first;
+  let checksum2 = checksum1 +wrap first_row_second;
+  let checksum3 = checksum2 +wrap second_row_first;
+  let checksum4 = checksum3 +wrap second_row_second;
+  return checksum4;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source)
+        .replace("@main(", "@wf_nested_range_main(")
+        .replace("@wf__main_body(", "@wf_nested_range_body(");
+    let oracle = r#"#include <stdint.h>
+#include <stdio.h>
+extern int wf__floor_run(int, char **);
+extern uint64_t wf_nested_range_checksum(void);
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    uint64_t rows[2][2] = {{11, 13}, {17, 19}};
+    uint64_t first = rows[1][0] * 100 + 71;
+    rows[1][0] = 71;
+    uint64_t second = rows[0][1] * 100 + 83;
+    rows[0][1] = 83;
+    uint64_t expected = first + second * UINT64_C(10000)
+        + rows[0][0] * UINT64_C(100000000)
+        + rows[0][1] * UINT64_C(10000000000)
+        + rows[1][0] * UINT64_C(1000000000000)
+        + rows[1][1] * UINT64_C(100000000000000);
+    uint64_t actual = wf_nested_range_checksum();
+    if (actual != expected) {
+        (void)fprintf(stderr, "nested range: expected=%llu actual=%llu\n",
+                      (unsigned long long)expected, (unsigned long long)actual);
+        return 1;
+    }
+    return 0;
+}
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(oracle), &[], &directory);
+    let output = Command::new(executable)
+        .output()
+        .expect("run nested range element oracle");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove nested range element oracle files");
+}
+
+/// [REF-1, REF-2] a loop header carries the runtime reference value selected
+/// by either its zero-trip entry or its last executed backedge. The scalar
+/// case observes the thin address inside and after the loop. The range case
+/// also observes the two-word pointer/count descriptor after each rebinding.
+/// A C model computes both answers from the source arrays rather than copying
+/// a Whitefoot checksum literal.
+#[test]
+fn loop_carried_references_execute_zero_trip_and_backedge_values() {
+    let source = br#"fn carried_cell(count: own u64) -> result: own u64 pure contract {
+  requires count <= 2_u64;
+} {
+  let values = array_filled::<u64, 3>(value: 0_u64);
+  set values[0_u64] = 11_u64;
+  set values[1_u64] = 22_u64;
+  set values[2_u64] = 33_u64;
+  let selected = &values[0_u64];
+  let observed = 0_u64;
+  for (i in 0_u64..count) {
+    let current = deref(selected);
+    set observed = observed +wrap current;
+    let next = i + 1_u64;
+    set selected = &values[next];
+  }
+  let final_value = deref(selected);
+  let scaled = observed *wrap 100_u64;
+  return scaled +wrap final_value;
+}
+
+fn carried_range(count: own u64) -> result: own u64 pure contract {
+  requires count <= 2_u64;
+} {
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  set values[0_u64] = 11_u64;
+  set values[1_u64] = 23_u64;
+  set values[2_u64] = 37_u64;
+  set values[3_u64] = 53_u64;
+  let selected = &values[0_u64..2_u64];
+  let observed = 0_u64;
+  for (i in 0_u64..count) {
+    let available = 0_u64 < deref(selected).len;
+    if available {
+      let current = deref(selected)[0_u64];
+      set observed = observed +wrap current;
+    } else {
+      return 1_u64;
+    }
+    let next = i + 1_u64;
+    let end = next + 2_u64;
+    set selected = &values[next..end];
+  }
+  let width = deref(selected).len;
+  let has_first = 0_u64 < width;
+  if has_first {
+    let first = deref(selected)[0_u64];
+    let has_second = 1_u64 < width;
+    if has_second {
+      let second = deref(selected)[1_u64];
+      let observed_part = observed *wrap 1000000000_u64;
+      let first_part = first *wrap 1000000_u64;
+      let second_part = second *wrap 1000_u64;
+      let first_sum = observed_part +wrap first_part;
+      let second_sum = first_sum +wrap second_part;
+      return second_sum +wrap width;
+    }
+  }
+  return 2_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source)
+        .replace("@main(", "@wf_loop_carried_main(")
+        .replace("@wf__main_body(", "@wf_loop_carried_body(");
+    let oracle = r#"#include <stdint.h>
+#include <stdio.h>
+extern int wf__floor_run(int, char **);
+extern uint64_t wf_carried_cell(uint64_t);
+extern uint64_t wf_carried_range(uint64_t);
+
+static uint64_t expected_cell(uint64_t count) {
+    const uint64_t values[3] = {11, 22, 33};
+    uint64_t selected = 0;
+    uint64_t observed = 0;
+    for (uint64_t i = 0; i < count; ++i) {
+        observed += values[selected];
+        selected = i + 1;
+    }
+    return observed * 100 + values[selected];
+}
+
+static uint64_t expected_range(uint64_t count) {
+    const uint64_t values[4] = {11, 23, 37, 53};
+    uint64_t start = 0;
+    uint64_t observed = 0;
+    for (uint64_t i = 0; i < count; ++i) {
+        observed += values[start];
+        start = i + 1;
+    }
+    return observed * UINT64_C(1000000000)
+        + values[start] * UINT64_C(1000000)
+        + values[start + 1] * UINT64_C(1000)
+        + UINT64_C(2);
+}
+
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const uint64_t counts[2] = {0, 2};
+    for (uint64_t i = 0; i < 2; ++i) {
+        uint64_t count = counts[i];
+        uint64_t expected = expected_cell(count);
+        uint64_t actual = wf_carried_cell(count);
+        if (actual != expected) {
+            (void)fprintf(stderr,
+                          "carried cell count=%llu expected=%llu actual=%llu\n",
+                          (unsigned long long)count,
+                          (unsigned long long)expected,
+                          (unsigned long long)actual);
+            return 1;
+        }
+        expected = expected_range(count);
+        actual = wf_carried_range(count);
+        if (actual != expected) {
+            (void)fprintf(stderr,
+                          "carried range count=%llu expected=%llu actual=%llu\n",
+                          (unsigned long long)count,
+                          (unsigned long long)expected,
+                          (unsigned long long)actual);
+            return 2;
+        }
+    }
+    return 0;
+}
+
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(oracle), &[], &directory);
+    let output = Command::new(executable)
+        .output()
+        .expect("run loop-carried reference oracle");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove loop-carried reference oracle files");
+}
+
+/// [ENT-2, OP-4, OP-15] lowers the measure of a window selected directly
+/// through a range reference. The inner window contains one value, so the
+/// process observes the descriptor read rather than merely compiling an
+/// unused measure expression.
+#[test]
+fn a_measured_range_element_has_its_observable_inner_length() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let inner = slots_new::<u64, 2>();
+  place_back(window: &inner, value: 41_u64);
+  let outer = slots_new::<Slots<u64, 2>, 1>();
+  place_back(window: &outer, value: move inner);
+  let items = &outer[0_u64..1_u64];
+  let observed = deref(items)[0_u64].len;
+  if observed != 1_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    let output = compile_and_run(&llvm);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+/// [REF-1, REF-4, ENT-2, OP-4, OP-15] a value-if may join range references
+/// to different storage roots. The joined value keeps its pointer-and-count
+/// representation, and a nested measured element is addressed through the
+/// target selected at runtime. Calling both ways makes the driver observe
+/// both possible targets rather than accepting an unused semantic join.
+#[test]
+fn joined_range_element_measures_select_each_runtime_target() {
+    let source = br#"fn observe(flag: own Bool, expected: own u64) -> result: own u8 pure {
+  let left_row = slots_new::<u64, 3>();
+  place_back(window: &left_row, value: 11_u64);
+  let right_row = slots_new::<u64, 3>();
+  place_back(window: &right_row, value: 21_u64);
+  place_back(window: &right_row, value: 22_u64);
+  let left = slots_new::<Slots<u64, 3>, 1>();
+  place_back(window: &left, value: move left_row);
+  let right = slots_new::<Slots<u64, 3>, 1>();
+  place_back(window: &right, value: move right_row);
+  let items = if flag {
+    give &left[0_u64..1_u64];
+  } else {
+    give &right[0_u64..1_u64];
+  }
+  if 0_u64 < deref(items).len {
+    let observed = deref(items)[0_u64].len;
+    if observed == expected {
+      return 0_u8;
+    }
+  }
+  return 1_u8;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let selected_left = 0_u64 == 0_u64;
+  let left_status = observe(flag: selected_left, expected: 1_u64);
+  if left_status != 0_u8 {
+    return exit_status(code: 1_u8);
+  }
+  let selected_right = 0_u64 != 0_u64;
+  let right_status = observe(flag: selected_right, expected: 2_u64);
+  if right_status != 0_u8 {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    let output = compile_and_run(&llvm);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
 /// One `&[u8]` consumer reads the three storage origins [STOR-1]: a `const`
 /// item's read-only static storage, a frame-resident constant-capacity window,
 /// and a runtime-capacity window inside its own cell. The range reference is
@@ -941,15 +1302,41 @@ fn a_range_reference_over_a_frame_resident_window_reaches_its_own_slots() {
 "#;
     let llvm = compile(source);
     let main = emitted_function(&llvm, "main");
-    // The window's slots are inline, so forming the range reference stores
-    // the aggregate into the frame slot the planner reserved and indexes
-    // there. A window whose slots live behind a descriptor pointer would
-    // `extractvalue` instead, so this is the shape assertion and not a
-    // spelling one.
-    assert!(
-        main.contains("getelementptr inbounds { [4 x i8], i64, i64 }, ptr %"),
-        "the range reference must index the window's own frame slot:\n{main}"
-    );
+    // A frame-resident `Slots<u8, 4>` is the header-first
+    // `{ i64 len, [4 x i8] slots }`. Forming the range reads that same
+    // aggregate's length field and takes the first inline slot address; the
+    // two GEPs must therefore share one frame-slot base.
+    let length_gep = main
+        .lines()
+        .find(|line| {
+            line.contains("getelementptr inbounds { i64, [4 x i8] }, ptr %")
+                && line.ends_with("i32 0, i32 0")
+        })
+        .expect("range formation must address the window length in its frame slot");
+    let slots_gep = main
+        .lines()
+        .find(|line| {
+            line.contains("getelementptr inbounds { i64, [4 x i8] }, ptr %")
+                && line.ends_with("i64 0, i32 1, i64 0")
+        })
+        .expect("range formation must address the window's first inline slot");
+    fn gep_base(line: &str) -> &str {
+        line.split_once("ptr ")
+            .and_then(|(_, suffix)| suffix.split_once(',').map(|(base, _)| base))
+            .expect("window GEP must carry one base pointer")
+    }
+    assert_eq!(gep_base(length_gep), gep_base(slots_gep));
+    fn result_name(line: &str) -> &str {
+        line.trim_start()
+            .split_once(" =")
+            .map(|(name, _)| name)
+            .expect("window GEP must define one SSA value")
+    }
+    assert!(main.contains(&format!("load i64, ptr {}", result_name(length_gep))));
+    assert!(main.contains(&format!(
+        "insertvalue {{ ptr, i64 }} zeroinitializer, ptr {}, 0",
+        result_name(slots_gep)
+    )));
     // Nothing is allocated or freed: a frame-resident window owns no heap
     // storage and a reference owns none at all [STOR-1].
     assert!(!main.contains("call void @free"));

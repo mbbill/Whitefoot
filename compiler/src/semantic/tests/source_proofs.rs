@@ -198,6 +198,114 @@ fn an_explicit_three_premise_invariant_survives_source_writes() {
     });
 }
 
+/// [PRF-1] relation-form uses are admitted by AUTO itself, not by the later
+/// affine-left/L0-right step of [MSR-4]. The first branch demonstrates that
+/// `length < widened` is a valid blockless invariant target through Step 6.
+/// In the sibling branch the same relation is only one source of a genuine
+/// three-premise certificate, so the whole target is not already automatic
+/// and redundancy cannot mask the premise-authority check.
+#[test]
+fn a_relation_use_cannot_borrow_the_msr4_right_bridge() {
+    let source = format!(
+        r#"fn larger(current: own u64, total: own u64) -> result: own u64 pure contract {{
+  ensures result >= total;
+}} {{
+  if current >= total {{
+    return current;
+  }}
+  return total;
+}}
+
+fn inspect(length: own u64, capacity: own u64, first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, choose_blockless: own Bool) -> result: own unit pure contract {{
+  requires length <= capacity;
+  requires capacity <= 9223372036854775807_u64;
+  requires first <= first_limit;
+  requires second <= second_limit;
+}} {{
+  if capacity == 0_u64 {{
+    return unit;
+  }}
+  let doubled = capacity + capacity;
+  let widened = larger(current: capacity, total: doubled);
+  if choose_blockless {{
+    invariant bridge_target: length < widened;
+  }} else {{
+    invariant upper_bound: length + first + second <= widened + first_limit + second_limit {{
+      use (length < widened);
+      use (first <= first_limit);
+      use (second <= second_limit);
+    }}
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    assert_prf1_issue(
+        source.as_bytes(),
+        SourceProofObligation::Premise(0),
+        ExpectedProofIssueNode::Use {
+            source: "use (length < widened);",
+            occurrence: 0,
+        },
+    );
+}
+
+/// [INV-1] admits a blockless invariant through complete [MSR-4], including
+/// its affine-left/L0-right bridge. [PRF-1] still tests redundancy with exact
+/// AUTO, so the same target in a sibling branch retains a certificate whose
+/// four premises exceed AUTO's fixed one- and two-premise families.
+#[test]
+fn a_written_certificate_is_not_redundant_when_only_full_msr4_proves_its_target() {
+    let source = format!(
+        r#"fn inspect(storage: &Box<Slots<u8>>, start: own u64, at: own u64, count: own u64, capacity: own u64, cap: own u64, blockless: own Bool) -> result: own unit pure contract {{
+  requires deref(storage).inner.len <= start + at;
+  requires at < count;
+  requires start + count <= capacity;
+  requires capacity <= cap;
+}} {{
+  if blockless {{
+    invariant automatic_bound: deref(storage).inner.len < cap;
+  }} else {{
+    invariant certified_bound: deref(storage).inner.len < cap {{
+      use (deref(storage).inner.len <= start + at);
+      use (at < count);
+      use (start + count <= capacity);
+      use (capacity <= cap);
+    }}
+  }}
+  return unit;
+}}
+
+{COMMAND_MAIN}"#
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!(
+                "full MSR-4 must admit the blockless branch without making the sibling certificate redundant: {outcome:?}"
+            );
+        };
+        let inspect = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "inspect")
+            .expect("inspect function exists");
+        let [automatic, proof] = inspect.entailment.source_proofs.as_slice() else {
+            panic!("inspect retains both sibling-branch invariant judgments");
+        };
+        assert_eq!(automatic.name, "automatic_bound");
+        assert!(!automatic.certificate_written);
+        assert!(automatic.check.discharged());
+        assert_eq!(proof.name, "certified_bound");
+        assert!(proof.certificate_written);
+        assert_eq!(proof.check.premises, [true, true, true, true]);
+        assert!(proof.check.combination);
+        assert!(!proof.check.redundant);
+        assert!(proof.check.discharged());
+    });
+}
+
 #[test]
 fn the_first_unproved_use_is_reported_in_source_order() {
     let source = format!(

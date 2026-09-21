@@ -183,9 +183,8 @@ fn ordered_invariant_roots_have_exact_integer_normalization() {
 }
 
 #[test]
-fn equality_and_disequality_are_not_invariant_roots() {
-    for source in [
-        br#"fn main() -> status: own ExitStatus pure {
+fn equality_is_an_invariant_root() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant same: i == i
@@ -193,9 +192,18 @@ fn equality_and_disequality_are_not_invariant_roots() {
   }
   return exit_status(code: 0_u8);
 }
-"#
-        .as_slice(),
-        br#"fn main() -> status: own ExitStatus pure {
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "equality must normalize to one invariant bound pair: {outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn disequality_is_not_an_invariant_root() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant different: i != 2_u64
@@ -203,23 +211,20 @@ fn equality_and_disequality_are_not_invariant_roots() {
   }
   return exit_status(code: 0_u8);
 }
-"#
-        .as_slice(),
-    ] {
-        with_semantics(source, |outcome| {
-            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-                panic!("a non-ordered invariant root must be rejected: {outcome:?}");
-            };
-            assert_eq!(issue.rule(), SemanticRule::Inv1);
-            assert_eq!(
-                issue.kind(),
-                &SemanticIssueKind::InvalidInvariant {
-                    reason: "the invariant relation is not an admitted ordered integer relation",
-                    mechanical_fix: "write `<=`, `<`, `>=`, or `>` between the two affine expressions; equality and disequality are not invariant relations",
-                }
-            );
-        });
-    }
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("disequality must be rejected as an invariant root: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Inv1);
+        assert_eq!(
+            issue.kind(),
+            &SemanticIssueKind::InvalidInvariant {
+                reason: "the invariant relation is not an admitted ordered integer relation",
+                mechanical_fix: "write `<=`, `<`, `>=`, `>`, or `==` between the two affine expressions; disequality is not an invariant relation",
+            }
+        );
+    });
 }
 
 #[test]
@@ -1543,8 +1548,10 @@ fn main() -> status: own ExitStatus pure {
             .iter()
             .filter(|outcome| outcome.family == ObligationFamily::AllocationFit)
             .collect::<Vec<_>>();
-        assert_eq!(allocations.len(), 2, "both allocation forms retain OP-9");
-        for allocation in allocations {
+        let [filled, vacant] = allocations.as_slice() else {
+            panic!("both allocation forms retain OP-9");
+        };
+        let proof_routes = |allocation: &&super::super::entailment::ObligationOutcome| {
             assert!(allocation.discharged);
 
             let root = allocation
@@ -1560,6 +1567,7 @@ fn main() -> status: own ExitStatus pure {
             let mut seen = vec![false; function.entailment.derivations.nodes.len()];
             let mut stack = vec![root];
             let mut used_exhaustion = false;
+            let mut used_direct_interval = false;
             while let Some(node) = stack.pop() {
                 let position = node.0 as usize;
                 if seen[position] {
@@ -1574,13 +1582,33 @@ fn main() -> status: own ExitStatus pure {
                         ..
                     } if !premises.is_empty()
                 );
+                // OP-9 for u8 is exactly count <= u64::MAX. Its direct
+                // L0 derivation retains the type maximum itself; an empty
+                // affine-premise wrapper is not required by DIAG-2 and is
+                // not the evidence that establishes this bound.
+                used_direct_interval |= matches!(
+                    retained,
+                    DerivationNode::ImplicitBound {
+                        kind: super::super::entailment::ImplicitBoundKind::TypeMaximum,
+                        bound,
+                        ..
+                    } if *bound == i128::from(u64::MAX)
+                );
                 stack.extend(retained.parent_ids());
             }
-            assert!(
-                used_exhaustion,
-                "each OP-9 proof must descend from the exported source invariant"
-            );
-        }
+            (used_exhaustion, used_direct_interval)
+        };
+        let (filled_exhaustion, _) = proof_routes(filled);
+        assert!(
+            filled_exhaustion,
+            "u16 allocation fit must descend from the exported source invariant"
+        );
+        let (vacant_exhaustion, vacant_direct) = proof_routes(vacant);
+        assert!(
+            !vacant_exhaustion && vacant_direct,
+            "u8 allocation fit is direct from the u64 count's type interval: exhaustion={vacant_exhaustion}, direct={vacant_direct}, derivations={:?}",
+            function.entailment.derivations.nodes
+        );
     });
 }
 

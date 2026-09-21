@@ -152,7 +152,7 @@ fn main() -> status: own ExitStatus pure {
   set page[7_u64] = 50_u8;
   set page[8_u64] = 60_u8;
   let before = checksum(page: &page, used: 9_u64);
-  let before_ok = is_sum(value: move before, expected: 180182158841830816_u64);
+  let before_ok = is_sum(value: before, expected: 180182158841830816_u64);
   if bnot(before_ok) {
     return exit_status(code: 1_u8);
   }
@@ -164,18 +164,18 @@ fn main() -> status: own ExitStatus pure {
     return exit_status(code: 3_u8);
   }
   let after = checksum(page: &page, used: remaining);
-  let after_ok = is_sum(value: move after, expected: 47421924604_u64);
+  let after_ok = is_sum(value: after, expected: 47421924604_u64);
   if bnot(after_ok) {
     return exit_status(code: 4_u8);
   }
   set page[0_u64] = 255_u8;
   let malformed = checksum(page: &page, used: remaining);
-  let malformed_ok = is_invalid(value: move malformed);
+  let malformed_ok = is_invalid(value: malformed);
   if bnot(malformed_ok) {
     return exit_status(code: 5_u8);
   }
   let oversized = checksum(page: &page, used: 33_u64);
-  let oversized_ok = is_invalid(value: move oversized);
+  let oversized_ok = is_invalid(value: oversized);
   if bnot(oversized_ok) {
     return exit_status(code: 6_u8);
   }
@@ -209,7 +209,7 @@ fn main() -> status: own ExitStatus pure {
     return exit_status(code: 13_u8);
   }
   let inserted_sum = checksum(page: &empty, used: second_used);
-  let inserted_ok = is_sum(value: move inserted_sum, expected: 10302497567214_u64);
+  let inserted_ok = is_sum(value: inserted_sum, expected: 10302497567214_u64);
   if bnot(inserted_ok) {
     return exit_status(code: 14_u8);
   }

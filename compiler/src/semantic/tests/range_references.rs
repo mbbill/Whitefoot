@@ -11,7 +11,7 @@
 //! - [VIEW-2] range separation retires as a judgment of its own. The successor
 //!   is [OWN-7]'s range-step relation, whose four non-strict orderings are
 //!   submitted by [EFF-5] at a call and reported as
-//!   `UndischargedRangeSeparation` citing EFF-5.
+//!   `UndischargedCallSeparation` citing EFF-5.
 //! - [VIEW-4] the slice type and [VIEW-6] the slice return ceiling retire.
 //!   `Slice<T>` and `MutSlice<T>` are not types at all: `&[T]` is a reference
 //!   KIND admitted only in parameter position [TYPE-8, GRAM-2], is never a
@@ -67,6 +67,277 @@ fn a_range_reference_over_a_ring_is_refused() {
     });
 }
 
+/// [ENT-2, OP-15] a measure place may carry an ordinary subscript projection,
+/// including one through a range reference. [OP-4] discharges the element
+/// selection before the measure is read. The nested case keeps the real
+/// `Box.inner` projection between the selected range element and the `Slots`
+/// descriptor; borrowing the element into a separate reference must not be
+/// required just to name either measure.
+#[test]
+fn a_range_element_measure_is_an_ordinary_subscripted_measure_place() {
+    let source = br#"fn direct(items: &[Slots<u64, 2>]) -> length: own u64 reads(items) contract {
+  requires 0_u64 < deref(items).len;
+} {
+  return deref(items)[0_u64].len;
+}
+
+fn nested(items: &[Box<Slots<u64, 2>>]) -> length: own u64 reads(items) contract {
+  requires 0_u64 < deref(items).len;
+} {
+  return deref(items)[0_u64].inner.len;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// [REF-4, OP-4, SET-1] a range may contain composite elements. Every
+/// subscript below the selected outer element is an ordinary typed place step:
+/// its offset is evaluated in source order, its own bound is discharged, and
+/// read, write and borrow all name the same final scalar storage.
+#[test]
+fn nested_range_element_subscripts_are_complete_places() {
+    let source = br#"fn exercise(rows: &[Array<u64, 2>], outer: own u64, inner: own u64) -> result: own u64 writes(rows) contract {
+  requires outer < deref(rows).len;
+  requires inner < 2_u64;
+} {
+  let before = deref(rows)[outer][inner];
+  let changed = before +wrap 1_u64;
+  set deref(rows)[outer][inner] = changed;
+  let selected = &deref(rows)[outer][inner];
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// Both positions of a nested range element path owe their own [OP-4]
+/// judgment. The outer failure is reported before the inner position is
+/// considered, following the source's base-outward evaluation order.
+#[test]
+fn an_out_of_bounds_outer_nested_range_index_is_an_op4_rejection() {
+    let source = br#"fn invalid(rows: &[Array<u64, 2>]) -> result: own u64 reads(rows) contract {
+  requires deref(rows).len == 1_u64;
+} {
+  return deref(rows)[1_u64][0_u64];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+/// Discharging the outer range position does not authorize a nested Array
+/// position. The inner suffix keeps its own base type and obligation.
+#[test]
+fn an_out_of_bounds_inner_nested_range_index_is_an_op4_rejection() {
+    let source = br#"fn invalid(rows: &[Array<u64, 2>]) -> result: own u64 reads(rows) contract {
+  requires 0_u64 < deref(rows).len;
+} {
+  return deref(rows)[0_u64][2_u64];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+/// [REF-1, ENT-2, ENT-3.S1] a nested path may extend a joined range after
+/// the selected holder's own length has been proved sufficient. The branch
+/// supplies that fact without equating either input's measure to the joined
+/// holder or reducing the holder to one possible origin.
+#[test]
+fn a_nested_range_element_path_preserves_joined_origins() {
+    let source = br#"fn inspect(left: &[Array<u64, 2>], right: &[Array<u64, 2>], flag: own Bool) -> result: own u64 reads(left), reads(right) {
+  let rows = if flag {
+    give left;
+  } else {
+    give right;
+  }
+  if deref(rows).len > 0_u64 {
+    return deref(rows)[0_u64][1_u64];
+  }
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+/// [ENT-2, ENT-3, ENT-6] the two incoming range measures and the joined
+/// holder's measure are distinct terms. The fixed fact sources have no
+/// reference-valued delivery rule that transports the former bounds to the
+/// latter. Preserve this source as an unproved OP-4 control: mathematical
+/// safety alone must not authorize an extra alias-based proof route.
+#[test]
+fn incoming_range_bounds_do_not_invent_a_joined_holder_length_fact() {
+    let source = br#"fn inspect(left: &[Array<u64, 2>], right: &[Array<u64, 2>], flag: own Bool) -> result: own u64 reads(left), reads(right) contract {
+  requires 0_u64 < deref(left).len;
+  requires 0_u64 < deref(right).len;
+} {
+  let rows = if flag {
+    give left;
+  } else {
+    give right;
+  }
+  return deref(rows)[0_u64][1_u64];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+/// [REF-2] replacing the outer composite element writes a proper prefix of a
+/// reference to one of its nested scalars. Keeping only the outer range index
+/// or dropping the suffix would incorrectly leave this reference valid.
+#[test]
+fn replacing_a_range_element_invalidates_a_nested_element_reference() {
+    let source = br#"fn invalid(rows: &[Array<u64, 2>]) -> result: own u64 writes(rows) contract {
+  requires 0_u64 < deref(rows).len;
+} {
+  let selected = &deref(rows)[0_u64][0_u64];
+  let replacement = array_filled::<u64, 2>(value: 9_u64);
+  set deref(rows)[0_u64] = replacement;
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Ref2, |_| true);
+}
+
+/// The subscript inside a measure place owes the same [OP-4] bound as every
+/// other subscript. A one-element range cannot admit element one, even though
+/// the selected element's `len` would itself be a total [OP-15] read.
+#[test]
+fn an_out_of_bounds_range_element_measure_is_an_op4_rejection() {
+    let source = br#"fn invalid(items: &[Slots<u64, 2>]) -> length: own u64 reads(items) contract {
+  requires deref(items).len == 1_u64;
+} {
+  return deref(items)[1_u64].len;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+/// [REF-1, MSR-2] a measure through a joined range holder reads the element
+/// selected at run time. Its own guard is sufficient for a downstream use on
+/// either incoming path. Without that guard, a fact about the first possible
+/// referent must not hide the second referent's contradictory length.
+#[test]
+fn a_joined_range_element_measure_checks_every_possible_target() {
+    let source = |check: &str| {
+        format!(
+            r#"fn needs_one(value: own u64) -> result: own unit pure contract {{
+  requires value == 1_u64;
+}} {{
+  return unit;
+}}
+
+fn examine(flag: own Bool) -> result: own unit pure {{
+  let left_row = slots_new::<u64, 2>();
+  place_back(window: &left_row, value: 11_u64);
+  let right_row = slots_new::<u64, 2>();
+  let left = slots_new::<Slots<u64, 2>, 1>();
+  place_back(window: &left, value: move left_row);
+  let right = slots_new::<Slots<u64, 2>, 1>();
+  place_back(window: &right, value: move right_row);
+  let items = if flag {{
+    give &left[0_u64..1_u64];
+  }} else {{
+    give &right[0_u64..1_u64];
+  }}
+{check}
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#,
+        )
+    };
+    let guarded = source(
+        "  if 0_u64 < deref(items).len {\n    let observed = deref(items)[0_u64].len;\n    if observed == 1_u64 {\n      let answer = needs_one(value: deref(items)[0_u64].len);\n    }\n  }",
+    );
+    assert_accepts(guarded.as_bytes());
+    let conflicting = source(
+        "  if 0_u64 < deref(items).len {\n    if left[0_u64].len == 1_u64 {\n      if right[0_u64].len == 0_u64 {\n        let answer = needs_one(value: deref(items)[0_u64].len);\n      }\n    }\n  }",
+    );
+    assert_rule_kind(conflicting.as_bytes(), SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
+}
+
+/// [MSR-2, ENT-5] replacing a measured range element through a second alias
+/// kills the guarded fact about that element's old descriptor. The range
+/// itself remains a valid view of the outer window, but its newly empty inner
+/// window cannot use the stale length to discharge a downstream requirement
+/// [FN-8].
+#[test]
+fn a_range_element_measure_dies_on_a_write_through_an_alias() {
+    let source = br#"fn needs_one(value: own u64) -> result: own unit pure contract {
+  requires value == 1_u64;
+} {
+  return unit;
+}
+
+fn clear(window: &Slots<u64, 2>) -> result: own unit writes(window) {
+  let empty = slots_new::<u64, 2>();
+  set deref(window) = move empty;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let row = slots_new::<u64, 2>();
+  place_back(window: &row, value: 17_u64);
+  let outer = slots_new::<Slots<u64, 2>, 1>();
+  place_back(window: &outer, value: move row);
+  let items = &outer[0_u64..1_u64];
+  if deref(items)[0_u64].len == 1_u64 {
+    let alias = &deref(items)[0_u64];
+    let cleared = clear(window: alias);
+    let invalid = needs_one(value: deref(items)[0_u64].len);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
+}
+
 /// [REF-4] formation submits `lo <= hi` and `hi <= x.len` to [MSR-4]. An
 /// endpoint above the base's length discharges neither, and the rejection
 /// carries the residual and the rule's own restructuring.
@@ -100,6 +371,207 @@ fn a_write_through_a_range_reference_keeps_both_lengths() {
     assert_accepts(include_bytes!(
         "../../../../tests/conformance/cases/call3-pos-a-fill-through-an-exclusive-view-keeps-both-lengths.wf"
     ));
+}
+
+/// [REF-4, MSR-2] overlapping views still carry distinct immutable range
+/// descriptors. A direct element commit and a projected callee element write
+/// through the wider view therefore preserve the narrower view's formed
+/// length. Whole-origin replacement remains the [REF-2] rejection exercised
+/// by `references::a_reslice_of_a_joined_range_is_invalidated_by_either_origin_replacement`.
+#[test]
+fn overlapping_range_element_writes_preserve_each_formed_length() {
+    let source = br#"fn needs_two(part: &[u8]) -> result: own unit reads(part) contract {
+  requires deref(part).len == 2_u64;
+} {
+  let observed = deref(part).len;
+  return unit;
+}
+
+fn write_first(part: &[u8]) -> result: own unit writes(part) contract {
+  requires 0_u64 < deref(part).len;
+} {
+  set deref(part)[0_u64] = 9_u8;
+  return unit;
+}
+
+fn exercise(values: &Slots<u8, 4>) -> result: own unit writes(values) contract {
+  requires deref(values).len == 3_u64;
+} {
+  let wider = &deref(values)[0_u64..3_u64];
+  let narrower = &deref(values)[1_u64..3_u64];
+  set deref(wider)[1_u64] = 7_u8;
+  let after_direct = needs_two(part: narrower);
+  let written = write_first(part: wider);
+  let after_call = needs_two(part: narrower);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source);
+}
+
+const CONDITIONAL_RANGE_SEPARATION_HELPERS: &str = r#"fn touch(left: &[Slots<u64, 2>], right: &[Slots<u64, 2>]) -> result: own unit writes(left), writes(right) contract {
+  requires 0_u64 < deref(left).len;
+  requires 0_u64 < deref(right).len;
+} {
+  clear(window: &deref(left)[0_u64]);
+  clear(window: &deref(right)[0_u64]);
+  return unit;
+}
+
+fn clear(window: &Slots<u64, 2>) -> result: own unit writes(window) {
+  let empty = slots_new::<u64, 2>();
+  set deref(window) = move empty;
+  return unit;
+}
+"#;
+
+/// [OWN-7, EFF-5] a range-separation proof is available under the guard that
+/// establishes it. This is the positive control for the flow-sensitive
+/// non-leak cases below.
+#[test]
+fn a_range_separation_is_available_in_its_dominating_guard() {
+    let source = format!(
+        "{CONDITIONAL_RANGE_SEPARATION_HELPERS}
+fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64) -> result: own unit writes(values) contract {{
+  requires 1_u64 <= hi;
+  requires hi <= 2_u64;
+  requires lo <= 1_u64;
+}} {{
+  let left = &deref(values)[0_u64..hi];
+  let right = &deref(values)[lo..2_u64];
+  if hi <= lo {{
+    touch(left: left, right: right);
+  }}
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+    );
+    assert_accepts(source.as_bytes());
+}
+
+/// [OWN-7, ENT-5] a proof established only in one arm is unavailable after
+/// the join. Otherwise the write through `right` can retain the stale length
+/// of the overlapping slot selected through `left`.
+#[test]
+fn a_conditional_range_separation_does_not_escape_its_join() {
+    let source = format!(
+        "{CONDITIONAL_RANGE_SEPARATION_HELPERS}
+fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64) -> result: own u64 writes(values) contract {{
+  requires 1_u64 <= hi;
+  requires hi <= 2_u64;
+  requires lo <= 1_u64;
+}} {{
+  let left = &deref(values)[0_u64..hi];
+  let right = &deref(values)[lo..2_u64];
+  if hi <= lo {{
+    touch(left: left, right: right);
+  }}
+  let selected = &deref(left)[0_u64];
+  if deref(selected).len == 1_u64 {{
+    clear(window: &deref(right)[0_u64]);
+    return deref(selected)[0_u64];
+  }}
+  return 0_u64;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Op4, |_| true);
+}
+
+/// The sibling arm has the opposite guard, so a proof recorded while walking
+/// the first arm must not affect its overlap judgments.
+#[test]
+fn a_range_separation_does_not_leak_into_a_sibling_arm() {
+    let source = format!(
+        "{CONDITIONAL_RANGE_SEPARATION_HELPERS}
+fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64) -> result: own u64 writes(values) contract {{
+  requires 1_u64 <= hi;
+  requires hi <= 2_u64;
+  requires lo <= 1_u64;
+}} {{
+  let left = &deref(values)[0_u64..hi];
+  let right = &deref(values)[lo..2_u64];
+  if hi <= lo {{
+    touch(left: left, right: right);
+  }} else {{
+    let selected = &deref(left)[0_u64];
+    if deref(selected).len == 1_u64 {{
+      clear(window: &deref(right)[0_u64]);
+      return deref(selected)[0_u64];
+    }}
+  }}
+  return 0_u64;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Op4, |_| true);
+}
+
+/// A counted loop has a zero-trip predecessor. A separation proved in its
+/// body therefore cannot be available after loop exhaustion.
+#[test]
+fn a_range_separation_does_not_escape_a_maybe_zero_trip_loop() {
+    let source = format!(
+        "{CONDITIONAL_RANGE_SEPARATION_HELPERS}
+fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64, count: own u64) -> result: own u64 writes(values) contract {{
+  requires 1_u64 <= hi;
+  requires hi <= 2_u64;
+  requires lo <= 1_u64;
+}} {{
+  let left = &deref(values)[0_u64..hi];
+  let right = &deref(values)[lo..2_u64];
+  for (i in 0_u64..count) {{
+    if hi <= lo {{
+      touch(left: left, right: right);
+    }}
+  }}
+  let selected = &deref(left)[0_u64];
+  if deref(selected).len == 1_u64 {{
+    clear(window: &deref(right)[0_u64]);
+    return deref(selected)[0_u64];
+  }}
+  return 0_u64;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Op4, |_| true);
+}
+
+/// [REF-4, OP-10] a range reference captures its own immutable descriptor.
+/// Growing its backing Slots writes `next` and `len`, but neither write
+/// changes the range's formed length or the bound for an element inside it.
+#[test]
+fn growing_the_backing_window_preserves_a_formed_range_length() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let values = slots_new::<u8, 4>();
+  place_back(window: &values, value: 11_u8);
+  let part = &values[0_u64..1_u64];
+  place_back(window: &values, value: 22_u8);
+  let first = deref(part)[0_u64];
+  return exit_status(code: first);
+}
+"#;
+    assert_accepts(source);
 }
 
 /// [CALL-1] through a reference the callee only reads, every fact survives.
@@ -320,6 +792,22 @@ fn main() -> status: own ExitStatus pure {{
 "
     );
     assert_accepts(source.as_bytes());
+}
+
+/// [REF-4, ENT-5] assigning a new range to the holder replaces its captured
+/// descriptor. A window-part preservation rule must not retain the old
+/// one-element length across this whole-holder write.
+#[test]
+fn rebinding_a_range_reference_does_not_retain_the_old_length() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let a = array_filled::<u8, 2>(value: 0_u8);
+  let part = &a[0_u64..1_u64];
+  set part = &a[0_u64..0_u64];
+  let first = deref(part)[0_u64];
+  return exit_status(code: first);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op4, |_| true);
 }
 
 /// Endpoint bindings are evaluated when a range is formed. Later assignments

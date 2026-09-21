@@ -397,25 +397,14 @@ pub const fn diagnostic_terminal_order() -> &'static [LookaheadPredicate] {
     &generated::DIAGNOSTIC_ORDER
 }
 
-/// The child sequence of one [PRE-1] declaration record: `fn_sig`'s own
-/// sequence with `fn_decl`'s own `generics?` node spliced in after the
-/// leading `"fn" IDENT`.
+/// The child sequence of one [PRE-1] declaration head: `fn_sig`'s generated
+/// sequence with `fn_decl`'s generated `generics?` node spliced in after the
+/// leading `"fn" IDENT`, exactly as [PRE-1] defines the record.
 ///
-/// [PRE-1] calls its records "ordinary GRAM-2 `fn_sig` records" and then
-/// writes generic parameters on eleven of them, naming them in its own
-/// prose: "The type parameters `W` and `X` of the window operations are the
-/// compiler-owned window type parameter OP-10 fixes". [GRAM-2]'s `fn_sig` is
-/// `"fn" IDENT "(" param_list? ")" ...` and has no `generics?`, while the
-/// `fn_decl` written beside it has one. The two sentences cannot both hold,
-/// and as written no prelude record carrying a type parameter parses, which
-/// stops every compilation before any source file is read.
-///
-/// Both nodes returned here are the generated ones and the decision that
-/// selects the header is `fn_decl`'s own, so no grammar datum is invented.
-/// Only the prelude record reader uses this sequence, so a writer's `fn_sig`
-/// inside a `interface_decl` still admits no generic header. When [GRAM-2]
-/// gives `fn_sig` a `generics?`, this function and its two callers collapse
-/// back into the ordinary `Production::FnSig` path.
+/// The record has no source body, and its semicolon is table punctuation.
+/// Reusing these generated nodes introduces no grammar datum or source item
+/// production. Only the prelude reader uses this sequence; an interface
+/// member's ordinary `fn_sig` still admits no generic header.
 pub(crate) fn prelude_signature_children() -> Option<Vec<GrammarNodeId>> {
     let signature = grammar_node(Production::FnSig.root())?;
     if !matches!(signature.kind(), GrammarNodeKind::Sequence) {

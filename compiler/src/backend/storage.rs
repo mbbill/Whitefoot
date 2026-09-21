@@ -37,9 +37,7 @@ pub(super) fn is_stored_aggregate(
             match nominal.kind() {
                 IrNominalKind::Struct { .. } | IrNominalKind::Opaque => true,
                 IrNominalKind::Enum { .. } => !nominal.is_tag_only_enum(),
-                IrNominalKind::Box { .. }
-                | IrNominalKind::Arena { .. }
-                | IrNominalKind::ArenaStorage => false,
+                IrNominalKind::Box { .. } => false,
             }
         }
         IrType::Unit
@@ -49,6 +47,7 @@ pub(super) fn is_stored_aggregate(
         | IrType::Buffer { .. }
         | IrType::Window { capacity: None, .. }
         | IrType::Range { .. }
+        | IrType::RuntimeBoxPayload { .. }
         | IrType::Address(_) => false,
     })
 }
@@ -835,9 +834,6 @@ impl FlowInstruction {
                 let exposed = match operation {
                     IrOperation::AddressOf { value, .. } => Some(index(*value)),
                     IrOperation::SliceFromRun { run } => Some(index(*run)),
-                    IrOperation::SliceFromArray {
-                        array: IrArrayRoot::Value(value),
-                    } => Some(index(*value)),
                     _ => None,
                 };
                 (Some(index(*result)), reuse, exposed)
@@ -903,10 +899,9 @@ fn terminator_operands(terminator: &IrTerminator) -> Vec<IrValueId> {
 /// a deliberate liveness decision before this module compiles.
 pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
     match operation {
-        IrOperation::Constant(_)
-        | IrOperation::ConstantAddress { .. }
-        | IrOperation::Window
-        | IrOperation::ArenaListNew => Vec::new(),
+        IrOperation::Constant(_) | IrOperation::ConstantAddress { .. } | IrOperation::Window => {
+            Vec::new()
+        }
         IrOperation::Call { arguments, .. }
         | IrOperation::Integer { arguments, .. }
         | IrOperation::Float { arguments, .. }
@@ -919,16 +914,14 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
         | IrOperation::BoxNew { value, .. }
         | IrOperation::BoxTake { value, .. }
         | IrOperation::BoxDeref { value, .. }
-        | IrOperation::ArenaDeref { value, .. }
+        | IrOperation::RuntimeBoxPayload { owner: value, .. }
+        | IrOperation::RuntimeBoxOwner { payload: value, .. }
         | IrOperation::AddressOf { value, .. } => vec![*value],
         IrOperation::ArrayIndex { root, offset, .. } => array_root_operand(*root)
             .into_iter()
             .chain([*offset])
             .collect(),
         IrOperation::BufferFill { length, value, .. } => vec![*length, *value],
-        IrOperation::BufferVacant { length, .. } | IrOperation::BufferFits { length, .. } => {
-            vec![*length]
-        }
         IrOperation::BufferMeasure { buffer } | IrOperation::SliceFromBuffer { buffer } => {
             vec![*buffer]
         }
@@ -959,10 +952,9 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
             .into_iter()
             .chain(needles.iter().copied())
             .collect(),
-        IrOperation::SliceFromArray { array } => array_root_operand(*array).into_iter().collect(),
         IrOperation::SliceMeasure { slice } => vec![*slice],
         IrOperation::SliceIndex { slice, offset, .. } => vec![*slice, *offset],
-        IrOperation::ArenaNew { list, value, .. } => vec![*list, *value],
+        IrOperation::SliceAddress { slice, offset, .. } => vec![*slice, *offset],
         IrOperation::ConstructStruct { fields, .. } | IrOperation::ConstructEnum { fields, .. } => {
             fields.clone()
         }

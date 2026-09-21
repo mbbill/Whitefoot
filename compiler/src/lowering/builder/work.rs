@@ -235,13 +235,9 @@ impl<'ir> Environment<'ir> {
             (Observation::Length, Some(IrOperation::SliceFromBuffer { buffer })) => {
                 self.observe(kind, *buffer, active)
             }
-            (
-                Observation::Length,
-                Some(
-                    IrOperation::BufferFill { length, .. }
-                    | IrOperation::BufferVacant { length, .. },
-                ),
-            ) => self.observe(Observation::Scalar, *length, active),
+            (Observation::Length, Some(IrOperation::BufferFill { length, .. })) => {
+                self.observe(Observation::Scalar, *length, active)
+            }
             (Observation::Length, Some(IrOperation::AddressOf { value, .. })) => {
                 self.observe(kind, *value, active)
             }

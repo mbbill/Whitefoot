@@ -3,55 +3,6 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
-- **SOUNDNESS: a requirement over a range reference's length is judged
-  against the owner.** `let view = &a[2_u64..4_u64]; touch(part: view, at:
-  3_u64)` with `requires at < deref(part).len` is accepted and the run reads
-  outside the four-element array (found 2026-09-20 by probing; conformance
-  case `ref4-neg-a-requirement-over-a-range-reference-is-the-ranges-length`
-  fails until fixed, and the pinned sentence `wide <= deref(view).len` in
-  `compiler/src/driver/pinned_sentences.rs` likewise). The call-site goal
-  instantiation drops the range step of the actual's path, so the measure
-  becomes the owner's `len` instead of `hi - lo`.
-- **A contract fact stated over `room` does not survive the window write it
-  precedes.** [MSR-1]'s table fixes a window's `room` cell as `cap - len`, so
-  the affine image of `r.room` is the difference of the other two images and a
-  relation over it is an [ENT-4] fact about the `room` *term*. That term has
-  no difference bound relating it to `len` -- `room + len = cap` is a
-  three-term relation no difference-bound domain holds -- so the consequence
-  the relation carries about `len` exists only as an ephemeral affine image at
-  query time and dies with the term at the first descriptor write. A callee
-  whose own `requires deref(window).room > 1_u64` should admit two
-  `place_back` calls therefore stops at the second
-  ([`call6-pos-a-row-relation-establishes-at-a-caller`](../tests/conformance/cases/call6-pos-a-row-relation-establishes-at-a-caller.wf)),
-  while the same program with the requirement restated as a local `invariant`
-  is accepted, because an invariant conclusion is published over the immutable
-  atoms. Decide whether such a relation should also be published over its
-  images, which extends [ENT-6]'s automatic premise sequence, or whether the
-  translation belongs in the fact establishment itself.
-
-- **An accepted [OP-9] site's proved count ceiling does not reach the
-  allocation it authorizes.** The obligation is now submitted and refused at
-  each runtime-capacity construction and at `grow`, but the numeric ceiling
-  the discharge retains is not carried into the compiler-owned row whose
-  lowered body performs the allocation: that row is out of line and one
-  instance's body serves every call site. Target qualification therefore keeps
-  the `has_call_site_bound` gate at
-  [`backend/target.rs`](../compiler/src/backend/target.rs), comparing the byte
-  ceiling only where the retained bound is the allocation site's own, and a
-  proved 5e18-element `u16` construction is still lowered instead of being
-  reported unrepresentable. Either the weakest ceiling over an instance's call
-  sites must reach the row, or the row must be specialized per site.
-
-- **A field projected after dereferencing a runtime-indexed composite element
-  stops as unsupported.** The specification admits ordinary chained element,
-  dereference, and field selection, but
-  `deref(owners.storage[index]).id` stops in semantic checking as
-  `Unsupported(CompositeValues)` with no rule or source diagnostic. The
-  growable-vector executable currently borrows `owners.storage[index]` into a
-  helper and performs `deref(deref(item)).id` there. Complete the general
-  checked-place and lowering path for a subscript followed by dereference and
-  field projection, add owning and copy-element tests, then remove that helper.
-
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
@@ -92,17 +43,86 @@ of them is a decision. Remove an item when its fix and test land.
   regression verdict, and a later pass does not explain an earlier failure.
   Attribute host/sample variability separately from emitted code, linked layout
   and runtime changes before changing a policy or declaring the suspect noise.
-  Close this item when the source of both observations and the resulting
-  measurement/detection tradeoff are established.
+  The [PR 70 comparison at `7044db24`](https://github.com/mbbill/Whitefoot/actions/runs/35539977014)
+  still fails for `records`: baseline/candidate wall-time ratios are 0.938915
+  at two workers and 0.882544 at four, adverse in all five pairs at both
+  widths; the other four kernels pass. Identical-image and intentional-slowdown
+  qualification steps pass. The subsequent
+  [bounded capture repair](../research/investigations/access-effects/parallel-array-captures.md)
+  passed the unchanged formal comparison at every width: `records` ratios were
+  1.087361, 1.004834 and 1.060012 at W1, W2 and W4, and all five kernels passed.
+  Its identical-image control nevertheless retained a `records` W4 suspect at
+  0.962815708 with four adverse pairs. The concrete PR 70 regression is repaired,
+  while its cause and the earlier and remaining control variation are not
+  attributed. Keep this item until those observations and the resulting
+  measurement/detection tradeoff are explained.
 
-- **A runtime-sized `buffer_new` fails with no rule and no location.** At an
-  unproved runtime capacity the driver stops four stages after semantic
-  checking with `TargetLayout(Unrepresentable(RuntimeSizedAllocation))` and no
-  rule id or source coordinate; the real defect is an undischarged size
-  obligation. The store surface already answers it (`heap_vector` hands back
-  an `Option` and [OP-9] refuses at the source with a rule and a line). The
-  item is removed with `buffer_new` and `buffer_vacant`, not repaired
-  separately.
+- **Recursive cleanup has no general bounded-stack lowering.** The current
+  emitter recursively calls release actions, so machine-stack use can grow
+  with owned value depth; its stack ledger reports the release cycle. The
+  [continuation models](../research/investigations/access-effects/cleanup-continuations/README.md)
+  demonstrate fixed-stack, nonallocating walks only for their selected layouts.
+  They establish neither an encoding for all WF types without extra object
+  fields nor its impossibility. Retain the existing lowering while researching
+  how every suspended aggregate, enum, array and window traversal records its
+  continuation. Preserve reverse binding order, declaration order within
+  aggregates, logical window order, and content-before-Box-free order. Close
+  this item when a general implementation and native regressions establish
+  those properties, or a different resource tradeoff is selected explicitly.
+- **Retired implicit empty-window release leaves unused proof scaffolding.**
+  No source operation constructs the checked `EmptyRun` release mode, but its
+  release-graph branch, obligation family and derivation plumbing remain.
+  This is maintenance debt, not a promise to restore implicit dropping of
+  linear windows. Remove the unused paths when next changing cleanup or its
+  proof inventory, retaining `free_empty` and its active OP-14 requirement
+  diagnostic; the similarly named diagnostic is not the retired mechanism.
+  The current semantic fixes take precedence over this deletion. Close the
+  item with the normal release and explicit-empty-release regressions intact.
+- **Box/window representation costs remain unqualified.** The current runtime-
+  capacity Box is one pointer to one header-first allocation; `grow` uses
+  allocation, memmove and free. A one-word owner, one allocation and header
+  placement are distinct choices: a fat descriptor can also own one element
+  allocation and make measure reads direct, while widening transport and
+  capture storage. Neither alternative is established as generally faster.
+  Keep the current implementation while separating owner width, measure loads,
+  allocation count, copying and linked layout in representative single-thread
+  and parallel comparisons. The successful bounded capture repair above is
+  evidence about the synthesized task ABI; it neither attributes the earlier
+  `records` failure nor proves that any one general layout choice caused it.
+  Keep the deferred general representation study separate, and close this item
+  only when the relevant costs and chosen tradeoffs have discriminating evidence.
+- **Loop reference abstraction needs practical precision and cost evidence.**
+  Current loop headers keep possible roots and static path shapes, give
+  potentially rebound endpoints finite opaque capture identities, and solve
+  owner-tagged validity dependencies over entry and executable backedges.
+  This prevents a current iteration's facts from authorizing a previous
+  iteration's reference. Its precision and checking cost on larger real loops,
+  nested loops and joined targets remain unqualified. Investigate useful facts
+  lost at headers and the evidence needed to recover them without merging
+  distinct evaluations, dropping possible targets or imposing an acceptance
+  budget. Close this item with representative positive and hostile cases,
+  cost measurements, and any required precision repair or explicit limitation.
+- **Runtime-capacity Array element suffixes retain a flat-buffer limitation.**
+  A valid field selection such as `values.inner[i].field` on a
+  `Box<Array<CopyStruct>>` can still reach `CompositeValues` instead of the
+  general storage-place path. The checker resolves the suffix before reporting
+  this capability gap; it is not a source-language rejection. Whole-element
+  reads into a copy local and whole-element replacements avoid this path,
+  while range-reference element suffixes already use the general path. Unify
+  the remaining flat-buffer projections with it and cover field reads, writes,
+  and borrows before removing this item.
+- **Pair-scoped parallel proofs need scaling and coverage work.** The current
+  PAR-1 planner constructs questions for every ordered source pair in a segment
+  and retains range separation only for that pair's first-statement state;
+  repeated visits meet with logical AND. A segment of n members has n(n-1)/2
+  pairs, but that logical requirement does not mandate quadratic repeated
+  proof work. General index mapping through the first member's `ensures` is
+  still unavailable; missing evidence keeps sequential lowering. Investigate
+  indexing and reuse without losing statement identity, captured endpoints,
+  flow context or all-pairs composition. Close this item when larger segments
+  have measured costs and the intended proof coverage, retaining guarded,
+  nonadjacent and stale-capture negative controls.
+
 - **Large entering proof contexts still have substantial checking cost.**
   In the [pinned row-summary comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#row-summary-selection-2026-09-15),
   256 independent inequality pairs with 256 uses still take a median 5.50 s;
@@ -114,21 +134,17 @@ of them is a decision. Remove an item when its fix and test land.
   unmeasured; these results establish neither linear total cost nor a
   universal cost for the full use ceiling.
   Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
-- **Pre-kill L0 closure has an unresolved compilation cost.** Before an
-  [ENT-5] invalidation batch, `materialize_before_event_kill` in
-  [`semantic/entailment/flow.rs`](../compiler/src/semantic/entailment/flow.rs)
-  calls `materialize_closure_before_kill` in
-  [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs).
-  A non-closed state with explicit relations takes the complete closure;
-  already-closed, contradictory, and empty-relation states have fast paths.
-  The [build/test investigation](../research/investigations/test-economy/build-and-test.md#a-compiler-hotspot-not-native-execution)
-  measures 58.29 s for one optimized read-heavy LLVM-only compilation; a
-  three-second semantic-checking sample puts 61.2% of leaf samples in
-  `close_with_excluded_term`. Whole-run attribution and a controlled algorithm
-  comparison remain necessary. A narrower projection must preserve every
-  surviving consequence,
-  including implicit type edges and disequality strengthening; filtering
-  explicit edges alone is insufficient. No speedup is established.
+- **Ordinary-fallback views still copy a fact state per materialization.**
+  After [incremental closure](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#selection),
+  the [retained-proof follow-up](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#retained-proof-follow-up-results)
+  checks `tests/programs/fixed_run_library.wf` in 1.21 s and
+  `tests/programs/wfgrep.wf` in 0.94 s. The previously attributed largest
+  fixed-run cost is `materialize_closure_at` in
+  [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs):
+  whenever a selected proof depends on a postcondition call, it clones the
+  state, removes the call-dependent candidates and closes that view again.
+  Kill-time edge insertion and derivation interning for recreated cells are
+  the next costs.
 - **Connection-level concurrency is not supplied by ordinary source order.**
   A loop that accepts and serves connections in source order
   completes the current handler before entering the next, so a handler waiting
@@ -271,14 +287,13 @@ condition under which it is taken up.
   convention and is a later step. Without the marker the stack bound rests
   on an implementation obligation the writer cannot check, and a pending
   release silently breaks tail position. Implement after PR 70 merges.
-- **Totality and recursion-depth proofs.** Stack depth is an implementation
-  obligation, not a language promise: the compiler-derived release of an
-  owned chain must run in bounded stack (using the freed cells as its
-  worklist) and self tail calls must be eliminated. Domains that need
-  determinism about resource use will need proved totality (termination) and
-  proved recursion depth as obligation families; the atomic in-place update
-  deliberately requires only a function that returns the place's type with no
-  failure exit.
+- **Totality and recursion-depth proofs.** Domains that need determinism about
+  resource use will need proved totality (termination) and proved recursion
+  depth as obligation families; the atomic in-place update deliberately
+  requires only a function that returns the place's type with no failure exit.
+  The current recursive-cleanup stack cost is a separate compiler limitation
+  recorded above, and the call-site `musttail` mechanism remains a separate
+  follow-up. Neither is an implemented source-level recursion-depth proof.
 - **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
   Three additive widenings, taken up together, each measured:
   (1) Affine `ensures`. A `requires` may already be an affine relation and

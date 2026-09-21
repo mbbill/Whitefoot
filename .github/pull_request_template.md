@@ -8,8 +8,8 @@ under AGENTS.md rule 4. -->
 
 <!-- Explain the proposed or approved changes to the current design tree
 and their reasons, linking supporting design discussion or documents where
-useful. List relevant open amendments under design/amendments/ and the
-applicable review findings. Report node count, depth, and net change as the
+useful. Follow design/skill/SKILL.md for proposals, rulings and PR readiness.
+Report applicable findings, node count, depth, and net change as the
 lint prints them against the base.
 Link log entries for traceability. Use "none" when no decision changes. -->
 

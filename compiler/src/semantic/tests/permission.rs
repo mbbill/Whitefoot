@@ -23,12 +23,34 @@
 
 use crate::{SemanticOutcome, SemanticRule};
 
+use super::super::entailment::{DerivationNode, RangeSeparationOrdering};
 use super::super::permission::{
     ConflictKind, Denial, ExitKind, FootprintHalf, FunctionPermissions, PairSide,
     PermissionMetadata, PermissionPair, PermissionRun, PermissionVerdict,
 };
 use super::super::places::ResolvedPlace;
-use super::with_semantics;
+use super::{assert_rule_kind, with_semantics};
+
+#[test]
+fn a_condition_call_cannot_hide_an_arm_read_of_the_previous_result() {
+    let source = br#"fn predicate(value: own u64) -> result: own Bool pure {
+  return value == 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let first = predicate(value: 1_u64);
+  if predicate(value: 0_u64) {
+    let observed = first;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    assert!(matches!(
+        pair_of(&table, "main", "predicate", "predicate").verdict,
+        PermissionVerdict::Denied(Denial::Footprint { .. })
+    ));
+}
 
 // Scalar state keeps the ordinary adjacency tests independent of a library
 // API. The shared-factory tests below exercise the linked declarations
@@ -38,11 +60,47 @@ use super::with_semantics;
 const MARKER: &str = "fn write_marker(output: &u64, source: &[u8], start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(source), writes(output) {\n  let previous = deref(output);\n  let length = deref(source).len;\n  set deref(output) = previous +wrap start;\n  return Ok<u64, IoError>(value: end);\n}\n\n";
 
 fn permission_of(source: &[u8]) -> PermissionMetadata {
+    permission_of_with_discharged_query(source, None)
+}
+
+fn permission_of_with_discharged_query(
+    source: &[u8],
+    expected: Option<(&str, RangeSeparationOrdering)>,
+) -> PermissionMetadata {
     let combined = [MARKER.as_bytes(), source].concat();
     with_semantics(&combined, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("permission fixture must check: {outcome:?}");
         };
+        for function in &program.data.functions {
+            super::entailment::validate_derivations(&function.entailment);
+        }
+        if let Some((expected_function, expected_ordering)) = expected {
+            let function = program
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == expected_function)
+                .unwrap_or_else(|| panic!("no checked function named {expected_function}"));
+            assert!(
+                function
+                    .entailment
+                    .permission_separations
+                    .iter()
+                    .any(|proof| {
+                        proof.discharged && proof.derivations.iter().any(|derivation| {
+                            matches!(
+                                function.entailment.derivations.nodes.get(derivation.0 as usize),
+                                Some(DerivationNode::RangeSeparation { detail })
+                                    if detail.left == proof.query.left
+                                        && detail.right == proof.query.right
+                                        && detail.ordering == expected_ordering
+                            )
+                        })
+                    }),
+                "the permitted range pair must retain its exact {expected_ordering:?} conclusion"
+            );
+        }
         program.data.permission.clone()
     })
 }
@@ -102,7 +160,7 @@ fn pair_of<'table>(
             function_table(table, function).pairs
         );
     };
-    *pair
+    pair
 }
 
 /// The one run of `function` whose members carry exactly these ledger names,
@@ -131,7 +189,7 @@ fn run_of<'table>(
             permissions.runs
         );
     };
-    *run
+    run
 }
 
 fn denial(pair: &PermissionPair, condition: u8) -> &Denial {
@@ -977,6 +1035,47 @@ fn a_write_over_the_previous_calls_operand_read_is_denied() {
     assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
+#[test]
+fn an_owned_box_path_take_has_a_complete_root_footprint_and_conflicts_with_an_alias() {
+    let source = br#"nocopy struct Payload {
+  value: u8;
+}
+
+nocopy struct Holder {
+  cell: Box<Payload>;
+}
+
+fn observe(holder: &Holder) -> result: own u8 reads(holder) {
+  return deref(holder).cell.inner.value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let payload = Payload(value: 7_u8);
+  let cell = box_new::<Payload>(value: move payload);
+  let holder = Holder(cell: move cell);
+  let seen = observe(holder: &holder);
+  let taken = move holder.cell.inner;
+  return exit_status(code: taken.value);
+}
+"#;
+    let table = permission_of(source);
+    let pair = pair_of(&table, "main", "observe", "a let statement");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 1) else {
+        panic!(
+            "the known owner root must conflict, not fail unresolved: {:?}",
+            pair.verdict
+        );
+    };
+    assert_eq!(
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::Read,
+            later: FootprintHalf::Write,
+        }
+    );
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
+}
+
 /// The statement after a call reads the binding that call defines. Under the
 /// schedule that hands the call out that value does not exist until the join.
 #[test]
@@ -1347,6 +1446,327 @@ fn exclusive(handed: &[u8]) -> result: own u64 writes(handed) contract {
     assert_eq!(kind.halves(), ("write", "write"));
 }
 
+// Range fixtures for the proof-carrying half of [OWN-7]. Each call writes
+// the range it receives, while the source remains sequentially valid whether
+// or not [PAR-1] can retain an overlap permission.
+const RANGE_PERMISSION_HELPERS: &str = r#"fn stamp_range(part: &[u8]) -> result: own u64 writes(part) contract {
+  requires 0_u64 < deref(part).len;
+} {
+  set deref(part)[0_u64] = 9_u8;
+  return 1_u64;
+}
+
+fn stamp_two_ranges(first: &[u8], second: &[u8]) -> result: own u64 writes(first), writes(second) contract {
+  requires 0_u64 < deref(first).len;
+  requires 0_u64 < deref(second).len;
+} {
+  set deref(first)[0_u64] = 7_u8;
+  set deref(second)[0_u64] = 8_u8;
+  return 2_u64;
+}
+"#;
+
+/// [REF-1, PAR-1] a source occurrence evaluated in a loop is not the runtime
+/// generation a carried reference retained from the prior iteration. At
+/// `i == 1`, `saved` is `[5..6]` from the preceding iteration and `other` is
+/// the current `[5..6]`; the current formation at the same source occurrence
+/// is `[4..5]`. `observed` snapshots that carried value before the rebinding,
+/// so alias closure must retain the header alternative and deny the pair,
+/// while using the freshly formed `current` in that same iteration keeps the
+/// ordinary range-separation permission. The dominating length guards admit
+/// each helper's real element store without supplying an affine image for the
+/// carried range endpoints.
+#[test]
+fn loop_carried_range_generations_do_not_reuse_the_current_iteration_image() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn shifted(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
+  let seed = &deref(values)[0_u64..1_u64];
+  let saved = &deref(seed)[0_u64..deref(seed).len];
+  for (i in 0_u64..2_u64) {{
+    let current_start = 5_u64 - i;
+    let current_end = 6_u64 - i;
+    let other_start = 6_u64 - i;
+    let other_end = 7_u64 - i;
+    let current = &deref(values)[current_start..current_end];
+    let other = &deref(values)[other_start..other_end];
+    let observed = saved;
+    if 0_u64 < deref(observed).len {{
+      if 0_u64 < deref(other).len {{
+        let a = stamp_range(part: observed);
+        let b = stamp_range(part: other);
+      }}
+    }}
+    set saved = &deref(current)[0_u64..deref(current).len];
+  }}
+  return 0_u64;
+}}
+
+fn current_iteration(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
+  for (i in 0_u64..2_u64) {{
+    let current_start = 5_u64 - i;
+    let current_end = 6_u64 - i;
+    let other_start = 6_u64 - i;
+    let other_end = 7_u64 - i;
+    let current = &deref(values)[current_start..current_end];
+    let other = &deref(values)[other_start..other_end];
+    if 0_u64 < deref(current).len {{
+      if 0_u64 < deref(other).len {{
+        let a = stamp_range(part: current);
+        let b = stamp_range(part: other);
+      }}
+    }}
+  }}
+  return 0_u64;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    let shifted = pair_of(&table, "shifted", "stamp_range", "stamp_range");
+    let Denial::Footprint { kind, .. } = denial(shifted, 1) else {
+        panic!(
+            "the prior iteration overlaps the current other range: {:?}",
+            shifted.verdict
+        );
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
+    assert_eq!(
+        pair_of(&table, "current_iteration", "stamp_range", "stamp_range").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+}
+
+/// [REF-1, EFF-5] the same time shift is a source conflict when both writes
+/// are effects of one call. The loop-header generation must fail closed in
+/// the ordinary call-effect judgment as well as in optional [PAR-1].
+#[test]
+fn loop_carried_range_generations_do_not_discharge_overlapping_call_effects() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn shifted(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
+  let seed = &deref(values)[0_u64..1_u64];
+  let saved = &deref(seed)[0_u64..deref(seed).len];
+  for (i in 0_u64..2_u64) {{
+    let current_start = 5_u64 - i;
+    let current_end = 6_u64 - i;
+    let other_start = 6_u64 - i;
+    let other_end = 7_u64 - i;
+    let current = &deref(values)[current_start..current_end];
+    let other = &deref(values)[other_start..other_end];
+    let observed = saved;
+    if 0_u64 < deref(observed).len {{
+      if 0_u64 < deref(other).len {{
+        let conflict = stamp_two_ranges(first: observed, second: other);
+      }}
+    }}
+    set saved = &deref(current)[0_u64..deref(current).len];
+  }}
+  return 0_u64;
+}}
+"
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Eff5, |_| true);
+}
+
+/// [PAR-1, OWN-7] both captured ranges exist before the first statement, and
+/// its entering state proves the first range ends where the second starts.
+/// The permission judgment must consume that exact proof instead of treating
+/// every pair of range steps as overlapping.
+#[test]
+fn dynamic_ranges_separated_at_the_first_statement_are_permitted() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn separated(values: &Array<u8, 4>, split: own u64) -> result: own u64 writes(values) contract {{
+  requires 1_u64 <= split;
+  requires split < 4_u64;
+}} {{
+  let left = &deref(values)[0_u64..split];
+  let right = &deref(values)[split..4_u64];
+  let a = stamp_range(part: left);
+  let b = stamp_range(part: right);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of_with_discharged_query(
+        source.as_bytes(),
+        Some(("separated", RangeSeparationOrdering::LeftBeforeRight)),
+    );
+    assert_eq!(
+        pair_of(&table, "separated", "stamp_range", "stamp_range").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+}
+
+/// [PAR-1] a run means every source-ordered pair, including nonadjacent
+/// members. The benign scalar statement reaches neither range, so the two
+/// calls and that statement form one run only when the first/third captured
+/// ranges are proved apart in the first call's entering state.
+#[test]
+fn a_nonadjacent_dynamic_range_pair_keeps_the_complete_run() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn separated(values: &Array<u8, 4>, split: own u64) -> result: own u64 writes(values) contract {{
+  requires 1_u64 <= split;
+  requires split < 4_u64;
+}} {{
+  let left = &deref(values)[0_u64..split];
+  let right = &deref(values)[split..4_u64];
+  let a = stamp_range(part: left);
+  let gap = 7_u64 +wrap 1_u64;
+  let b = stamp_range(part: right);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of_with_discharged_query(
+        source.as_bytes(),
+        Some(("separated", RangeSeparationOrdering::LeftBeforeRight)),
+    );
+    let permissions = function_table(&table, "separated");
+    assert!(
+        permissions.runs.iter().any(|run| {
+            run.sites.windows(3).any(|sites| {
+                sites[0].callee_name == "stamp_range"
+                    && sites[1].callee_name == "a let statement"
+                    && sites[2].callee_name == "stamp_range"
+            })
+        }),
+        "the two calls and their benign interposed statement must remain in one all-pairs run: {:?}",
+        permissions.runs
+    );
+}
+
+/// [REF-4, PAR-1] endpoint values belong to their range-formation captures.
+/// Rebinding the source scalar later must not retarget an earlier capture and
+/// manufacture separation for two ranges that were identical when formed.
+#[test]
+fn rebinding_an_endpoint_does_not_separate_earlier_captured_ranges() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn stale(values: &Array<u8, 4>) -> result: own u64 writes(values) {{
+  let start = 0_u64;
+  let stop = 2_u64;
+  let left = &deref(values)[0_u64..2_u64];
+  let right = &deref(values)[start..stop];
+  set start = 2_u64;
+  let a = stamp_range(part: left);
+  let b = stamp_range(part: right);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    let pair = pair_of(&table, "stale", "stamp_range", "stamp_range");
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!(
+            "expected the captured ranges to overlap: {:?}",
+            pair.verdict
+        );
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
+}
+
+/// [ENT-5, PAR-1] the guarded pair may use its arm-entry ordering, but that
+/// proof is unavailable after the join. The exact same captured ranges at two
+/// different statement pairs therefore receive different permission verdicts
+/// rather than sharing one function-wide range oracle.
+#[test]
+fn a_guarded_range_permission_does_not_escape_to_another_statement_pair() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn guarded(values: &Array<u8, 4>, cut: own u64, start: own u64) -> result: own u64 writes(values) contract {{
+  requires 1_u64 <= cut;
+  requires cut <= 4_u64;
+  requires start < 4_u64;
+}} {{
+  let left = &deref(values)[0_u64..cut];
+  let right = &deref(values)[start..4_u64];
+  if cut <= start {{
+    let guarded_left = stamp_range(part: left);
+    let guarded_right = stamp_range(part: right);
+  }}
+  let outer_left = stamp_range(part: left);
+  let outer_right = stamp_range(part: right);
+  return outer_left +wrap outer_right;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    let pairs = pairs_of(&table, "guarded", "stamp_range", "stamp_range");
+    let [inside, after_join] = pairs.as_slice() else {
+        panic!("guarded must contain the arm pair and the post-join pair: {pairs:?}");
+    };
+    assert_eq!(inside.verdict, PermissionVerdict::PermittedEligible);
+    let Denial::Footprint { kind, .. } = denial(after_join, 1) else {
+        panic!(
+            "the post-join pair must not reuse the arm proof: {:?}",
+            after_join.verdict
+        );
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
+}
+
+/// [PAR-1] a statement pair with several range conflicts is permitted only
+/// when every conflicting pair is apart. Three literal pairs here separate,
+/// but `[4..6]` and `[5..7]` overlap, so one successful proof must not hide
+/// the remaining write/write conflict.
+#[test]
+fn every_range_conflict_of_a_multi_target_pair_must_be_separated() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn conjunction(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
+  let a0 = &deref(values)[0_u64..2_u64];
+  let a1 = &deref(values)[4_u64..6_u64];
+  let b0 = &deref(values)[2_u64..4_u64];
+  let b1 = &deref(values)[5_u64..7_u64];
+  let a = stamp_two_ranges(first: a0, second: a1);
+  let b = stamp_two_ranges(first: b0, second: b1);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    let pair = pair_of(
+        &table,
+        "conjunction",
+        "stamp_two_ranges",
+        "stamp_two_ranges",
+    );
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!("one overlapping range pair must deny: {:?}", pair.verdict);
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
+}
+
+/// [PAR-1] this is the conservative first-point control, not an assertion
+/// about reference-holder dataflow: `right` is formed between the calls, so
+/// its capture has no affine image in the state before the first call. The
+/// bounded range handoff therefore cannot use it to justify a wider run.
+#[test]
+fn a_later_formed_range_does_not_justify_a_wider_run() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn later(values: &Array<u8, 4>) -> result: own u64 writes(values) {{
+  let left = &deref(values)[0_u64..2_u64];
+  let a = stamp_range(part: left);
+  let right = &deref(values)[2_u64..4_u64];
+  let b = stamp_range(part: right);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    let has_wider_run = function_table(&table, "later").runs.iter().any(|run| {
+        run.sites.iter().map(|site| site.callee_name.as_str()).eq([
+            "stamp_range",
+            "a let statement",
+            "stamp_range",
+        ])
+    });
+    assert!(!has_wider_run);
+}
+
 /// Prelude calls use the ordinary call permission judgment. This pure call
 /// forms the two adjacent eligible pairs rather than becoming an opaque
 /// statement the judgment passes over.
@@ -1381,17 +1801,12 @@ fn probe(x: own u64, name: own HostString) -> result: own u64 pure {
 // Call position
 // ----------------------------------------------------------------------
 
-/// A call written in `match` scrutinee position is not a member of any
-/// adjacency.
-///
-/// v0.59 admitted a scrutinee call as a candidate so that one written
-/// spelling of two independent operations was not invisible to the judgment.
-/// v0.60 refuses a `match` statement outright — its arms are statements this
-/// walk does not fold into the statement's own footprint — and the checked
-/// model gives that statement no node, so the pair it would have formed does
-/// not exist to receive a verdict.
+/// [PAR-1] includes the scrutinee and every possible arm in a match's
+/// footprint. Both arms here are empty, so these independent calls remain
+/// eligible. The conflicting-arm control above checks that a nonempty arm
+/// cannot hide a read of the first statement's result.
 #[test]
-fn a_scrutinee_call_forms_no_pair() {
+fn a_scrutinee_call_with_independent_arms_forms_a_pair() {
     let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 65_u8);
   let bytes = slots_from_array::<u8, 2>(values: values);
@@ -1407,17 +1822,16 @@ fn a_scrutinee_call_forms_no_pair() {
 }
 "#;
     let table = permission_of(source);
-    assert!(
-        pairs_of(&table, "main", "write_marker", "write_marker").is_empty(),
-        "a scrutinee call is no member: {:?}",
-        function_table(&table, "main").pairs
+    assert_eq!(
+        pair_of(&table, "main", "write_marker", "write_marker").verdict,
+        PermissionVerdict::PermittedEligible
     );
 }
 
-/// The same two calls with the scrutinee written first, which is refused for
-/// the same reason and by the same absence of a node.
+/// [PAR-1] applies the same complete-footprint check when the match is the
+/// first statement; source order does not exclude its scrutinee call.
 #[test]
-fn a_scrutinee_call_written_first_forms_no_pair() {
+fn a_scrutinee_call_written_first_with_independent_arms_forms_a_pair() {
     let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 65_u8);
   let bytes = slots_from_array::<u8, 2>(values: values);
@@ -1433,9 +1847,8 @@ fn a_scrutinee_call_written_first_forms_no_pair() {
 }
 "#;
     let table = permission_of(source);
-    assert!(
-        pairs_of(&table, "main", "write_marker", "write_marker").is_empty(),
-        "a scrutinee call is no member: {:?}",
-        function_table(&table, "main").pairs
+    assert_eq!(
+        pair_of(&table, "main", "write_marker", "write_marker").verdict,
+        PermissionVerdict::PermittedEligible
     );
 }

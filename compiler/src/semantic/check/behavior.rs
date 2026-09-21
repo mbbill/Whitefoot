@@ -1365,9 +1365,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn behavior_call_signature(
         &self,
         node: NodeId,
+        instance: Option<super::super::model::FunctionId>,
         formal: &FunctionSignature,
         actual: &FunctionSignature,
-    ) -> Result<FunctionSignature, CheckStop> {
+    ) -> Result<
+        (
+            FunctionSignature,
+            super::super::model::CheckedEffects,
+            super::super::model::CheckedCallContract,
+        ),
+        CheckStop,
+    > {
         let bound_actual = actual.clone();
         if formal.parameters.len() != actual.parameters.len()
             || formal.results.len() != actual.results.len()
@@ -1418,10 +1426,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 })
                 .collect()
         };
-        let mut effective = actual.clone();
         let mut boundary = formal.declared_effects.clone();
         boundary.reads = rebase(&boundary.reads)?;
         boundary.writes = rebase(&boundary.writes)?;
+        // [STOR-8] allocation has no source effect entry and therefore is
+        // not an FN-4 refinement dimension. It remains compiler metadata:
+        // retained analyses index the selected actual, so preserve that
+        // actual's allocation fact rather than inferring purity from the
+        // interface's path row.
+        boundary.allocates = actual.declared_effects.allocates;
         for (implementation, promised) in [
             (&actual.declared_effects.reads, &boundary.reads),
             (&actual.declared_effects.writes, &boundary.writes),
@@ -1438,25 +1451,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
         }
-        // [EFF-3] the supplied function may not allocate where the formal
-        // interface promises it does not: an allocating call is excepted from
-        // deduplication and reordering, so a caller framing the formal's
-        // licence over an allocating actual would license a duplicated take
-        // from the finite heap [STOR-8].
-        if actual.declared_effects.allocates && !boundary.allocates {
-            return self.behavior_mismatch(
-                SemanticRule::Fn4,
-                node,
-                "a supplied function that allocates where the formal interface does not",
-            );
-        }
-        effective.declared_effects = boundary;
-        for (parameter, formal_parameter) in effective.parameters.iter_mut().zip(&formal.parameters)
-        {
-            parameter.name = formal_parameter.name.clone();
-        }
-        self.check_behavior_contracts(node, formal, &bound_actual)?;
-        Ok(effective)
+        let contract = self.check_behavior_contracts(node, instance, formal, &bound_actual)?;
+        // [FN-5] the immediate call judgment stays wholly in the formal
+        // parameter namespace, including its row roots. Keep a second copy of
+        // the same row rebased onto the actual parameter declarations only
+        // for retained analyses that index the executable callee by its
+        // FunctionId. Mixing either namespace makes a valid row look
+        // unresolved and can omit its overlap checks.
+        let mut effective = formal.clone();
+        effective.id = actual.id;
+        effective.name = actual.name.clone();
+        effective.symbol = actual.symbol.clone();
+        effective.declared_effects.allocates = actual.declared_effects.allocates;
+        Ok((
+            effective,
+            super::super::model::CheckedEffects {
+                reads: boundary.reads,
+                writes: boundary.writes,
+                allocates: boundary.allocates,
+            },
+            contract,
+        ))
     }
 
     pub(super) fn check_behavior_bindings(&self) -> Result<(), CheckStop> {
@@ -1488,7 +1503,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     &substitution,
                     target,
                 )?;
-                self.behavior_call_signature(*binding, &signature, actual)?;
+                let _ = self.behavior_call_signature(*binding, None, &signature, actual)?;
             }
         }
         let mut contexts = self
@@ -1513,7 +1528,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let formal = self.formal_signature(*key, substitution, target)?;
                 let source = self.behavior_binding_site(node, *key, substitution)?;
-                self.behavior_call_signature(source, &formal, actual)?;
+                let _ = self.behavior_call_signature(source, None, &formal, actual)?;
             }
         }
         Ok(())

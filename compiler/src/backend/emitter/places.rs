@@ -91,9 +91,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::FullArrayConversion { value } => {
                 self.emit_full_array_conversion(result, ty, *value)?;
             }
-            IrOperation::SliceFromArray { array } => {
-                self.emit_slice_from_array(result, ty, *array)?
-            }
             IrOperation::RunIndex {
                 run,
                 offset,
@@ -525,7 +522,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         destination: &str,
     ) -> Result<(), BackendFailure> {
         let ty = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
-        if self.storage.slot(value).is_some() {
+        if is_stored_aggregate(self.program, ty)? {
             let source = self.value_place(value)?;
             return self.copy_storage(ty, &source, destination);
         }

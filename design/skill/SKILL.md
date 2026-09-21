@@ -56,15 +56,12 @@ prints them against the review base.
 
 ## Amendments
 
-Only the owner's explicit approval of a proposed revision permits changing the
-live tree, including on a work branch. Before editing the live tree or writing
-its approval log entry, show the owner the complete proposed revision, naming
-the affected nodes and the exact decisions to add, replace, or retire, and wait
-for approval of that revision. A request to investigate or perform the work,
-or approval given before that revision was shown, is not approval of the tree
-revision. Until approval follows the proposal, keep it beside the tree and
-record autonomous choices as amendments while continuing authorized
-implementation.
+Keep all proposed tree revisions in `design/amendments/`, the sole temporary
+amendment directory. Research and implementation continue on the Draft PR;
+only live-tree edits wait for the owner's explicit approval. Present the
+complete revision, naming the nodes and decisions added, replaced or retired.
+Approval to perform the work, or approval preceding that proposal, does not
+authorize its tree edit or approval log entry.
 
 An amendment file starts with `Node: <tree path>`, then a blank line and the
 node form. Identify any decision replaced or retired and explain why. Keep
@@ -76,6 +73,8 @@ accepted amendment. When rejected, add a log entry naming the node, what was
 proposed, and why it was refused, remove the amendment, and adjust the design
 and implementation to the ruling. Later revisions, including material changes
 to an approved proposal, must be shown again and receive their own approval.
+After all rulings are applied, remove the amendment directory itself. Removing
+or relocating an unresolved proposal does not resolve its required ruling.
 
 ## Log format
 
@@ -96,56 +95,52 @@ both, newest first.
 
 ## Workflow
 
-Discuss the design with the owner and develop the implementation in one
-continuous workflow, without required phases, separate design submissions,
-or separate design commits. A PR may open before coding and hold reviewable
-artifacts and supporting discussion. Use documents, experiments, and changes
-to code, specifications, or tests as needed, following project conventions.
+1. Research, implement and validate continuously on a Draft PR. Keep proposed
+   tree changes in amendments; pending approval does not block this work.
+2. Once the agreed implementation and evidence are ready, run DCR against the
+   live tree, amendments and implementation together. Present the reviewed
+   proposals and findings to the owner, then await the ruling.
+3. Apply the ruling to the tree, log and affected implementation; remove the
+   resolved amendments and their directory. Recheck affected work and run CI.
+4. Only after all proposals are resolved and the final revision's required CI
+   is green, mark the PR ready and await the owner's merge. A new pending tree
+   revision returns the PR to Draft. Design approval does not authorize merge.
 
-Present a complete design for the agreed scope with its proposed tree
-revision: mechanism, requirements, alternatives, evidence, uncertainty, and
-exactly which decisions change and why. Scale the explanation to the work;
-the comparison with the current tree is central to the owner's review.
+At each code-structure choice, examine responsibilities, interfaces,
+representations and affected consumers: does the change expose an existing
+design gap, and would another implementation or focused refactor serve better?
+Reconsider as implementation reveals new information. Fix concrete gaps within
+scope or record their impact, deferral reason and reopening condition in the
+project's maintained backlog; revisit them when later changes touch or enlarge
+them. Keep this proportional to the change, within the continuous workflow.
 
-Before stopping work to await owner input, marking work blocked, or reporting
-completion, explain every outstanding amendment in the task's scope in the
-conversation. For each amendment, name the affected node and current decision;
-explain what is added, replaced, or retired, the problem and evidence that
-motivate it, the alternatives and material tradeoffs, and remaining
-uncertainty. Give your recommendation and identify the ruling needed.
-Put this self-contained explanation in the reply that hands the work back,
-in the owner's language while preserving node names and identifiers. Links
-to amendments, evidence, or the PR support the explanation; a link, an
-amendment count, or earlier progress messages do not replace it.
-
-Keep affected nodes and ancestors in context, extending as needed. Discuss
-material discoveries with the owner when available. Otherwise choose a
-reasonable solution, record its grounds as an amendment, and continue;
-present outstanding revisions when the owner returns.
+When discussing implementation choices or handing back work, include a short,
+separate **Design suitability** paragraph in the owner's language. State
+concerns and their fix or deferral; if none were found, say so within the
+assessed scope and give the reason. This does not replace amendment or DCR
+explanations.
 
 ## Design Correspondence Review (DCR)
 
-Requests to run `dcr` invoke the bidirectional tree/code review below. Also
-run it before declaring a goal or agreed work complete, moving a draft PR to
-ready, or presenting finished work as ready to merge. Opening a PR or
-publishing progress does not trigger it; goal completion does, even on a
-draft. These triggers are defined here; a project's completion review refers
-to them rather than restating them. Reuse the project's completion review
-when it covers these checks.
+Run the bidirectional review below when asked for `dcr` and at Workflow step 2,
+before submitting the completed work for owner ruling. Amendments are review
+inputs at this point, not a reason to refuse DCR. Opening a Draft PR or
+publishing intermediate progress needs no completion review. A task without
+proposed tree changes still needs DCR before completion. Reuse the project's
+completion review when it covers these checks; no second DCR is required just
+to apply the exact reviewed and approved revision.
 
 Use a separate, read-only reviewer that did not implement the change,
 normally a small or mid-sized model with bounded inputs. It reads actual
 artifacts and reports scope, revision, findings, evidence, and uncertainty.
-The primary agent presents those results in the conversation before stopping
-or requesting direction, in the same reply as the amendment explanations
-above. State the reviewed revision and scope, passed checks, every finding
-with its affected artifact and evidence, and anything unverified or outside
-scope. If there are no findings, say so within the reviewed scope. Give the
-primary agent's assessment of the result and recommended next step. For each
-finding, separately state whether the primary agent agrees and why, the
-significance, and the recommended response. Identify exactly what needs the
-owner's direction. A report stored only in the PR or a linked document does
-not satisfy this handoff.
+Before awaiting owner input, give a self-contained handoff in the owner's
+language. For each amendment, name the node and current decision, the exact
+revision, its problem, evidence, alternatives, tradeoffs, uncertainty and
+recommended ruling. Report the DCR revision, scope, passed checks, findings
+and unverified items; assess each finding and recommend a response. Say when
+none were found within scope. Links and amendment counts support this account
+but do not replace it. A clean DCR does not approve the proposals or make the
+Draft PR ready.
 
 Await the owner's direction before acting on the findings, including during
 unattended work; DCR does not authorize fixes or tree changes. This waiting
@@ -170,6 +165,12 @@ comparing the updated main ref with itself checks no changes.
 
     python3 -B <skill-directory>/lint.py --root <design-directory> --trees <concept-name> --base <review-base>
 
+In Whitefoot, `make design-lint` checks form during draft work. The separate
+`make design-ready` uses `--require-no-amendments` and fails if
+`design/amendments/` exists, even empty. CI runs this readiness check alongside
+correctness jobs; its failure while proposals await ruling does not block
+draft implementation or DCR. It must pass before the PR becomes ready.
+
 ## Design checks
 
 Use these during discussion and DCR; discussion needs neither finished
@@ -184,6 +185,11 @@ G2. Consistency scan. Check changed nodes and amendments against ancestors
 and siblings, extending to related decisions as needed. A change governing a
 whole concept requires reading its subtree. Report nodes read and conflicts,
 narrowings, or broken dependencies, naming both sides.
+
+G3. Architectural fit. Check that structural choices received the Workflow
+assessment when made or revised, and that the result is visible to the owner.
+Report concrete gaps left without a fix or maintained backlog entry; do not
+demand speculative generality or reconstruct a missing rationale after coding.
 
 ## Correspondence: design and implementation
 

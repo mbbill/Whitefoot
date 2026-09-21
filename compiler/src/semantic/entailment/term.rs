@@ -12,10 +12,10 @@
 //! [OWN-7] overlap relation over resolved places instead, which
 //! over-approximates it [ENT-5].
 
-use std::collections::HashMap;
-
 use super::super::model::{CheckedMeasure, IntegerType};
+use super::super::places::CaptureId;
 pub(crate) use super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
+use super::state::WordHashMap;
 use crate::DeclarationId;
 
 /// Which once-captured endpoint one private counted-range term denotes.
@@ -50,6 +50,8 @@ pub(crate) enum TermKind {
         range_path: Vec<u32>,
         side: CountedCaptureSide,
     },
+    /// The immutable value of one index evaluation at formation.
+    IndexCapture { capture: CaptureId },
     /// One immutable compiler-owned commit value [ENT-2]: the value the
     /// right-hand side of one `set` statement evaluated to at that
     /// occurrence, before its target kill. The statement's finalized
@@ -96,21 +98,22 @@ pub(crate) enum TermKind {
     /// [LIV-2] `set` rebind, a construct's field operand, a destructuring
     /// binder, an element position, or an enum payload. The statement's
     /// finalized NodePath, the placement, the ordinal within that statement,
-    /// the field path from that ordinal's operand to the measured place, and
+    /// the projection path from that ordinal's operand to the measured place, and
     /// the measure are its complete function-local identity. No place occurs
     /// in it, so neither the consume the statement performs nor the write it
     /// commits can kill it, which is what carries a measured value's measures
     /// across the event.
     ///
     /// `path` is empty where the operand is itself measured, and names the
-    /// field selections that reach the measured place where the operand is a
-    /// struct holding one: a placement carries every measured place under its
-    /// operand, so one operand mints one datum set per such place [MSR-1].
+    /// field and payload selections that reach the measured place where the
+    /// operand is an aggregate holding one: a placement carries every
+    /// measured place under its operand, so one operand mints one datum set
+    /// per such place [MSR-1].
     MeasureDatum {
         statement: Vec<u32>,
         placement: MeasurePlacement,
         ordinal: u32,
-        path: Vec<u32>,
+        path: Vec<PlaceStep>,
         measure: CheckedMeasure,
     },
 }
@@ -167,8 +170,8 @@ pub(crate) const ZERO: TermId = TermId(0);
 /// unregistered term.
 pub(crate) struct TermTable {
     terms: Vec<TermKind>,
-    ids: HashMap<TermKind, TermId>,
-    measure_bounds: HashMap<TermId, MeasureBound>,
+    ids: WordHashMap<TermKind, TermId>,
+    measure_bounds: WordHashMap<TermId, MeasureBound>,
     revision: usize,
 }
 
@@ -176,8 +179,8 @@ impl TermTable {
     pub(crate) fn new() -> Self {
         let mut table = Self {
             terms: Vec::new(),
-            ids: HashMap::new(),
-            measure_bounds: HashMap::new(),
+            ids: WordHashMap::default(),
+            measure_bounds: WordHashMap::default(),
             revision: 0,
         };
         let zero = table.intern(TermKind::Zero);

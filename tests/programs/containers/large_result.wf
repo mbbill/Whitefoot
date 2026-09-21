@@ -18,7 +18,7 @@ fn build_record(seed: own u8) -> result: own Slots<Record, 2> pure {
       return move rows;
     }
     Ok(value: item) => {
-      place_back(window: &rows, value: move item);
+      place_back(window: &rows, value: item);
       let built = move rows;
       return move built;
     }

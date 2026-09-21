@@ -390,6 +390,135 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 }
 "#;
 
+/// One supported padded nominal in a runtime-capacity Array. Whole-element
+/// assignment avoids the currently unsupported projection through a nominal
+/// buffer element while retaining the `{ u8, u64 }` element's alignment and
+/// stride. Reading the written Array's whole measure inside the loop denies
+/// PAR-2; the test retains that negative control and moves only this measure
+/// read to the preheader for its positive split. The empty Box's measure is
+/// still read by each iteration. A zero-length call takes the empty edge.
+/// `discarded` is deliberately consumed before the loop: the lowering carries
+/// all lexical bindings, so projecting its now-dead pointer must remain a
+/// harmless address calculation and must never recreate cleanup or a read.
+const ALIGNED_PAYLOAD_MAP: &[u8] = br#"struct Aligned {
+  tag: u8;
+  word: u64;
+}
+
+fn discard(value: own Box<Array<Aligned>>) -> result: own unit pure {
+  return unit;
+}
+
+fn mix(seed: own u64) -> result: own u64 pure {
+  let state = seed;
+  let round = 0_u64;
+  loop @rounds {
+    let done = round == 24_u64;
+    if done {
+      break @rounds;
+    }
+    let shifted = irotl(state, 27_u32);
+    let scaled = state *wrap 6364136223846793005_u64;
+    set state = ixor(shifted, scaled);
+    set state = state +wrap 1442695040888963407_u64;
+    set round = round +wrap 1_u64;
+  }
+  return state;
+}
+
+fn marked(seed: own u64) -> result: own Aligned pure {
+  let mixed = mix(seed: seed);
+  let result = Aligned(tag: 7_u8, word: mixed);
+  return result;
+}
+
+fn aligned_array(count: own u64, tag: own u8, word: own u64) -> result: own Box<Array<Aligned>> pure contract {
+  requires count <= 400000_u64;
+  ensures result.inner.len == count;
+} {
+  let value = Aligned(tag: tag, word: word);
+  let result = box_array_filled::<Aligned>(count: count, value: value);
+  return move result;
+}
+
+fn mapped(count: own u64) -> result: own Box<Array<Aligned>> pure contract {
+  requires count <= 400000_u64;
+  ensures result.inner.len == count;
+} {
+  let discarded = aligned_array(count: 1_u64, tag: 99_u8, word: 99_u64);
+  set discarded.inner[0_u64] = Aligned(tag: 98_u8, word: 98_u64);
+  let gone = discard(value: move discarded);
+  let empty = aligned_array(count: 0_u64, tag: 0_u8, word: 0_u64);
+  let output = aligned_array(count: count, tag: 0_u8, word: 0_u64);
+  let extent = output.inner.len;
+  for @fill (i in 0_u64..extent) {
+    let empty_extent = empty.inner.len;
+    let current_extent = output.inner.len;
+    let all_extents = empty_extent + current_extent;
+    let shifted = i +wrap all_extents;
+    let selected = marked(seed: shifted);
+    set output.inner[i] = selected;
+  }
+  return move output;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let empty = mapped(count: 0_u64);
+  if empty.inner.len != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  let output = mapped(count: 400000_u64);
+  if output.inner.len != 400000_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let first = output.inner[0_u64];
+  let first_expected = mix(seed: 400000_u64);
+  if first.tag != 7_u8 {
+    return exit_status(code: 3_u8);
+  }
+  if first.word != first_expected {
+    return exit_status(code: 4_u8);
+  }
+  let last = output.inner[399999_u64];
+  let last_expected = mix(seed: 799999_u64);
+  if last.tag != 7_u8 {
+    return exit_status(code: 5_u8);
+  }
+  if last.word != last_expected {
+    return exit_status(code: 6_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// Two lexically nested split reductions share one locally owned boxed Array.
+/// The owner is projected into the outer split, reconstructed in its chunk,
+/// and projected again into the inner split reached from that chunk.
+const NESTED_PAYLOAD_REDUCTIONS: &[u8] = br#"fn nested() -> result: own u64 pure {
+  let source = box_array_filled::<u64>(count: 65536_u64, value: 3_u64);
+  let total = 0_u64;
+  for @batches (i in 0_u64..8_u64) {
+    let partial = 0_u64;
+    let extent = source.inner.len;
+    for @items (j in 0_u64..extent) {
+      let value = source.inner[j];
+      let salted = value +wrap i;
+      set partial = partial +wrap salted;
+    }
+    set total = total +wrap partial;
+  }
+  return total;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let observed = nested();
+  if observed != 3407872_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
 /// Preserve the entire map and append all eight checksum bytes, so a defect in
 /// any reduction bit is visible without overwriting the map's first element.
 ///
@@ -408,27 +537,28 @@ fn map_and_reduction_source() -> Vec<u8> {
         .into_bytes()
 }
 
-/// The same work as [`INDEPENDENT_MAP`], expressed through a range-reference
-/// output parameter and a same-index read-modify-write. This keeps the result
-/// bytes unchanged while exercising both read-side map evidence and holder
-/// capture.
+/// The same work as [`INDEPENDENT_MAP`], expressed through an ordinary
+/// reference to its boxed Array and a same-index read-modify-write. PAR-2's
+/// single-element family requires an Array or Slots subscript; it does not
+/// admit indexing an unpartitioned range reference. This exercises that
+/// family's reference-parameter route without changing its access pattern.
 fn borrowed_read_modify_map_source() -> Vec<u8> {
     let source = std::str::from_utf8(INDEPENDENT_MAP).expect("the fixture is UTF-8");
     source
         .replacen(
             "fn mapped() -> result: own Box<Array<u8>> pure {\n  let out = box_array_filled::<u8>(count: 400000_u64, value: 0_u8);\n",
-            "fn mapped(out: &[u8]) -> result: own unit writes(out) contract {\n  define spare = deref(out).len;\n  requires 400000_u64 <= spare;\n} {\n",
+            "fn mapped(out: &Box<Array<u8>>) -> result: own unit writes(out.inner) contract {\n  define spare = deref(out).inner.len;\n  requires 400000_u64 <= spare;\n} {\n",
             1,
         )
         .replacen(
             "    set out.inner[slot] = byte;\n",
-            "    let old = deref(out)[slot];\n    let blended = old +wrap byte;\n    set deref(out)[slot] = blended;\n",
+            "    let old = deref(out).inner[slot];\n    let blended = old +wrap byte;\n    set deref(out).inner[slot] = blended;\n",
             1,
         )
         .replacen("  return move out;\n", "  return unit;\n", 1)
         .replacen(
             "  let report = mapped();\n",
-            "  let report = box_array_filled::<u8>(count: 400000_u64, value: 173_u8);\n  let target = &report.inner[0_u64..400000_u64];\n  let done = mapped(out: target);\n",
+            "  let report = box_array_filled::<u8>(count: 400000_u64, value: 173_u8);\n  let done = mapped(out: &report);\n",
             1,
         )
         .into_bytes()
@@ -586,6 +716,16 @@ fn the_sequential_world_of_a_split_loop_is_the_loop() {
 /// tail has to be a number, because the runtime's own `wf__par_split_budget`
 /// shares a prefix with the splitter and is not one of these.
 fn synthesized(module: &str, prefix: &str) -> String {
+    let found = synthesized_symbols(module, prefix);
+    let [only] = found.as_slice() else {
+        panic!("the module must define exactly one {prefix}: {found:?}\n{module}");
+    };
+    only.clone()
+}
+
+/// Every synthesized definition bearing `prefix`, without runtime helpers or
+/// sequential-clone spellings that merely contain a similar suffix.
+fn synthesized_symbols(module: &str, prefix: &str) -> Vec<String> {
     let mut found: Vec<String> = module
         .lines()
         .filter_map(|line| line.split_once(prefix))
@@ -596,10 +736,7 @@ fn synthesized(module: &str, prefix: &str) -> String {
         .collect();
     found.sort_unstable();
     found.dedup();
-    let [only] = found.as_slice() else {
-        panic!("the module must define exactly one {prefix}: {found:?}\n{module}");
-    };
-    only.clone()
+    found
 }
 
 /// A split that carries captures and folds under a second admitted operation
@@ -668,6 +805,237 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
 /// A proved single-binder affine map uses the same split machinery without inventing
 /// a source accumulator: Unit carries the worker join, while the captured
 /// buffer carries the only observable result.
+fn assert_map_payload_capture(module: &str, chunk: &str, seed_type: &str, element_type: &str) {
+    let signature = chunk.lines().next().expect("chunk definition");
+    let (_, arguments) = signature.split_once('(').expect("chunk parameters");
+    let (arguments, _) = arguments.split_once(')').expect("closed parameters");
+    let arguments = arguments.split(',').collect::<Vec<_>>();
+    let types = arguments
+        .iter()
+        .map(|argument| argument.split_whitespace().next().expect("parameter type"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        types,
+        [seed_type, "i64", "i64", "ptr"],
+        "the chunk must capture exactly the stable thin Box pointer after its seed and bounds:\n{chunk}"
+    );
+    let captured_payload = arguments
+        .last()
+        .and_then(|argument| argument.split_whitespace().next_back())
+        .expect("Box<Array<T>> payload capture parameter");
+    let parent_slot_load = format!("load ptr, ptr {captured_payload}");
+    assert!(
+        !chunk.contains(&parent_slot_load),
+        "the chunk must not reload a Box pointer through the captured parent owner slot:\n{chunk}"
+    );
+
+    let block_type = format!("{{ i64, [0 x {element_type}] }}");
+    let forward = format!("getelementptr inbounds {block_type}, ptr ");
+    let outer = function_body(module, "@wf_mapped");
+    let projection = outer
+        .find(&forward)
+        .expect("the owner must be projected to its element base before the split");
+    let split_call = outer
+        .find("call i8 @wf__par_split_")
+        .or_else(|| outer.find("call i64 @wf__par_split_"))
+        .expect("the projected capture must reach the splitter");
+    assert!(
+        projection < split_call,
+        "payload projection must precede the split:\n{outer}"
+    );
+    assert!(
+        outer[projection..].contains("i64 0, i32 1, i64 0"),
+        "the forward operation must select the first array element:\n{outer}"
+    );
+
+    let offset =
+        format!("ptrtoint (ptr getelementptr ({block_type}, ptr null, i64 0, i32 1) to i64)");
+    assert!(
+        chunk.contains(&offset),
+        "the chunk must derive the exact inverse of the typed payload projection:\n{chunk}"
+    );
+    assert!(
+        chunk.contains(&format!(
+            "getelementptr inbounds i8, ptr {captured_payload}, i64 %"
+        )),
+        "the chunk must reconstruct a local owner from its payload parameter:\n{chunk}"
+    );
+}
+
+#[test]
+fn an_aligned_nominal_payload_capture_handles_empty_and_mixed_measure_element_paths() {
+    let unsplit = emit(ALIGNED_PAYLOAD_MAP);
+    assert!(!module_requires_parallel_runtime(&unsplit));
+    let denied = emit_with_overlap(ALIGNED_PAYLOAD_MAP);
+    assert!(
+        synthesized_symbols(&denied, "@wf__par_chunk_").is_empty(),
+        "PAR-2 must still deny a whole-root measure read beside a mapped write"
+    );
+    // The specification forbids the whole-root read inside an element map;
+    // the preheader already captures the same immutable length. Preserve the
+    // entire write fixture, its exact output oracle, and the negative control.
+    let source = std::str::from_utf8(ALIGNED_PAYLOAD_MAP)
+        .expect("UTF-8 fixture")
+        .replacen(
+            "let current_extent = output.inner.len;",
+            "let current_extent = extent;",
+            1,
+        );
+    let split = emit_with_overlap(source.as_bytes());
+    assert!(
+        module_requires_parallel_runtime(&split),
+        "the nominal-element map must actualize its permitted split:\n{split}"
+    );
+
+    let aligned_type = split
+        .lines()
+        .find_map(|line| line.strip_suffix(" = type { i8, i64 }"))
+        .expect("Aligned must retain its padding-sensitive nominal LLVM type");
+    let block_type = format!("{{ i64, [0 x {aligned_type}] }}");
+    let outer = function_body(&split, "@wf_mapped");
+    let forward = format!("getelementptr inbounds {block_type}, ptr ");
+    assert_eq!(
+        outer
+            .lines()
+            .filter(|line| line.contains(&forward) && line.contains("i64 0, i32 1, i64 0"))
+            .count(),
+        3,
+        "the live output, live empty box, and consumed lexical Box must use typed payload captures:\n{outer}"
+    );
+
+    let chunk = function_body(&split, &synthesized(&split, "@wf__par_chunk_"));
+    let inverse =
+        format!("ptrtoint (ptr getelementptr ({block_type}, ptr null, i64 0, i32 1) to i64)");
+    assert_eq!(
+        chunk.matches(&inverse).count(),
+        3,
+        "the chunk must reconstruct all three lexical Box values without dereferencing the consumed one:\n{chunk}"
+    );
+    assert!(
+        chunk.lines().any(|line| {
+            line.contains(&format!("getelementptr inbounds {block_type}, ptr "))
+                && line.contains("i32 1, i64 %")
+        }),
+        "the live payload must still reach ordinary indexed element lowering:\n{chunk}"
+    );
+    assert!(
+        chunk.lines().any(|line| line.contains("load i64, ptr ")),
+        "the reconstructed empty owner must still support its len read:\n{chunk}"
+    );
+    assert!(!chunk.contains("call void @free("), "{chunk}");
+
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&unsplit, &directory))
+        .output()
+        .expect("run the unsplit nominal-element map");
+    assert_eq!(reference.status.code(), Some(0), "{reference:?}");
+    assert!(reference.stdout.is_empty());
+
+    let executable = build_executable(&split, &directory);
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the split nominal-element map");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "WF_WORKERS={workers}: {output:?}"
+        );
+        assert_eq!(output.stdout, reference.stdout, "WF_WORKERS={workers}");
+    }
+    let (granted, output) = CountedProgram::link(&split, &directory).run(Some("4"));
+    assert!(
+        granted > 0,
+        "the nominal-element map must execute a real worker callback"
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, reference.stdout);
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+#[test]
+fn nested_boxed_array_payload_reductions_preserve_the_unsplit_result() {
+    let unsplit = emit(NESTED_PAYLOAD_REDUCTIONS);
+    assert!(!module_requires_parallel_runtime(&unsplit));
+    let split = emit_with_overlap(NESTED_PAYLOAD_REDUCTIONS);
+    assert!(module_requires_parallel_runtime(&split));
+
+    let splitters = synthesized_symbols(&split, "@wf__par_split_");
+    let chunks = synthesized_symbols(&split, "@wf__par_chunk_");
+    assert_eq!(
+        splitters.len(),
+        2,
+        "both reductions must split: {splitters:?}\n{split}"
+    );
+    assert_eq!(
+        chunks.len(),
+        2,
+        "both reductions must have chunks: {chunks:?}\n{split}"
+    );
+    let chunk_bodies = chunks
+        .iter()
+        .map(|symbol| function_body(&split, symbol))
+        .collect::<Vec<_>>();
+    let block_type = "{ i64, [0 x i64] }";
+    let inverse =
+        format!("ptrtoint (ptr getelementptr ({block_type}, ptr null, i64 0, i32 1) to i64)");
+    for chunk in &chunk_bodies {
+        assert!(
+            chunk.contains(&inverse),
+            "each nested chunk must reconstruct its payload capture:\n{chunk}"
+        );
+    }
+    let outer_chunk = chunk_bodies
+        .iter()
+        .find(|chunk| chunk.contains("call i64 @wf__par_split_"))
+        .expect("the outer chunk must enter the inner splitter");
+    assert!(
+        outer_chunk.lines().any(|line| {
+            line.contains("getelementptr inbounds { i64, [0 x i64] }, ptr ")
+                && line.contains("i64 0, i32 1, i64 0")
+        }),
+        "the outer chunk must project the reconstructed owner into the inner split:\n{outer_chunk}"
+    );
+    let nested = function_body(&split, "@wf_nested");
+    assert!(
+        nested.lines().any(|line| {
+            line.contains("getelementptr inbounds { i64, [0 x i64] }, ptr ")
+                && line.contains("i64 0, i32 1, i64 0")
+        }),
+        "the source owner must be projected into the outer split:\n{nested}"
+    );
+
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&unsplit, &directory))
+        .output()
+        .expect("run the unsplit nested reductions");
+    assert_eq!(reference.status.code(), Some(0), "{reference:?}");
+    assert!(reference.stdout.is_empty());
+
+    let executable = build_executable(&split, &directory);
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the nested split reductions");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "WF_WORKERS={workers}: {output:?}"
+        );
+        assert_eq!(output.stdout, reference.stdout, "WF_WORKERS={workers}");
+    }
+    let (granted, output) = CountedProgram::link(&split, &directory).run(Some("4"));
+    assert!(
+        granted > 0,
+        "the controlled nested program must grant worker work"
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, reference.stdout);
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
 #[test]
 fn an_independent_map_joins_and_preserves_its_outer_buffer() {
     let unsplit = emit(INDEPENDENT_MAP);
@@ -693,18 +1061,11 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
         splitter.starts_with("define i8 "),
         "an independent map splitter must return the Unit token:\n{splitter}"
     );
-    // KEPT AS WRITTEN for the lowering port: `{ ptr, i64 }` is the emitted
-    // descriptor of the mapped run, whose source spelling moved from
-    // `buffer<u8>` to `Box<Array<u8>>` [TYPE-9, OP-13]. If the runtime-count
-    // run's physical type changes, re-derive the literal here; the property -
-    // the chunk captures the descriptor rather than copying the run - does not.
-    assert!(
-        chunk
-            .lines()
-            .next()
-            .is_some_and(|signature| signature.contains("{ ptr, i64 }")),
-        "the mapped buffer descriptor must be captured by the chunk:\n{chunk}"
-    );
+    // STOR-1 puts the descriptor inside the allocation. The complete chunk
+    // signature is Unit seed, two bounds, and the stable thin Box pointer
+    // snapshotted before the split. Native bytes and the source owner's
+    // per-exit releases are checked below.
+    assert_map_payload_capture(&split, chunk, "i8", "i8");
     for step in [
         "call ptr @wf__par_acquire_lane(",
         "call void @wf__par_publish(",
@@ -759,7 +1120,7 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
 
     let executable = build_executable(&split, &directory);
     let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "4"] {
+    for workers in ["0", "1", "4"] {
         let output = Command::new(&executable)
             .env("WF_WORKERS", workers)
             .output()
@@ -807,7 +1168,7 @@ fn a_borrowed_read_modify_map_preserves_the_sequential_bytes() {
 
     let executable = build_executable(&split, &directory);
     let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "4"] {
+    for workers in ["0", "1", "4"] {
         let output = Command::new(&executable)
             .env("WF_WORKERS", workers)
             .output()
@@ -844,15 +1205,9 @@ fn a_map_and_reduction_preserves_both_results() {
         splitter.starts_with("define i64 "),
         "the combined loop must retain its real reduction result:\n{splitter}"
     );
-    // KEPT AS WRITTEN for the lowering port: the same emitted run descriptor
-    // as in `an_independent_map_joins_and_preserves_its_outer_buffer`.
-    assert!(
-        chunk
-            .lines()
-            .next()
-            .is_some_and(|signature| signature.contains("{ ptr, i64 }")),
-        "the reduction chunk must also capture its mapped buffer:\n{chunk}"
-    );
+    // The reduction seed replaces Unit; bounds and the one stable thin Box
+    // pointer retain exactly the independent map's capture ABI.
+    assert_map_payload_capture(&split, chunk, "i64", "i8");
 
     let directory = test_directory();
     let reference = Command::new(build_executable(&unsplit, &directory))
@@ -863,7 +1218,7 @@ fn a_map_and_reduction_preserves_both_results() {
 
     let executable = build_executable(&split, &directory);
     let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "4"] {
+    for workers in ["0", "1", "4"] {
         let output = Command::new(&executable)
             .env("WF_WORKERS", workers)
             .output()

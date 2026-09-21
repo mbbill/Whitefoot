@@ -8,8 +8,7 @@
 use crate::semantic::{
     CheckedBooleanOperation, CheckedElement, CheckedEnumType, CheckedFlatElement,
     CheckedFloatOperation, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
-    CheckedNumericType, CheckedProgram, CheckedRuntimeTargetObligations,
-    CheckedTargetDomainObligation, CheckedType,
+    CheckedNumericType, CheckedProgram, CheckedTargetDomainObligation, CheckedType,
 };
 
 mod physical_types;
@@ -201,7 +200,7 @@ impl IrAddressed {
         }
     }
 
-    const fn of(ty: IrType) -> Option<Self> {
+    pub(crate) const fn of(ty: IrType) -> Option<Self> {
         Some(match ty {
             IrType::Unit => Self::Unit,
             IrType::Bool => Self::Bool,
@@ -209,7 +208,7 @@ impl IrAddressed {
             IrType::Float { width } => Self::Float { width },
             IrType::Nominal(id) => Self::Nominal(id),
             IrType::Buffer { element } => Self::Buffer { element },
-            IrType::Range { .. } => return None,
+            IrType::Range { .. } | IrType::RuntimeBoxPayload { .. } => return None,
             IrType::Array { element, length } => Self::Array { element, length },
             IrType::Window {
                 shape,
@@ -235,8 +234,6 @@ impl IrAddressed {
 pub enum IrReleaseClass {
     /// A free to the general store the run was taken from.
     General,
-    /// Empty: the extent's reclamation is its region's own reset [BLK-2].
-    Extent,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -273,7 +270,15 @@ pub enum IrType {
     /// It is a reference kind and not a type [TYPE-8], so no storage ever
     /// holds one and nothing is ever released through one.
     Range {
-        element: IrFlatElement,
+        element: IrElement,
+    },
+    /// One compiler-synthesized task capture of the first element address of
+    /// a runtime-capacity `Array` block. The pointer may be one-past for an
+    /// empty array, so it is not an [`IrType::Address`] and cannot be loaded
+    /// or stored through directly. Its nominal identifies the ordinary Box
+    /// owner that [`IrOperation::RuntimeBoxOwner`] may reconstruct.
+    RuntimeBoxPayload {
+        nominal: IrNominalId,
     },
     /// One `Slots<T, N>`, `Slots<T>`, `Ring<T, N>` or `Ring<T>` [TYPE-9].
     ///
@@ -316,7 +321,6 @@ pub(crate) const fn lower_release_class(
 ) -> IrReleaseClass {
     match value {
         crate::semantic::CheckedReleaseClass::General => IrReleaseClass::General,
-        crate::semantic::CheckedReleaseClass::Extent => IrReleaseClass::Extent,
     }
 }
 
@@ -443,15 +447,9 @@ pub(crate) fn type_derives_release(
                             .map(IrField::ty),
                     );
                 }
-                IrNominalKind::Box { .. }
-                // The allocation-list drop is the region's storage
-                // release [STOR-3]: walk and free.
-                | IrNominalKind::ArenaStorage => {
+                IrNominalKind::Box { .. } => {
                     return Some(true);
                 }
-                // An arena value's storage is released with its region,
-                // never by an owner-scope cleanup [STOR-3].
-                IrNominalKind::Arena { .. } => {}
                 // Ordinary opaque values have empty release [PRE-1].
                 IrNominalKind::Opaque => {}
             },
@@ -462,6 +460,9 @@ pub(crate) fn type_derives_release(
             // [REF-4, TYPE-8] a range reference is a name for elements it
             // does not own, so nothing of it is ever released.
             | IrType::Range { .. }
+            // A synthesized payload capture borrows the source Box allocation
+            // and never carries ownership or cleanup authority.
+            | IrType::RuntimeBoxPayload { .. }
             | IrType::Address(_) => {}
         }
     }
@@ -565,15 +566,6 @@ pub enum IrNominalKind {
         /// reclaimed by its region's own reset and has no action of its own.
         release: IrReleaseClass,
     },
-    /// One `arena<'r, T>` instance: a pointer-shaped handle to region-owned
-    /// heap content, released with its region rather than with an owner
-    /// scope [STOR-3].
-    Arena {
-        content: IrType,
-    },
-    /// One region block's compiler-owned arena allocation-list cell; its
-    /// drop walks and frees every registered allocation [STOR-3].
-    ArenaStorage,
     /// An ordinary opaque nominal supplied by PRE-1.
     Opaque,
 }
@@ -884,8 +876,10 @@ pub struct IrRuntimeTargetObligations {
     ///
     /// A compiler-owned [PRE-1] construction row is one body per instance,
     /// reached from every call of that row, so no single call's proved bound
-    /// belongs to it (compiler/prelude-records). Target qualification reads
-    /// this to say which of [STOR-6]'s two halves it actually has.
+    /// belongs to it (compiler/prelude-records). Each caller carries and is
+    /// qualified with its own bound in [`IrSourceCall`]; this flag keeps the
+    /// shared body's representation record from reusing the language maximum
+    /// as though it were one caller's target-domain bound.
     call_site_bound: bool,
 }
 
@@ -939,21 +933,6 @@ impl From<CheckedLayoutCeiling> for IrLayoutCeiling {
     }
 }
 
-impl TryFrom<CheckedRuntimeTargetObligations> for IrRuntimeTargetObligations {
-    type Error = LoweringFailure;
-
-    fn try_from(value: CheckedRuntimeTargetObligations) -> Result<Self, Self::Error> {
-        Ok(Self {
-            allocation: value.allocation().into(),
-            element_address: value.element_address().into(),
-            source_length_upper_bound: value
-                .source_length_upper_bound()
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-            call_site_bound: true,
-        })
-    }
-}
-
 impl IrRuntimeTargetObligations {
     pub(crate) const fn is_complete(self) -> bool {
         matches!(
@@ -977,14 +956,12 @@ impl IrRuntimeTargetObligations {
 
     /// The record one compiler-owned [PRE-1] allocation carries [OP-9].
     ///
-    /// A construction row's body is built once per monomorphized instance and
-    /// is reached only from calls the checker accepted, and every accepted
-    /// call discharged [OP-9]'s own predicate on its own count, so the bound
-    /// retained here is that predicate's right-hand side: the largest count
-    /// the language admits for this stored type. Target qualification
-    /// separately requires the actual stride to be no larger than the
-    /// language ceiling [STOR-6], so this bound times the actual stride is
-    /// representable.
+    /// A construction row's body is built once per monomorphized instance.
+    /// This record retains [OP-9]'s language maximum for the body-level
+    /// representation check; each accepted caller separately retains its
+    /// tighter proved bound in [`IrSourceAllocation`] for target byte-domain
+    /// qualification. The language maximum is deliberately not used as a
+    /// selected-target allocation bound here.
     pub(crate) const fn from_language_ceiling(source_length_upper_bound: u64) -> Self {
         Self {
             allocation: IrTargetDomainObligation::RuntimeSizedAllocation,
@@ -998,7 +975,6 @@ impl IrRuntimeTargetObligations {
 impl From<CheckedTargetDomainObligation> for IrTargetDomainObligation {
     fn from(value: CheckedTargetDomainObligation) -> Self {
         match value {
-            CheckedTargetDomainObligation::RuntimeSizedAllocation => Self::RuntimeSizedAllocation,
             CheckedTargetDomainObligation::ElementAddress => Self::ElementAddress,
         }
     }
@@ -1143,25 +1119,6 @@ pub enum IrOperation {
         layout_ceiling: IrLayoutCeiling,
         target_domains: IrRuntimeTargetObligations,
     },
-    /// The same block with every element initialized to the element nominal's
-    /// tag-zero value [OP-9].
-    ///
-    /// v0.59's `buffer_vacant::<T>(n)` head, which built an all-`None` run,
-    /// has no v0.60 spelling: [OP-1]'s table no longer carries the row and
-    /// the identifier is free again, so no accepted source reaches this
-    /// operation. It is retained beside `BufferFill` because the two share
-    /// one block layout and one allocation obligation, and a later
-    /// vacant-element construction row lowers to exactly this.
-    BufferVacant {
-        nominal: IrNominalId,
-        length: IrValueId,
-        layout_ceiling: IrLayoutCeiling,
-        target_domains: IrRuntimeTargetObligations,
-    },
-    BufferFits {
-        length: IrValueId,
-        maximum_length: u64,
-    },
     /// [MSR-1] the one measure a runtime-capacity `Array<T>` has, read from
     /// the `len` word at the head of its block. `buffer` is the block's
     /// address.
@@ -1255,9 +1212,9 @@ pub enum IrOperation {
         capacity: IrValueId,
         obligations: IrAllocationObligations,
     },
-    /// [OP-14] the cell of a boxed window proved empty: its own storage is
-    /// freed and nothing inside it is released, because an empty window
-    /// holds no element [WIN-1].
+    /// Release only one cell's own storage. [OP-14] uses this after proving a
+    /// boxed window empty; an owned-path take uses it after the checked cleanup
+    /// plan has accounted for the cell's split content [WIN-3, STOR-3].
     CellFree {
         nominal: IrNominalId,
         value: IrValueId,
@@ -1284,9 +1241,6 @@ pub enum IrOperation {
         index: IrValueId,
         limit: IrValueId,
         needles: Vec<IrValueId>,
-    },
-    SliceFromArray {
-        array: IrArrayRoot,
     },
     SliceFromBuffer {
         buffer: IrValueId,
@@ -1317,6 +1271,13 @@ pub enum IrOperation {
         offset: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
+    /// The address of one discharged range element, retained for a source
+    /// reference instead of loaded as an owned value.
+    SliceAddress {
+        slice: IrValueId,
+        offset: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    },
     BoxNew {
         nominal: IrNominalId,
         value: IrValueId,
@@ -1332,22 +1293,20 @@ pub enum IrOperation {
         nominal: IrNominalId,
         value: IrValueId,
     },
-    /// One region block's arena allocation-list cell, materialized at region
-    /// entry: a stack cell reset to empty, whose address is the operation's
-    /// value [STOR-1, STOR-3].
-    ArenaListNew,
-    /// One `arena_new` allocation: heap storage for the content, registered
-    /// on the owning region's allocation list so the region's exit release
-    /// frees it [STOR-1, STOR-3]. The value is the content address.
-    ArenaNew {
+    /// The first-element pointer used only by a synthesized split capture of
+    /// a `Box<Array<T>>`. The source Box value remains the allocation-base
+    /// pointer and retains sole cleanup authority.
+    RuntimeBoxPayload {
         nominal: IrNominalId,
-        list: IrValueId,
-        value: IrValueId,
+        owner: IrValueId,
     },
-    /// Arena content read through explicit `deref` [STOR-1].
-    ArenaDeref {
+    /// Recovers the ordinary allocation-base Box pointer from a synthesized
+    /// payload capture before rebuilding borrowed local owner storage in a
+    /// chunk. The inverse uses the same target-layout field offset as the
+    /// forward projection.
+    RuntimeBoxOwner {
         nominal: IrNominalId,
-        value: IrValueId,
+        payload: IrValueId,
     },
     ConstructStruct {
         nominal: IrNominalId,
@@ -1747,6 +1706,38 @@ pub enum IrSourceArgument {
     Value,
 }
 
+/// The accepted source-level allocation judgment attached to one ordinary
+/// call of a compiler-owned construction or growth row [OP-9, STOR-6].
+///
+/// The row body remains one out-of-line monomorphized function. Target
+/// qualification reads this per-call record to qualify the exact proved
+/// count bound against the selected target's element stride and block header.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct IrSourceAllocation {
+    cell: IrNominalId,
+    count_argument: usize,
+    layout_ceiling: IrLayoutCeiling,
+    source_length_upper_bound: u64,
+}
+
+impl IrSourceAllocation {
+    pub(crate) const fn cell(self) -> IrNominalId {
+        self.cell
+    }
+
+    pub(crate) const fn count_argument(self) -> usize {
+        self.count_argument
+    }
+
+    pub(crate) const fn layout_ceiling(self) -> IrLayoutCeiling {
+        self.layout_ceiling
+    }
+
+    pub(crate) const fn source_length_upper_bound(self) -> u64 {
+        self.source_length_upper_bound
+    }
+}
+
 /// Source-call use and direct borrow-result relations tied to one IR call.
 ///
 /// The actual arguments and their typed address/projection operations remain
@@ -1760,6 +1751,9 @@ pub struct IrSourceCall {
     /// A direct borrow result's checked candidate. Absence says nothing about
     /// loans carried inside owned view results or other aggregates.
     returned_borrow_argument: Option<usize>,
+    /// The call's accepted allocation bound, only for the runtime-capacity
+    /// construction and growth rows that carry OP-9.
+    allocation: Option<IrSourceAllocation>,
 }
 
 impl IrSourceCall {
@@ -1769,6 +1763,10 @@ impl IrSourceCall {
 
     pub(crate) fn arguments(&self) -> &[IrSourceArgument] {
         &self.arguments
+    }
+
+    pub(crate) const fn allocation(&self) -> Option<IrSourceAllocation> {
+        self.allocation
     }
 }
 

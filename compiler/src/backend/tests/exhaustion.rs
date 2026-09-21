@@ -23,42 +23,11 @@
 //! Record bytes are a runtime implementation contract; SCOPE-3 keeps resource
 //! availability outside the source outcome model.
 //!
-//! Ported to kernel specification v0.60. Every case below keeps its subject,
-//! because every subject below is the trusted base's own termination outside
-//! the language [SCOPE-3]: the resource record, the abort, the stack floor and
-//! the probe that keeps a large frame inside the guard region. [STOR-8] now
-//! makes allocation total *in the source*: it never returns a failure, never
-//! traps, and no allocating operation carries a `Result`, and exhaustion of
-//! the heap terminates the program from the trusted base. That retires the
-//! writer-visible failure path, not the termination these cases observe.
-//!
-//! Two v0.59 subjects this module carried are retired outright, each with a
-//! named successor:
-//!
-//! - The arena allocation form and its `arena.new.oom.` refusal edge retire
-//!   with regions and arenas [OWN-3, OWN-4, OWN-10, FORM-8, STOR-4]. There is
-//!   no successor form and no successor edge; the four-form image below is now
-//!   the four [OP-13] cell constructions `box_new`, `box_array_filled`,
-//!   `box_slots_new` and `box_ring_new` over [STOR-8]'s one heap.
-//! - Modelling a vacant slot as `Option<T>` and reading one back with
-//!   `replace`, whose `None()` arm the writer matched on, retires with [SET-2]
-//!   and [LIV-2]. The successor is [WIN-1]'s window: a slot inside the window
-//!   always holds a value, no program point can observe one as empty, and the
-//!   boundary moves only through [OP-10]'s `place_back` and `take_back`, with
-//!   [OP-11]'s `swap` where an old value must survive the write.
-//!
-//! Emitted-shape expectations are kept exactly as v0.59 wrote them wherever a
-//! concurrent lowering port owns the answer; each is marked
-//! `KEPT AS WRITTEN for the lowering port:` at its assertion.
-//!
-//! Three of the checker gaps the v0.60 packages carry are reached from here:
-//! [OP-10]'s compiler-owned window type parameter is not inferred from the
-//! operand (`check/generics.rs:2196-2213` refuses a call to a callee with type
-//! parameters and no written argument list, citing FN-2), a `Box`'s content
-//! `b.inner` is reached only on the explicit-`deref` chain, and a
-//! runtime-capacity `Slots<T>` or `Ring<T>` stops as an unimplemented compiler
-//! capability at `check/types.rs:464`. Those are unimplemented capabilities,
-//! not source rejections, and no expectation here is softened for them.
+//! Allocation is total in the source language [STOR-8]; heap exhaustion ends
+//! the process inside the trusted base. The tests below cover the resource
+//! record and abort edges for scalar, array, Slots and Ring cells, cleanup of
+//! initialized elements before their backing allocation, probe attachment to
+//! every emitted definition, and native containment on a guarded stack.
 
 use std::process::Command;
 
@@ -694,6 +663,7 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 fn a_frame_larger_than_the_guard_region_is_still_reported() {
     let module = expose_large_frame_spine(&compile(LARGE_FRAME_SPINE));
     let directory = test_directory();
+    let (_, probed_assembly) = super::stack_ledger::machine_report(&module, &directory);
     let executable = build_linked_executable(&module, Some(LARGE_FRAME_BODY), &[], &directory);
     let output = Command::new(&executable)
         .output()
@@ -706,13 +676,15 @@ fn a_frame_larger_than_the_guard_region_is_still_reported() {
     );
     assert_resource_record(&output.stderr, "stack");
 
-    let ablated = ablate_probe(&module, "@wf_spine(");
+    let ablated = ablate_large_frame_probe(&module);
     assert_eq!(
         module.matches(" #0 {").count() - ablated.matches(" #0 {").count(),
         1,
         "the ablation must remove the group from exactly one definition"
     );
     let elsewhere = test_directory();
+    let (_, assembly) = super::stack_ledger::machine_report(&ablated, &elsewhere);
+    assert_native_spine_probe_was_ablated(&probed_assembly, &assembly);
     let unprobed = build_linked_executable(&ablated, Some(LARGE_FRAME_BODY), &[], &elsewhere);
     let output = Command::new(&unprobed)
         .output()
@@ -795,22 +767,108 @@ const fn protected_page_signal() -> i32 {
     libc_sigsegv()
 }
 
-/// The same module with the probe attribute group taken off the one definition
-/// whose `define` line contains `signature`.
+/// The same module with probing disabled on the one definition whose `define`
+/// line contains `signature`.
+///
+/// Darwin probes large frames by target default even when `probe-stack` is
+/// absent. LLVM's function-local `no-stack-arg-probe` attribute is therefore
+/// the negative control: it suppresses that default only for the selected
+/// definition and leaves the emitted module and every other definition's
+/// production probe untouched.
 fn ablate_probe(module: &str, signature: &str) -> String {
-    module
+    assert!(
+        !module.contains("attributes #1 ="),
+        "the test-only negative-control attribute needs one fresh group"
+    );
+    let mut ablated = module
         .lines()
         .map(|line| {
             if line.starts_with("define ") && line.contains(signature) {
                 line.strip_suffix(" #0 {")
-                    .map(|head| format!("{head} {{"))
+                    .map(|head| format!("{head} #1 {{"))
                     .unwrap_or_else(|| line.to_owned())
             } else {
                 line.to_owned()
             }
         })
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n");
+    ablated.push_str("\nattributes #1 = { \"no-stack-arg-probe\" }\n");
+    ablated
+}
+
+/// Isolates the large-frame negative control from the probed fill helper.
+///
+/// At `-O2`, LLVM inlines the compiler-owned `array_filled` body into the
+/// spine and propagates that callee's production `probe-stack` attribute back
+/// onto the caller. Marking only this negative control's one fill definition
+/// `noinline` keeps the same complete frame and fill operation while allowing
+/// [`ablate_probe`] to remove the spine's own probe. The positive module and
+/// every production definition remain unchanged.
+fn ablate_large_frame_probe(module: &str) -> String {
+    let mut fills = 0;
+    let isolated = module
+        .lines()
+        .map(|line| {
+            if line.starts_with("define void @wf_array_filled$instance$") {
+                fills += 1;
+                line.strip_suffix(" #0 {")
+                    .map(|head| format!("{head} noinline #0 {{"))
+                    .unwrap_or_else(|| line.to_owned())
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(
+        fills, 1,
+        "the large-frame control must have exactly one compiler-owned fill helper"
+    );
+    ablate_probe(&isolated, "@wf_spine(")
+}
+
+/// Confirms the exact positive probe and its absence from the exact negative
+/// control before relying on that control's signal.
+fn assert_native_spine_probe_was_ablated(probed: &str, ablated: &str) {
+    let label = if cfg!(target_os = "macos") {
+        "_wf_spine:"
+    } else {
+        "wf_spine:"
+    };
+    let probed = native_function_body(probed, label);
+    let ablated = native_function_body(ablated, label);
+    let has_probe = |body: &str| {
+        if cfg!(target_os = "macos") {
+            body.contains("chkstk")
+        } else if cfg!(target_arch = "x86_64") {
+            body.contains("subq\t$4096, %rsp") && body.contains("movq\t$0, (%rsp)")
+        } else if cfg!(target_arch = "aarch64") {
+            body.contains("sub\tsp, sp, #1, lsl #12") && body.contains("str\txzr, [sp]")
+        } else {
+            panic!("the stack floor has no qualified native-probe check on this architecture")
+        }
+    };
+    assert!(
+        has_probe(probed),
+        "the positive-control spine has no recognized native stack probe:\n{probed}"
+    );
+    assert!(
+        !has_probe(ablated),
+        "the negative-control spine still contains a native stack probe:\n{ablated}"
+    );
+}
+
+fn native_function_body<'assembly>(assembly: &'assembly str, label: &str) -> &'assembly str {
+    assembly
+        .split_once(label)
+        .map(|(_, tail)| tail)
+        // An unprobed leaf-like native function may need no unwind directives,
+        // so `.cfi_endproc` is not a stable end marker for the very negative
+        // control this helper examines. Clang emits this function-end marker
+        // for both qualified architectures regardless of CFI presence.
+        .and_then(|tail| tail.split_once("-- End function").map(|(body, _)| body))
+        .expect("the native module must retain the selected function")
 }
 
 // ------------------------------------------- the compiler's own recursion
@@ -1118,15 +1176,13 @@ fn definition_body<'a>(module: &'a str, signature: &str) -> &'a str {
 }
 
 /// [STOR-3] fixes a window's release as each element's release in ascending
-/// logical index order followed by that one heap free, and the release of a
-/// window inside a cycle is the same action as the release of any other.
+/// logical index order. Its enclosing `Box` then performs the one heap free,
+/// and a window inside a cycle follows the same walk as any other.
 ///
-/// KEPT AS WRITTEN for the lowering port: the drop-glue symbol
-/// `@wf.drop.buffer.t`, the `%index`/`%next` loop registers, the `%element`
-/// load and `call void @free(ptr %pointer)` are v0.59's emitted spellings for
-/// what is now a `Slots` release over its window [WIN-1, STOR-3]. Re-derive
-/// each symbol from the port; the order the case pins is the rule's and does
-/// not move.
+/// The run action walks the live elements but frees no separate backing:
+/// [TYPE-9] places a runtime-capacity `Slots` only inside its `Box`, and
+/// [STOR-1] gives that pair exactly one heap object. The enclosing owner action
+/// therefore calls the run action and then frees the cell [STOR-3].
 ///
 /// The order is pinned where it is chosen because nothing downstream can see
 /// it: [STOR-3] gives memory reclamation the empty effect row. Walking the
@@ -1140,8 +1196,14 @@ fn definition_body<'a>(module: &'a str, signature: &str) -> &'a str {
 #[test]
 fn a_buffer_in_a_cleanup_cycle_is_walked_in_the_order_the_rule_fixes() {
     let module = buffer_module();
-    // The buffer's own release action: the element loop, then the block free.
-    let buffer_drop = definition_body(&module, "define private void @wf.drop.buffer.t");
+    let run_definitions = module
+        .lines()
+        .filter(|line| line.starts_with("define private void @wf.drop.run."))
+        .collect::<Vec<_>>();
+    let [run_definition] = run_definitions.as_slice() else {
+        panic!("the module must define one runtime-window release: {run_definitions:?}");
+    };
+    let buffer_drop = definition_body(&module, run_definition.trim_end_matches(" #0 {"));
     assert!(
         buffer_drop.contains("%index = phi i64 [ 0, %entry ], [ %next, %body ]")
             && buffer_drop.contains("%next = add i64 %index, 1"),
@@ -1161,17 +1223,38 @@ fn a_buffer_in_a_cleanup_cycle_is_walked_in_the_order_the_rule_fixes() {
         body.contains("call void @wf.drop."),
         "each live element invokes its release action: {body}"
     );
+    let element_release = buffer_drop
+        .find("call void @wf.drop.")
+        .expect("the run release calls its element release");
     assert!(
-        body.contains("br label %head") && !body.contains("call void @free(ptr %pointer)"),
-        "backing may only be released after leaving the element loop: {body}"
+        element < element_release,
+        "the element must be loaded before its release action: {buffer_drop}"
     );
-    let block = buffer_drop
-        .find("call void @free(ptr %pointer)")
-        .expect("the buffer release frees its own block");
     assert!(
-        element < block,
-        "every element must be released before the block that holds it: \
-         {buffer_drop}"
+        body.contains("br label %walk") && !body.contains("call void @free("),
+        "the element loop returns to its header and frees no enclosing cell: {body}"
+    );
+    assert!(
+        !buffer_drop.contains("call void @free("),
+        "Slots has no storage reclamation separate from its Box: {buffer_drop}"
+    );
+    let owner_drop = module
+        .split("\n\n")
+        .find(|body| {
+            body.starts_with("define private void @wf.drop.")
+                && body.contains("call void @wf.drop.run.")
+                && body.contains("call void @free(")
+        })
+        .expect("the enclosing owner releases the run and its one Box cell");
+    let elements = owner_drop
+        .find("call void @wf.drop.run.")
+        .expect("the owner calls the run release");
+    let cell = owner_drop
+        .find("call void @free(")
+        .expect("the owner frees the Box cell");
+    assert!(
+        elements < cell,
+        "every element must be released before the Box cell that holds it: {owner_drop}"
     );
 }
 
@@ -1184,12 +1267,10 @@ fn a_buffer_in_a_cleanup_cycle_is_walked_in_the_order_the_rule_fixes() {
 /// order and releases the placeholder the exchange left behind, and the final
 /// walk still descends left before right.
 ///
-/// KEPT AS WRITTEN for the lowering port: the two window fixtures' limits and
-/// identity ranges say that one `box_slots_new` is one interposed allocation
-/// where v0.59 spelled it `buffer_vacant` plus `box_new`. Whether a boxed
-/// runtime-capacity shape is one heap object or a cell plus a block is the
-/// lowering port's decision under [STOR-1]; re-derive the `nested buffer` and
-/// `wide buffer` limits and traces from it.
+/// Each `box_slots_new` is one interposed allocation: [TYPE-9] makes the
+/// runtime-capacity shape the content of its `Box`, and [STOR-1] stores the
+/// pair in exactly one heap object. The nested and wide fixtures each create
+/// one root cell and four child cells.
 #[test]
 fn branching_and_nested_release_walks_reclaim_each_instance_in_order() {
     let mut boxed_trace = String::from("A1;");
@@ -1207,16 +1288,14 @@ fn branching_and_nested_release_walks_reclaim_each_instance_in_order() {
         let first = 2 + 3 * round;
         boxed_trace.push_str(&format!("F{first};F{};", first + 2));
     }
-    let nested_trace = (1..=9).map(|id| format!("A{id};")).collect::<String>()
-        + &(2..=9).map(|id| format!("F{id};")).collect::<String>()
+    let nested_trace = (1..=5).map(|id| format!("A{id};")).collect::<String>()
+        + &(2..=5).map(|id| format!("F{id};")).collect::<String>()
         + "F1;";
-    let wide_trace = (1..=10).map(|id| format!("A{id};")).collect::<String>()
-        + &(2..=9).map(|id| format!("F{id};")).collect::<String>()
-        + "F1;F10;";
+    let wide_trace = nested_trace.clone();
     for (name, module, limit, expected) in [
         ("boxed branches", boxed_module(), 13, boxed_trace),
-        ("nested buffer", buffer_module(), 9, nested_trace),
-        ("wide buffer", compile(WIDE_BUFFER_CYCLE), 10, wide_trace),
+        ("nested buffer", buffer_module(), 5, nested_trace),
+        ("wide buffer", compile(WIDE_BUFFER_CYCLE), 5, wide_trace),
     ] {
         let observed = module
             .replace("@malloc(", "@wf_test_allocate(")

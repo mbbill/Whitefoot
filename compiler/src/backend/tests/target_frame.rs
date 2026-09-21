@@ -109,7 +109,10 @@ fn scalar_static_storage_must_fit_the_selected_target_address_domain() {
 
 #[test]
 fn pointer_static_storage_must_fit_the_selected_target_address_domain() {
-    let pointer = TargetStorageType::pointer();
+    let pointer = TargetStorageType::source(crate::IrType::Address(crate::IrAddressed::Integer {
+        width: 8,
+        signed: false,
+    }));
 
     assert_eq!(
         validate_static(&pointer, 7),

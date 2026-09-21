@@ -1294,4 +1294,3 @@ view6-neg-two-same-region-view-results | retire | view values are deleted: a ref
 x-borrow-own-param-escape-no-return | retire | the region-outlives relation it violates is gone; forming a reference to a local is unconditionally admitted in v0.60 [REF-1]
 x-borrow-two-uniq-same-place | retire | loan liveness, reference exclusivity, child reborrows and parent suspension are deleted: in v0.60 two references to one place coexist freely, and the only overlap judgment is the pairwise one at a call [EFF-5]
 ```
-

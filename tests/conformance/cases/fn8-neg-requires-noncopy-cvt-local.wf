@@ -1,9 +1,13 @@
-fn guarded(value: own u8) -> result: own unit pure contract {
-  define converted = cvt::<u8, i8>(value);
-  define ok = value >= 0_u8;
+nocopy struct ProofToken {
+  value: u8;
+}
+
+fn guarded(value: own ProofToken) -> result: own unit pure contract {
+  define saved = value;
+  define ok = value.value >= 0_u8;
   requires ok;
 } {
-  doc "A requirement local is a fresh own copy value [FN-8], and after the v0.23 annotation deletion only the derived type can say so. The row is the same in both directions and the operand is the same: cvt<u8, i64> is total and derives a copy i64, which the clause admits, while cvt<u8, i8> is partial and derives Result, which it does not. The gate therefore reads the derived type, not the row spelling.";
+  doc "A contract definition must derive an own copy value [FN-8]. ProofToken is explicitly nocopy even though its field is copy. OWN-1 rejects this bare affine initializer and supplies its contract-specific repair over copy operands or non-consuming admitted reads.";
   return unit;
 }
 

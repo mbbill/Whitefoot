@@ -179,7 +179,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// [MSR-1] one measure of a run or a bump extent, read at run time.
+    /// [MSR-1] one measure of a storage shape, read at run time.
     pub(super) fn emit_container_measure(
         &mut self,
         result: IrValueId,
@@ -272,9 +272,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             length,
         } = run_type
         {
-            if self.program.element(actual) != Some(element.ty())
-                || !matches!(self.value_type(run), Some(IrType::Address(_)))
-            {
+            if actual != element || !matches!(self.value_type(run), Some(IrType::Address(_))) {
                 return Err(BackendFailure::InvalidIr);
             }
             let pointer = self.value_name(run);
@@ -283,7 +281,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let Some(shape) = RunShape::of(run_type) else {
             return Err(BackendFailure::InvalidIr);
         };
-        if shape.element_type(self.program)? != element.ty() {
+        if shape.element_type(self.program)?
+            != self
+                .program
+                .element(element)
+                .ok_or(BackendFailure::InvalidIr)?
+        {
             return Err(BackendFailure::InvalidIr);
         }
         let head = self.window_origin(shape, run_type, run)?;
@@ -390,14 +393,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             let physical = self.boundary_slot(shape, run_type, run, row)?;
             let element_pointer =
                 self.element_pointer(result, shape, run_type, updated, &physical)?;
-            let element_type = llvm_type(self.program, shape.element_type(self.program)?)?;
-            let operand = self.value_operand(value)?;
-            writeln!(
-                self.output,
-                "  store {element_type} {}, ptr %{element_pointer}",
-                operand,
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
+            self.store_value_at(value, &format!("%{element_pointer}"))?;
         }
         // The new descriptor words. A back operation leaves `head` where it
         // was; a front operation moves it by one, modulo the capacity.

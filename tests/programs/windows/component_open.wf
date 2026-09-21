@@ -174,7 +174,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, files: &Handle
                           let read_a = read_at(factory: files, file: &file_a, destination: data_window_a, file_offset: 0_u64, start: 0_u64, end: 1_u64);
                           let data_window_b = &data_b[0_u64..1_u64];
                           let read_b = read_at(factory: files, file: &file_b, destination: data_window_b, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-                          match move read_a {
+                          match read_a {
                             Ok(value: reached_a) => {
                               if reached_a == 1_u64 {
                               } else {
@@ -198,7 +198,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, files: &Handle
                               }
                             }
                           }
-                          match move read_b {
+                          match read_b {
                             Ok(value: reached_b) => {
                               if reached_b == 1_u64 {
                               } else {

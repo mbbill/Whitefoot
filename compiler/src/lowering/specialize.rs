@@ -7,9 +7,10 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::semantic::{
-    CheckedBodyDisposition, CheckedContainerRoot, CheckedEnumType, CheckedExpression,
-    CheckedFunction, CheckedNominalKind, CheckedPlaceStep, CheckedProgramData, CheckedReleaseClass,
-    CheckedSetTarget, CheckedStatement, CheckedType, FunctionId, NominalId, expression_children,
+    CheckedBodyDisposition, CheckedContainerRoot, CheckedElement, CheckedEnumType,
+    CheckedExpression, CheckedFunction, CheckedNominalKind, CheckedPlaceStep, CheckedProgramData,
+    CheckedReleaseClass, CheckedSetTarget, CheckedStatement, CheckedType, FunctionId, NominalId,
+    expression_children,
 };
 use crate::{DeclarationId, NodePath};
 
@@ -39,6 +40,7 @@ struct CallEdge {
 #[derive(Default)]
 struct FunctionDependencies {
     types: Vec<CheckedType>,
+    elements: Vec<CheckedElement>,
     calls: Vec<CallEdge>,
 }
 
@@ -141,21 +143,7 @@ impl PhysicalFunctions {
 
     fn order_by_source(mut self) -> Result<Self, LoweringFailure> {
         let mut order = (0..self.variants.len()).collect::<Vec<_>>();
-        order.sort_by(|left, right| {
-            let left = &self.variants[*left];
-            let right = &self.variants[*right];
-            left.source.0.cmp(&right.source.0).then_with(|| {
-                left.releases
-                    .iter()
-                    .map(|(_, class)| matches!(class, CheckedReleaseClass::Extent))
-                    .cmp(
-                        right
-                            .releases
-                            .iter()
-                            .map(|(_, class)| matches!(class, CheckedReleaseClass::Extent)),
-                    )
-            })
-        });
+        order.sort_by_key(|variant| self.variants[*variant].source.0);
         let mut remapping = vec![0; order.len()];
         for (new, old) in order.iter().enumerate() {
             remapping[*old] = u32::try_from(new).map_err(|_| LoweringFailure::CounterOverflow)?;
@@ -303,10 +291,7 @@ fn collect_regions(
                     }
                     collect_regions(program, *referent, regions, visited, defaults)?;
                 }
-                CheckedNominalKind::Arena { content, .. } => {
-                    collect_regions(program, *content, regions, visited, defaults)?;
-                }
-                CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
+                CheckedNominalKind::Opaque => {}
             }
         }
         CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
@@ -335,8 +320,11 @@ fn collect_regions(
     Ok(())
 }
 
-pub(super) fn executable_types(function: &CheckedFunction) -> Vec<CheckedType> {
-    FunctionDependencies::collect(function).types
+pub(super) fn executable_storage(
+    function: &CheckedFunction,
+) -> (Vec<CheckedType>, Vec<CheckedElement>) {
+    let dependencies = FunctionDependencies::collect(function);
+    (dependencies.types, dependencies.elements)
 }
 
 fn insert_default(
@@ -378,16 +366,6 @@ impl FunctionDependencies {
                     self.types.extend(bindings.iter().map(|(_, ty, _)| *ty));
                     self.expression(value);
                 }
-                CheckedStatement::SetList {
-                    targets, values, ..
-                } => {
-                    for target in targets {
-                        self.target(target);
-                    }
-                    for value in values.expressions() {
-                        self.expression(value);
-                    }
-                }
                 CheckedStatement::PropagateLet {
                     scrutinee,
                     result_nominal,
@@ -406,8 +384,7 @@ impl FunctionDependencies {
                     self.types.extend(error_drops.iter().map(|drop| drop.ty));
                     self.expression(scrutinee);
                 }
-                CheckedStatement::Set { target, value, .. }
-                | CheckedStatement::Replace { target, value, .. } => {
+                CheckedStatement::Set { target, value, .. } => {
                     self.target(target);
                     self.expression(value);
                 }
@@ -429,8 +406,14 @@ impl FunctionDependencies {
                     arms,
                     ..
                 } => {
-                    if let CheckedStatement::ValueMatchLet { result_type, .. } = statement {
+                    if let CheckedStatement::ValueMatchLet {
+                        result_type,
+                        result_range_element,
+                        ..
+                    } = statement
+                    {
                         self.types.push(*result_type);
+                        self.elements.extend(result_range_element.iter().copied());
                     }
                     if let CheckedEnumType::Nominal(nominal) = enum_type {
                         self.types.push(CheckedType::Nominal(*nominal));
@@ -464,19 +447,6 @@ impl FunctionDependencies {
                 CheckedStatement::Break { drops, .. } => {
                     self.types.extend(drops.iter().map(|drop| drop.ty));
                 }
-                CheckedStatement::Dispose { value, drops, .. } => {
-                    self.expression(value);
-                    self.types.extend(drops.iter().map(|drop| drop.ty));
-                }
-                CheckedStatement::Region {
-                    body,
-                    fallthrough_drops,
-                    ..
-                } => {
-                    self.statements(body);
-                    self.types
-                        .extend(fallthrough_drops.iter().map(|drop| drop.ty));
-                }
             }
         }
     }
@@ -497,9 +467,28 @@ impl FunctionDependencies {
                 });
             }
             CheckedExpression::BoxDeref { nominal, .. }
-            | CheckedExpression::ArenaDeref { nominal, .. }
             | CheckedExpression::ProjectValue { nominal, .. } => {
                 self.types.push(CheckedType::Nominal(*nominal));
+            }
+            CheckedExpression::BoxTake { path, cleanup, .. } => {
+                self.steps(path);
+                for action in cleanup {
+                    match action {
+                        crate::semantic::CheckedOwnedTakeCleanup::Drop { path, ty } => {
+                            self.types.push(*ty);
+                            self.steps(path);
+                        }
+                        crate::semantic::CheckedOwnedTakeCleanup::BoxShell {
+                            path,
+                            nominal,
+                            referent,
+                        } => {
+                            self.types
+                                .extend([CheckedType::Nominal(*nominal), *referent]);
+                            self.steps(path);
+                        }
+                    }
+                }
             }
             CheckedExpression::Project { residual_drops, .. } => {
                 self.types.extend(residual_drops.iter().map(|drop| drop.ty));
@@ -507,7 +496,16 @@ impl FunctionDependencies {
             CheckedExpression::ContainerMeasure { root, .. }
             | CheckedExpression::ReadStorage { root, .. }
             | CheckedExpression::BorrowAddressed { root, .. } => self.root_types(root),
-            CheckedExpression::BufferFits { element, .. } => self.types.push(*element),
+            CheckedExpression::BorrowRangeIndex { place, .. }
+            | CheckedExpression::RangeIndex { place, .. } => {
+                self.types.push(place.root.element_type);
+                self.steps(&place.path);
+            }
+            CheckedExpression::RangeElementMeasure { place, .. } => {
+                self.types.push(place.root.element_type);
+                self.types.push(place.ty);
+                self.steps(&place.path);
+            }
             _ => {}
         }
         for child in expression_children(expression) {
@@ -524,7 +522,13 @@ impl FunctionDependencies {
                 self.expression(&target.offset);
             }
             CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
-            CheckedSetTarget::RangeIndex(target) => self.expression(&target.offset),
+            CheckedSetTarget::RangeIndex(target) => {
+                self.types.push(target.root.element_type);
+                for offset in target.offsets() {
+                    self.expression(offset);
+                }
+                self.steps(&target.path);
+            }
             CheckedSetTarget::Storage(root) => {
                 self.root_types(root);
                 for offset in root.offsets() {
@@ -536,7 +540,11 @@ impl FunctionDependencies {
 
     fn root_types(&mut self, root: &CheckedContainerRoot) {
         self.types.push(root.ty);
-        for step in &root.path {
+        self.steps(&root.path);
+    }
+
+    fn steps(&mut self, steps: &[CheckedPlaceStep]) {
+        for step in steps {
             match step {
                 CheckedPlaceStep::Field(_) => {}
                 CheckedPlaceStep::BoxReferent(nominal) => {
@@ -545,6 +553,7 @@ impl FunctionDependencies {
                 CheckedPlaceStep::Subscript(subscript) => {
                     self.types
                         .extend([subscript.base_type, subscript.element_type]);
+                    self.expression(&subscript.offset);
                 }
             }
         }

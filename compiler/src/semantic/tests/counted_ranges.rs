@@ -69,7 +69,7 @@ fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
             })
         ));
         assert!(matches!(
-            upper,
+            upper.as_ref(),
             CheckedExpression::Constant(CheckedValue::Integer {
                 ty: IntegerType::U64,
                 bits: 1
@@ -269,6 +269,46 @@ fn main() -> status: own ExitStatus pure {
     overwrite(target: &i);
   }
   return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own11,
+    );
+}
+
+#[test]
+fn a_counted_binders_reference_does_not_make_it_writable() {
+    assert_only_rule(
+        br#"fn main() -> status: own ExitStatus pure {
+  for (i in 0_u64..2_u64) {
+    let held = &i;
+    let alias = held;
+    set deref(alias) = 9_u64;
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Set1,
+    );
+
+    // The first possible target is writable. The second is the counted
+    // binder; checking only the first member must not authorize this call.
+    assert_only_rule(
+        br#"fn overwrite(target: &u64) -> result: own unit writes(target) {
+  set deref(target) = 9_u64;
+  return unit;
+}
+
+fn examine(flag: own Bool) -> result: own unit pure {
+  for (i in 0_u64..2_u64) {
+    let spare = 0_u64;
+    let held = if flag {
+      give &spare;
+    } else {
+      give &i;
+    }
+    overwrite(target: held);
+  }
+  return unit;
 }
 "#,
         SemanticRule::Own11,

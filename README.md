@@ -51,8 +51,6 @@ requirements. The reading and authority rules are in
 
 - [compiler/](compiler/): the Rust compiler, LLVM emission, and native
   runtime support.
-- [lib/](lib/): reusable Whitefoot source libraries, each bundled with
-  gate-executed caller programs.
 - [spec/](spec/): the active language and its immutable version archives.
 - [tests/](tests/): normative conformance evidence, executable programs,
   code-generation evidence, and the separate performance regression suite.

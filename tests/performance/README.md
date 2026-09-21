@@ -8,11 +8,20 @@ which uses small synthetic tables and no compiler.
 
 The five programs and independent complete-result oracles live in
 `tests/programs/compute/`: Mandelbrot, UTF-8 records, FIR, adaptive quadrature
-and stencil. `Makefile` compiles those current sources with each arm's compiler
-and its own ordinary runtime, using the shared native construction rules.
-Both arms must support the current ordinary entry ABI; no historical source
-adapter or research-side baseline discovery is used. Build failure is missing
-comparison evidence, never a passing performance result.
+and stencil. `Makefile` uses the current timing runner to compile each
+revision's corresponding formal source, host adapter and independent oracle
+with that revision's compiler and ordinary runtime. This compares the same
+workload across a language port without requiring the older compiler to parse
+newer source syntax or the newer source to use a retired native ABI. Before
+construction, the workflow requires the two revisions to name the same kernel
+set, declare identical `wf_oracle_name` and `wf_oracle_fixture` identities,
+and expose the same oracle interface. A mismatch or a build failure is missing
+comparison evidence, never a passing performance result. No historical source
+adapter or research-side baseline discovery is used. These identity checks
+guard selection and ABI compatibility; review of the source and independent
+oracle ports establishes that they still implement the same algorithm and
+inputs, since matching identity strings alone cannot prove semantic
+equivalence.
 
 Each arm has five native images. Both arms first run their correctness matrices
 at eligible widths. Five passes then rotate kernel/width order and alternate
@@ -45,9 +54,16 @@ regression. Failed controls retain their raw data; there is no automatic retry
 or threshold adjustment. The identical-image control needs no third native
 build.
 
-`compare.sh BASELINE_IMAGES CANDIDATE_IMAGES FRESH_RESULTS` is the explicit
-measurement entry. Each child has a 60-second deadline, and the workflow bounds
-the campaign as a whole. `manifest.txt`, `raw.tsv`, `paired.tsv`, `verdict.txt`
-and per-process logs are uploaded on success or failure. Keep these files only
-while the maintained regression workflow consumes them; experimental framework
-comparisons belong to explicitly requested research runs.
+`compare.sh BASELINE_IMAGES CANDIDATE_IMAGES FRESH_RESULTS` from the candidate
+revision is the explicit measurement entry for both image sets. Each child has
+a 60-second deadline, and the workflow bounds the campaign as a whole.
+`manifest.txt`, `raw.tsv`, `paired.tsv`, `verdict.txt` and per-process logs are
+uploaded on success or failure. The artifact also retains each arm's generated
+LLVM modules, native objects and executable images, so a regression can be
+inspected using the exact hosted code and its final linked addresses rather
+than a local toolchain approximation. The input identity record includes the
+host CPU report so architecture-dependent code-placement hypotheses can be
+checked against the machine that produced the samples.
+Keep these files only while the maintained regression workflow consumes them;
+experimental framework comparisons belong to explicitly requested research
+runs.

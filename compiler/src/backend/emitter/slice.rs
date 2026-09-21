@@ -1,44 +1,6 @@
 use super::*;
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
-    pub(super) fn emit_slice_from_array(
-        &mut self,
-        result: IrValueId,
-        ty: IrType,
-        array: IrArrayRoot,
-    ) -> Result<(), BackendFailure> {
-        let IrType::Range { element } = ty else {
-            return Err(BackendFailure::InvalidIr);
-        };
-        let array_type = match array {
-            IrArrayRoot::Value(value) => self
-                .function
-                .value_type(value)
-                .ok_or(BackendFailure::InvalidIr)?,
-            IrArrayRoot::Constant(id) => self
-                .program
-                .constant(id)
-                .ok_or(BackendFailure::InvalidIr)?
-                .ty(),
-        };
-        let IrType::Array {
-            element: array_element,
-            length,
-        } = array_type
-        else {
-            return Err(BackendFailure::InvalidIr);
-        };
-        if self.program.element(array_element) != Some(element.ty()) {
-            return Err(BackendFailure::InvalidIr);
-        }
-
-        let pointer = match array {
-            IrArrayRoot::Value(value) => self.value_place(value)?,
-            IrArrayRoot::Constant(id) => constant_symbol(id),
-        };
-        self.emit_slice_descriptor(result, ty, &pointer, length)
-    }
-
     /// [REF-4] the descriptor of the whole run a runtime-capacity `Array<T>`
     /// block holds: its first element's address and the `len` word at the
     /// head of the block (compiler/storage-representation).
@@ -51,10 +13,21 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let IrType::Range { element } = ty else {
             return Err(BackendFailure::InvalidIr);
         };
-        if self.value_type(buffer) != Some(IrType::Address(IrAddressed::Buffer { element })) {
+        let Some(IrType::Address(IrAddressed::Buffer {
+            element: buffer_element,
+        })) = self.value_type(buffer)
+        else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        if self.program.element(element) != Some(buffer_element.ty()) {
             return Err(BackendFailure::InvalidIr);
         }
-        let block_type = llvm_type(self.program, IrType::Buffer { element })?;
+        let block_type = llvm_type(
+            self.program,
+            IrType::Buffer {
+                element: buffer_element,
+            },
+        )?;
         let descriptor_type = llvm_type(self.program, ty)?;
         let address = self.value_name(buffer);
         let pointer = self.next_temporary()?;
@@ -91,7 +64,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         let descriptor_type = llvm_type(self.program, ty)?;
-        let element_type = llvm_type(self.program, element.ty())?;
+        let element_type = llvm_type(
+            self.program,
+            self.program
+                .element(element)
+                .ok_or(BackendFailure::InvalidIr)?,
+        )?;
         let pointer = self.next_temporary()?;
         let adjusted = self.next_temporary()?;
         let length = self.next_temporary()?;
@@ -157,7 +135,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let Some(slice_type @ IrType::Range { element }) = self.value_type(slice) else {
             return Err(BackendFailure::InvalidIr);
         };
-        if element.ty() != ty
+        if self.program.element(element) != Some(ty)
             || self.value_type(offset)
                 != Some(IrType::Integer {
                     width: 64,
@@ -198,22 +176,27 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 width: 64,
                 signed: false,
             })
-            || self.value_type(value) != Some(element.ty())
+            || self.value_type(value) != self.program.element(element)
         {
             return Err(BackendFailure::InvalidIr);
         }
         let descriptor_type = llvm_type(self.program, slice_type)?;
-        let element_type = llvm_type(self.program, element.ty())?;
+        let element_type = llvm_type(
+            self.program,
+            self.program
+                .element(element)
+                .ok_or(BackendFailure::InvalidIr)?,
+        )?;
         let pointer = self.next_temporary()?;
         let element_pointer = self.next_temporary()?;
         writeln!(
             self.output,
-            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  store {element_type} {}, ptr %{element_pointer}",
+            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}",
             self.value_name(slice),
             self.value_name(index),
-            self.value_name(value),
         )
-        .map_err(|_| BackendFailure::TextEmission)
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.store_value_at(value, &format!("%{element_pointer}"))
     }
 
     pub(super) fn emit_slice_descriptor(
@@ -229,6 +212,49 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.output,
             "  %{partial} = insertvalue {descriptor_type} zeroinitializer, ptr {pointer}, 0\n  {} = insertvalue {descriptor_type} %{partial}, i64 {length}, 1",
             self.value_name(result),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    /// Emits the address of a discharged range element [REF-1, REF-4]. The
+    /// range descriptor supplies the base pointer and [OP-4] supplies the
+    /// proof that the inbounds step is valid; no element load occurs here.
+    pub(super) fn emit_slice_address(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        slice: IrValueId,
+        offset: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    ) -> Result<(), BackendFailure> {
+        if target_domain != IrTargetDomainObligation::ElementAddress {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let Some(slice_type @ IrType::Range { element }) = self.value_type(slice) else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        let element_type = self
+            .program
+            .element(element)
+            .ok_or(BackendFailure::InvalidIr)?;
+        if ty != IrType::Address(IrAddressed::of(element_type).ok_or(BackendFailure::InvalidIr)?)
+            || self.value_type(offset)
+                != Some(IrType::Integer {
+                    width: 64,
+                    signed: false,
+                })
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let descriptor_type = llvm_type(self.program, slice_type)?;
+        let llvm_element_type = llvm_type(self.program, element_type)?;
+        let pointer = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  {} = getelementptr inbounds {llvm_element_type}, ptr %{pointer}, i64 {}",
+            self.value_name(slice),
+            self.value_name(result),
+            self.value_name(offset),
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

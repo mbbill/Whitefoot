@@ -1,0 +1,7 @@
+fn invalid(values: &Slots<u8, 4>) -> result: own unit reads(values.head) {
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

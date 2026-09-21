@@ -54,7 +54,85 @@
 //!   observed is kept by the three reading helpers that remain.
 
 use super::owned_places::retain_calls;
+use super::system::with_ir;
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
+use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject, validate_program};
+
+fn invariant_bounded_runtime_allocation(
+    construction: &str,
+    half_ceiling: u64,
+    count_ceiling: u64,
+) -> Vec<u8> {
+    format!(
+        r#"fn allocate(n: own u64, half: own u64) -> result: own unit pure contract {{
+  requires half <= {half_ceiling}_u64;
+}} {{
+  let doubled = half * 2_u64;
+  let within = n <= doubled;
+  if within {{
+    invariant tight: n <= {count_ceiling}_u64;
+    let values = {construction};
+  }}
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+    )
+    .into_bytes()
+}
+
+/// [STOR-6] qualifies each accepted runtime allocation at its source call,
+/// using the selected target's actual element stride and padded block header.
+/// The retained bound comes from an invariant rather than a literal count.
+/// Validation alone observes the oversized cases, so no impossible allocation
+/// is executed.
+#[test]
+fn runtime_allocation_bounds_include_each_shape_header_at_target_qualification() {
+    let host = TargetLayout::host().expect("the backend test runs on a supported host layout");
+    for (shape, construction, header) in [
+        (
+            "Array",
+            "box_array_filled::<u16>(count: n, value: 0_u16)",
+            8_u64,
+        ),
+        ("Slots", "box_slots_new::<u16>(capacity: n)", 16_u64),
+        ("Ring", "box_ring_new::<u16>(capacity: n)", 24_u64),
+    ] {
+        let boundary = invariant_bounded_runtime_allocation(construction, 500, 1_000);
+        with_ir(&boundary, |program| {
+            let exact_bytes = header + 2_000;
+            let exact = host.with_runtime_allocation_limits_for_test(exact_bytes, 8);
+            assert_eq!(validate_program(exact, program), Ok(()), "{shape}");
+
+            let one_byte_short = host.with_runtime_allocation_limits_for_test(exact_bytes - 1, 8);
+            assert_eq!(
+                validate_program(one_byte_short, program),
+                Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::RuntimeSizedAllocation
+                )),
+                "{shape}"
+            );
+        });
+
+        let oversized = invariant_bounded_runtime_allocation(
+            construction,
+            2_500_000_000_000_000_000,
+            5_000_000_000_000_000_000,
+        );
+        with_ir(&oversized, |program| {
+            assert_eq!(
+                validate_program(host, program),
+                Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::RuntimeSizedAllocation
+                )),
+                "{shape}"
+            );
+        });
+    }
+}
 
 #[test]
 fn structural_copy_aggregates_keep_independent_storage_after_generic_substitution() {
@@ -110,6 +188,82 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert!(output.stdout.is_empty(), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+/// A complete aggregate written through a reference or into a window remains
+/// a storage copy. Loading the value into SSA before either write makes LLVM's
+/// first SROA pass split the nested array into thousands of scalar
+/// instructions; the native compiler then spends the program-test deadline
+/// compiling one ordinary transfer. The same typed `memmove` used by other
+/// stored-value snapshots preserves overlap and representation padding without
+/// that expansion.
+#[test]
+fn referenced_aggregate_writes_remain_typed_storage_copies() {
+    let source = br#"struct Record {
+  bytes: Array<u8, 64>;
+}
+
+fn replace(target: &Record, value: own Record) -> result: own unit writes(target) {
+  set deref(target) = value;
+  return unit;
+}
+
+fn append_record(target: &Slots<Record, 2>, value: own Record) -> result: own unit writes(target) contract {
+  requires deref(target).len < deref(target).cap;
+} {
+  place_back(window: target, value: value);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let old_bytes = array_filled::<u8, 64>(value: 1_u8);
+  let target = Record(bytes: old_bytes);
+  let new_bytes = array_filled::<u8, 64>(value: 2_u8);
+  let value = Record(bytes: new_bytes);
+  replace(target: &target, value: value);
+  let records = slots_new::<Record, 2>();
+  append_record(target: &records, value: target);
+  if target.bytes[63_u64] == 2_u8 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
+    let module = compile(source);
+    let replace = emitted_function(&module, "replace");
+    assert!(
+        replace.contains("call void @llvm.memmove.p0.p0.i64"),
+        "{replace}"
+    );
+    assert!(
+        !replace.lines().any(|line| {
+            let line = line.trim_start();
+            line.contains(" = load %wf.t") || line.starts_with("store %wf.t")
+        }),
+        "stored aggregates must not cross the write as SSA values: {replace}"
+    );
+    let marker = module
+        .find("@wf_place_back$instance$")
+        .expect("the aggregate place_back instance must be emitted");
+    let start = module[..marker]
+        .rfind("define ")
+        .expect("the place_back definition must start");
+    let end = module[start..]
+        .find("\n}\n")
+        .map(|offset| start + offset + 2)
+        .expect("the place_back definition must close");
+    let place_back = &module[start..end];
+    assert!(
+        place_back.contains("call void @llvm.memmove.p0.p0.i64"),
+        "{place_back}"
+    );
+    assert!(
+        !place_back.lines().any(|line| {
+            let line = line.trim_start();
+            line.contains(" = load %wf.t") || line.starts_with("store %wf.t")
+        }),
+        "window element transfers must not cross SSA: {place_back}"
+    );
 }
 
 #[test]
@@ -1110,13 +1264,14 @@ fn main() -> status: own ExitStatus pure {
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
-        let host = super::owned_places::allocation_observer(2, 0);
+        let host = super::owned_places::u64_allocation_observer(2);
         let output = super::compile_link_and_run(&observed, Some(&host), &[]);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
-        // KEPT AS WRITTEN for the lowering port: the two cells three window
-        // layers down are released in logical index order after the generic
-        // handoff returns.
-        assert_eq!(output.stdout, b"A1;A2;F1;F2;", "{output:?}");
+        // STOR-3 releases elements in logical index order. PAR-1 permits the
+        // two independent allocations to reach the host in either order, so
+        // their payloads identify the elements even when allocation IDs swap.
+        // The observer still rejects unknown and duplicate releases.
+        assert_eq!(output.stdout, b"A1;A2;V17;V29;", "{output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
     }
 }

@@ -11,9 +11,9 @@ use crate::{
 };
 
 use super::{
-    IrBlock, IrDrop, IrDropSubject, IrFunction, IrInstruction, IrIntegerOperation, IrOperation,
-    IrProgram, IrSourceArgument, IrSourceCall, IrSourceMode, IrTerminator, IrType, IrValueId,
-    lower_checked,
+    IrAddressed, IrBlock, IrDrop, IrDropSubject, IrFunction, IrInstruction, IrIntegerOperation,
+    IrNominalKind, IrOperation, IrProgram, IrSourceArgument, IrSourceCall, IrSourceMode,
+    IrTerminator, IrType, IrValueId, lower_checked,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -61,6 +61,158 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
 /// An ordinary function selected by executable fixtures.
 const PLAIN_ENTRY: &str =
     "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+
+#[test]
+fn a_split_captures_an_array_payload_but_keeps_owner_and_inline_storage_addressed() {
+    let source = br#"nocopy struct Inline {
+  values: Array<u8, 16>;
+}
+
+fn make_inline() -> result: own Inline pure {
+  let values = array_filled::<u8, 16>(value: 0_u8);
+  let result = Inline(values: values);
+  return move result;
+}
+
+fn mapped() -> result: own Box<Array<u8>> pure {
+  let output = box_array_filled::<u8>(count: 16_u64, value: 0_u8);
+  let inline = make_inline();
+  for @fill (i in 0_u64..16_u64) {
+    set output.inner[i] = 1_u8;
+    set inline.values[i] = 2_u8;
+  }
+  return move output;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let output = mapped();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir_mode(source, OverlapLowering::On, |program| {
+        let function = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "mapped")
+            .expect("mapped function");
+        let (captures, chunk) = function
+            .blocks()
+            .iter()
+            .flat_map(|block| block.instructions())
+            .find_map(|instruction| match instruction {
+                IrInstruction::Define {
+                    operation:
+                        IrOperation::LoopSplit {
+                            captures, chunk, ..
+                        },
+                    ..
+                } => Some((captures, *chunk)),
+                _ => None,
+            })
+            .expect("the independent element writes must remain a split loop");
+
+        let mut payload_capture = None;
+        let mut inline_addresses = 0;
+        for capture in captures {
+            match function.value_type(*capture).expect("capture type") {
+                IrType::RuntimeBoxPayload { nominal } => {
+                    assert!(
+                        matches!(
+                            program
+                                .nominal(nominal)
+                                .expect("payload owner nominal")
+                                .kind(),
+                            IrNominalKind::Box {
+                                referent: IrType::Buffer { .. },
+                                ..
+                            }
+                        ),
+                        "only a Box<Array<T>> payload may use the internal capture type"
+                    );
+                    assert!(payload_capture.replace((*capture, nominal)).is_none());
+                }
+                IrType::Address(IrAddressed::Nominal(nominal))
+                    if matches!(
+                        program.nominal(nominal).expect("nominal").kind(),
+                        IrNominalKind::Struct { .. }
+                    ) =>
+                {
+                    inline_addresses += 1;
+                }
+                _ => {}
+            }
+        }
+        let (payload, nominal) = payload_capture.expect("one projected Box<Array<T>> capture");
+        assert_eq!(
+            inline_addresses, 1,
+            "an inline nocopy aggregate must retain its addressed representation"
+        );
+
+        let forward = function
+            .blocks()
+            .iter()
+            .flat_map(IrBlock::instructions)
+            .filter_map(|instruction| match instruction {
+                IrInstruction::Define {
+                    result,
+                    operation:
+                        IrOperation::RuntimeBoxPayload {
+                            nominal: operation_nominal,
+                            owner,
+                        },
+                    ..
+                } if *result == payload => Some((*operation_nominal, *owner)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(forward.len(), 1, "the parent must derive the payload once");
+        assert_eq!(forward[0].0, nominal);
+        assert_eq!(
+            function.value_type(forward[0].1),
+            Some(IrType::Nominal(nominal)),
+            "the forward projection must read the real source-owned Box value"
+        );
+
+        let chunk = &program.functions()[chunk as usize];
+        let payload_parameter = chunk
+            .parameters()
+            .iter()
+            .find_map(|(value, ty)| {
+                (*ty == IrType::RuntimeBoxPayload { nominal }).then_some(*value)
+            })
+            .expect("the chunk must take the projected payload in its one-word frame");
+        let inverse = chunk
+            .blocks()
+            .iter()
+            .flat_map(IrBlock::instructions)
+            .filter_map(|instruction| match instruction {
+                IrInstruction::Define {
+                    result,
+                    operation:
+                        IrOperation::RuntimeBoxOwner {
+                            nominal: operation_nominal,
+                            payload,
+                        },
+                    ..
+                } => Some((*result, *operation_nominal, *payload)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let [inverse] = inverse.as_slice() else {
+            panic!("the chunk must reconstruct exactly one local Box value: {inverse:?}");
+        };
+        assert_eq!(
+            (inverse.1, inverse.2),
+            (nominal, payload_parameter),
+            "the chunk must reconstruct exactly one local Box value from the captured payload"
+        );
+        assert_eq!(
+            chunk.value_type(inverse.0),
+            Some(IrType::Nominal(nominal)),
+            "the inverse exists only to feed ordinary Box projection lowering"
+        );
+    });
+}
 
 fn with_ir<ResultValue>(
     source: &[u8],
@@ -1035,6 +1187,67 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// The schema and the shared constructor body must retain the same OP-9
+/// pair, including empty repeated pairs and a fixed type deeper than the
+/// former lowering-only limit of 64. Expected sizes come from OP-9's
+/// sequence rule, independently of either implementation.
+#[test]
+fn stored_layout_ceilings_agree_across_lowering() {
+    let mut declarations =
+        "struct Giant {\n  words: Array<u64, 2305843009213693952>;\n}\n\n".to_owned();
+    declarations.push_str("struct Layer0 {\n  value: u64;\n}\n\n");
+    for depth in 1..=66 {
+        declarations.push_str(&format!(
+            "struct Layer{depth} {{\n  value: Layer{};\n}}\n\n",
+            depth - 1
+        ));
+    }
+    for (stored, size, align) in [
+        ("Array<Array<u64, 0>, 4>", 0_u64, 1_u64),
+        ("Slots<Array<u64, 0>, 4>", 8, 8),
+        ("Ring<Array<u64, 0>, 4>", 16, 8),
+        ("Array<Giant, 0>", 0, 1),
+        ("Slots<Giant, 0>", 8, 8),
+        ("Ring<Giant, 0>", 16, 8),
+        ("Layer66", 8, 8),
+    ] {
+        let source = format!(
+            "{declarations}fn main() -> status: own ExitStatus pure {{\n  let cells = box_slots_new::<{stored}>(capacity: 0_u64);\n  free_empty(window: move cells);\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        with_ir(source.as_bytes(), |program| {
+            let expected = super::IrLayoutCeiling {
+                size: super::IrLayoutMagnitude::Finite(size),
+                align,
+                stride: super::IrLayoutMagnitude::Finite(size.max(1)),
+            };
+            let source_ceilings = program
+                .functions()
+                .iter()
+                .flat_map(IrFunction::source_calls)
+                .filter_map(|call| {
+                    call.allocation()
+                        .map(|allocation| allocation.layout_ceiling())
+                })
+                .collect::<Vec<_>>();
+            let body_ceilings = program
+                .functions()
+                .iter()
+                .flat_map(IrFunction::blocks)
+                .flat_map(IrBlock::instructions)
+                .filter_map(|instruction| match instruction {
+                    IrInstruction::Define {
+                        operation: IrOperation::WindowBlockNew { obligations, .. },
+                        ..
+                    } => Some(obligations.layout_ceiling),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(source_ceilings, vec![expected], "checked {stored}");
+            assert_eq!(body_ceilings, vec![expected], "lowered {stored}");
+        });
+    }
+}
+
 /// [STOR-6]: "The accepted [OP-9] judgment retains a numeric upper bound for
 /// the source length **at that allocation site**; target qualification
 /// multiplies that bound by the actual target stride ... before lowering the
@@ -1075,8 +1288,12 @@ fn main() -> status: own ExitStatus pure {
 "#;
     with_ir(source, |program| {
         let mut sites: Vec<(&str, Vec<u64>)> = Vec::new();
+        let mut shared_allocators = Vec::new();
         for function in program.functions() {
-            let bounds = function
+            // Keep inspecting the actual allocation instructions. With the
+            // ordinary PRE-1 ABI they reside in one shared body per type,
+            // which cannot carry both callers' different bounds.
+            let shared = function
                 .blocks()
                 .iter()
                 .flat_map(IrBlock::instructions)
@@ -1085,15 +1302,55 @@ fn main() -> status: own ExitStatus pure {
                         return None;
                     };
                     match operation {
-                        IrOperation::BufferFill { target_domains, .. }
-                        | IrOperation::BufferVacant { target_domains, .. } => {
-                            Some(target_domains.source_length_upper_bound())
-                        }
+                        IrOperation::BufferFill { target_domains, .. } => Some(*target_domains),
                         IrOperation::WindowBlockNew { obligations, .. } => {
-                            Some(obligations.target_domains.source_length_upper_bound())
+                            Some(obligations.target_domains)
                         }
                         _ => None,
                     }
+                })
+                .collect::<Vec<_>>();
+            for domains in shared {
+                assert!(!domains.has_call_site_bound());
+                shared_allocators.push(function.name());
+            }
+            // These are lowered IR call records, attached to the result of
+            // the actual Call instruction. Target qualification consumes
+            // them; backend arrays tests separately pin each shape's exact
+            // byte boundary and its one-byte-short rejection.
+            let bounds = function
+                .source_calls()
+                .iter()
+                .filter_map(|call| {
+                    let allocation = call.allocation()?;
+                    let instruction = function
+                        .blocks()
+                        .iter()
+                        .flat_map(IrBlock::instructions)
+                        .find(|instruction| {
+                            matches!(instruction,
+                                IrInstruction::Define { result, .. } if *result == call.result()
+                            )
+                        })
+                        .expect("an allocation bound names an emitted IR definition");
+                    let IrInstruction::Define {
+                        operation:
+                            IrOperation::Call {
+                                function: callee,
+                                arguments,
+                            },
+                        ..
+                    } = instruction
+                    else {
+                        panic!("an allocation bound must belong to an ordinary Call");
+                    };
+                    assert!(allocation.count_argument() < arguments.len());
+                    let callee = &program.functions()[*callee as usize];
+                    assert!(
+                        callee.name().starts_with("box_array_filled")
+                            || callee.name().starts_with("box_slots_new")
+                    );
+                    Some(allocation.source_length_upper_bound())
                 })
                 .collect::<Vec<_>>();
             if !bounds.is_empty() {
@@ -1105,6 +1362,17 @@ fn main() -> status: own ExitStatus pure {
             vec![("allocate", vec![1000, 1000]), ("small", vec![7, 7])],
             "each allocation site keeps its own caller's proved ceiling"
         );
+        assert_eq!(shared_allocators.len(), 2, "one body per constructor type");
+        for constructor in ["box_array_filled", "box_slots_new"] {
+            assert_eq!(
+                shared_allocators
+                    .iter()
+                    .filter(|name| name.starts_with(constructor))
+                    .count(),
+                1,
+                "site bounds do not clone the ordinary prelude body"
+            );
+        }
     });
 }
 

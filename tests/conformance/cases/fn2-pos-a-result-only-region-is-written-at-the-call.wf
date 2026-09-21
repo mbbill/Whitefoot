@@ -3,7 +3,7 @@ fn nothing<T>() -> made: own Option<T> pure {
   return None<T>();
 }
 
-fn absorb<T>(spare: own Option<T>) -> width: own u64 pure {
+fn absorb(spare: own Option<Slots<u8, 4>>) -> width: own u64 pure {
   doc "Reports the capacity of the run it was handed, or zero when there is none.";
   match spare {
     None() => {
@@ -16,9 +16,9 @@ fn absorb<T>(spare: own Option<T>) -> width: own u64 pure {
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "FN-2: a type parameter that occupies no input position of its declaration is still written at the call and substituted into the result; every instantiation argument is explicit. The `absorb` call fixes the same parameter from its own operand, so the empty result is admitted at the element type the caller chose.";
+  doc "FN-2: a type parameter that occupies no input position of its declaration is still written at the call and substituted into the result; every instantiation argument is explicit. The specialized `absorb` then observes that the empty result has exactly the element type the caller chose.";
   let spare = nothing::<Slots<u8, 4>>();
-  let width = absorb::<Slots<u8, 4>>(spare: move spare);
+  let width = absorb(spare: move spare);
   if width == 0_u64 {
     return exit_status(code: 0_u8);
   }

@@ -594,6 +594,7 @@ enum ListStop {
         r#"fn append<W, X>(destination: &W, source: &X) -> result: own unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
   requires deref(source).len <= deref(destination).cap - deref(destination).len;
   ensures deref(destination).len >= deref(entry(destination)).len;
+  ensures deref(destination).len >= deref(entry(source)).len;
   ensures deref(source).len == 0_u64;
 };
 "#,

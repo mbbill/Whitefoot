@@ -379,9 +379,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(), CheckStop> {
-        // [TYPE-9] `box<T>` and `arena<'r, T>` are no longer grammar atoms:
-        // `Box<T>` is the prelude's opaque struct and reaches the container
-        // branch below, and the arena retired with the regions.
+        // [TYPE-9] `box<T>` is no longer a grammar atom: `Box<T>` is the
+        // prelude's opaque struct and reaches the container branch below.
         if self
             .tree
             .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
@@ -801,7 +800,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             constructors.push(super::ConstructorShape {
                 fields: fields.iter().map(|field| field.name.clone()).collect(),
                 determining_field,
-                field_regions,
             });
         }
         Ok(constructors)
@@ -1302,24 +1300,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 Ok(CheckedType::Nominal(existing))
             }
-            CheckedNominalKind::Arena { region, content } => {
-                let substituted_region = Self::substituted_region(regions, *region);
-                let substituted_content = self.substitute_type_regions(*content, regions)?;
-                if substituted_region == *region && substituted_content == *content {
-                    return Ok(CheckedType::Nominal(id));
-                }
-                let key = (substituted_region, substituted_content);
-                let Some(existing) = self.arena_nominals.get(&key).copied() else {
-                    self.pending_nominals
-                        .borrow_mut()
-                        .push(super::PendingNominal::Arena(key.0, key.1));
-                    return Err(CheckStop::DeferredNominal);
-                };
-                Ok(CheckedType::Nominal(existing))
-            }
             CheckedNominalKind::Struct { .. }
             | CheckedNominalKind::Enum { .. }
-            | CheckedNominalKind::ArenaStorage
             | CheckedNominalKind::Opaque => Ok(CheckedType::Nominal(id)),
         }
     }
@@ -1329,7 +1311,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ///
     /// The same name shape — one source declaration at two regions, one
     /// prelude shape over two region-blind-equal arguments, one result list
-    /// [CALL-4] with the same ordinal names, one `box` or one `arena`
+    /// [CALL-4] with the same ordinal names, or one `box`
     /// [STOR-2] — and the same lowered content: a region names a store for
     /// the proof, so two such nominals are two checked types and one IR
     /// nominal. The content comparison is what keeps a difference the run
@@ -1419,8 +1401,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         release_sensitive: bool,
         pending: &mut Vec<(CheckedType, CheckedType)>,
     ) -> Result<bool, CheckStop> {
-        // Box and legacy arena content lives in the kind, rather than in
-        // fields. The ordinary lowering alias retains Box's release action;
+        // Box content lives in the kind, rather than in fields. The ordinary
+        // lowering alias retains Box's release action;
         // the physical family defers it to the closed release environment.
         match (&self.nominal(left)?.kind, &self.nominal(right)?.kind) {
             (
@@ -1438,15 +1420,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 pending.push((*left, *right));
                 return Ok(!release_sensitive || left_release == right_release);
             }
-            (
-                CheckedNominalKind::Arena { content: left, .. },
-                CheckedNominalKind::Arena { content: right, .. },
-            ) => {
-                pending.push((*left, *right));
-                return Ok(true);
-            }
-            (CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. }, _)
-            | (_, CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. }) => {
+            (CheckedNominalKind::Box { .. }, _) | (_, CheckedNominalKind::Box { .. }) => {
                 return Ok(false);
             }
             _ => {}
@@ -1723,16 +1697,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .retain(|_, id| (id.0 as usize) < checkpoint);
         self.box_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
-        self.arena_nominals
-            .retain(|_, id| (id.0 as usize) < checkpoint);
         self.result_list_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
-        if self
-            .arena_storage_nominal
-            .is_some_and(|id| (id.0 as usize) >= checkpoint)
-        {
-            self.arena_storage_nominal = None;
-        }
         Ok(())
     }
 }
