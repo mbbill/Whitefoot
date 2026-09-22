@@ -593,7 +593,8 @@ nodrop residuals in that inventory even when their release emits no action.
 Positive and negative compiler tests cover that distinction; the library's
 nodrop chain exercises the complete source-to-native cleanup path.
 
-Taking the wrapper apart is also an ordinary measure placement:
+The approved ENT-2/MSR-3 clarification makes the owned descendants explicit
+at an ordinary naming event such as taking this wrapper apart:
 
 ```whitefoot
 let GrowVector(storage: storage) = move values;
@@ -602,13 +603,17 @@ free_empty(window: move storage);
 
 The `efe41016` compiler loses `values.storage.inner.len == 0` at that naming
 event and rejects the second line under OP-14 because its placement walk
-stops at Box content. The follow-up repairs that ordinary MSR-3 path; both
-forms now preserve the established emptiness fact. The
+stops at Box content. The follow-up carries the established emptiness fact
+through both forms. The
 [`descriptor_invalidation` regressions](../../../compiler/src/semantic/tests/descriptor_invalidation.rs)
 cover this exact generic witness, projected and recursive Box moves,
 constructor placement into Box content and elements, and overlapping writes
-that must still kill an old fact. This was an implementation defect, not a
-missing way to represent an empty owning vector or a new proof mechanism.
+that must still kill an old fact. Completion review found that v0.62's
+placement table did not explicitly cover measured descendants of an unmeasured
+owner and that its datum identity omitted their relative projection. The
+owner-approved v0.63 amendment states that boundary and identity; the repair
+implements it using existing measure datums. This does not require a new
+representation of an empty owning vector.
 
 FN-8's Signed Goal affine route has a separate spelling boundary [ENT-6]:
 
@@ -632,14 +637,20 @@ Earlier observations retain their recorded baselines; the old absence of
 wildcard traversal is not a premise of this follow-up. The two remaining
 questions are ordinary Box-content measure transport and the extra transfers
 required by ordered Vector consumption.
-The integrated validation revision also includes main `f3cf41d4`, kernel
-v0.62. The repairs themselves amend no source-language rule. Paired source
-measurements use one rebuilt integrated compiler; earlier v0.61 compiler
-comparisons retain their own identities and conditions.
+The integrated measurement revision also includes main `f3cf41d4`, kernel
+v0.62. Paired source measurements use one rebuilt integrated compiler; earlier
+v0.61 compiler comparisons retain their own identities and conditions.
+Following completion review, the owner approved the v0.63 ENT-2/MSR-3
+clarification: existing within-body placements carry current facts through
+exact owned fields, enum payloads and Box content, with the relative descendant
+projection included in datum identity. Existing kills, cross-function contract
+boundaries and the exclusion of implicit window slots remain. The amendment
+adds no runtime check and does not change the measured lowering or library
+source. The dated measurements remain v0.62 evidence, not a new v0.63 run.
 
-The Box witness above is a naming event, not a new relation theorem. A repair
-must transfer the available measure facts through the placements MSR-3
-specifies and preserve ENT-5's invalidation after an overlapping write,
+The Box witness above is a naming event, not a new relation theorem. The
+selected repair transfers available measure facts through the owned descendants
+now explicit in MSR-3 and preserves ENT-5's invalidation after an overlapping write,
 replacement or call. Check both directions: an admitted consume becomes
 provable after rebinding, and an obsolete pre-mutation measure cannot authorize
 a later operation. Recursive nominal types must not cause infinite path
@@ -681,7 +692,7 @@ skip the supplementary scan.
 Unbounded type unfolding cannot terminate on a recursive nominal; merely
 cutting the cycle loses known facts at deeper written paths, and a fixed
 depth cutoff has no language ground. Reusing existing exact terms avoids a
-second path-analysis pass. The proposed compiler-tree addition records this
+second path-analysis pass. The approved compiler-tree addition records this
 choice. The focused `descriptor_invalidation` group passes all 17 cases,
 including distinct measures beyond two recursive nominal cycles,
 capacity/head-only evidence, an overwritten recursive descendant and a cursor
@@ -691,7 +702,12 @@ The recursive cases also exposed a constructor-placement omission at
 `set Box.inner = ...`; using the existing exact destination path repairs that
 naming event without changing commit order or invalidation. These focused
 checks distinguish the placement repair; the canonical gate also covers its
-other semantic, lowering and native-program consumers.
+other semantic, lowering and native-program consumers. The normative
+[`owned-descendant` positive](../../../tests/conformance/cases/msr3-pos-owned-descendant-measures.wf)
+carries two distinct lengths through fields, Box content, owner rebinding,
+an enum payload and destructuring. Its
+[`replacement` negative](../../../tests/conformance/cases/msr3-neg-replaced-owned-descendant-measure.wf)
+requires an overlapping replacement to invalidate the old length.
 
 The consumption candidate takes a rear element into an owned local before
 exchanging it with the next suffix slot and calling the consumer. At offset
@@ -738,6 +754,9 @@ change without depending on a downstream optimizer.
 Broad ABI promises and
 unrestricted frame splitting were therefore not adopted. The general mixed-
 alignment case needs a separate complete-frame argument if a concrete workload
-later demonstrates a benefit. The library and compiler choices remain proposed
-tree revisions. Measurements compare both source algorithms through the same
-integrated compiler and keep the historical compiler comparisons separate.
+later demonstrates a benefit. The owner approved the library and compiler
+choices, including the measured large-record benefit alongside the repeatable
+8.2–10.6 percent short-scalar regression. Remaining consumption and lowering
+costs stay in `docs/todo.md`; the selection claims neither uniform improvement
+nor native parity. Measurements compare both source algorithms through the
+same integrated compiler and keep the historical compiler comparisons separate.

@@ -54,7 +54,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   workload. Require a before/after transfer and timing comparison plus the
   existing exposed-place, later-argument-write, reentered-block and owned-result
   snapshot controls. The
-  [transfer evidence](../research/experiments/container-representation/vector-library/RESULTS.md#lowering-attribution)
+  [transfer evidence](../research/experiments/container-representation/vector-library/RESULTS.md#v061-copy-and-consumption-trial)
   separates this opportunity from the library's remaining element relocation.
 
 - **Parallel grain policy needs a dedicated study.** Captured extents are a

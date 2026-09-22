@@ -4,10 +4,12 @@ This experiment bundles the current reusable
 [`GrowVector`](../../../../lib/containers/grow-vector.wf), not a second
 benchmark-only implementation. The selection criteria precede measurement in
 [X1-LIBRARY.md](../../../investigations/containers-and-resources/X1-LIBRARY.md#vector-consumption-trial).
-The current source uses kernel v0.62's global heap and total allocation. The
-v0.61 diagnostic trial and dated v0.60 measurements below retain their original
-compiler and source identities. Measurements are descriptive evidence, outside
-correctness CI, not a native-parity gate.
+The paired measurements use kernel v0.62's global heap and total allocation.
+The later v0.63 clarification of Box descendant measure placement changes
+neither the measured library source nor its lowering. The v0.61 diagnostic
+trial and dated v0.60 measurements below retain their original compiler and
+source identities. Measurements are descriptive evidence, outside correctness
+CI, not a native-parity gate.
 
 ## Contract and controls
 
@@ -357,7 +359,7 @@ algorithm's extra relocation. Conversely, comparison with direct C includes
 both composition and lowering costs. Inlining changes aggregate handling,
 surrounding loops and checksum work; subtracting the two helper modes does
 not isolate call overhead. The particular remaining optimizer causes were
-not isolated by this source-only timing comparison. It supports the proposed
+not isolated by this source-only timing comparison. It supports the selected
 large-record improvement, not general native parity or a minimum-cost API.
 
 Local retained IR confirms the attribution's limited scope: original WF has
@@ -385,7 +387,9 @@ Construction and execution costs were recorded separately, in seconds:
 Every listed command exited zero under the shared verification guard. The
 saved compiler was not rebuilt during this experiment. These stage costs
 are local wall-clock observations, not program timing samples or compiler
-performance comparisons. No specification rule changes in this trial.
+performance comparisons. This measurement trial used the recorded v0.62
+specification; the subsequent approved Box-placement clarification is described
+under Source and proof boundaries below.
 
 ## Lowering attribution
 
@@ -492,13 +496,18 @@ records the exact rejected fragments, rules and ordinary forms:
   The PROV-6 repair judges the unselected residual and includes regressions
   that still reject an abandoned generic or fieldless nodrop member.
 - Destructuring a Box-containing wrapper previously lost the content measure
-  fact. The ordinary placement repair carries the recursive content inventory
-  through ownership moves and construction; focused
+  fact. The approved v0.63 ENT-2/MSR-3 clarification explicitly carries current
+  facts through exact owned fields, payloads and Box content, and includes the
+  relative descendant projection in placement datum identity. The implementation
+  carries that finite inventory through ownership moves and construction; focused
   [descriptor regressions](../../../../compiler/src/semantic/tests/descriptor_invalidation.rs)
   exercise it. Direct field consumption still serves this library without an
   artificial failure branch.
 
-No specification rule changes in this trial.
+The amendment preserves existing invalidation and cross-function contract
+boundaries. It does not infer window-element facts or add runtime checks. The
+paired measurements above preceded this normative clarification and retain
+their v0.62 compiler and specification identities.
 
 ## Reproduction and earlier evidence
 
