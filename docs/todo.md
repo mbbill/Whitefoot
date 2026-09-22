@@ -305,8 +305,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
-- **Remaining value-evidence boundaries.** Local integer Result transport now
-  uses the common conditional-value rule. The
+- **Remaining value-evidence boundaries.** The
   [investigation](../research/investigations/result-proof-transport/DESIGN.md)
   leaves three related extensions to assess together: borrowed Result
   selection and aggregate/indexed storage, multiple Result destinations from
@@ -319,8 +318,11 @@ each is resolved by a discussion and a tree change.
   stronger-contract negatives before choosing an extension; do not infer a
   general refinement system from the local-result implementation. Also assess
   sharing or projecting per-local conditional fact matrices when many outcomes
-  remain live: the benefit and precision tradeoff are not established by the
-  finite storage bound. Compare checking time, retained evidence and peak memory
+  remain live: 32 outcome additions measured 585 ms versus 23 ms at the
+  baseline, and 32 chained joins measured 721 ms and 214 MiB peak RSS. These
+  are whole compilations of small sources; the benefit and precision tradeoff
+  of sharing/projection remain unverified by that observation. Compare checking
+  time, retained evidence and peak memory
   on the investigation's scaled sources before selecting that representation
   improvement. These extensions are deferred because the selected ordinary
   local composition rule can be validated without widening the storage or

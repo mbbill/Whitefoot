@@ -274,18 +274,29 @@ The `definitely_err` bit records constructor information, not a numeric proof
 search. It meets by conjunction at joins and is reset by unknown replacement.
 
 For a concrete checked function, let H be its maximum live local Result count,
-T its existing term count plus at most eight parameters, and E its finite
-number of walked events and incoming join edges. Each conditional numeric
-matrix has O(T^2) cells, including the existing ordinary/S12 candidate layers;
-associations therefore add O(H*T^2) live numeric storage per flow snapshot.
+T its ordinary term inventory including call-substituted operands plus at most
+eight parameters, E its finite number of walked events and incoming join edges,
+and Q its instantiated clause occurrences. Terms remain bounded by the existing
+source/path substitution inventory; copying a Result creates no new term.
+Each conditional matrix has O(T^2) selected cells. Independently live proof
+candidates are additional storage: they are not a constant-size second layer.
+Each refresh imports at most two closed ordinary candidates per pair, and a
+materialization or join reduces its output to the strongest full and ordinary
+fallback. Between such reductions, at most O(E*T^2 + Q) candidates accumulate
+per context. Thus O(H*(E*T^2 + Q)) conservatively bounds stored numeric cells
+and candidate references per flow snapshot, excluding the shared proof DAG.
+
 Transport performs O(E*H) invocations of the existing terminating closure/kill
-machinery plus corresponding matrix projections and joins. It introduces no
-new predicate, term per path, iteration unrolling or recursive summary search.
-This is a polynomial bound on the added number of closure invocations and
-stored cells, relative to the concrete function and existing closure cost;
-it is not a bound on generic expansion or all compiler work. Proof DAG parents
-are retained and shared under the existing deterministic ledger. Measurements
-below examine whether those extra contexts are practical at the tested sizes.
+machinery plus corresponding candidate projections and joins. Substitution
+maps candidates individually; joins retain one joined parent per output and
+layer, never products of incoming proof alternatives. It introduces no new
+predicate, term per path, iteration unrolling or recursive summary search.
+These bounds describe added storage and closure invocations relative to a
+concrete function and the existing closure cost, not generic expansion, proof
+DAG byte size or all compiler work. The existing deterministic ledger retains
+and shares derivation parents. Measurements below account for whole-process
+memory as well, rather than treating the matrix-cell bound as a practical
+memory guarantee.
 
 The old `PostconditionDirectMatch` and first-arm
 `PostconditionSelectedReceiver` implementation and required roots are removed.
@@ -373,7 +384,79 @@ these losses; the common transfer rule recovers them while the stale-support,
 guard-isolation, join and loop controls preserve their rejection. The bounded
 term and context argument selects reuse of L0 closure over guard products.
 
+## Compilation cost and erased execution
+
+On 2026-09-22, compare baseline `7127bcb6` with candidate `da55db81`, using
+Rust 1.98.1, the repository gate profile, macOS 26.6.2 and Apple M1 Pro with
+32 GiB RAM. Both compilers are built before measurement. `probe --scale`
+generates identical accepted inputs for three axes, each with 4, 8, 16 and 32
+steps after one initial outcome: copying the last outcome, adding independent
+call outcomes, and chaining value-if joins. Thus 32 additions retain 33 local
+outcomes. Each input has three separate invocations, with no warmup exclusion.
+The runner measures wall time around `whitefootc --emit-llvm`, and macOS
+`/usr/bin/time -l` records peak RSS in bytes. This includes parsing, checking,
+LLVM emission and startup; it excludes compiler construction, linking and
+program execution. It is not an isolated proof-checker measurement. Baseline
+runs precede candidate runs, so the small samples do not isolate every cause
+of their timing difference.
+
+[scaling.csv](scaling.csv) retains all 72 samples and their source sizes. It
+serves this representation comparison and can be retired when that comparison
+is superseded. Neither the data nor the research runner enters correctness CI.
+Times below are medians; peak memory takes the maximum of three samples.
+
+| Axis | Steps | Baseline ms | Candidate ms | Baseline MiB | Candidate MiB |
+|---|---:|---:|---:|---:|---:|
+| Copies | 4 | 19.278 | 24.706 | 10.03 | 10.22 |
+| Copies | 8 | 19.501 | 20.250 | 10.05 | 10.48 |
+| Copies | 16 | 19.700 | 23.143 | 10.28 | 11.36 |
+| Copies | 32 | 20.330 | 23.897 | 10.47 | 12.86 |
+| Outcome additions | 4 | 19.407 | 21.258 | 10.13 | 10.67 |
+| Outcome additions | 8 | 19.622 | 27.183 | 10.08 | 12.58 |
+| Outcome additions | 16 | 20.359 | 64.728 | 10.69 | 19.83 |
+| Outcome additions | 32 | 22.988 | 585.006 | 11.66 | 56.42 |
+| Joins | 4 | 20.798 | 22.210 | 10.17 | 10.77 |
+| Joins | 8 | 20.348 | 28.773 | 10.36 | 13.53 |
+| Joins | 16 | 21.686 | 78.119 | 11.00 | 33.62 |
+| Joins | 32 | 25.652 | 720.838 | 13.30 | 213.56 |
+
+Copying stays near startup cost. Independent calls add immutable call datums;
+joins retain several conditional contexts. Both expose steep growth: at 32
+steps, candidate compilation is about 25 times baseline for outcome additions
+and 28 times for joins. This supports an executable local transport experiment,
+not a claim of cheap general refinement checking. Matrix sharing/projection is
+a concrete TODO with these measurements as its baseline. Defer that change
+until a matched precision/cost experiment or a real program needs many live
+outcomes: ordinary composition and maintained programs can be exercised without
+it, and changing the stored fact set needs its own correspondence argument.
+No acceptance limit hides the measured cost.
+
+Reproduce on macOS from this branch. Set `wf_result_compiler` to the prebuilt
+baseline or candidate executable, and create `wf_result_scratch` as above.
+Build the current runner even when measuring the older compiler:
+
+```sh
+rustc --edition=2024 -O research/investigations/result-proof-transport/probe.rs -o "$wf_result_scratch/probe"
+perl .github/run-check.pl result-proof-scale "$wf_result_scratch/probe" \
+  "$wf_result_compiler" "$wf_result_scratch/scaling" --scale
+```
+
+The scale inputs impose no requirement available only to the candidate, so
+both compilers successfully compile the same source. The 35 correctness probes
+separately require the recovered facts. All twelve matched LLVM files are
+byte-for-byte identical, while the runtime transport case executes the newly
+accepted success and error paths. This is evidence of erased transport on
+these inputs; runtime representations and lowering were not changed.
+
 ## Candidate evidence and remaining validation
+
+With the candidate compiler, the same current runner accepts `--candidate`
+for the semantic comparison (omit it only when reproducing the old baseline):
+
+```sh
+perl .github/run-check.pl result-proof-probe "$wf_result_scratch/probe" \
+  "$wf_result_compiler" "$wf_result_scratch/results" --candidate
+```
 
 The unified path, after removing the old direct-match and selected-receiver
 code, passes all 35 candidate probes: 25 accepts and 10 expected rejections.
@@ -381,7 +464,8 @@ The compiler's 950 semantic unit tests pass, including independent retained-DAG
 arithmetic/substitution checks and the maintained real-program proof inventory.
 A first complete library run exposed eight expectations for the retired rules;
 those expectations were revised against the amendment and the semantic suite
-was rerun. The complete gate still needs its final run.
+was rerun. Complete gate results and their tested revision are reported in
+[PR #87](https://github.com/mbbill/Whitefoot/pull/87).
 
 The formal corpus adds a runtime value-transport case and a conditional-join
 case, and negative cases for replacement, mutable support, guard isolation,
@@ -405,7 +489,7 @@ Design suitability: a private child of the existing entailment flow owns
 conditional evidence construction, selection and joins. The parent retains
 ordinary event order and callable authority; no second solver, runtime state
 or body-private interprocedural summary is introduced. Dense per-local contexts
-may be costly when many unrelated outcomes stay live; measurement determines
-whether sharing or projection deserves immediate work. DCR and final gates
-are pending; evidence here does not constitute a general soundness certificate
-or an owner ruling on the two tree amendments.
+have the measured cost above; sharing/projection is a follow-up with explicit
+precision and cost criteria. This evidence does not constitute a general
+soundness certificate or an owner ruling on the two tree amendments; the
+independent review and current validation status belong to the PR.
