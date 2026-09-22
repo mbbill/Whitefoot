@@ -229,6 +229,19 @@ impl<'ir> Environment<'ir> {
             (Observation::Scalar, Some(IrOperation::BufferMeasure { buffer })) => {
                 self.observe(Observation::Length, *buffer, active)
             }
+            (
+                Observation::Scalar,
+                Some(IrOperation::ContainerMeasure {
+                    measure: crate::IrMeasure::Length,
+                    container,
+                }),
+            ) if matches!(
+                self.function.value_type(*container),
+                Some(IrType::Address(IrAddressed::Buffer { .. }))
+            ) =>
+            {
+                self.observe(Observation::Length, *container, active)
+            }
             (Observation::Length, Some(IrOperation::SliceRange { start, end, .. })) => {
                 let end = self.observe(Observation::Scalar, *end, active);
                 let start = self.observe(Observation::Scalar, *start, active);

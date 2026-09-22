@@ -1244,6 +1244,19 @@ percentage verdict to the latter's sub-microsecond work; W2 and W8 provide
 bounded scaling context. Five rotated passes use one checked warmup and five
 warm calls per process, alternating arm order. Fixture construction, oracle
 work, checking and release remain outside the interval. An identical-image
-control precedes the compiler comparison; a failing control makes the timing
-inconclusive. This comparison selects no scheduler constant or new grain
-policy. Candidate native and timing results are still pending.
+control precedes the compiler comparison. Apply the maintained comparison's
+three-percent, two-width noise screen at W1/W2/W4 to this control in either
+direction: two widths consistently favoring one arm in four of five pairs
+make timing inconclusive. The tiny case and W8 remain observations. This
+comparison selects no scheduler constant or new grain
+policy.
+
+The native witness on `3402048f` with the repair observes Box-helper prices
+11, 18, 130, 28,683 and 458,763 at the same five lengths, with unchanged
+range-helper prices and independently correct results. A strict increasing-price
+assertion now makes the probe fail if only the output is correct. The retained
+summary is `7 * length + 5`; the outer iteration's own instructions produce
+`7 * length + 11`. The generic `ContainerMeasure(Length)` operation and the
+buffer-specific measure both feed the typed Array-length observation. Reading
+only the older buffer-specific operation misses the current helper path.
+Focused regression tests and matched-current performance remain pending.
