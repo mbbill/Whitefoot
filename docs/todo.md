@@ -7,6 +7,68 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
+- **Empty public source input needs an explicit contract.** In
+  [the driver](../compiler/src/driver.rs), `check(&[])` accepts after adding the prelude,
+  while the CLI requires a source path. Whether PRE-1 representations count
+  toward PROG-2's source-record requirement needs clarification before
+  changing acceptance. `max_sources` counts injected prelude inputs as well
+  as caller inputs; that is not by itself a defect. Add API-level boundary
+  controls for the selected policy without rewriting source verdicts around
+  an invocation policy.
+
+- **Validate retirement of legacy flat assignment targets.**
+  [Storage place checking](../compiler/src/semantic/check/expressions/flat_storage.rs)
+  converts mutable Array and Buffer targets to the shared Container/Storage
+  path before its older flat-target dispatch. Confirm that no ordinary
+  source or necessary internal consumer still constructs `CheckedArraySetTarget`
+  or `CheckedBufferSetTarget`; if none does, retire those representations and
+  their duplicated capture, kill and lowering paths. This could simplify
+  assignment reasoning, but the complete consumer audit remains undone.
+  Defer until the next storage-checker simplification; preserve target-before-RHS
+  capture, diagnostic locations and native assignment behavior in that audit.
+
+- **POSIX heap-exhaustion record writers do not retry an interrupted write.**
+  The generated heap record writers abort on every nonpositive `write`
+  result, while the host floor's stack-record writer retries EINTR. This
+  can truncate the promised resource record, not continue execution after
+  allocation refusal. Validate with the existing allocation-refusal observer
+  plus one interrupted record write before selecting the repair; no native
+  interruption experiment has run. Retain platform-specific error handling
+  and best-effort behavior for irrecoverable output failure.
+
+- **Zero-size target address qualification needs a precise domain ruling.**
+  An `Array<Empty>` with count `2^63 + 1` and index `2^63` passes OP-9,
+  source checking and LLVM emission on the current 64-bit target. Its actual
+  stride is zero and allocation is header-only, so a signed GEP index still
+  produces zero displacement; this is not a demonstrated memory error.
+  STOR-6 requires representability in the actual address-index domain, but
+  the target checker does not inspect `BufferIndex.offset`. Determine whether
+  representability constrains that raw logical index or the effective byte
+  displacement, including ordinary facts-off omissions, and test the selected
+  interpretation. The enormous fill loop was not run natively. Keep this as
+  a target-rule clarification, not an asserted incorrect execution.
+
+- **Joined reference proofs lose useful target-relative information.** A
+  reference selecting either of two freshly empty Slots cannot establish the
+  append precondition from both constructors' facts; captured disjoint ranges
+  formed in separate branches also lose their branch-local endpoint images
+  at the join. These safe examples are rejected under the current fixed proof
+  routes, rather than demonstrating an implementation violation. Evaluate a
+  bounded rule for retaining the needed target-relative facts, preserving
+  same-holder identity without claiming that a write changed every possible
+  target. Require matching overlapping and stale-capture controls and a
+  checking-cost comparison before proposing a language change. This is an
+  improvement-validation task.
+
+- **Invariant-name reservation has conflicting definitions.** OP-1 lists the
+  declaration roles subject to FORM-3 reservation and explicitly excludes
+  other roles; that list omits invariants. TYPE-6 later says header and body
+  invariant names participate in FORM-3. The resolver and existing tests
+  reject an invariant named `cvt`, matching the latter text. Decide whether
+  invariant declarations are covered, then align both normative definitions
+  and their derived tests. Neither implementation behavior nor this audit
+  selects the language rule.
+
 - **Ordered Vector consumption still relocates rear elements.** The take-first
   composition exchanges an owned local with each first-half suffix slot, then
   consumes the reversed remainder. It preserves the prefix and callback order

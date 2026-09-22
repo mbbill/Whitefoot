@@ -183,6 +183,28 @@ pub struct CompilationFailure {
 }
 
 impl CompilationFailure {
+    fn source_envelope(failure: crate::SourceBundleError) -> Self {
+        use crate::{LogicalPathError, SourceBundleError};
+
+        let kind = match &failure {
+            SourceBundleError::LimitExceeded { .. }
+            | SourceBundleError::StorageUnavailable { .. }
+            | SourceBundleError::ArithmeticOverflow
+            | SourceBundleError::LogicalPath(
+                LogicalPathError::LengthOverflow | LogicalPathError::StorageUnavailable { .. },
+            ) => CompilationFailureKind::Resource,
+            SourceBundleError::LogicalPath(
+                LogicalPathError::Empty
+                | LogicalPathError::Absolute
+                | LogicalPathError::EmptyComponent
+                | LogicalPathError::DotComponent
+                | LogicalPathError::InvalidByte { .. },
+            )
+            | SourceBundleError::DuplicateLogicalPath { .. } => CompilationFailureKind::Invocation,
+        };
+        Self::new(CompilationStage::SourceEnvelope, kind, failure)
+    }
+
     fn new(stage: CompilationStage, kind: CompilationFailureKind, detail: impl fmt::Debug) -> Self {
         Self {
             stage,
@@ -373,13 +395,8 @@ where
         &SourceBundle,
     ) -> Result<T, CompilationFailure>,
 {
-    let bundle = SourceBundle::with_prelude(inputs, limits.source).map_err(|failure| {
-        CompilationFailure::new(
-            CompilationStage::SourceEnvelope,
-            CompilationFailureKind::Invocation,
-            failure,
-        )
-    })?;
+    let bundle = SourceBundle::with_prelude(inputs, limits.source)
+        .map_err(CompilationFailure::source_envelope)?;
     let lexed = match lex(&bundle, limits.lexer) {
         LexOutcome::Complete(complete) => complete,
         LexOutcome::SourceIssue(issue) => {
@@ -693,6 +710,90 @@ mod tests {
         compile_with_permission_ledger,
     };
     use crate::{OverlapLowering, RecursionBudget, SourceInput};
+
+    #[test]
+    fn source_envelope_limits_are_resource_failures_in_both_public_projections() {
+        let inputs = [SourceInput::new("main.wf", b"@")];
+        let mut count_limits = CompilerLimits::default();
+        count_limits.source.max_sources = 0;
+        let mut byte_limits = CompilerLimits::default();
+        byte_limits.source.max_source_bytes = 0;
+
+        for (limits, detail) in [
+            (
+                count_limits,
+                format!(
+                    "LimitExceeded {{ limit: Sources, maximum: 0, actual: {} }}",
+                    inputs.len() + crate::prelude::DECLARATIONS.len()
+                ),
+            ),
+            (
+                byte_limits,
+                "LimitExceeded { limit: SourceBytes, maximum: 0, actual: 1 }".to_owned(),
+            ),
+        ] {
+            for failure in [
+                check(&inputs, limits).expect_err("the source envelope exceeds its ceiling"),
+                compile(&inputs, limits).expect_err("the source envelope exceeds its ceiling"),
+            ] {
+                assert_eq!(failure.stage(), CompilationStage::SourceEnvelope);
+                assert_eq!(failure.kind(), CompilationFailureKind::Resource);
+                assert_eq!(failure.rule_id(), None);
+                assert_eq!(failure.detail(), detail);
+            }
+        }
+    }
+
+    #[test]
+    fn source_envelope_invalid_paths_remain_invocation_failures() {
+        let invalid = [SourceInput::new("/main.wf", b"@")];
+        let duplicate = [
+            SourceInput::new("main.wf", b"@"),
+            SourceInput::new("main.wf", b"@"),
+        ];
+        for (inputs, detail) in [
+            (invalid.as_slice(), "LogicalPath(Absolute)"),
+            (
+                duplicate.as_slice(),
+                "DuplicateLogicalPath { path: LogicalPath(\"main.wf\"), first_position: 0, duplicate_position: 1 }",
+            ),
+        ] {
+            for failure in [
+                check(inputs, CompilerLimits::default())
+                    .expect_err("the source envelope is invalid"),
+                compile(inputs, CompilerLimits::default())
+                    .expect_err("the source envelope is invalid"),
+            ] {
+                assert_eq!(failure.stage(), CompilationStage::SourceEnvelope);
+                assert_eq!(failure.kind(), CompilationFailureKind::Invocation);
+                assert_eq!(failure.rule_id(), None);
+                assert_eq!(failure.detail(), detail);
+            }
+        }
+    }
+
+    #[test]
+    fn source_envelope_storage_and_representation_failures_preserve_their_details() {
+        use crate::{LogicalPathError, SourceBundleError, SourceLimit};
+
+        // Exercise allocator failure classification without exhausting the host.
+        for error in [
+            SourceBundleError::StorageUnavailable {
+                limit: SourceLimit::Sources,
+                requested: 1,
+            },
+            SourceBundleError::ArithmeticOverflow,
+            SourceBundleError::LogicalPath(LogicalPathError::LengthOverflow),
+            SourceBundleError::LogicalPath(LogicalPathError::StorageUnavailable { requested: 7 }),
+        ] {
+            let detail = format!("{error:?}");
+            let failure = super::CompilationFailure::source_envelope(error);
+            assert_eq!(failure.stage(), CompilationStage::SourceEnvelope);
+            assert_eq!(failure.kind(), CompilationFailureKind::Resource);
+            assert_eq!(failure.rule_id(), None);
+            assert_eq!(failure.detail(), detail);
+        }
+    }
 
     #[test]
     fn the_executable_caller_proves_the_selected_functions_contract() {

@@ -1042,14 +1042,15 @@ impl<'program> IrBuilder<'program> {
                     self.expression(expression)?;
                 }
                 CheckedStatement::DropExpression {
-                    value: expression, ..
+                    value: expression,
+                    drops,
                 } => {
                     let value = self.expression(expression)?;
-                    let drop = IrDrop {
-                        subject: IrDropSubject::Value(value),
-                        ty: self.value_type(value)?,
-                    };
-                    self.append_drops(vec![drop])?;
+                    let mut lowered = Vec::with_capacity(drops.len());
+                    for drop in drops {
+                        lowered.push(self.lower_projected_drop(value, drop)?);
+                    }
+                    self.append_drops(lowered)?;
                 }
                 // PRF-1 proof statements have already contributed their
                 // checked fact to semantic flow. They have no runtime value,

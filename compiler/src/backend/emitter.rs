@@ -2251,7 +2251,10 @@ pub(crate) fn llvm_type(
         // names its element count.
         IrType::Buffer { element } => Ok(format!(
             "{{ i64, [0 x {}] }}",
-            llvm_type(program, element.ty())?
+            llvm_type(
+                program,
+                program.element(element).ok_or(BackendFailure::InvalidIr)?
+            )?
         )),
         // compiler/storage-representation: header first, so the inline and
         // the boxed placement of one shape share one address computation. A

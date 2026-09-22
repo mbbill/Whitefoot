@@ -12,8 +12,8 @@ use crate::{
 
 use super::super::goal::{CheckedRequirement, GoalDatum, GoalExpression, GoalOperation};
 use super::super::model::{
-    CheckedConst, CheckedElement, CheckedFlatElement, CheckedGenericRequirement,
-    CheckedNominalKind, CheckedType, CheckedValue, FloatType, IntegerType, NominalId,
+    CheckedConst, CheckedElement, CheckedGenericRequirement, CheckedNominalKind, CheckedType,
+    CheckedValue, IntegerType, NominalId,
 };
 use super::{CheckStop, Checker, FunctionSignature, FunctionTemplate, PreludeType};
 
@@ -132,7 +132,7 @@ enum StableCheckedType {
         length: CheckedConst,
     },
     Buffer {
-        element: StableFlatElement,
+        element: StableElement,
     },
     Window {
         shape: super::super::model::WindowShape,
@@ -144,21 +144,6 @@ enum StableCheckedType {
 /// A structural bridge across speculative nominal rollback.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct StableElement(Box<StableCheckedType>);
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum StableFlatElement {
-    Unit,
-    Bool,
-    Integer(IntegerType),
-    Float(FloatType),
-    GenericInt(DeclarationId),
-    GenericFloat(DeclarationId),
-    TagOnlyNominal(Box<StableCheckedType>),
-    Nominal(Box<StableCheckedType>),
-    /// [BLK-1] one unbounded type parameter in a run element position, which
-    /// only a symbolic instance carries [FN-2].
-    Generic(DeclarationId),
-}
 
 /// One symbolic generic requirement while its scratch nominal suffix is
 /// rolled back. The checked predicate remains exact, but every scratch
@@ -365,23 +350,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.substitute_stable_type_regions(&mut element.0, regions)?
             }
             StableCheckedType::Buffer { element } => {
-                self.substitute_stable_element_regions(element, regions)?
+                self.substitute_stable_type_regions(&mut element.0, regions)?
             }
         }
         Ok(())
-    }
-
-    fn substitute_stable_element_regions(
-        &self,
-        element: &mut StableFlatElement,
-        regions: &[(DeclarationId, DeclarationId)],
-    ) -> Result<(), CheckStop> {
-        match element {
-            StableFlatElement::TagOnlyNominal(ty) | StableFlatElement::Nominal(ty) => {
-                self.substitute_stable_type_regions(ty, regions)
-            }
-            _ => Ok(()),
-        }
     }
 
     pub(super) fn collect_function_templates(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
@@ -1600,12 +1572,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 StableCheckedType::Array { element, length }
             }
             CheckedType::Buffer { element } => {
-                let Some(element) = self.stabilize_flat_element(
-                    element,
-                    nominal_checkpoint,
-                    visiting,
-                    allow_symbolic,
-                )?
+                let Some(element) =
+                    self.stabilize_element(element, nominal_checkpoint, visiting, allow_symbolic)?
                 else {
                     return Ok(None);
                 };
@@ -1688,46 +1656,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 allow_symbolic,
             )?
             .map(|ty| StableElement(Box::new(ty))))
-    }
-
-    fn stabilize_flat_element(
-        &self,
-        element: CheckedFlatElement,
-        nominal_checkpoint: usize,
-        visiting: &mut HashSet<NominalId>,
-        allow_symbolic: bool,
-    ) -> Result<Option<StableFlatElement>, CheckStop> {
-        Ok(match element {
-            CheckedFlatElement::Unit => Some(StableFlatElement::Unit),
-            CheckedFlatElement::Bool => Some(StableFlatElement::Bool),
-            CheckedFlatElement::Integer(ty) => Some(StableFlatElement::Integer(ty)),
-            CheckedFlatElement::Float(ty) => Some(StableFlatElement::Float(ty)),
-            CheckedFlatElement::GenericInt(declaration) => {
-                allow_symbolic.then_some(StableFlatElement::GenericInt(declaration))
-            }
-            CheckedFlatElement::GenericFloat(declaration) => {
-                allow_symbolic.then_some(StableFlatElement::GenericFloat(declaration))
-            }
-            CheckedFlatElement::Generic(declaration) => {
-                allow_symbolic.then_some(StableFlatElement::Generic(declaration))
-            }
-            CheckedFlatElement::TagOnlyNominal(id) => self
-                .stabilize_type(
-                    CheckedType::Nominal(id),
-                    nominal_checkpoint,
-                    visiting,
-                    allow_symbolic,
-                )?
-                .map(|ty| StableFlatElement::TagOnlyNominal(Box::new(ty))),
-            CheckedFlatElement::Nominal(id) => self
-                .stabilize_type(
-                    CheckedType::Nominal(id),
-                    nominal_checkpoint,
-                    visiting,
-                    allow_symbolic,
-                )?
-                .map(|ty| StableFlatElement::Nominal(Box::new(ty))),
-        })
     }
 
     fn stabilize_prelude_type(
@@ -1817,7 +1745,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 length: *length,
             },
             StableCheckedType::Buffer { element } => CheckedType::Buffer {
-                element: self.reify_flat_element(element)?,
+                element: self.reify_element(element)?,
             },
             StableCheckedType::Window {
                 shape,
@@ -1834,37 +1762,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn reify_element(&mut self, element: &StableElement) -> Result<CheckedElement, CheckStop> {
         let ty = self.reify_concrete_type(&element.0)?;
         self.intern_element(ty)
-    }
-
-    fn reify_flat_element(
-        &mut self,
-        element: &StableFlatElement,
-    ) -> Result<CheckedFlatElement, CheckStop> {
-        Ok(match element {
-            StableFlatElement::Unit => CheckedFlatElement::Unit,
-            StableFlatElement::Bool => CheckedFlatElement::Bool,
-            StableFlatElement::Integer(ty) => CheckedFlatElement::Integer(*ty),
-            StableFlatElement::Float(ty) => CheckedFlatElement::Float(*ty),
-            StableFlatElement::GenericInt(declaration) => {
-                CheckedFlatElement::GenericInt(*declaration)
-            }
-            StableFlatElement::GenericFloat(declaration) => {
-                CheckedFlatElement::GenericFloat(*declaration)
-            }
-            StableFlatElement::Generic(declaration) => CheckedFlatElement::Generic(*declaration),
-            StableFlatElement::TagOnlyNominal(ty) => {
-                let CheckedType::Nominal(id) = self.reify_concrete_type(ty)? else {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                };
-                CheckedFlatElement::TagOnlyNominal(id)
-            }
-            StableFlatElement::Nominal(ty) => {
-                let CheckedType::Nominal(id) = self.reify_concrete_type(ty)? else {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                };
-                CheckedFlatElement::Nominal(id)
-            }
-        })
     }
 
     fn stabilize_generic_requirement(
@@ -2446,7 +2343,7 @@ impl Checker<'_, '_, '_, '_> {
             } => self.collect_type_nominals(operand_type, output)?,
             GoalOperation::BufferMeasure { element, .. }
             | GoalOperation::BufferIndex { element } => {
-                self.collect_flat_element_nominals(element, output)?;
+                self.collect_element_nominals(element, output)?;
             }
             GoalOperation::ArrayMeasure { element, .. }
             | GoalOperation::ArrayIndex { element, .. }
@@ -2472,9 +2369,7 @@ impl Checker<'_, '_, '_, '_> {
     ) -> Result<(), CheckStop> {
         match ty {
             CheckedType::Nominal(id) => output.push(id),
-            CheckedType::Buffer { element } => {
-                self.collect_flat_element_nominals(element, output)?
-            }
+            CheckedType::Buffer { element } => self.collect_element_nominals(element, output)?,
             CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 self.collect_element_nominals(element, output)?;
             }
@@ -2495,26 +2390,6 @@ impl Checker<'_, '_, '_, '_> {
         output: &mut Vec<NominalId>,
     ) -> Result<(), CheckStop> {
         self.collect_type_nominals(self.element_type(element)?, output)
-    }
-
-    fn collect_flat_element_nominals(
-        &self,
-        element: CheckedFlatElement,
-        output: &mut Vec<NominalId>,
-    ) -> Result<(), CheckStop> {
-        match element {
-            CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id) => {
-                output.push(id)
-            }
-            CheckedFlatElement::Unit
-            | CheckedFlatElement::Bool
-            | CheckedFlatElement::Integer(_)
-            | CheckedFlatElement::Float(_)
-            | CheckedFlatElement::GenericInt(_)
-            | CheckedFlatElement::GenericFloat(_)
-            | CheckedFlatElement::Generic(_) => {}
-        };
-        Ok(())
     }
 
     fn collect_value_nominals(
@@ -2604,7 +2479,7 @@ impl Checker<'_, '_, '_, '_> {
             } => self.rewrite_type_nominals(operand_type, checkpoint, replacements)?,
             GoalOperation::BufferMeasure { element, .. }
             | GoalOperation::BufferIndex { element } => {
-                self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
+                self.rewrite_element_nominals(element, checkpoint, replacements)?;
             }
             GoalOperation::ArrayMeasure { element, .. }
             | GoalOperation::ArrayIndex { element, .. }
@@ -2636,7 +2511,7 @@ impl Checker<'_, '_, '_, '_> {
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             }
             CheckedType::Buffer { element } => {
-                self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
+                self.rewrite_element_nominals(element, checkpoint, replacements)?;
             }
             CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 self.rewrite_element_nominals(element, checkpoint, replacements)?;
@@ -2662,33 +2537,6 @@ impl Checker<'_, '_, '_, '_> {
         let mut ty = self.element_type(*element)?;
         self.rewrite_type_nominals(&mut ty, checkpoint, replacements)?;
         *element = self.intern_element(ty)?;
-        Ok(())
-    }
-
-    fn rewrite_flat_element_nominals(
-        &self,
-        element: &mut CheckedFlatElement,
-        checkpoint: usize,
-        replacements: &HashMap<NominalId, NominalId>,
-    ) -> Result<(), CheckStop> {
-        match element {
-            CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id)
-                if (id.0 as usize) >= checkpoint =>
-            {
-                *id = *replacements
-                    .get(id)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            }
-            CheckedFlatElement::Unit
-            | CheckedFlatElement::Bool
-            | CheckedFlatElement::Integer(_)
-            | CheckedFlatElement::Float(_)
-            | CheckedFlatElement::GenericInt(_)
-            | CheckedFlatElement::GenericFloat(_)
-            | CheckedFlatElement::TagOnlyNominal(_)
-            | CheckedFlatElement::Nominal(_)
-            | CheckedFlatElement::Generic(_) => {}
-        }
         Ok(())
     }
 

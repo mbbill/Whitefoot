@@ -448,7 +448,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let IrType::Buffer { element } = base.ty() else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if element.ty() != referent.ty()
+                if self.program.element(element) != Some(referent.ty())
                     || *target_domain != IrTargetDomainObligation::ElementAddress
                     || self.value_type(*offset)
                         != Some(IrType::Integer {

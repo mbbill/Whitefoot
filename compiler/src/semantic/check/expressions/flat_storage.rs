@@ -149,6 +149,7 @@ impl CheckedIndexedPlace {
                 binding,
                 path,
                 element,
+                ..
             } = buffer.root;
             return Ok(Self::Container(CheckedContainerPlace {
                 root: CheckedContainerRoot {
@@ -217,7 +218,7 @@ impl CheckedIndexedPlace {
             Self::Buffer(buffer) => Ok(buffer.element_type),
             Self::Range(range) => Ok(range.element_type),
             Self::Container(container) => match container.root.ty {
-                CheckedType::Buffer { element } => Ok(element.ty()),
+                CheckedType::Buffer { element } => checker.element_type(element),
                 _ => checker.element_type(
                     container
                         .root
@@ -664,7 +665,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        self.check_storage_read(node, place, bindings, options)
+        self.check_storage_read(node, node, place, bindings, options)
     }
 
     /// Recomputes the OP-9 ceiling after a generic GoalTemplate's element
@@ -924,6 +925,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn check_storage_read(
         &self,
         node: NodeId,
+        source_place: NodeId,
         place: CheckedContainerPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         options: PlaceUseOptions,
@@ -949,7 +951,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if options.explicit_move && !copy && !read_out {
             return self.issue_node(
                 SemanticRule::Win3,
-                node,
+                source_place,
                 SemanticIssueKind::MoveOutOfSlot {
                     mechanical_fix: WIN3_NO_SLOT_MOVE,
                 },
@@ -1071,7 +1073,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 function,
                 options.loop_depth,
             )?;
-            return self.check_storage_read(use_node, container, bindings, options);
+            return self.check_storage_read(use_node, place, container, bindings, options);
         }
         let element_type = indexed.element_type(self)?;
         let (range_path, selected_type, carried) =
@@ -1123,7 +1125,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // instead.
                 return self.issue_node(
                     SemanticRule::Win3,
-                    use_node,
+                    place,
                     SemanticIssueKind::MoveOutOfSlot {
                         mechanical_fix: WIN3_NO_SLOT_MOVE,
                     },
@@ -1621,7 +1623,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                     self.element_type(element)?
                 }
-                CheckedType::Buffer { element } => element.ty(),
+                CheckedType::Buffer { element } => self.element_type(element)?,
                 _ => {
                     return self.issue_node(
                         SemanticRule::Op4,
@@ -1812,9 +1814,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         binding,
                         path: path.clone(),
                         element,
+                        element_type: self.element_type(element)?,
                     },
                     declaration: place.declaration,
-                    element_type: element.ty(),
+                    element_type: self.element_type(element)?,
                     resolved: place.resolved,
                     offsets,
                 }))
@@ -2022,9 +2025,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
-        // Every base but a run's carries a flat element [TYPE-2], so a
-        // subscript inside one selects storage this version has no measured
-        // place for; the field prefix is what those branches read.
+        // Field-only fixed-array roots retain the compact root form;
+        // nested subscripts use the complete typed storage path.
         let fields = field_prefix(&path);
         match ty {
             CheckedType::Array { element, length } if fields.is_some() => {
@@ -2056,12 +2058,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     binding,
                     path: path.clone(),
                     element,
+                    element_type: self.element_type(element)?,
                 };
                 let resolved = ResolvedPlace::from_path(binding, root.place_path());
                 Ok(CheckedIndexedPlace::Buffer(CheckedBufferPlace {
                     root,
                     declaration,
-                    element_type: element.ty(),
+                    element_type: self.element_type(element)?,
                     resolved: ResolvedPlaceSet::one(resolved),
                     offsets,
                 }))

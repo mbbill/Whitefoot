@@ -1500,3 +1500,64 @@ fn main() -> status: own ExitStatus pure {
     );
     assert_indexed_call_proof("later nested candidate", later.as_bytes(), false);
 }
+
+/// Conformance owns the source verdicts. This shared fixture additionally
+/// checks that each demanded preservation keeps its replayable proof root,
+/// including captured indices, joined targets and loop-header dependencies.
+#[test]
+fn demanded_bystander_preservations_retain_derivations() {
+    let source =
+        include_bytes!("../../../../tests/conformance/cases/ref2-pos-bystander-preservation.wf");
+    super::with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("bystander proof fixture must check completely: {outcome:?}");
+        };
+        for name in [
+            "inspect_requirement",
+            "inspect_guard",
+            "inspect_capture",
+            "inspect_join",
+            "inspect_loop",
+            "inspect_direct_write",
+            "inspect_rhs_capture",
+            "inspect_unused",
+        ] {
+            let function = program
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .unwrap_or_else(|| panic!("missing proof fixture function {name}"));
+            super::entailment::validate_derivations(&function.entailment);
+            let preservations: Vec<_> = function
+                .entailment
+                .obligations
+                .iter()
+                .filter(|outcome| {
+                    matches!(
+                        outcome.family,
+                        super::super::entailment::ObligationFamily::ReferencePreservation(_)
+                    )
+                })
+                .collect();
+            if name == "inspect_unused" {
+                assert!(
+                    preservations.is_empty(),
+                    "unused references demand no proof"
+                );
+            } else {
+                assert!(!preservations.is_empty(), "{name} retains its preservation");
+                if name == "inspect_join" {
+                    assert!(
+                        preservations.len() >= 2,
+                        "both joined targets retain preservation obligations"
+                    );
+                }
+                for preservation in preservations {
+                    assert!(preservation.discharged, "{name} has a discharged proof");
+                    assert!(preservation.derivation.is_some(), "{name} retains its root");
+                }
+            }
+        }
+    });
+}

@@ -1,9 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    IrArrayRoot, IrElement, IrFlatElement, IrFunction, IrInstruction, IrLayoutCeiling, IrNominalId,
-    IrNominalKind, IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId,
-    IrWindowShape,
+    IrArrayRoot, IrElement, IrFunction, IrInstruction, IrLayoutCeiling, IrNominalId, IrNominalKind,
+    IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId, IrWindowShape,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -745,7 +744,13 @@ fn runtime_capacity_layout(
     content: IrType,
 ) -> Result<(Layout, RuntimeCapacityAllocationLayout), TargetLayoutFailure> {
     let (element, header_words) = match content {
-        IrType::Buffer { element } => (element.ty(), 1_u64),
+        IrType::Buffer { element } => (
+            layouts
+                .program
+                .element(element)
+                .ok_or(TargetLayoutFailure::InvalidIr)?,
+            1_u64,
+        ),
         IrType::Window {
             shape,
             element,
@@ -1148,7 +1153,7 @@ impl LayoutComputer<'_, '_, '_, '_> {
             // storage; its own layout is the `len` word that heads it
             // (compiler/storage-representation).
             IrType::Buffer { element } => {
-                let element = self.flat_element(element)?;
+                let element = self.element(element)?;
                 Ok(Layout {
                     size: 8,
                     align: element.align.max(8),
@@ -1209,10 +1214,6 @@ impl LayoutComputer<'_, '_, '_, '_> {
                 Ok(Layout { size, align })
             }
         }
-    }
-
-    fn flat_element(&mut self, element: IrFlatElement) -> Result<Layout, TargetLayoutFailure> {
-        self.layout(element.ty())
     }
 
     /// One run slot's layout [WIN-1, OP-9]. A slot holding a run holds that

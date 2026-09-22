@@ -10,9 +10,8 @@ use crate::{
 
 use super::super::model::{
     CheckedConst, CheckedConstant, CheckedConstantId, CheckedEffectStep, CheckedElement,
-    CheckedFlatElement, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedStatePath,
-    CheckedType, CheckedValue, ConstOperation, FloatType, IntegerType, WindowShape,
-    evaluate_const_operation,
+    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedStatePath, CheckedType, CheckedValue,
+    ConstOperation, FloatType, IntegerType, WindowShape, evaluate_const_operation,
 };
 use super::super::places::WindowPart;
 use super::floats::parse_float_literal;
@@ -464,12 +463,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }),
             (crate::ContainerShape::Array, None) => {
                 self.reject_unboxed_runtime_capacity(node)?;
-                match self.buffer_element(element_type)? {
-                    Some(element) => Ok(CheckedType::Buffer { element }),
-                    None => {
-                        self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node)
-                    }
-                }
+                Ok(CheckedType::Buffer {
+                    element: self.intern_element(element_type)?,
+                })
             }
             // The two window shapes in both placements [WIN-1]: the filled
             // prefix is `r.len` and a `Ring` additionally carries the window
@@ -1019,7 +1015,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 Some(self.element_type(element)?)
             }
-            CheckedType::Buffer { element } => Some(element.ty()),
+            CheckedType::Buffer { element } => Some(self.element_type(element)?),
             _ => None,
         })
     }
@@ -1421,7 +1417,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             capacity: Some(length),
         } = ty
         {
-            let Some(_) = self.flat_element(self.element_type(element)?)? else {
+            let true = self.is_flat_element(self.element_type(element)?)? else {
                 return self.issue_node(
                     SemanticRule::Const2,
                     node,
@@ -1543,7 +1539,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 CheckedType::Window { element, .. } => {
                     let element = self.element_type(element)?;
-                    if self.flat_element(element)?.is_none() {
+                    if !self.is_flat_element(element)? {
                         return Ok(false);
                     }
                     pending.push(element);
@@ -1598,51 +1594,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(element)
     }
 
-    /// The [TYPE-2] buffer element domain: every scalar or tag-only value,
-    /// plus a region-free payload nominal stored by value. Capability class
-    /// does not select representation: direct views use the same represented
-    /// element domain, and arrays use complete elements.
-    pub(super) fn buffer_element(
-        &self,
-        ty: CheckedType,
-    ) -> Result<Option<CheckedFlatElement>, CheckStop> {
-        if let Some(element) = self.flat_element(ty)? {
-            return Ok(Some(element));
-        }
+    pub(super) fn is_flat_element(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(match ty {
-            CheckedType::Nominal(id) => Some(CheckedFlatElement::Nominal(id)),
-            // [FN-2] the one source-canonical symbolic instance of a generic
-            // record carries its unsubstituted element; every concrete
-            // instance re-reads this position with its own substitution, so
-            // this variant reaches no lowering.
-            CheckedType::Generic(declaration) => Some(CheckedFlatElement::Generic(declaration)),
-            _ => None,
-        })
-    }
-
-    pub(super) fn flat_element(
-        &self,
-        ty: CheckedType,
-    ) -> Result<Option<CheckedFlatElement>, CheckStop> {
-        Ok(match ty {
-            CheckedType::Unit => Some(CheckedFlatElement::Unit),
-            CheckedType::Bool => Some(CheckedFlatElement::Bool),
-            CheckedType::Integer(ty) => Some(CheckedFlatElement::Integer(ty)),
-            CheckedType::Float(ty) => Some(CheckedFlatElement::Float(ty)),
-            CheckedType::GenericInt(declaration) => {
-                Some(CheckedFlatElement::GenericInt(declaration))
-            }
-            CheckedType::GenericFloat(declaration) => {
-                Some(CheckedFlatElement::GenericFloat(declaration))
-            }
-            CheckedType::Nominal(id) if self.nominal(id)?.is_tag_only_enum() => {
-                Some(CheckedFlatElement::TagOnlyNominal(id))
-            }
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_) => true,
+            CheckedType::Nominal(id) => self.nominal(id)?.is_tag_only_enum(),
             CheckedType::Generic(_)
-            | CheckedType::Nominal(_)
             | CheckedType::Array { .. }
             | CheckedType::Buffer { .. }
-            | CheckedType::Window { .. } => None,
+            | CheckedType::Window { .. } => false,
         })
     }
 

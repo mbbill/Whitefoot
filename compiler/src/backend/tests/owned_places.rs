@@ -1472,6 +1472,28 @@ void wf_test_release(void *allocation) {{
     )
 }
 
+/// A front removal and back placement wrap the runtime Ring, whose logical
+/// reads and drain must yield 20, 30, and 40 [TYPE-9, WIN-1, OP-10]. The helper
+/// consumes each whole Box while returning its copy scalar, so scope cleanup
+/// frees that cell before the next source step [WIN-3]. The process-tag trace
+/// checks that the removed owner leaves before A5, the remaining owners leave
+/// in drain order, and the empty outer cell leaves last [OP-14].
+#[test]
+fn boxed_runtime_ring_wraps_and_releases_each_owner_in_order() {
+    let source = include_bytes!("../../../../tests/programs/runtime_ring_wrap.wf");
+    let module = compile(source);
+    let observed = retain_calls(&module)
+        .replace("@malloc(", "@wf_test_allocate(")
+        .replace("@free(", "@wf_test_release(");
+    let output = compile_link_and_run(&observed, Some(&allocation_observer(5, 0)), &[]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(
+        output.stdout, b"A1;A2;A3;A4;F2;A5;F3;F4;F5;F1;",
+        "{output:?}"
+    );
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
 /// A full bounded append returns its input rather than overwriting an element.
 ///
 /// The arena half of this case retired with [STOR-4]: there is one heap
@@ -1843,5 +1865,105 @@ fn main() -> status: own ExitStatus pure {{
             );
             assert!(output.stderr.is_empty(), "{output:?}");
         }
+    }
+}
+
+#[test]
+fn discarded_struct_results_release_nested_cells_once() {
+    for statement in ["make();", "let held = make();"] {
+        let source = format!(
+            r#"struct Inner {{
+  value: Box<u64>;
+}}
+
+struct Outer {{
+  first: Box<u64>;
+  inner: Inner;
+}}
+
+fn make() -> result: own Outer pure {{
+  let first = box_new::<u64>(value: 11_u64);
+  let second = box_new::<u64>(value: 22_u64);
+  let inner = Inner(value: move second);
+  return Outer(first: move first, inner: move inner);
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  {statement}
+  return exit_status(code: 0_u8);
+}}
+"#
+        );
+        for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
+            let module = super::emit_lowered(source.as_bytes(), overlap);
+            let observed = retain_calls(&module)
+                .replace("@malloc(", "@wf_test_allocate(")
+                .replace("@free(", "@wf_test_release(");
+            let output = compile_link_and_run(&observed, Some(&u64_allocation_observer(2)), &[]);
+            assert_eq!(output.status.code(), Some(0), "{statement}: {output:?}");
+            let records = std::str::from_utf8(&output.stdout)
+                .expect("observer emits ASCII")
+                .split_terminator(';')
+                .filter(|record| record.starts_with('V'))
+                .collect::<Vec<_>>();
+            assert_eq!(records, ["V11", "V22"], "{statement}: {output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
+}
+
+#[test]
+fn boxed_field_consumes_skip_empty_residuals_and_release_nested_cells() {
+    let source = br#"nocopy enum Tag {
+  Present();
+}
+
+struct Residual {
+  tag: Tag;
+  cell: Box<u64>;
+}
+
+struct Holder {
+  stamp: u64;
+  selected: Box<u64>;
+  tag: Tag;
+  residual: Residual;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let selected = box_new::<u64>(value: 17_u64);
+  let other = box_new::<u64>(value: 29_u64);
+  let residual_tag = Present();
+  let residual = Residual(tag: move residual_tag, cell: move other);
+  let tag = Present();
+  let holder = Holder(stamp: 43_u64, selected: move selected, tag: move tag, residual: move residual);
+  let owner = box_new::<Holder>(value: move holder);
+  let taken = move owner.inner.selected;
+  if taken.inner != 17_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let output = compile_link_and_run(&observed, Some(&u64_allocation_observer(3)), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        let records = std::str::from_utf8(&output.stdout)
+            .expect("observer emits ASCII")
+            .split_terminator(';')
+            .collect::<Vec<_>>();
+        let released = records
+            .iter()
+            .copied()
+            .filter(|record| record.starts_with('V'))
+            .collect::<Vec<_>>();
+        // Payload identity is independent of parallel allocation order:
+        // release the residual, then the outer cell, then the moved result.
+        assert_eq!(released, ["V29", "V43", "V17"], "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
     }
 }

@@ -1,0 +1,19 @@
+struct CopyToken {
+}
+
+nocopy struct AffineToken {
+}
+
+fn mint_copy() -> result: own CopyToken pure {
+  return CopyToken();
+}
+
+fn mint_affine() -> result: own AffineToken pure {
+  return AffineToken();
+}
+
+fn main() -> status: own ExitStatus pure {
+  mint_copy();
+  mint_affine();
+  return exit_status(code: 0_u8);
+}
