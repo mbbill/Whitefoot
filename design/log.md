@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-21 Select eligible ordinary self calls for tail lowering
+
+Nodes: compiler/self-tail-lowering, language/self-tail-calls
+
+Owner-approved: The owner explicitly approved the presented compiler/self-tail-lowering replacement after the detailed PR #75 explanation and clean independent review of revision b05ee4be. The language/self-tail-calls node retains the earlier explicit approval recorded below. These rulings do not authorize a merge.
+
+Summary: Apply the reviewed compiler replacement unchanged. Separate the written musttail obligation from the checked lowering selection, and select an unmarked direct self call when the shared position, reference-root and release conditions permit activation replacement. An unavailable condition retains an ordinary unmarked call and produces an FN-10 rejection only for a written marker. Both forms preserve ordinary call and proof checking and share argument capture, checked cleanup and the parameterized entry jump, avoiding duplicate semantics or a new source acceptance condition. Remove the resolved amendment and its directory. The language guarantee is unchanged.
+
 ## 2026-09-21 Guarantee direct self-tail transfers
 
 Nodes: language/self-tail-calls, compiler/self-tail-lowering
