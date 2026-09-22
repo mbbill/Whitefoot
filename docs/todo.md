@@ -117,6 +117,15 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   checking-cost comparison before proposing a language change. This is an
   improvement-validation task, distinct from the bystander defect above.
 
+- **Invariant-name reservation has conflicting definitions.** OP-1 lists the
+  declaration roles subject to FORM-3 reservation and explicitly excludes
+  other roles; that list omits invariants. TYPE-6 later says header and body
+  invariant names participate in FORM-3. The resolver and existing tests
+  reject an invariant named `cvt`, matching the latter text. Decide whether
+  invariant declarations are covered, then align both normative definitions
+  and their derived tests. Neither implementation behavior nor this audit
+  selects the language rule.
+
 - **Ordered Vector consumption still makes avoidable transfers.** The ordinary
   prefix-window library reverses a removed suffix before consuming it in
   original order. It is O(n), but the
@@ -319,15 +328,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
-
-- **Invariant-name reservation has conflicting definitions.** OP-1 lists the
-  declaration roles subject to FORM-3 reservation and explicitly excludes
-  other roles; that list omits invariants. TYPE-6 later says header and body
-  invariant names participate in FORM-3. The resolver and existing tests
-  reject an invariant named `cvt`, matching the latter text. Decide whether
-  invariant declarations are covered, then align both normative definitions
-  and their derived tests. Neither implementation behavior nor this audit
-  selects the language rule.
 
 - **Sparse containers over must-consume linear elements need ownership-visible
   slot state.** The maintained
