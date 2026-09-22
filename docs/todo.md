@@ -57,6 +57,17 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   query for now and reopen when measuring target-emission cost or extending its
   layout consumers.
 
+- **Validate a shared Ring wrap calculation independent of layout bounds.**
+  The corrected front predecessor handles every admitted capacity. Remaining
+  address-only modular additions are justified by the positive-stride target
+  bound or the zero-stride address operand; head advancement separately uses
+  the safe offset one. An overflow-free common formulation could simplify
+  those grounds across indexed access, shifts, transfers and cleanup, at the
+  cost of more emitted arithmetic. Compare exact coordinates at u64 boundaries
+  and representative native cost before selecting it. No remaining observable
+  defect is established; defer beyond the predecessor repair and reopen when
+  changing Ring layout or coordinate consumers.
+
 - **Ordered Vector consumption still relocates rear elements.** The take-first
   composition exchanges an owned local with each first-half suffix slot, then
   consumes the reversed remainder. It preserves the prefix and callback order

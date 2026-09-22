@@ -85,8 +85,27 @@ of OP-4 or OP-9.
 Zero/nonzero elements, nested layouts, construction/access, a narrow simulated
 address domain and exact/insufficient descriptor ceilings distinguish the
 alternatives. Inspect ordinary pre-optimization IR; there is no separate
-facts-off compiler flag. The enormous logical count is emission-only. Native
+facts-off compiler flag. Enormous full-array fills are emission-only. Native
 coverage uses small zero-size values and a mixed nonzero/empty-field struct.
+
+A subsequent Ring discriminator keeps the large capacity but inserts only two
+zero-byte values, allocating only its header. At capacity `2^63 + 1`, WIN-1 and
+OP-10 require two front placements to leave `head = 2^63 - 1`. Both the baseline
+compiler and revision `3269302f` instead execute with `head = 0`: their emitted
+`head + cap - 1` overflows on the second placement before conditional reduction.
+The native source distinguishes that zero result from other unexpected values.
+
+The repair computes `(head == 0 ? cap : head) - 1`. Placement already proves
+`cap > 0`, and the Ring invariant supplies `head < cap`, so the selected base is
+positive and no intermediate overflows. This changes neither source acceptance
+nor the window representation, and uses the same result for the selected element
+and published head. The existing zero-size boundary test now observes the two
+placements and removals, the empty round trip, and capacity one under both
+sequential and overlap lowering. Other address-only modular additions rely on
+the positive-stride target bound; zero-stride address operands are zero, and
+the head-advancing addition uses the separately safe offset one. Decoupling those
+remaining calculations from these representation grounds is a deferred
+improvement-validation task, not an established remaining observable defect.
 
 ## Reference joins and bounded proof precision
 

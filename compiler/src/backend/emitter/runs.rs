@@ -461,19 +461,17 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let head = self.window_origin(shape, run_type, run)?;
         match row {
             IrBoundary::TakeFront => Ok(head),
-            // One slot before the window origin: `head + cap - 1` lies in
-            // `[cap - 1, 2 * cap - 1]`, so it never underflows and the
-            // modulus is the same one conditional subtract.
+            // Placement proves cap > 0 and the Ring invariant gives head <
+            // cap. Select a positive predecessor base before subtracting:
+            // head + cap - 1 can overflow even for header-only storage.
             IrBoundary::PlaceFront => {
                 let capacity = self.run_capacity(shape, run_type, run)?;
-                let raised = self.next_temporary()?;
-                let stepped = self.next_temporary()?;
-                let over = self.next_temporary()?;
-                let wrapped = self.next_temporary()?;
+                let at_start = self.next_temporary()?;
+                let predecessor = self.next_temporary()?;
                 let physical = self.next_temporary()?;
                 writeln!(
                     self.output,
-                    "  %{raised} = add i64 {head}, {capacity}\n  %{stepped} = sub i64 %{raised}, 1\n  %{over} = icmp uge i64 %{stepped}, {capacity}\n  %{wrapped} = sub i64 %{stepped}, {capacity}\n  %{physical} = select i1 %{over}, i64 %{wrapped}, i64 %{stepped}",
+                    "  %{at_start} = icmp eq i64 {head}, 0\n  %{predecessor} = select i1 %{at_start}, i64 {capacity}, i64 {head}\n  %{physical} = sub i64 %{predecessor}, 1",
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
                 Ok(format!("%{physical}"))
