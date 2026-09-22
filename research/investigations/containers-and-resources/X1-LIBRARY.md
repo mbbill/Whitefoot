@@ -905,6 +905,13 @@ give the identities, method and rerun correctness checks. This establishes
 that emitted-module correspondence, not linked-image identity or a new timing
 run; the original CSVs keep their original compiler and measurement identity.
 
+The subsequent merge of main `95b21cfd` at `4da1710e` was checked with the
+rebuilt compiler as well. Fresh raw and normal/retained optimized LLVM for
+both libraries matched the saved `dcbfdc0f` artifacts byte-for-byte; all four
+C-control optimized modules were unchanged. The same integration records
+give this compiler identity and the bounded re-emission commands. The earlier
+native, assembly and timing evidence retains its original scope and identity.
+
 ### Exact unavailable source forms
 
 These are the rejected additions or functions in the linked library's type

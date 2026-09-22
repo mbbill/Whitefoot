@@ -256,3 +256,27 @@ No new timing run was needed for the name-only IR change. The original CSV
 remains historical timing evidence, not a fresh measurement of this revision;
 the code comparison is specific to these source instantiations and this
 Clang/arm64 configuration, not a claim about other toolchains or programs.
+
+Requalification after main PR #80 used merge `4da1710e` (main `95b21cfd`)
+and compiler SHA-256
+`cb399df104e975c607973f151dd87a4caf2e4a0e9606a468b4ea69d683345a48`.
+The library, workload, C driver, Makefile, runtime inputs and CSV were
+unchanged. Fresh raw, normal-optimized and retained-optimized WF LLVM were
+byte-identical to the saved `dcbfdc0f` artifacts; the C controls' optimized
+modules retained their exact hashes too. The artifact table above therefore
+also identifies the newly emitted WF modules. No normalization was needed.
+
+The guarded `slab-deque-pr80-emission` command requested these Make targets:
+
+```sh
+make -C research/experiments/container-representation/slab-library \
+  .build/slab-library-normal.opt.ll .build/slab-library-retained.opt.ll \
+  .build/control-normal.opt.ll .build/control-retained.opt.ll
+```
+
+Slab emission/optimization took 0.69 seconds; the combined Slab/Deque guard
+interval took 1.03 seconds. The unchanged C targets were already current.
+This byte-identity check reuses the earlier assembly comparison and native
+checks. No native relink, execution, probe or timing was repeated, and the
+original CSV remains the historical baseline rather than a new PR #80
+performance result.

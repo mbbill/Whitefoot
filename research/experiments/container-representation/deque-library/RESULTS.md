@@ -320,3 +320,27 @@ target saves `deque-gep-{baseline,nuw,split}.opt.ll` and corresponding
 The complete Slab/Deque integration interval took 7.51 seconds. This confirms
 the optional reproduction wiring and bounded code-generation observation;
 it does not add the flag to production lowering or measure a speedup.
+
+Requalification after main PR #80 used merge `4da1710e` (main `95b21cfd`)
+and compiler SHA-256
+`cb399df104e975c607973f151dd87a4caf2e4a0e9606a468b4ea69d683345a48`.
+The library, workload, C driver, Makefile, runtime inputs and CSV were
+unchanged. Fresh raw, normal-optimized and retained-optimized WF LLVM were
+byte-identical to the saved `dcbfdc0f` artifacts; both C-control optimized
+modules retained their exact hashes. The recorded raw/optimized identities
+therefore also identify this fresh emission, without normalization.
+
+The guarded `slab-deque-pr80-emission` command requested these Make targets:
+
+```sh
+make -C research/experiments/container-representation/deque-library \
+  .build/deque-library-normal.opt.ll .build/deque-library-retained.opt.ll \
+  .build/control-normal.opt.ll .build/control-retained.opt.ll
+```
+
+Deque emission/optimization took 0.28 seconds; the combined Slab/Deque guard
+interval took 1.03 seconds. The C targets were already current. The earlier
+native checks, assembly comparison and optional-probe evidence are reused
+because their inputs are unchanged. No native relink, execution, probe or
+timing was repeated. The original CSV remains historical timing evidence,
+with no fresh performance or wider toolchain claim.
