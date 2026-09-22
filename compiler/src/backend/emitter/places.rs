@@ -433,7 +433,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let IrType::Buffer { element } = base.ty() else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if element.ty() != referent.ty()
+                if self.program.element(element) != Some(referent.ty())
                     || *target_domain != IrTargetDomainObligation::ElementAddress
                     || self.value_type(*offset)
                         != Some(IrType::Integer {
@@ -530,12 +530,24 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // Keep the checked snapshot and its ordering, but do not expand an
         // aggregate into SSA fields merely to copy it. The target's allocated
         // type size includes representation padding and is not the source
-        // layout ceiling or a run's initialized length. memmove also preserves
-        // a snapshot when the proven places overlap and is a no-op at size zero.
-        self.intrinsics.insert(IntrinsicDeclaration::MemoryMove);
+        // layout ceiling or a run's initialized length. The closed OP-11 body
+        // copies only between its equal-or-disjoint reference targets and its
+        // private snapshots. Ordinary llvm.memcpy permits equal pointers (the
+        // stricter memcpy.inline does not), so it preserves same-place swap
+        // without withholding the proved exclusion of partial overlap. This
+        // grants no noalias attribute to swap's reference parameters.
+        // Other bodies may reuse overlapping aggregate result storage and keep
+        // memmove's snapshot semantics.
+        let operation = if aliasing_admitted_row(self.function.name()) {
+            self.intrinsics.insert(IntrinsicDeclaration::MemoryCopy);
+            "memcpy"
+        } else {
+            self.intrinsics.insert(IntrinsicDeclaration::MemoryMove);
+            "memmove"
+        };
         writeln!(
             self.output,
-            "  call void @llvm.memmove.p0.p0.i64(ptr {destination}, ptr {source}, i64 ptrtoint (ptr getelementptr ({llvm}, ptr null, i32 1) to i64), i1 false)"
+            "  call void @llvm.{operation}.p0.p0.i64(ptr {destination}, ptr {source}, i64 ptrtoint (ptr getelementptr ({llvm}, ptr null, i32 1) to i64), i1 false)"
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

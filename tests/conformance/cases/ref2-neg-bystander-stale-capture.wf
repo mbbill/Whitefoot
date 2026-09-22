@@ -1,0 +1,25 @@
+struct BystanderRecord {
+  value: u8;
+}
+
+fn overwrite_bystander(values: &Array<BystanderRecord, 4>, index: own u64) -> result: own unit writes(values[index]) contract {
+  requires index < 4_u64;
+} {
+  set deref(values)[index] = BystanderRecord(value: 9_u8);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+
+fn inspect(values: &Array<BystanderRecord, 4>, j: own u64) -> result: own u8 reads(values), writes(values[j]) contract {
+  requires 0_u64 < j;
+  requires j < 4_u64;
+} {
+  let i = j;
+  let selected = &deref(values)[i].value;
+  set i = 0_u64;
+  overwrite_bystander(values: values, index: j);
+  return deref(selected);
+}

@@ -37,10 +37,10 @@ use super::goal::{
 };
 use super::model::{
     BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
-    CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode, CheckedNominal,
-    CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedStatement,
-    CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId,
-    ValueInitializerKind, evaluate_const_operation,
+    CheckedFunction, CheckedGenericRequirement, CheckedMode, CheckedNominal, CheckedNominalKind,
+    CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedStatement, CheckedType,
+    CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId, ValueInitializerKind,
+    evaluate_const_operation,
 };
 use super::permission::{PermissionSignature, analyze_permission, plan_permission_separations};
 use super::permission_ledger::{LedgerSource, render_ledger};
@@ -2895,10 +2895,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             GoalOperation::BufferMeasure { measure, element } => GoalOperation::BufferMeasure {
                 measure,
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
             },
             GoalOperation::BufferIndex { element } => GoalOperation::BufferIndex {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
             },
             GoalOperation::BufferFits {
                 element,
@@ -2962,7 +2962,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 length: self.instantiate_goal_const(length, signature)?,
             },
             CheckedType::Buffer { element } => CheckedType::Buffer {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
             },
             CheckedType::Window {
                 shape,
@@ -3008,36 +3008,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .filter(|(formal, actual)| formal != actual)
             .collect::<Vec<_>>();
         self.substitute_type_regions(CheckedType::Nominal(id), &substitution)
-    }
-
-    fn instantiate_goal_flat_element(
-        &self,
-        element: CheckedFlatElement,
-        signature: &FunctionSignature,
-        regions: &[DeclarationId],
-    ) -> Result<CheckedFlatElement, CheckStop> {
-        let ty = self.instantiate_goal_type(element.ty(), signature, regions)?;
-        Ok(match ty {
-            CheckedType::Unit => CheckedFlatElement::Unit,
-            CheckedType::Bool => CheckedFlatElement::Bool,
-            CheckedType::Integer(ty) => CheckedFlatElement::Integer(ty),
-            CheckedType::Float(ty) => CheckedFlatElement::Float(ty),
-            CheckedType::GenericInt(declaration) => CheckedFlatElement::GenericInt(declaration),
-            CheckedType::GenericFloat(declaration) => CheckedFlatElement::GenericFloat(declaration),
-            CheckedType::Nominal(nominal) => {
-                if self.nominal(nominal)?.is_tag_only_enum() {
-                    CheckedFlatElement::TagOnlyNominal(nominal)
-                } else {
-                    CheckedFlatElement::Nominal(nominal)
-                }
-            }
-            CheckedType::Generic(_)
-            | CheckedType::Array { .. }
-            | CheckedType::Buffer { .. }
-            | CheckedType::Window { .. } => {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-        })
     }
 
     /// One run element at a caller's instance [BLK-1].
@@ -3265,6 +3235,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::RangeFormation => SemanticRule::Ref4,
                         super::entailment::ObligationFamily::CallSeparation => SemanticRule::Eff5,
+                        super::entailment::ObligationFamily::ReferencePreservation(_) => {
+                            SemanticRule::Ref2
+                        }
                         super::entailment::ObligationFamily::ExchangeSeparation => {
                             SemanticRule::Op11
                         }
@@ -3593,6 +3566,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 kind: SemanticIssueKind::UndischargedCallSeparation {
                                     residual,
                                     mechanical_fix: "prove the two positions distinct before this call, or pass one of them",
+                                },
+                            }
+                        }
+                        super::entailment::ObligationFamily::ReferencePreservation(query) => {
+                            let use_site = function
+                                .call_separations
+                                .get(query as usize)
+                                .and_then(|query| query.reference_use.as_ref())
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                            SemanticIssue {
+                                rule: SemanticRule::Ref2,
+                                location,
+                                kind: SemanticIssueKind::InvalidReferenceUse {
+                                    binder: use_site.binder.clone(),
+                                    event: use_site.event,
+                                    mechanical_fix: references::REF2_FORM_AGAIN,
                                 },
                             }
                         }

@@ -23,7 +23,7 @@ $(BUILD)/vector-library-normal.ll: $(BUILD)/vector-library.raw.ll
 	    -e 's/@main(/@wf_fixture_main(/g' $< > $@
 
 $(BUILD)/vector-library-retained.ll: $(BUILD)/vector-library-normal.ll
-	awk '/^define .* @wf_(grow_vector_|vector_library_(work|round)|vector_(word|record)_(make|accept))/ { if (sub(/ #0 [{]$$/, " noinline #0 {") != 1) exit 1; retained++ } { print } END { if (retained == 0) exit 1; print "retained Vector helpers: " retained > "/dev/stderr" }' $< > $@
+	awk '/^define .* @wf_(grow_vector_|vector_library_(work|round|tail_work)|vector_(word|record)_(make|accept))/ { if (sub(/ #0 [{]$$/, " noinline #0 {") != 1) exit 1; retained++ } { print } END { if (retained == 0) exit 1; print "retained Vector helpers: " retained > "/dev/stderr" }' $< > $@
 
 $(BUILD)/vector-library-%.opt.ll: $(BUILD)/vector-library-%.ll
 	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@

@@ -1002,10 +1002,7 @@ mod tests {
     use super::*;
 
     const AGGREGATE: IrType = IrType::Buffer {
-        element: crate::IrFlatElement::Integer {
-            width: 64,
-            signed: false,
-        },
+        element: crate::IrElement(0),
     };
 
     fn define(result: usize, operands: &[usize], reuse: Option<usize>) -> FlowInstruction {

@@ -5,6 +5,22 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Preserve references through event-site separation proofs
+
+Nodes: compiler/checker-facts
+
+Owner-approved: The owner explicitly approved the complete reference-preservation amendment and the accompanying D3 TODO wording correction after the detailed PR #84 explanation of all eight repairs and both requested rulings.
+
+Summary: Apply the reviewed amendment unchanged. Retain finite conjunctive preservation questions across reference copies, joins and loop dependencies, demand them only at reference uses, and discharge them at the original write through the existing proof ledger. Preserve assignment targets captured before right-hand-side evaluation while judging preservation at commit; failed preservation reports REF-2 without suppressing the write's effects. Record the reviewed alternatives, remove the accepted amendment and its directory, and remove the stale bystander cross-reference from the still-open joined-reference precision task. The language specification is unchanged; this ruling does not authorize a merge.
+
+## 2026-09-22 Carry owned descendant measures and reduce Vector transfer costs
+
+Nodes: compiler/checker-facts, compiler/storage-placement, language/data-model/vector-consumption
+
+Owner-approved: The owner replied that all presented revisions were accepted after the PR #82 handoff at 29516a39, approving the ENT-2/MSR-3 clarification, all three tree amendments including the measured scalar tradeoff, and both DCR responses. This ruling does not authorize a merge.
+
+Summary: Record finite measure placement through exact owned fields, payloads and Box content, keeping current-state invalidation and distinguishing descendant covers from exact identity. ENT-2 and MSR-3 explicitly carry those descendants at their existing within-body naming events and include the descendant projection in datum identity; ordinary cross-function contracts and implicit-window-slot limits remain. Record independent stack allocations only after complete target qualification permits a uniform, padding-free layout, and complete takes that capture the old element address before updating the descriptor and transferring the element. Replace the separate-reversal Vector baseline with take-first local exchange and original-order consumption, preserving the ownership and O(removed), constant-auxiliary-space contract. The [Box investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#box-placement-and-vector-consumption-follow-up) and [paired measurements](../research/experiments/container-representation/vector-library/RESULTS.md#paired-v062-source-measurements) supply the grounds and alternatives. Accept the measured large-record benefit with the short-scalar regression and remaining optimizer costs retained in TODO; claim neither uniform improvement nor native parity. Remove the three resolved amendments and their directory.
+
 ## 2026-09-21 Select eligible ordinary self calls for tail lowering
 
 Nodes: compiler/self-tail-lowering, language/self-tail-calls

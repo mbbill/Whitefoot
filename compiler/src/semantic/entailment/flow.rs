@@ -251,16 +251,6 @@ struct AffineFlowState {
     published_invariants: HashMap<crate::DeclarationId, AffineInequality>,
 }
 
-/// The capture identity [EFF-5] substitution gives every index and range
-/// position of one call.
-///
-/// [REF-1] names a captured value by the occurrence it was evaluated at, and
-/// a substituted row position has no `psuffix` of its own to be named by. It
-/// sits outside the node-derived identities [`CapturedValue`] mints and
-/// outside the unknown offset, so no substituted position is ever taken for a
-/// place's own written subscript or for an offset this version cannot name.
-const SUBSTITUTED_OFFSET_CAPTURE: CaptureId = CaptureId::SubstitutedOffset;
-
 /// The affine images of one range formation's two captured endpoints
 /// [REF-4], with the node the formation stands at.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1425,8 +1415,9 @@ struct Analyzer<'check, 'unit> {
     function: &'check CheckedFunction,
     /// [REF-1] place resolution for this function.
     places: PlaceMap,
-    /// The [EFF-5] pairs already judged, by the call they were recorded at.
-    judged_separations: HashSet<crate::NodePath>,
+    /// The effect and demanded reference-preservation questions already
+    /// judged, distinguished by query even when they share a write event.
+    judged_separations: HashSet<usize>,
     /// Optional [PAR-1] range questions. Each one is evaluated only at its
     /// first statement's entry and meets every visit with logical AND.
     permission_separations: Vec<PermissionSeparationAttempt>,
@@ -4774,6 +4765,12 @@ impl Analyzer<'_, '_> {
     ) -> bool {
         self.goals.support(goal).iter().any(|support| {
             let (place, holders) = self.resolve_goal_support(support);
+            // [ENT-5, MSR-2] a current place reads every named offset as
+            // well as the selected storage. Goals and L0 terms must lose
+            // that place's identity on the same offset event.
+            if self.event_kills_offset_support(separations, &place, event) {
+                return true;
+            }
             match event {
                 // [MSR-2] a write at an element position carries the written
                 // element's own place, `P[i]`, so it reaches the descriptor
@@ -4848,6 +4845,10 @@ impl Analyzer<'_, '_> {
             let (place, holders) = self.resolve_goal_support(support);
             holders.iter().any(|holder| exited.contains(holder))
                 || matches!(place.root, PlaceRoot::Binding(binding) if exited.contains(&binding))
+                || place.path.iter().any(|projection| {
+                    matches!(projection, PlaceStep::Index(offset)
+                        if offset.support().is_some_and(|binding| exited.contains(&binding)))
+                })
         })
     }
 
@@ -5822,7 +5823,7 @@ impl Analyzer<'_, '_> {
                     },
                     Vec::new(),
                     Vec::new(),
-                    root.element.ty(),
+                    root.element_type,
                     vec![collection, self.goal_expression(offset, admitted_partial)?],
                 )
             }
@@ -7084,9 +7085,10 @@ impl Analyzer<'_, '_> {
     }
 
     fn obligations_since_discharged(&self, obligation_start: usize) -> bool {
-        self.obligations[obligation_start..]
-            .iter()
-            .all(|outcome| outcome.discharged)
+        self.obligations[obligation_start..].iter().all(|outcome| {
+            outcome.discharged
+                || matches!(outcome.family, ObligationFamily::ReferencePreservation(_))
+        })
     }
 
     fn judge_expression(
@@ -7157,6 +7159,9 @@ impl Analyzer<'_, '_> {
                 }
                 let actual_parents = self.obligations[obligation_start..]
                     .iter()
+                    .filter(|outcome| {
+                        !matches!(outcome.family, ObligationFamily::ReferencePreservation(_))
+                    })
                     .map(|outcome| outcome.discharged.then_some(outcome.derivation).flatten())
                     .collect::<Option<Vec<_>>>();
                 let mut goal_parents = Vec::with_capacity(requirements.len());
@@ -8759,20 +8764,14 @@ impl Analyzer<'_, '_> {
         value: &CheckedExpression,
         state: &mut ProofFlowState,
     ) -> Option<MeasureCarry> {
-        let CheckedExpression::Binding { binding, ty, .. } = value else {
-            return None;
+        let source = self.placement_source_place(value)?;
+        let destination = self.set_target_place(target)?;
+        let placement = if matches!(destination.path.last(), Some(PlaceStep::Index(_))) {
+            MeasurePlacement::Element
+        } else {
+            MeasurePlacement::Rebind
         };
-        self.set_target_place(target)?;
-        let placement = match target {
-            CheckedSetTarget::Storage(_) => MeasurePlacement::Element,
-            _ => MeasurePlacement::Rebind,
-        };
-        let source = ResolvedPlace::spelled(
-            PlaceRoot::Binding(*binding),
-            self.is_holder(*binding),
-            Vec::new(),
-        );
-        self.mint_measure_datums(node_path, ordinal, placement, source, *ty, state)
+        self.mint_measure_datums(node_path, ordinal, placement, source, value.ty(), state)
     }
 
     /// [MSR-3] the construct placement: the datums one `construct`'s field
@@ -8818,21 +8817,16 @@ impl Analyzer<'_, '_> {
         };
         let mut carried = Vec::new();
         for (ordinal, field) in fields.iter().enumerate() {
-            let CheckedExpression::Binding { binding, ty, .. } = field else {
+            let Some(source) = self.placement_source_place(field) else {
                 continue;
             };
             let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
-            let source = ResolvedPlace::spelled(
-                PlaceRoot::Binding(*binding),
-                self.is_holder(*binding),
-                Vec::new(),
-            );
             if let Some(carry) = self.mint_measure_datums(
                 node_path,
                 ordinal,
                 MeasurePlacement::Construct,
                 source,
-                *ty,
+                field.ty(),
                 state,
             ) {
                 let destination =
@@ -8877,12 +8871,10 @@ impl Analyzer<'_, '_> {
         enum_type: CheckedEnumType,
         state: &mut ProofFlowState,
     ) -> Vec<PayloadPlacement> {
-        let CheckedExpression::Binding {
-            carrier: node_path,
-            binding,
-            ..
-        } = scrutinee
-        else {
+        let Some(base) = self.placement_source_place(scrutinee) else {
+            return Vec::new();
+        };
+        let Some(node_path) = scrutinee.carrier() else {
             return Vec::new();
         };
         let CheckedEnumType::Nominal(nominal) = enum_type else {
@@ -8896,11 +8888,6 @@ impl Analyzer<'_, '_> {
         };
         // Clone declaration data before minting terms through `self`.
         let variants = variants.clone();
-        let base = ResolvedPlace::spelled(
-            PlaceRoot::Binding(*binding),
-            self.is_holder(*binding),
-            Vec::new(),
-        );
         let mut placements = Vec::new();
         // [MSR-3] `ordinal within that statement` counts payload binders
         // across the whole match, not separately inside each variant. Two
@@ -8954,14 +8941,9 @@ impl Analyzer<'_, '_> {
         value: &CheckedExpression,
         state: &mut ProofFlowState,
     ) -> Vec<(u32, MeasureCarry)> {
-        let CheckedExpression::Binding { binding, .. } = value else {
+        let Some(base) = self.placement_source_place(value) else {
             return Vec::new();
         };
-        let base = ResolvedPlace::spelled(
-            PlaceRoot::Binding(*binding),
-            self.is_holder(*binding),
-            Vec::new(),
-        );
         let mut carried = Vec::new();
         // [MSR-3] the destructuring placement's source is the field the
         // binder names, which the rest marker makes a written ordinal rather
@@ -9636,14 +9618,16 @@ impl Analyzer<'_, '_> {
         });
     }
 
-    /// [EFF-5] the pairwise separations one call's substituted paths owe.
+    /// [OWN-7] the separations at this call or set commit: mandatory effect
+    /// questions and preservation questions demanded by later reference uses.
     ///
     /// The checker owns the comparison — clauses 2 and 3 need the actual
     /// argument spellings and the live reference state — and hands over the
     /// pairs whose separation is a proof rather than syntax [OWN-7]. Each
     /// pair is discharged here by the fixed [ENT-6] families under [MSR-4]'s
     /// disposition, and a discharged pair is recorded on the current edge so
-    /// that later dominated [OWN-7] questions can read it.
+    /// that later dominated [OWN-7] questions can read it. A set reaches this
+    /// judgment after RHS effects, using target captures evaluated before it.
     fn judge_call_separations(
         &mut self,
         site: &crate::NodePath,
@@ -9653,15 +9637,18 @@ impl Analyzer<'_, '_> {
             .function
             .call_separations
             .iter()
-            .filter(|separation| !self.judged_separations.contains(&separation.site))
-            .filter(|separation| separation.site.components().starts_with(site.components()))
-            .cloned()
+            .enumerate()
+            .filter(|(query, _)| !self.judged_separations.contains(query))
+            .filter(|(_, separation)| separation.site.components().starts_with(site.components()))
+            .map(|(query, separation)| (query, separation.clone()))
             .collect();
         let mut all_discharged = true;
-        for separation in pending {
-            self.judged_separations.insert(separation.site.clone());
-            let discharged = self.judge_one_separation(&separation, state);
-            all_discharged &= discharged;
+        for (query, separation) in pending {
+            self.judged_separations.insert(query);
+            let discharged = self.judge_one_separation(query, &separation, state);
+            // A preservation query is a later reference-use obligation. It
+            // does not make this event unreachable or suppress its effects.
+            all_discharged &= discharged || separation.reference_use.is_some();
         }
         all_discharged
     }
@@ -9672,6 +9659,7 @@ impl Analyzer<'_, '_> {
     /// greater than end [REF-4].
     fn judge_one_separation(
         &mut self,
+        query: usize,
         separation: &super::super::model::CheckedCallSeparation,
         state: &mut ProofFlowState,
     ) -> bool {
@@ -9707,8 +9695,13 @@ impl Analyzer<'_, '_> {
                 .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
         }
         self.obligations.push(ObligationOutcome {
-            node_path: separation.site.clone(),
-            family: if separation.exchange {
+            node_path: separation.reference_use.as_ref()
+                .map_or_else(|| separation.site.clone(), |use_site| use_site.site.clone()),
+            family: if separation.reference_use.is_some() {
+                ObligationFamily::ReferencePreservation(
+                    u32::try_from(query).expect("reference-preservation queries exceed u32"),
+                )
+            } else if separation.exchange {
                 ObligationFamily::ExchangeSeparation
             } else {
                 ObligationFamily::CallSeparation
@@ -10056,13 +10049,14 @@ impl Analyzer<'_, '_> {
             .function
             .call_separations
             .iter()
-            .filter(|separation| !self.judged_separations.contains(&separation.site))
-            .cloned()
+            .enumerate()
+            .filter(|(query, _)| !self.judged_separations.contains(query))
+            .map(|(query, separation)| (query, separation.clone()))
             .collect();
-        for separation in missing {
-            self.judged_separations.insert(separation.site.clone());
+        for (query, separation) in missing {
+            self.judged_separations.insert(query);
             let mut state = ProofFlowState::default();
-            self.judge_one_separation(&separation, &mut state);
+            self.judge_one_separation(query, &separation, &mut state);
         }
     }
 
@@ -14405,7 +14399,7 @@ impl Analyzer<'_, '_> {
             }
             _ => return CapturedValue::unknown(),
         };
-        CapturedValue::new(SUBSTITUTED_OFFSET_CAPTURE, term)
+        CapturedValue::new(CaptureId::SubstitutedOffset, term)
     }
 
     /// The [ENT-5] commit kill of one `set` target, and the goal-origin and
@@ -14502,9 +14496,11 @@ impl Analyzer<'_, '_> {
         // the place this commit writes, which is a plain place or one element
         // position of a run.
         let placement = self.mint_commit_placement(node_path, 0, target, value, state);
-        let constructed = matches!(target, CheckedSetTarget::Place(_))
-            .then(|| self.mint_construct_placements(node_path, value, state))
-            .unwrap_or_default();
+        let constructed = if self.set_target_place(target).is_some() {
+            self.mint_construct_placements(node_path, value, state)
+        } else {
+            Vec::new()
+        };
         // [SET-1]: the target's base and offset are evaluated before the
         // right-hand side; both are judged at this point, then the commit
         // kill applies.
@@ -14612,13 +14608,8 @@ impl Analyzer<'_, '_> {
         }
         if commit_reached
             && !constructed.is_empty()
-            && let CheckedSetTarget::Place(place) = target
+            && let Some(base) = self.set_target_place(target)
         {
-            let base = ResolvedPlace::spelled(
-                PlaceRoot::Binding(place.binding),
-                self.is_holder(place.binding),
-                place.fields.clone(),
-            );
             self.establish_construct_placements(node_path, &base, &constructed, &mut state.facts);
         }
         // [CALL-4] a `set` target is an S12 destination, and [CALL-6] puts
@@ -16960,7 +16951,7 @@ fn invalidate_goal_origin_for_set(state: &mut FactState, target: &CheckedSetTarg
 /// The type one slot of an indexable base holds [OP-4, WIN-1].
 fn element_type(input: CheckedType, elements: &[CheckedType]) -> Option<CheckedType> {
     match input {
-        CheckedType::Buffer { element } => Some(element.ty()),
+        CheckedType::Buffer { element } => elements.get(element.index()).copied(),
         CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
             elements.get(element.0 as usize).copied()
         }
@@ -17172,6 +17163,131 @@ mod proof_closure_tests {
             &context.close(&terms, &goals, &mut ledger),
             &closed.state
         ));
+    }
+}
+
+#[cfg(test)]
+mod indexed_goal_kill_tests {
+    use super::*;
+
+    #[test]
+    fn signed_indexed_facts_follow_offset_events_and_scope_exits() {
+        let constant_ids = HashMap::new();
+        let context = EntailmentContext {
+            callees: &[],
+            constants: &[],
+            constant_ids: &constant_ids,
+            nominals: &[],
+            elements: &[],
+            contract_queries: &[],
+            verified_postconditions: &[],
+            verified_postcondition_proofs: &[],
+            binding_names: &[],
+        };
+        let function = CheckedFunction {
+            formal_hypothesis: false,
+            id: crate::semantic::model::FunctionId(0),
+            declaration: crate::DeclarationId::from_index(0).unwrap(),
+            name: String::new(),
+            symbol: String::new(),
+            region_parameters: Vec::new(),
+            parameters: Vec::new(),
+            result_mode: CheckedMode::Own,
+            result: CheckedType::Unit,
+            declared_state_writes: Vec::new(),
+            requirements: Vec::new(),
+            postconditions: Vec::new(),
+            body: None,
+            body_disposition: Default::default(),
+            allocates: false,
+            call_separations: Vec::new(),
+            permission_separation_queries: Vec::new(),
+            entailment: FunctionEntailment::default(),
+        };
+        let mut analyzer = Analyzer::new(&context, &function);
+        let index = BindingId(1);
+        let unrelated = BindingId(2);
+        // The offset is below a preceding literal subscript: every index
+        // in a selected place contributes support, not only its first one.
+        let projections = vec![
+            GoalProjection::Subscript(CapturedValue::new(
+                CaptureId::source(0),
+                CapturedTerm::Literal(0),
+            )),
+            GoalProjection::Subscript(CapturedValue::new(
+                CaptureId::source(1),
+                CapturedTerm::Binding(index),
+            )),
+        ];
+        let goal = analyzer.goals.intern(
+            GoalExpression::Datum(GoalDatum::Place {
+                root: BindingId(0),
+                projections: projections.clone(),
+                ty: CheckedType::Bool,
+            }),
+            None,
+            None,
+            vec![GoalSupport {
+                root: BindingId(0),
+                projections,
+                measure: None,
+            }],
+        );
+        let separations = SeparationLedger::default();
+        for sign in [GoalSign::Positive, GoalSign::Negative] {
+            for binding in [index, unrelated] {
+                let source = crate::NodePath {
+                    components: Vec::new(),
+                };
+                let events = [
+                    KillEvent::Write {
+                        place: ResolvedPlace::binding(binding),
+                        element: false,
+                        source: source.clone(),
+                    },
+                    KillEvent::Consume { binding, source },
+                ];
+                for event in events {
+                    let mut facts = FactState::new();
+                    let established = analyzer.derivations.event(FlowEventKind::S1, None);
+                    facts.establish_goal(goal, sign, &mut analyzer.derivations, established);
+                    analyzer.apply_kills_one(&separations, &mut facts, &[event]);
+                    let closed = close(
+                        &facts,
+                        &analyzer.terms,
+                        &analyzer.goals,
+                        &mut analyzer.derivations,
+                    );
+                    assert_eq!(
+                        closed.derives_goal(goal, sign, &analyzer.goals),
+                        binding == unrelated,
+                        "event must remove exactly the goals that read its binding"
+                    );
+                }
+                let mut facts = FactState::new();
+                let established = analyzer.derivations.event(FlowEventKind::S1, None);
+                facts.establish_goal(goal, sign, &mut analyzer.derivations, established);
+                let exited = HashSet::from([binding]);
+                materialize_closure_before_kill(
+                    &mut facts,
+                    &analyzer.terms,
+                    &analyzer.goals,
+                    &mut analyzer.derivations,
+                );
+                facts.kill_goals(|candidate| analyzer.scope_kills_goal(candidate, &exited));
+                let closed = close(
+                    &facts,
+                    &analyzer.terms,
+                    &analyzer.goals,
+                    &mut analyzer.derivations,
+                );
+                assert_eq!(
+                    closed.derives_goal(goal, sign, &analyzer.goals),
+                    binding == unrelated,
+                    "scope exit must remove exactly the goals that read its binding"
+                );
+            }
+        }
     }
 }
 
