@@ -113,7 +113,9 @@ enum Decline {
 /// ordinary statement lowering from the value carried in its task frame.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CaptureReconstruction {
-    Direct,
+    Direct {
+        readonly_reference: bool,
+    },
     BoxSlot {
         referent: IrAddressed,
     },
@@ -301,7 +303,12 @@ impl IrBuilder<'_> {
                     }
                 }
                 Some(_) => return Err(LoweringFailure::InvalidCheckedProgram),
-                None => (stored, CaptureReconstruction::Direct),
+                None => (
+                    stored,
+                    CaptureReconstruction::Direct {
+                        readonly_reference: self.readonly_reference_parameters.contains(&stored),
+                    },
+                ),
             };
             capture_types.push(self.value_type(captured)?);
             capture_values.push(captured);
@@ -493,7 +500,12 @@ impl IrBuilder<'_> {
         {
             let value = builder.new_parameter(*ty)?;
             let value = match reconstruction {
-                CaptureReconstruction::Direct => value,
+                CaptureReconstruction::Direct { readonly_reference } => {
+                    if *readonly_reference {
+                        builder.readonly_reference_parameters.push(value);
+                    }
+                    value
+                }
                 CaptureReconstruction::BoxSlot { referent } => {
                     if referent.ty() != *ty {
                         return Err(LoweringFailure::InvalidCheckedProgram);

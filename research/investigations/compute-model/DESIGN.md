@@ -1196,3 +1196,215 @@ Runtime profile-guided compilation and online adaptation are candidate
 directions in [the research ideas](../../../docs/ideas.md#parallel-grain-policies-and-runtime-profiles),
 with the unresolved cost tracked in [TODO](../../../docs/todo.md). No profile
 collection, adaptive policy or further timing trial is implemented here.
+
+### Read-only Box-array helper work pricing
+
+The initial check at `3402048f` loses the runtime extent in a helper over
+`&Box<Array<u64>>`: a native observer sees an outer iteration price of 123 at
+input lengths 0, 1, 17, 4,096 and 65,536. An equivalent range helper retains
+prices 10, 15, 95, 20,490 and 327,690, respectively. Both forms return the
+independently checked result `14 * length`. Their per-element lowering costs
+differ, so equal prices are not the criterion; retaining the helper's extent
+is. This is a current representation-dependent summary gap, separate from the
+historical grain-policy trial and its continuation-accounting correction.
+
+The repair follows only the checked direct Box-to-runtime-Array
+projection. Lowering copies the existing checked absence of writes to an
+original reference formal's root. An exact direct chunk capture retains that
+fact; rebinding and reconstructed owned captures do not. Work estimation can
+then carry a typed Box-array length observation, and the emitter uses the
+ordinary Box/header projection. The source call establishes the original
+referent's validity. The originating typed length read supplies an exhibited
+read effect even in a zero-trip body under EFF-2, and EFF-5 separates it from
+reference writes and by-value consumption throughout the call. The no-write
+marker alone does not establish the lifetime of an unused formal. A reference
+type alone does not establish this lifetime: capture-all can retain an already
+consumed owner, and pricing must not dereference it. The accepted extension
+is recorded in the [parallel-lowering decision](../../../design/compiler/parallel-lowering.md).
+
+The focused native regression requires increasing prices for original Box,
+range and shared read-only alias helpers, unchanged static estimates for
+mutable formals, rebound values, local owners and an unrelated `Box<u64>`, and
+correct complete results at zero and nonzero inner lengths and outer trip
+counts. The existing EFF-5 substituted read/write-alias rejection covers the
+checker fact used by lowering. Existing total-estimate and post-loop
+continuation-accounting regressions remain protected. Compare emitted modules
+for prefix, histogram, BFS and the five formal performance kernels on identical
+source; any changed module needs explanation before extending this narrow
+comparison to an affected workload.
+
+Before timing the candidate, the performance witness and criterion are fixed:
+a batch of 512 independently seeded sequential hashes over 16,384 words,
+called through a read-only Box-array helper, with every result and the unchanged
+input checked against a separate C calculation. The intended primary W4 result
+is actual useful steals where the baseline has none, at least ten percent lower
+median paired wall time and a faster candidate in at least four of five pairs.
+Report process CPU separately and investigate an increase over fifteen percent.
+Protect W1's sequential entry and a 17-word, two-result case without applying a
+percentage verdict to the latter's sub-microsecond work; W2 and W8 provide
+bounded scaling context. Five rotated passes use one checked warmup and five
+warm calls per process, alternating arm order. Fixture construction, oracle
+work, checking and release remain outside the interval. An identical-image
+control precedes the compiler comparison. Apply the maintained comparison's
+three-percent, two-width noise screen at W1/W2/W4 to this control in either
+direction: two widths consistently favoring one arm in four of five pairs
+make timing inconclusive. The tiny case and W8 remain observations. This
+comparison selects no scheduler constant or new grain policy. The cell order
+is primary W1/W2/W4/W8, then tiny W1/W4, rotated left by the pass number minus
+one. Odd passes run baseline then candidate; even passes reverse those arms.
+Reduce each process's five warm calls to medians, then report the median of
+the five paired candidate/baseline ratios.
+
+The native witness on `3402048f` with the repair observes Box-helper prices
+11, 18, 130, 28,683 and 458,763 at the same five lengths, with unchanged
+range-helper prices and independently correct results. A strict increasing-price
+assertion now makes the probe fail if only the output is correct. The retained
+summary is `7 * length + 5`; the outer iteration's own instructions produce
+`7 * length + 11`. The generic `ContainerMeasure(Length)` operation and the
+buffer-specific measure both feed the typed Array-length observation. Reading
+only the older buffer-specific operation misses the current helper path.
+The same two-arm witness passes with independently built `6fdb6768` baseline
+and `cabae235` candidate compilers: baseline Box prices remain 123 and candidate
+prices grow as above. The exact source and native oracle of the maintained
+seven-arm regression also pass in a separate 1.14-second preflight. At lengths
+0, 1, 17 and 4,096, mutable, rebound and local-owner estimates stay 123, the
+unrelated `Box<u64>` estimate stays 91, and the shared read-only alias estimate
+grows from 19 to 57,363. Complete output checks and zero-trip outer calls pass.
+
+The new EFF-5 conformance pair retains a header read inside a zero-trip body
+and passes a sibling affine field by value at the same call. Both baseline
+and candidate reject the same-owner case, comparing the referenced field with
+consumption of the complete owner root, and accept the unrelated-owner
+control. This tests the existing EFF-2/OWN-1/EFF-5 safety premise without
+changing a source rule. The four source checks take 0.21 seconds together.
+After integrating main `c6cd9add`, candidate `7895c9d0` passes the five focused
+Rust tests: the seven-arm native regression, total estimates for empty and
+inverted ranges, post-loop continuation accounting, helper-summary lowering
+and the existing EFF-5 alias rejection. Test-image construction took 82.81 s;
+the three native builds within the selected tests took 0.925, 0.791 and
+0.827 s. The conformance pair also passes directly with the current candidate.
+
+#### Matched helper result, 2026-09-22 UTC
+
+The retained [WF source](../../experiments/compute-bench/array_reference.wf),
+[C oracle](../../experiments/compute-bench/array_reference_bench.c) and
+[ordinary ABI adapter](../../experiments/compute-bench/array_reference_host.ll)
+have an explicit manual build target in the existing compute-bench Makefile.
+Their [raw rows](../../experiments/compute-bench/array-reference-work-2026-09-22.tsv)
+retain the identical-image control, matched comparison and separately labelled
+tiny-call resolution diagnostic, including warmups. They are research evidence,
+with no daily correctness dependency.
+
+The host is MacBookPro18,3 with eight physical/logical CPUs in performance
+levels of six and two cores, Apple clang 21.0.0 and Rust 1.98.1. The baseline
+compiler is an independently built `6fdb6768` image, SHA-256
+`d6ba9286f877df7e2a2d9e7d751d415871b2d2d992d558a2d9e37ad14e3a32c5`.
+The candidate used for this comparison is `7895c9d0`, SHA-256
+`90711761755287a55b2859c46d03772a862ca0d212287a584992c25c4ef4a563`.
+Its experiment module is byte-identical to the independently built `cabae235`
+candidate from the earlier main revision. Full emitted modules for prefix,
+histogram, BFS, Mandelbrot, records, FIR, quadrature and stencil are identical
+across all three compilers, as is the sequential experiment module. Runtime
+sources and the formal host adapter are unchanged. No metadata was stripped.
+Thus the older baseline remains a matched code comparison after the main
+integration; it is not presented as a newly built current-main compiler.
+
+After integrating main `f3cf41d4`, the built `e100682d` compiler, SHA-256
+`8a11c347fb84d1f6ae323e605f8ab9c7301d1add7e913e5b2ab943186747b395`,
+passes exact correspondence with the retained `7895c9d0` output. All ten
+complete LLVM modules are byte-identical: the eight protected parallel kernels
+listed above, plus the hash experiment's parallel and sequential modules.
+No normalization or metadata removal was used. Runtime sources, WF fixtures
+and the formal host adapter are unchanged. The guarded emission-and-comparison
+stage passed in 1.07 s, with 1.04 s reported for the command itself; it reused
+the existing compiler and performed source emission and byte checks only.
+This extends the dated evidence's applicability to `e100682d` while preserving
+the recorded timing revisions, image hashes and results.
+
+The only parallel module changes are the split-site header length load and
+saturating work arithmetic, plus the two required intrinsic declarations.
+The old price is 154; the new price is `9 * length + 10`, or 147,466 at the
+primary length. Hash bodies and chunk bodies are unchanged. Native images
+use the ordinary `-std=c11 -pthread -O2 -Wno-override-module` flags and runtime,
+without LTO or extra scheduling instrumentation. Their SHA-256 identities are
+`0cec62229866b74b440de7633a19d1c35b4a2c3db5890d2fe4344aa01030454f`
+(baseline) and
+`ca604f608f6bef8a8da5b10d6fcfd4e5ea1916da603123956aa7e69f899a309e`
+(candidate). Whole-output and unchanged-input checks pass at W1/W4 for both
+primary and tiny fixtures. Native construction took 1.25 s and the oracle
+preflight took 1.04 s; the fixed null and matched timing stages took 2.09 s and
+2.80 s respectively.
+
+The identical-image primary wall ratios at W1/W2/W4 are
+0.9946/1.0006/1.0039, passing the prospective noise screen. Matched results:
+
+| Workers | Baseline wall, ms | Candidate wall, ms | Paired wall ratio | Paired CPU ratio | Faster pairs | Median steals, baseline/candidate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 10.618 | 10.541 | 0.9926 | 0.9911 | 4/5 | 0/0 |
+| 2 | 10.486 | 5.403 | 0.5159 | 1.0239 | 5/5 | 0/1 |
+| 4 | 10.494 | 2.821 | 0.2698 | 1.0522 | 5/5 | 0/5 |
+| 8 | 10.499 | 1.742 | 0.1659 | 1.1921 | 5/5 | 0/31 |
+
+The preselected W4 criterion passes: 73.0 percent lower paired wall time,
+five of five faster pairs and actual useful steals, with 5.2 percent more
+process CPU. W1 selects the identical sequential world and has no offers.
+The tiny W1/W4 fixture also has no offers, but its single-call wall readings
+quantize to 0 or 1,000 ns and cannot establish an absolute overhead bound;
+no tiny ratio is interpreted. The post-hoc resolution diagnostic below retains
+these original images and rows.
+
+W8's 19.2 percent CPU increase is a real tradeoff in this comparison. Its
+per-pair CPU ratios range from 1.150 to 1.227. The unchanged policy allows
+64 leaves at W4 and 128 at W8 for this price; median actual steals rise from
+five to 31, and W8 uses the host's two performance levels. Additional
+scheduling and slower-core execution are plausible contributors, but this
+experiment does not isolate their shares. W8 buys a further roughly
+38 percent wall reduction relative to the W4 candidate. Record that cost and
+uncertainty without selecting a new grain, queue or worker-width policy.
+The bounded pricing repair meets its primary criterion; full gate and
+independent completion review remain pending.
+
+#### Tiny-call resolution diagnostic
+
+Before this separate diagnostic ran, its scope was fixed at 4,096 calls of
+the unchanged 17-word, two-result WF case per interval, at the protected W1
+and W4 widths only. It addresses the unresolved possibility of more than
+one microsecond added cost per call, using absolute differences and an
+identical-image control rather than a percentage verdict. Each process
+contains one warmup interval and five measured intervals. Five paired passes
+alternate arm order; odd passes use widths W1 then W4 and baseline then
+candidate, while even passes reverse both. The null comparison runs the
+candidate image under both arm labels before the matched comparison. No
+fixture, work-size, worker-width or policy search follows the observation.
+
+The manual target's `ARRAY_REFERENCE_REPEATS=4096` changes only the C host's
+number of calls inside an interval. The same allocations, inputs, WF code,
+whole-output and unchanged-input checks surround each interval. Both emitted
+WF modules compare byte-for-byte with the corresponding primary modules;
+all calls remain externally linked without LTO or floating-point changes.
+The diagnostic image SHA-256 identities are
+`6ace664888bf39971a28d96a8a3f03f33a57bab9cdc6ed300c4ed616fcc997ff`
+(baseline) and
+`c6db980e863a7bb92fb7bd8702ea86f8df15444ecbb4979c525c164d32f2ddc0`
+(candidate). Original primary image hashes are unchanged. The retained raw
+rows are labelled `batched-null-4096` and `batched-matched-4096`; their wall and
+CPU columns contain interval totals, divided by 4,096 before the same
+within-process median reduction. All output and input checks pass, with zero
+actual steals throughout. Image construction took 1.25 s, null execution
+0.63 s and matched execution 0.41 s.
+
+The largest absolute null paired wall difference is 4.151 ns per call. The
+largest matched candidate increase is 5.616 ns per call; even adding the
+observed null variation gives less than 0.01 microseconds, well below the
+one-microsecond question. Median paired wall differences are 0 ns at W1 and
++0.244 ns at W4. One W1 baseline pair is much slower and yields a -31.494 ns
+candidate difference; it remains in the raw data and is not treated as a
+speedup. These are observed differences on this host, not a universal cost
+bound or a percentage improvement claim.
+
+CPU resolution is separate: the recorded 1,000 ns interval quantum becomes
+0.244 ns per call. The largest null paired CPU difference is 2.930 ns per
+call and the largest matched candidate increase is 5.372 ns per call; median
+paired CPU differences are 0 ns at W1 and +0.488 ns at W4. The diagnostic
+resolves the original tiny-call protection question without replacing the
+primary experiment or its clock-unresolved individual-call rows.

@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::{
-    IrConstant, IrFunction, IrInstruction, IrIntegerOperation, IrOperation, IrSynthesis,
-    IrTerminator, IrType, IrValueId, IrWorkEstimate as Work,
+    IrAddressed, IrConstant, IrFunction, IrInstruction, IrIntegerOperation, IrOperation,
+    IrSynthesis, IrTerminator, IrType, IrValueId, IrWorkEstimate as Work,
 };
 
 use super::split::{LOOP_FACTOR, loop_depths};
@@ -107,6 +107,7 @@ fn quotient(value: Work, divisor: u64) -> Work {
 enum Observation {
     Scalar,
     Length,
+    BoxArrayLength,
 }
 
 impl Observation {
@@ -114,6 +115,7 @@ impl Observation {
         match self {
             Self::Scalar => Work::Value(value),
             Self::Length => Work::Length(value),
+            Self::BoxArrayLength => Work::BoxArrayLength(value),
         }
     }
 }
@@ -227,6 +229,19 @@ impl<'ir> Environment<'ir> {
             (Observation::Scalar, Some(IrOperation::BufferMeasure { buffer })) => {
                 self.observe(Observation::Length, *buffer, active)
             }
+            (
+                Observation::Scalar,
+                Some(IrOperation::ContainerMeasure {
+                    measure: crate::IrMeasure::Length,
+                    container,
+                }),
+            ) if matches!(
+                self.function.value_type(*container),
+                Some(IrType::Address(IrAddressed::Buffer { .. }))
+            ) =>
+            {
+                self.observe(Observation::Length, *container, active)
+            }
             (Observation::Length, Some(IrOperation::SliceRange { start, end, .. })) => {
                 let end = self.observe(Observation::Scalar, *end, active);
                 let start = self.observe(Observation::Scalar, *start, active);
@@ -243,6 +258,19 @@ impl<'ir> Environment<'ir> {
             }
             (Observation::Length, Some(IrOperation::Load { address, .. })) => {
                 self.observe(kind, *address, active)
+            }
+            (
+                Observation::Length,
+                Some(IrOperation::ProjectAddress {
+                    address,
+                    projection: crate::IrPlaceStep::BoxReferent { .. },
+                }),
+            ) if matches!(
+                self.function.value_type(value),
+                Some(IrType::Address(IrAddressed::Buffer { .. }))
+            ) =>
+            {
+                self.observe(Observation::BoxArrayLength, *address, active)
             }
             (_, None) => {
                 let Some(incoming) = self.incoming.get(&value).cloned() else {
@@ -286,6 +314,9 @@ impl<'ir> Environment<'ir> {
             Work::Length(value) => self.function.parameters().iter().any(|(parameter, ty)| {
                 parameter == value && matches!(ty, IrType::Buffer { .. } | IrType::Range { .. })
             }),
+            Work::BoxArrayLength(value) => {
+                self.function.readonly_reference_parameters.contains(value)
+            }
             Work::Sum(parts) => parts.iter().all(|part| self.available(part)),
             Work::Product(left, right) | Work::Difference(left, right) => {
                 self.available(left) && self.available(right)
@@ -311,6 +342,9 @@ impl<'ir> Environment<'ir> {
             Work::Length(value) => actual(*value).map_or(Work::Constant(0), |value| {
                 self.observe(Observation::Length, value, &mut Vec::new())
             }),
+            Work::BoxArrayLength(value) => actual(*value).map_or(Work::Constant(0), |value| {
+                self.observe(Observation::BoxArrayLength, value, &mut Vec::new())
+            }),
             Work::Sum(parts) => sum(parts
                 .iter()
                 .map(|part| self.instantiate(part, callee, arguments))),
@@ -335,6 +369,7 @@ fn is_active_leaf(work: &Work, active: &[(Observation, IrValueId)]) -> bool {
     match work {
         Work::Value(value) => active.contains(&(Observation::Scalar, *value)),
         Work::Length(value) => active.contains(&(Observation::Length, *value)),
+        Work::BoxArrayLength(value) => active.contains(&(Observation::BoxArrayLength, *value)),
         _ => false,
     }
 }
@@ -606,6 +641,7 @@ fn bind_site(work: &Work, function: &IrFunction, arguments: &[IrValueId]) -> Wor
         Work::Constant(value) => Work::Constant(*value),
         Work::Value(value) => Work::Value(actual(*value)),
         Work::Length(value) => Work::Length(actual(*value)),
+        Work::BoxArrayLength(value) => Work::BoxArrayLength(actual(*value)),
         Work::Sum(parts) => sum(parts
             .iter()
             .map(|part| bind_site(part, function, arguments))),

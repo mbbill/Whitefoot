@@ -395,6 +395,14 @@ fn lower_function<'program>(
     for parameter in &function.parameters {
         let ty = lower_parameter_type(context.erasure, parameter, context.nominals)?;
         let value = builder.new_parameter(ty)?;
+        if parameter.mode == CheckedMode::Reference
+            && !function
+                .declared_state_writes
+                .iter()
+                .any(|path| path.root == parameter.declaration)
+        {
+            builder.readonly_reference_parameters.push(value);
+        }
         if builder.bindings.insert(parameter.binding, value).is_some() {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
@@ -568,6 +576,7 @@ struct IrBuilder<'program> {
     constants: &'program [IrGlobalConstant],
     bindings: HashMap<BindingId, IrValueId>,
     parameters: Vec<(IrValueId, IrType)>,
+    readonly_reference_parameters: Vec<IrValueId>,
     source_calls: Vec<IrSourceCall>,
     values: Vec<IrType>,
     blocks: Vec<BuildingBlock>,
@@ -643,6 +652,7 @@ impl<'program> IrBuilder<'program> {
             constants,
             bindings: HashMap::new(),
             parameters: Vec::new(),
+            readonly_reference_parameters: Vec::new(),
             source_calls: Vec::new(),
             values: Vec::new(),
             blocks: Vec::new(),
@@ -710,6 +720,7 @@ impl<'program> IrBuilder<'program> {
         Ok(IrFunction {
             name,
             parameters: self.parameters,
+            readonly_reference_parameters: self.readonly_reference_parameters,
             source_signature: None,
             source_calls: self.source_calls,
             result: self.result,
