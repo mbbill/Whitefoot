@@ -9,10 +9,8 @@ fn unchanged(rows: &Slots<Slots<u8, 4>, 2>, index: own u64) -> result: own u8 re
     }
   }
   if deref(rows)[index].len == 0_u64 {
-  } else {
-    if deref(rows)[index].len == 0_u64 {
-      return deref(rows)[index][0_u64];
-    }
+  } else if deref(rows)[index].len == 0_u64 {
+    return deref(rows)[index][0_u64];
   }
   return 0_u8;
 }

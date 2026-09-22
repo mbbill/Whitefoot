@@ -80,7 +80,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         visited: &mut HashSet<NominalId>,
     ) -> Result<bool, CheckStop> {
         match ty {
-            CheckedType::Buffer { element } => self.loan_bearing_with(self.element_type(element)?, visited),
+            CheckedType::Buffer { element } => {
+                self.loan_bearing_with(self.element_type(element)?, visited)
+            }
             CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 self.loan_bearing_with(self.element_type(element)?, visited)
             }

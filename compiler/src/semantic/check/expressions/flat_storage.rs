@@ -665,7 +665,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        self.check_storage_read(node, place, bindings, options)
+        self.check_storage_read(node, node, place, bindings, options)
     }
 
     /// Recomputes the OP-9 ceiling after a generic GoalTemplate's element
@@ -925,6 +925,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn check_storage_read(
         &self,
         node: NodeId,
+        source_place: NodeId,
         place: CheckedContainerPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         options: PlaceUseOptions,
@@ -950,7 +951,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if options.explicit_move && !copy && !read_out {
             return self.issue_node(
                 SemanticRule::Win3,
-                node,
+                source_place,
                 SemanticIssueKind::MoveOutOfSlot {
                     mechanical_fix: WIN3_NO_SLOT_MOVE,
                 },
@@ -1072,7 +1073,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 function,
                 options.loop_depth,
             )?;
-            return self.check_storage_read(use_node, container, bindings, options);
+            return self.check_storage_read(use_node, place, container, bindings, options);
         }
         let element_type = indexed.element_type(self)?;
         let (range_path, selected_type, carried) =
@@ -1124,7 +1125,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // instead.
                 return self.issue_node(
                     SemanticRule::Win3,
-                    use_node,
+                    place,
                     SemanticIssueKind::MoveOutOfSlot {
                         mechanical_fix: WIN3_NO_SLOT_MOVE,
                     },
@@ -1441,6 +1442,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         element_type: array.element_type,
                         length: array.length,
                         offset: offset.expression,
+                        captured: offset_place,
                         obligation,
                         target_domain: CheckedTargetDomainObligation::ElementAddress,
                     })),
@@ -1458,6 +1460,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     CheckedSetTarget::BufferIndex(Box::new(CheckedBufferSetTarget {
                         root: buffer.root,
                         offset: offset.expression,
+                        captured: offset_place,
                         obligation,
                         target_domain: CheckedTargetDomainObligation::ElementAddress,
                     })),

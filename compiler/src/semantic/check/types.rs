@@ -10,9 +10,8 @@ use crate::{
 
 use super::super::model::{
     CheckedConst, CheckedConstant, CheckedConstantId, CheckedEffectStep, CheckedElement,
-    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedStatePath,
-    CheckedType, CheckedValue, ConstOperation, FloatType, IntegerType, WindowShape,
-    evaluate_const_operation,
+    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedStatePath, CheckedType, CheckedValue,
+    ConstOperation, FloatType, IntegerType, WindowShape, evaluate_const_operation,
 };
 use super::super::places::WindowPart;
 use super::floats::parse_float_literal;
@@ -1597,11 +1596,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     pub(super) fn is_flat_element(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(match ty {
-            CheckedType::Unit | CheckedType::Bool | CheckedType::Integer(_)
-            | CheckedType::Float(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => true,
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_) => true,
             CheckedType::Nominal(id) => self.nominal(id)?.is_tag_only_enum(),
-            CheckedType::Generic(_) | CheckedType::Array { .. }
-            | CheckedType::Buffer { .. } | CheckedType::Window { .. } => false,
+            CheckedType::Generic(_)
+            | CheckedType::Array { .. }
+            | CheckedType::Buffer { .. }
+            | CheckedType::Window { .. } => false,
         })
     }
 

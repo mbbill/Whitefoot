@@ -784,9 +784,7 @@ mod tests {
             },
             SourceBundleError::ArithmeticOverflow,
             SourceBundleError::LogicalPath(LogicalPathError::LengthOverflow),
-            SourceBundleError::LogicalPath(LogicalPathError::StorageUnavailable {
-                requested: 7,
-            }),
+            SourceBundleError::LogicalPath(LogicalPathError::StorageUnavailable { requested: 7 }),
         ] {
             let detail = format!("{error:?}");
             let failure = super::CompilationFailure::source_envelope(error);

@@ -1408,8 +1408,7 @@ fn boxed_runtime_ring_wraps_and_releases_each_owner_in_order() {
     let output = compile_link_and_run(&observed, Some(&allocation_observer(5, 0)), &[]);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert_eq!(
-        output.stdout,
-        b"A1;A2;A3;A4;F2;A5;F3;F4;F5;F1;",
+        output.stdout, b"A1;A2;A3;A4;F2;A5;F3;F4;F5;F1;",
         "{output:?}"
     );
     assert!(output.stderr.is_empty(), "{output:?}");
@@ -1820,8 +1819,7 @@ fn main() -> status: own ExitStatus pure {{
             let observed = retain_calls(&module)
                 .replace("@malloc(", "@wf_test_allocate(")
                 .replace("@free(", "@wf_test_release(");
-            let output =
-                compile_link_and_run(&observed, Some(&u64_allocation_observer(2)), &[]);
+            let output = compile_link_and_run(&observed, Some(&u64_allocation_observer(2)), &[]);
             assert_eq!(output.status.code(), Some(0), "{statement}: {output:?}");
             let records = std::str::from_utf8(&output.stdout)
                 .expect("observer emits ASCII")

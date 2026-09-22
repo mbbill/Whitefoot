@@ -194,6 +194,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 {
                     return self.check_box_unbox(
                         use_node,
+                        node,
                         place.declaration,
                         place.ty,
                         &place.resolved.identity.path,
@@ -282,6 +283,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn check_box_unbox(
         &self,
         use_node: NodeId,
+        place_node: NodeId,
         declaration: DeclarationId,
         referent: CheckedType,
         resolved_path: &[PlaceStep],
@@ -315,7 +317,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     if let Some(obligation) = self.linear_release_obligation(ty)? {
                         return self.issue_node(
                             SemanticRule::Prov6,
-                            use_node,
+                            place_node,
                             SemanticIssueKind::LinearValuePartiallyConsumed {
                                 obligation,
                                 residual: self.checked_type_name(ty)?,

@@ -6,9 +6,9 @@
 //! judgment.
 
 use crate::semantic::{
-    CheckedBooleanOperation, CheckedElement, CheckedEnumType,
-    CheckedFloatOperation, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
-    CheckedNumericType, CheckedProgram, CheckedTargetDomainObligation, CheckedType,
+    CheckedBooleanOperation, CheckedElement, CheckedEnumType, CheckedFloatOperation,
+    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedNumericType,
+    CheckedProgram, CheckedTargetDomainObligation, CheckedType,
 };
 
 mod physical_types;

@@ -37,10 +37,10 @@ use super::goal::{
 };
 use super::model::{
     BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
-    CheckedFunction, CheckedGenericRequirement, CheckedMode, CheckedNominal,
-    CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedStatement,
-    CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId,
-    ValueInitializerKind, evaluate_const_operation,
+    CheckedFunction, CheckedGenericRequirement, CheckedMode, CheckedNominal, CheckedNominalKind,
+    CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedStatement, CheckedType,
+    CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId, ValueInitializerKind,
+    evaluate_const_operation,
 };
 use super::permission::{PermissionSignature, analyze_permission, plan_permission_separations};
 use super::permission_ledger::{LedgerSource, render_ledger};
@@ -3235,7 +3235,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::RangeFormation => SemanticRule::Ref4,
                         super::entailment::ObligationFamily::CallSeparation => SemanticRule::Eff5,
-                        super::entailment::ObligationFamily::ReferencePreservation(_) => SemanticRule::Ref2,
+                        super::entailment::ObligationFamily::ReferencePreservation(_) => {
+                            SemanticRule::Ref2
+                        }
                         super::entailment::ObligationFamily::ExchangeSeparation => {
                             SemanticRule::Op11
                         }
@@ -3568,7 +3570,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             }
                         }
                         super::entailment::ObligationFamily::ReferencePreservation(query) => {
-                            let use_site = function.call_separations
+                            let use_site = function
+                                .call_separations
                                 .get(query as usize)
                                 .and_then(|query| query.reference_use.as_ref())
                                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;

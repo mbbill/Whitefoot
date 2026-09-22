@@ -12,8 +12,8 @@ use crate::{
 
 use super::super::goal::{CheckedRequirement, GoalDatum, GoalExpression, GoalOperation};
 use super::super::model::{
-    CheckedConst, CheckedElement, CheckedGenericRequirement,
-    CheckedNominalKind, CheckedType, CheckedValue, IntegerType, NominalId,
+    CheckedConst, CheckedElement, CheckedGenericRequirement, CheckedNominalKind, CheckedType,
+    CheckedValue, IntegerType, NominalId,
 };
 use super::{CheckStop, Checker, FunctionSignature, FunctionTemplate, PreludeType};
 
@@ -1572,12 +1572,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 StableCheckedType::Array { element, length }
             }
             CheckedType::Buffer { element } => {
-                let Some(element) = self.stabilize_element(
-                    element,
-                    nominal_checkpoint,
-                    visiting,
-                    allow_symbolic,
-                )?
+                let Some(element) =
+                    self.stabilize_element(element, nominal_checkpoint, visiting, allow_symbolic)?
                 else {
                     return Ok(None);
                 };
@@ -2373,9 +2369,7 @@ impl Checker<'_, '_, '_, '_> {
     ) -> Result<(), CheckStop> {
         match ty {
             CheckedType::Nominal(id) => output.push(id),
-            CheckedType::Buffer { element } => {
-                self.collect_element_nominals(element, output)?
-            }
+            CheckedType::Buffer { element } => self.collect_element_nominals(element, output)?,
             CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 self.collect_element_nominals(element, output)?;
             }

@@ -251,16 +251,6 @@ struct AffineFlowState {
     published_invariants: HashMap<crate::DeclarationId, AffineInequality>,
 }
 
-/// The capture identity [EFF-5] substitution gives every index and range
-/// position of one call.
-///
-/// [REF-1] names a captured value by the occurrence it was evaluated at, and
-/// a substituted row position has no `psuffix` of its own to be named by. It
-/// sits outside the node-derived identities [`CapturedValue`] mints and
-/// outside the unknown offset, so no substituted position is ever taken for a
-/// place's own written subscript or for an offset this version cannot name.
-const SUBSTITUTED_OFFSET_CAPTURE: CaptureId = CaptureId::SubstitutedOffset;
-
 /// The affine images of one range formation's two captured endpoints
 /// [REF-4], with the node the formation stands at.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1425,7 +1415,8 @@ struct Analyzer<'check, 'unit> {
     function: &'check CheckedFunction,
     /// [REF-1] place resolution for this function.
     places: PlaceMap,
-    /// The [EFF-5] pairs already judged, by the call they were recorded at.
+    /// The effect and demanded reference-preservation questions already
+    /// judged, distinguished by query even when they share a write event.
     judged_separations: HashSet<usize>,
     /// Optional [PAR-1] range questions. Each one is evaluated only at its
     /// first statement's entry and meets every visit with logical AND.
@@ -7094,10 +7085,10 @@ impl Analyzer<'_, '_> {
     }
 
     fn obligations_since_discharged(&self, obligation_start: usize) -> bool {
-        self.obligations[obligation_start..]
-            .iter()
-            .all(|outcome| outcome.discharged
-                || matches!(outcome.family, ObligationFamily::ReferencePreservation(_)))
+        self.obligations[obligation_start..].iter().all(|outcome| {
+            outcome.discharged
+                || matches!(outcome.family, ObligationFamily::ReferencePreservation(_))
+        })
     }
 
     fn judge_expression(
@@ -7168,10 +7159,9 @@ impl Analyzer<'_, '_> {
                 }
                 let actual_parents = self.obligations[obligation_start..]
                     .iter()
-                    .filter(|outcome| !matches!(
-                        outcome.family,
-                        ObligationFamily::ReferencePreservation(_)
-                    ))
+                    .filter(|outcome| {
+                        !matches!(outcome.family, ObligationFamily::ReferencePreservation(_))
+                    })
                     .map(|outcome| outcome.discharged.then_some(outcome.derivation).flatten())
                     .collect::<Option<Vec<_>>>();
                 let mut goal_parents = Vec::with_capacity(requirements.len());
@@ -9651,14 +9641,16 @@ impl Analyzer<'_, '_> {
         });
     }
 
-    /// [EFF-5] the pairwise separations one call's substituted paths owe.
+    /// [OWN-7] the separations at this call or set commit: mandatory effect
+    /// questions and preservation questions demanded by later reference uses.
     ///
     /// The checker owns the comparison — clauses 2 and 3 need the actual
     /// argument spellings and the live reference state — and hands over the
     /// pairs whose separation is a proof rather than syntax [OWN-7]. Each
     /// pair is discharged here by the fixed [ENT-6] families under [MSR-4]'s
     /// disposition, and a discharged pair is recorded on the current edge so
-    /// that later dominated [OWN-7] questions can read it.
+    /// that later dominated [OWN-7] questions can read it. A set reaches this
+    /// judgment after RHS effects, using target captures evaluated before it.
     fn judge_call_separations(
         &mut self,
         site: &crate::NodePath,
@@ -9678,7 +9670,7 @@ impl Analyzer<'_, '_> {
             self.judged_separations.insert(query);
             let discharged = self.judge_one_separation(query, &separation, state);
             // A preservation query is a later reference-use obligation. It
-            // does not make this call unreachable or suppress its effects.
+            // does not make this event unreachable or suppress its effects.
             all_discharged &= discharged || separation.reference_use.is_some();
         }
         all_discharged
@@ -11414,6 +11406,7 @@ impl Analyzer<'_, '_> {
                     self.judge_children_reach_parent(std::iter::once(&target.offset), states);
                 let obligation_start = self.obligations.len();
                 if reaches_target {
+                    self.establish_index_capture(target.captured, &target.offset, states);
                     let base = ResolvedPlace::spelled(
                         PlaceRoot::Binding(target.binding),
                         self.is_holder(target.binding),
@@ -11435,6 +11428,7 @@ impl Analyzer<'_, '_> {
                     self.judge_children_reach_parent(std::iter::once(&target.offset), states);
                 let obligation_start = self.obligations.len();
                 if reaches_target {
+                    self.establish_index_capture(target.captured, &target.offset, states);
                     let base =
                         ResolvedPlace::from_path(target.root.binding, target.root.place_path());
                     self.judge_obligation(
@@ -14415,24 +14409,6 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// A value-determined set offset keeps its exact slot through RHS
-    /// evaluation. Other offsets need the captured target value, not a
-    /// reread of a binding the RHS may have changed, and remain unknown here.
-    fn commit_index(offset: &CheckedExpression) -> CapturedValue {
-        let term = match offset {
-            CheckedExpression::Constant(CheckedValue::Integer { bits, .. })
-            | CheckedExpression::NamedConstant {
-                value: CheckedValue::Integer { bits, .. },
-                ..
-            } => CapturedTerm::Literal(*bits),
-            CheckedExpression::Constant(CheckedValue::ConstGeneric { declaration, .. }) => {
-                CapturedTerm::Const(*declaration)
-            }
-            _ => return CapturedValue::unknown(),
-        };
-        CapturedValue::new(SUBSTITUTED_OFFSET_CAPTURE, term)
-    }
-
     /// The [ENT-5] commit kill of one `set` target, and the goal-origin and
     /// outcome state a whole-place commit invalidates. One target list's
     /// commits are exactly this event per target, on the same edge.
@@ -14467,10 +14443,7 @@ impl Analyzer<'_, '_> {
                     target.fields.clone(),
                 );
                 target_kills.push(KillEvent::Write {
-                    place: element_write_place(
-                        self.resolve(&spelled),
-                        Self::commit_index(&target.offset),
-                    ),
+                    place: element_write_place(self.resolve(&spelled), target.captured),
                     element: true,
                     source: node_path.clone(),
                 });
@@ -14479,10 +14452,7 @@ impl Analyzer<'_, '_> {
                 let spelled =
                     ResolvedPlace::from_path(target.root.binding, target.root.place_path());
                 target_kills.push(KillEvent::Write {
-                    place: element_write_place(
-                        self.resolve(&spelled),
-                        Self::commit_index(&target.offset),
-                    ),
+                    place: element_write_place(self.resolve(&spelled), target.captured),
                     element: true,
                     source: node_path.clone(),
                 });
@@ -16229,10 +16199,7 @@ impl Analyzer<'_, '_> {
                     target.fields.clone(),
                 );
                 events.push(KillEvent::Write {
-                    place: element_write_place(
-                        self.resolve(&spelled),
-                        Self::commit_index(&target.offset),
-                    ),
+                    place: element_write_place(self.resolve(&spelled), target.captured),
                     element: true,
                     source: node_path.clone(),
                 });
@@ -16241,10 +16208,7 @@ impl Analyzer<'_, '_> {
                 let spelled =
                     ResolvedPlace::from_path(target.root.binding, target.root.place_path());
                 events.push(KillEvent::Write {
-                    place: element_write_place(
-                        self.resolve(&spelled),
-                        Self::commit_index(&target.offset),
-                    ),
+                    place: element_write_place(self.resolve(&spelled), target.captured),
                     element: true,
                     source: node_path.clone(),
                 });

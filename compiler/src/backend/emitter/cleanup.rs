@@ -58,9 +58,8 @@ pub(super) fn emit_resource_drop_helpers(
 /// read. The physical slot of logical offset `i` is `(head + i) mod cap`,
 /// which is the one conditional subtract a subscript already emits.
 ///
-/// This helper visits elements only. Its caller releases a general store's
-/// backing after the walk; a frame-resident run has no backing action, and an
-/// extent-backed run's storage is reclaimed by its region reset [BLK-2].
+/// This helper visits elements only. A Box owner releases its allocation after
+/// the walk; an inline array or window has no separate backing action.
 fn emit_run_drop_helper(
     program: &IrProgram<'_, '_, '_>,
     output: &mut String,
@@ -72,7 +71,10 @@ fn emit_run_drop_helper(
     // A runtime-capacity block is reached only through the `Box` that owns
     // it [TYPE-9], so its helper takes the block pointer; every other run is
     // a value and its helper takes that value.
-    let parameter = if matches!(ty, IrType::Window { capacity: None, .. } | IrType::Buffer { .. }) {
+    let parameter = if matches!(
+        ty,
+        IrType::Window { capacity: None, .. } | IrType::Buffer { .. }
+    ) {
         "ptr".to_owned()
     } else {
         run_llvm.clone()
@@ -175,7 +177,10 @@ fn emit_run_drop_helper(
 fn cleanup_run_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, BackendFailure> {
     let mut needed = Vec::new();
     for ty in program_types(program)? {
-        let (IrType::Array { element, .. } | IrType::Window { element, .. } | IrType::Buffer { element }) = ty else {
+        let (IrType::Array { element, .. }
+        | IrType::Window { element, .. }
+        | IrType::Buffer { element }) = ty
+        else {
             continue;
         };
         let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
@@ -231,7 +236,9 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
             IrType::Array { element, .. } | IrType::Window { element, .. } => {
                 pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?);
             }
-            IrType::Buffer { element } => pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?),
+            IrType::Buffer { element } => {
+                pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?)
+            }
             IrType::Range { element } => {
                 pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?);
             }

@@ -1,9 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    IrArrayRoot, IrElement, IrFunction, IrInstruction, IrLayoutCeiling, IrNominalId,
-    IrNominalKind, IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId,
-    IrWindowShape,
+    IrArrayRoot, IrElement, IrFunction, IrInstruction, IrLayoutCeiling, IrNominalId, IrNominalKind,
+    IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId, IrWindowShape,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -726,7 +725,13 @@ fn runtime_capacity_layout(
     content: IrType,
 ) -> Result<(Layout, RuntimeCapacityAllocationLayout), TargetLayoutFailure> {
     let (element, header_words) = match content {
-        IrType::Buffer { element } => (layouts.program.element(element).ok_or(TargetLayoutFailure::InvalidIr)?, 1_u64),
+        IrType::Buffer { element } => (
+            layouts
+                .program
+                .element(element)
+                .ok_or(TargetLayoutFailure::InvalidIr)?,
+            1_u64,
+        ),
         IrType::Window {
             shape,
             element,

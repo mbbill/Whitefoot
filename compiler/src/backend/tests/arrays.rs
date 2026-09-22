@@ -1454,6 +1454,12 @@ fn main() -> status: own ExitStatus pure {
   let rows = make::<Array<u64, 2>>(value: seed);
   set rows.inner[1_u64][0_u64] = 11_u64;
   update(row: &rows.inner[1_u64]);
+  if rows.inner[0_u64][0_u64] != 7_u64 {
+    return exit_status(code: 8_u8);
+  }
+  if rows.inner[0_u64][1_u64] != 7_u64 {
+    return exit_status(code: 9_u8);
+  }
   let snapshot = rows.inner[1_u64];
   set rows.inner[0_u64] = snapshot;
   set snapshot[1_u64] = 23_u64;
@@ -1534,6 +1540,9 @@ __attribute__((constructor)) static void check_nested_cleanup(void) {
     );
     let output = super::compile_link_and_run(&module, Some(&observer), &[]);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
-    assert_eq!(output.stdout, b"A1;A2;A3;A4;A5;F2;F3;F4;F5;F1;", "{output:?}");
+    assert_eq!(
+        output.stdout, b"A1;A2;A3;A4;A5;F2;F3;F4;F5;F1;",
+        "{output:?}"
+    );
     assert!(output.stderr.is_empty(), "{output:?}");
 }

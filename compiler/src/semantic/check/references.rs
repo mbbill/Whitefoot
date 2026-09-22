@@ -34,10 +34,10 @@ use crate::{
 };
 
 use super::super::model::{
-    BindingId, CheckedCallSeparation, CheckedContainerRoot, CheckedEffectStep, CheckedExpression, CheckedLoopId,
-    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedPlaceStep, CheckedRangeRoot,
-    CheckedRangeSource, CheckedStatePath, CheckedTargetDomainObligation, CheckedType, IntegerType,
-    WindowShape,
+    BindingId, CheckedCallSeparation, CheckedContainerRoot, CheckedEffectStep, CheckedExpression,
+    CheckedLoopId, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedPlaceStep,
+    CheckedRangeRoot, CheckedRangeSource, CheckedStatePath, CheckedTargetDomainObligation,
+    CheckedType, IntegerType, WindowShape,
 };
 use super::super::places::{
     CapturedRange, CapturedValue, DescendantTarget, PlaceRoot, PlaceStep, ResolvedPlace,
@@ -589,7 +589,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         for preservation in preservations {
             let mut query = preservation.clone();
-            let use_site = query.reference_use.as_mut()
+            let use_site = query
+                .reference_use
+                .as_mut()
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             use_site.site = self.tree.path(node)?.clone();
             use_site.binder = self.declaration_spelling(declaration)?;
@@ -667,7 +669,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if !written.may_be_prefix_of(&oracle, path, include_equal) {
                     continue;
                 }
-                if let Some((site, positions)) = site.zip(Self::separable_by_position(written, path)) {
+                if let Some((site, positions)) =
+                    site.zip(Self::separable_by_position(written, path))
+                {
                     let query = CheckedCallSeparation {
                         site: site.clone(),
                         exchange: false,

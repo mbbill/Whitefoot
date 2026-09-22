@@ -5,8 +5,8 @@ use crate::semantic::{
     CheckedMatchArm, CheckedStatement, CheckedType,
 };
 use crate::{
-    IrAddressed, IrConstant, IrEnumType, IrIntegerOperation, IrMatchTarget,
-    IrOperation, IrTerminator, IrType, LoweringFailure,
+    IrAddressed, IrConstant, IrEnumType, IrIntegerOperation, IrMatchTarget, IrOperation,
+    IrTerminator, IrType, LoweringFailure,
 };
 
 use super::IrBuilder;
@@ -171,8 +171,7 @@ fn recognize_load(
     };
     let (root, offset) = match value {
         CheckedExpression::BufferIndex { root, offset, .. } => {
-            if crate::lowering::lower_type(TypeLowering::EMPTY, root.element_type).ok()?
-                != U8
+            if crate::lowering::lower_type(TypeLowering::EMPTY, root.element_type).ok()? != U8
                 || root
                     .path
                     .iter()
@@ -476,7 +475,8 @@ impl IrBuilder<'_> {
             // cell exactly as every other read of it is.
             WalkedRun::Boxed(root) => {
                 let address = self.buffer_root(root)?;
-                let IrType::Address(IrAddressed::Buffer { element }) = self.value_type(address)? else {
+                let IrType::Address(IrAddressed::Buffer { element }) = self.value_type(address)?
+                else {
                     return Ok(());
                 };
                 if self.element_type(element)? != U8 {

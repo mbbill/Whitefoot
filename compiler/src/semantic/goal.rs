@@ -1,9 +1,9 @@
 use crate::{DeclarationId, NodePath};
 
 use super::model::{
-    BindingId, CheckedBooleanOperation, CheckedConst, CheckedElement,
-    CheckedFloatOperation, CheckedIntegerOperation, CheckedMeasure, CheckedNumericType,
-    CheckedType, CheckedValue, FunctionId, MeasuredKind,
+    BindingId, CheckedBooleanOperation, CheckedConst, CheckedElement, CheckedFloatOperation,
+    CheckedIntegerOperation, CheckedMeasure, CheckedNumericType, CheckedType, CheckedValue,
+    FunctionId, MeasuredKind,
 };
 
 /// One function requirement, split into predicate and occurrence identity.

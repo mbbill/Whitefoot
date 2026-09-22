@@ -463,7 +463,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// One resolved place in the spelling an [EFF-5] diagnostic renders.
-    fn render_resolved_place(&self, place: &ResolvedPlace) -> Result<String, CheckStop> {
+    pub(in crate::semantic::check) fn render_resolved_place(
+        &self,
+        place: &ResolvedPlace,
+    ) -> Result<String, CheckStop> {
         let mut rendered = match place.root {
             PlaceRoot::Binding(binding) => format!("<binding:{}>", binding.0),
             PlaceRoot::Constant(constant) => self.constant(constant)?.name.clone(),

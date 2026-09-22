@@ -63,7 +63,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     fn buffer_element_stride(&self, element: IrElement) -> Result<String, BackendFailure> {
         Ok(format!(
             "ptrtoint (ptr getelementptr ({}, ptr null, i64 1) to i64)",
-            llvm_type(self.program, self.program.element(element).ok_or(BackendFailure::InvalidIr)?)?
+            llvm_type(
+                self.program,
+                self.program
+                    .element(element)
+                    .ok_or(BackendFailure::InvalidIr)?
+            )?
         ))
     }
 
@@ -160,7 +165,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             width: 64,
             signed: false,
         };
-        if self.value_type(length) != Some(u64_type) || self.value_type(value) != Some(self.program.element(element).ok_or(BackendFailure::InvalidIr)?)
+        if self.value_type(length) != Some(u64_type)
+            || self.value_type(value)
+                != Some(
+                    self.program
+                        .element(element)
+                        .ok_or(BackendFailure::InvalidIr)?,
+                )
         {
             return Err(BackendFailure::InvalidIr);
         }
@@ -182,7 +193,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         length: IrValueId,
         stored: Option<IrValueId>,
     ) -> Result<(), BackendFailure> {
-        let element_type = llvm_type(self.program, self.program.element(element).ok_or(BackendFailure::InvalidIr)?)?;
+        let element_type = llvm_type(
+            self.program,
+            self.program
+                .element(element)
+                .ok_or(BackendFailure::InvalidIr)?,
+        )?;
         let stride = self.buffer_element_stride(element)?;
         let header = self.buffer_header_size(block)?;
         let element_bytes = self.next_temporary()?;
@@ -271,7 +287,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         let (block, element) = self.buffer_block(buffer)?;
-        if self.program.element(element).ok_or(BackendFailure::InvalidIr)? != ty
+        if self
+            .program
+            .element(element)
+            .ok_or(BackendFailure::InvalidIr)?
+            != ty
             || self.value_type(offset)
                 != Some(IrType::Integer {
                     width: 64,
@@ -300,7 +320,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 width: 64,
                 signed: false,
             })
-            || self.value_type(value) != Some(self.program.element(element).ok_or(BackendFailure::InvalidIr)?)
+            || self.value_type(value)
+                != Some(
+                    self.program
+                        .element(element)
+                        .ok_or(BackendFailure::InvalidIr)?,
+                )
         {
             return Err(BackendFailure::InvalidIr);
         }
@@ -362,7 +387,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // window computation; a constant-capacity run's length is its type
         // constant and reads nothing.
         let (length, first_element) = match self.value_type(buffer) {
-            Some(IrType::Address(IrAddressed::Buffer { element })) if self.program.element(element).ok_or(BackendFailure::InvalidIr)? == u8_type => {
+            Some(IrType::Address(IrAddressed::Buffer { element }))
+                if self
+                    .program
+                    .element(element)
+                    .ok_or(BackendFailure::InvalidIr)?
+                    == u8_type =>
+            {
                 let block = IrType::Buffer { element };
                 let address = self.value_name(buffer);
                 let length_address = self.aggregate_field_pointer(block, &address, LENGTH_FIELD)?;

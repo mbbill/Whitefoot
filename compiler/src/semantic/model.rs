@@ -558,7 +558,9 @@ impl CheckedType {
                     .is_some_and(|ty| ty.is_concrete(elements))
                     && capacity.is_none_or(|capacity| capacity.is_concrete())
             }
-            Self::Buffer { element } => elements.get(element.index()).is_some_and(|ty| ty.is_concrete(elements)),
+            Self::Buffer { element } => elements
+                .get(element.index())
+                .is_some_and(|ty| ty.is_concrete(elements)),
             Self::Unit | Self::Bool | Self::Integer(_) | Self::Float(_) | Self::Nominal(_) => true,
         }
     }
@@ -1578,9 +1580,9 @@ impl CheckedRangeElementPlace {
 
     pub(crate) const fn element(&self) -> Option<CheckedElement> {
         match self.ty {
-            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } | CheckedType::Buffer { element } => {
-                Some(element)
-            }
+            CheckedType::Array { element, .. }
+            | CheckedType::Window { element, .. }
+            | CheckedType::Buffer { element } => Some(element),
             _ => None,
         }
     }
@@ -1696,9 +1698,9 @@ impl CheckedContainerRoot {
     /// The element type of a storage shape.
     pub(crate) const fn element(&self) -> Option<CheckedElement> {
         match self.ty {
-            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } | CheckedType::Buffer { element } => {
-                Some(element)
-            }
+            CheckedType::Array { element, .. }
+            | CheckedType::Window { element, .. }
+            | CheckedType::Buffer { element } => Some(element),
             _ => None,
         }
     }
@@ -2181,6 +2183,7 @@ pub(crate) struct CheckedArraySetTarget {
     pub(crate) element_type: CheckedType,
     pub(crate) length: CheckedConst,
     pub(crate) offset: CheckedExpression,
+    pub(crate) captured: super::places::CapturedValue,
     pub(crate) obligation: NodePath,
     pub(crate) target_domain: CheckedTargetDomainObligation,
 }
@@ -2189,6 +2192,7 @@ pub(crate) struct CheckedArraySetTarget {
 pub(crate) struct CheckedBufferSetTarget {
     pub(crate) root: CheckedBufferRoot,
     pub(crate) offset: CheckedExpression,
+    pub(crate) captured: super::places::CapturedValue,
     pub(crate) obligation: NodePath,
     pub(crate) target_domain: CheckedTargetDomainObligation,
 }
@@ -2479,18 +2483,18 @@ pub(crate) struct CheckedFunction {
     pub(crate) entailment: super::entailment::FunctionEntailment,
 }
 
-/// One [EFF-5] pairwise comparison the checker could not settle by syntax.
+/// One [OWN-7] separation question the checker could not settle by syntax.
 ///
-/// Two substituted effect paths overlap [OWN-7] and at least one of them is a
-/// write, so the call is admitted only where the two positions are proved
-/// distinct. The checker holds the actual argument spellings and the live
+/// A mandatory call-effect pair [EFF-5] or a write's preservation of a later
+/// reference use [REF-2] requires the positions to be proved distinct.
+/// The checker holds the actual argument spellings and the live
 /// reference state, so it owns the comparison; what it cannot do is discharge
 /// the index or range goal, which is the fixed [ENT-6] families' work under
 /// [MSR-4]'s disposition. This record is that handover, and the diagnostic it
-/// carries cites EFF-5, or OP-11 for exchange, at the complete `call`.
+/// carries cites EFF-5 or OP-11 at the call, or REF-2 at the reference use.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedCallSeparation {
-    /// The complete `call` the diagnostic is reported at.
+    /// The call or set commit whose pre-write proof context answers the query.
     pub(crate) site: NodePath,
     /// Exchange's possible ancestry is refused by OP-11, rather than EFF-5.
     pub(crate) exchange: bool,

@@ -335,7 +335,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // target is a proper prefix of. Writing the storage at the target's
         // own path, or below it, is a content write and invalidates nothing.
         for place in &mutation.place.members {
-            self.invalidate_references(bindings, place, &InvalidationEvent::PrefixWritten)?;
+            self.invalidate_references_with_separation(
+                bindings,
+                place,
+                &InvalidationEvent::PrefixWritten,
+                Some(self.tree.path(node)?),
+            )?;
         }
         if self.commit_reinitializes_binding(&mutation) {
             bindings

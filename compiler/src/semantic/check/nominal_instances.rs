@@ -8,8 +8,8 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConstructor, CheckedElement, CheckedField, CheckedNominal,
-    CheckedNominalKind, CheckedNumericType, CheckedType, CheckedVariant, NominalId,
+    CheckedConstructor, CheckedElement, CheckedField, CheckedNominal, CheckedNominalKind,
+    CheckedNumericType, CheckedType, CheckedVariant, NominalId,
 };
 use super::generics::GenericSubstitution;
 use super::{

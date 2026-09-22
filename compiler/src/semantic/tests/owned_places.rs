@@ -216,6 +216,8 @@ fn a_field_consume_cannot_hide_a_linear_residual_without_a_drop_action() {
     }
 }
 
+/// [PROV-6, DIAG-1] the complete consumed `place` excludes its `move`
+/// wrapper, even when the checked expression retains that wrapper's carrier.
 #[test]
 fn boxed_field_consumes_judge_linear_residuals_before_empty_releases() {
     for (declaration, residual) in [
@@ -239,18 +241,28 @@ fn boxed_field_consumes_judge_linear_residuals_before_empty_releases() {
     }
 }
 
+/// [WIN-3, DIAG-1] the refused element move cites its `place` operand and
+/// offers the boundary operations that preserve initialized storage.
 #[test]
 fn moving_an_array_or_window_element_still_reports_a_hole() {
     for (ty, requires) in [
         ("Array<Box<u64>, 1>", ""),
-        ("Slots<Box<u64>, 1>", " contract {\n  requires values.len > 0_u64;\n}"),
+        (
+            "Slots<Box<u64>, 1>",
+            " contract {\n  requires values.len > 0_u64;\n}",
+        ),
     ] {
         let source = format!(
             "fn take(values: own {ty}) -> value: own Box<u64> pure{requires} {{\n  return move values[0_u64];\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_rule_at(source.as_bytes(), SemanticRule::Win3, "values[0_u64]");
         assert_rule_kind(source.as_bytes(), SemanticRule::Win3, |kind| {
-            matches!(kind, SemanticIssueKind::InvalidElementMove { .. })
+            matches!(
+                kind,
+                SemanticIssueKind::MoveOutOfSlot {
+                    mechanical_fix: "use take_back, remove_at, or swap [OP-10, OP-11]",
+                }
+            )
         });
     }
 }
