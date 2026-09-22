@@ -2210,16 +2210,6 @@ pub(crate) struct CheckedWritablePlace {
     /// does: the target identifier resolved to none, so the statement is the
     /// binding's own initialization and nothing before it holds its storage.
     pub(crate) declares: bool,
-    /// [WIN-3, STOR-3] whether the binding this commit names still holds a
-    /// value at the commit, so the write displaces an owner that owes its
-    /// compiler-derived release there.
-    ///
-    /// Only the checker can answer it: a binding is revived from dead by a
-    /// [SET-1] commit whose target is that complete binding, and a
-    /// right-hand side that reads the target's own value out leaves nothing
-    /// for the write to displace. Both are accepted programs, and neither is
-    /// readable from the target's type or path [SET-1, LIV-1].
-    pub(crate) displaces_live_value: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2285,7 +2275,7 @@ pub(crate) struct PropagationContext {
 
 /// One outer reference whose value may cross this loop's normal backedge.
 ///
-/// `paths` are the finite static-shape header alternatives [REF-1]. Every
+/// `paths` are the finite static-shape or descendant header covers [REF-1]. Every
 /// index and range capture that a continuing rebinding may replace carries a
 /// compiler-owned loop generation rather than the source occurrence in the
 /// body. This is proof metadata for place resolution and permission only;
@@ -2338,6 +2328,10 @@ pub(crate) enum CheckedStatement {
         node_path: NodePath,
         target: CheckedSetTarget,
         value: CheckedExpression,
+        /// [SET-1, OP-12, WIN-3] the checked post-RHS disposition, for every
+        /// target shape. A read-out or revived binding displaces no old value;
+        /// a reference rebinding has no owned value to release either.
+        displaces_live_value: bool,
     },
     Evaluate(CheckedExpression),
     /// The discarded result of an expression statement, with the
@@ -2531,11 +2525,13 @@ pub(crate) struct CheckedFunction {
 /// reference state, so it owns the comparison; what it cannot do is discharge
 /// the index or range goal, which is the fixed [ENT-6] families' work under
 /// [MSR-4]'s disposition. This record is that handover, and the diagnostic it
-/// carries cites EFF-5 at the complete `call`.
+/// carries cites EFF-5, or OP-11 for exchange, at the complete `call`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedCallSeparation {
     /// The complete `call` the diagnostic is reported at.
     pub(crate) site: NodePath,
+    /// Exchange's possible ancestry is refused by OP-11, rather than EFF-5.
+    pub(crate) exchange: bool,
     pub(crate) positions: Vec<CheckedCallSeparationPositions>,
     /// The two substituted paths as the diagnostic renders them.
     pub(crate) left_spelling: String,

@@ -1,0 +1,26 @@
+struct Node {
+  value: u64;
+  next: Option<Box<Node>>;
+}
+
+fn inspect(root: &Node) -> result: own u64 writes(root) {
+  doc "A straight-line alias shares the current target and may change its content without removing that target.";
+  let cursor = root;
+  for (i in 0_u64..2_u64) {
+    match deref(cursor).next {
+      Some(value: child) => {
+        set cursor = &deref(child).inner;
+      }
+      None() => {
+        break;
+      }
+    }
+  }
+  let alias = cursor;
+  set deref(alias).next = None<Box<Node>>();
+  return deref(cursor).value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

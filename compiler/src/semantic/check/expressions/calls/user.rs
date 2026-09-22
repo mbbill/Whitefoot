@@ -342,7 +342,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [EFF-5] would otherwise report against that row.
         let atomic_target = self.check_atomic_update_row(node, &actual_paths, &substituted)?;
         self.check_call_pairwise_disjointness(node, signature, &substituted)?;
-        self.invalidate_call_bystanders(&substituted, atomic_target.as_ref(), &call, bindings);
+        self.invalidate_call_references(&substituted, atomic_target.as_ref(), bindings)?;
         Self::invalidate_window_operation_references(signature, &substituted, bindings);
         self.project_call_effects(node, function, &substituted, bindings, &mut effects)?;
         let result = signature.result;
@@ -470,6 +470,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         for step in &place.path {
             match step {
+                PlaceStep::Descendant(_) => rendered.push_str(".**"),
                 PlaceStep::Field(field) => rendered.push_str(&format!(".{field}")),
                 PlaceStep::Deref => rendered = format!("deref({rendered})"),
                 PlaceStep::Payload { variant, field } => {
@@ -651,7 +652,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // own transfer, not a reach of the row; every other argument's
             // write, consume, or free is the row reaching the caller's
             // storage, and a prefix of the target is what [OP-12] refuses.
-            if !entry.write || entry.argument == 0 || !entry.place.contains(&target) {
+            if !entry.write
+                || entry.argument == 0
+                || !entry
+                    .place
+                    .may_be_prefix_of(&UnprovedSeparations, &target, true)
+            {
                 continue;
             }
             return self.issue_node(
@@ -682,9 +688,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         signature: &FunctionSignature,
         entries: &[SubstitutedEntry],
     ) -> Result<(), CheckStop> {
-        if self.is_swap_row(signature) {
-            return Ok(());
-        }
+        let exchange = self.is_swap_row(signature);
         let oracle = UnprovedSeparations;
         for (index, left) in entries.iter().enumerate() {
             for right in entries.iter().skip(index + 1) {
@@ -692,6 +696,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     continue;
                 }
                 if !places_overlap(&oracle, &left.place, &right.place) {
+                    continue;
+                }
+                if exchange && left.place.exchange_safe(&oracle, &right.place) {
                     continue;
                 }
                 // A pair whose only unseparated steps are index or range
@@ -702,6 +709,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .borrow_mut()
                         .push(CheckedCallSeparation {
                             site: self.tree.path(node)?.clone(),
+                            exchange,
                             positions,
                             left_spelling: left.spelling.clone(),
                             right_spelling: right.spelling.clone(),
@@ -709,12 +717,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     continue;
                 }
                 return self.issue_node(
-                    SemanticRule::Eff5,
+                    if exchange {
+                        SemanticRule::Op11
+                    } else {
+                        SemanticRule::Eff5
+                    },
                     node,
                     SemanticIssueKind::OverlappingCallEffects {
                         first: left.spelling.clone(),
                         second: right.spelling.clone(),
-                        mechanical_fix: "prove the two positions distinct, or pass one of them",
+                        mechanical_fix: if exchange {
+                            "exchange equal or disjoint places without an ancestor relation"
+                        } else {
+                            "prove the two positions distinct, or pass one of them"
+                        },
                     },
                 );
             }
@@ -866,22 +882,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         signature.name == "swap"
     }
 
-    /// [EFF-5] clause 3: a live reference outside the call whose path has a
-    /// proper prefix among the call's substituted write paths becomes invalid
-    /// after the call [REF-2].
-    ///
-    /// A reference that is itself an argument is the thing being accessed,
-    /// not a bystander, and does not invalidate itself; the reference whose
-    /// own path the write names is exactly the one whose path the write is a
-    /// prefix of, which [`Checker::invalidate_references`] already decides.
-    fn invalidate_call_bystanders(
+    /// [EFF-5] clause 3: every live reference, including an actual argument,
+    /// receives each substituted effect's ordinary invalidation [REF-2].
+    /// Only an access at or below its captured target preserves that target;
+    /// being an argument does not exempt it from another actual's write.
+    fn invalidate_call_references(
         &self,
         entries: &[SubstitutedEntry],
         atomic_target: Option<&ResolvedPlace>,
-        call: &crate::NodePath,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
-    ) {
-        let _ = call;
+    ) -> Result<(), CheckStop> {
         for entry in entries.iter().filter(|entry| entry.write) {
             let event = if entry.consuming {
                 // [OP-12] the recognized first argument is not an ordinary
@@ -900,8 +910,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } else {
                 InvalidationEvent::CallWrite
             };
-            Self::invalidate_references(bindings, &entry.place, &event);
+            self.invalidate_references(bindings, &entry.place, &event)?;
         }
+        Ok(())
     }
 
     /// [EFF-2] the caller's own row: each projected entry rooted in a current
@@ -980,7 +991,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         ty: expected_type,
                     })
                 }
-                _ => match passed_place {
+                _ => match passed_place.filter(|place| !place.has_descendant()) {
                     Some(place) => self.goal_referent_image(place, expected_type, atom)?,
                     None => GoalExpression::Datum(GoalDatum::EvaluatedValue {
                         function: caller,
@@ -996,7 +1007,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             });
         }
         if expected_mode != CheckedMode::Own {
-            if let Some(place) = passed_place {
+            if let Some(place) = passed_place.filter(|place| !place.has_descendant()) {
                 return self.goal_referent_image(place, expected_type, atom);
             }
             // FN-1's candidate protects every mutable origin a returned
@@ -1179,7 +1190,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 // A window-part effect is not a value projection. Failing
                 // to represent a value must not substitute its parent.
-                PlaceStep::Part(_) | PlaceStep::Measure(_) => {
+                PlaceStep::Part(_) | PlaceStep::Measure(_) | PlaceStep::Descendant(_) => {
                     return self.unsupported(
                         super::super::super::super::UnsupportedSemanticFeature::CompositeValues,
                         node,
@@ -1256,7 +1267,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     if let Some(reference) = &local.reference {
                         (
                             match reference.paths.as_slice() {
-                                [path] => self.goal_referent_image(path, local.ty, place)?,
+                                [path] if !path.has_descendant() => {
+                                    self.goal_referent_image(path, local.ty, place)?
+                                }
                                 // [REF-1] a joined reference still denotes
                                 // one selected referent, but no member of its
                                 // possible-target set is its unconditional

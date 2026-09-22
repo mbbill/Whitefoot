@@ -1,0 +1,25 @@
+struct Node {
+  value: u64;
+  next: Option<Box<Node>>;
+}
+
+fn inspect(root: &Node) -> result: own u64 writes(root) {
+  doc "Exchange permits equality but cannot exchange a possible ancestor and descendant.";
+  let cursor = root;
+  for (i in 0_u64..2_u64) {
+    match deref(cursor).next {
+      Some(value: child) => {
+        set cursor = &deref(child).inner;
+      }
+      None() => {
+        break;
+      }
+    }
+  }
+  swap(first: root, second: cursor);
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

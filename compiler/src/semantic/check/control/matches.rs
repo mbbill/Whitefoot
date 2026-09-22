@@ -792,20 +792,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         leaving: &[super::super::super::model::BindingId],
     ) {
         Self::invalidate_references_leaving_scope(bindings, leaving);
-        Self::invalidate_references_without_refinement_witness(bindings, leaving);
         for state in give_states.iter_mut() {
             Self::invalidate_references_leaving_scope(state, leaving);
-            Self::invalidate_references_without_refinement_witness(state, leaving);
         }
         for state in break_states.iter_mut() {
             state.invalidate_references_leaving_scope(leaving);
-            state.invalidate_references_without_refinement_witness(leaving);
         }
         if let Some(context) = give_context
             && !give_states.is_empty()
         {
             context.invalidate_reference_roots_leaving_scope(leaving);
-            context.invalidate_reference_refinements(give_states, leaving);
         }
     }
 

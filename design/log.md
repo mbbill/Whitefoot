@@ -21,6 +21,14 @@ Owner-approved: The owner explicitly approved both presented self-tail amendment
 
 Summary: Add a call-site guarantee for sole-return direct self calls with incoming-reference-rooted actuals and no retained cleanup. Permit ordinary derived releases before the transfer when no live valid reference names the released owner. Preserve ordinary call and proof checking, capture every argument before cleanup and simultaneous parameter replacement, and lower the transfer to a parameterized body-entry jump using existing frame storage. These choices make the guarantee independent of optimizer decisions and inter-function tail-call ABIs while retaining the source ownership boundary. Mutual transfers and termination proofs remain deferred. Apply the reviewed amendments unchanged and remove them.
 
+## 2026-09-21 Admit finite descendant summaries for owned-link cursors
+
+Nodes: compiler/checker-facts, language/effects, language/ownership, language/ownership/exchange, language/ownership/reference-rebinding, language/ownership/reference-validity
+
+Owner-approved: The owner explicitly approved all six amendments presented at e5ac601e in the work line C conversation, after the complete Chinese explanation, independent DCR and owner-directed effects companion follow-up.
+
+Summary: Apply the approved revisions together: retain finite per-root descendant covers separately from current-target identity, preserve selected payload storage beyond match exit, apply ordinary invalidation to every call actual, and exclude possible ancestor exchanges while preserving equal-target exchange. The ordinary typed walk grows finite loop summaries to completion without an acceptance budget. The [wildcard-path investigation](../research/investigations/wildcard-path/DESIGN.md) records the representation, alternatives, executable list/tree/cursor evidence and measured checking-cost limits. Update the affected refused alternatives and remove all six accepted amendments.
+
 ## 2026-09-21 Adopt the measured Vector baseline and qualify kernel composition costs
 
 Nodes: language/data-model/vector-consumption, language/data-model/kernel-minimality

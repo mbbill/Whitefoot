@@ -1,6 +1,15 @@
 use super::support::{compile_and_run, compile_program};
 
 #[test]
+fn owned_link_cursors_walk_edit_and_reset_lists_and_trees() {
+    let llvm = compile_program("owned_link_cursors.wf");
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+#[test]
 fn growable_vector_grows_by_affine_replace_and_runs_its_checks() {
     let llvm = compile_program("growable_vec.wf");
     let output = compile_and_run(&llvm);

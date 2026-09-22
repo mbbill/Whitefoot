@@ -1,0 +1,26 @@
+struct Node {
+  value: u64;
+  next: Option<Box<Node>>;
+}
+
+fn inspect(first: &Node, second: &Node) -> result: own u64 reads(first), reads(second) {
+  let a = first;
+  let b = first;
+  let c = second;
+  for (i in 0_u64..8_u64) {
+    set a = b;
+    set b = c;
+    match deref(c).next {
+      Some(value: child) => {
+        set c = &deref(child).inner;
+      }
+      None() => {
+      }
+    }
+  }
+  return deref(a).value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

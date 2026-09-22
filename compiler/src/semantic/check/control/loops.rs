@@ -23,8 +23,15 @@ use super::{ControlCounters, ControlScope, StatementResult};
 #[derive(Clone)]
 pub(in crate::semantic::check) struct LoopContext {
     pub(super) id: CheckedLoopId,
+    pub(super) reference_rebindings: HashSet<NodeId>,
     label_declaration: Option<DeclarationId>,
     preserved: HashSet<DeclarationId>,
+}
+
+#[derive(Default)]
+struct ReferenceRebindings {
+    holders: HashSet<DeclarationId>,
+    sites: HashSet<NodeId>,
 }
 
 pub(in crate::semantic::check) struct BreakState {
@@ -61,8 +68,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// Forms the one finite abstract header used to check every iteration.
     /// Every outer reference gets an owner-tagged validity variable. Only a
-    /// holder a continuing source `set` may rebind loses capture precision;
-    /// its roots and static steps remain unchanged [REF-1].
+    /// holder a continuing source `set` may rebind loses capture precision
+    /// and receives the current finite path summary [REF-1].
     fn enter_loop_reference_header(
         &self,
         id: CheckedLoopId,
@@ -93,8 +100,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if let Some(paths) =
                 reference.enter_loop_header(token, rebound.contains(&declaration))?
             {
+                let ty = local.ty;
+                let kind = reference.kind;
+                self.join_loop_reference_summary(token, ty, kind, &paths, bindings)?;
+                let paths = self
+                    .loop_reference_summaries
+                    .borrow()
+                    .get(&token)
+                    .cloned()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                bindings
+                    .get_mut(&declaration)
+                    .and_then(|local| local.reference.as_mut())
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    .paths
+                    .clone_from(&paths);
                 carried.push(CheckedLoopCarriedReference {
-                    binding: local.binding,
+                    binding: token.owner,
                     paths,
                 });
             }
@@ -106,7 +128,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         set: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-        rebound: &mut HashSet<DeclarationId>,
+        rebound: &mut ReferenceRebindings,
     ) -> Result<(), CheckStop> {
         let [target] = self.tree.children_with(set, Production::Place)?[..] else {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -125,7 +147,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(&declaration)
             .is_some_and(|binding| binding.reference.is_some())
         {
-            rebound.insert(declaration);
+            rebound.holders.insert(declaration);
+            rebound.sites.insert(set);
         }
         Ok(())
     }
@@ -137,8 +160,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         statements: &[NodeId],
         bindings: &HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<HashSet<DeclarationId>, CheckStop> {
-        let mut rebound = HashSet::new();
+    ) -> Result<ReferenceRebindings, CheckStop> {
+        let mut rebound = ReferenceRebindings::default();
         let _ =
             self.collect_continuing_reference_rebindings(statements, true, bindings, &mut rebound)?;
         Ok(rebound)
@@ -149,7 +172,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         statements: &[NodeId],
         normal_reaches: bool,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-        rebound: &mut HashSet<DeclarationId>,
+        rebound: &mut ReferenceRebindings,
     ) -> Result<bool, CheckStop> {
         let mut reaches = normal_reaches;
         for wrapper in statements.iter().rev() {
@@ -166,7 +189,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         statement: NodeId,
         normal_reaches: bool,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-        rebound: &mut HashSet<DeclarationId>,
+        rebound: &mut ReferenceRebindings,
     ) -> Result<bool, CheckStop> {
         match self.tree.production(statement)? {
             Production::SetStmt => {
@@ -518,7 +541,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.continuing_reference_rebindings(&executable_statements, &base_bindings)?;
         let mut header_bindings = base_bindings.clone();
         let (reference_equations, carried_references) =
-            self.enter_loop_reference_header(id, &rebound, &mut header_bindings)?;
+            self.enter_loop_reference_header(id, &rebound.holders, &mut header_bindings)?;
         if header_bindings
             .insert(
                 binder_declaration_id,
@@ -544,6 +567,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut nested_loops = scope.loops.to_vec();
         nested_loops.push(LoopContext {
             id,
+            reference_rebindings: rebound.sites,
             label_declaration: label,
             preserved: preserved.clone(),
         });
@@ -583,7 +607,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             && !checked.give_states.is_empty()
         {
             context.invalidate_reference_roots_leaving_scope(&leaving);
-            context.invalidate_reference_refinements(&checked.give_states, &leaving);
         }
         self.judge_backedge_liveness(node, &header_keys, &header_bindings, &body_bindings)?;
         if checked.can_continue
@@ -914,20 +937,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let base_bindings = bindings.clone();
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
         let preserved = base_keys.iter().copied().collect::<HashSet<_>>();
-        let mut nested_loops = scope.loops.to_vec();
-        nested_loops.push(LoopContext {
-            id,
-            label_declaration: declaration,
-            preserved: preserved.clone(),
-        });
-
         let invariant_nodes = self.tree.children_with(node, Production::HeaderInvariant)?;
         let executable_statements = self.tree.children_with(node, Production::Stmt)?;
         let rebound =
             self.continuing_reference_rebindings(&executable_statements, &base_bindings)?;
+        let mut nested_loops = scope.loops.to_vec();
+        nested_loops.push(LoopContext {
+            id,
+            reference_rebindings: rebound.sites,
+            label_declaration: declaration,
+            preserved: preserved.clone(),
+        });
         let mut header_bindings = base_bindings.clone();
         let (reference_equations, carried_references) =
-            self.enter_loop_reference_header(id, &rebound, &mut header_bindings)?;
+            self.enter_loop_reference_header(id, &rebound.holders, &mut header_bindings)?;
         let mut body_bindings = header_bindings.clone();
         let allowed_invariant_values = base_keys.iter().copied().collect::<HashSet<_>>();
         let invariants = self.form_loop_invariants(
@@ -964,7 +987,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             && !checked.give_states.is_empty()
         {
             context.invalidate_reference_roots_leaving_scope(&leaving);
-            context.invalidate_reference_refinements(&checked.give_states, &leaving);
         }
         self.judge_backedge_liveness(node, &base_keys, &header_bindings, &body_bindings)?;
         if checked.can_continue
@@ -1111,14 +1133,5 @@ impl BreakState {
     /// this edge.
     pub(super) fn invalidate_references_leaving_scope(&mut self, leaving: &[BindingId]) {
         Checker::invalidate_references_leaving_scope(&mut self.bindings, leaving);
-    }
-
-    /// [REF-2, ENT-3.S15] a break edge also meets reference validity with the
-    /// refinement witnesses that survive the crossed scope.
-    pub(super) fn invalidate_references_without_refinement_witness(
-        &mut self,
-        leaving: &[BindingId],
-    ) {
-        Checker::invalidate_references_without_refinement_witness(&mut self.bindings, leaving);
     }
 }

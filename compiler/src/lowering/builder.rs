@@ -1019,7 +1019,14 @@ impl<'program> IrBuilder<'program> {
                         self.promote_binding_if_needed(*binding)?;
                     }
                 }
-                CheckedStatement::Set { target, value, .. } => self.set(target, value)?,
+                CheckedStatement::Set {
+                    target,
+                    value,
+                    displaces_live_value,
+                    ..
+                } => {
+                    self.set(target, value, *displaces_live_value)?;
+                }
                 CheckedStatement::Evaluate(expression) => {
                     self.expression(expression)?;
                 }
@@ -1941,8 +1948,9 @@ impl<'program> IrBuilder<'program> {
         &mut self,
         target: &CheckedSetTarget,
         value: &CheckedExpression,
+        displaces_live_value: bool,
     ) -> Result<(), LoweringFailure> {
-        let target = self.prepare_target(target)?;
+        let target = self.prepare_target(target, displaces_live_value)?;
         let value = self.expression(value)?;
         let displaced = self.displaced_release(&target)?;
         self.write_target(&target, value)?;

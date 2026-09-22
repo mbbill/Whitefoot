@@ -163,6 +163,27 @@ fn automatic_tail_selection_cannot_discharge_an_ordinary_requirement() {
 }
 
 #[test]
+fn tail_selection_uses_the_settled_loop_reference_summary() {
+    let marked = String::from_utf8(super::system::corpus_source(
+        "fn10-pos-loop-summary-release",
+    ))
+    .expect("the conformance source is UTF-8");
+    let unmarked = marked.replace("musttail ", "");
+    for source in [marked, unmarked] {
+        for overlap in [OverlapLowering::Off, OverlapLowering::On] {
+            with_mutated_ir_lowering(source.as_bytes(), overlap, |program| {
+                let module = emit_llvm(program)
+                    .expect("settled tail transfer emits")
+                    .into_string();
+                let body = emitted_function(&module, "walk");
+                assert_eq!(body.matches("@wf_walk(").count(), 1, "{body}");
+                assert!(body.contains("phi "), "{body}");
+            });
+        }
+    }
+}
+
+#[test]
 fn one_function_can_mix_tail_transfers_with_calls_retaining_local_storage() {
     let module = compile(
         br#"fn walk(n: own u64, value: &u64) -> result: own u64 reads(value) {

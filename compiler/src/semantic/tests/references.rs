@@ -774,16 +774,15 @@ fn main() -> status: own ExitStatus pure {
     super::assert_accepts(source);
 }
 
-/// [REF-2, ENT-3.S15] a reference to a borrowed payload is valid only inside
-/// the arm that established that payload step's refinement.
+/// [REF-2] a selected payload remains in place after its selecting arm ends.
 #[test]
-fn a_payload_reference_rebound_into_an_outer_local_dies_at_arm_exit() {
+fn a_selected_payload_reference_survives_arm_exit() {
     let source = br#"enum Packet {
   Data(value: u64);
   Idle();
 }
 
-fn examine(packet: &Packet) -> result: own u64 pure {
+fn examine(packet: &Packet) -> result: own u64 reads(packet) {
   let fallback = 7_u64;
   let selected = &fallback;
   match deref(packet) {
@@ -800,10 +799,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
-        matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
-            if event.contains("refinement fact"))
-    });
+    assert_accepts(source);
 }
 
 /// [REF-2] an `if` branch is a lexical scope just as a loop body is. A local
@@ -890,16 +886,16 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// A direct value-match delivery does not extend the selected payload's arm
-/// refinement to the result binding.
+/// A direct value-match delivery retains the selected address, without
+/// exporting the selecting arm's variant fact.
 #[test]
-fn a_payload_reference_delivered_by_value_match_is_invalid_outside_the_arm() {
+fn a_selected_payload_reference_survives_value_match_delivery() {
     let source = br#"enum Packet {
   Data(value: u64);
   Idle();
 }
 
-fn examine(packet: &Packet) -> result: own u64 pure {
+fn examine(packet: &Packet) -> result: own u64 reads(packet) {
   let fallback = 7_u64;
   let selected = match deref(packet) {
     Data(value: payload) => {
@@ -916,22 +912,18 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
-        matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
-            if event.contains("refinement fact"))
-    });
+    assert_accepts(source);
 }
 
-/// A `give` edge crossing a statement match carries the same arm-exit
-/// invalidation into its enclosing value initializer.
+/// A `give` crossing a nested match retains an existing selected payload.
 #[test]
-fn a_payload_reference_on_a_nested_give_edge_loses_the_arm_refinement() {
+fn a_selected_payload_reference_survives_nested_give() {
     let source = br#"enum Packet {
   Data(value: u64);
   Idle();
 }
 
-fn examine(packet: &Packet, choose: own Bool) -> result: own u64 pure {
+fn examine(packet: &Packet, choose: own Bool) -> result: own u64 reads(packet) {
   let fallback = 7_u64;
   let selected = if choose {
     match deref(packet) {
@@ -952,22 +944,18 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
-        matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
-            if event.contains("refinement fact"))
-    });
+    assert_accepts(source);
 }
 
-/// A loop-carried reference may change captured indices but not its root and
-/// step kinds [REF-1]. This refusal precedes any arm-exit validity question.
+/// A reference leaving on a break edge can select another root and payload.
 #[test]
-fn a_loop_carried_reference_cannot_change_static_shape() {
+fn a_reference_on_a_break_edge_may_change_its_root() {
     let source = br#"enum Packet {
   Data(value: u64);
   Idle();
 }
 
-fn examine(packet: &Packet) -> result: own u64 pure {
+fn examine(packet: &Packet) -> result: own u64 reads(packet) {
   let fallback = 7_u64;
   let selected = &fallback;
   loop @done {
@@ -988,9 +976,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_kind(source, SemanticRule::Ref1, |kind| {
-        matches!(kind, SemanticIssueKind::ReferenceShapeChanged { .. })
-    });
+    assert_accepts(source);
 }
 
 /// [REF-1] a loop-carried reference keeps one static path shape while the
@@ -1121,12 +1107,10 @@ fn main() -> status: own ExitStatus pure {
     assert_accepts(source);
 }
 
-/// A break edge can carry a newly formed reference with the same static path
-/// shape as its loop-carried predecessor. Replacing the enum ends the old
-/// witness, and the inner match's new witness ends before the break reaches
-/// the continuation.
+/// A break join includes the branch which never reforms the invalidated
+/// reference, even when another branch selects the replacement payload.
 #[test]
-fn a_payload_reference_on_a_break_edge_loses_the_arm_refinement() {
+fn a_break_edge_with_an_unrepaired_invalid_reference_is_rejected() {
     let source = br#"enum Packet {
   Data(value: u64);
   Idle();
@@ -1162,7 +1146,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     assert_rule_kind(source, SemanticRule::Ref2, |kind| {
         matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
-            if event.contains("refinement fact"))
+            if event.contains("proper prefix"))
     });
 }
 
@@ -1316,11 +1300,10 @@ fn main() -> status: own ExitStatus pure {
     assert_accepts(source);
 }
 
-/// Replacing an enum ends the outer occurrence of its refinement even when a
-/// nested match later establishes the same `(place, variant)` fact. The new
-/// occurrence cannot borrow the old arm's lifetime at the inner arm exit.
+/// Replacing an enum ends the old selection. Selecting the new payload
+/// establishes a new witness which can survive the inner match.
 #[test]
-fn a_replaced_outer_refinement_cannot_preserve_a_new_inner_payload_reference() {
+fn a_new_selection_survives_the_replaced_outer_refinement() {
     let source = br#"enum Packet {
   Data(value: u64);
   Idle();
@@ -1351,10 +1334,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_kind(source, SemanticRule::Ref2, |kind| {
-        matches!(kind, SemanticIssueKind::InvalidReferenceUse { event, .. }
-            if event.contains("refinement fact"))
-    });
+    assert_accepts(source);
 }
 
 /// A loop body local leaves scope on a nested delivery edge just as it does
