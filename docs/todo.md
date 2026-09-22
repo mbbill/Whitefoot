@@ -7,82 +7,25 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
-- **Named-offset writes can leave obsolete measure goals available.** On
-  `c6cd9add`, a guard on `rows[index].len == 1`, followed by
-  `set index = replacement`, lets the old goal survive. Repeating the guard
-  makes its false branch contradictory to that stale goal, and an unproved
-  `rows[index][0]` read is accepted and lowered there. A called witness with
-  row lengths one and zero, index zero and replacement one would reach that
-  empty-row read; the same read without the stale guard is rejected by OP-4.
-  This violates ENT-5's explicit offset support and can admit uninitialized
-  reads. In
-  [proof flow](../compiler/src/semantic/entailment/flow.rs), term invalidation
-  consults `event_kills_offset_support`, while `event_kills_goal` does not.
-  Repair this before relying on indexed measure guards; cover both goal
-  signs, index writes/consumes/scope exits, and stable-index controls. This
-  audit records the defect; the repair must restore the existing rule,
-  not narrow its expected rejection.
-
-- **Temporary and residual cleanup do not consistently use the checked release
-  graph.** Three distinct observations remain on `c6cd9add`. Discarding a
-  `nodrop` result as `mint();` is accepted and lowered, although binding the
-  same result and leaving it live is rejected by PROV-6. Discarding a struct
-  result containing a `Box<u8>` emits no cell free, whereas binding that
-  result emits one. Moving a Box field out of a boxed struct with a tag-only
-  `nocopy enum` sibling passes source checking but fails with backend
-  `InvalidIr`; that sibling has an empty release. The expression-statement
-  path in [control checking](../compiler/src/semantic/check/control.rs),
-  `DropExpression` in [lowering](../compiler/src/lowering/builder.rs), and
-  `owned_take_cleanup` in
-  [place checking](../compiler/src/semantic/check/expressions/places.rs)
-  diverge from ordinary typed cleanup. Unify their use of PROV-6/STOR-3
-  disposition and empty-action handling. Close with exact-rule linear
-  controls and native allocation/release observations for discarded
-  aggregates and empty residuals; emitted LLVM currently confirms the
-  missing free, but no native release trace was taken for that case.
-
-- **Proved index separation does not preserve a bystander reference across a
-  call write.** A saved reference to `values[i].field` is invalidated by a
-  helper writing `values[j]` even with in-range `i < j` requirements; the
-  literal-separated control passes and the possible-overlap control rejects.
-  REF-2/OWN-7/EFF-5 require the current-context separation to participate.
-  [Structural reference invalidation](../compiler/src/semantic/check/references.rs)
-  uses `UnprovedSeparations` before proof flow can answer this question.
-  This is a false rejection, separate from the loop precision study below.
-  Extend the existing proof-to-validity path when repairing this case, with
-  guarded, joined-target and stale-index controls; do not add a second solver.
-
-- **Runtime Array element checking excludes legal fixed Arrays.**
-  `Box<Array<Array<u64, 2>>>` is admitted by TYPE-9, but an ordinary
-  `box_array_filled` call reports unsupported `CompositeValues` in the
-  `buffer_element` path of
-  [type checking](../compiler/src/semantic/check/types.rs).
-  This is a capability gap, not a source-language rejection. Extend the
-  existing element representation and its downstream consumers, with nested
-  array construction, indexed access and cleanup observations; retain this
-  item until that end-to-end path is implemented.
-
-- **Nested Box linear-residual rejection selects the wrong rule.** For a
-  projected consume leaving a linear sibling, both PROV-6 and WIN-3 name
-  the same consuming place; DIAG-1 selects the earlier-defined PROV-6.
-  [Box-content checking](../compiler/src/semantic/check/expressions/places.rs)
-  and `nested_owned_box_take_rejects_a_linear_residual` currently choose
-  WIN-3. Align attribution without changing the rejected program set, and
-  preserve WIN-3 for hole-producing moves without a linear residual. This
-  diagnostic repair is deferred separately from cleanup correctness.
-
-- **Source-envelope resource failures are classified as invocation errors.**
-  The public API reports `SourceEnvelope/Invocation` when `max_sources`
-  is exceeded; [the driver](../compiler/src/driver.rs) maps every
-  `SourceBundle` failure that way, including resource/storage failures.
-  Distinguish these from invalid logical paths using the public failure
-  taxonomy. `max_sources` currently counts injected prelude inputs as well
-  as caller inputs; this is not by itself a defect. Also settle the API's
-  empty-input contract: `check(&[])` accepts after adding the prelude,
+- **Empty public source input needs an explicit contract.** In
+  [the driver](../compiler/src/driver.rs), `check(&[])` accepts after adding the prelude,
   while the CLI requires a source path. Whether PRE-1 representations count
   toward PROG-2's source-record requirement needs clarification before
-  changing acceptance. Close with API-level boundary and classification
-  controls, without rewriting source verdicts around an invocation policy.
+  changing acceptance. `max_sources` counts injected prelude inputs as well
+  as caller inputs; that is not by itself a defect. Add API-level boundary
+  controls for the selected policy without rewriting source verdicts around
+  an invocation policy.
+
+- **Validate retirement of legacy flat assignment targets.**
+  [Storage place checking](../compiler/src/semantic/check/expressions/flat_storage.rs)
+  converts mutable Array and Buffer targets to the shared Container/Storage
+  path before its older flat-target dispatch. Confirm that no ordinary
+  source or necessary internal consumer still constructs `CheckedArraySetTarget`
+  or `CheckedBufferSetTarget`; if none does, retire those representations and
+  their duplicated capture, kill and lowering paths. This could simplify
+  assignment reasoning, but the complete consumer audit remains undone.
+  Defer until the next storage-checker simplification; preserve target-before-RHS
+  capture, diagnostic locations and native assignment behavior in that audit.
 
 - **POSIX heap-exhaustion record writers do not retry an interrupted write.**
   The generated heap record writers abort on every nonpositive `write`
