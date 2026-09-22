@@ -101,7 +101,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 reference.enter_loop_header(token, rebound.contains(&declaration))?
             {
                 let ty = local.ty;
-                self.join_loop_reference_summary(token, ty, &paths, bindings)?;
+                let kind = reference.kind;
+                self.join_loop_reference_summary(token, ty, kind, &paths, bindings)?;
                 let paths = self
                     .loop_reference_summaries
                     .borrow()

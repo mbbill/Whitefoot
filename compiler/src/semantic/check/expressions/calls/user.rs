@@ -327,7 +327,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [EFF-5] would otherwise report against that row.
         let atomic_target = self.check_atomic_update_row(node, &actual_paths, &substituted)?;
         self.check_call_pairwise_disjointness(node, signature, &substituted)?;
-        self.invalidate_call_bystanders(&substituted, atomic_target.as_ref(), &call, bindings)?;
+        self.invalidate_call_references(&substituted, atomic_target.as_ref(), bindings)?;
         Self::invalidate_window_operation_references(signature, &substituted, bindings);
         self.project_call_effects(node, function, &substituted, bindings, &mut effects)?;
         let result = signature.result;
@@ -866,22 +866,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         signature.name == "swap"
     }
 
-    /// [EFF-5] clause 3: a live reference outside the call whose path has a
-    /// proper prefix among the call's substituted write paths becomes invalid
-    /// after the call [REF-2].
-    ///
-    /// A reference that is itself an argument is the thing being accessed,
-    /// not a bystander, and does not invalidate itself; the reference whose
-    /// own path the write names is exactly the one whose path the write is a
-    /// prefix of, which [`Checker::invalidate_references`] already decides.
-    fn invalidate_call_bystanders(
+    /// [EFF-5] clause 3: every live reference, including an actual argument,
+    /// receives each substituted effect's ordinary invalidation [REF-2].
+    /// Only an access at or below its captured target preserves that target;
+    /// being an argument does not exempt it from another actual's write.
+    fn invalidate_call_references(
         &self,
         entries: &[SubstitutedEntry],
         atomic_target: Option<&ResolvedPlace>,
-        call: &crate::NodePath,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
     ) -> Result<(), CheckStop> {
-        let _ = call;
         for entry in entries.iter().filter(|entry| entry.write) {
             let event = if entry.consuming {
                 // [OP-12] the recognized first argument is not an ordinary

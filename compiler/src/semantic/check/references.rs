@@ -392,6 +392,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         token: LoopReferenceToken,
         ty: CheckedType,
+        kind: ReferenceKind,
         paths: &[ResolvedPlace],
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<bool, CheckStop> {
@@ -457,6 +458,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 loop_id: token.loop_id,
                 holder: token.owner,
                 ty,
+                range: kind == ReferenceKind::Range,
                 readonly,
             }));
             if same_root.as_slice() != [&joined] {

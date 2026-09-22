@@ -68,6 +68,12 @@ target shapes, including references and elements, rather than only a named
 binding target. This restores the existing cleanup-traversal decision; the
 backend neither rediscovers liveness nor infers it from the target's shape.
 
+Range summaries retain their range kind as well as element type. An indexed
+write must run the shared readonly-origin check after resolving its complete
+suffix; the new range cursor case exposed that missing check in the existing
+indexed-target path. Both single-target and range-target cursors therefore
+retain readonly provenance through widening and later projections.
+
 ## Alternatives and tradeoffs
 
 Recursion and indexed pools remain usable but do not implement iterative
@@ -147,5 +153,10 @@ cost bound for arbitrary functions. The 64-to-128-holder increase shows a
 remaining scale cost; reopen the transfer-graph alternative when a real
 program needs that scale or a later measurement misses the criterion.
 Precision remains intentionally conservative for independent cursors in
-one subtree and for changing captured indices; the formal cases own those
-acceptance boundaries. No measurement threshold selects source acceptance.
+one subtree and for changing captured indices. A write through a widened
+range can also discard a prior length bound because its support covers the
+subtree; selecting an element reference before the write, or establishing
+the bound again afterwards, avoids relying on that lost fact. This study
+does not establish precision for all recursive range edits. The formal
+cases own the acceptance boundaries. No measurement threshold selects
+source acceptance.

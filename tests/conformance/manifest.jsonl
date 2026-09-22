@@ -1144,3 +1144,5 @@
 {"id":"ref2-neg-wildcard-window-removal","rules":["REF-1","REF-2","OP-10"],"expect":{"kind":"reject","rule":"REF-2"},"status":"runnable","doc":"Removing a window slot invalidates a descendant cursor formed under that window's bound."}
 {"id":"op11-pos-proved-separated-ancestors","rules":["OP-11","OWN-7","ENT-6"],"expect":{"kind":"accept"},"status":"runnable","doc":"Proved distinct array indices separate a node from a deeper target under another slot."}
 {"id":"op12-neg-wildcard-ancestor-effect","rules":["REF-1","OP-12","OWN-7"],"expect":{"kind":"reject","rule":"OP-12"},"status":"runnable","doc":"An atomic update row cannot write a possible ancestor of the captured descendant target."}
+{"id":"ref1-pos-wildcard-range-descent","rules":["REF-1","REF-4","OP-4"],"expect":{"kind":"accept"},"status":"runnable","doc":"A descendant summary retains the range kind, its captured length and typed element suffixes."}
+{"id":"type2-neg-wildcard-range-readonly","rules":["REF-1","REF-4","TYPE-2"],"expect":{"kind":"reject","rule":"TYPE-2"},"status":"runnable","doc":"A readonly element field remains readonly below a widened range cursor."}

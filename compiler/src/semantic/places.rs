@@ -319,6 +319,7 @@ pub(crate) struct DescendantTarget {
     pub(crate) loop_id: CheckedLoopId,
     pub(crate) holder: BindingId,
     pub(crate) ty: CheckedType,
+    pub(crate) range: bool,
     pub(crate) readonly: bool,
 }
 

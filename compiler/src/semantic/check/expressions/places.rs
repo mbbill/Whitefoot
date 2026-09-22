@@ -897,7 +897,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     if target.readonly {
                         return Ok(Some("a readonly descendant path".to_owned()));
                     }
-                    ty = PathType::Value(target.ty);
+                    ty = if target.range {
+                        PathType::Range(target.ty)
+                    } else {
+                        PathType::Value(target.ty)
+                    };
                 }
                 PlaceStep::Field(index) => {
                     let PathType::Value(current) = ty else {
@@ -998,7 +1002,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         for step in &path.path {
             ty = match *step {
-                PlaceStep::Descendant(target) => target.ty,
+                PlaceStep::Descendant(target) => {
+                    range = target.range;
+                    target.ty
+                }
                 PlaceStep::Field(index) => {
                     let CheckedType::Nominal(id) = ty else {
                         return Ok(None);

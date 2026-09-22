@@ -349,8 +349,8 @@ fn inspect(root: &Node) -> result: own unit writes(root) {
       }
     }
   }
-  paint_left(node: first);
-  paint_right(node: second);
+  let painted_left = paint_left(node: first);
+  let painted_right = paint_right(node: second);
   return unit;
 }
 

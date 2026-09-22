@@ -534,6 +534,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 && self.join_loop_reference_summary(
                     token,
                     expected_type,
+                    previous_kind,
                     &reference.paths,
                     bindings,
                 )?
