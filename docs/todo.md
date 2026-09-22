@@ -36,6 +36,27 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   enumerating infinitely many content paths and test kills as well as fact
   retention.
 
+- **Parallel footprints omit ordinary result-list bindings.** The
+  [sparse-routing trial](../research/investigations/compute-model/DESIGN.md#sparse-destination-routing-trial-2026-09-21)
+  exposes a receiver map denied solely because one statement binds two local
+  results. PAR-2 allows iteration-owned writes, but the current PAR-1/PAR-2
+  walkers model one result definition per statement and refuse this form.
+  A two-field record admits the same receiver map without added allocation or
+  traversal. Defer a general multi-definition footprint implementation while
+  measuring the algorithm; reopen when that workaround materially complicates
+  a real consumer. Validate complete effects, consumption, exits and lowering
+  for all result ordinals rather than granting a tuple-specific exception.
+
+- **Initialized allocation can impose serial span on parallel work.** The
+  [private-outbox representation](../research/investigations/compute-model/DESIGN.md#private-outboxes-without-frontier-compaction)
+  requires a fresh C-by-D head matrix each level; its element fill is a
+  sequential emitted loop before otherwise independent routing. Initialization
+  remains linear work but can dominate the full critical path. The end-to-end
+  cost is not yet attributed. Measure fill/allocation separately from useful
+  routing before choosing a general lowering change; preserve initial values,
+  cleanup and the unchanged sequential image in any later experiment. Defer
+  repair until the sparse oracle and bounded comparison establish materiality.
+
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)

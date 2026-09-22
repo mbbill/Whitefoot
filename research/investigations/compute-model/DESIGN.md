@@ -11,6 +11,200 @@ protocol merges. The containers handover added at that revision describes a
 separate, unmerged implementation; it is not this experiment's language or
 compiler. The active specification and executable cases remain authoritative.
 
+## Sparse destination routing trial (2026-09-21)
+
+This bounded continuation starts at merged `3402048f` and asks whether useful
+parallel sparse discovery can proceed independently of stable-scatter tuning.
+The research-only [candidate](sparse-frontier.wf) routes the current frontier's
+adjacency slots through source-private outboxes into disjoint destination
+ranges. Each destination owner handles competing discoveries in source order
+and retains an intrusive list for the next level. No loop scatters into shared
+visited storage, and no frontier compaction is required.
+
+Before source or performance results select this direction, the criteria are:
+
+- Preserve every FIFO-oracle distance, unreachable sentinel, and input byte in
+  sequential and overlapping images. Reuse the formal BFS observer and add
+  only research fixtures needed for broad collision-heavy frontiers, vertex-ID
+  permutation, self edges, duplicate edges, disconnected vertices, and skew.
+- Establish that source routing and destination discovery offer and execute
+  nonempty work on helpers. A grant during initialization alone does not
+  establish parallel discovery. Permission is not a speedup.
+- Count adjacency slots, matrix initialization and visits, list traversals,
+  and peak workspace. Charge every allocated or reset cell and repeated scan.
+  No full-vertex scan per level or source worker count may be hidden in routing.
+- First obtain a correct executable and a small, bounded cost comparison on
+  the current compiler. Retain useful sparse FIFO and the unchanged intrusive
+  sparse implementation. Test a broad tree and a broad collision-heavy graph,
+  with a chain, width-31 grid, and duplicate-discovery control. Do not add
+  artificial vertex work to amortize sorting.
+- A candidate is promising only if a qualified parallel run beats useful
+  sparse FIFO by at least 20 percent on one broad family and improves its own
+  sequential image on both broad families. Narrow-frontier work must remain
+  proportional to reached adjacency, and its elapsed-time penalty is reported
+  explicitly. A result slower than FIFO on both broad families ends this
+  algorithm trial; do not tune routing indefinitely or rename it success.
+- Separate compiler construction, WF analysis/emission, native construction,
+  and execution. Use host-locked bounded runs and unobserved timing images;
+  qualify identical-image variation before using a timing difference. Compare
+  wall time and process CPU at the same worker widths and retain exact source,
+  compiler identity, flags, graph shape, and work counts.
+
+An initial sorting alternative expanded four candidates per frontier vertex,
+used the maintained parallel merge sort, split sorted candidates among
+destination owners, and copied active output prefixes together. Comparison
+sorting costs O(m log m) for m candidate slots in a level; owner routing and
+balanced prefix copying can add O(m log V). That alternative never established
+a sparse O(V+E) work bound. FN-9 withholds same-component postconditions during
+recursive verification, so the diagnostic source capped recursive returned
+counts to their candidate and destination spans before copying. The current
+[obligation-discharge decision](../../../design/language/checks-and-proofs/obligation-discharge.md)
+withholds recursive summaries to prevent unearned circular justification and
+teaches a proved invariant in place of an impossible-case branch. This capped
+form is a non-adopted diagnostic control, not an implementation proposed to
+ship under that decision. No amendment is proposed to bless the control, and
+no sorting or proof-system tuning is selected to rescue it. Actual source
+acceptance, native correctness, emitted task structure, and cost were not
+established for that control.
+
+The first bounded control check used the immutable current-main compiler
+SHA-256 `6b87581a30c8a0afcdaf062221a58e21087a408bb7a071bdea6f08ca0d1937e4`.
+After separating a correlated scalar update into a normal step helper, the
+source still stopped at INV-1 on the leaf's `emitted <= i` backedge invariant
+(0.47 seconds for source analysis; no native build or execution). This is an
+unresolved source-proof failure, not evidence that the algorithm is impossible
+or that the compiler violates the specification. Further repair of the
+non-adopted sorting control was not selected while the no-compaction route
+below remained more promising.
+The rejected source was replaced in place by the private-outbox candidate.
+Keep the selected source in research until its distinct permanent-test
+obligation is known; remove or extract it when this trial is concluded.
+
+Sparse FIFO remains the useful baseline, including narrow frontiers. A
+possible fallback comparator on the existing undirected fixtures is a hybrid
+that uses sparse traversal below F < alpha*V and parallel pull above a fixed
+positive density threshold alpha. Each full-vertex scan can then be charged
+to its frontier: V <= F/alpha. If every newly reached vertex enters exactly
+one frontier and degree remains bounded, the complete traversal has linear
+work. This argument also requires charging any frontier reconstruction and
+buffer copying to those dense rounds. Pull reads the reverse adjacency, so
+the undirected fixture premise matters. This alternative only parallelizes
+dense frontiers; it does not resolve broad sparse directed work or arbitrary
+dependencies. It is recorded for comparison if outbox overhead is material,
+not selected as a second implementation before the current trial is measured.
+
+### Private outboxes without frontier compaction
+
+The selected representation retains one intrusive frontier list per
+destination owner. In the following level those owners become the source
+owners. A source walks only its active list and builds private bucket heads
+for the new destination owners. An immutable original adjacency-slot index is
+the message node: only its next-link cell is written, without copying the
+destination value into a candidate array.
+After source routing joins, each destination owner scans its bucket heads,
+handles competing discoveries locally, and builds its next intrusive list.
+The old links may be reused after that join. No global frontier flattening,
+unique-output scatter, or recursive returned-count proof is required.
+
+Let m(t) be four candidate slots per active vertex in level t. Choosing a
+destination-owner count proportional to the square root of m(t) makes the next
+round's old-source count proportional to the square root of m(t-1). The
+rectangular bucket matrix then has O(sqrt(m(t-1) * m(t))) entries, bounded by
+O(m(t-1) + m(t)). Charging metadata to adjacent levels gives O(V+E) total work
+for the complete traversal, provided all list traversals visit only active
+nodes, initialization outside these matrices is paid once, and no later
+consumer adds a full-vertex scan. Abrupt frontier shrink does not invalidate
+that total-work bound.
+
+The current source reserves V distance cells, V intrusive vertex-link cells,
+4V message-link cells, and two V owner-head buffers, all initialized once.
+The two head buffers keep the returned policy stride independent of a stored
+array-length relation; only the active owner prefixes are read or written.
+Persistent storage is therefore 8V u64 cells (64V bytes), plus array headers
+and the current C-by-D bucket matrix. Matrix allocation initializes C*D cells,
+and receivers read C*D heads. Source routing uses the freshly filled sentinel
+heads directly; its redundant second reset was removed before timing.
+Both matrix passes are charged explicitly. There is no per-level
+vertex-wide clear. The four graph slots per vertex are input, not workspace.
+
+Each receiver maps a message to `(vertex -wrap origin) % owner_width`.
+Remainder proves a valid local index for every message without an unavailable
+stored per-message range relation or an impossible-case guard. Correct routing
+makes this exactly the intended vertex; the independent FIFO comparison must
+establish that correspondence. Both variable remainder and source division
+are real per-message costs. Source routing rejects out-of-range adjacency
+values before building any bucket, preserving absent-edge semantics without
+funneling all absent values through the final owner. Discovery counts use
+`+wrap` only for zero-termination and choosing the next partition, never as a
+storage-bound premise. Actual uniqueness supplies the algorithm's count bound.
+
+The full source admits and emits on the immutable `6fdb6768` compiler,
+SHA-256 `d6ba9286f877df7e2a2d9e7d751d415871b2d2d992d558a2d9e37ad14e3a32c5`,
+in 0.21 seconds including the guard wrapper. It uses ordinary range ownership
+with partial final owners, safe bucket indices, guarded local list traversal,
+and proved matrix and message capacities. The public input limit remains
+16,777,216 slots. Helpers use conservative erased domain bounds because the
+unsigned-division facts supply `vertices <= slots` directly; those helper
+contracts do not enlarge accepted inputs or actual allocations.
+
+The source adaptations expose existing proof boundaries rather than change
+them. A nonlinear function requirement does not supply the affine
+certificate premise over a later product binding, and scaling a premise whose
+operand expands from a local sum does not match the separately recorded
+product. The source therefore represents the matrix as the complete-row
+product plus one tail row, and the receiver advances a proved current index
+along its column until the actual matrix end. This preserves C head visits
+without an impossible-case branch or recursive count contract. The resulting
+data-dependent metadata loop, like the frontier/message walks, needs separate
+work-price and helper-participation inspection before any timing conclusion.
+The routing phase's span is O(4*max(source frontier size)); discovery span
+is O(C + max(incoming bucket messages)). Both can be linear in active work:
+concentrated vertex labels or competing destinations can serialize a level.
+The current full-range maps and final tail execute in separate source-order
+steps, adding at most another largest-owner term to those bounds. Preserve
+both the original and permuted broad graph, and explicit skew, before claiming
+useful parallel sparse discovery. The source decomposition has no worker count.
+
+The first native image matches the independent formal FIFO oracle in 90
+configurations at W1 and W4, checking 1,863,630 distance and unchanged-input
+values at each width. This reuses the maintained BFS matrix and adds a
+65,535-vertex permuted tree and a directed broad graph with colliding,
+duplicate and self-edge discoveries. Construction took 0.68 seconds and the
+complete guarded construction/check batch 1.14 seconds. These are correctness
+observations, not qualified performance samples. That image's ledger denies
+both useful owner loops, so an active worker pool alone establishes no
+parallel discovery.
+
+Two ordinary compiler limitations explain those denials. The loop-footprint
+walker refuses ordered result-list bindings even when every new binding is
+iteration-local; PAR-2 itself imposes no such restriction. Returning the same
+two scalars as one `Discovery` record admits the receiver map without another
+allocation, traversal, or accumulator. General support for all result-list
+bindings remains a compiler opportunity. The record-result image also passes
+all 90 oracle configurations at W1 and W4; native construction takes 0.65
+seconds and the complete check batch 1.14 seconds. Its source SHA-256 is
+`d10f0047164ca614968d55e50549d7efd1a768a5784c901d36dd82f9467f63f2`.
+The source-row failure reduces to
+`stride = width + padding; cells = rows * stride` followed by disjoint
+`[i*stride, i*stride+stride)` writes. A preheader symbolic product creates a
+copied-value handle that the retained range-image classifier treats as opaque,
+while the added endpoint expands the same value. The corresponding constant-
+multiplier control is already a maintained positive test. This is an
+implementation limitation in retaining the specified exact images, not a
+language ban on these partitions. A general repair is being investigated
+separately; no private solver or BFS exception is proposed. The equivalent
+product-endpoint spelling did not pass the existing certificate matcher, so
+the admitted source retains the natural start-plus-stride endpoints.
+
+Those are phase bounds, not the complete implementation's span.
+`compiler/src/backend/emitter/buffer.rs::emit_buffer_block` emits a sequential
+element-fill loop after each allocation. The fresh matrix consequently adds
+O(C*D) serial initialization span per level before routing begins, and the
+persistent arrays add O(V) serial fill work once. Independent allocations may
+overlap as statements, but each individual fill is serial in this lowering.
+This is an implementation cost to attribute in a native result, not a language
+ban on parallel initialization or a reason to claim useful speedup already.
+
 ## Reference-model scatter investigation
 
 The reference/effect/storage port in PR #70 changes the source mechanisms
