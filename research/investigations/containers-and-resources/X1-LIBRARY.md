@@ -689,5 +689,55 @@ whose possible-descendant fact cannot establish the owner's measure. The
 original generic witness fails under `efe41016` and passes after the repair.
 The recursive cases also exposed a constructor-placement omission at
 `set Box.inner = ...`; using the existing exact destination path repairs that
-naming event without changing commit order or invalidation. Full repository
-validation is a separate remaining check for this revision.
+naming event without changing commit order or invalidation. These focused
+checks distinguish the placement repair; the canonical gate also covers its
+other semantic, lowering and native-program consumers.
+
+The consumption candidate takes a rear element into an owned local before
+exchanging it with the next suffix slot and calling the consumer. At offset
+`k < floor(removed / 2)`, the post-take length still exceeds `retained + k`;
+the source writes that bound as an ordinary finite certificate. The reversed
+remainder is then consumed from the back. Only removed elements move, so
+almost complete retention does not turn truncation into a prefix walk. The
+interface, permitted callback effects, retained contents and capacity are
+unchanged. This still relocates rear elements and is not a minimum-transfer
+algorithm.
+
+Two target choices address the demonstrated extra temporary copies. A complete
+take captures the old physical slot, updates the window descriptor, then
+transfers the element. Its header and element bytes are disjoint, and no call,
+release or source observation occurs between those steps. Zero-size elements
+touch no bytes. Separately, unrelated storage groups become independent entry
+stack allocations only after complete target qualification establishes positive
+sizes, one common natural alignment, no requested-alignment discrepancy and
+no inter-group or tail padding. Every eligible ordering has the same complete
+extent. Mixed alignment, padding and zero-size roots retain the qualified
+frame struct; complete parents, storage interference, result destinations,
+probing and parallel lifetimes are unchanged. The old canonical offsets
+remain qualification accounting, not physical offsets between independent
+objects.
+
+The [transfer experiment](../../experiments/container-representation/vector-library/RESULTS.md)
+records the alternatives and isolating evidence. Early capture annotations or
+independent slots alone did not reduce the candidate's four transfers per
+first-half iteration; the descriptor order and independent slots together
+reduced them to two after local Clang 21 optimization. Apple Clang 15 retains
+an additional immutable argument snapshot in the straight-line regression,
+so this is not an optimizer-independent copy-count guarantee. The regression
+checks the compiler-owned allocation and descriptor-order properties and the
+native result; optimized transfer counts remain toolchain-specific evidence.
+Forwarding a consumed mutable local into an ordinary call is a separate
+opportunity: it needs a liveness and interference argument across all arguments
+and result/input reuse, and the existing result-coalescing path does not cover
+a consumer returning unit. That opportunity is retained in the maintained
+TODO rather than broadening the present changes without that argument.
+The unchanged v0.61 compiler emits one aggregate frame for the regression's
+distinct roots and copies the taken element before updating the descriptor;
+each new raw-IR assertion therefore distinguishes its corresponding lowering
+change without depending on a downstream optimizer.
+Broad ABI promises and
+unrestricted frame splitting were therefore not adopted. The general mixed-
+alignment case needs a separate complete-frame argument if a concrete workload
+later demonstrates a benefit. The library and compiler choices remain proposed
+tree revisions. Measurements compare both source algorithms through the same
+integrated compiler and keep the historical compiler comparisons separate.

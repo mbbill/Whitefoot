@@ -4,10 +4,10 @@ This experiment bundles the current reusable
 [`GrowVector`](../../../../lib/containers/grow-vector.wf), not a second
 benchmark-only implementation. The selection criteria precede measurement in
 [X1-LIBRARY.md](../../../investigations/containers-and-resources/X1-LIBRARY.md#vector-consumption-trial).
-The current source uses kernel v0.61's global heap and total allocation. The
-dated v0.60 measurements below retain their original compiler and source
-identities. Measurements are descriptive evidence, outside correctness CI,
-not a native-parity gate.
+The current source uses kernel v0.62's global heap and total allocation. The
+v0.61 diagnostic trial and dated v0.60 measurements below retain their original
+compiler and source identities. Measurements are descriptive evidence, outside
+correctness CI, not a native-parity gate.
 
 ## Contract and controls
 
@@ -18,18 +18,27 @@ member in original element order. Every element contributes to an
 order-sensitive checksum. The independent C oracle computes that logical
 sequence without constructing or mutating a vector.
 
-The three paths are reserve-before-fill, growth by append, and reuse of one
+The three whole-chain paths are reserve-before-fill, growth by append, and reuse of one
 reserved allocation across rounds. All have a final empty-owner release.
 Lengths 16, 256 and 4096 are timed with `16384 / length` rounds per sample.
 Elements are an 8-byte scalar or a 256-byte `nocopy` record of 32 words; each
 record word contributes to the checksum. These are operation trials, not a
 claim about real application frequencies or a measurement of Box-payload
-allocation costs.
+allocation costs. Two additional paths retain all but one or three elements
+at lengths 16 and 4096. They build the retained prefix once, then append and
+consume the small suffix repeatedly, and finally drain the prefix and release
+the backing. Each sample uses `65536 / removed` cycles. Its per-cycle time
+includes the amortized prefix setup and final drain; it is not an isolated
+truncate measurement. The original and revised libraries use the same
+extended workload and controls.
 
-- **Whitefoot:** the actual library's reverse-suffix, take-back composition.
-- **Reverse C:** the same algorithm, growth policy, element ownership transfer
-  and callback sequence. Its difference from WF measures compiler/lowering
-  costs under this source shape, including ordinary native ABI differences.
+- **Whitefoot:** the actual library's take-first, swap-local composition. The
+  paired original-source run substitutes the saved reverse-suffix library
+  while retaining the same compiler, workload and controls.
+- **Reverse C:** the original library's algorithm, growth policy, element
+  ownership transfer and callback sequence. Its difference from the
+  original-source WF run measures compiler/lowering costs under that source
+  shape, including ordinary native ABI differences.
 - **Direct C:** the same contract with a direct ordered suffix consumer. The
   callback cannot observe the vector, so the control can traverse the suffix
   and shorten the length once. Its difference from reverse C measures the
@@ -53,16 +62,17 @@ the dated v0.60 timing datasets.
 
 The ordinary mode permits normal Clang O2 inlining. The retained mode marks
 library and workload helpers and the element make/accept functions noinline
-on both sides. WF retains 26 selected definitions. Compiler-owned primitive
+on both sides. Compiler-owned primitive
 operations remain eligible for inlining, just as C primitive operations do.
 Generated optimized WF and C IR remain in `.build/` for inspection.
 
 ## Correctness and timing method
 
-`make check` in this directory checks 540 configurations per helper mode:
+`make check` in this directory checks 1260 configurations per helper mode:
 10 lengths (including 0, 1, 8192), three round counts (including 0), three
-seeds (including u64 max), two element sizes and three allocation paths.
-All five implementations run each configuration: 5,400 executions across
+seeds (including u64 max), two element sizes, three whole-chain allocation
+paths and four suffix paths removing zero through three elements (clamped to
+the length). All five implementations run each configuration: 12,600 executions across
 the two modes. This is an experiment check, not a daily gate dependency.
 
 The formal corpus separately bundles the library and
@@ -78,13 +88,18 @@ and release. The same parallel native image also runs a four-worker,
 release controls; these four executions add no WF compilation or native build.
 
 Measurements run on Apple M1 Pro (8 logical CPUs), arm64 macOS 26.6.2,
-Apple Clang 21.0.0. Each of two cohorts has 11 samples and reverses the
-implementation order; samples rotate the first implementation. Each timing
+Apple Clang 21.0.0 (`clang-2100.3.34.2`). Each executable has two cohorts of
+11 samples; the second cohort reverses implementation order, and samples
+rotate the first implementation. Each timing
 still checks the oracle and complete release. Raw times cover the whole
-operation chain, not just drain. The 32-word checksum is material work in
+operation chain or the stated suffix cycle, including amortized setup and
+cleanup, not just drain. The 32-word checksum is material work in
 large-record samples, so these timings do not isolate pure memory bandwidth.
-Reported timings are medians in nanoseconds per round; ratios are ratios of
-those medians. No cross-machine or application-wide speed claim follows.
+Reported timings are medians in nanoseconds per round or suffix cycle;
+ratios are ratios of those medians. The paired source experiment below uses
+separate executables: implementations are interleaved within each executable,
+not across the original and current WF sources. No cross-machine or
+application-wide speed claim follows.
 
 ## v0.61 copy and consumption trial
 
@@ -150,15 +165,66 @@ diagnosis left source, callbacks, control flow and noalias facts unchanged:
 | Early `captures(none)` on aggregate ABI inputs/results | 4 | 1 |
 | Four separate local allocations instead of one 1,024-byte frame | 4 | 1 |
 | Both changes | 4 | 1 |
+| Non-underflow flag on take's length decrement, combined frame | 4 | 1 |
+| Non-underflow flag on take's length decrement, separate locals | 4 | 1 |
+| Take captures address, shortens descriptor, then transfers; combined frame | 4 | 1 |
+| That take ordering with separate locals | 2 | 1 |
 
 Clang O2 completed all three diagnostic optimizations in one guarded 0.20-second
 run. Separate allocations forwarded two caller snapshots but exposed the
 swap temporary, leaving the transfer count unchanged. These negative results
-justify neither a broader ABI attribute nor a frame representation change.
+did not select a broader ABI attribute or a frame representation change.
+The four following optimizations took 0.31 seconds. The take-order experiment
+captured the old element address before writing the shortened descriptor,
+then transferred the element. That ordering forwarded the last element
+directly to the suffix slot; separate allocations also removed the sibling
+frame snapshot before the callback. Both changes were needed for two transfers
+in this fixture. No `captures(none)` or arithmetic-flag change was selected.
 The compiler-produced raw and optimized modules are in the experiment's
 `.build/followups-*` directories. The diagnostic transformations were written
 outside the repository; they are not an alternate compiler path or checked-in
 implementation.
+
+The bounded frame/probe diagnostic took 0.21 seconds. Both modules qualified
+the same 1,024 bytes of four 256-byte, alignment-8 local allocations before
+optimization. On arm64 the original function used a 1,104-byte machine frame
+(1,024 local bytes plus 80 saved-register bytes); the combined positive
+diagnostic used 576 bytes (512 local bytes plus 64 saved-register bytes).
+Both retained the stack-probe attribute and neither needed a probe call at
+these sizes. These emitted frame sizes describe the fixture, not a target
+layout guarantee.
+
+The delivered compiler generalizes only the proved parts of that diagnostic.
+OP-10 take is lowered as one operation: capture the old physical address,
+update the Slots/Ring descriptor once, then transfer the element. Descriptor
+and element storage are disjoint; there is no intervening callback, drop or
+allocation. Independent entry allocations are selected only after validating
+the complete facts-off frame extent, and only when every complete allocation
+root has positive size, the same natural and requested alignment, and no
+padding. Zero-sized, mixed-alignment and over-aligned frames retain the
+contiguous form. The target plan supplies the emission recipe; it does not
+recast accounting offsets as addresses of separate objects. Runtime lane
+frames, ownership interference and storage coalescing are unchanged.
+
+The integrated v0.62 compiler with local Apple Clang 21 produced the same
+two/one retained transfer shape and passed the original 5,400-execution
+workload before the suffix extension. In that optimized body the new
+composition transfers
+`removed + floor(removed / 2)` records, versus the original
+`removed + 3 * floor(removed / 2)`. Direct C
+needs one callback-argument transfer per removed record. The extra half-record
+per element is a remaining cost of this composition, not a demonstrated lower
+bound for all ordinary representations or a reason to weaken the API.
+These are toolchain-specific bulk-transfer counts, not a compiler promise.
+The existing intrinsic-count proxy omits scalar loads and stores. The hosted
+Apple Clang 15.0.0 (`clang-1500.3.9.4`, arm64 Darwin 23.6.0) optimized a related
+large-record regression to three 256-byte transfers, retaining an additional
+consuming-call snapshot. Its old exact-count assertion stopped that run before
+the native checksum test. The maintained regression now checks the compiler's
+allocation and take-order guarantees and native checksum rather than requiring
+every supported optimizer to produce two transfers. General consumed-local
+snapshot forwarding remains a separate compiler improvement in
+[`docs/todo.md`](../../../../docs/todo.md).
 
 Ordinary representation alternatives must preserve the complete API. An
 `Option<T>` slot representation permits a forward drain but cannot implement
@@ -171,6 +237,155 @@ returns a replacement would avoid the local swap, but OP-12 admits only copy
 or affine targets; unconstrained T is linear, so that form cannot serve the
 existing nodrop-generic API. None of these alternatives was silently substituted
 for the selected operation contract.
+
+## Paired v0.62 source measurements
+
+The 2026-09-22 UTC run compares the original reverse-suffix library with the
+current take-first library through the same saved compiler, built from compiler
+source at `99dc453737ec459fcd08e5efc53ff5c43a59d178`. The two builds use the same
+extended workload, runtime, C harness, target flags and host. This isolates the
+library-source change with the final lowering repairs present on both sides;
+it is not a before/after compiler timing experiment.
+
+| Input | SHA-256 |
+| --- | --- |
+| Saved compiler executable | `d0d291ce2343a078a0bfdb212dcee52f4523888ebcb6373bcbfbcb417c0f634c` |
+| Active v0.62 specification | `bb2697f9c5a99d59917cc0371a4bea3b50a3445f30b62e943b0fcdb046804db2` |
+| Original library | `c8ce9e0cdd850deebcb5c4d0cc91d5bc183631c19514c274834d59ff6e139eb8` |
+| Current library | `07a5730d1888bd010f11abf288ed94a0c4c4ac04da6a36426a5ddc75733e7e65` |
+| Extended WF workload | `5a04a0e7dcb7b09644cc626d0af2b0407e1a49b8dc2cc25cff6384fb5dd8c37c` |
+| Five-way C harness | `4df575e42e046d45228634f0a453be59f590ec9d4924e14eb6b5fa97ec747684` |
+
+Both source variants pass all 12,600 correctness executions. The suffix source
+publishes `retained <= 8192` and `retained + removed <= 8192` as local
+invariants before filling the prefix; these erased theorems establish the
+existing append and cycle-helper requirements without an extra runtime guard.
+It also carries the existing whole-chain/reuse construction observation:
+`initial != 0` returns the checksum sentinel. Both libraries have the same
+`new()` body without a result-length contract, and both source runs use this
+same observation to establish emptiness. It is not an allocation-refusal
+path or a workaround specific to take-first consumption. Any retained cost
+from that common source shape is included here, not separately isolated.
+Each timing dataset has 5,720 samples: 52 mode/width/path/length cells, two
+cohorts, 11 samples and five implementations. Every timed checksum and final
+release passed. A separate complete-matrix comparison confirmed identical
+checksums, request counts, requested bytes and peak bytes across all controls
+and both source variants. The optimized C modules are byte-identical across
+the two builds.
+
+The initial executable order was original ordinary, current ordinary,
+original retained, current retained. Short scalar variation justified one
+repeat of the same matrix in the exact reversed executable order; no workload
+or sample count was widened. The raw
+[`measurements-followups.csv`](measurements-followups.csv) contains all 22,880
+samples with `run` (`initial` or `reversed`) and `library` (`original` or
+`current`) columns. Its SHA-256 is
+`a47707ffbe33f6415c4dd36e95604dcf45b2a774c74d2ad3168d8476e23459a4`.
+The initial and reversed runs are retained separately, not pooled into a
+single favorable median.
+
+The current source improves the affected large-record workloads in both
+source orders. To account for host variation, compute
+`(current WF / current C) / (original WF / original C)` separately for every
+cohort and each of the four C controls. A value below one favors the current
+source. The ranges below include every such comparison in both runs; they
+are observed ranges, not confidence intervals.
+
+| Helpers | 256-byte workload | Lengths | Normalized current / original range |
+| --- | --- | --- | ---: |
+| ordinary | reserved, growth, reuse whole chains | 16, 256, 4096 | 0.852–0.981 |
+| retained | reserved, growth, reuse whole chains | 16, 256, 4096 | 0.871–0.963 |
+| ordinary | append/truncate suffix-3 cycle | 16, 4096 | 0.932–0.965 |
+| retained | append/truncate suffix-3 cycle | 16, 4096 | 0.907–0.937 |
+| ordinary | append/truncate suffix-1 cycle | 16, 4096 | 0.955–1.018 |
+| retained | append/truncate suffix-1 cycle | 16, 4096 | 0.966–1.042 |
+
+The one-element suffix has no reversed pair to remove and establishes no
+reproducible source improvement. The three-element suffix does improve at
+both lengths while preserving the retained prefix, supporting O(removed)
+behavior rather than a hidden prefix walk. Setup and final prefix consumption
+are still amortized into these cycle times, so they do not isolate truncation.
+
+The initial whole-chain reuse medians below show both source change and
+remaining costs against every C control. All times are ns/round; each C
+column is current WF divided by that control. Other allocation paths and all
+individual samples are in the raw dataset.
+
+| Helpers | Bytes | Length | Original WF | Current WF | / Reverse C | / Direct C | / Swap/take C | / Take/swap C |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ordinary | 8 | 16 | 47.36 | 51.27 | 1.500 | 1.944 | 1.750 | 1.810 |
+| ordinary | 8 | 4096 | 13,875 | 13,250 | 1.233 | 2.038 | 1.606 | 1.559 |
+| retained | 8 | 16 | 62.50 | 60.55 | 0.939 | 0.984 | 0.992 | 0.984 |
+| retained | 8 | 4096 | 20,750 | 20,500 | 0.965 | 1.031 | 1.031 | 1.025 |
+| ordinary | 256 | 16 | 833.01 | 781.25 | 1.159 | 1.235 | 1.225 | 1.225 |
+| ordinary | 256 | 4096 | 222,875 | 196,875 | 1.052 | 1.219 | 1.193 | 1.206 |
+| retained | 256 | 16 | 862.30 | 794.43 | 0.929 | 1.018 | 0.835 | 1.018 |
+| retained | 256 | 4096 | 227,625 | 201,250 | 0.927 | 1.050 | 0.827 | 1.051 |
+
+Ordinary scalar reuse at length 16 regresses by 8.2% initially and 10.6% in
+the reversed run (45.90 to 50.78 ns). Every cohort/control normalization for
+that cell is above one, ranging from 1.022 to 1.128. Ordinary scalar suffix-3
+changes direction between runs, and the retained short scalar suffix-3 C
+controls vary enough to prevent a general improvement claim. Retained scalar
+suffix-1 at length 16 is slightly slower after normalization in both runs;
+the length-4096 result is less consistent. The source change therefore has a
+measured small-scalar tradeoff, even though all large-record whole chains
+improve. These observations do not select a per-size source specialization.
+
+The large-record suffix medians make the ordinary-inlining gap explicit.
+Times are ns/cycle, including append, checksum, amortized prefix setup and
+final drain; ratios again compare current WF with each C control.
+
+| Helpers | Removed | Length | Original WF | Current WF | / Reverse C | / Direct C | / Swap/take C | / Take/swap C |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ordinary | 1 | 16 | 43.40 | 42.94 | 2.698 | 2.781 | 2.698 | 2.714 |
+| ordinary | 1 | 4096 | 46.66 | 45.81 | 2.477 | 2.609 | 2.513 | 2.532 |
+| ordinary | 3 | 16 | 138.54 | 129.96 | 1.226 | 1.804 | 1.218 | 1.326 |
+| ordinary | 3 | 4096 | 148.43 | 137.99 | 1.215 | 1.759 | 1.217 | 1.312 |
+| retained | 1 | 16 | 41.49 | 41.12 | 0.725 | 0.755 | 0.718 | 0.705 |
+| retained | 1 | 4096 | 44.34 | 44.01 | 0.756 | 0.800 | 0.731 | 0.749 |
+| retained | 3 | 16 | 140.38 | 129.69 | 0.971 | 1.062 | 0.935 | 1.043 |
+| retained | 3 | 4096 | 148.84 | 138.41 | 0.964 | 1.061 | 0.922 | 1.042 |
+
+At length 4096 the reversed run retains a 2.60x direct-C cost for the ordinary
+one-element record cycle and 1.78x for the three-element cycle. The latter's
+retained result is 1.05x direct C. For the ordinary large-record whole chains,
+the current/direct-C ratios remain 1.17–1.23 at length 4096 across both runs;
+retained helpers give 1.05–1.06. The matched take/swap C comparison also
+retains a gap, so the residual cost cannot all be attributed to the library
+algorithm's extra relocation. Conversely, comparison with direct C includes
+both composition and lowering costs. Inlining changes aggregate handling,
+surrounding loops and checksum work; subtracting the two helper modes does
+not isolate call overhead. The particular remaining optimizer causes were
+not isolated by this source-only timing comparison. It supports the proposed
+large-record improvement, not general native parity or a minimum-cost API.
+
+Local retained IR confirms the attribution's limited scope: original WF has
+three bulk transfers per reversed pair plus one per callback, while current
+WF and take/swap C have two per first-half iteration and one per remainder.
+The current first half contains one memcpy and one memmove after Clang O2;
+optimization may reconstruct memmove even though the compiler-owned swap
+emits memcpy. The ordinary scalar paths are not measured by this bulk-copy
+proxy. Both source builds retain 28 marked WF helpers; the optimized call
+scan reports 14 ordinary and 56 retained WF library sites, and 32 retained C
+append/truncate sites in its reverse/direct-family scan.
+
+Construction and execution costs were recorded separately, in seconds:
+
+| Stage | Original | Current |
+| --- | ---: | ---: |
+| Source admission and raw LLVM emission | 0.18 | 0.19 |
+| Native executables and optimized IR, after emission | 1.92 | 2.05 |
+| Cached experiment checks, both helper modes | 1.16 | 1.26 |
+| Initial ordinary timing matrix | 2.03 | 1.99 |
+| Initial retained timing matrix | 2.85 | 2.82 |
+| Reversed ordinary timing matrix | 2.03 | 2.03 |
+| Reversed retained timing matrix | 2.89 | 2.82 |
+
+Every listed command exited zero under the shared verification guard. The
+saved compiler was not rebuilt during this experiment. These stage costs
+are local wall-clock observations, not program timing samples or compiler
+performance comparisons. No specification rule changes in this trial.
 
 ## Lowering attribution
 
@@ -301,6 +516,42 @@ and a fresh `BUILD=/path/to/scratch` select another compiler without changing
 the workload; use the `b3d323a7` compiler to reproduce the before-address case.
 The checked-in dated samples retain the original run; a new run does not
 silently replace them.
+
+For the paired v0.62 trial, the original source is exactly
+`git show efe41016d10379325ed4513d0ac7457ec7f24c5b:lib/containers/grow-vector.wf`.
+Save it as `/tmp/whitefoot-vector-reverse.wf`, and use one saved compiler for
+both builds. The executable hash above identifies the measured compiler;
+a new build is a reproduction with its own identity. From the repository root,
+after the gate-profile build:
+
+```sh
+vector_compiler="$(pwd)/compiler/target/gate/whitefootc"
+perl .github/run-check.pl vector-original make -C research/experiments/container-representation/vector-library \
+  BUILD=.build/final-v062-original WHITEFOOTC="$vector_compiler" \
+  'SOURCES=/tmp/whitefoot-vector-reverse.wf vector-library.wf' check
+perl .github/run-check.pl vector-current make -C research/experiments/container-representation/vector-library \
+  BUILD=.build/final-v062-current WHITEFOOTC="$vector_compiler" check
+perl .github/run-check.pl vector-paired sh -ec '
+  experiment=research/experiments/container-representation/vector-library
+  for pair in "original normal" "current normal" "original retained" "current retained"; do
+    set -- $pair
+    output="$experiment/.build/final-v062-$1"
+    /usr/bin/time -p "$output/vector-costs-$2" measure > "$output/$2.csv"
+  done
+  for pair in "current retained" "original retained" "current normal" "original normal"; do
+    set -- $pair
+    output="$experiment/.build/final-v062-$1"
+    /usr/bin/time -p "$output/vector-costs-$2" measure > "$output/$2-repeat.csv"
+  done
+'
+```
+
+To form the published dataset, concatenate each source's normal and retained
+rows, preserving one header, and prefix every row with its run and library
+identity. Validate 5,720 rows per run/source and identical
+checksums and allocation metrics for every sample across the ten source/control
+results before summarizing. The native runtime is constructed separately in
+each build directory; the experiment adds no correctness-gate dependency.
 
 The older [`measurements.csv`](measurements.csv) belongs to revision
 `5fcf1ce2`, kernel v0.58, measured on 2026-09-14. Its provider/refusal contract,
