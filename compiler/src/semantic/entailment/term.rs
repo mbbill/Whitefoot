@@ -105,10 +105,10 @@ pub(crate) enum TermKind {
     /// across the event.
     ///
     /// `path` is empty where the operand is itself measured, and names the
-    /// field and payload selections that reach the measured place where the
-    /// operand is an aggregate holding one: a placement carries every
-    /// measured place under its operand, so one operand mints one datum set
-    /// per such place [MSR-1].
+    /// field, payload and Box-content selections that reach the measured
+    /// place where the operand is an aggregate holding one: a placement
+    /// carries every measured place under its operand, so one operand mints
+    /// one datum set per such place [MSR-1].
     MeasureDatum {
         statement: Vec<u32>,
         placement: MeasurePlacement,
