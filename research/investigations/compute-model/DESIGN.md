@@ -1208,7 +1208,7 @@ differ, so equal prices are not the criterion; retaining the helper's extent
 is. This is a current representation-dependent summary gap, separate from the
 historical grain-policy trial and its continuation-accounting correction.
 
-The proposed repair follows only the checked direct Box-to-runtime-Array
+The repair follows only the checked direct Box-to-runtime-Array
 projection. Lowering copies the existing checked absence of writes to an
 original reference formal's root. An exact direct chunk capture retains that
 fact; rebinding and reconstructed owned captures do not. Work estimation can
@@ -1219,8 +1219,8 @@ read effect even in a zero-trip body under EFF-2, and EFF-5 separates it from
 reference writes and by-value consumption throughout the call. The no-write
 marker alone does not establish the lifetime of an unused formal. A reference
 type alone does not establish this lifetime: capture-all can retain an already
-consumed owner, and pricing must not dereference it. The precise proposed
-extension is in the [pending amendment](../../../design/amendments/array-reference-work.md).
+consumed owner, and pricing must not dereference it. The accepted extension
+is recorded in the [parallel-lowering decision](../../../design/compiler/parallel-lowering.md).
 
 The focused native regression requires increasing prices for original Box,
 range and shared read-only alias helpers, unchanged static estimates for
