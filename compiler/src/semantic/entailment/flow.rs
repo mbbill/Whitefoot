@@ -17188,10 +17188,12 @@ mod indexed_goal_kill_tests {
     #[test]
     fn signed_indexed_facts_follow_offset_events_and_scope_exits() {
         let constant_ids = HashMap::new();
+        let const_parameter_types = HashMap::new();
         let context = EntailmentContext {
             callees: &[],
             constants: &[],
             constant_ids: &constant_ids,
+            const_parameter_types: &const_parameter_types,
             nominals: &[],
             elements: &[],
             contract_queries: &[],
