@@ -74,11 +74,11 @@ enum { MAX_TAPS = 64 };
 static const double FIR_SENTINEL = 0x1.23456789abcdep42;
 
 extern void wf_bench_fir_par(const double *, uint64_t, const double *, uint64_t, uint64_t,
-                             uint64_t, uint64_t, double **, uint64_t *);
-extern void wf_bench_fir_par_release(double *, uint64_t);
+                             uint64_t, uint64_t, double **, uint64_t *, void **);
+extern void wf_bench_fir_par_release(void *);
 extern void wf_bench_fir_seq(const double *, uint64_t, const double *, uint64_t, uint64_t,
-                             uint64_t, uint64_t, double **, uint64_t *);
-extern void wf_bench_fir_seq_release(double *, uint64_t);
+                             uint64_t, uint64_t, double **, uint64_t *, void **);
+extern void wf_bench_fir_seq_release(void *);
 
 /* ------------------------------------------------------------ generator -- */
 
@@ -307,6 +307,7 @@ typedef struct {
     double *expected_history;
     double *backing; /* the native output allocation; NULL for a WF result */
     double *output;  /* the n output doubles, wherever they live */
+    void *output_held; /* the owned WF result; the element pointer is borrowed */
     int output_from_wf, output_from_seq, guarded;
     size_t n, k, h, grain;
 } Work;
@@ -371,13 +372,14 @@ static void native_chunk(void *opaque, size_t chunk) {
 static void release(Work *w) {
     if (!w->output) return;
     if (w->output_from_wf) {
-        if (w->output_from_seq) wf_bench_fir_seq_release(w->output, w->n);
-        else wf_bench_fir_par_release(w->output, w->n);
+        if (w->output_from_seq) wf_bench_fir_seq_release(w->output_held);
+        else wf_bench_fir_par_release(w->output_held);
     } else {
         free(w->backing);
     }
     w->backing = NULL;
     w->output = NULL;
+    w->output_held = NULL;
     w->output_from_wf = 0;
     w->output_from_seq = 0;
     w->guarded = 0;
@@ -393,11 +395,11 @@ static void run(Work *w, const char *form, unsigned width, int guard) {
         if (seq)
             wf_bench_fir_seq(w->prefix, (uint64_t)(w->h + w->n), w->taps, (uint64_t)w->k,
                              (uint64_t)w->h, (uint64_t)(w->h + w->n), (uint64_t)w->h, &out,
-                             &length);
+                             &length, &w->output_held);
         else
             wf_bench_fir_par(w->prefix, (uint64_t)(w->h + w->n), w->taps, (uint64_t)w->k,
                              (uint64_t)w->h, (uint64_t)(w->h + w->n), (uint64_t)w->h, &out,
-                             &length);
+                             &length, &w->output_held);
         if (length != (uint64_t)w->n) wfb_fail("fir: generated length");
         w->output = out;
         w->backing = NULL;

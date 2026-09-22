@@ -179,6 +179,13 @@ linkage and optimization attributes and leaves library imports and weak
 runtime hooks unchanged. Changing a strong definition to internal linkage
 would change the compiler optimization being measured.
 
+Owned array results cross the host adapter as a borrowed element pointer and
+length plus a retained `Box` handle. Every caller passes that handle to the
+generated release entry after checking the result, outside the timed interval.
+Native results keep their allocation pointer as the equivalent release handle.
+This follows the formal host ABI without changing the algorithms, fixtures,
+allocation boundaries, or result checks. Scalar quadrature needs no handle.
+
 - No C adapter to any runtime is labelled WF.
 - No research copy of the Whitefoot runtime is carried here; the runtime
   sources come from `../../../compiler/` by relative path.
