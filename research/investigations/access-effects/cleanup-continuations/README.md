@@ -6,6 +6,39 @@ using the host call stack. They are investigation artifacts, not compiler
 code, specification text, conformance evidence, or a selected general
 lowering.
 
+## Current-compiler investigation, 2026-09-22
+
+The resumed question is whether merged self-tail lowering also removed the
+compiler-generated release stack, and, if it did not, what a general replacement
+would require. The baseline is main `f3cf41d4` (PR #75), specification v0.62.
+Mutual source tail calls and termination proofs are outside this investigation.
+
+After code inspection and an initial automatic-chain ledger probe, the criteria
+for the controlled comparisons and replacement study are:
+
+- Compare an ordinary scope release of a heap-linked chain with the maintained
+  `tests/programs/tail_list.wf` consuming traversal. Inspect both unoptimized
+  emitted LLVM and the ordinary optimized host assembly/stack ledger. A remaining
+  nonzero-cost cleanup cycle establishes a depth-dependent stack cost even if a
+  selected shallow execution succeeds. A native depth control must distinguish
+  construction from cleanup and must not turn an exhaustion boundary into a
+  language rejection.
+- Any proposed general replacement must account for the continuation of every
+  suspended struct field, enum variant, fixed array and runtime window, including
+  recursive layouts without an enum tag. It must preserve the specification's
+  exact release order, visit only live elements, release each allocation once,
+  and neither allocate nor grow traversal state with value depth during cleanup.
+  Additional persistent object storage and target pointer assumptions are costs
+  to state explicitly, not facts to hide in the model.
+- A model must compare complete free traces with a separate structural oracle,
+  use deep and mixed-layout cases, and count traversal-state and allocation
+  requirements. Passing another closed type grammar is useful evidence only for
+  that grammar; it does not establish a general layout theorem. A native compiler
+  implementation and its performance remain separate qualification work.
+
+This study compares implementation alternatives; it does not select a new
+language rule or replace the live `compiler/cleanup-traversal` decision.
+
 The compiler still emits recursive release actions. Generalizing these
 models is the [open bounded-stack cleanup item](../../../../docs/todo.md),
 not behavior supplied by these research programs.
