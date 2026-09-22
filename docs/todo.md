@@ -89,6 +89,37 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   against direct C and the current WF implementation. No new language operation
   is selected yet.
 
+- **Ring payload addressing withholds a useful unsigned offset fact.** The
+  [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  observes a 2.28–2.34x scalar forward-churn cost against C with ordinary
+  inlining. A bounded IR-only probe adding `nuw` to four positive-stride
+  payload GEPs lets Clang keep the descriptor in registers; merely splitting
+  the address calculation does not. No timing recovery or general validity
+  claim follows from that probe. Qualify the effective byte offset against
+  the actual padded header, stride, allocation domain and parent extent,
+  including zero-capacity, zero-size and maximum-index cases; do not apply
+  the fact to wrapping head arithmetic. Older LLVM needs a supported spelling
+  or an equally justified portable fact. Compare identical source with the
+  fact on and off, retain the independent oracle, and measure the full
+  normal/retained matrix before selecting production emission. Defer that
+  backend change while completing the library baseline; reopen for the next
+  container lowering experiment. This also depends on the zero-size address
+  qualification question above.
+
+- **Slab aggregate results retain extra transfers and layout overhead.**
+  The [Slab comparison](../research/experiments/container-representation/slab-library/RESULTS.md)
+  separates the one-slot cell's extra word from its helper boundary: retained
+  wide removal and consumption has three 256-byte transfers in WF versus one
+  in C, and WF's product-layout result differs from the C union ABI. Keep
+  this distinction when interpreting timing; a cell-layout change alone
+  cannot remove these costs. Validate forwarding or result placement with
+  the same owning return paths, failed insertion returning the offered owner,
+  partial cleanup and alias controls, checking optimized transfers and
+  same-source timings on supported toolchains. Defer general enum layout and
+  call ABI changes until that experiment establishes which transfer can be
+  removed without changing ownership; reopen with the owning-map library or
+  a workload dominated by wide Slab removal.
+
 - **Short Vector cycles retain unresolved lowering costs.** The paired
   consumption experiment improves the large-record paths but slows the
   16-element scalar reuse chain in both source orders. Ordinary optimization

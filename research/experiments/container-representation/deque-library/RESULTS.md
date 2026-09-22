@@ -194,14 +194,24 @@ After Apple Clang 21 O2:
 | Unsigned non-wrapping GEP fact only | 1 payload load / 1 payload store; header state in SSA | 1,296 passed |
 | Split GEP without new fact | 4 / 4 | 1,296 passed |
 
-The fact-only variant also permits initial-fill vectorization. This isolates
-why these metadata operations survive optimization; it supplies no measured
-timing recovery percentage. Construction and all three oracle checks took
+The fact-only variant also permits initial-fill vectorization. It identifies
+an omitted fact sufficient to eliminate this specialization's metadata traffic;
+it supplies no measured timing recovery percentage. Construction and all three oracle checks took
 2.26 seconds under the shared guard. Production lowering is unchanged. A
 general improvement still needs qualification over all admitted storage/index
 domains, including zero-sized elements, a compatible path for older LLVM,
 and the same-source timing matrix. The bounded positive-stride u64 probe does
 not establish that those other cases may receive the flag.
+
+The maintained optional reproduction is
+`make -C research/experiments/container-representation/deque-library probe-scalar-gep`,
+under the shared guard. It refuses drift from the exact four selected u64
+GEPs, saves the three optimized IR variants and their oracle results under
+`.build/`, and requires a local Clang that accepts GEP `nuw`. It is outside
+both daily checks and the ordinary benchmark targets. It changes no compiler
+emission. The target was added after baseline timing: the measured Makefile
+hash below predates it; the Makefile containing the optional target is
+`1facd9eafce1baabac65e456df6ba962b46abd45a944af4eeeaf5f0afbd4e020`.
 
 ### Instrumentation correction
 

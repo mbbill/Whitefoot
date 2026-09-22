@@ -115,7 +115,7 @@ to duplicate every library.
 | Family | First ordinary candidate | Complete operation chain | Proof and ownership obligations | Cost obligations, not measured WF parity |
 | --- | --- | --- | --- | --- |
 | Vector | `Box<Slots<T>>`; `Slots<T,N>` for inline bounded use | Construct, reserve, append, insert, ordered remove, swap-remove, truncate, ordered consume/drain, final release | OP-9 on growth; index/room facts; exact count changes over references; a consume callback for nodrop T; `free_empty` after complete consumption | O(1) no-growth append; amortized O(1) under geometric growth; O(n-i) ordered insert/remove; O(1) swap-remove; O(n) drain. No owner round trip for mutation. |
-| Deque | `Box<Ring<T>>`, fresh ring plus `append` for growth; fixed Ring for bounded queues | Push/pop both ends, wrap, indexed access, grow/rebase, consume, release | Bounds in logical coordinates; front operations invalidate old slot references; new backing invalidates every old path; source emptied before releasing it | O(1) endpoints and logical access; O(n) growth; one visit per drained element. Generic two-span consumption remains a separate unavailable interface, discussed below. |
+| Deque | `Box<Ring<T>>`, fresh ring plus a counted take/place transfer for exact rebase contracts; fixed Ring for bounded queues | Push/pop both ends, wrap, indexed access, grow/rebase, consume, release | Bounds in logical coordinates; front operations invalidate old slot references; new backing invalidates every old path; source emptied before releasing it | O(1) endpoints and logical access; O(n) growth; one visit per drained element. Generic two-span consumption remains a separate unavailable interface, discussed below. |
 | Slab | `Box<Slots<SlabCell<T>>>`, with `Slots<T,1>` occupancy, a free-list head and generation handles; compare a compact tagged native cell | Insert/handle, validate/get, remove, expiry, reuse, exhaustion/limit outcome, final consumption | Return every removed T; never wrap a generation into an old handle's generation; distinguish a slot ID from a physical address | O(1) free-list operations and validation; no payload movement on ordinary reuse. The bounded library does not grow its backing; its extra occupancy word is a measured cost. |
 | Hash map | One window of valid `Vacant/Deleted/Occupied(K,V)` slots; compare a dense-entry/index-table alternative for large payloads | Construct, collision insertion, duplicate replacement, lookup after tombstone, remove, reuse, growth/rehash, iterate, consume | K and V need not be copy/drop if replacement returns the old pair and final cleanup explicitly consumes them; bounded probing; no assumed behavior laws; preserve every owner during rehash | Hash/equality cost plus probes; ordinary load-dependent expected constant access, capacity-bounded worst-case lookup. Rehash scans old capacity and reinserts live entries; adversarial collisions can make it quadratic. |
 | Priority queue | Slots of T, with an explicit comparison behavior; indexed variant adds a reverse-position map | Push, peek via a local reference/callback, pop, replace top, change priority/remove by handle when selected, heapify, drain | Compare borrowed T; exchange slots then take a boundary value; every sift step progresses along an index; arithmetic domains and child bounds proved independently of comparator laws | O(log n) sifts and O(n) bottom-up heapify; no aggregate owner transfer per level. Count reverse-index repairs in an indexed queue. |
@@ -858,6 +858,42 @@ The matched [Slab comparison](../../experiments/container-representation/slab-li
 and [Deque comparison](../../experiments/container-representation/deque-library/RESULTS.md)
 own cost conditions and results. Source acceptance and the formal execution
 above are not performance selection evidence.
+
+### Selection and remaining costs
+
+The proposed Slab choice keeps one allocation and stable cell positions for
+arbitrary owned T. Its scalar cell costs 32 bytes against the tagged C
+control's 24; the 256-byte payload costs 280 against 272. The C window/tagged
+comparison isolates that extra word, while WF/window timings also include
+result layout and call lowering. Retained wide removal and consumption still
+perform redundant transfers, so these results do not select the representation
+as a performance ceiling. Keep this ordinary implementation available for
+composition, and test the remaining transfers before using a Slab cost alone
+to justify a compiler-known sparse layout. The new pending
+`slab-storage` decision records that qualified choice.
+
+The proposed Deque choice keeps precise endpoint rows and an explicit new-owner
+conversion. Its strongest measured gap is ordinary scalar forward churn;
+retaining helpers largely removes that gap, exposing optimization of the
+inlined address path rather than an unavoidable reference-interface cost.
+A bounded GEP-fact probe removes the redundant descriptor traffic, but its
+general target qualification and timing recovery remain unverified. Keep the
+library interface and the measured baseline while qualifying that optimization;
+do not add a Ring growth primitive solely from this comparison. The pending
+`deque-rebase` decision records the interface and its two-span limitation.
+
+These proposals supplement the pending typed-constant representation choice
+and the two corrections to storage/range correspondence. They add two proposed
+leaf nodes, with no new depth, and leave the live tree unchanged until a ruling.
+The affected current guidance is the container writer pattern and library
+README; unresolved source interfaces and lowering opportunities remain in
+`docs/todo.md`. No specification or conformance verdict changes are proposed.
+
+The original CSVs and artifact hashes remain evidence for the recorded
+pre-merge compiler. Main `7127bcb6` adds checker and aggregate-lowering repairs;
+its clean merge also required supplying the const-type inventory to a newly
+added unit-test context. Integrated emission comparisons are recorded in each
+experiment's RESULTS rather than silently relabelling earlier timings.
 
 ### Exact unavailable source forms
 
