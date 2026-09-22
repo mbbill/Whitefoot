@@ -24,18 +24,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   separately attribute alignment/alias facts and ordinary inlining against
   the retained-helper controls. No new language operation is selected yet.
 
-- **Measure placement stops at Box content.** Destructuring an owner with a
-  `Box<Slots<T>>` field loses established facts about its `.inner.len`;
-  `free_empty` on the resulting binding then fails OP-14. The exact
-  [Vector example](../research/investigations/containers-and-resources/X1-LIBRARY.md#vector-source-obligations)
-  is a naming event covered by MSR-3, whose implementation's `measured_paths`
-  currently traverses inline nominal fields but stops at a Box. The Vector
-  can consume its sole storage field directly, so this does not block its
-  cleanup. Repair the general placement path when a consumer needs the
-  destructured or rebound owner; account for recursive nominal types without
-  enumerating infinitely many content paths and test kills as well as fact
-  retention.
-
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)

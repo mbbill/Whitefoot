@@ -8759,20 +8759,14 @@ impl Analyzer<'_, '_> {
         value: &CheckedExpression,
         state: &mut ProofFlowState,
     ) -> Option<MeasureCarry> {
-        let CheckedExpression::Binding { binding, ty, .. } = value else {
-            return None;
+        let source = self.placement_source_place(value)?;
+        let destination = self.set_target_place(target)?;
+        let placement = if matches!(destination.path.last(), Some(PlaceStep::Index(_))) {
+            MeasurePlacement::Element
+        } else {
+            MeasurePlacement::Rebind
         };
-        self.set_target_place(target)?;
-        let placement = match target {
-            CheckedSetTarget::Storage(_) => MeasurePlacement::Element,
-            _ => MeasurePlacement::Rebind,
-        };
-        let source = ResolvedPlace::spelled(
-            PlaceRoot::Binding(*binding),
-            self.is_holder(*binding),
-            Vec::new(),
-        );
-        self.mint_measure_datums(node_path, ordinal, placement, source, *ty, state)
+        self.mint_measure_datums(node_path, ordinal, placement, source, value.ty(), state)
     }
 
     /// [MSR-3] the construct placement: the datums one `construct`'s field
@@ -8818,21 +8812,16 @@ impl Analyzer<'_, '_> {
         };
         let mut carried = Vec::new();
         for (ordinal, field) in fields.iter().enumerate() {
-            let CheckedExpression::Binding { binding, ty, .. } = field else {
+            let Some(source) = self.placement_source_place(field) else {
                 continue;
             };
             let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
-            let source = ResolvedPlace::spelled(
-                PlaceRoot::Binding(*binding),
-                self.is_holder(*binding),
-                Vec::new(),
-            );
             if let Some(carry) = self.mint_measure_datums(
                 node_path,
                 ordinal,
                 MeasurePlacement::Construct,
                 source,
-                *ty,
+                field.ty(),
                 state,
             ) {
                 let destination =
@@ -8877,12 +8866,10 @@ impl Analyzer<'_, '_> {
         enum_type: CheckedEnumType,
         state: &mut ProofFlowState,
     ) -> Vec<PayloadPlacement> {
-        let CheckedExpression::Binding {
-            carrier: node_path,
-            binding,
-            ..
-        } = scrutinee
-        else {
+        let Some(base) = self.placement_source_place(scrutinee) else {
+            return Vec::new();
+        };
+        let Some(node_path) = scrutinee.carrier() else {
             return Vec::new();
         };
         let CheckedEnumType::Nominal(nominal) = enum_type else {
@@ -8896,11 +8883,6 @@ impl Analyzer<'_, '_> {
         };
         // Clone declaration data before minting terms through `self`.
         let variants = variants.clone();
-        let base = ResolvedPlace::spelled(
-            PlaceRoot::Binding(*binding),
-            self.is_holder(*binding),
-            Vec::new(),
-        );
         let mut placements = Vec::new();
         // [MSR-3] `ordinal within that statement` counts payload binders
         // across the whole match, not separately inside each variant. Two
@@ -8954,14 +8936,9 @@ impl Analyzer<'_, '_> {
         value: &CheckedExpression,
         state: &mut ProofFlowState,
     ) -> Vec<(u32, MeasureCarry)> {
-        let CheckedExpression::Binding { binding, .. } = value else {
+        let Some(base) = self.placement_source_place(value) else {
             return Vec::new();
         };
-        let base = ResolvedPlace::spelled(
-            PlaceRoot::Binding(*binding),
-            self.is_holder(*binding),
-            Vec::new(),
-        );
         let mut carried = Vec::new();
         // [MSR-3] the destructuring placement's source is the field the
         // binder names, which the rest marker makes a written ordinal rather
@@ -14502,7 +14479,9 @@ impl Analyzer<'_, '_> {
         // the place this commit writes, which is a plain place or one element
         // position of a run.
         let placement = self.mint_commit_placement(node_path, 0, target, value, state);
-        let constructed = matches!(target, CheckedSetTarget::Place(_))
+        let constructed = self
+            .set_target_place(target)
+            .is_some()
             .then(|| self.mint_construct_placements(node_path, value, state))
             .unwrap_or_default();
         // [SET-1]: the target's base and offset are evaluated before the
@@ -14612,13 +14591,8 @@ impl Analyzer<'_, '_> {
         }
         if commit_reached
             && !constructed.is_empty()
-            && let CheckedSetTarget::Place(place) = target
+            && let Some(base) = self.set_target_place(target)
         {
-            let base = ResolvedPlace::spelled(
-                PlaceRoot::Binding(place.binding),
-                self.is_holder(place.binding),
-                place.fields.clone(),
-            );
             self.establish_construct_placements(node_path, &base, &constructed, &mut state.facts);
         }
         // [CALL-4] a `set` target is an S12 destination, and [CALL-6] puts

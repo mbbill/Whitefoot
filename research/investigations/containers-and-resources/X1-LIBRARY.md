@@ -592,19 +592,22 @@ nodrop residuals in that inventory even when their release emits no action.
 Positive and negative compiler tests cover that distinction; the library's
 nodrop chain exercises the complete source-to-native cleanup path.
 
-Taking the wrapper apart first is not a substitute for that repair:
+Taking the wrapper apart is also an ordinary measure placement:
 
 ```whitefoot
 let GrowVector(storage: storage) = move values;
 free_empty(window: move storage);
 ```
 
-The initial compiler loses `values.storage.inner.len == 0` at that naming
-event and rejects the second line under OP-14. Its placement walk stops at
-Box content. This is recorded in `docs/todo.md` as a separate implementation
-gap against ordinary field-based measure placement, not as evidence that the
-language cannot represent an empty owning vector. The direct consume above
-needs no workaround branch and no new proof mechanism.
+The `efe41016` compiler loses `values.storage.inner.len == 0` at that naming
+event and rejects the second line under OP-14 because its placement walk
+stops at Box content. The follow-up repairs that ordinary MSR-3 path; both
+forms now preserve the established emptiness fact. The
+[`descriptor_invalidation` regressions](../../../compiler/src/semantic/tests/descriptor_invalidation.rs)
+cover this exact generic witness, projected and recursive Box moves,
+constructor placement into Box content and elements, and overlapping writes
+that must still kill an old fact. This was an implementation defect, not a
+missing way to represent an empty owning vector or a new proof mechanism.
 
 FN-8's Signed Goal affine route has a separate spelling boundary [ENT-6]:
 
@@ -656,3 +659,30 @@ large-record path and an explicit account of changes to the other operations.
 A new attribution alone is not an improvement result. Any native-parity claim
 must be supported by the resulting comparisons, including measurement
 variation, rather than inferred from O(n) complexity or fewer IR instructions.
+
+The placement repair uses the existing measure datums and invalidation path.
+Owned fields, payloads and Box content share the structural inventory. When
+a nominal recurs, the structural walk stops and exact already-interned source
+measure paths supply deeper descendants after replay against the operand's
+type. Earlier numeric evidence already requires those finite terms; even a
+capacity- or head-only read registers the sibling length term. Unmentioned
+descendants need only their ordinary standing type facts. The inventory does
+not retain old facts or convert an alias cover into an exact owner: a datum
+is equated to its source only in the current fact state. Each placement
+finishes collecting paths before minting datums, and the entailment walk
+visits each static statement once, including loop bodies. Acyclic operands
+skip the supplementary scan.
+
+Unbounded type unfolding cannot terminate on a recursive nominal; merely
+cutting the cycle loses known facts at deeper written paths, and a fixed
+depth cutoff has no language ground. Reusing existing exact terms avoids a
+second path-analysis pass. The proposed compiler-tree addition records this
+choice. The focused `descriptor_invalidation` group passes all 17 cases,
+including distinct measures beyond two recursive nominal cycles,
+capacity/head-only evidence, an overwritten recursive descendant and a cursor
+whose possible-descendant fact cannot establish the owner's measure. The
+original generic witness fails under `efe41016` and passes after the repair.
+The recursive cases also exposed a constructor-placement omission at
+`set Box.inner = ...`; using the existing exact destination path repairs that
+naming event without changing commit order or invalidation. Full repository
+validation is a separate remaining check for this revision.
