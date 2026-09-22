@@ -187,14 +187,46 @@ seconds and the complete check batch 1.14 seconds. Its source SHA-256 is
 The source-row failure reduces to
 `stride = width + padding; cells = rows * stride` followed by disjoint
 `[i*stride, i*stride+stride)` writes. A preheader symbolic product creates a
-copied-value handle that the retained range-image classifier treats as opaque,
-while the added endpoint expands the same value. The corresponding constant-
-multiplier control is already a maintained positive test. This is an
-implementation limitation in retaining the specified exact images, not a
-language ban on these partitions. A general repair is being investigated
-separately; no private solver or BFS exception is proposed. The equivalent
+copied-value handle that the range-image classifier formerly kept opaque,
+while the added endpoint expanded the same value. Repair `31282f01`, integrated
+as `8f6d5131`, expands that recorded transparent image before classifying a
+fixed atom. The existing constant-multiplier control remains permitted, and
+the unchanged minimal witness, accepted but denied outer-loop permission by
+the verified `7895c9d0` compiler, now retains permission and emits its partition
+split. The specification, source-acceptance rules and shared proof/ledger
+interfaces are unchanged: the existing source-positioned ProofContext still
+discharges the formation bounds and both nonnegativity goals. The equivalent
 product-endpoint spelling did not pass the existing certificate matcher, so
 the admitted source retains the natural start-plus-stride endpoints.
+
+The maintained
+[`runtime_preheader_products_expand_transparent_stride_handles` regression](../../../compiler/src/semantic/tests/loop_permission.rs)
+covers a runtime row count and a copied stride whose original operands are
+overwritten after an explicit stride-bound invariant. It checks the canonical
+two-atom stride, both retained sign roots, and the complete derivation ledger;
+the copied-value source also changes from a denied to an emitted partition.
+All 73 `semantic::tests::loop_permission` cases pass at `31282f01`, including
+the existing varying-stride, shifted-range, whole-origin and nested-binder
+denials. Final test-executable construction took 80.04 seconds; test execution
+took 0.73 seconds (1.35 seconds including its guard). Separate compiler
+construction took 43.94 seconds, and the three minimal-source emission
+controls took 0.52 seconds together. These are construction and checking costs,
+not program performance samples.
+
+On the unchanged record-result [source](sparse-frontier.wf), the isolated
+`31282f01` compiler over `c6cd9add`, SHA-256
+`86e218b895fa6ee601b49fd731dc843478b3d1a48379896d856c694e3a4c5624`,
+retains PAR-2 permission for both useful owner loops and emits in 0.21 seconds.
+With `--par --par-ledger --emit-llvm`, routing emits an independent split with
+21 captured bindings. Receiver permission also succeeds, but lowering declines
+its 352-byte frame over 29 captures because the lane bound is 256 bytes.
+The emitted module SHA-256 is
+`63f0f31e1481c1e0506a97f0d5edb0e799ef846a8da3096d4e510ba7318d695f`.
+The general capture-selection repair is in progress; nonempty helper work in
+both phases and performance remain unqualified. The 90-configuration native
+oracle above describes the `6fdb6768` baseline, whereas the repair observations
+here establish source checking and emission. The integrated compiler through
+`cc060dc9` has not yet run its full gate or the candidate native oracle.
 
 Those are phase bounds, not the complete implementation's span.
 `compiler/src/backend/emitter/buffer.rs::emit_buffer_block` emits a sequential
