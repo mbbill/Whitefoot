@@ -32,6 +32,9 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
 - [Compute expression and cost](investigations/compute-model/DESIGN.md):
   blocked and irregular algorithm consumers, independent correctness criteria,
   and the runtime costs that test the compute model after range loans.
+- [Fixed-resource execution](investigations/fixed-resource-execution/README.md):
+  no-heap computations with proved completion, work and storage bounds;
+  bounded recursion probes and the missing source-to-runtime evidence.
 - [Containers over x1](investigations/containers-and-resources/X1-LIBRARY.md):
   complete container operations and representation costs over merged PR #70,
   the restored source-library home, and the next implementation trials.

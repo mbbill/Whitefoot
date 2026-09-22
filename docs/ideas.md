@@ -347,6 +347,9 @@ resource evidence for an existing systems program. A resource certificate
 would need proved loop or recursion bounds, complete call and allocation
 coverage, and a stated target/runtime model. Source-level boundedness alone
 does not establish the final linked program's stack, heap, or timing bound.
+The [fixed-resource investigation](../research/investigations/fixed-resource-execution/README.md)
+compares counted control and checked ranks with target/runtime accounting;
+bounded recursion is a candidate when its complete stack cost fits the budget.
 
 First experiments can be separated: a minimal bare-metal program measures
 startup, linker, runtime, and image-size costs; a bounded existing program

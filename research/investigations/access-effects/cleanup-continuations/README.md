@@ -11,7 +11,12 @@ not compiler code, conformance evidence, or a selected general lowering.
 The resumed question is whether merged self-tail lowering also removed the
 compiler-generated release stack, and, if it did not, what a general replacement
 would require. The baseline is main `f3cf41d4` (PR #75), specification v0.62.
-Mutual source tail calls and termination proofs are outside this investigation.
+This cleanup-specific comparison leaves mutual source tail calls and termination
+proofs to separate work. The broader objective is now the
+[fixed-resource execution study](../../fixed-resource-execution/README.md):
+no heap, proved completion, and checked resource bounds. Recursive release is
+not itself a violation of that goal if its complete cost fits a proved budget;
+the strict no-heap subset has no recursive Box cleanup in the first place.
 
 After code inspection and an initial automatic-chain ledger probe, the criteria
 for the controlled comparisons and replacement study are:
@@ -161,8 +166,11 @@ suffice for all its concrete continuation states.
 | Reserve continuation storage with each participating allocation | Direct resumption, no cleanup-time allocation | Persistent heap/layout cost; the model isolates the controller but does not establish the WF encoding |
 | Reuse consumed object fields and tags | Potentially direct resumption with unchanged normal layout | Needs a storage proof for every continuation state and target; the two existing models cover only their stated grammars |
 
-The preferred next experiment is a **type-directed continuation layout
-calculation**, not another handwritten linked-list specialization. Derive a
+If this heap-using cleanup optimization is reopened, its next discriminating
+experiment is a **type-directed continuation layout calculation**, not another
+handwritten linked-list specialization. The current research priority is the
+fixed-resource proof path linked above; this layout calculation is not its
+prerequisite. Derive a
 continuation state at each recursive release edge, list its still-live fields,
 parent link, resume identity and dynamic cursor, then show exactly where these
 fit. Begin with the existing tagged and tagless models, and challenge the
@@ -197,9 +205,12 @@ The existing checked release graph is the semantic owner, and one eventual
 continuation lowering should consume that graph for both ordinary and parallel
 emission. A second source checker or container-specific compiler path would
 duplicate that responsibility. The concrete opportunity is to make automatic
-cleanup independent of value depth without changing writer programs. The
-remaining layout and cost questions stay in `docs/todo.md`; the research models
-do not change the current lowering decision.
+cleanup independent of value depth for heap-using programs without changing
+writer programs. It is deferred until a concrete stack budget or cleanup cost
+needs it. Proving a sufficient depth-dependent bound is also an admissible
+resource strategy; constant stack is not the larger goal. The remaining layout
+and cost questions stay in `docs/todo.md`; the research models do not change
+the current lowering decision.
 
 `scope-drop.wf` serves the native stack reproduction; `continuation-cost.rs`
 serves the storage-versus-repeated-work comparison. They belong with these

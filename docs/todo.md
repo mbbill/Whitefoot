@@ -104,19 +104,23 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   [continuation models](../research/investigations/access-effects/cleanup-continuations/README.md)
   demonstrate fixed-stack, nonallocating walks only for their selected layouts.
   They establish neither an encoding for all WF types without extra object
-  fields nor its impossibility. Retain the existing lowering while researching
-  how every suspended aggregate, enum, array and window traversal records its
+  fields nor its impossibility. The remaining layout question is how every
+  suspended aggregate, enum, array and window traversal records its
   continuation. Preserve reverse binding order, declaration order within
   aggregates, logical window order, and content-before-Box-free order.
   The [post-tail-call study](../research/investigations/access-effects/cleanup-continuations/README.md#current-compiler-investigation-2026-09-22)
   reproduces a 32-byte-per-level optimized release cycle on its arm64 host
   after PR #75. A continuation-controller model separates quadratic root
   rescanning from direct resumption with reserved state; it does not establish
-  a general object layout. Next derive and check continuation storage per
-  release state, comparing consumed-field reuse with explicit reservation
-  where needed, without presuming spare pointer bits or vacant capacity. Close
-  this item when a general implementation and native regressions establish
-  those properties, or a different resource tradeoff is selected explicitly.
+  a general object layout. This is a heap-using optimization opportunity, not
+  a prerequisite for the no-heap fixed-resource goal below: a proved bound on
+  depth and complete stack use is also an admissible resource strategy. Defer
+  general continuation lowering until a concrete permitted ownership depth
+  fails its stack budget or cleanup cost is the measured obstacle. Then derive
+  continuation storage per release state, comparing consumed-field reuse with
+  reservation without presuming spare bits or capacity. Close this item when
+  a general implementation and native regressions establish the required bound,
+  or an explicitly selected resource-proof strategy meets the consumer's budget.
 - **Box/window representation costs remain unqualified.** The current runtime-
   capacity Box is one pointer to one header-first allocation; `grow` uses
   allocation, memmove and free. A one-word owner, one allocation and header
@@ -251,14 +255,23 @@ condition under which it is taken up.
   a different function needs a matching tail-call ABI and target evidence;
   the current parameter reassignment and entry jump cannot cross a function
   boundary. Reopen when a real mutually recursive program needs that bound.
-- **Totality and recursion-depth proofs.** Domains that need determinism about
-  resource use will need proved totality (termination) and proved recursion
-  depth as obligation families; the atomic in-place update deliberately
-  requires only a function that returns the place's type with no failure exit.
-  The current recursive-cleanup stack cost is a separate compiler limitation
-  recorded above; the call-site `musttail` guarantee covers only retained
-  activations at marked self transfers. Neither is an implemented
-  source-level recursion-depth proof.
+- **Fixed-resource execution with proved completion.** The
+  [resource investigation](../research/investigations/fixed-resource-execution/README.md)
+  studies the no-heap goal: checked loop/recursion progress, total work and peak
+  storage within an explicit entry, target and runtime contract. `program
+  no_heap;` supplies source allocation restrictions, but ordinary linked bodies,
+  startup and exit are not resource-closed by that declaration. `musttail`
+  supplies neither termination nor a complete stack bound. A bounded non-tail
+  recursive probe works today, while its nondecreasing control is also accepted;
+  the missing rank and resource consumers must distinguish them. Next qualify
+  local rank evidence, complete work/stack composition and one fixed sequential
+  adapter against an exact image. Validation must detect an unchanged rank,
+  unknown callee, over-budget cap and changed artifact, while admitting proved
+  bounded recursion. Symbolic/amortized bounds, hardware deadlines, interrupts,
+  parallel contexts and service-response contracts remain unqualified; reopen
+  each when a concrete consumer needs that extension. This research does not
+  change the atomic in-place update callable's no-failure-exit contract or source
+  rules.
 - **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
   Three additive widenings, taken up together, each measured:
   (1) Affine `ensures`. A `requires` may already be an affine relation and
