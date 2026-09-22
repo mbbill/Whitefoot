@@ -1,0 +1,6 @@
+Node: design/compiler/parallel-lowering/two-worlds.md
+
+Decision: Select a synthesized loop's captures from runtime uses in its completed chunk, tracing block-parameter forwarding backward from ordinary instructions, calls, cleanup and returns before applying the fixed lane-frame bound, because the sparse-frontier receiver is independently permitted yet its complete surrounding scope needs a 352-byte frame and blocks the useful parallel map; retaining only used inputs avoids tying task width to unrelated lexical bindings, instead of enlarging every lane frame, asking writers to outline phase helpers, or reconstructing source effects in a second analysis. Compiler-generated capture reconstruction is a dependency rather than a use, and unused forwarding and reconstruction may disappear without deleting source operations, changing ownership or changing the sequential loop body. [The capture investigation](../../research/investigations/compute-model/DESIGN.md#needed-loop-captures) records the consumer, criteria and limits.
+
+Rejected:
+- A general capture projection or interprocedural dead-argument optimizer: rejected for this change because following existing runtime operands removes the demonstrated lexical-scope obstruction without introducing new storage representation or source-call semantics.

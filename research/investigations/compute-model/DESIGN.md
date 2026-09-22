@@ -1196,3 +1196,45 @@ Runtime profile-guided compilation and online adaptation are candidate
 directions in [the research ideas](../../../docs/ideas.md#parallel-grain-policies-and-runtime-profiles),
 with the unresolved cost tracked in [TODO](../../../docs/todo.md). No profile
 collection, adaptive policy or further timing trial is implemented here.
+
+## Needed loop captures
+
+The sparse-frontier source at `139fc2d1d74480d58ab878c0eb67bca12b5144f1`,
+SHA-256 `d10f0047164ca614968d55e50549d7efd1a768a5784c901d36dd82f9467f63f2`,
+exposes a task-width obstruction independent of its partition proof. The
+emission ledger for `outbox_level` loop `6.0.27.0` reports 29 captured bindings
+and a 352-byte frame against the 256-byte lane limit. The current lowering
+captures every surrounding binding, including inputs used only by an earlier
+source phase or the function's tail. These bindings reach no runtime operation
+in the receiver but are forwarded through every loop block parameter.
+
+The selected change builds the ordinary chunk once, then traces runtime need
+backward through its block parameters. All ordinary instruction operands,
+helper arguments, cleanup subjects and returned values seed need. Only the
+compiler-generated entry operations that reconstruct captured Box slots are
+removable computations; their inputs become needed when the reconstructed
+value is needed. Nested chunks select their inputs before the enclosing chunk
+reads the nested call. Keep value identities, source operations, ownership,
+cleanup order, range proof, source Box representation, and the chunk's loop.
+Capture loads and projections in the parent wait until the reduced frame fits.
+A still-oversized candidate discards its tentative nested synthesis and ledger
+before normal lowering revisits the body.
+
+The discriminating criterion is that the unchanged sparse receiver actually
+emits its split with a frame below the existing limit, while ordinary native
+loop tests retain their independently checked results and cleanup. Formal
+structural cases must retain call-, cleanup-, return- and nested-helper-only
+uses, remove forwarding-only captures, and preserve ordinary lowering when a
+still-oversized candidate declines. These are lowering observations, not a
+performance verdict. Construction cost must be recorded separately: accepted
+candidates lower once, while declined candidates lower their body again for
+the ordinary path.
+
+Enlarging the lane limit preserves the accidental dependency on lexical scope.
+Writer phase helpers would work around it in every consumer. A source-use or
+effect walk would duplicate semantic interpretation and risk missing generated
+cleanup; a general projection or interprocedural optimizer is unnecessary to
+remove this obstruction. The existing exhaustive IR operand walk therefore
+becomes the shared owner for capture selection, backend storage and emission.
+Read-only formal markers and Box payload reconstruction remain associated with
+their original value identities when a capture survives.

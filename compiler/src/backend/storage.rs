@@ -14,7 +14,7 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    IrArrayRoot, IrFunction, IrInstruction, IrNominalId, IrNominalKind, IrOperation, IrProgram,
+    IrFunction, IrInstruction, IrNominalId, IrNominalKind, IrOperation, IrProgram,
     IrSourceArgument, IrSourceMode, IrTerminator, IrType, IrValueId,
 };
 
@@ -480,7 +480,9 @@ impl FlowGraph {
                             FlowInstruction::from_ir(program, function, instruction, sequential)
                         })
                         .collect::<Result<Vec<_>, BackendFailure>>()?,
-                    terminal_uses: terminator_operands(block.terminator())
+                    terminal_uses: block
+                        .terminator()
+                        .operands()
                         .into_iter()
                         .map(index)
                         .collect(),
@@ -845,10 +847,7 @@ impl FlowInstruction {
         };
         Ok(Self {
             result,
-            operands: instruction_operands(instruction)
-                .into_iter()
-                .map(index)
-                .collect(),
+            operands: instruction.operands().into_iter().map(index).collect(),
             reuse,
             exposed,
         })
@@ -857,142 +856,6 @@ impl FlowInstruction {
 
 fn index(value: IrValueId) -> usize {
     value.ordinal() as usize
-}
-
-fn instruction_operands(instruction: &IrInstruction) -> Vec<IrValueId> {
-    match instruction {
-        IrInstruction::Define { operation, .. } => operation_operands(operation),
-        IrInstruction::StoreBuffer {
-            buffer,
-            index,
-            value,
-        } => vec![*buffer, *index, *value],
-        IrInstruction::StoreSlice {
-            slice,
-            index,
-            value,
-        } => vec![*slice, *index, *value],
-        IrInstruction::Store { address, value, .. } => vec![*address, *value],
-        IrInstruction::Drops(drops) => drops.iter().map(|drop| drop.operand()).collect(),
-    }
-}
-
-fn terminator_operands(terminator: &IrTerminator) -> Vec<IrValueId> {
-    match terminator {
-        IrTerminator::Unreachable => Vec::new(),
-        IrTerminator::Jump {
-            arguments, drops, ..
-        } => arguments
-            .iter()
-            .copied()
-            .chain(drops.iter().map(|drop| drop.operand()))
-            .collect(),
-        IrTerminator::Match { scrutinee, .. } => vec![*scrutinee],
-        IrTerminator::Return { value, drops } => std::iter::once(*value)
-            .chain(drops.iter().map(|drop| drop.operand()))
-            .collect(),
-    }
-}
-
-/// Every value read by an operation, including allocation providers, captures,
-/// and source aggregates. Exhaustive matching makes a new IR operation require
-/// a deliberate liveness decision before this module compiles.
-pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
-    match operation {
-        IrOperation::Constant(_) | IrOperation::ConstantAddress { .. } | IrOperation::Window => {
-            Vec::new()
-        }
-        IrOperation::Call { arguments, .. }
-        | IrOperation::Integer { arguments, .. }
-        | IrOperation::Float { arguments, .. }
-        | IrOperation::Boolean { arguments, .. } => arguments.clone(),
-        IrOperation::EnumEquality { arguments, .. } => arguments.to_vec(),
-        IrOperation::NumericConversion { value, .. }
-        | IrOperation::Reinterpret { value, .. }
-        | IrOperation::ArrayFill { value, .. }
-        | IrOperation::FullArrayConversion { value }
-        | IrOperation::BoxNew { value, .. }
-        | IrOperation::BoxTake { value, .. }
-        | IrOperation::BoxDeref { value, .. }
-        | IrOperation::RuntimeBoxPayload { owner: value, .. }
-        | IrOperation::RuntimeBoxOwner { payload: value, .. }
-        | IrOperation::AddressOf { value, .. } => vec![*value],
-        IrOperation::ArrayIndex { root, offset, .. } => array_root_operand(*root)
-            .into_iter()
-            .chain([*offset])
-            .collect(),
-        IrOperation::BufferFill { length, value, .. } => vec![*length, *value],
-        IrOperation::BufferMeasure { buffer } | IrOperation::SliceFromBuffer { buffer } => {
-            vec![*buffer]
-        }
-        IrOperation::ContainerMeasure { container, .. } => vec![*container],
-        IrOperation::RunIndex { run, offset, .. } => vec![*run, *offset],
-        IrOperation::RunBoundary { run, value, .. } => {
-            std::iter::once(*run).chain(value.iter().copied()).collect()
-        }
-        IrOperation::RunTaken { run, .. } | IrOperation::SliceFromRun { run } => vec![*run],
-        IrOperation::RunShift { run, index, .. } => vec![*run, *index],
-        IrOperation::RunInsert { run, index, value } => vec![*run, *index, *value],
-        IrOperation::RunTransfer {
-            destination,
-            source,
-            index,
-        } => vec![*destination, *source, *index],
-        IrOperation::WindowBlockNew { capacity, .. } => vec![*capacity],
-        IrOperation::WindowGrow { cell, capacity, .. } => vec![*cell, *capacity],
-        IrOperation::CellFree { value, .. } => vec![*value],
-        IrOperation::SliceRange { slice, start, end } => vec![*slice, *start, *end],
-        IrOperation::BufferIndex { buffer, offset, .. } => vec![*buffer, *offset],
-        IrOperation::BufferProbeSkip {
-            buffer,
-            index,
-            limit,
-            needles,
-        } => [*buffer, *index, *limit]
-            .into_iter()
-            .chain(needles.iter().copied())
-            .collect(),
-        IrOperation::SliceMeasure { slice } => vec![*slice],
-        IrOperation::SliceIndex { slice, offset, .. } => vec![*slice, *offset],
-        IrOperation::SliceAddress { slice, offset, .. } => vec![*slice, *offset],
-        IrOperation::ConstructStruct { fields, .. } | IrOperation::ConstructEnum { fields, .. } => {
-            fields.clone()
-        }
-        IrOperation::ProjectStruct { aggregate, .. }
-        | IrOperation::ProjectVariant { aggregate, .. } => vec![*aggregate],
-        IrOperation::InsertStruct {
-            aggregate, value, ..
-        } => vec![*aggregate, *value],
-        IrOperation::Load { address, .. } => vec![*address],
-        IrOperation::ProjectAddress {
-            address,
-            projection,
-        } => match projection {
-            crate::IrPlaceStep::Field { .. }
-            | crate::IrPlaceStep::BoxReferent { .. }
-            | crate::IrPlaceStep::EnumVariant { .. } => vec![*address],
-            crate::IrPlaceStep::RunElement { offset, .. }
-            | crate::IrPlaceStep::ArrayElement { offset, .. }
-            | crate::IrPlaceStep::BufferElement { offset, .. } => vec![*address, *offset],
-        },
-        IrOperation::LoopSplit {
-            seed,
-            lower,
-            upper,
-            captures,
-            ..
-        } => [*seed, *lower, *upper]
-            .into_iter()
-            .chain(captures.iter().copied())
-            .collect(),
-    }
-}
-
-fn array_root_operand(root: IrArrayRoot) -> Option<IrValueId> {
-    match root {
-        IrArrayRoot::Value(value) => Some(value),
-        IrArrayRoot::Constant(_) => None,
-    }
 }
 
 #[cfg(test)]

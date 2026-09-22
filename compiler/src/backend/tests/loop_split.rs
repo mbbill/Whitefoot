@@ -397,9 +397,8 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 /// PAR-2; the test retains that negative control and moves only this measure
 /// read to the preheader for its positive split. The empty Box's measure is
 /// still read by each iteration. A zero-length call takes the empty edge.
-/// `discarded` is deliberately consumed before the loop: the lowering carries
-/// all lexical bindings, so projecting its now-dead pointer must remain a
-/// harmless address calculation and must never recreate cleanup or a read.
+/// `discarded` is deliberately consumed before the loop: its unused lexical
+/// binding must not acquire a capture, projection, cleanup or read in the chunk.
 const ALIGNED_PAYLOAD_MAP: &[u8] = br#"struct Aligned {
   tag: u8;
   word: u64;
@@ -750,17 +749,56 @@ fn synthesized_symbols(module: &str, prefix: &str) -> Vec<String> {
 /// not present in the reference.
 #[test]
 fn a_split_loop_carries_its_captures_and_a_second_combine() {
-    let unsplit = emit(CAPTURED_XOR_FOLD);
-    let split = emit_with_overlap(CAPTURED_XOR_FOLD);
+    // The tail uses every extra scalar, but none belongs to the loop's task.
+    // Capturing lexical scope would put this otherwise unchanged fold beyond
+    // the lane limit. Keep the existing native builds and worker observations.
+    let tail_bindings = (0..32)
+        .map(|index| format!("  let tail{index} = {index}_u64;\n"))
+        .collect::<String>();
+    let tail_sum = (0..32)
+        .map(|index| format!("tail{index}"))
+        .collect::<Vec<_>>()
+        .join(" +wrap ");
+    let source = std::str::from_utf8(CAPTURED_XOR_FOLD)
+        .expect("UTF-8 fixture")
+        .replace(
+            "  let total = 12345678901234567890_u64;",
+            &format!("{tail_bindings}  let total = 12345678901234567890_u64;"),
+        )
+        .replace(
+            "  return total;",
+            &format!(
+                "  let tail_sum = {tail_sum};\n  return total +wrap (tail_sum -wrap 496_u64);"
+            ),
+        );
+    let unsplit = emit(source.as_bytes());
+    let split = super::system::with_parallel_ir(source.as_bytes(), |program| {
+        use crate::backend::target::{TargetLayout, parallel_lane_frame_layout};
+        let host = TargetLayout::host().expect("supported test host");
+        let splitter = program
+            .functions()
+            .iter()
+            .find(|function| function.synthesis() == Some(crate::IrSynthesis::Splitter))
+            .expect("the fold must split despite its wide surrounding scope");
+        let frame = parallel_lane_frame_layout(host, program, splitter, false)
+            .expect("target frame layout")
+            .expect("the needed capture frame fits");
+        assert_eq!(
+            frame.size(),
+            64,
+            "seed, bounds, three captures, budget and result"
+        );
+        crate::backend::emitter::emit_llvm_with_layout(program, host)
+            .expect("the reduced capture ABI must emit")
+            .text()
+            .to_owned()
+    });
     assert!(
         split.contains("@wf__par_split_"),
         "the fixture's loop must actually split, or this checks nothing:\n{split}"
     );
     // Three captures, so the chunk takes the seed, both endpoints, and them.
-    // KEPT AS WRITTEN for the lowering port: the count is the chunk's emitted
-    // parameter ABI. The source still declares exactly three captures, so if
-    // the split lowering changes how a capture is passed, re-derive the count
-    // rather than the fixture.
+    // Only the loop's three runtime inputs belong to its parameter ABI.
     let chunk = function_body(&split, &synthesized(&split, "@wf__par_chunk_"));
     let signature = chunk.lines().next().expect("a definition has a signature");
     assert_eq!(
@@ -899,8 +937,8 @@ fn an_aligned_nominal_payload_capture_handles_empty_and_mixed_measure_element_pa
             .lines()
             .filter(|line| line.contains(&forward) && line.contains("i64 0, i32 1, i64 0"))
             .count(),
-        3,
-        "the live output, live empty box, and consumed lexical Box must use typed payload captures:\n{outer}"
+        2,
+        "only the live output and empty box may acquire payload captures:\n{outer}"
     );
 
     let chunk = function_body(&split, &synthesized(&split, "@wf__par_chunk_"));
@@ -908,8 +946,8 @@ fn an_aligned_nominal_payload_capture_handles_empty_and_mixed_measure_element_pa
         format!("ptrtoint (ptr getelementptr ({block_type}, ptr null, i64 0, i32 1) to i64)");
     assert_eq!(
         chunk.matches(&inverse).count(),
-        3,
-        "the chunk must reconstruct all three lexical Box values without dereferencing the consumed one:\n{chunk}"
+        2,
+        "the chunk must reconstruct its two used Box values and omit the consumed binding:\n{chunk}"
     );
     assert!(
         chunk.lines().any(|line| {
