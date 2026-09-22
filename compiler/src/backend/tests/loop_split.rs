@@ -788,10 +788,13 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
             64,
             "seed, bounds, three captures, budget and result"
         );
-        crate::backend::emitter::emit_llvm_with_layout(program, host)
+        let mut module = crate::backend::emitter::emit_llvm_with_layout(program, host)
             .expect("the reduced capture ABI must emit")
-            .text()
-            .to_owned()
+            .into_string();
+        module.push_str(
+            &crate::driver::launcher::render(program, "main").expect("ordinary test launcher"),
+        );
+        module
     });
     assert!(
         split.contains("@wf__par_split_"),
@@ -1849,4 +1852,41 @@ fn a_loop_whose_frame_is_too_wide_declines_and_says_so() {
         !module.contains("@wf__par_split_"),
         "a declined loop must emit no splitter:\n{module}"
     );
+
+    // The outer candidate first builds an eligible inner reduction. Refusing
+    // its still-wide frame must discard that tentative synthesis, then emit
+    // the inner loop once when the ordinary outer graph is built.
+    let nested = std::str::from_utf8(WIDE_FRAME).expect("UTF-8 fixture").replace(
+        "    let bias0 = mixed +wrap a0;",
+        "    let partial = 0_u64;\n    for @inner (j in 0_u64..2_u64) {\n      set partial = partial +wrap j;\n    }\n    let bias0 = mixed +wrap a0 +wrap partial;",
+    );
+    super::system::with_parallel_ir(nested.as_bytes(), |program| {
+        let rows = program.actualization_ledger();
+        assert_eq!(
+            rows.iter()
+                .filter(|line| line.contains("declined:"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            rows.iter()
+                .filter(|line| line.contains("split under"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            program
+                .functions()
+                .iter()
+                .filter(|function| function.synthesis() == Some(crate::IrSynthesis::Chunk))
+                .count(),
+            1
+        );
+        let host = crate::backend::target::TargetLayout::host().expect("supported test host");
+        let module = crate::backend::emitter::emit_llvm_with_layout(program, host)
+            .expect("ordinary lowering must retain valid nested synthesis ordinals")
+            .into_string();
+        assert_eq!(synthesized_symbols(&module, "@wf__par_split_").len(), 1);
+        assert!(function_body(&module, "@wf_main").contains("call i64 @wf__par_split_"));
+    });
 }

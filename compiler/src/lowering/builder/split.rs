@@ -479,9 +479,10 @@ impl IrBuilder<'_> {
     /// subrange starting from `seed`; an independent-map chunk performs its
     /// disjoint stores and returns the `Unit` seed as a synchronization token.
     ///
-    /// This is the same block graph [`IrBuilder::counted_range_graph`] builds
-    /// at an unsplit site, built by the same code from the same statements. The
-    /// only difference is where the endpoints and any accumulator come from.
+    /// This starts with the block graph [`IrBuilder::counted_range_graph`]
+    /// builds at an unsplit site, using the same code and statements. Endpoints
+    /// and the accumulator come from parameters; after building, unused
+    /// capture forwarding is removed without changing any body operation.
     #[allow(clippy::too_many_arguments)]
     fn build_chunk(
         &self,
@@ -1206,8 +1207,170 @@ pub(crate) type SynthesisCell = RefCell<Synthesis>;
 
 #[cfg(test)]
 mod tests {
-    use super::{LoopCombine, identity, operation};
-    use crate::{IrBooleanOperation, IrConstant, IrIntegerOperation, IrType};
+    use super::{LoopCombine, U64, identity, operation, prune_capture_parameters};
+    use crate::{
+        IrAddressed, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop, IrDropSubject,
+        IrEnumType, IrFunction, IrInstruction, IrIntegerOperation, IrMatchTarget, IrOperation,
+        IrSynthesis, IrTerminator, IrType, IrValueId,
+    };
+
+    #[test]
+    fn capture_need_crosses_phi_cycles_for_calls_drops_returns_and_reconstruction() {
+        let referent = IrAddressed::Integer {
+            width: 64,
+            signed: false,
+        };
+        let address = IrType::Address(referent);
+        let value = IrValueId;
+        let mut types = vec![U64; 20];
+        for index in [9, 10, 15, 16] {
+            types[index] = address;
+        }
+        types[19] = IrType::Bool;
+        let parameters = |indices: std::ops::Range<u32>| {
+            indices
+                .map(|index| (value(index), types[index as usize]))
+                .collect()
+        };
+        let mut function = IrFunction {
+            name: "capture_need".into(),
+            parameters: parameters(0..9),
+            source_signature: None,
+            source_calls: Vec::new(),
+            result: U64,
+            values: types.clone(),
+            counted_ranges: Vec::new(),
+            overlaps: Vec::new(),
+            synthesis: Some(IrSynthesis::Chunk),
+            blocks: vec![
+                IrBlock {
+                    parameters: Vec::new(),
+                    instructions: vec![
+                        IrInstruction::Define {
+                            result: value(9),
+                            ty: address,
+                            operation: IrOperation::AddressOf {
+                                value: value(7),
+                                referent,
+                            },
+                        },
+                        IrInstruction::Define {
+                            result: value(10),
+                            ty: address,
+                            operation: IrOperation::AddressOf {
+                                value: value(8),
+                                referent,
+                            },
+                        },
+                    ],
+                    terminator: IrTerminator::Jump {
+                        target: IrBlockId(1),
+                        arguments: [3, 4, 5, 6, 9, 10].map(value).to_vec(),
+                        drops: Vec::new(),
+                    },
+                },
+                IrBlock {
+                    parameters: parameters(11..17),
+                    instructions: vec![
+                        IrInstruction::Define {
+                            result: value(17),
+                            ty: U64,
+                            operation: IrOperation::Call {
+                                function: 0,
+                                arguments: vec![value(11)],
+                            },
+                        },
+                        IrInstruction::Define {
+                            result: value(18),
+                            ty: U64,
+                            operation: IrOperation::Load {
+                                address: value(15),
+                                referent,
+                            },
+                        },
+                        IrInstruction::Define {
+                            result: value(19),
+                            ty: IrType::Bool,
+                            operation: IrOperation::Constant(IrConstant::Bool(true)),
+                        },
+                    ],
+                    terminator: IrTerminator::Match {
+                        scrutinee: value(19),
+                        enum_type: IrEnumType::Bool,
+                        targets: vec![
+                            IrMatchTarget {
+                                tag: 1,
+                                block: IrBlockId(2),
+                            },
+                            IrMatchTarget {
+                                tag: 0,
+                                block: IrBlockId(3),
+                            },
+                        ],
+                    },
+                },
+                IrBlock {
+                    parameters: Vec::new(),
+                    instructions: Vec::new(),
+                    terminator: IrTerminator::Jump {
+                        target: IrBlockId(1),
+                        arguments: (11..17).map(value).collect(),
+                        drops: vec![IrDrop {
+                            subject: IrDropSubject::Value(value(12)),
+                            ty: U64,
+                        }],
+                    },
+                },
+                IrBlock {
+                    parameters: Vec::new(),
+                    instructions: Vec::new(),
+                    terminator: IrTerminator::Return {
+                        value: value(13),
+                        drops: Vec::new(),
+                    },
+                },
+            ],
+        };
+        let needed = prune_capture_parameters(&mut function, 2).expect("valid chunk graph");
+        assert_eq!(needed, [true, true, true, false, true, false]);
+        assert_eq!(
+            function
+                .parameters
+                .iter()
+                .map(|(value, _)| value.0)
+                .collect::<Vec<_>>(),
+            [0, 1, 2, 3, 4, 5, 7]
+        );
+        assert_eq!(
+            function.blocks[0].instructions.len(),
+            1,
+            "only unused reconstruction disappears"
+        );
+        assert_eq!(
+            function.blocks[1].instructions.len(),
+            3,
+            "unused call/load results do not erase runtime uses"
+        );
+        assert_eq!(
+            function.blocks[1]
+                .parameters
+                .iter()
+                .map(|(value, _)| value.0)
+                .collect::<Vec<_>>(),
+            [11, 12, 13, 15]
+        );
+        for block in &function.blocks {
+            if let IrTerminator::Jump {
+                target, arguments, ..
+            } = &block.terminator
+            {
+                assert_eq!(
+                    arguments.len(),
+                    function.blocks[target.index()].parameters.len()
+                );
+            }
+        }
+    }
 
     /// Every admitted combine, so a widening of the set has to come through
     /// here and answer the property below for its new entry.
