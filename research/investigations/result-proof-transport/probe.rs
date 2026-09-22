@@ -212,14 +212,29 @@ fn cases() -> Vec<Case> {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = std::env::args().collect::<Vec<_>>();
-    if args.len() != 3 {
-        return Err("usage: probe COMPILER SCRATCH_DIRECTORY".into());
+    if args.len() == 4 && args[3] == "--scale" {
+        return scale(&args[1], Path::new(&args[2]));
+    }
+    if !(args.len() == 3 || (args.len() == 4 && args[3] == "--candidate")) {
+        return Err("usage: probe COMPILER SCRATCH_DIRECTORY [--candidate|--scale]".into());
     }
     let scratch = Path::new(&args[2]);
     fs::create_dir_all(scratch)?;
     let mut results = String::from("case,expected,exit,matched\n");
     let mut failures = Vec::new();
-    for case in cases() {
+    let mut inputs = cases();
+    if args.len() == 4 {
+        for case in &mut inputs {
+            if !matches!(
+                case.name,
+                "direct-stale-scalar" | "overwritten-outcome" | "mixed-join"
+            ) {
+                case.expected_rule = None;
+            }
+        }
+        inputs.extend(candidate_cases());
+    }
+    for case in inputs {
         let source = scratch.join(format!("{}.wf", case.name));
         fs::write(&source, case.source)?;
         let output = Command::new(&args[1])
@@ -264,4 +279,212 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err(failures.join("\n").into());
     }
     Ok(())
+}
+
+/// Explicit research only: source construction precedes each timed compiler
+/// invocation; no build, linker or executable run is included. The CLI still
+/// performs parsing, checking and LLVM emission, so this is compilation cost,
+/// not an isolated entailment timer. The same sources are valid at the baseline.
+fn scale(compiler: &str, scratch: &Path) -> Result<(), Box<dyn Error>> {
+    if std::env::consts::OS != "macos" {
+        return Err("this measurement uses macOS /usr/bin/time -l RSS bytes".into());
+    }
+    fs::create_dir_all(scratch)?;
+    let mut csv = String::from("axis,size,repeat,source_bytes,wall_ms,peak_rss_bytes\n");
+    for axis in ["copies", "outcomes", "joins"] {
+        for count in [4, 8, 16, 32] {
+            let mut body = String::from("let outcome0 = selected(value: input);\n");
+            for index in 1..=count {
+                let previous = index - 1;
+                body.push_str(&match axis {
+                    "copies" => format!("let outcome{index} = outcome{previous};\n"),
+                    "outcomes" => format!("let outcome{index} = selected(value: input);\n"),
+                    "joins" => format!(
+                        "let outcome{index} = if choose {{\n  give outcome{previous};\n}} else {{\n  give selected(value: input);\n}}\n"
+                    ),
+                    _ => unreachable!(),
+                });
+            }
+            // The outcome remains an ordinary value on both compilers; the
+            // correctness probes separately require the transported relations.
+            body.push_str(&matched(
+                &format!("outcome{count}"),
+                "let observed = payload;",
+            ));
+            let source = consumer(&body);
+            let path = scratch.join(format!("{axis}-{count}.wf"));
+            fs::write(&path, &source)?;
+            for repeat in 0..3 {
+                let start = std::time::Instant::now();
+                let output = Command::new("/usr/bin/time")
+                    .arg("-l")
+                    .arg(compiler)
+                    .arg("--emit-llvm")
+                    .arg("-o")
+                    .arg(scratch.join(format!("{axis}-{count}.ll")))
+                    .arg(&path)
+                    .output()?;
+                let wall_ms = start.elapsed().as_secs_f64() * 1000.0;
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                fs::write(
+                    scratch.join(format!("{axis}-{count}-{repeat}.stderr")),
+                    &output.stderr,
+                )?;
+                if !output.status.success() {
+                    return Err(format!("{axis}/{count}: {stderr}").into());
+                }
+                let rss = stderr
+                    .lines()
+                    .find(|line| line.contains("maximum resident set size"))
+                    .and_then(|line| line.split_whitespace().next())
+                    .ok_or("missing peak RSS")?
+                    .parse::<u64>()?;
+                let row = format!(
+                    "{axis},{count},{repeat},{},{wall_ms:.3},{rss}\n",
+                    source.len()
+                );
+                print!("{row}");
+                csv.push_str(&row);
+                fs::write(scratch.join("scale.csv"), &csv)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn candidate_cases() -> Vec<Case> {
+    let use_payload = "guard(left: payload, right: input);";
+    let mut cases = Vec::new();
+    for (name, body, expected_rule) in [
+        (
+            "saved-copy-after-replacement",
+            format!(
+                "let outcome = selected(value: input);\nlet retained = outcome;\nset outcome = Ok<i32, Overflow>(value: 0_i32);\n{}",
+                matched("retained", use_payload)
+            ),
+            None,
+        ),
+        (
+            "set-call-result",
+            format!(
+                "let outcome = Ok<i32, Overflow>(value: 0_i32);\nset outcome = selected(value: input);\n{}",
+                matched("outcome", use_payload)
+            ),
+            None,
+        ),
+        (
+            "set-copied-result",
+            format!(
+                "let outcome = Ok<i32, Overflow>(value: 0_i32);\nlet retained = selected(value: input);\nset outcome = retained;\n{}",
+                matched("outcome", use_payload)
+            ),
+            None,
+        ),
+        (
+            "same-relation-join",
+            format!(
+                "let outcome = if choose {{\n  give selected(value: input);\n}} else {{\n  give selected(value: input);\n}}\n{}",
+                matched("outcome", use_payload)
+            ),
+            None,
+        ),
+        (
+            "constructor-through-binding",
+            format!(
+                "let outcome = Ok<i32, Overflow>(value: input);\n{}",
+                matched("outcome", use_payload)
+            ),
+            None,
+        ),
+        (
+            "delayed-stale-scalar",
+            format!(
+                "let outcome = selected(value: input);\nset input = 0_i32;\n{}",
+                matched("outcome", use_payload)
+            ),
+            Some("FN-8"),
+        ),
+        (
+            "distinct-outcomes-isolated",
+            format!(
+                "let retained = selected(value: input);\nlet outcome = selected(value: 0_i32);\n{}",
+                matched("outcome", use_payload)
+            ),
+            Some("FN-8"),
+        ),
+        (
+            "unselected-guard-isolated",
+            "let outcome = selected(value: input);\nguard(left: input, right: 0_i32);".to_owned(),
+            Some("FN-8"),
+        ),
+        (
+            "loop-replaced-outcome",
+            format!(
+                "let outcome = selected(value: input);\nfor (counter in 0_u64..2_u64) {{\n{}\n  set outcome = Ok<i32, Overflow>(value: 0_i32);\n}}",
+                indent(&matched("outcome", use_payload), 2)
+            ),
+            Some("FN-8"),
+        ),
+        (
+            "loop-local-production",
+            format!(
+                "for (counter in 0_u64..2_u64) {{\n  let outcome = selected(value: input);\n{}\n  set input = 0_i32;\n}}",
+                indent(&matched("outcome", use_payload), 2)
+            ),
+            None,
+        ),
+        (
+            "loop-unchanged-outcome",
+            format!(
+                "let outcome = selected(value: input);\nfor (counter in 0_u64..2_u64) {{\n{}\n}}",
+                indent(&matched("outcome", use_payload), 2)
+            ),
+            None,
+        ),
+        (
+            "alias-replaces-outcome",
+            format!(
+                "let outcome = selected(value: input);\nlet alias = &outcome;\nset deref(alias) = Ok<i32, Overflow>(value: 0_i32);\n{}",
+                matched("outcome", use_payload)
+            ),
+            Some("FN-8"),
+        ),
+        (
+            "alias-replaces-source-of-copy",
+            format!(
+                "let outcome = selected(value: input);\nlet retained = outcome;\nlet alias = &outcome;\nset deref(alias) = Ok<i32, Overflow>(value: 0_i32);\n{}",
+                matched("retained", use_payload)
+            ),
+            None,
+        ),
+    ] {
+        cases.push(Case {
+            name,
+            expected_rule,
+            source: consumer(&body),
+        });
+    }
+    let weaker = "fn smaller() -> result: own Result<i32, Overflow> pure contract {\n  ensures when Ok(value: payload): payload < 8_i32;\n} {\n  return Ok<i32, Overflow>(value: 0_i32);\n}\n\nfn larger() -> result: own Result<i32, Overflow> pure contract {\n  ensures when Ok(value: payload): payload < 10_i32;\n} {\n  return Ok<i32, Overflow>(value: 0_i32);\n}\n\nfn bounded(value: own i32) -> result: own unit pure contract {\n  requires value < 10_i32;\n} {\n  return unit;\n}\n\nfn consumer(choose: own Bool) -> result: own Result<unit, Overflow> pure {\n  let outcome = if choose {\n    give smaller();\n  } else {\n    give larger();\n  }\n  let value = propagate outcome;\n  bounded(value: value);\n  return Ok<unit, Overflow>(value: unit);\n}\n\n";
+    cases.push(Case {
+        name: "weaker-bound-join",
+        expected_rule: None,
+        source: format!("{weaker}{ENTRY}"),
+    });
+    cases.push(Case {
+        name: "stronger-bound-join-refused",
+        expected_rule: Some("FN-8"),
+        source: format!(
+            "{}{ENTRY}",
+            weaker.replace("requires value < 10_i32;", "requires value < 8_i32;")
+        ),
+    });
+    cases.push(Case {
+        name: "wrapper-stronger-contract-refused",
+        expected_rule: Some("FN-9"),
+        source: wrapper("return selected(value: input);").replace(
+            "ensures when Ok(value: payload): payload == input;",
+            "ensures when Ok(value: payload): payload < input;",
+        ),
+    });
+    cases
 }

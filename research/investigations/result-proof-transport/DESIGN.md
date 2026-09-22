@@ -2,9 +2,9 @@
 
 This investigation asks why a verified result relation survives a direct call
 match but not naming that result or forwarding its success with `propagate`.
-The active specification remains authoritative. This study changes no language
-rule, conformance expectation or compiler implementation, and selects no live
-design-tree revision.
+The active specification remains authoritative. The work branch now implements
+a v0.64 amendment for local integer-payload Results. The two design-tree
+revisions remain pending amendments; this investigation does not approve them.
 
 The consumer is ordinary library composition: perform one operation, keep its
 outcome while doing unrelated work, then use the established success bound.
@@ -41,17 +41,17 @@ Baseline acceptance checks establish current behavior only. A proposed
 extension needs its own implementation and checking-cost evidence before any
 claim of performance or complete soundness.
 
-## Current boundary and its history
+## Baseline boundary and its history
 
 The measured baseline is compiler revision
 `7127bcb6f48a0664d31a856ef54e21010bb2c238`, with specification v0.63.
 The original discussion used v0.62; v0.63 widens owned-descendant measure
 placement and retains the result-route restrictions examined here. The sources
-of authority are [FN-9, CALL-4](../../../spec/kernel-spec.md#8-functions-generics-contracts),
-[CALL-6, ENT-3.S12, ENT-5](../../../spec/kernel-spec.md#15-obligation-discharge-deterministic-facts-invariants-and-local-certificates-normative)
-and [GIVE-1](../../../spec/kernel-spec.md#3-grammar).
+of authority are [FN-9, CALL-4](../../../spec/kernel-spec-v0.63.md#8-functions-generics-contracts),
+[CALL-6, ENT-3.S12, ENT-5](../../../spec/kernel-spec-v0.63.md#15-obligation-discharge-deterministic-facts-invariants-and-local-certificates-normative)
+and [GIVE-1](../../../spec/kernel-spec-v0.63.md#3-grammar).
 
-There are three separate losses:
+The baseline has three separate losses:
 
 1. **Capturing an outcome.** FN-9 limits an `Ok` relation to a call used
    directly as a match scrutinee. A named, copied, moved, stored or propagated
@@ -81,14 +81,14 @@ current requirements. Later contract-surface changes replaced executable-looking
 contract blocks, and x1 replaced ownership and reference machinery, while
 these closed publication routes survived.
 
-The engineering benefit of the present restriction is identifiable: it avoids
+The engineering benefit of the baseline restriction is identifiable: it avoids
 representing conditional evidence that must survive value transfer and later
 mutation. The inspected current decisions and historical specification do not
 establish that this is necessary for deterministic proof checking, or that its
 composition cost is preferable today. That is a design question, not a
-compiler defect under the current rules.
+compiler defect under the baseline rules.
 
-## Reproduction and observed results
+## Baseline reproduction and observed results
 
 [probe.rs](probe.rs) is the sole source generator and baseline runner. Its caller
 is the explicit command below; it is research, not a daily gate or conformance
@@ -97,7 +97,7 @@ CSV to scratch. Remove or replace it when these discriminating observations
 are superseded; an implemented language change must add its maintained cases
 to the formal test system without making that system import this probe.
 
-Run from the repository root, with task-specific scratch paths:
+Run from a checkout of the stated baseline revision, with task-specific scratch paths:
 
 ```sh
 wf_result_scratch=$(mktemp -d)
@@ -120,7 +120,7 @@ The first seventeen probes were the predeclared call/transfer/wrapper controls.
 Reading GIVE-1 then motivated the two additional `value-match-delivery` and
 `value-if-delivery-control` probes; these are follow-up exploration.
 
-| Probe | Current result | Observation |
+| Probe | Baseline result | Observation |
 |---|---|---|
 | `direct-match` | accept | A verified `payload == input` is available in the arm. |
 | `named-match` | FN-8 | One intervening `let` loses that equality. |
@@ -141,15 +141,14 @@ Reading GIVE-1 then motivated the two additional `value-match-delivery` and
 
 The last two negative controls are rejected today even without invalidation or
 join handling for stored evidence: the initial evidence is absent. They are
-required challenges for a future candidate, not evidence that such a candidate
-already handles those transitions correctly. The affine probe adds a `nocopy`
+required challenges for a candidate, not evidence that the baseline
+handles those transitions correctly. The affine probe adds a `nocopy`
 error declaration to exercise a legal move; it is not a Copy Result with an
 illegal `move` disguising the publication failure.
 
-## Implementation correspondence
+## Baseline implementation correspondence
 
-The inspected [flow checker](../../../compiler/src/semantic/entailment/flow.rs)
-matches the specification:
+At the measured baseline revision, the flow checker implemented those rules:
 
 - `PreparedCall` is transient evidence for an exact root call and explicitly
   does not enter the checked expression tree.
@@ -178,15 +177,13 @@ and corresponding conformance updates, not silently making that case pass.
 | Retain finite evidence associated with the returned value | One account of capture, transport and success selection can serve named outcomes, propagation and wrappers. | Requires precise support, replacement, join, loop and return judgments, with a bounded term universe and measured checking cost. |
 | General refinement or dependent result types | Could express richer payload, storage and cross-boundary relationships. | Changes the type/interface and proof language well beyond this defect; current examples do not select that scope. |
 
-The recommended next experiment is the third direction, confined initially to
-the existing single-Result integer-payload relation language. This is a
-recommendation for a prototype and rule comparison, not a selected language
-amendment or a claim that the following sketch is implementation-complete.
-The direct-`propagate` alternative remains useful as a comparison baseline.
-No new relation syntax, SMT, arbitrary predicate inference or runtime state is
-needed to state the narrower question.
+The owner selected the third direction for implementation, confined to local
+integer-payload Results and the existing declared relation language. The
+comparison rejects a direct-propagate-only repair because it leaves naming,
+copying and forwarding failures intact. It does not select general refinement
+types or make that larger design impossible.
 
-## Candidate: conditional evidence associated with a value
+## Implemented conditional value evidence
 
 Conceptually retain `Ok(v) implies R(payload(v), captured operands)` for one
 particular produced value `v`. This is compiler proof metadata, not a source
@@ -194,7 +191,7 @@ reference, a field added to Result, a new user-authored assertion or an
 unconditional numeric fact. Selecting the success path makes the relation
 available; merely possessing the Result does not prove that it is `Ok`.
 
-The candidate needs these rules together:
+The implementation applies these rules together:
 
 1. **Capture once, after a successful call judgment.** Obtain authority from
    the verified callable contract and its actual arguments at that call.
@@ -216,10 +213,9 @@ The candidate needs these rules together:
 4. **Keep value identity distinct from external support.** Existing immutable
    call/placement datums stay immutable. A substituted live scalar or reference
    measure remains supported by its current place and is killed by the ordinary
-   overlapping event, including scope exit. The first prototype need not invent
-   a general scalar snapshot family. Consequently it may conservatively lose a
-   relation after an argument changes even where richer snapshot reasoning
-   could preserve a useful old-value relation. This limit must be explicit.
+   overlapping event, including scope exit. Existing immutable call datums
+   retain old argument values. Closing before a kill preserves consequences
+   whose own support survives; it never equates an old datum with a new value.
 5. **Use one success-delivery judgment.** Direct match, named match, successful
    propagation and value-initializer delivery must map the same selected
    payload evidence to their receiving binding after ordinary kills. Carrying
@@ -230,9 +226,11 @@ The candidate needs these rules together:
    relations established on every reaching alternative that can supply that
    success value. Retain the proof parent from each alternative. Do not union
    branch-specific claims, pair a relation from one outcome with another, or
-   build cross-products of guards over independent outcomes. A conservative
-   exact normalized-template intersection is a candidate initial meet; it can
-   lose relations that a more expensive consequence meet would retain.
+   build cross-products of guards over independent outcomes. The selected
+   representation reuses the ordinary weakest-bound join: payload < 8 and
+   payload < 10 retain payload < 10. The initial exact-template-intersection
+   sketch is rejected because that needless loss buys no simpler inference
+   family once the existing fact-state machinery is reused.
 7. **Keep loops finite without cross-iteration identity reuse.** Start with
    the existing conservative head discipline: evidence whose holder or support
    changes on a continuing backedge is not carried to the next head. A fresh
@@ -247,6 +245,10 @@ The candidate needs these rules together:
    replace direct-constructor selection and define the nonempty selected-return
    judgment for forwarded values. Same-SCC callee summaries remain unavailable;
    otherwise an unchecked recursive forwarding cycle could prove itself.
+   Direct Err and values whose constructor-tag information is definitely Err
+   supply no selected success exit, including through copies and joins. A
+   merely contradictory numeric context does not change structural selection.
+   Each clause reads only its own returned ordinal's conditional context.
 
 For example, after `let saved = outcome; set outcome = replacement;`, saved
 must retain only the evidence for its copied value. After changing a buffer's
@@ -255,27 +257,86 @@ must never become a bound about the new length. A genuinely immutable captured
 length can still denote the old length, but connecting it to current storage
 requires a surviving relation. These are different obligations.
 
-Aggregate fields, indexed storage, recursive payloads, multiple result
-ordinals and cross-function body-private facts are outside this initial
+Aggregate fields, indexed storage, recursive payloads, multi-result call
+destinations and cross-function body-private facts are outside this initial
 prototype's added transport surface. Existing admitted direct routes remain
 available. In particular, no callee-local fact crosses a function boundary
 without its declared contract. A local-result prototype that succeeds does
 not settle general stored refinement types or quantify over container slots.
 
-The retained state should use a finite vocabulary of source sites, result
-ordinals, payload placeholders and already-admitted operand terms. Copying
-metadata can share immutable relations and derivation nodes. If H is the number
-of tracked holders and Q the finite candidate-relation vocabulary, a holder
-map with at most Q entries has O(HQ) association storage; this conditional bound
-does not prove that a proposed construction of Q is polynomial in source size.
-The next design must bound that construction, the join work and the added
-ordinary closure cost. Never substitute a timeout, fuel cap or arbitrary path
-depth for that argument. No candidate checking-cost measurement was made here.
+The representation is a deterministic map from live local bindings to separate
+`ResultEvidence` values. Its private integer parameter is a formal name scoped
+to each context, not a globally shared value. Interning one parameter per
+integer type adds at most eight terms; equal TermIds in different contexts
+never justify combining their guards. Copies receive independent associations;
+whole-holder writes remove only associations whose resolved storage overlaps.
+The `definitely_err` bit records constructor information, not a numeric proof
+search. It meets by conjunction at joins and is reset by unknown replacement.
 
-## Next experiment and affected owners
+For a concrete checked function, let H be its maximum live local Result count,
+T its existing term count plus at most eight parameters, and E its finite
+number of walked events and incoming join edges. Each conditional numeric
+matrix has O(T^2) cells, including the existing ordinary/S12 candidate layers;
+associations therefore add O(H*T^2) live numeric storage per flow snapshot.
+Transport performs O(E*H) invocations of the existing terminating closure/kill
+machinery plus corresponding matrix projections and joins. It introduces no
+new predicate, term per path, iteration unrolling or recursive summary search.
+This is a polynomial bound on the added number of closure invocations and
+stored cells, relative to the concrete function and existing closure cost;
+it is not a bound on generic expansion or all compiler work. Proof DAG parents
+are retained and shared under the existing deterministic ledger. Measurements
+below examine whether those extra contexts are practical at the tested sizes.
 
-Before selecting a language change, implement the compared mechanisms only as
-research candidates with these held observations:
+The old `PostconditionDirectMatch` and first-arm
+`PostconditionSelectedReceiver` implementation and required roots are removed.
+Every own selection uses the same context-to-binding substitution; subsequent
+scalar assignments use ordinary S5 commit images. Tests retain exact callable
+clauses, source call identities and numeric actuals. They retire unused special
+assignment-root counts because those roots are no longer a language rule;
+actual downstream requirements still test assignment correctness.
+
+## Implementation criteria and affected owners
+
+### Authorized implementation investigation
+
+The owner selected the unified transport direction and authorized implementation
+after clarifying that an initially conservative prototype does not select a
+permanent language restriction. Ordinary local binding, copy, move, selection,
+propagation, value delivery and verified forwarding are the delivery scope.
+Live-tree revisions remain proposals until the complete revisions are ruled on.
+
+The implementation experiment uses one independent conditional numeric context
+per live local Result. Its private typed payload parameter is interpreted only
+inside that context; selecting success substitutes it into the receiving value,
+and no conditional relation is published into ordinary flow before selection. Copies share the
+value's evidence while holder replacement removes only the replaced association.
+Each context uses the existing difference-bound closure and weakest-bound join,
+including common weaker bounds such as `x < 8` and `x < 10` yielding `x < 10`.
+It never combines the guards of distinct outcomes. Ordinary events and lexical
+exits use the existing resolved-place support kills; continuing-backedge kills
+also remove changed associations before entering an arbitrary loop iteration.
+
+Before judging this candidate, require all ordinary transfer probes to recover,
+common weaker bounds to survive joins, and all stale-support, replaced-value,
+mixed-producer and cross-iteration controls to reject. Include a surviving-copy
+control after overwriting its source, constructor delivery, an Err-only incoming
+alternative, and a wrapper whose declared relation is stronger than its callee's.
+Runtime validation must execute both success and error paths. Inspect emitted
+code for the absence of runtime evidence and independently scale transfer depth,
+live outcomes and joins when measuring checking time and peak memory.
+
+Representation assessment: keep this mechanism in a private child of the
+existing entailment flow module, which already owns events, joins and call
+authority. Extending the large walker inline would obscure those responsibilities;
+a second analysis pass or sibling solver would duplicate them. The child serves
+this experiment and the maintained rule if selected; remove it if the candidate
+is rejected. The existing fact matrix bounds one context by the finite term
+inventory rather than by path histories. The implementation must account for
+the extra contexts, term construction and closure calls before claiming a
+practical polynomial overhead. General aggregate and indexed-storage transport
+remains a separate research question, not an inferred impossibility.
+
+The implementation is judged against these held observations:
 
 - Recover the named, copied, moved, propagated and extracted success bounds
   and the forwarded wrapper contracts from this probe, with unchanged producer
@@ -292,23 +353,59 @@ research candidates with these held observations:
   code for unchanged value transfers, branches and allocations. A candidate
   requiring extra runtime proof state fails the held requirement.
 
-The main language owners are FN-9, CALL-4, CALL-6, ENT-3.S12/S13, ENT-5,
-GIVE-1 and ERR-3. If new immutable scalar captures are selected, ENT-2/MSR-3
-are affected too. The relevant tree owners are
-[requires-entry-contract](../../../design/language/checks-and-proofs/requires-entry-contract.md),
-[obligation-discharge](../../../design/language/checks-and-proofs/obligation-discharge.md),
-[surface-form/match-form](../../../design/language/surface-form/match-form.md)
-and [compiler/checker-facts](../../../design/compiler/checker-facts.md), with
-their ancestors. A selected revision needs amendments for the new transport
-and return decisions, the active-spec/version update, changed conformance
-expectations and cases, and the ordinary checker/derivation changes together.
-Ownership, reference access and existing contract vocabulary do not change
-merely because evidence travels farther.
+The affected language owners are FN-9, CALL-4, CALL-6, ENT-2, ENT-3.S12,
+ENT-5, GIVE-1 and DIAG-2; ERR-3 retains its ordinary value/control semantics.
+S13 captures, MSR-2 descriptor support, ownership, callable refinement and the
+same-component summary schedule retain their existing rules. The outgoing
+v0.63 bytes are archived unchanged; no grammar production or generated syntax
+data changes. The two pending amendments supplement
+[automatic-facts](../../../design/language/checks-and-proofs/automatic-facts.md)
+and [checker-facts](../../../design/compiler/checker-facts.md); they replace no
+live-tree line. Their ancestors and the existing contract, obligation-discharge,
+match and propagation decisions remain applicable.
 
-Design suitability: a unified local transport mechanism directly addresses the
-observed composition failures and has a plausible erased representation.
-General stored refinements would expand this study's scope, while a direct-
-propagation-only repair leaves most failures intact. Prototype the local
-mechanism first; retain invalidation, join, iteration identity, return selection
-and vocabulary-size bounds as unresolved design work. No live-tree decision,
-specification revision or implementation is approved by this research result.
+META-5 delta: numbered rules +0/-0, tokens +0/-0, spellings +0/-0,
+source-shape exceptions -3 (direct-match-only Result publication,
+direct-constructor-only routed return, and value-if-only scalar delivery),
+plus retirement of the redundant first-arm payload-assignment special route.
+Selection ground: evidence-selected. The matched baseline programs expose
+these losses; the common transfer rule recovers them while the stale-support,
+guard-isolation, join and loop controls preserve their rejection. The bounded
+term and context argument selects reuse of L0 closure over guard products.
+
+## Candidate evidence and remaining validation
+
+The unified path, after removing the old direct-match and selected-receiver
+code, passes all 35 candidate probes: 25 accepts and 10 expected rejections.
+The compiler's 950 semantic unit tests pass, including independent retained-DAG
+arithmetic/substitution checks and the maintained real-program proof inventory.
+A first complete library run exposed eight expectations for the retired rules;
+those expectations were revised against the amendment and the semantic suite
+was rerun. The complete gate still needs its final run.
+
+The formal corpus adds a runtime value-transport case and a conditional-join
+case, and negative cases for replacement, mutable support, guard isolation,
+stronger join bounds, loop replacement, strengthened forwarding, an empty
+success-exit set, cyclic forwarding and descriptor mutation. The two existing
+named-outcome/value-match negatives become positives for the same source.
+All thirteen added or changed expectations pass the ordinary compiler CLI.
+The runtime case also links and exits zero after checking both success and
+error, copy/move, value delivery, loop retention and forwarding paths.
+No formal test imports the research probe.
+
+The scalar `give` extension keeps the existing bare-atom carrier rule, while
+Result-valued `give` carries its whole conditional context. General scalar
+computed/projection delivery, borrowed Result selection, aggregate/indexed
+storage and multiple Result destinations from one call remain outside this
+amendment. They are recorded together with validation/reopening criteria in
+[TODO](../../../docs/todo.md), rather than being treated as impossible or as a
+reason to retain the direct-call restriction for ordinary locals.
+
+Design suitability: a private child of the existing entailment flow owns
+conditional evidence construction, selection and joins. The parent retains
+ordinary event order and callable authority; no second solver, runtime state
+or body-private interprocedural summary is introduced. Dense per-local contexts
+may be costly when many unrelated outcomes stay live; measurement determines
+whether sharing or projection deserves immediate work. DCR and final gates
+are pending; evidence here does not constitute a general soundness certificate
+or an owner ruling on the two tree amendments.

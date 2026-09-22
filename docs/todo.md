@@ -305,20 +305,26 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
-- **Result-proof transport across ordinary value use.** The
-  [result-proof study](../research/investigations/result-proof-transport/DESIGN.md)
-  reproduces lost success relations through named/copied/moved Results,
-  `propagate`, value-match delivery and wrapper returns. Current FN-9/GIVE-1
-  specify these restrictions; they are not compiler discrepancies. Compare a
-  direct-propagation extension with finite value-associated conditional
-  evidence, preserving the existing relation vocabulary and erased execution.
-  Benefit to composition is demonstrated by the current failures; candidate
-  soundness, finite term construction and checking cost remain unverified.
-  Defer implementation until the prototype scope and transport/return rules
-  are selected. Reopen with the study's same-obligation positives, stale-state,
-  alias, join, loop and recursive-summary controls and its cost comparison;
-  close when the selected general path and formal regressions land or an
-  explicit design disposition retains the limits.
+- **Remaining value-evidence boundaries.** Local integer Result transport now
+  uses the common conditional-value rule. The
+  [investigation](../research/investigations/result-proof-transport/DESIGN.md)
+  leaves three related extensions to assess together: borrowed Result
+  selection and aggregate/indexed storage, multiple Result destinations from
+  one call, and general scalar `give` expressions beyond the existing bare
+  atom. These can remove remaining naming/projection workarounds, but storage
+  invalidation, cross-result guard identity and evaluated-expression images
+  need their own acceptance rules and cost evidence. Reopen when an ordinary
+  library example needs one of these boundaries. Validate matched direct/local/
+  projected programs, alias and descriptor writes, joins, loop iterations and
+  stronger-contract negatives before choosing an extension; do not infer a
+  general refinement system from the local-result implementation. Also assess
+  sharing or projecting per-local conditional fact matrices when many outcomes
+  remain live: the benefit and precision tradeoff are not established by the
+  finite storage bound. Compare checking time, retained evidence and peak memory
+  on the investigation's scaled sources before selecting that representation
+  improvement. These extensions are deferred because the selected ordinary
+  local composition rule can be validated without widening the storage or
+  predicate vocabulary.
 - **Declaration and call-boundary syntax after the ownership redesign.**
   Reassess mandatory `own` on value parameters and results, mandatory names
   for every result including `unit`, and the named-argument/construction-field
