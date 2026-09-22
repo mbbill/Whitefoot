@@ -305,6 +305,20 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
+- **Result-proof transport across ordinary value use.** The
+  [result-proof study](../research/investigations/result-proof-transport/DESIGN.md)
+  reproduces lost success relations through named/copied/moved Results,
+  `propagate`, value-match delivery and wrapper returns. Current FN-9/GIVE-1
+  specify these restrictions; they are not compiler discrepancies. Compare a
+  direct-propagation extension with finite value-associated conditional
+  evidence, preserving the existing relation vocabulary and erased execution.
+  Benefit to composition is demonstrated by the current failures; candidate
+  soundness, finite term construction and checking cost remain unverified.
+  Defer implementation until the prototype scope and transport/return rules
+  are selected. Reopen with the study's same-obligation positives, stale-state,
+  alias, join, loop and recursive-summary controls and its cost comparison;
+  close when the selected general path and formal regressions land or an
+  explicit design disposition retains the limits.
 - **Declaration and call-boundary syntax after the ownership redesign.**
   Reassess mandatory `own` on value parameters and results, mandatory names
   for every result including `unit`, and the named-argument/construction-field
