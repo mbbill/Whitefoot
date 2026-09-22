@@ -102,12 +102,43 @@ fn scalar_consumption() -> code: own u64 pure {
   let reused = grow_vector_append::<u64, 8>(values: &values, value: 7_u64);
   grow_vector_truncate::<SumDrain, 8>(values: &values, retained: 1_u64, env: &seen);
   grow_vector_truncate::<SumDrain, 8>(values: &values, retained: 0_u64, env: &seen);
-  grow_vector_free_empty::<u64, 8>(values: move values);
   if seen.sequence != 1549_u64 {
     return 8_u64;
   }
   if seen.count != 2_u64 {
     return 9_u64;
+  }
+  set seen.sequence = 0_u64;
+  set seen.count = 0_u64;
+  for @refill (
+    index in 0_u64..8_u64,
+    invariant length_lo: values.storage.inner.len >= index,
+    invariant length_hi: values.storage.inner.len <= index
+  ) {
+    let value = index + 1_u64;
+    let length = grow_vector_append::<u64, 8>(values: &values, value: value);
+  }
+  grow_vector_truncate::<SumDrain, 8>(values: &values, retained: 7_u64, env: &seen);
+  grow_vector_truncate::<SumDrain, 8>(values: &values, retained: 6_u64, env: &seen);
+  if seen.sequence != 2063_u64 {
+    return 10_u64;
+  }
+  if seen.count != 2_u64 {
+    return 11_u64;
+  }
+  for (index in 0_u64..6_u64) {
+    let expected = index + 1_u64;
+    if values.storage.inner[index] != expected {
+      return 12_u64;
+    }
+  }
+  if values.storage.inner.cap != reserved {
+    return 13_u64;
+  }
+  grow_vector_drain::<SumDrain, 8>(values: &values, env: &seen);
+  grow_vector_free_empty::<u64, 8>(values: move values);
+  if seen.count != 8_u64 {
+    return 14_u64;
   }
   return 0_u64;
 }

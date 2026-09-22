@@ -201,6 +201,93 @@ fn aggregate_transfer_inspector_counts_copy_and_vector_traffic() {
     );
 }
 
+/// Taking first gives the last value a local owner. Its subsequent exchange
+/// needs only the old selected value's callback snapshot and last-to-selected
+/// transfer; private address materialization must not add two more copies.
+#[test]
+fn taking_then_swapping_a_large_value_forwards_the_two_transfers() {
+    let source = br#"nocopy struct Row {
+  words: Array<u64, 32>;
+}
+
+fn accept(seen: &u64, value: own Row) -> result: own unit writes(seen) {
+  for (index in 0_u64..32_u64) {
+    set deref(seen) = deref(seen) +wrap value.words[index];
+  }
+  return unit;
+}
+
+fn transfer(values: &Slots<Row, 4>, index: own u64, seen: &u64) -> result: own unit writes(values), writes(seen) contract {
+  requires index + 2_u64 <= deref(values).len;
+  ensures deref(values).len + 1_u64 == deref(entry(values)).len;
+} {
+  let value = take_back(window: values);
+  swap(first: &deref(values)[index], second: &value);
+  accept(seen: seen, value: move value);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = slots_new::<Row, 4>();
+  for @fill (
+    index in 0_u64..4_u64,
+    invariant length_lo: values.len >= index,
+    invariant length_hi: values.len <= index
+  ) {
+    let value = (index + 1_u64) * 10_u64;
+    let words = array_filled::<u64, 32>(value: value);
+    let row = Row(words: words);
+    place_back(window: &values, value: move row);
+  }
+  let seen = 0_u64;
+  transfer(values: &values, index: 0_u64, seen: &seen);
+  if seen != 320_u64 {
+    return exit_status(code: 1_u8);
+  }
+  transfer(values: &values, index: 1_u64, seen: &seen);
+  if seen != 960_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if values[0_u64].words[0_u64] != 40_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if values[1_u64].words[31_u64] != 30_u64 {
+    return exit_status(code: 4_u8);
+  }
+  let next = take_back(window: &values);
+  accept(seen: &seen, value: move next);
+  let last = take_back(window: &values);
+  accept(seen: &seen, value: move last);
+  if seen != 3200_u64 {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = emit(source);
+    let retained = module
+        .lines()
+        .map(|line| {
+            if line.starts_with("define ")
+                && (line.contains("@wf_transfer(") || line.contains("@wf_accept("))
+            {
+                line.strip_suffix(" {").unwrap().to_owned() + " noinline {\n"
+            } else {
+                line.to_owned() + "\n"
+            }
+        })
+        .collect::<String>();
+    let optimized = super::host_optimized_module(&retained);
+    let transfer = super::emitted_function(&optimized, "transfer");
+    let (copy_bytes, vector_bytes) = aggregate_transfer_cost(transfer);
+    assert_eq!(copy_bytes + vector_bytes, 2 * 256, "{transfer}");
+    assert!(transfer.contains("@wf_accept("), "{transfer}");
+    let output = super::compile_and_run(&retained);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
 #[test]
 fn growing_a_run_keeps_the_original_data_at_capacity_and_target_limits() {
     let source = include_bytes!("../../../../tests/programs/growable_vec.wf");

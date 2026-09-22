@@ -1153,16 +1153,16 @@ pub enum IrOperation {
         offset: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
-    /// [BLK-3] the run one boundary operation hands back: one store at the
-    /// boundary slot for a placement, and one boundary arithmetic for both.
+    /// [OP-10] place one element at a window boundary and move that boundary.
     RunBoundary {
         row: IrBoundary,
         run: IrValueId,
-        /// The placed element; a removal row has none.
+        /// The placed element. Takes use the complete `RunTaken` operation.
         value: Option<IrValueId>,
     },
-    /// [BLK-3] the element a removal row hands back, read from the boundary
-    /// slot before the boundary moves.
+    /// [OP-10] take one element and move the window boundary. The physical
+    /// element address is captured before changing the descriptor; no source
+    /// observation occurs between that change and reading the captured slot.
     RunTaken {
         row: IrBoundary,
         run: IrValueId,

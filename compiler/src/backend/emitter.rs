@@ -909,8 +909,31 @@ impl FunctionFramePlan {
             .iter()
             .map(|field| llvm_storage_type(program, field))
             .collect::<Result<Vec<_>, _>>()?;
-        let frame_type = format!("{{ {} }}", fields.join(", "));
         let mut output = String::new();
+        if let Some(alignment) = self.target.independent_slot_alignment() {
+            // The complete frame was qualified before this representation
+            // choice. Keep each full allocation root, including parents of
+            // reused result fields; only unrelated roots gain distinct LLVM
+            // allocation provenance. Storage interference is unchanged.
+            for key in &self.ordered {
+                let slot = self.slots.get(key).ok_or(BackendFailure::InvalidIr)?;
+                let field = self
+                    .target
+                    .logical_field(slot.logical_index)
+                    .ok_or(BackendFailure::InvalidIr)?;
+                let ty = fields
+                    .get(field.physical_index() as usize)
+                    .ok_or(BackendFailure::InvalidIr)?;
+                writeln!(
+                    output,
+                    "  {} = alloca {ty}, align {alignment}",
+                    slot.pointer
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            return Ok(output);
+        }
+        let frame_type = format!("{{ {} }}", fields.join(", "));
         writeln!(
             output,
             "  %wf.frame = alloca {frame_type}, align {}",

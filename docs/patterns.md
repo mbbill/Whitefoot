@@ -79,9 +79,12 @@ element is acceptable; it transfers a constant number of elements.
 `grow_vector_truncate` preserves a chosen prefix, while `grow_vector_drain`
 consumes the complete window. Both invoke the supplied `VectorDrain` member
 in the removed elements' original order and preserve capacity for reuse.
-They reverse the removed suffix and take from the back, so element movement
-is linear but greater than a direct native consumer. Their callback's
-environment must be effect-disjoint from the backing [EFF-5].
+For the first half of the removed suffix, they take the rear element into a
+local, exchange it with the next suffix element and consume that local. The
+remaining suffix can then be consumed from the back. Work is proportional
+to the number removed, with constant auxiliary element storage; rear-element
+relocation remains extra movement compared with a direct native consumer.
+The callback's environment must be effect-disjoint from the backing [EFF-5].
 
 These operations also accept `nodrop` elements: the callback explicitly
 consumes each one, then `grow_vector_free_empty` consumes the empty owner.
