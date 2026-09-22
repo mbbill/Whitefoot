@@ -7494,7 +7494,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn direct_and_value_matches_select_one_conditional_call_context() {
+fn success_selections_retain_one_conditional_call_context() {
     let source = br#"fn callee(value: own i32) -> result: own Result<i32, Overflow> pure contract {
   ensures when Ok(value: payload): payload == value;
 } {
@@ -7526,11 +7526,18 @@ fn delivered(value: own i32) -> result: own i32 pure {
   return selected;
 }
 
+fn propagated(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+  ensures when Ok(value: payload): payload == value;
+} {
+  let selected = propagate callee(value: value);
+  return Ok<i32, Overflow>(value: selected);
+}
+
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for function in ["direct", "delivered"] {
+    for function in ["direct", "delivered", "propagated"] {
         let summary = entailment(source, function);
         validate_derivations(&summary);
         let roots = summary

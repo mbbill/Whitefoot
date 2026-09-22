@@ -472,13 +472,13 @@ The error edge keeps its ordinary return and cleanup behavior [FN-9, ENT-5].
 let outcome = bounded(count: limit);
 let saved = outcome;
 let index = propagate saved;
-// If bounded declared its Ok payload < count, index < limit is available
-// here while the relation to limit remains valid.
 ```
 
-The fragment assumes a declared `bounded` contract and a compatible enclosing
-Result return. A wrapper may return the named outcome or the call directly;
-its own routed `ensures` must still be proved. The
+If `bounded` declares its Ok payload less than `count`, `index < limit` is
+available after propagation while that relation remains valid. The fragment
+assumes that contract and a compatible enclosing Result return. A wrapper may
+return the named outcome or the call directly; its own routed `ensures` must
+still be proved. The
 [complete transport case](../tests/conformance/cases/fn9-pos-result-value-transport.wf)
 shows both forms and executes success and error paths.
 

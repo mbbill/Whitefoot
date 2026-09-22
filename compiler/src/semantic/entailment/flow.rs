@@ -14419,7 +14419,6 @@ impl Analyzer<'_, '_> {
                 let mut result = self.capture_result(node_path, scrutinee, state);
                 let judgment = self.expression_effects(scrutinee, state);
                 self.finish_result(scrutinee, &judgment, &mut result, state);
-                self.finish_result(scrutinee, &judgment, &mut result, state);
                 self.declare(*binding);
                 if let Some(result) = result {
                     self.select_result(node_path, &result, *binding, *ok_type, state);

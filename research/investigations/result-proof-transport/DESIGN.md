@@ -2,9 +2,8 @@
 
 This investigation asks why a verified result relation survives a direct call
 match but not naming that result or forwarding its success with `propagate`.
-The active specification remains authoritative. The work branch now implements
-a v0.64 amendment for local integer-payload Results. The two design-tree
-revisions remain pending amendments; this investigation does not approve them.
+The active specification remains authoritative. The implemented v0.64 rules
+carry conditional evidence with local integer-payload Results.
 
 The consumer is ordinary library composition: perform one operation, keep its
 outcome while doing unrelated work, then use the established success bound.
@@ -97,14 +96,18 @@ CSV to scratch. Remove or replace it when these discriminating observations
 are superseded; an implemented language change must add its maintained cases
 to the formal test system without making that system import this probe.
 
-Run from a checkout of the stated baseline revision, with task-specific scratch paths:
+Run from this branch, which contains the current runner. Create a detached
+checkout of baseline `7127bcb6` in scratch and build its compiler separately;
+the baseline checkout does not contain the runner:
 
 ```sh
 wf_result_scratch=$(mktemp -d)
-make -C compiler build CARGO_TARGET_DIR="$wf_result_scratch/target"
+git worktree add --detach "$wf_result_scratch/baseline" 7127bcb6f48a0664d31a856ef54e21010bb2c238
+make -C "$wf_result_scratch/baseline/compiler" build CARGO_TARGET_DIR="$wf_result_scratch/target"
 rustc --edition=2024 -O research/investigations/result-proof-transport/probe.rs -o "$wf_result_scratch/probe"
 perl .github/run-check.pl result-proof-probe "$wf_result_scratch/probe" "$wf_result_scratch/target/gate/whitefootc" "$wf_result_scratch/results"
 cat "$wf_result_scratch/results/results.csv"
+git worktree remove "$wf_result_scratch/baseline"
 ```
 
 The actual run on 2026-09-22 built the unchanged compiler with `make -C compiler
@@ -160,13 +163,14 @@ At the measured baseline revision, the flow checker implemented those rules:
   a fresh unknown integer image. Its comment explicitly withholds a new fact.
 - The give path and `establish_value_if_delivery_join` enable relation delivery
   only for `ValueInitializerKind::ValueIf`.
-- [The return checker](../../../compiler/src/semantic/check/ensures.rs) reports
+- [The baseline return checker](https://github.com/mbbill/Whitefoot/blob/7127bcb6f48a0664d31a856ef54e21010bb2c238/compiler/src/semantic/check/ensures.rs) reports
   `InvalidPostconditionReturn` for a routed return without the required
   constructor shape.
 
-The [existing negative conformance case](../../../tests/conformance/cases/fn9-neg-named-outcome-no-publication.wf)
-deliberately requires this loss. Repairing it requires a specification amendment
-and corresponding conformance updates, not silently making that case pass.
+The [baseline negative conformance case](https://github.com/mbbill/Whitefoot/blob/7127bcb6f48a0664d31a856ef54e21010bb2c238/tests/conformance/cases/fn9-neg-named-outcome-no-publication.wf)
+deliberately required this loss. The v0.64 specification amendment changes
+that expectation explicitly; the unchanged WF source now lives in the
+[positive transport case](../../../tests/conformance/cases/fn9-pos-named-outcome-publication.wf).
 
 ## Alternatives
 
@@ -314,7 +318,6 @@ The owner selected the unified transport direction and authorized implementation
 after clarifying that an initially conservative prototype does not select a
 permanent language restriction. Ordinary local binding, copy, move, selection,
 propagation, value delivery and verified forwarding are the delivery scope.
-Live-tree revisions remain proposals until the complete revisions are ruled on.
 
 The implementation experiment uses one independent conditional numeric context
 per live local Result. Its private typed payload parameter is interpreted only
@@ -369,7 +372,7 @@ ENT-5, GIVE-1 and DIAG-2; ERR-3 retains its ordinary value/control semantics.
 S13 captures, MSR-2 descriptor support, ownership, callable refinement and the
 same-component summary schedule retain their existing rules. The outgoing
 v0.63 bytes are archived unchanged; no grammar production or generated syntax
-data changes. The two pending amendments supplement
+data changes. The approved decisions supplement
 [automatic-facts](../../../design/language/checks-and-proofs/automatic-facts.md)
 and [checker-facts](../../../design/compiler/checker-facts.md); they replace no
 live-tree line. Their ancestors and the existing contract, obligation-discharge,
@@ -491,5 +494,5 @@ ordinary event order and callable authority; no second solver, runtime state
 or body-private interprocedural summary is introduced. Dense per-local contexts
 have the measured cost above; sharing/projection is a follow-up with explicit
 precision and cost criteria. This evidence does not constitute a general
-soundness certificate or an owner ruling on the two tree amendments; the
-independent review and current validation status belong to the PR.
+soundness certificate; the independent review and current validation status
+belong to the PR.
