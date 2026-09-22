@@ -1800,3 +1800,30 @@ done < "$out/order.txt"
 awk -f "$bench/reduce.awk" -v passes=5 -v calls=5 "$out/raw.tsv" > "$out/table.txt"
 SH
 ```
+
+### Native kernel vectorization control
+
+The next bounded control retains compiler/runtime `6fdb6768`, harness
+`f19d53e2`, fixed wide stencil (1,024 by 4,096, 16 steps) and FIR (524,288
+outputs, 64 taps), at W1/W4. It removes the native kernel translation units'
+global vectorization bans and FIR's local `FIR_TAP_ORDER` prohibition, retaining
+`-O3 -fno-fast-math -ffp-contract=off -fno-lto`, native decomposition and
+allocation/release boundaries. These C units also contain driver and oracle
+code; the control recompiles that complete scope. WF modules, native runtime,
+harness and scheduler/dependency objects remain byte-identical. Cached native
+libraries retain their scalar flags, so this is a native-kernel control rather
+than a rebuilt-library comparison.
+
+Full existing correctness/oracle matrices and inspection of actual optimized
+arithmetic precede timing. Each arm runs five paired passes, each with one
+warm-up and five measured calls, at zero call gap. A native wall-time improvement
+of at least 10% in at least four of five pairs at either width flags a material
+previously hidden cost for subsequent attribution, not an automatic WF compiler
+change or a scheduling diagnosis. Retiming identical WF objects in both linked
+images and paired identical-image controls qualifies combined layout, wrapper
+and host/cadence effects; variation comparable to the proposed benefit leaves
+its attribution inconclusive. All outcomes remain reported without rerunning
+to obtain a favorable result, and there is no broader sweep. If FIR remains
+scalar, this trial establishes no lane-blocked FIR comparison. Construction,
+correctness and measurement remain separate guarded stages capped at 90 seconds,
+calibrated against the preceding baseline's largest 12.39-second action.
