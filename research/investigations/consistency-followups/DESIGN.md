@@ -20,7 +20,7 @@ check(&[SourceInput::new("empty.wf", b"")], CompilerLimits::default());
 check(&[SourceInput::new("empty.wf", b"\n")], CompilerLimits::default());
 ```
 
-The proposed repair rejects the first input as an invocation failure before
+The repair rejects the first input as an invocation failure before
 prelude injection. PROG-2 supplies the requirement; TYPE-6 gives PRE-1 declarations
 no writer source event. The second still reaches ordinary source checking and
 fails FORM-2 for its missing final newline; the third is a valid declaration-free
@@ -79,7 +79,7 @@ without rejecting header-only storage or depending on optimizer erasure.
 STOR-6's target-derived length bound also needs a zero-stride definition: its
 division applies only to positive strides; zero stride adds no count bound beyond
 the source length type. Descriptor qualification and exact emitted-address
-requirements remain. This is the proposed v0.64 clarification, not a relaxation
+requirements remain. This is the v0.64 clarification, not a relaxation
 of OP-4 or OP-9.
 
 Zero/nonzero elements, nested layouts, construction/access, a narrow simulated
@@ -183,7 +183,7 @@ previously includes them both in its payload-role inventory and its invariant
 record paragraph. TYPE-6 supplies the separate proof lookup domain; it does not
 own the contradictory reservation sentence.
 
-The proposed v0.64 rule admits every lexical IDENT in header and body invariant
+The v0.64 rule admits every lexical IDENT in header and body invariant
 declarations. `invariant cvt` and `use 3 times cvt` select the proof domain through
 their grammar positions; `cvt::<u8, u64>(value)` still selects the operation.
 Neither operation-versus-callable lookup nor field maximal munch supplies an
