@@ -158,7 +158,7 @@ fn grow_vector_executes_and_releases_every_allocation_in_both_lowering_modes() {
         assert!(output.stderr.is_empty(), "{mode}: {output:?}");
         assert_eq!(
             output.stdout,
-            b"vector allocation observer: 12 allocations, each released exactly once\n",
+            b"vector allocation observer: 25 allocations, each released exactly once\n",
             "{mode}: {output:?}"
         );
     }

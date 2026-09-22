@@ -532,3 +532,75 @@ Before measuring, use these discriminators:
 The proposed consumption decision remains in
 [`design/amendments/vector-consumption.md`](../../../design/amendments/vector-consumption.md)
 while implementation and measurement proceed; it has not changed the live tree.
+
+### Vector source obligations
+
+An ordinary loop's header hypothesis does not survive its exit [ENT-5].
+Consequently, this source does not establish its declared postcondition:
+
+```whitefoot
+loop @truncate (
+  invariant prefix: deref(values).storage.inner.len >= retained
+) {
+  if deref(values).storage.inner.len <= retained {
+    break @truncate;
+  }
+  let value = take_back(window: &deref(values).storage.inner);
+  VectorDrain::accept(env: env, value: move value);
+}
+return unit;
+```
+
+FN-9 cannot prove the exit length equal to `retained`. Publishing
+`invariant exhausted: deref(values).storage.inner.len == retained;` immediately
+before the break uses INV-1's existing local theorem route, which ENT-5 retains
+across that edge. The theorem is proved from the header and the exit guard;
+it introduces no runtime branch. This is a specified proof-writing boundary,
+not a compiler bug or a relaxed postcondition.
+
+The initial compiler rejected the following admitted consume under PROV-6:
+
+```whitefoot
+fn grow_vector_free_empty<T, const ceiling: u64>(values: own GrowVector<T, ceiling>) -> result: own unit pure contract {
+  requires values.storage.inner.len <= 0_u64;
+} {
+  free_empty(window: move values.storage);
+  return unit;
+}
+```
+
+The only field moves into the operation, leaving no residual. WIN-3 consumes
+the whole wrapper; PROV-6 refuses a linear *remaining* part, not the moved
+field. The checker instead tested the complete original type. The repair
+judges the residual inventory and keeps unbounded generic and fieldless
+nodrop residuals in that inventory even when their release emits no action.
+Positive and negative compiler tests cover that distinction; the library's
+nodrop chain exercises the complete source-to-native cleanup path.
+
+Taking the wrapper apart first is not a substitute for that repair:
+
+```whitefoot
+let GrowVector(storage: storage) = move values;
+free_empty(window: move storage);
+```
+
+The initial compiler loses `values.storage.inner.len == 0` at that naming
+event and rejects the second line under OP-14. Its placement walk stops at
+Box content. This is recorded in `docs/todo.md` as a separate implementation
+gap against ordinary field-based measure placement, not as evidence that the
+language cannot represent an empty owning vector. The direct consume above
+needs no workaround branch and no new proof mechanism.
+
+FN-8's Signed Goal affine route has a separate spelling boundary [ENT-6]:
+
+```whitefoot
+requires deref(values).storage.inner.len == 0_u64;
+```
+
+With only a proved loop-header theorem supplying emptiness, this equality
+requirement is unproved even when a local invariant can restate that same
+equality. ENT-6's affine Signed Goal leaves are the four order comparisons,
+not equality. The equivalent `requires deref(values).storage.inner.len <=
+0_u64;` succeeds because the length is an unsigned measure. The reuse work
+helper and empty-owner consumer use that spelling, without a runtime test or
+weaker domain. FN-9's numeric postcondition route still permits equality.
