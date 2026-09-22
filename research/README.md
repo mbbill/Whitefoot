@@ -41,6 +41,9 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
 - [Incremental L0 closure](investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md):
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.
+- [Modular compilation](investigations/modular-compilation/DESIGN.md):
+  independent module checking, persistent proof dependencies, and incremental
+  cross-module optimization through executable construction.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).
