@@ -4,4 +4,4 @@ Decision: The Deque library exposes the ordinary boxed Ring directly, performs e
 
 Rejected:
 - Claiming append alone implements the exact rebase contract: rejected because its present postcondition supplies lower bounds rather than the exact sum used by the caller; the counted take/place loop carries that relation without a new primitive.
-- Replacing generic payloads by a fully initialized Array to obtain contiguous ranges: rejected for this library because spare slots would require values and initialization that arbitrary must-consume T does not supply. Ring range admission and a real two-span consumer remain a separate language question.
+- Replacing generic payloads by a fully initialized Array to obtain contiguous ranges: rejected because spare slots would require values and initialization that arbitrary must-consume T does not supply. Ring range admission and a real two-span consumer remain a separate language question.
