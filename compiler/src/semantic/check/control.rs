@@ -1,3 +1,4 @@
+use super::super::model::CheckedExpression;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
@@ -258,7 +259,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     );
                 }
                 self.check_return_implicit_read(function, expression_node, bindings)?;
-                let value =
+                let mut value =
                     self.check_expression(function, expression_node, bindings, scope.loops.len())?;
                 // [REF-3] a `return_stmt` whose selected expression is a
                 // reference is the escape violation itself, and [FN-1] forms
@@ -274,11 +275,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         kind: SemanticIssueKind::ReturnMismatch,
                     }));
                 }
+                let drops = self.live_affine_drops(bindings, &HashSet::new(), node)?;
+                if let CheckedExpression::UserCall {
+                    tail_transfer,
+                    call,
+                    ..
+                } = &mut value.expression
+                    && *tail_transfer
+                {
+                    *tail_transfer = self.check_self_tail_releases(call, bindings)?;
+                }
                 Ok(StatementResult {
                     statement: CheckedStatement::Return {
                         node_path: self.tree.path(node)?.clone(),
                         value: value.expression,
-                        drops: self.live_affine_drops(bindings, &HashSet::new(), node)?,
+                        drops,
                     },
                     can_continue: false,
                     effects: value.effects,
