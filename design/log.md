@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Preserve references through event-site separation proofs
+
+Nodes: compiler/checker-facts
+
+Owner-approved: The owner explicitly approved the complete reference-preservation amendment and the accompanying D3 TODO wording correction after the detailed PR #84 explanation of all eight repairs and both requested rulings.
+
+Summary: Apply the reviewed amendment unchanged. Retain finite conjunctive preservation questions across reference copies, joins and loop dependencies, demand them only at reference uses, and discharge them at the original write through the existing proof ledger. Preserve assignment targets captured before right-hand-side evaluation while judging preservation at commit; failed preservation reports REF-2 without suppressing the write's effects. Record the reviewed alternatives, remove the accepted amendment and its directory, and remove the stale bystander cross-reference from the still-open joined-reference precision task. The language specification is unchanged; this ruling does not authorize a merge.
+
 ## 2026-09-21 Select eligible ordinary self calls for tail lowering
 
 Nodes: compiler/self-tail-lowering, language/self-tail-calls

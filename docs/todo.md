@@ -58,7 +58,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   same-holder identity without claiming that a write changed every possible
   target. Require matching overlapping and stale-capture controls and a
   checking-cost comparison before proposing a language change. This is an
-  improvement-validation task, distinct from the bystander defect above.
+  improvement-validation task.
 
 - **Invariant-name reservation has conflicting definitions.** OP-1 lists the
   declaration roles subject to FORM-3 reservation and explicitly excludes
