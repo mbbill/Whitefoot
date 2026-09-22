@@ -52,7 +52,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   tradeoffs are recorded.
 
 - **Array-helper pricing beyond original read-only references remains conservative.**
-  The [typed Box-array extent repair](../research/investigations/compute-model/DESIGN.md#read-only-box-array-helper-work-pricing)
+  The pending [typed Box-array extent proposal](../research/investigations/compute-model/DESIGN.md#read-only-box-array-helper-work-pricing)
   keeps static estimates for local owners, write-capable formals and references
   changed away from the original formal. Retaining their runtime extents could
   expose useful work, but their measured workload impact is unknown and a
