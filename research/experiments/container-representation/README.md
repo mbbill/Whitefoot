@@ -42,9 +42,11 @@ Its parts answer different questions:
   separate behavior binding from owning exchange and value/result ABI costs;
   `families/RESULTS.md` states coverage, attribution and remaining limits.
 - `vector-library/`: the reusable source `GrowVector` operation chain against
-  matched-shape and direct-swap C controls. It checks identical results and
-  allocation counts with ordinary and retained helpers, then records the
-  language-shape and lowering portions of the remaining cost separately.
+  reverse/pop and direct ordered-consumption C controls over v0.60. Scalar
+  and 256-byte records exercise reserved, growing and reused backing with
+  ordinary and retained helpers. An independent sequence oracle and matched
+  allocation bytes precede timing; `RESULTS.md` separates lowering from
+  source-composition costs and identifies the retained historical samples.
 
 These small programs test specific capabilities and costs. They are not a
 representative corpus of real applications and supply no workload-frequency data.
