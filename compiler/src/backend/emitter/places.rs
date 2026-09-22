@@ -350,6 +350,21 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         address: IrValueId,
         projection: &crate::IrPlaceStep,
     ) -> Result<(), BackendFailure> {
+        let pointer = self.projected_address_pointer(ty, address, projection)?;
+        writeln!(
+            self.output,
+            "  {} = getelementptr i8, ptr {pointer}, i64 0",
+            value_name(result)
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    pub(super) fn projected_address_pointer(
+        &mut self,
+        ty: IrType,
+        address: IrValueId,
+        projection: &crate::IrPlaceStep,
+    ) -> Result<String, BackendFailure> {
         let Some(IrType::Address(base)) = self.value_type(address) else {
             return Err(BackendFailure::InvalidIr);
         };
@@ -468,12 +483,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 )?
             }
         };
-        writeln!(
-            self.output,
-            "  {} = getelementptr i8, ptr {pointer}, i64 0",
-            value_name(result)
-        )
-        .map_err(|_| BackendFailure::TextEmission)
+        Ok(pointer)
     }
 
     /// Resolve the binding's ordinary backing storage.
