@@ -292,9 +292,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedType::Integer(_)
                 | CheckedType::Float(_)
                 | CheckedType::GenericInt(_)
-                | CheckedType::GenericFloat(_)
-                | CheckedType::Generic(_) => {}
-                CheckedType::Array { .. }
+                | CheckedType::GenericFloat(_) => {}
+                CheckedType::Generic(_)
+                | CheckedType::Array { .. }
                 | CheckedType::Buffer { .. }
                 | CheckedType::Window { .. } => {
                     if !self.is_copy_type(current)? {
@@ -303,7 +303,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 CheckedType::Nominal(id) => {
                     let nominal = self.nominal(id)?;
-                    if self.is_copy_type(current)? || nominal.is_tag_only_enum() {
+                    if self.is_copy_type(current)? {
                         if selected {
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }

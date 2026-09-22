@@ -73,6 +73,25 @@ constructor's measure through its aggregate result field. Its caller first
 establishes that nested measure through ordinary control flow, as the
 [program](../tests/programs/containers/grow-vector-program.wf) shows.
 
+`grow_vector_remove` preserves the remaining order. Use
+`grow_vector_swap_remove` when filling the selected position with the last
+element is acceptable; it transfers a constant number of elements.
+`grow_vector_truncate` preserves a chosen prefix, while `grow_vector_drain`
+consumes the complete window. Both invoke the supplied `VectorDrain` member
+in the removed elements' original order and preserve capacity for reuse.
+They reverse the removed suffix and take from the back, so element movement
+is linear but greater than a direct native consumer. Their callback's
+environment must be effect-disjoint from the backing [EFF-5].
+
+These operations also accept `nodrop` elements: the callback explicitly
+consumes each one, then `grow_vector_free_empty` consumes the empty owner.
+Its `len <= 0_u64` precondition means empty because length is unsigned. This
+ordering spelling also lets FN-8 use ENT-6's affine Signed Goal route when
+emptiness comes from a proved invariant; that route does not introduce an
+equality goal. An ordinary-loop header hypothesis itself expires at loop
+exit. Publish the required outer conclusion as a local `invariant` before
+`break` when the continuation needs it [ENT-5, INV-1].
+
 ## P3. Reach heap content through `Box.inner`
 
 `Box<T>` owns one heap cell. Its content is the ordinary field `inner`;

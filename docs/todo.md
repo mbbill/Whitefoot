@@ -7,6 +7,35 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
+- **Ordered Vector consumption still makes avoidable transfers.** The ordinary
+  prefix-window library reverses a removed suffix before consuming it in
+  original order. It is O(n), but the
+  [matched native comparison](../research/experiments/container-representation/vector-library/RESULTS.md#lowering-attribution)
+  retains three whole-record transfers per reversed pair that a direct
+  consumer does not need. With retained helpers, the 4096-element 256-byte
+  reuse chain is 18.4 percent slower than direct C; ordinary optimization
+  also exposes a separate WF/reverse-C gap and short-vector overhead. The
+  Slots wrap-arithmetic repair does not remove either source-required movement
+  or every lowering cost. Retain the tested composition as the current
+  implementation, without claiming minimum-transfer or general native parity.
+  Reopen before relying on ordered consumption in a performance-critical
+  container: compare a representation or operation that avoids reversal under
+  the same original-order, disjoint-callback, nodrop-ownership contract, and
+  separately attribute alignment/alias facts and ordinary inlining against
+  the retained-helper controls. No new language operation is selected yet.
+
+- **Measure placement stops at Box content.** Destructuring an owner with a
+  `Box<Slots<T>>` field loses established facts about its `.inner.len`;
+  `free_empty` on the resulting binding then fails OP-14. The exact
+  [Vector example](../research/investigations/containers-and-resources/X1-LIBRARY.md#vector-source-obligations)
+  is a naming event covered by MSR-3, whose implementation's `measured_paths`
+  currently traverses inline nominal fields but stops at a Box. The Vector
+  can consume its sole storage field directly, so this does not block its
+  cleanup. Repair the general placement path when a consumer needs the
+  destructured or rebound owner; account for recursive nominal types without
+  enumerating infinitely many content paths and test kills as well as fact
+  retention.
+
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)

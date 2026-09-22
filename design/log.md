@@ -13,6 +13,14 @@ Owner-approved: The owner explicitly approved all six amendments presented at e5
 
 Summary: Apply the approved revisions together: retain finite per-root descendant covers separately from current-target identity, preserve selected payload storage beyond match exit, apply ordinary invalidation to every call actual, and exclude possible ancestor exchanges while preserving equal-target exchange. The ordinary typed walk grows finite loop summaries to completion without an acceptance budget. The [wildcard-path investigation](../research/investigations/wildcard-path/DESIGN.md) records the representation, alternatives, executable list/tree/cursor evidence and measured checking-cost limits. Update the affected refused alternatives and remove all six accepted amendments.
 
+## 2026-09-21 Adopt the measured Vector baseline and qualify kernel composition costs
+
+Nodes: language/data-model/vector-consumption, language/data-model/kernel-minimality
+
+Owner-approved: The owner accepted both presented amendments after the PR #79 implementation, measurements and independent DCR handoff, replying that both revisions were acceptable.
+
+Summary: Apply both reviewed amendments unchanged. Record synchronous original-order Vector consumption by suffix reversal and back consumption as the current O(n), no-allocation baseline, with performance-critical consumers reopening the representation or operation choice. Retain the kernel operation inventory while replacing the blanket zero-extra-cost promise and its corresponding refusal ground with comparison under the same native operation contract. The [Vector measurements](../research/experiments/container-representation/vector-library/RESULTS.md) separate extra source-composition transfers from lowering costs and retain the remaining gaps. Remove the accepted amendments. This ruling changes no language rule and does not authorize a merge.
+
 ## 2026-09-21 Reuse the affine index within entering proof contexts
 
 Nodes: compiler/proof-query-context
