@@ -292,7 +292,9 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Win3,
+        // PROV-6 precedes WIN-3 under DIAG-1 at this same consumed place:
+        // a residual linear value has no derived release, even under Box.
+        SemanticRule::Prov6,
         |kind| matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. }),
     );
 }

@@ -194,6 +194,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 {
                     return self.check_box_unbox(
                         use_node,
+                        node,
                         place.declaration,
                         place.ty,
                         &place.resolved.identity.path,
@@ -282,6 +283,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn check_box_unbox(
         &self,
         use_node: NodeId,
+        place_node: NodeId,
         declaration: DeclarationId,
         referent: CheckedType,
         resolved_path: &[PlaceStep],
@@ -305,20 +307,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let path = self.checked_owned_take_path(local.ty, resolved_path)?;
-        let cleanup = self.owned_take_cleanup(local.ty, &path)?;
-        for action in &cleanup {
-            if let CheckedOwnedTakeCleanup::Drop { ty, .. } = action
-                && let Some(obligation) = self.linear_release_obligation(*ty)?
-            {
-                return self.issue_node(
-                    SemanticRule::Win3,
-                    use_node,
-                    SemanticIssueKind::LinearValuePartiallyConsumed {
-                        obligation,
-                        residual: self.checked_type_name(*ty)?,
-                        mechanical_fix: "take it in the same destructuring: let N(f: a, ..) = move v;",
-                    },
-                );
+        let mut cleanup = Vec::new();
+        for action in self.owned_take_cleanup(local.ty, &path)? {
+            match action {
+                CheckedOwnedTakeCleanup::Drop { path, ty } => {
+                    // [PROV-6, DIAG-1] judge the residual's capability before
+                    // omitting an empty runtime release: a nodrop tag-only
+                    // enum still cannot be abandoned by this consume.
+                    if let Some(obligation) = self.linear_release_obligation(ty)? {
+                        return self.issue_node(
+                            SemanticRule::Prov6,
+                            place_node,
+                            SemanticIssueKind::LinearValuePartiallyConsumed {
+                                obligation,
+                                residual: self.checked_type_name(ty)?,
+                                mechanical_fix: "destructure the whole value with let N(f: a, ...) = move v;",
+                            },
+                        );
+                    }
+                    // [STOR-3] use the same component releases as a named
+                    // owner, prefixed by this residual's complete Box path.
+                    for (fields, ty) in self.drop_paths(ty, Vec::new())? {
+                        let mut selected = path.clone();
+                        selected.extend(fields.into_iter().map(CheckedPlaceStep::Field));
+                        cleanup.push(CheckedOwnedTakeCleanup::Drop { path: selected, ty });
+                    }
+                }
+                shell @ CheckedOwnedTakeCleanup::BoxShell { .. } => cleanup.push(shell),
             }
         }
         // [REF-2] a consume is one of the three invalidating actions: every
@@ -959,7 +974,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         PathType::Value(current) => match current {
                             CheckedType::Array { element, .. }
                             | CheckedType::Window { element, .. } => self.element_type(element)?,
-                            CheckedType::Buffer { element } => element.ty(),
+                            CheckedType::Buffer { element } => self.element_type(element)?,
                             _ => return Ok(None),
                         },
                     });
@@ -970,7 +985,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         PathType::Value(current) => match current {
                             CheckedType::Array { element, .. }
                             | CheckedType::Window { element, .. } => self.element_type(element)?,
-                            CheckedType::Buffer { element } => element.ty(),
+                            CheckedType::Buffer { element } => self.element_type(element)?,
                             _ => return Ok(None),
                         },
                     });
@@ -1044,7 +1059,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         match ty {
                             CheckedType::Array { element, .. }
                             | CheckedType::Window { element, .. } => self.element_type(element)?,
-                            CheckedType::Buffer { element } => element.ty(),
+                            CheckedType::Buffer { element } => self.element_type(element)?,
                             _ => return Ok(None),
                         }
                     };
@@ -1117,7 +1132,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                         self.element_type(element)?
                     }
-                    CheckedType::Buffer { element } => element.ty(),
+                    CheckedType::Buffer { element } => self.element_type(element)?,
                     _ => return Ok(()),
                 };
                 continue;

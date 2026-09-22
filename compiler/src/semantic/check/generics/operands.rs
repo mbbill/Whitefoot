@@ -494,7 +494,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         ty = SelectedPlaceType::Value(self.element_type(element)?);
                     }
                     SelectedPlaceType::Value(CheckedType::Buffer { element }) => {
-                        ty = SelectedPlaceType::Value(element.ty());
+                        ty = SelectedPlaceType::Value(self.element_type(element)?);
                     }
                     // [REF-4] a `&[T]` binding already carries the element
                     // type the dereference selects, so its subscript selects

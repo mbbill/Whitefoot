@@ -19,7 +19,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         else {
             return Err(BackendFailure::InvalidIr);
         };
-        if self.program.element(element) != Some(buffer_element.ty()) {
+        if element != buffer_element {
             return Err(BackendFailure::InvalidIr);
         }
         let block_type = llvm_type(
