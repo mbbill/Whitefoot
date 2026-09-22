@@ -165,6 +165,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   when a policy meets explicit representative criteria or its accepted
   tradeoffs are recorded.
 
+- **Array-helper pricing beyond original read-only references remains conservative.**
+  The pending [typed Box-array extent proposal](../research/investigations/compute-model/DESIGN.md#read-only-box-array-helper-work-pricing)
+  keeps static estimates for local owners, write-capable formals and references
+  changed away from the original formal. Some unchanged forwarded references
+  also lose the exact capture identity and fall back. Retaining those runtime extents could
+  expose useful work, but their measured workload impact is unknown and a
+  captured owner may already be consumed. Reopen when an affected helper's
+  static price demonstrably withholds useful splitting and an existing checked
+  validity fact or captured scalar measure can authorize the observation at
+  every split site, including zero-trip loops. Defer broader transport until
+  that case supplies both the benefit and the availability evidence; pricing
+  must not infer a separate source lifetime.
+
 - **Stable scatter has low parallel utilization and unresolved costs.** The
   [reference-model trial](../research/investigations/compute-model/DESIGN.md#reference-model-scatter-result-2026-09-20)
   removes the owned tally/packing transfers and verifies nonempty helper work

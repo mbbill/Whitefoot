@@ -13,6 +13,14 @@ Owner-approved: The owner explicitly adopted all five revisions presented for PR
 
 Summary: Apply the five reviewed amendments unchanged. Retain a symbolic integer constant's declaration identity and exact source type through the shared read-only inventory. Correct the storage-versus-range wording and qualify source Ring growth without promising a native copy count. Retain REF-4's Ring-range exclusion as a fresh ruling, not a recovered historical decision, leaving proved-contiguous and two-span admission open to a concrete consumer. Select the ordinary one-slot Slab representation with its measured storage and transfer costs, and direct boxed Ring endpoints with an explicit consuming rebase, without claiming universal native parity or automatic reference-based growth. The [library investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#slab-and-deque-trial-over-v063), [Slab controls](../research/experiments/container-representation/slab-library/RESULTS.md) and [Deque controls](../research/experiments/container-representation/deque-library/RESULTS.md) supply the grounds and alternatives. Remove the resolved amendments and their directory. The specification is unchanged; this ruling does not authorize a merge.
 
+## 2026-09-22 Retain Array extents through read-only Box helpers
+
+Nodes: compiler/parallel-lowering
+
+Owner-approved: The owner accepted the reviewed PR #80 contents at 1d8f838b, including its unchanged Array-reference work amendment.
+
+Summary: Apply the reviewed extension and its rejected alternatives unchanged. Preserve runtime Array-length observations through original read-only reference formals and exact direct captures, using checker-owned validity and ordinary typed header projection. Keep mutable, rebound, local-owner and unsupported projection cases on the static estimate. The [matched helper trial](../research/investigations/compute-model/DESIGN.md#matched-helper-result-2026-09-22-utc) retains the measured benefit, CPU costs and validation limits. Remove the resolved amendment and its directory. No specification or compiler implementation changes accompany this ruling; it does not authorize a merge.
+
 ## 2026-09-22 Preserve references through event-site separation proofs
 
 Nodes: compiler/checker-facts
