@@ -12,6 +12,7 @@ pub(crate) mod publication;
 mod references;
 mod requires;
 mod support;
+mod tail_calls;
 mod type_regions;
 mod types;
 
@@ -495,6 +496,9 @@ enum PreludeType {
 
 struct Checker<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+    /// [DIAG-1, FN-10] retain tail-condition failures until ordinary call
+    /// checking, including FN-8 proofs, can establish a prior same-node rule.
+    musttail_rejections: RefCell<Vec<SemanticIssue>>,
     /// [STOR-8, GRAM-2] whether this compilation unit wrote `program
     /// no_heap;`.
     ///
@@ -665,7 +669,10 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
         })
     };
     let result = preflight.and_then(|()| {
-        Checker::new(&resolved, reject_entailment).and_then(|mut checker| checker.check_program())
+        Checker::new(&resolved, reject_entailment).and_then(|mut checker| {
+            let result = checker.check_program();
+            checker.finish_musttail_checks(result)
+        })
     });
     match result {
         Ok(data) => SemanticOutcome::Complete(Box::new(CheckedProgram {
@@ -1127,6 +1134,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             source_nominal_instances: Vec::new(),
             box_nominals: HashMap::new(),
             result_list_nominals: HashMap::new(),
+            musttail_rejections: RefCell::new(Vec::new()),
             pending_nominals: RefCell::new(Vec::new()),
             pending_instances: RefCell::new(Vec::new()),
             elided_store_brand: std::cell::Cell::new(None),
@@ -1161,6 +1169,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn check_program(&mut self) -> Result<CheckedProgramData, CheckStop> {
+        self.check_musttail_positions()?;
         let items = self.item_declarations()?;
         self.collect_behavior_groups(&items)?;
         self.reject_instantiation_cycles(&items)?;
@@ -1651,14 +1660,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         );
         self.loop_reference_summaries.borrow_mut().clear();
         let queries = self.contract_queries.borrow().len();
+        let tail_rejections = self.musttail_rejections.borrow().len();
         let outcome = loop {
             self.call_separations.borrow_mut().clear();
             self.contract_queries.borrow_mut().truncate(queries);
+            // Only the settled body may contribute FN-10 refusals. Keep the
+            // position checks and earlier functions outside this attempt.
+            self.musttail_rejections
+                .borrow_mut()
+                .truncate(tail_rejections);
             match self.check_function_signature_body(signature) {
                 Err(CheckStop::ReferenceSummaryChanged) => continue,
                 outcome => break outcome,
             }
         };
+        if matches!(outcome, Err(CheckStop::DeferredNominal)) {
+            self.musttail_rejections
+                .borrow_mut()
+                .truncate(tail_rejections);
+        }
         self.template_spelling_authority.set(previous);
         outcome
     }
@@ -1707,6 +1727,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // inventory. No deferred REF-2 dependency may cross that namespace
         // boundary.
         self.deferred_loop_reference_uses.borrow_mut().clear();
+        self.check_musttail_callees(signature)?;
         self.check_entry_formers(signature)?;
         let mut bindings = HashMap::new();
         let mut parameters = Vec::with_capacity(signature.parameters.len());
