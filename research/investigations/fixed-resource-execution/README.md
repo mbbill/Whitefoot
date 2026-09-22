@@ -3,18 +3,20 @@
 This investigation asks how Whitefoot can establish that a no-heap program
 finishes within a declared resource budget. Bounded recursion is an admissible
 candidate: qualification must prove peak stack bytes fit a capacity supplied
-in advance; a recursion-depth bound is only intermediate evidence. The study
-uses main `f3cf41d4`, specification v0.62, and the compiler built for the
+in advance; a recursion-depth bound is only intermediate evidence. The initial
+probes use main `f3cf41d4`, specification v0.62, and the compiler built for the
 [cleanup investigation](../access-effects/cleanup-continuations/README.md).
-The [implementation contract](DESIGN.md) now proposes source rank clauses and
-an internal proof consumer. The active specification and compiler are unchanged;
+The [implementation contract](DESIGN.md) proposes source rank clauses and
+an internal proof consumer. The selected next study is [stack bytes](STACK.md);
+whole-program work estimation is deferred until a concrete budget needs it.
+The active specification and compiler are unchanged by this investigation;
 three pending design amendments keep those choices outside the live tree.
 
 ## Question and initial scope
 
 For every input satisfying an entry contract, establish normal completion or
 an ordinary declared result, no dynamic heap acquisition, and an upper bound
-on all required storage and executed work under an explicit target/runtime
+on all required storage under an explicit target/runtime
 model. Exhaustion followed by an abort does not establish this property.
 The first research baseline is a sequential, bounded-input computation;
 interrupts, parallel execution, blocking I/O and hardware deadlines require
@@ -70,7 +72,6 @@ contract, resource evidence needs to establish all of the following:
 |---|---|---|
 | Ordinary safety | All Whitefoot value, ownership and memory obligations hold | A resource estimate |
 | Progress | Every admitted invocation reaches its declared completion | Finite stack, tail calls or an exhaustion abort |
-| Work | Loop iterations and total call/work counts have checked bounds | Maximum recursion depth alone |
 | Storage | Peak live storage fits each supplied memory region | Sum of source local-variable sizes |
 | Allocation closure | No heap or unbudgeted acquisition in the covered execution | No `box_new` in one module |
 | Correspondence | Bounds describe the delivered code, helpers and runtime | A report for another build or target |
@@ -139,7 +140,7 @@ For an ordinary loop, a first candidate is an integer rank R with a proved
 nonnegative lower bound, a finite entry cap B, and `R_next < R_head` on every
 continuing backedge. Strict integer decrease gives at most B backedges and
 B+1 head visits under this convention. Exits by break, return or propagation
-owe no decrease, but their work and cleanup still count. Inner loops cannot
+owe no decrease, but their calls and cleanup still need coverage. Inner loops cannot
 silently reset an outer rank. These are mathematical value images; machine
 wraparound is not a decreasing proof.
 
@@ -528,14 +529,16 @@ fixed-capacity storage and erased finite proofs provide suitable foundations.
 Resource consumers should use the shared checked representation, followed by
 evidence for the target closure. A second source checker or container-specific
 proof path would duplicate semantic responsibility. The main uncertainty is
-preserving and checking source progress/cost evidence through optimization and
+preserving and checking source progress/storage evidence through optimization and
 linking.
 
-The next implementation is the ordinary source rank/coverage consumer and
-separate cost composition specified in [DESIGN.md](DESIGN.md). Its proposed
-rules and interfaces are ready for implementation; the live tree still awaits
-the owner's ruling on the three amendments. This source task is a dependency,
-not a usable fixed-stack guarantee. The first complete target milestone takes
+The next target task is the complete stack inventory described in the
+[stack study](STACK.md). The later source rank/coverage consumer and storage
+composition are specified in [DESIGN.md](DESIGN.md).
+An acyclic stack calculation can be implemented independently of rank syntax;
+recursive path bounds and progress coverage follow as separate proof inputs.
+The live tree still awaits the owner's ruling on the three amendments.
+The first complete target milestone takes
 the supplied byte budget as an input and must distinguish one oversized frame
 from many small frames that fit, as well as the exact budget boundary. It also
 must distinguish an unaccounted native callee, missing source/machine mapping,

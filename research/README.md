@@ -33,9 +33,9 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
   blocked and irregular algorithm consumers, independent correctness criteria,
   and the runtime costs that test the compute model after range loans.
 - [Fixed-resource execution](investigations/fixed-resource-execution/README.md):
-  no-heap computations with proved completion, work and storage bounds;
-  rank and fixed-stack probes, a source implementation proposal, and the
-  remaining source-to-runtime evidence.
+  no-heap computations with proved completion and storage bounds;
+  stack-frame and fixed-stack probes, a source progress proposal, and the
+  remaining source-to-runtime evidence; total-work estimation is deferred.
 - [Containers over x1](investigations/containers-and-resources/X1-LIBRARY.md):
   complete container operations and representation costs over merged PR #70,
   the restored source-library home, and the next implementation trials.

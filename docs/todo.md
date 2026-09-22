@@ -340,7 +340,7 @@ condition under which it is taken up.
   boundary. Reopen when a real mutually recursive program needs that bound.
 - **Fixed-resource execution with proved completion.** The
   [resource investigation](../research/investigations/fixed-resource-execution/README.md)
-  studies the no-heap goal: checked loop/recursion progress, total work and peak
+  studies the no-heap goal: checked loop/recursion progress and peak
   storage within an explicit entry, target and runtime contract. The stack
   capacity is supplied in bytes before qualification; depth is only an input
   to the byte calculation, never an independent acceptance limit. `program
@@ -350,26 +350,36 @@ condition under which it is taken up.
   recursive probe works today, while its nondecreasing control is also accepted.
   The [implementation contract](../research/investigations/fixed-resource-execution/DESIGN.md)
   proposes erased entry/header rank snapshots, ordinary ProofContext queries,
-  complete call/loop coverage and separate work/stack composition. Implementing
-  that consumer is the next source task: it must detect unchanged actuals,
+  complete call/loop coverage and storage composition. The
+  [stack study](../research/investigations/fixed-resource-execution/STACK.md)
+  is the first selected item; its complete acyclic target inventory need not
+  wait for rank syntax. The later progress consumer must detect unchanged actuals,
   reset-before-decrement, missing backedges and nonterminating callees inside
   counted loops, including concrete function-kind actuals. The existing INV-1
   probes establish reusable arithmetic checks, not implemented termination.
   A fixed 4 KiB stack adapter runs the recursive fixture and its particular
   linked path was inspected, but general source/machine correspondence and
   complete native closure remain unqualified. The diagnostic stack parser
-  drops unmeasured targets and malformed rows and uses saturating sums;
+  drops unmeasured targets and malformed rows and uses saturating sums. Its
+  raw frame numbers can omit red-zone storage or entry-alignment-dependent
+  realignment even with a `static` qualifier; ordinary generated WF code can
+  also call unaccounted `bzero` and stack-probe helpers. Thus
   qualification needs typed missing-evidence outcomes, all frame/call/region
   coverage and the analyzed objects actually linked. Validate with unknown
   callees, dynamic frames, new unmapped cycles, insufficient budgets and changed
   images before claiming a deployment guarantee. Include an oversized single
   frame, many small frames that fit, the exact budget boundary, and changed
-  frames under an unchanged source depth proof. This target work is deferred
-  until the source consumer supplies proved bounds; reopen at that handoff.
-  Uniform body bounds may be too loose: validation of tighter per-call or
-  per-iteration dependence is deferred until a real kernel misses its budget
-  because of that estimate. Clipped numeric composition must report an upper
+  frames under an unchanged source depth proof. Validate report numbers against
+  below-SP accesses and every ABI-admitted entry alignment; preserve unresolved
+  direct/indirect calls and unknown stack geometry. Updating the diagnostic
+  ledger and implementing complete stack qualification remain open compiler
+  tasks, with these probes as the admission evidence. Numeric composition must report an upper
   bound that cannot certify the request, not an actual resource lower bound.
+  Whole-program work estimates and cost-budget reports are deferred until a
+  concrete execution-cost budget needs them; retain the earlier model as
+  research evidence, not an implementation requirement. Tighter storage-path
+  estimates reopen when conservative composition prevents a real kernel from
+  fitting a supplied memory budget.
   Wider/lexicographic ranks, symbolic/amortized costs, hardware deadlines,
   asynchronous or parallel contexts and service-response contracts remain
   unqualified; reopen each when a concrete consumer needs that extension.

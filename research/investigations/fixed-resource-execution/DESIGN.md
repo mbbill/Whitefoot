@@ -9,9 +9,14 @@ components, parallel execution, asynchronous entry and blocking operations
 remain outside the first qualification domain.
 
 The implementation is divided by ownership of evidence, not into independent
-source checkers: source progress, structural cost composition, and target
+source checkers: source progress, peak-storage composition, and target
 resource qualification. A passed source check, a resource qualification and a
 successful native run remain distinct results.
+
+The first selected research item is [actual stack bytes](STACK.md). Whole-program
+work estimation is deferred until a concrete execution-cost budget needs it.
+Termination and the path/depth bounds needed for storage remain in scope;
+they do not require an aggregate step-count report.
 
 ## Supplied stack budget
 
@@ -170,44 +175,18 @@ to lowering. It does not infer a rank. A preceding checked invariant can
 expose a tighter endpoint without extending AUTO. A maximum of `u64::MAX`
 is valid evidence but will normally be too coarse for a stack budget.
 
-## Cost algebra and its limits
+## Peak-storage composition and its limits
 
-Keep total work and maximum simultaneous storage separate. A work unit in the
-first source report is an executable checked statement/expression node visit,
-counted with its component summary; erased proof constructs contribute zero.
-Aggregate operations also report their bounded element
-or byte extent. It is not a CPU cycle or a final machine instruction. Native
-helper progress and resource coverage are separate obligations. A future
-hardware time budget must introduce and validate its own cost interpretation.
+The current goal has no aggregate execution-cost budget. The earlier
+[work-algebra probe](README.md#implementation-readiness-results) remains
+research evidence for a deferred consumer; it adds no implementation or
+acceptance requirement here. No source work count is a machine-instruction
+or wall-clock guarantee.
 
-For each function, calculate a nonnegative upper bound A for one activation's
-nonrecursive work, including completed callees, and M for the number of self
-calls one activation can perform. Sequence adds, alternatives take a maximum,
-and bounded loops multiply their body's upper bound plus their own overhead.
-Use the maximum of A and M across branches even when they cannot occur on
-the same path. With rank maximum B:
-
-```text
-W(-1) = 0
-W(r) <= A + M * W(r-1), for 0 <= r <= B
-```
-
-The deliberately conservative base includes A even when the zero-rank arm
-does less. M=0 is acyclic work; M=1 is at most `(B+1)*A`; M=2 already grows
-exponentially with B. Evaluate the affine map `x -> M*x + A` to power B+1
-by repeated squaring. Do not recursively unfold B levels in the checker.
-
-For a requested numeric budget Q, use nonnegative arithmetic clipped at Q+1.
-Addition, multiplication and maximum commute with this clipping, including
-`0 * (Q+1) = 0`. Checked u128 intermediates suffice when Q is a u64 request;
-an overflowing nonnegative product is certainly above Q. B+1 is computed
-in u128, so B=`u64::MAX` is represented. At most 65 exponent bits are visited.
-This is exact evaluation of a clipped bound, not a compiler work budget.
-All fixed proof families still run to completion. A clipped result says only
-that **this conservative upper bound does not certify Q**, not that actual
-execution necessarily exceeds Q. Keep missing evidence distinct from that
-result. Do not silently saturate an unknown value to zero or to a supposedly
-proved finite maximum.
+Storage arithmetic must be checked. A full-u64 rank's B+1 is calculated in
+u128, never by wrapping or iterating B times. A conservative upper bound
+above the supplied byte capacity means that this bound does not certify fit;
+it is not a lower bound on actual use. Missing evidence is a distinct result.
 
 For stack, retain the [frame/edge equations](README.md#target-storage-and-correspondence).
 Serial sibling calls take a maximum, not a sum. A loop reuses its activation's
@@ -231,8 +210,8 @@ The root compiler decision rejects such infrastructure before a consumer.
 | `backend/stack_ledger.rs`, target and driver | Read a structured complete machine inventory; compose target bounds; render the existing ledger separately | Developer text is not evidence consumed by qualification |
 | Driver/runtime packaging | Link and account for the actual entry adapter and native closure | No source operation-name classification chooses a different semantic rule |
 
-The checked result needs explicit progress coverage, B and its proof, and a
-work-bound expression or evaluated bound for every relevant construct.
+The checked result needs explicit progress coverage and the path/depth maxima
+and proofs required by peak-storage composition, without a total-work summary.
 Coverage identities include the containing concrete function and exact call
 or loop node. Snapshots are owner-tagged finite identities, like current
 capture identities: one entry image or one arbitrary current header image,
@@ -241,7 +220,7 @@ the proof-only name from scope without equating two runtime iterations.
 Bodyless functions carry pending native obligations, not zero-cost summaries.
 
 Keep the new resource consumer focused; do not turn the 17,000-line flow
-implementation into a second graph/cost engine. The flow owns program-point
+implementation into a second graph/storage engine. The flow owns program-point
 facts. The resource module consumes retained conclusions and structured
 control, and the target module consumes lowering conclusions. Generalizing
 all existing proof consumers into a plugin framework has no current benefit.
@@ -265,6 +244,11 @@ Native bodies, ABI shims, aggregate-copy helpers and target stack-probe helpers
 must all be accounted for by their actual linked definitions. Missing native
 progress, stack or allocation evidence means no complete qualification.
 No user-written numeric assertion qualifies a native body.
+
+The [stack probes](STACK.md) show that a `static` stack-usage row is not itself
+a complete byte bound: red-zone accesses and alignment-dependent SP changes
+need target evidence too. The inventory must retain those cases and indirect
+helper transfers, even when the ordinary diagnostic ledger omits them.
 
 Produce assembly and stack usage once, assemble that exact text to an object,
 and link that object. Include every selected native object in the same
@@ -302,10 +286,14 @@ toolchain certification claim.
 
 ## Implementation admission and evidence
 
-Implementation can start with RES-1 and source summaries now: formation,
-capture semantics, proof timing, graph coverage, bound algebra and ownership
-of each interface are specified above. Do not postpone those to design a
-stable artifact protocol. A first source implementation is complete only when
+The [stack investigation](STACK.md) comes first: it can validate a complete
+acyclic machine call closure without waiting for recursive progress syntax.
+An unresolved recursive component has no complete stack bound yet; it is not
+given a depth chosen from the available space. Stack fit and completion remain
+separate results until both have evidence.
+
+The later RES-1 source consumer uses the formation, capture, proof-timing,
+coverage and interface rules above. It is complete only when
 the following cases run on the ordinary checker/lowering path:
 
 | Case | Required observation |
@@ -318,8 +306,8 @@ the following cases run on the ordinary checker/lowering path:
 | Argument effects and alias writes | Captured actuals and rank snapshots retain the intended time identity |
 | Branch-only proof; missing edge | No function-global memo supplies another edge's proof |
 | Function-kind actual, generic instance | Resource closure follows concrete selected bodies |
-| Binary recursive calls; early exit; zero-trip loop | Work and simultaneous depth compose differently |
-| Maximum u64 rank and zero-cost algebra operands | No numeric-depth unrolling or wraparound in the bound evaluator |
+| Serial recursive children; early exit; zero-trip loop | Peak storage follows simultaneously live activations |
+| Maximum u64 rank | No numeric-depth unrolling or wraparound in storage-bound evaluation |
 
 Normative syntax/proof cases belong in conformance when RES-1 is specified;
 source-summary and target-inventory obligations belong in compiler tests;
@@ -356,7 +344,7 @@ The arithmetic examples are test criteria, not additional native measurements:
 - A runtime counter or a larger stack gives an execution limit but does not
   prove normal completion. Neither supplies missing source evidence.
 - A second source interpreter or resource-only parser duplicates semantics.
-  Select a consumer of the existing checked model, with graph/cost work outside
+  Select a consumer of the existing checked model, with graph/storage work outside
   the program-point proof flow.
 - Certifying arbitrary optimized binaries immediately needs more origin and
   native coverage than the current ledger contains. Begin with source evidence
