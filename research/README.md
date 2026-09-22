@@ -42,8 +42,9 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.
 - [Modular compilation](investigations/modular-compilation/DESIGN.md):
-  independent module checking, persistent proof dependencies, and incremental
-  cross-module optimization through object generation, with ordinary final linking.
+  centralized module descriptors, independent checking, persistent proof
+  dependencies, and incremental cross-module optimization through object
+  generation, with ordinary final linking.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).

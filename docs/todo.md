@@ -10,12 +10,22 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 - **Modular incremental checking and optimized code generation.** The compiler
   currently rechecks one source bundle and emits one LLVM module. The proposed
   [architecture](../research/investigations/modular-compilation/DESIGN.md)
-  targets independent modules, reusable source proofs and generic instances,
-  dependency-tracked cross-module optimization, and ordinary full final linking.
+  targets one explicit `.wfm` descriptor per module, reusable source proofs and
+  generic instances, dependency-tracked cross-module optimization, and ordinary
+  full final linking. The descriptor owns membership, namespaces, imports and
+  export selection; ordinary definitions remain the source of semantic APIs.
   Its selected direction remains an amendment, not implemented capability.
-  Validate qualified grammar and private contract projection rules; establish
-  the component-proof composition argument; exercise graph edge deletion and
-  SCC changes; and qualify complete LLVM planning/cache dependencies.
+  Validate descriptor/qualified grammars, order-independent top-level formation,
+  generated-interface comparison and field access. Compare thin descriptors
+  against full public declarations on matched module collaboration tasks;
+  descriptor contention, API-reading accuracy and useful module sizes remain
+  unmeasured. The prior review's private-contract composition gap is unresolved:
+  accessor facts in a body cannot express a private requirement in a wrapper
+  or function-kind formal while FN-8 forbids ordinary calls in contracts; await
+  owner direction on the proposed checked proof-expression/abbreviation route.
+  Establish the component-proof composition argument, exercise graph edge
+  deletion and SCC changes despite acyclic module imports, and qualify complete
+  LLVM planning/cache dependencies.
   Require cold/incremental agreement, no unchanged-body proof work on a no-op
   build, precise isolated-edit invalidation, and causal investigation of every
   repeatable runtime loss against matched optimized baselines. Fragment sizes,
