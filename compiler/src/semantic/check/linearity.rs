@@ -311,40 +311,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// [PROV-6] a consume of a proper sub-place of a value linear in this
-    /// scope, where the same statement's commit does not reinitialise that
-    /// sub-place, abandons the residual the obligation was written for.
+    /// [PROV-6, WIN-3] a field consume kills its whole owner. Only the
+    /// unselected residual needs drop; linearity of the moved field does
+    /// not make an otherwise droppable residual an error.
     pub(in crate::semantic) fn reject_partial_consume(
         &self,
         root: CheckedType,
         selected: &[u32],
         node: NodeId,
     ) -> Result<(), CheckStop> {
-        let obligation = if let Some(obligation) = self.linear_release_obligation(root)? {
-            obligation
-        } else {
-            self.release_graph_nodes(root)?;
-            return Ok(());
-        };
-        // The residual is what the consume abandons: every part of the root
-        // the selected sub-place does not carry away, named by its own type.
-        let residual = match self
-            .residual_drop_paths(root, selected)?
-            .first()
-            .map(|(_, ty)| *ty)
-        {
-            Some(ty) => self.checked_type_name(ty)?,
-            None => self.checked_type_name(root)?,
-        };
-        self.issue_node::<()>(
-            SemanticRule::Prov6,
-            node,
-            SemanticIssueKind::LinearValuePartiallyConsumed {
-                obligation,
-                residual,
-                mechanical_fix: "destructure the whole value with let N(f: a, ...) = move v;",
-            },
-        )?;
+        for (_, residual) in self.residual_drop_paths(root, selected)? {
+            let Some(obligation) = self.linear_release_obligation(residual)? else {
+                continue;
+            };
+            self.issue_node::<()>(
+                SemanticRule::Prov6,
+                node,
+                SemanticIssueKind::LinearValuePartiallyConsumed {
+                    obligation,
+                    residual: self.checked_type_name(residual)?,
+                    mechanical_fix: "destructure the whole value with let N(f: a, ...) = move v;",
+                },
+            )?;
+        }
         Ok(())
     }
 

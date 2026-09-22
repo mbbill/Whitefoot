@@ -13,6 +13,14 @@ Owner-approved: The owner explicitly approved both presented self-tail amendment
 
 Summary: Add a call-site guarantee for sole-return direct self calls with incoming-reference-rooted actuals and no retained cleanup. Permit ordinary derived releases before the transfer when no live valid reference names the released owner. Preserve ordinary call and proof checking, capture every argument before cleanup and simultaneous parameter replacement, and lower the transfer to a parameterized body-entry jump using existing frame storage. These choices make the guarantee independent of optimizer decisions and inter-function tail-call ABIs while retaining the source ownership boundary. Mutual transfers and termination proofs remain deferred. Apply the reviewed amendments unchanged and remove them.
 
+## 2026-09-21 Adopt the measured Vector baseline and qualify kernel composition costs
+
+Nodes: language/data-model/vector-consumption, language/data-model/kernel-minimality
+
+Owner-approved: The owner accepted both presented amendments after the PR #79 implementation, measurements and independent DCR handoff, replying that both revisions were acceptable.
+
+Summary: Apply both reviewed amendments unchanged. Record synchronous original-order Vector consumption by suffix reversal and back consumption as the current O(n), no-allocation baseline, with performance-critical consumers reopening the representation or operation choice. Retain the kernel operation inventory while replacing the blanket zero-extra-cost promise and its corresponding refusal ground with comparison under the same native operation contract. The [Vector measurements](../research/experiments/container-representation/vector-library/RESULTS.md) separate extra source-composition transfers from lowering costs and retain the remaining gaps. Remove the accepted amendments. This ruling changes no language rule and does not authorize a merge.
+
 ## 2026-09-21 Reuse the affine index within entering proof contexts
 
 Nodes: compiler/proof-query-context

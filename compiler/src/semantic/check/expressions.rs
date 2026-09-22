@@ -1338,10 +1338,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 } else {
                     AccessKind::Move
                 };
-                // [PROV-6] a consume of a proper sub-place of a value linear
-                // in this scope, with no commit reinitialising that sub-place,
-                // is a partial consume: the residual leaf is abandoned in a
-                // scope that has no derived release to reclaim it.
+                // [PROV-6] a whole-owner consume may leave only droppable
+                // residual parts; the selected field is moved, not released.
                 if !copy && !read_out && !fields.is_empty() {
                     self.reject_partial_consume(local.ty, &fields, use_node)?;
                 }

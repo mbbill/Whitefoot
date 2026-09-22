@@ -13,8 +13,9 @@
 //! the runtime-capacity placement and none at all where the type constant
 //! already fixes it.
 //!
-//! The window is `len` slots beginning at `head` modulo `cap` [WIN-1], so a
-//! subscript at logical offset `i` reads slot `(head + i) mod cap`. Because
+//! Slots uses its proved logical offset directly. A Ring window is `len`
+//! slots beginning at `head` modulo `cap` [WIN-1], so its subscript at
+//! logical offset `i` reads slot `(head + i) mod cap`. Because
 //! `head < cap` and `i < len <= cap`, the sum is below `2 * cap` and the
 //! modulus is one conditional subtract; no division is emitted.
 
@@ -486,8 +487,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
     }
 
-    /// `(base + offset) mod cap`, as the one conditional subtract [WIN-1]
-    /// fixes.
+    /// A Slots offset already names its physical slot: OP-4 and OP-10 prove
+    /// the selected element exists, or that a placement has spare capacity.
+    /// Only Ring needs `(base + offset) mod cap` [WIN-1].
     fn wrap_offset(
         &mut self,
         shape: RunShape,
@@ -496,6 +498,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         base: &str,
         offset: &str,
     ) -> Result<String, BackendFailure> {
+        if shape.shape == IrWindowShape::Slots {
+            return Ok(offset.to_owned());
+        }
         let capacity = self.run_capacity(shape, run_type, run)?;
         let sum = self.next_temporary()?;
         let over = self.next_temporary()?;
