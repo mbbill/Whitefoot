@@ -442,6 +442,123 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [FN-2, OWN-1] a callee's written body keeps its own symbolic spelling
+/// authority when a generic caller fixes only some of its arguments. The two
+/// declarations deliberately reuse `T`: symbolic identity is a declaration,
+/// not the parameter's spelling.
+#[test]
+fn partial_type_instantiation_keeps_the_callees_move_spelling() {
+    let source = br#"nocopy struct Payload {
+  value: u64;
+}
+
+fn package_value<T: drop, R>(value: own R) -> result: own Result<R, unit> pure {
+  return Ok<R, unit>(value: move value);
+}
+
+fn forward<T: drop>(value: own T) -> result: own T pure {
+  let wrapped = package_value::<T, unit>(value: unit);
+  return move value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let copied = forward::<u64>(value: 7_u64);
+  let payload = Payload(value: 3_u64);
+  let held = forward::<Payload>(value: move payload);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn partial_const_instantiation_keeps_the_callees_move_spelling() {
+    let source =
+        br#"fn package_value<R, const n: u64>(value: own R) -> result: own Result<R, unit> pure {
+  return Ok<R, unit>(value: move value);
+}
+
+fn forward<const n: u64>() -> result: own Result<unit, unit> pure {
+  return package_value::<unit, n>(value: unit);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let copied = forward::<3>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+}
+
+/// This is the Slab visitor's failure without any container code: the result
+/// type is already copy while the supplied callable is still symbolic.
+#[test]
+fn partial_function_instantiation_keeps_the_callees_move_spelling() {
+    let source = br#"fn package_value<R, fn make() -> result: own R pure>() -> result: own Result<R, unit> pure {
+  let observed = make();
+  return Ok<R, unit>(value: move observed);
+}
+
+fn forward<fn make() -> result: own unit pure>() -> result: own Result<unit, unit> pure {
+  return package_value::<unit, fn make>();
+}
+
+fn make_unit() -> result: own unit pure {
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let copied = forward::<fn make_unit>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn the_canonical_generic_body_still_rejects_copy_moves_and_repeated_consumes() {
+    for (parameters, value_type) in [("T: copy", "T"), ("T: drop", "u64")] {
+        let source = format!(
+            "fn invalid<{parameters}>(value: own {value_type}) -> result: own {value_type} pure {{\n  return move value;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Own1, |kind| {
+            matches!(kind, SemanticIssueKind::MoveOfCopy { .. })
+        });
+    }
+    let source = br#"fn invalid<T: drop, R>(value: own R) -> result: own Result<R, unit> pure {
+  let first = move value;
+  return Ok<R, unit>(value: move value);
+}
+
+fn forward<T: drop>() -> result: own Result<unit, unit> pure {
+  return invalid::<T, unit>(value: unit);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let copied = forward::<u64>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::UseAfterMove { .. })
+    });
+}
+
 #[test]
 fn nested_generic_calls_discover_reachable_instances_after_template_checking() {
     let source = br#"fn select<T: Int>(value: own T) -> result: own T pure {

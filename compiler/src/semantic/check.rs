@@ -544,16 +544,15 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// `struct_decl` or `enum_decl` body is being read, and `None`
     /// everywhere else, where FORM-8 requires a written store argument.
     elided_store_brand: std::cell::Cell<Option<DeclarationId>>,
-    /// [FN-2, OWN-1, PROV-6] whether the body now being checked is a *concrete
-    /// instance* of a generic template whose spelling one symbolic instance
-    /// has already judged.
+    /// [FN-2, OWN-1, PROV-6] whether the body now being checked is an instance
+    /// other than its generic template's own symbolic spelling authority.
     ///
     /// The template is the spelling authority: a body whose parameter lacks
     /// copy writes `move`, a `copy`-bounded body writes bare use, and the one
-    /// symbolic instance decides both once. The concrete-instance recheck
-    /// therefore
-    /// does not re-judge the [OWN-1]/[FORM-1] spelling, and a `move` of a
-    /// template-affine value at a copy instance denotes a copy. Every other
+    /// symbolic instance decides both once. A recheck with supplied arguments,
+    /// even arguments still symbolic in a caller, does not re-judge the
+    /// [OWN-1]/[FORM-1] spelling, and a `move` of a template-affine value at a
+    /// copy instance denotes a copy. Every other
     /// [OWN-1] judgment — consume-once, dead roots, exclusivity — is
     /// re-judged as usual, because those are properties of the concrete
     /// instance and not of the written spelling.
@@ -1003,8 +1002,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// spelling [FORM-1] keys on a value's copy/affine class.
     ///
     /// That spelling is `move p` versus a bare `p` [OWN-1]: one spelling per
-    /// meaning, selected by the class. A concrete instance of a generic
-    /// template is not its authority: the template's one symbolic instance
+    /// meaning, selected by the class. A supplied instance of a generic
+    /// template is not its authority: the template's own symbolic instance
     /// judged it under the parameter's written bound, so at a copy instance a
     /// `move` of a template-affine value denotes a copy rather than reopening
     /// a judgment the template already made [PROV-6]. Every other judgment of
@@ -1645,19 +1644,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [FN-2, OWN-1, PROV-6] one body, checked with the template's spelling
     /// authority recorded for the instance it is.
     ///
-    /// A concrete instance of a generic template is exactly the body whose
-    /// [OWN-1]/[FORM-1] spelling the template's own symbolic instance already
-    /// judged under the parameter's written bound, so this instance does not
-    /// re-judge it. A symbolic instance and a nongeneric body are their own
-    /// authority and judge the spelling here.
+    /// A supplied instance of a generic template is exactly the body whose
+    /// [OWN-1]/[FORM-1] spelling the template's own symbolic instance judges
+    /// under the parameter's written bound, so this instance does not re-judge
+    /// it. In particular, a caller may fix one argument to a copy type while
+    /// forwarding another still-symbolic type, const or function parameter.
+    /// Only the template's own symbolic instance and a nongeneric body judge
+    /// the written spelling here.
     fn check_function_signature(
         &self,
         signature: &FunctionSignature,
     ) -> Result<CheckedFunctionInventory, CheckStop> {
-        let previous = self.template_spelling_authority.replace(
-            signature.substitution.len() > 0
-                && signature.substitution.is_concrete(&self.elements.borrow()),
-        );
+        let previous = self
+            .template_spelling_authority
+            .replace(signature.substitution.len() > 0 && !signature.substitution.is_symbolic());
         self.loop_reference_summaries.borrow_mut().clear();
         let queries = self.contract_queries.borrow().len();
         let tail_rejections = self.musttail_rejections.borrow().len();
