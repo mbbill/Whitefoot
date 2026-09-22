@@ -9253,14 +9253,18 @@ impl Analyzer<'_, '_> {
                 base: AffineForm::constant(0),
             });
         }
+        // A preheader product can mint a handle for a transparent sum. The
+        // handle and its image name the same value, so expand it before the
+        // invariant-atom case: otherwise the product's stride and an endpoint
+        // that reads the sum directly would have different canonical images.
+        if let Some(image) = self.handle_images.get(&term) {
+            return self.counted_value_image(image, binder, invariant, visiting);
+        }
         if invariant.contains(&term) {
             return Some(CountedValueImage {
                 stride: AffineForm::constant(0),
                 base: AffineForm::term(term),
             });
-        }
-        if let Some(image) = self.handle_images.get(&term) {
-            return self.counted_value_image(image, binder, invariant, visiting);
         }
         let (left, right) = *self.product_atoms.get(&term)?;
         let left =
@@ -12367,10 +12371,8 @@ impl Analyzer<'_, '_> {
         let Some(product) = state.values.get(&binding).and_then(AffineForm::unit_term) else {
             return;
         };
-        // Constant-scaled products already have a transparent affine image.
-        // Do not mint opaque operand handles for them: a handle established
-        // before a loop becomes invariant and can hide a stride's affine sum
-        // from the counted partition decomposition.
+        // Constant-scaled products already have a transparent affine image
+        // and need no opaque operand handles for a nonlinear certificate fold.
         let nonconstant =
             |image: Option<AffineForm>| image.is_some_and(|image| !image.terms().is_empty());
         if !nonconstant(self.affine_pre_domain_form(left, state))
