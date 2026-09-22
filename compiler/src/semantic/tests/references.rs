@@ -1500,3 +1500,241 @@ fn main() -> status: own ExitStatus pure {
     );
     assert_indexed_call_proof("later nested candidate", later.as_bytes(), false);
 }
+
+
+const BYSTANDER_WRITE_HELPER: &str = r#"struct BystanderRecord {
+  value: u8;
+}
+
+fn overwrite_bystander(values: &Array<BystanderRecord, 4>, index: own u64) -> result: own unit writes(values[index]) contract {
+  requires index < 4_u64;
+} {
+  set deref(values)[index] = BystanderRecord(value: 9_u8);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+
+fn assert_bystander_preservation(source: &[u8]) {
+    super::with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("bystander preservation must be accepted: {outcome:?}");
+        };
+        let mut found = false;
+        for function in &program.data.functions {
+            super::entailment::validate_derivations(&function.entailment);
+            found |= function.entailment.obligations.iter().any(|outcome| {
+                matches!(outcome.family,
+                    super::super::entailment::ObligationFamily::ReferencePreservation(_))
+                    && outcome.discharged
+                    && outcome.derivation.is_some()
+            });
+        }
+        assert!(found, "a used symbolic preservation retains its derivation");
+    });
+}
+
+/// REF-2 uses OWN-7's current proof context for a destructive-prefix question,
+/// including when the preserved reference is not an argument of the call.
+#[test]
+fn bystander_reference_survives_a_symbolically_disjoint_call_write() {
+    let source = format!(
+        "{BYSTANDER_WRITE_HELPER}\n{}",
+        r#"fn inspect(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own u8 reads(values), writes(values[j]) contract {
+  requires i < j;
+  requires j < 4_u64;
+} {
+  let selected = &deref(values)[i].value;
+  overwrite_bystander(values: values, index: j);
+  return deref(selected);
+}
+"#
+    );
+    assert_bystander_preservation(source.as_bytes());
+}
+
+/// A dominating guard supplies the same separation as a requirement.
+#[test]
+fn bystander_reference_uses_a_dominating_separation_guard() {
+    let source = format!(
+        "{BYSTANDER_WRITE_HELPER}\n{}",
+        r#"fn inspect(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own u8 reads(values), writes(values[j]) {
+  if j < 4_u64 {
+    if i < j {
+      let selected = &deref(values)[i].value;
+      overwrite_bystander(values: values, index: j);
+      return deref(selected);
+    }
+  }
+  return 0_u8;
+}
+"#
+    );
+    assert_bystander_preservation(source.as_bytes());
+}
+
+/// Every member of a joined reference's target union must be preserved.
+#[test]
+fn bystander_reference_separation_checks_every_joined_target() {
+    for (second_target, accepted) in [("k", true), ("j", false)] {
+        let source = format!(
+            "{BYSTANDER_WRITE_HELPER}\nfn inspect(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64, k: own u64, choose: own Bool) -> result: own u8 reads(values), writes(values[j]) contract {{\n  requires i < j;\n  requires k < j;\n  requires j < 4_u64;\n}} {{\n  let selected = &deref(values)[i].value;\n  if choose {{\n    set selected = &deref(values)[{second_target}].value;\n  }}\n  overwrite_bystander(values: values, index: j);\n  return deref(selected);\n}}\n"
+        );
+        if accepted {
+            assert_bystander_preservation(source.as_bytes());
+        } else {
+            assert_rule_kind(source.as_bytes(), SemanticRule::Ref2, |kind| {
+                matches!(kind, SemanticIssueKind::InvalidReferenceUse { .. })
+            });
+        }
+    }
+}
+
+/// The selected index is its captured value, even when its source binding
+/// changes before the helper call.
+#[test]
+fn bystander_reference_does_not_retarget_after_an_index_assignment() {
+    let source = format!(
+        "{BYSTANDER_WRITE_HELPER}\n{}",
+        r#"fn inspect(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own u8 reads(values), writes(values[j]) contract {
+  requires i < j;
+  requires j < 4_u64;
+} {
+  let selected = &deref(values)[i].value;
+  set i = j;
+  overwrite_bystander(values: values, index: j);
+  return deref(selected);
+}
+"#
+    );
+    assert_bystander_preservation(source.as_bytes());
+
+    let source = format!(
+        "{BYSTANDER_WRITE_HELPER}\n{}",
+        r#"fn inspect(values: &Array<BystanderRecord, 4>, j: own u64) -> result: own u8 reads(values), writes(values[j]) contract {
+  requires 0_u64 < j;
+  requires j < 4_u64;
+} {
+  let i = j;
+  let selected = &deref(values)[i].value;
+  set i = 0_u64;
+  overwrite_bystander(values: values, index: j);
+  return deref(selected);
+}
+"#
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { .. })
+    });
+}
+
+/// A separation learned in a sibling branch cannot preserve a reference
+/// across a write reached on both incoming edges.
+#[test]
+fn bystander_reference_separation_does_not_escape_a_guard() {
+    let source = format!(
+        "{BYSTANDER_WRITE_HELPER}\n{}",
+        r#"fn inspect(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own u8 reads(values), writes(values[j]) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let selected = &deref(values)[i].value;
+  if i < j {
+    let observed = i;
+  }
+  overwrite_bystander(values: values, index: j);
+  return deref(selected);
+}
+"#
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { .. })
+    });
+}
+
+/// Invalidating a reference is legal; only its later use is refused.
+#[test]
+fn an_unused_bystander_does_not_require_call_write_separation() {
+    let source = format!(
+        "{BYSTANDER_WRITE_HELPER}\n{}",
+        r#"fn inspect(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own unit writes(values[j]) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let selected = &deref(values)[i].value;
+  overwrite_bystander(values: values, index: j);
+  return unit;
+}
+"#
+    );
+    assert_accepts(source.as_bytes());
+}
+
+
+/// Separation must hold in the write's entering context; a later guard
+/// cannot repair a validity fact that the write already removed.
+#[test]
+fn a_post_write_guard_cannot_restore_bystander_validity() {
+    let source = format!(
+        "{BYSTANDER_WRITE_HELPER}\n{}",
+        r#"fn inspect(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own u8 reads(values), writes(values[j]) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let selected = &deref(values)[i].value;
+  overwrite_bystander(values: values, index: j);
+  if i < j {
+    return deref(selected);
+  }
+  return 0_u8;
+}
+"#
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { .. })
+    });
+}
+
+/// A use before the write in source order still depends on prior iterations'
+/// writes. Pending symbolic preservation must survive loop-token elimination.
+#[test]
+fn a_loop_header_use_demands_bystander_preservation_on_the_backedge() {
+    for (order, accepted) in [("  requires i < j;\n", true), ("", false)] {
+        let source = format!(
+            "{BYSTANDER_WRITE_HELPER}\nfn inspect(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own unit reads(values), writes(values[j]) contract {{\n  requires i < 4_u64;\n  requires j < 4_u64;\n{order}}} {{\n  let selected = &deref(values)[i].value;\n  let alias = selected;\n  for (round in 0_u64..2_u64) {{\n    let observed = deref(alias);\n    overwrite_bystander(values: values, index: j);\n  }}\n  return unit;\n}}\n"
+        );
+        if accepted {
+            assert_bystander_preservation(source.as_bytes());
+        } else {
+            assert_rule_kind(source.as_bytes(), SemanticRule::Ref2, |kind| {
+                matches!(kind, SemanticIssueKind::InvalidReferenceUse { .. })
+            });
+        }
+    }
+}
+
+/// Reforming after a write creates a new validity fact, but must not discard
+/// an already demanded use of the earlier reference.
+#[test]
+fn later_reformation_does_not_cancel_a_bystander_use_obligation() {
+    let source = format!(
+        "{BYSTANDER_WRITE_HELPER}\n{}",
+        r#"fn inspect(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own u8 reads(values), writes(values[j]) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let selected = &deref(values)[i].value;
+  overwrite_bystander(values: values, index: j);
+  let observed = deref(selected);
+  set selected = &deref(values)[i].value;
+  return observed;
+}
+"#
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Ref2, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidReferenceUse { .. })
+    });
+}

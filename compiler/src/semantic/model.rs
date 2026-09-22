@@ -2533,10 +2533,20 @@ pub(crate) struct CheckedCallSeparation {
     pub(crate) site: NodePath,
     /// Exchange's possible ancestry is refused by OP-11, rather than EFF-5.
     pub(crate) exchange: bool,
+    /// A demanded REF-2 use; the separation is still proved at `site`, before
+    /// the invalidating write, and diagnosed at this later use.
+    pub(crate) reference_use: Option<CheckedReferencePreservationUse>,
     pub(crate) positions: Vec<CheckedCallSeparationPositions>,
     /// The two substituted paths as the diagnostic renders them.
     pub(crate) left_spelling: String,
     pub(crate) right_spelling: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedReferencePreservationUse {
+    pub(crate) site: NodePath,
+    pub(crate) binder: String,
+    pub(crate) event: &'static str,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

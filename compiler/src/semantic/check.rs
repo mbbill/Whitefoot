@@ -3265,6 +3265,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::RangeFormation => SemanticRule::Ref4,
                         super::entailment::ObligationFamily::CallSeparation => SemanticRule::Eff5,
+                        super::entailment::ObligationFamily::ReferencePreservation(_) => SemanticRule::Ref2,
                         super::entailment::ObligationFamily::ExchangeSeparation => {
                             SemanticRule::Op11
                         }
@@ -3593,6 +3594,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 kind: SemanticIssueKind::UndischargedCallSeparation {
                                     residual,
                                     mechanical_fix: "prove the two positions distinct before this call, or pass one of them",
+                                },
+                            }
+                        }
+                        super::entailment::ObligationFamily::ReferencePreservation(query) => {
+                            let use_site = function.call_separations
+                                .get(query as usize)
+                                .and_then(|query| query.reference_use.as_ref())
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                            SemanticIssue {
+                                rule: SemanticRule::Ref2,
+                                location,
+                                kind: SemanticIssueKind::InvalidReferenceUse {
+                                    binder: use_site.binder.clone(),
+                                    event: use_site.event,
+                                    mechanical_fix: references::REF2_FORM_AGAIN,
                                 },
                             }
                         }

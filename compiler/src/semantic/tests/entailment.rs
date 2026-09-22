@@ -1968,7 +1968,9 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
                     // [EFF-5] a range separation submits its four orderings as
                     // one occurrence and never carries a conjunct of its own.
-                    ObligationFamily::CallSeparation | ObligationFamily::ExchangeSeparation => {
+                    ObligationFamily::CallSeparation
+                    | ObligationFamily::ExchangeSeparation
+                    | ObligationFamily::ReferencePreservation(_) => {
                         assert_eq!(outcome.conjunct, 0)
                     }
                     // [REF-4] the two formation goals `lo <= hi` and
@@ -1989,7 +1991,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 // goal plus an affine normalization. That root must conclude
                 // the exact retained positive goal (or the actual entering
                 // contradiction), rather than being accepted by shape alone.
-                if outcome.family == ObligationFamily::CallSeparation {
+                if matches!(outcome.family, ObligationFamily::CallSeparation | ObligationFamily::ReferencePreservation(_)) {
                     assert!(outcome.components.is_empty());
                     assert!(outcome.canonical_goal.is_none());
                     assert!(matches!(

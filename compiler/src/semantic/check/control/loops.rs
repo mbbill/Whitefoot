@@ -45,12 +45,14 @@ struct LoopReferenceEquation {
     token: LoopReferenceToken,
     entry_validity: ReferenceValidity,
     entry_dependencies: Vec<LoopReferenceToken>,
+    entry_preservations: Vec<super::super::super::model::CheckedCallSeparation>,
 }
 
 #[derive(Clone)]
 struct LoopReferenceResolution {
     invalid: Option<InvalidationEvent>,
     dependencies: Vec<LoopReferenceToken>,
+    preservations: Vec<super::super::super::model::CheckedCallSeparation>,
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -96,6 +98,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 token,
                 entry_validity: reference.validity.clone(),
                 entry_dependencies: reference.loop_dependencies().to_vec(),
+                entry_preservations: reference.preservations.clone(),
             });
             if let Some(paths) =
                 reference.enter_loop_header(token, rebound.contains(&declaration))?
@@ -289,6 +292,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ReferenceValidity::Invalid(event) => Some(event.clone()),
             };
             let mut dependencies = equation.entry_dependencies.clone();
+            let mut preservations = equation.entry_preservations.clone();
             if has_backedge {
                 let reference = backedge
                     .get(&equation.declaration)
@@ -298,6 +302,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     && let ReferenceValidity::Invalid(event) = &reference.validity
                 {
                     invalid = Some(event.clone());
+                }
+                for preservation in &reference.preservations {
+                    if !preservations.contains(preservation) {
+                        preservations.push(preservation.clone());
+                    }
                 }
                 for dependency in reference.loop_dependencies() {
                     if !dependencies.contains(dependency) {
@@ -314,6 +323,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 LoopReferenceResolution {
                     invalid,
                     dependencies: outside,
+                    preservations,
                 },
             );
         }
@@ -369,9 +379,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             .flat_map(|result| result.dependencies.iter().copied())
                     })
                     .collect::<Vec<_>>();
+                let inherited_preservations = local_dependencies
+                    .get(&equation.token)
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|dependency| {
+                        results
+                            .get(dependency)
+                            .into_iter()
+                            .flat_map(|result| result.preservations.iter().cloned())
+                    })
+                    .collect::<Vec<_>>();
                 let result = results
                     .get_mut(&equation.token)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                for preservation in inherited_preservations {
+                    if !result.preservations.contains(&preservation) {
+                        result.preservations.push(preservation);
+                        changed = true;
+                    }
+                }
                 for dependency in inherited {
                     if !result.dependencies.contains(&dependency) {
                         result.dependencies.push(dependency);
@@ -398,7 +425,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             match &resolution.invalid {
                 Some(event) => reference.resolve_loop_dependency(token, Err(event)),
-                None => reference.resolve_loop_dependency(token, Ok(&resolution.dependencies)),
+                None => reference.resolve_loop_dependency(
+                    token,
+                    Ok((&resolution.dependencies, &resolution.preservations)),
+                ),
             }
         }
     }
@@ -439,6 +469,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if let Some(event) = &resolution.invalid {
                     invalid.get_or_insert_with(|| event.clone());
                 } else {
+                    for preservation in &resolution.preservations {
+                        if !deferred.preservations.contains(preservation) {
+                            deferred.preservations.push(preservation.clone());
+                        }
+                    }
                     for inherited in &resolution.dependencies {
                         if !dependencies.contains(inherited) {
                             dependencies.push(*inherited);
@@ -452,6 +487,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } else if !dependencies.is_empty() {
                 deferred.dependencies = dependencies;
                 remaining.push(deferred);
+            } else {
+                self.demand_reference_preservations(
+                    deferred.node,
+                    deferred.declaration,
+                    &deferred.preservations,
+                )?;
             }
         }
         *self.deferred_loop_reference_uses.borrow_mut() = remaining;

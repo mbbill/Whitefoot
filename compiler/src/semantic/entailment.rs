@@ -286,6 +286,8 @@ pub(crate) enum ObligationFamily {
     CallSeparation,
     /// Disjoint positions exclude proper ancestry at an exchange [OP-11].
     ExchangeSeparation,
+    /// A REF-2 use depends on this event-site separation query.
+    ReferencePreservation(u32),
 }
 
 /// One exact single-binder affine image retained at a discharged OP-4 site.

@@ -1426,7 +1426,7 @@ struct Analyzer<'check, 'unit> {
     /// [REF-1] place resolution for this function.
     places: PlaceMap,
     /// The [EFF-5] pairs already judged, by the call they were recorded at.
-    judged_separations: HashSet<crate::NodePath>,
+    judged_separations: HashSet<usize>,
     /// Optional [PAR-1] range questions. Each one is evaluated only at its
     /// first statement's entry and meets every visit with logical AND.
     permission_separations: Vec<PermissionSeparationAttempt>,
@@ -7096,7 +7096,8 @@ impl Analyzer<'_, '_> {
     fn obligations_since_discharged(&self, obligation_start: usize) -> bool {
         self.obligations[obligation_start..]
             .iter()
-            .all(|outcome| outcome.discharged)
+            .all(|outcome| outcome.discharged
+                || matches!(outcome.family, ObligationFamily::ReferencePreservation(_)))
     }
 
     fn judge_expression(
@@ -7167,6 +7168,10 @@ impl Analyzer<'_, '_> {
                 }
                 let actual_parents = self.obligations[obligation_start..]
                     .iter()
+                    .filter(|outcome| !matches!(
+                        outcome.family,
+                        ObligationFamily::ReferencePreservation(_)
+                    ))
                     .map(|outcome| outcome.discharged.then_some(outcome.derivation).flatten())
                     .collect::<Option<Vec<_>>>();
                 let mut goal_parents = Vec::with_capacity(requirements.len());
@@ -9663,15 +9668,18 @@ impl Analyzer<'_, '_> {
             .function
             .call_separations
             .iter()
-            .filter(|separation| !self.judged_separations.contains(&separation.site))
-            .filter(|separation| separation.site.components().starts_with(site.components()))
-            .cloned()
+            .enumerate()
+            .filter(|(query, _)| !self.judged_separations.contains(query))
+            .filter(|(_, separation)| separation.site.components().starts_with(site.components()))
+            .map(|(query, separation)| (query, separation.clone()))
             .collect();
         let mut all_discharged = true;
-        for separation in pending {
-            self.judged_separations.insert(separation.site.clone());
-            let discharged = self.judge_one_separation(&separation, state);
-            all_discharged &= discharged;
+        for (query, separation) in pending {
+            self.judged_separations.insert(query);
+            let discharged = self.judge_one_separation(query, &separation, state);
+            // A preservation query is a later reference-use obligation. It
+            // does not make this call unreachable or suppress its effects.
+            all_discharged &= discharged || separation.reference_use.is_some();
         }
         all_discharged
     }
@@ -9682,6 +9690,7 @@ impl Analyzer<'_, '_> {
     /// greater than end [REF-4].
     fn judge_one_separation(
         &mut self,
+        query: usize,
         separation: &super::super::model::CheckedCallSeparation,
         state: &mut ProofFlowState,
     ) -> bool {
@@ -9717,8 +9726,13 @@ impl Analyzer<'_, '_> {
                 .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
         }
         self.obligations.push(ObligationOutcome {
-            node_path: separation.site.clone(),
-            family: if separation.exchange {
+            node_path: separation.reference_use.as_ref()
+                .map_or_else(|| separation.site.clone(), |use_site| use_site.site.clone()),
+            family: if separation.reference_use.is_some() {
+                ObligationFamily::ReferencePreservation(
+                    u32::try_from(query).expect("reference-preservation queries exceed u32"),
+                )
+            } else if separation.exchange {
                 ObligationFamily::ExchangeSeparation
             } else {
                 ObligationFamily::CallSeparation
@@ -10066,13 +10080,14 @@ impl Analyzer<'_, '_> {
             .function
             .call_separations
             .iter()
-            .filter(|separation| !self.judged_separations.contains(&separation.site))
-            .cloned()
+            .enumerate()
+            .filter(|(query, _)| !self.judged_separations.contains(query))
+            .map(|(query, separation)| (query, separation.clone()))
             .collect();
-        for separation in missing {
-            self.judged_separations.insert(separation.site.clone());
+        for (query, separation) in missing {
+            self.judged_separations.insert(query);
             let mut state = ProofFlowState::default();
-            self.judge_one_separation(&separation, &mut state);
+            self.judge_one_separation(query, &separation, &mut state);
         }
     }
 
