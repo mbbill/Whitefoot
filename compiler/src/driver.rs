@@ -193,7 +193,8 @@ impl CompilationFailure {
             | SourceBundleError::LogicalPath(
                 LogicalPathError::LengthOverflow | LogicalPathError::StorageUnavailable { .. },
             ) => CompilationFailureKind::Resource,
-            SourceBundleError::LogicalPath(
+            SourceBundleError::EmptySourceSequence
+            | SourceBundleError::LogicalPath(
                 LogicalPathError::Empty
                 | LogicalPathError::Absolute
                 | LogicalPathError::EmptyComponent
@@ -710,6 +711,34 @@ mod tests {
         compile_with_permission_ledger,
     };
     use crate::{OverlapLowering, RecursionBudget, SourceInput};
+
+    #[test]
+    fn public_compilation_requires_a_source_record_before_adding_the_prelude() {
+        for failure in [
+            check(&[], CompilerLimits::default()).expect_err("no source record was supplied"),
+            compile(&[], CompilerLimits::default()).expect_err("no source record was supplied"),
+        ] {
+            assert_eq!(failure.stage(), CompilationStage::SourceEnvelope);
+            assert_eq!(failure.kind(), CompilationFailureKind::Invocation);
+            assert_eq!(failure.rule_id(), None);
+            assert_eq!(failure.detail(), "EmptySourceSequence");
+        }
+
+        let empty = check(
+            &[SourceInput::new("empty.wf", b"")],
+            CompilerLimits::default(),
+        )
+        .expect_err("a present record still needs its canonical final newline");
+        assert_eq!(empty.stage(), CompilationStage::CanonicalSource);
+        assert_eq!(empty.kind(), CompilationFailureKind::Source);
+        assert_eq!(empty.rule_id(), Some("FORM-2"));
+
+        check(
+            &[SourceInput::new("empty.wf", b"\n")],
+            CompilerLimits::default(),
+        )
+        .expect("a canonical source record may contain no declarations");
+    }
 
     #[test]
     fn source_envelope_limits_are_resource_failures_in_both_public_projections() {

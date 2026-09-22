@@ -75,21 +75,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .element(element)
             .ok_or(BackendFailure::InvalidIr)?;
         let element_llvm = llvm_type(self.program, element_type)?;
+        let length = length.to_string();
+        let count = self.element_address_index(element_type, &length)?;
         self.intrinsics.insert(IntrinsicDeclaration::MemoryMove);
         if to_array {
-            self.copy_element_range(
-                &element_llvm,
-                &format!("%{slots}"),
-                &destination,
-                &length.to_string(),
-            )
+            self.copy_element_range(&element_llvm, &format!("%{slots}"), &destination, count)
         } else {
-            self.copy_element_range(
-                &element_llvm,
-                &source,
-                &format!("%{slots}"),
-                &length.to_string(),
-            )
+            self.copy_element_range(&element_llvm, &source, &format!("%{slots}"), count)
         }
     }
 
@@ -137,9 +129,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let in_range = self.next_temporary()?;
         let element_pointer = self.next_temporary()?;
         let next_index = self.next_temporary()?;
+        let logical_index = format!("%{index}");
+        let address_index = self.element_address_index(element_type, &logical_index)?;
         writeln!(
             self.output,
-            "  store i64 0, ptr {index_slot}\n  br label %{}\n{}:\n  %{index} = load i64, ptr {index_slot}\n  %{in_range} = icmp ult i64 %{index}, {length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {array_type}, ptr {array_slot}, i64 0, i64 %{index}",
+            "  store i64 0, ptr {index_slot}\n  br label %{}\n{}:\n  %{index} = load i64, ptr {index_slot}\n  %{in_range} = icmp ult i64 %{index}, {length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {array_type}, ptr {array_slot}, i64 0, i64 {address_index}",
             array_fill_head_label(result),
             array_fill_head_label(result),
             array_fill_body_label(result),
@@ -206,7 +200,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  %{element_pointer} = getelementptr inbounds {array_type}, ptr {root_pointer}, i64 0, i64 {}",
-            self.value_name(offset),
+            self.element_address_index(ty, &self.value_name(offset))?,
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         self.load_place_result(result, ty, &format!("%{element_pointer}"))

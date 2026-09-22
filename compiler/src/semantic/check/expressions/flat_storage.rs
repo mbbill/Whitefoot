@@ -8,11 +8,11 @@ use crate::{
 };
 
 use super::super::super::model::{
-    CheckedArrayRoot, CheckedArraySetTarget, CheckedBufferRoot, CheckedBufferSetTarget,
-    CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedLayoutCeiling,
-    CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedPlaceStep,
-    CheckedPlaceSubscript, CheckedRangeElementPlace, CheckedRangeRoot, CheckedSetTarget,
-    CheckedTargetDomainObligation, CheckedType, IntegerType, MeasureCell, MeasuredKind, NominalId,
+    CheckedArrayRoot, CheckedBufferRoot, CheckedConst, CheckedContainerRoot, CheckedExpression,
+    CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind,
+    CheckedPlaceStep, CheckedPlaceSubscript, CheckedRangeElementPlace, CheckedRangeRoot,
+    CheckedSetTarget, CheckedTargetDomainObligation, CheckedType, IntegerType, MeasureCell,
+    MeasuredKind, NominalId,
 };
 use super::super::super::places::{
     CaptureId, CapturedTerm, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace,
@@ -1414,55 +1414,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Self::captured_of(offset_node, &offset.expression).unwrap_or(CapturedValue::unknown());
         let mut effects = offset.effects.union(carried.effects);
         let (declaration, place, target) = match indexed {
-            CheckedIndexedPlace::Array(array) => {
-                let Some(declaration) = array.declaration else {
-                    return self.issue_node(
-                        SemanticRule::Const2,
-                        node,
-                        SemanticIssueKind::ImmutableSetTarget,
-                    );
-                };
-                let resolved = array.resolved_place().ok_or_else(|| {
-                    self.issue_value(
-                        SemanticRule::Const2,
-                        node,
-                        SemanticIssueKind::ImmutableSetTarget,
-                    )
-                })?;
-                let CheckedArrayRoot::Binding { binding, fields } = array.root else {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                };
-                (
-                    declaration,
-                    ResolvedPlaceSet::one(resolved),
-                    CheckedSetTarget::ArrayIndex(Box::new(CheckedArraySetTarget {
-                        binding,
-                        fields,
-                        array_type: array.array_type,
-                        element_type: array.element_type,
-                        length: array.length,
-                        offset: offset.expression,
-                        obligation,
-                        target_domain: CheckedTargetDomainObligation::ElementAddress,
-                    })),
-                )
+            CheckedIndexedPlace::Array(_) => {
+                // Binding-rooted arrays took the shared storage path above;
+                // only immutable constant arrays reach this dispatch.
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::ImmutableSetTarget,
+                );
             }
-            CheckedIndexedPlace::Buffer(buffer) => {
-                for member in &buffer.resolved.members {
-                    for path in self.effect_paths_for_place(node, member, bindings)? {
-                        effects.add_write(path);
-                    }
-                }
-                (
-                    buffer.declaration,
-                    buffer.resolved.clone(),
-                    CheckedSetTarget::BufferIndex(Box::new(CheckedBufferSetTarget {
-                        root: buffer.root,
-                        offset: offset.expression,
-                        obligation,
-                        target_domain: CheckedTargetDomainObligation::ElementAddress,
-                    })),
-                )
+            CheckedIndexedPlace::Buffer(_) => {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
             CheckedIndexedPlace::Range(range) => {
                 for member in &range.resolved.members {

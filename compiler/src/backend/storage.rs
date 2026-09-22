@@ -838,8 +838,7 @@ impl FlowInstruction {
                 };
                 (Some(index(*result)), reuse, exposed)
             }
-            IrInstruction::StoreBuffer { .. }
-            | IrInstruction::StoreSlice { .. }
+            IrInstruction::StoreSlice { .. }
             | IrInstruction::Store { .. }
             | IrInstruction::Drops(_) => (None, None, None),
         };
@@ -862,11 +861,6 @@ fn index(value: IrValueId) -> usize {
 fn instruction_operands(instruction: &IrInstruction) -> Vec<IrValueId> {
     match instruction {
         IrInstruction::Define { operation, .. } => operation_operands(operation),
-        IrInstruction::StoreBuffer {
-            buffer,
-            index,
-            value,
-        } => vec![*buffer, *index, *value],
         IrInstruction::StoreSlice {
             slice,
             index,

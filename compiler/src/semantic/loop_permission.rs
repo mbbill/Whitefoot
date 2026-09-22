@@ -627,8 +627,6 @@ impl<'check> Survey<'check, '_> {
         // total spelled in a subscript is a read like any other.
         match target {
             CheckedSetTarget::Place(_) => {}
-            CheckedSetTarget::ArrayIndex(target) => self.expression(&target.offset),
-            CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::RangeIndex(target) => {
                 for offset in target.offsets() {
                     self.expression(offset);
@@ -651,13 +649,6 @@ impl<'check> Survey<'check, '_> {
     /// write was already decided when [SET-1] formed a writable target.
     fn proven_affine_map(&self, target: &CheckedSetTarget) -> Option<ProvedAffineIndexMap> {
         let obligation = match target {
-            // A constant-capacity `Array` target and a runtime-capacity one
-            // [TYPE-9]. Neither base is a `Ring`: the two forms are separate
-            // checked types, and the `Ring` refusal below belongs to the
-            // general storage path, which is the only target shape whose
-            // subscript carries its own base type.
-            CheckedSetTarget::ArrayIndex(target) => &target.obligation,
-            CheckedSetTarget::BufferIndex(target) => &target.obligation,
             // [REF-4] the outer position selects from a range. A suffix may
             // select a nested Array or Slots element; PAR-2 consumes the
             // innermost written element's retained affine map, as it does for

@@ -392,6 +392,24 @@ pub(super) fn plan_target_frame(
     })
 }
 
+/// Whether element-address scaling vanishes on the selected target. This is
+/// the same checked layout calculation used during program qualification,
+/// not a source-type or optional optimizer-fact approximation.
+pub(super) fn element_has_zero_stride(
+    target: TargetLayout,
+    program: &IrProgram<'_, '_, '_>,
+    element: IrType,
+) -> Result<bool, TargetLayoutFailure> {
+    let mut layouts = LayoutComputer {
+        target,
+        program,
+        nominal: HashMap::new(),
+        visiting: HashSet::new(),
+        visiting_elements: HashSet::new(),
+    };
+    Ok(layouts.layout(element)?.size == 0)
+}
+
 pub(super) fn validate_static_storage(
     target: TargetLayout,
     program: &IrProgram<'_, '_, '_>,
