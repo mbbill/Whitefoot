@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-21 Adopt the measured Vector baseline and qualify kernel composition costs
+
+Nodes: language/data-model/vector-consumption, language/data-model/kernel-minimality
+
+Owner-approved: The owner accepted both presented amendments after the PR #79 implementation, measurements and independent DCR handoff, replying that both revisions were acceptable.
+
+Summary: Apply both reviewed amendments unchanged. Record synchronous original-order Vector consumption by suffix reversal and back consumption as the current O(n), no-allocation baseline, with performance-critical consumers reopening the representation or operation choice. Retain the kernel operation inventory while replacing the blanket zero-extra-cost promise and its corresponding refusal ground with comparison under the same native operation contract. The [Vector measurements](../research/experiments/container-representation/vector-library/RESULTS.md) separate extra source-composition transfers from lowering costs and retain the remaining gaps. Remove the accepted amendments. This ruling changes no language rule and does not authorize a merge.
+
 ## 2026-09-21 Reuse the affine index within entering proof contexts
 
 Nodes: compiler/proof-query-context

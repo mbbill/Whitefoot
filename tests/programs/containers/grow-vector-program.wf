@@ -1,5 +1,7 @@
 struct Sum {
   total: u64;
+  sequence: u64;
+  count: u64;
 }
 
 struct OwnedItem {
@@ -10,6 +12,9 @@ fn sum_accept(env: &Sum, value: own u64) -> result: own unit writes(env) {
   doc "One drain member: folds each drained value into the caller's accumulator through the reference the row declares.";
   let running = deref(env).total;
   set deref(env).total = running +wrap value;
+  let prefix = deref(env).sequence *wrap 257_u64;
+  set deref(env).sequence = prefix +wrap value;
+  set deref(env).count = deref(env).count +wrap 1_u64;
   return unit;
 }
 
@@ -22,8 +27,136 @@ fn release_item(item: own Box<OwnedItem>) -> result: own unit pure {
   return unit;
 }
 
+fn sum_owned(env: &Sum, value: own Box<OwnedItem>) -> result: own unit writes(env) {
+  let id = value.inner.id;
+  sum_accept(env: env, value: id);
+  return unit;
+}
+
+binding OwnedDrain : VectorDrain<Box<OwnedItem>, Sum> {
+  accept = sum_owned;
+}
+
+nodrop struct Ticket {
+  payload: Box<OwnedItem>;
+}
+
+fn ticket_new(id: own u64) -> result: own Ticket pure {
+  let item = OwnedItem(id: id);
+  let payload = box_new::<OwnedItem>(value: item);
+  return Ticket(payload: move payload);
+}
+
+fn sum_ticket(env: &Sum, value: own Ticket) -> result: own unit writes(env) {
+  let Ticket(payload: payload) = move value;
+  sum_owned(env: env, value: move payload);
+  return unit;
+}
+
+binding TicketDrain : VectorDrain<Ticket, Sum> {
+  accept = sum_ticket;
+}
+
+fn scalar_consumption() -> code: own u64 pure {
+  let values = grow_vector_new::<u64, 8>();
+  let seen = Sum(total: 0_u64, sequence: 0_u64, count: 0_u64);
+  grow_vector_drain::<SumDrain, 8>(values: &values, env: &seen);
+  let reserved = grow_vector_reserve::<u64, 8>(values: &values, total: 8_u64);
+  for @fill (
+    index in 0_u64..5_u64,
+    invariant length_lo: values.storage.inner.len >= index,
+    invariant length_hi: values.storage.inner.len <= index
+  ) {
+    let value = index + 1_u64;
+    let length = grow_vector_append::<u64, 8>(values: &values, value: value);
+  }
+  grow_vector_truncate::<SumDrain, 8>(values: &values, retained: 2_u64, env: &seen);
+  if seen.sequence != 199180_u64 {
+    return 1_u64;
+  }
+  if seen.count != 3_u64 {
+    return 2_u64;
+  }
+  if values.storage.inner[0_u64] != 1_u64 {
+    return 3_u64;
+  }
+  if values.storage.inner[1_u64] != 2_u64 {
+    return 4_u64;
+  }
+  if values.storage.inner.cap != reserved {
+    return 5_u64;
+  }
+  let appended = grow_vector_append::<u64, 8>(values: &values, value: 6_u64);
+  let first = grow_vector_swap_remove::<u64, 8>(values: &values, index: 0_u64);
+  let last = grow_vector_swap_remove::<u64, 8>(values: &values, index: 1_u64);
+  if first != 1_u64 {
+    return 6_u64;
+  }
+  if last != 2_u64 {
+    return 7_u64;
+  }
+  set seen.sequence = 0_u64;
+  set seen.count = 0_u64;
+  grow_vector_drain::<SumDrain, 8>(values: &values, env: &seen);
+  grow_vector_drain::<SumDrain, 8>(values: &values, env: &seen);
+  let reused = grow_vector_append::<u64, 8>(values: &values, value: 7_u64);
+  grow_vector_truncate::<SumDrain, 8>(values: &values, retained: 1_u64, env: &seen);
+  grow_vector_truncate::<SumDrain, 8>(values: &values, retained: 0_u64, env: &seen);
+  grow_vector_free_empty::<u64, 8>(values: move values);
+  if seen.sequence != 1549_u64 {
+    return 8_u64;
+  }
+  if seen.count != 2_u64 {
+    return 9_u64;
+  }
+  return 0_u64;
+}
+
+fn linear_consumption() -> code: own u64 pure {
+  let values = grow_vector_new::<Ticket, 4>();
+  let seen = Sum(total: 0_u64, sequence: 0_u64, count: 0_u64);
+  let failures = 0_u64;
+  let initial = values.storage.inner.len;
+  if initial == 0_u64 {
+    let one = ticket_new(id: 1_u64);
+    let first = grow_vector_append::<Ticket, 4>(values: &values, value: move one);
+    let three = ticket_new(id: 3_u64);
+    let third = grow_vector_append::<Ticket, 4>(values: &values, value: move three);
+    let two = ticket_new(id: 2_u64);
+    let second = grow_vector_insert::<Ticket, 4>(values: &values, index: 1_u64, value: move two);
+    let removed = grow_vector_remove::<Ticket, 4>(values: &values, index: 1_u64);
+    sum_ticket(env: &seen, value: move removed);
+    let four = ticket_new(id: 4_u64);
+    let appended = grow_vector_append::<Ticket, 4>(values: &values, value: move four);
+    let replaced = grow_vector_swap_remove::<Ticket, 4>(values: &values, index: 0_u64);
+    sum_ticket(env: &seen, value: move replaced);
+    grow_vector_truncate::<TicketDrain, 4>(values: &values, retained: 1_u64, env: &seen);
+    let retained_id = values.storage.inner[0_u64].payload.inner.id;
+    if retained_id != 4_u64 {
+      set failures = failures +wrap 1_u64;
+    }
+    grow_vector_drain::<TicketDrain, 4>(values: &values, env: &seen);
+    let five = ticket_new(id: 5_u64);
+    let reused = grow_vector_append::<Ticket, 4>(values: &values, value: move five);
+    grow_vector_truncate::<TicketDrain, 4>(values: &values, retained: 1_u64, env: &seen);
+    let final = grow_vector_swap_remove::<Ticket, 4>(values: &values, index: 0_u64);
+    sum_ticket(env: &seen, value: move final);
+  } else {
+    set failures = failures +wrap 1_u64;
+  }
+  grow_vector_drain::<TicketDrain, 4>(values: &values, env: &seen);
+  grow_vector_free_empty::<Ticket, 4>(values: move values);
+  if seen.sequence != 8742114575_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  if seen.count != 5_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  return failures;
+}
+
 fn main() -> status: own ExitStatus pure {
-  doc "The scalar half exercises empty growth, doubling, saturation at its caller-selected ceiling, insert, remove and drain; the owning half repeats them over cells so the release ledger covers an element type that owns further storage. A zero-ceiling vector is a valid empty value whose growth operations cannot meet their static requirement. Allocation is total [STOR-8], so no operation carries a refusal arm and the program has no 70 exit.";
+  doc "Scalar, droppable owning and must-consume owning chains exercise construction, growth, ceiling saturation, ordered insert/remove, swap-remove, original-order truncation/drain, empty and singleton boundaries, reuse and final cleanup. The observer checks every allocation identity. Allocation is total [STOR-8], so no operation carries a refusal arm.";
   let zero = grow_vector_new::<u64, 0>();
   let zero_length = zero.storage.inner.len;
   let zero_capacity = zero.storage.inner.cap;
@@ -74,11 +207,14 @@ fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 5_u8);
   }
-  let sum = Sum(total: 0_u64);
+  let sum = Sum(total: 0_u64, sequence: 0_u64, count: 0_u64);
   grow_vector_drain::<SumDrain, 3>(values: &values, env: &sum);
   if sum.total == 44_u64 {
   } else {
     return exit_status(code: 6_u8);
+  }
+  if sum.sequence != 2860_u64 {
+    return exit_status(code: 17_u8);
   }
   let empty = values.storage.inner.len;
   if empty == 0_u64 {
@@ -127,6 +263,37 @@ fn main() -> status: own ExitStatus pure {
   if last_id == 303_u64 {
   } else {
     return exit_status(code: 12_u8);
+  }
+  let owned_seen = Sum(total: 0_u64, sequence: 0_u64, count: 0_u64);
+  grow_vector_truncate::<OwnedDrain, 3>(values: &owners, retained: 1_u64, env: &owned_seen);
+  let fourth_item = OwnedItem(id: 404_u64);
+  let fourth_cell = box_new::<OwnedItem>(value: fourth_item);
+  let owned_insert = grow_vector_insert::<Box<OwnedItem>, 3>(values: &owners, index: 0_u64, value: move fourth_cell);
+  let fourth = grow_vector_swap_remove::<Box<OwnedItem>, 3>(values: &owners, index: 0_u64);
+  if fourth.inner.id != 404_u64 {
+    release_item(item: move fourth);
+    return exit_status(code: 18_u8);
+  }
+  release_item(item: move fourth);
+  grow_vector_drain::<OwnedDrain, 3>(values: &owners, env: &owned_seen);
+  let fifth_item = OwnedItem(id: 505_u64);
+  let fifth_cell = box_new::<OwnedItem>(value: fifth_item);
+  let owned_reuse = grow_vector_append::<Box<OwnedItem>, 3>(values: &owners, value: move fifth_cell);
+  grow_vector_drain::<OwnedDrain, 3>(values: &owners, env: &owned_seen);
+  grow_vector_free_empty::<Box<OwnedItem>, 3>(values: move owners);
+  if owned_seen.sequence != 20039309_u64 {
+    return exit_status(code: 19_u8);
+  }
+  if owned_seen.count != 3_u64 {
+    return exit_status(code: 20_u8);
+  }
+  let scalar_code = scalar_consumption();
+  if scalar_code != 0_u64 {
+    return exit_status(code: 21_u8);
+  }
+  let linear_code = linear_consumption();
+  if linear_code != 0_u64 {
+    return exit_status(code: 22_u8);
   }
   return exit_status(code: 0_u8);
 }

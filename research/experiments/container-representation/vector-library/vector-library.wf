@@ -2,110 +2,160 @@ struct VectorDigest {
   value: u64;
 }
 
-fn vector_digest_accept(env: &uniq VectorDigest, value: own u64) -> result: own unit reads(env.value), writes(env.value) {
-  let folded = deref(env).value *wrap 131_u64;
-  set deref(env).value = folded +wrap value;
+nocopy struct VectorRecord {
+  words: Array<u64, 32>;
+}
+
+interface VectorElement<T: drop> {
+  fn make(seed: own u64) -> value: own T pure;
+  fn accept(env: &VectorDigest, value: own T) -> result: own unit writes(env);
+}
+
+fn vector_word_make(seed: own u64) -> value: own u64 pure {
+  return seed;
+}
+
+fn vector_word_accept(env: &VectorDigest, value: own u64) -> result: own unit writes(env) {
+  let prefix = deref(env).value *wrap 131_u64;
+  set deref(env).value = prefix +wrap value;
   return unit;
 }
 
-actual VectorDigestDrain : VectorDrain<u64, VectorDigest> {
-  accept = vector_digest_accept;
+fn vector_record_make(seed: own u64) -> value: own VectorRecord pure {
+  let words = array_filled::<u64, 32>(value: 0_u64);
+  for (index in 0_u64..32_u64) {
+    set words[index] = seed +wrap index;
+  }
+  return VectorRecord(words: words);
 }
 
-fn vector_library_round['s](store: &uniq Heap<'s>, seed: own u64, reserve_first: own Bool) -> result: own u64 reads(store), writes(store), allocates(store) {
-  region {
-    match grow_vector_new::<u64>(store: &uniq deref(store)) {
-      None() => {
-        return 70_u64;
-      }
-      Some(value: values) => {
-        if reserve_first {
-          region {
-            match grow_vector_reserve::<u64>(values: &uniq values, store: &uniq deref(store), total: 32_u64) {
-              Err(error: marker) => {
-                return 70_u64;
-              }
-              Ok(value: capacity) => {
-              }
-            }
-          }
-        }
-        let initial = len_of(values.storage);
-        if initial == 0_u64 {
-        } else {
-          return 71_u64;
-        }
-        for @append (
-          index in 0_u64..32_u64,
-          invariant length_lo: len_of(values.storage) >= index,
-          invariant length_hi: len_of(values.storage) <= index
-        ) {
-          let item = seed +wrap index;
-          region {
-            match grow_vector_append::<u64>(values: &uniq values, store: &uniq deref(store), value: item) {
-              Err(error: back) => {
-                return 70_u64;
-              }
-              Ok(value: length) => {
-              }
-            }
-          }
-        }
-        invariant complete_lo: len_of(values.storage) >= 32_u64;
-        invariant complete_hi: len_of(values.storage) <= 32_u64;
-        region {
-          match grow_vector_insert::<u64>(values: &uniq values, store: &uniq deref(store), index: 16_u64, value: seed) {
-            Err(error: back) => {
-              return 70_u64;
-            }
-            Ok(value: length) => {
-            }
-          }
-        }
-        region {
-          let removed = grow_vector_remove::<u64>(values: &uniq values, index: 16_u64);
-          let digest = VectorDigest(value: removed);
-          region {
-            grow_vector_drain::<VectorDigestDrain>(values: &uniq values, env: &uniq digest);
-          }
-          return digest.value;
-        }
-      }
+fn vector_record_accept(env: &VectorDigest, value: own VectorRecord) -> result: own unit writes(env) {
+  for (index in 0_u64..32_u64) {
+    let word = value.words[index];
+    let prefix = deref(env).value *wrap 131_u64;
+    set deref(env).value = prefix +wrap word;
+  }
+  return unit;
+}
+
+binding WordElement : VectorElement<u64> {
+  make = vector_word_make;
+  accept = vector_word_accept;
+}
+
+binding RecordElement : VectorElement<VectorRecord> {
+  make = vector_record_make;
+  accept = vector_record_accept;
+}
+
+fn vector_library_work<interface VectorElement<T>>(values: &GrowVector<T, 8193>, count: own u64, seed: own u64, digest: &VectorDigest) -> result: own unit writes(values.storage), writes(digest) contract {
+  requires count <= 8192_u64;
+  requires deref(values).storage.inner.len <= 0_u64;
+  ensures deref(values).storage.inner.len == 0_u64;
+} {
+  for @fill (
+    index in 0_u64..count,
+    invariant length_lo: deref(values).storage.inner.len >= index,
+    invariant length_hi: deref(values).storage.inner.len <= index
+  ) {
+    let next = seed +wrap index;
+    let value = VectorElement::make(seed: next);
+    let length = grow_vector_append::<T, 8193>(values: values, value: move value);
+  }
+  let middle = count / 2_u64;
+  let marker_seed = ixor(seed, 11400714819323198485_u64);
+  let marker = VectorElement::make(seed: marker_seed);
+  let inserted = grow_vector_insert::<T, 8193>(values: values, index: middle, value: move marker);
+  let removed = grow_vector_remove::<T, 8193>(values: values, index: middle);
+  VectorElement::accept(env: digest, value: move removed);
+  if count > 0_u64 {
+    let first = grow_vector_swap_remove::<T, 8193>(values: values, index: 0_u64);
+    VectorElement::accept(env: digest, value: move first);
+  }
+  let remaining = deref(values).storage.inner.len;
+  let retained = remaining / 2_u64;
+  grow_vector_truncate::<T, VectorDigest, fn VectorElement::accept, 8193>(values: values, retained: retained, env: digest);
+  grow_vector_drain::<T, VectorDigest, fn VectorElement::accept, 8193>(values: values, env: digest);
+  return unit;
+}
+
+fn vector_library_round<interface VectorElement<T>>(count: own u64, seed: own u64, reserve_first: own Bool) -> result: own u64 pure contract {
+  requires count <= 8192_u64;
+} {
+  let values = grow_vector_new::<T, 8193>();
+  let initial = values.storage.inner.len;
+  if initial != 0_u64 {
+    return 18446744073709551615_u64;
+  }
+  if reserve_first {
+    let requested = count + 1_u64;
+    let reserved = grow_vector_reserve::<T, 8193>(values: &values, total: requested);
+  }
+  let digest = VectorDigest(value: seed);
+  vector_library_work::<VectorElement<T>>(values: &values, count: count, seed: seed, digest: &digest);
+  grow_vector_free_empty::<T, 8193>(values: move values);
+  return digest.value;
+}
+
+fn vector_library_trace<interface VectorElement<T>>(count: own u64, rounds: own u64, seed: own u64, path: own u64) -> result: own u64 pure contract {
+  requires count <= 8192_u64;
+} {
+  let checksum = seed;
+  if path == 2_u64 {
+    let values = grow_vector_new::<T, 8193>();
+    let initial = values.storage.inner.len;
+    if initial != 0_u64 {
+      return 18446744073709551615_u64;
     }
-  }
-}
-
-fn vector_library_reserved_trace['s](store: &uniq Heap<'s>, rounds: own u64, seed: own u64) -> result: own u64 reads(store), writes(store), allocates(store) {
-  let digest = seed;
-  for (round in 0_u64..rounds) {
-    let next_seed = seed +wrap round;
-    let reserve_first = True();
-    let observed = vector_library_round(store: &uniq deref(store), seed: next_seed, reserve_first: reserve_first);
-    let folded = digest *wrap 257_u64;
-    set digest = folded +wrap observed;
-  }
-  return digest;
-}
-
-fn vector_library_growth_trace['s](store: &uniq Heap<'s>, rounds: own u64, seed: own u64) -> result: own u64 reads(store), writes(store), allocates(store) {
-  let digest = seed;
-  for (round in 0_u64..rounds) {
-    let next_seed = seed +wrap round;
-    let reserve_first = False();
-    let observed = vector_library_round(store: &uniq deref(store), seed: next_seed, reserve_first: reserve_first);
-    let folded = digest *wrap 257_u64;
-    set digest = folded +wrap observed;
-  }
-  return digest;
-}
-
-fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  region {
-    let reserved = vector_library_reserved_trace(store: &uniq heap, rounds: 3_u64, seed: 17_u64);
-    let growth = vector_library_growth_trace(store: &uniq heap, rounds: 3_u64, seed: 17_u64);
-    if reserved == growth {
-      return exit_status(code: 0_u8);
+    let requested = count + 1_u64;
+    let reserved = grow_vector_reserve::<T, 8193>(values: &values, total: requested);
+    for @reuse (
+      round in 0_u64..rounds,
+      invariant empty: values.storage.inner.len == 0_u64
+    ) {
+      let next = seed +wrap round;
+      let digest = VectorDigest(value: next);
+      vector_library_work::<VectorElement<T>>(values: &values, count: count, seed: next, digest: &digest);
+      let prefix = checksum *wrap 257_u64;
+      set checksum = prefix +wrap digest.value;
     }
+    grow_vector_free_empty::<T, 8193>(values: move values);
+    return checksum;
+  }
+  for (round in 0_u64..rounds) {
+    let next = seed +wrap round;
+    let reserve_first = path == 0_u64;
+    let observed = vector_library_round::<VectorElement<T>>(count: count, seed: next, reserve_first: reserve_first);
+    let prefix = checksum *wrap 257_u64;
+    set checksum = prefix +wrap observed;
+  }
+  return checksum;
+}
+
+fn vector_library_word_trace(count: own u64, rounds: own u64, seed: own u64, path: own u64) -> result: own u64 pure contract {
+  requires count <= 8192_u64;
+} {
+  let result = vector_library_trace::<WordElement>(count: count, rounds: rounds, seed: seed, path: path);
+  return result;
+}
+
+fn vector_library_record_trace(count: own u64, rounds: own u64, seed: own u64, path: own u64) -> result: own u64 pure contract {
+  requires count <= 8192_u64;
+} {
+  let result = vector_library_trace::<RecordElement>(count: count, rounds: rounds, seed: seed, path: path);
+  return result;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let word_reserved = vector_library_word_trace(count: 3_u64, rounds: 2_u64, seed: 17_u64, path: 0_u64);
+  let word_growth = vector_library_word_trace(count: 3_u64, rounds: 2_u64, seed: 17_u64, path: 1_u64);
+  let record_reserved = vector_library_record_trace(count: 3_u64, rounds: 2_u64, seed: 17_u64, path: 0_u64);
+  let record_growth = vector_library_record_trace(count: 3_u64, rounds: 2_u64, seed: 17_u64, path: 1_u64);
+  if word_reserved != word_growth {
     return exit_status(code: 1_u8);
   }
+  if record_reserved != record_growth {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
 }

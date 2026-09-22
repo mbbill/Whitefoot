@@ -126,6 +126,122 @@ fn is_aggregate_destination<'module>(function: &'module str, mut pointer: &'modu
     }
 }
 
+/// Recognize a single initialization of a freshly allocated payload, including
+/// a malloc whose null check puts the fill in a successor block. Following a
+/// unique predecessor chain back to the allocation excludes a refill loop:
+/// every execution of this fill must first execute that allocation again.
+/// Unknown provenance or a control-flow join fails this narrow test oracle.
+fn fresh_allocation_for_fill<'module>(
+    function: &'module str,
+    mut pointer: &'module str,
+    fill: &str,
+) -> Option<&'module str> {
+    let lines: Vec<_> = function.lines().collect();
+    let mut seen = Vec::new();
+    let allocation = loop {
+        if seen.contains(&pointer) {
+            return None;
+        }
+        seen.push(pointer);
+        let prefix = format!("  {pointer} = ");
+        let (index, definition) = lines.iter().enumerate().find_map(|(index, line)| {
+            line.strip_prefix(&prefix)
+                .map(|definition| (index, definition))
+        })?;
+        if call_target(lines[index]) == Some("malloc") {
+            break index;
+        }
+        pointer = getelementptr_base(definition)?;
+    };
+    let fill = lines.iter().position(|line| *line == fill)?;
+    let mut names = vec!["<entry>"];
+    let mut line_blocks = Vec::with_capacity(lines.len());
+    for line in &lines {
+        if !line.starts_with(char::is_whitespace)
+            && let Some((label, _)) = line.split_once(':')
+        {
+            names.push(label);
+        }
+        line_blocks.push(names.len() - 1);
+    }
+    let mut predecessors = vec![std::collections::BTreeSet::new(); names.len()];
+    for (line, block) in lines.iter().zip(&line_blocks) {
+        for successor in line.split("label %").skip(1) {
+            let name = successor.split([',', ' ', ']', '\r']).next()?;
+            let successor = names.iter().position(|candidate| *candidate == name)?;
+            predecessors[successor].insert(*block);
+        }
+    }
+    let allocation_block = line_blocks[allocation];
+    let mut block = line_blocks[fill];
+    let mut visited = std::collections::BTreeSet::new();
+    while block != allocation_block {
+        if !visited.insert(block) || predecessors[block].len() != 1 {
+            return None;
+        }
+        block = *predecessors[block].first()?;
+    }
+    (line_blocks[fill] != allocation_block || allocation < fill).then_some(pointer)
+}
+
+fn bulk_initializations_use_fresh_storage(function: &str) -> Result<(), String> {
+    let mut initialized_allocations = std::collections::BTreeSet::new();
+    for line in function.lines() {
+        let Some(callee) = call_target(line).filter(|name| name.contains("memset")) else {
+            continue;
+        };
+        let pointer = call_argument(line, callee, 0)
+            .and_then(|argument| argument.split_whitespace().next_back())
+            .expect("a memset has a destination");
+        if is_aggregate_destination(function, pointer) {
+            continue;
+        }
+        if let Some(allocation) = fresh_allocation_for_fill(function, pointer, line)
+            && initialized_allocations.insert(allocation)
+        {
+            continue;
+        }
+        return Err(format!(
+            "bulk initialization must not refill heap run backing: {line}\n{}",
+            aggregate_destination_trace(function, pointer)
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn heap_initialization_oracle_refuses_repeated_and_reused_fills() {
+    let fresh = r#"define void @fresh() {
+entry:
+  %run = tail call dereferenceable_or_null(4112) ptr @malloc(i64 4112)
+  %is_null = icmp eq ptr %run, null
+  br i1 %is_null, label %failed, label %initialize
+failed:
+  ret void
+initialize:
+  %payload = getelementptr i8, ptr %run, i64 16
+  call void @llvm.memset.p0.i64(ptr %payload, i8 0, i64 4096, i1 false)
+  ret void
+}"#;
+    assert!(bulk_initializations_use_fresh_storage(fresh).is_ok());
+
+    let twice = fresh.replace(
+        "  ret void\n}",
+        "  call void @llvm.memset.p0.i64(ptr %payload, i8 0, i64 4096, i1 false)\n  ret void\n}",
+    );
+    assert!(bulk_initializations_use_fresh_storage(&twice).is_err());
+    let looped = fresh.replace("  ret void\n}", "  br label %initialize\n}");
+    assert!(bulk_initializations_use_fresh_storage(&looped).is_err());
+    let reused = r#"define void @reuse(ptr %run) {
+  %payload = getelementptr i8, ptr %run, i64 16
+  call void @llvm.memset.p0.i64(ptr %payload, i8 0, i64 4096, i1 false)
+  ret void
+}"#;
+    assert!(bulk_initializations_use_fresh_storage(reused).is_err());
+    let calloc = fresh.replace("@malloc(i64 4112)", "@calloc(i64 1, i64 4112)");
+    assert!(bulk_initializations_use_fresh_storage(&calloc).is_err());
+}
+
 /// A compact pointer-provenance trace for optimizer-version failures in the
 /// aggregate-initialization oracle. It stops at the first instruction the
 /// classifier does not follow, so CI reports the missing spelling without
@@ -330,7 +446,11 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     // guarantee: the fill loop is inside `zeroed_bytes` and `zeroed_words`,
     // between the take and the hand-back, so a caller cannot reach a filled
     // run without having taken it and cannot re-reach the fill without taking
-    // another. Owned aggregate destinations also make LLVM retain memset
+    // another. LLVM may retain that first fill as a memset after malloc and
+    // its null check, instead of a calloc. The provenance/control-flow oracle
+    // permits one such fill per allocation and refuses repeated fills, fills
+    // reached again without allocation, and fills through incoming pointers.
+    // Owned aggregate destinations also make LLVM retain memset
     // initializations of 40-byte inactive Options, 236-byte inactive Results
     // and 16-byte frame metadata. These do not refill a run's heap payload.
     // Keep the no-refill claim on pointer provenance, rather than forbidding
@@ -346,19 +466,7 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
             .split("\n}")
             .next()
             .expect("a definition has a body");
-        for line in function.lines() {
-            let Some(callee) = call_target(line).filter(|name| name.contains("memset")) else {
-                continue;
-            };
-            let pointer = call_argument(line, callee, 0)
-                .and_then(|argument| argument.split_whitespace().next_back())
-                .expect("a memset has a destination");
-            assert!(
-                is_aggregate_destination(function, pointer),
-                "bulk initialization must not reach reused heap run backing: {line}\n{}",
-                aggregate_destination_trace(function, pointer)
-            );
-        }
+        bulk_initializations_use_fresh_storage(function).unwrap();
     }
     // Allocation begins in each function's prologue: the first allocation a
     // function makes precedes every host transfer it reaches, so no buffer is
