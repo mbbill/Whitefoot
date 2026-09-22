@@ -65,7 +65,7 @@ or self-description merely to satisfy this table.
 | Root README | Project introduction, getting started, navigation | Detailed compiler inventory, a second specification, task history |
 | `docs/constitution.md` | Complete statements of purpose, chosen objectives, obligations, prohibitions, tradeoffs, and applicable conditions that can guide a choice and test its grounds | Who requested an edit and when, agent conversations, implementation progress, maintenance instructions, abbreviated labels in place of clauses, per-clause usage checklists, a selected mechanism asserted as an inevitable consequence of the purpose |
 | `spec/kernel-spec.md` | Normative syntax, semantics, judgments, boundaries and relevant examples | Compiler convenience presented as law, task status, editing history |
-| `docs/todo.md` | Known compiler defects and open costs, removed when fixed | Decisions, unsupported capabilities, task progress |
+| `docs/todo.md` | Defects, costs, improvement opportunities and their validation tasks, removed when resolved | Settled decisions, claims of implemented capability, progress logs |
 | `docs/patterns.md` | Writer problems, usable forms, examples, applicability and costs | Additional acceptance rules, unsupported universal performance claims, project administration |
 | `AGENTS.md` / `CLAUDE.md` | Agent entry, project constraints, authority, workflow and pointers to detailed guidance | Research narration, a second detailed checklist or compiler inventory |
 | `docs/practice.md` / this checklist | Engineering methods and decision-update triggers / completion checks and document boundaries | Language semantics, task-specific outcomes, new owner approval requirements |

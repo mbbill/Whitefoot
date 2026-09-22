@@ -1950,8 +1950,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert_eq!(contradiction, root.node);
                 assert_eq!(conclusion, &DerivationConclusion::Contradiction);
             }
-            DerivationRootKind::BoundsObligation(ordinal)
-            | DerivationRootKind::EmptyRunRelease(ordinal) => {
+            DerivationRootKind::BoundsObligation(ordinal) => {
                 let ordinal = ordinal as usize;
                 let outcome = summary
                     .obligations
@@ -1966,7 +1965,6 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 // ranged EFF-5 pairs now share CallSeparation at a call.
                 match outcome.family {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
-                    ObligationFamily::EmptyRunRelease => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
                     // [EFF-5] a range separation submits its four orderings as
                     // one occurrence and never carries a conjunct of its own.

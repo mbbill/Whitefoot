@@ -53,7 +53,8 @@ probably not the next work.
   a listed idea grants or withholds nothing.
 - The active specification at `spec/kernel-spec.md` defines the language.
   The conformance results state what the compiler implements, `docs/todo.md`
-  lists its known defects, and `design/compiler` records its decisions.
+  lists known defects and follow-up work, including improvement validation,
+  and `design/compiler` records its decisions.
   Compiler behavior, tests, archived code, and design prose do not define the
   language.
 - `docs/constitution.md` owns purpose, chosen objectives, tradeoffs, and
@@ -292,7 +293,8 @@ prescribes.
 
 Apply the [design skill's structural-choice assessment](design/skill/SKILL.md#workflow)
 when choosing or revising compiler code structure, including during
-implementation. Record deferred compiler design defects in `docs/todo.md`.
+implementation. Record deferred compiler defects and improvement opportunities,
+including their validation, in `docs/todo.md`.
 
 ## Data safety
 

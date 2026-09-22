@@ -1034,6 +1034,11 @@ pub enum IrPlaceStep {
         offset: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
+    /// One runtime-capacity Array element after its descriptor word.
+    BufferElement {
+        offset: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    },
 }
 
 /// A total, nonnegative estimate evaluated only for a parallel split budget.

@@ -201,23 +201,40 @@ fn recognize_load(
             (WalkedRun::Inline(*binding), offset.as_ref())
         }
         // An inline `Array<u8, N>` named by a binding reaches lowering as the
-        // measured storage place its subscript selects, so the run is that
-        // place's own base and the offset is the subscript's.
+        // measured storage place its subscript selects. The unified storage
+        // path also carries a boxed runtime Array's final element subscript;
+        // its preceding path is the buffer root and must itself contain no
+        // subscript, preserving the recognizer's loop-invariant-root limit.
         CheckedExpression::ReadStorage { root, .. } => {
             let crate::semantic::CheckedPlaceRoot::Binding(binding) = root.root else {
                 return None;
             };
-            let [crate::semantic::CheckedPlaceStep::Subscript(subscript)] = &root.path[..] else {
-                return None;
-            };
-            let CheckedType::Array { element, .. } = subscript.base_type else {
+            let (last, prefix) = root.path.split_last()?;
+            let crate::semantic::CheckedPlaceStep::Subscript(subscript) = last else {
                 return None;
             };
             if crate::lowering::lower_type(TypeLowering::EMPTY, root.ty).ok()? != U8 {
                 return None;
             }
-            let _ = element;
-            (WalkedRun::Inline(binding), &subscript.offset)
+            let run = match subscript.base_type {
+                CheckedType::Array { .. } if prefix.is_empty() => WalkedRun::Inline(binding),
+                CheckedType::Buffer { element }
+                    if !prefix.iter().any(|step| {
+                        matches!(step, crate::semantic::CheckedPlaceStep::Subscript(_))
+                    }) && crate::lowering::lower_flat_element(TypeLowering::EMPTY, element)
+                        .ok()?
+                        .ty()
+                        == U8 =>
+                {
+                    WalkedRun::Boxed(crate::semantic::CheckedBufferRoot {
+                        binding,
+                        path: prefix.to_vec(),
+                        element,
+                    })
+                }
+                _ => return None,
+            };
+            (run, &subscript.offset)
         }
         _ => return None,
     };
