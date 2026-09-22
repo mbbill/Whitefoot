@@ -57,7 +57,8 @@ or workload frequency is assumed.
 ## Results
 
 The corrected baseline has 4,752 accepted timing samples in
-[`measurements.csv`](measurements.csv). Both normal and retained executables
+[`measurements.csv`](measurements.csv), preserved at checkpoint `5a5481b1`
+before the merge of main `7127bcb6`. Both normal and retained executables
 passed 288 correctness configurations, each run through all three
 implementations: 1,728 executions in total. Every execution checked the
 independent checksum, allocation requests, requested/peak bytes and final
@@ -99,9 +100,9 @@ cohorts, not confidence intervals. Setup and final cleanup remain included.
 | retained | 256 | reuse churn | 62.775–64.667 | 1.090–1.162 | 1.097–1.137 |
 
 The controlled C layout comparison is much smaller than the normal WF reuse
-gap: window C / tagged C is 0.979–1.010 for scalar reuse and 1.026–1.062 for
-record reuse. That supports retaining the ordinary one-slot representation as
-a usable first library while recording its storage premium. It does not
+gap: in normal mode, window C / tagged C is 0.979–1.010 for scalar reuse and
+1.026–1.062 for record reuse. That supports retaining the ordinary one-slot
+representation as a usable first library while recording its storage premium. It does not
 justify calling the library native parity or attributing its whole time gap
 to layout. Returning owning values through enums remains a measurable
 lowering/ABI concern.

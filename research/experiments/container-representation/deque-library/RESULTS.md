@@ -86,7 +86,8 @@ validation or fake fallback was added.
 ## Results
 
 The corrected baseline has 6,336 accepted timing samples in
-[`measurements.csv`](measurements.csv). Both normal and retained executables
+[`measurements.csv`](measurements.csv), preserved at checkpoint `5a5481b1`
+before the merge of main `7127bcb6`. Both normal and retained executables
 passed 432 correctness configurations, each through all three implementations:
 2,592 executions in total. Every execution checked the independent checksum,
 allocation requests, requested/peak bytes and final zero live bytes. Retained
@@ -151,7 +152,7 @@ three counts. Cleanup visits every payload word through the checksum callback.
 | --- | --- | --- |
 | Pop front or back | 1 x 256-byte memcpy | 1 x 256-byte memcpy |
 | Push front or back | 1 x 256-byte memmove | 1 x 256-byte memcpy |
-| Rebase transfer loop | 1 x 256-byte memmove | 1 x 256-byte memcpy |
+| Rebase transfer loop | 1 x 256-byte memcpy | 1 x 256-byte memcpy |
 | Drain to consumer | 1 x 256-byte memcpy | 1 x 256-byte memcpy |
 
 The WF retained functions are `wf_deque_pop_front$instance$50`,
@@ -196,8 +197,8 @@ After Apple Clang 21 O2:
 
 The fact-only variant also permits initial-fill vectorization. It identifies
 an omitted fact sufficient to eliminate this specialization's metadata traffic;
-it supplies no measured timing recovery percentage. Construction and all three oracle checks took
-2.26 seconds under the shared guard. Production lowering is unchanged. A
+it supplies no measured timing recovery percentage. Construction and all three
+oracle checks took 2.26 seconds under the shared guard. Production lowering is unchanged. A
 general improvement still needs qualification over all admitted storage/index
 domains, including zero-sized elements, a compatible path for older LLVM,
 and the same-source timing matrix. The bounded positive-stride u64 probe does
