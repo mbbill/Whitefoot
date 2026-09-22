@@ -261,8 +261,9 @@ impl TargetFrameSlot {
     }
 }
 
-/// The physical struct field which owns one logical slot, plus the exact
-/// selected-target offset at which its pointer is formed.
+/// A logical slot's field and offset in the complete qualification layout.
+/// When slots are emitted independently, each pointer is allocation-relative
+/// zero; this offset is then footprint accounting, not a physical address.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct TargetFrameField {
     physical_index: u32,
@@ -280,19 +281,23 @@ impl TargetFrameField {
     }
 }
 
-/// A complete generated frame whose bytes are materialized as one LLVM
-/// struct allocation.
+/// A complete generated frame, qualified before choosing how to expose its
+/// independent allocation roots to LLVM.
 ///
 /// `physical_fields` includes explicit inter-slot and tail padding. Therefore
 /// the LLVM struct rendered from it has exactly `layout`, even for a logical
 /// byte array whose requested address alignment is stronger than its natural
 /// type alignment. `logical_fields` maps each source/emitter slot, in the
-/// caller's order, to the physical field that owns it.
+/// caller's order, to the physical field that owns it. Positive-sized roots
+/// with one common natural alignment and no padding may instead be separate
+/// allocations: every ordering has the same complete extent. Other frames
+/// keep the struct allocation, including zero-sized or over-aligned roots.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct TargetFramePlan {
     physical_fields: Vec<TargetStorageType>,
     logical_fields: Vec<TargetFrameField>,
     layout: TargetAggregateLayout,
+    independent_slot_alignment: Option<u64>,
 }
 
 impl TargetFramePlan {
@@ -306,6 +311,10 @@ impl TargetFramePlan {
 
     pub(super) const fn layout(&self) -> TargetAggregateLayout {
         self.layout
+    }
+
+    pub(super) const fn independent_slot_alignment(&self) -> Option<u64> {
+        self.independent_slot_alignment
     }
 
     pub(super) const fn is_empty(&self) -> bool {
@@ -335,6 +344,8 @@ pub(super) fn plan_target_frame(
     let mut logical_fields = Vec::with_capacity(slots.len());
     let mut size = 0_u64;
     let mut frame_alignment = 1_u64;
+    let mut common_slot_alignment = None;
+    let mut independent_slots = true;
 
     for slot in slots {
         let layout = layouts
@@ -345,6 +356,12 @@ pub(super) fn plan_target_frame(
             return Err(TargetLayoutFailure::InvalidIr);
         }
         let start = align_up(target, size, requested, TargetObject::StackFrame)?;
+        independent_slots &= requested == layout.align
+            && layout.size > 0
+            && layout.size % requested == 0
+            && start == size
+            && common_slot_alignment.is_none_or(|alignment| alignment == requested);
+        common_slot_alignment = Some(requested);
         if start != size {
             physical_fields.push(TargetStorageType::bytes(start - size));
         }
@@ -360,6 +377,7 @@ pub(super) fn plan_target_frame(
     }
 
     let complete = align_up(target, size, frame_alignment, TargetObject::StackFrame)?;
+    independent_slots &= complete == size;
     if complete != size {
         physical_fields.push(TargetStorageType::bytes(complete - size));
     }
@@ -371,6 +389,7 @@ pub(super) fn plan_target_frame(
             size: complete,
             align: frame_alignment,
         },
+        independent_slot_alignment: independent_slots.then_some(common_slot_alignment).flatten(),
     })
 }
 

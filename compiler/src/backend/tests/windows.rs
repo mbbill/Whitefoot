@@ -102,6 +102,58 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
     }
 }
 
+/// A take changes the descriptor even when no element bytes exist. Ring's
+/// captured physical position must still use its old head through wrapping.
+#[test]
+fn zero_sized_takes_update_slots_and_wrapped_ring_boundaries_once() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let value = array_filled::<u64, 0>(value: 0_u64);
+  let slots = slots_new::<Array<u64, 0>, 2>();
+  place_back(window: &slots, value: value);
+  place_back(window: &slots, value: value);
+  let last = take_back(window: &slots);
+  if slots.len != 1_u64 {
+    return exit_status(code: 1_u8);
+  }
+  let first = take_back(window: &slots);
+  if slots.len != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let ring = ring_new::<Array<u64, 0>, 2>();
+  place_back(window: &ring, value: value);
+  place_back(window: &ring, value: value);
+  let front = take_front(window: &ring);
+  if ring.head != 1_u64 {
+    return exit_status(code: 3_u8);
+  }
+  place_back(window: &ring, value: front);
+  let back = take_back(window: &ring);
+  if ring.len != 1_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if ring.head != 1_u64 {
+    return exit_status(code: 5_u8);
+  }
+  let remainder = take_front(window: &ring);
+  if ring.head != 0_u64 {
+    return exit_status(code: 6_u8);
+  }
+  if ring.len != 0_u64 {
+    return exit_status(code: 7_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [OverlapLowering::Off, OverlapLowering::On] {
+        let module = super::emit_lowered(source, overlap);
+        let retained = super::owned_places::retain_calls(&module);
+        let output = super::compile_and_run(&retained);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
 /// OP-9 admits zero even when the mathematical language ceiling exceeds
 /// u64. Lowering must preserve that result so STOR-6, rather than an internal
 /// compiler failure, reports the unrepresentable concrete element layout.

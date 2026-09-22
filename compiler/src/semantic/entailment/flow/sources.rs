@@ -16,8 +16,9 @@ use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedConst, CheckedEnumType, CheckedExpression,
     CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMatchArm, CheckedMeasure,
     CheckedNominalKind, CheckedPlaceStep, CheckedSetTarget, CheckedType, CheckedValue, IntegerType,
-    MeasuredKind,
+    MeasuredKind, NominalId,
 };
+use super::super::super::places::CapturedTerm;
 use super::super::fragment_type;
 use super::super::state::{
     DerivationId, DerivationLedger, FactState, FlowEventId, FlowEventKind, OutcomeFact,
@@ -504,22 +505,44 @@ impl Analyzer<'_, '_> {
         value: &CheckedExpression,
         state: &mut ProofFlowState,
     ) -> Option<MeasureCarry> {
-        let CheckedExpression::Binding { binding, ty, .. } = value else {
-            return None;
-        };
-        let source = ResolvedPlace::spelled(
-            PlaceRoot::Binding(*binding),
-            self.is_holder(*binding),
-            Vec::new(),
-        );
+        let source = self.placement_source_place(value)?;
         self.mint_measure_datums(
             node_path,
             ordinal,
             MeasurePlacement::Rebind,
             source,
-            *ty,
+            value.ty(),
             state,
         )
+    }
+
+    /// A placement reads the exact checked source place, including a moved
+    /// field or Box content. Computed values and calls have their own fact
+    /// sources and are not placements [MSR-3].
+    pub(super) fn placement_source_place(
+        &self,
+        value: &CheckedExpression,
+    ) -> Option<ResolvedPlace> {
+        let source = match value {
+            CheckedExpression::Project {
+                binding, fields, ..
+            } => Some(ResolvedPlace {
+                root: PlaceRoot::Binding(*binding),
+                path: fields.iter().copied().map(PlaceStep::Field).collect(),
+            }),
+            CheckedExpression::BoxTake { binding, path, .. } => Some(ResolvedPlace {
+                root: PlaceRoot::Binding(*binding),
+                path: path.iter().map(CheckedPlaceStep::place_step).collect(),
+            }),
+            _ => self.read_place_path(value),
+        }?;
+        // A source subscript must name an MSR-1 offset. A computed offset
+        // and a possible-descendant cover have no exact placement identity.
+        (!source.path.iter().any(|step| {
+            matches!(step, PlaceStep::Descendant(_))
+                || matches!(step, PlaceStep::Index(offset) if offset.term == CapturedTerm::Opaque)
+        }))
+        .then_some(source)
     }
 
     /// [MSR-3] the first half of every placement below the entry and the
@@ -547,7 +570,7 @@ impl Analyzer<'_, '_> {
         state: &mut ProofFlowState,
     ) -> Option<MeasureCarry> {
         let mut carried = Vec::new();
-        for (path, measured_type) in self.measured_paths(ty) {
+        for (path, measured_type) in self.measured_paths(&source, ty) {
             let Some(measured) = super::measured_kind(measured_type) else {
                 continue;
             };
@@ -587,25 +610,64 @@ impl Analyzer<'_, '_> {
         (!carried.is_empty()).then_some(MeasureCarry { carried })
     }
 
-    /// [MSR-1, MSR-3] every measured place one placement's operand reaches by
-    /// field or enum-payload selection, as its projection path from the
-    /// operand and the type selected there.
+    /// [MSR-1, MSR-3] measured descendants reached through owned fields,
+    /// payloads and Box content. A structural walk covers acyclic type paths;
+    /// already registered exact source terms supply deeper recursive paths.
+    /// Both inventories are finite, without a depth limit on a written path.
     ///
-    /// A placement is per placement, not per depth. [MSR-1] admits a measure
-    /// place formed with any number of field and payload `psuffix`es, so an
-    /// aggregate operand holding a run two levels down names that measured
-    /// place; the naming event renames the aggregate, and without a datum for
-    /// the complete projection the run arrives at its new path with no
-    /// measures at all. Payload steps remain distinct by variant [REF-1].
-    ///
-    /// The walk does not cross a cell or run element: those require `deref`
-    /// and subscript steps rather than aggregate ownership projections.
-    fn measured_paths(&self, ty: CheckedType) -> Vec<(Vec<PlaceStep>, CheckedType)> {
+    /// A term's presence does not establish its old facts: the datum is
+    /// equated to the source in the current state, after all earlier kills.
+    /// Unregistered descendants have no numeric facts beyond their standing
+    /// type facts, which are available at the destination without transport.
+    /// Payload paths stay variant-specific and add no refinement fact.
+    fn measured_paths(
+        &self,
+        source: &ResolvedPlace,
+        ty: CheckedType,
+    ) -> Vec<(Vec<PlaceStep>, CheckedType)> {
+        let mut found = Vec::new();
+        if !self.collect_measured_paths(ty, &mut Vec::new(), &mut Vec::new(), &mut found) {
+            return found;
+        }
+        let source = source.clone().term_identity();
+        for term in self.terms.ids() {
+            let TermKind::Measure(CheckedMeasure::Length, place) = self.terms.kind(term) else {
+                continue;
+            };
+            if place.root != source.root {
+                continue;
+            }
+            let Some(path) = place.path.strip_prefix(source.path.as_slice()) else {
+                continue;
+            };
+            // No alias resolution or overlap test turns a possible target
+            // into this source. The suffix must select concrete owned
+            // fields; an unknown descendant cover is never such a step.
+            let Some(selected) = self.measured_path_type(ty, path) else {
+                continue;
+            };
+            if !found.iter().any(|(existing, _)| existing == path) {
+                found.push((path.to_vec(), selected));
+            }
+        }
+        found
+    }
+
+    /// Returns whether a nominal cycle left paths for the finite source-term
+    /// inventory to supply. Acyclic operands need no registry scan.
+    fn collect_measured_paths(
+        &self,
+        ty: CheckedType,
+        path: &mut Vec<PlaceStep>,
+        ancestors: &mut Vec<NominalId>,
+        found: &mut Vec<(Vec<PlaceStep>, CheckedType)>,
+    ) -> bool {
         if super::measured_kind(ty).is_some() {
-            return vec![(Vec::new(), ty)];
+            found.push((path.clone(), ty));
+            return false;
         }
         let CheckedType::Nominal(nominal) = ty else {
-            return Vec::new();
+            return false;
         };
         let Some(kind) = self
             .context
@@ -613,45 +675,74 @@ impl Analyzer<'_, '_> {
             .get(nominal.0 as usize)
             .map(|record| &record.kind)
         else {
-            return Vec::new();
+            return false;
         };
-        let mut found = Vec::new();
+        if ancestors.contains(&nominal) {
+            return true;
+        }
+        ancestors.push(nominal);
+        let mut recursive = false;
         match kind {
             CheckedNominalKind::Struct { fields } => {
-                let fields = fields.clone();
                 for (ordinal, field) in fields.iter().enumerate() {
                     let Ok(ordinal) = u32::try_from(ordinal) else {
                         continue;
                     };
-                    for (mut path, selected) in self.measured_paths(field.ty) {
-                        path.insert(0, PlaceStep::Field(ordinal));
-                        found.push((path, selected));
-                    }
+                    path.push(PlaceStep::Field(ordinal));
+                    recursive |= self.collect_measured_paths(field.ty, path, ancestors, found);
+                    path.pop();
                 }
             }
             CheckedNominalKind::Enum { variants } => {
-                let variants = variants.clone();
                 for variant in variants {
                     for (ordinal, field) in variant.fields.iter().enumerate() {
                         let Ok(field_ordinal) = u32::try_from(ordinal) else {
                             continue;
                         };
-                        for (mut path, selected) in self.measured_paths(field.ty) {
-                            path.insert(
-                                0,
-                                PlaceStep::Payload {
-                                    variant: variant.tag,
-                                    field: field_ordinal,
-                                },
-                            );
-                            found.push((path, selected));
-                        }
+                        path.push(PlaceStep::Payload {
+                            variant: variant.tag,
+                            field: field_ordinal,
+                        });
+                        recursive |= self.collect_measured_paths(field.ty, path, ancestors, found);
+                        path.pop();
                     }
                 }
             }
-            CheckedNominalKind::Box { .. } | CheckedNominalKind::Opaque => {}
+            CheckedNominalKind::Box { referent, .. } => {
+                path.push(PlaceStep::Deref);
+                recursive |= self.collect_measured_paths(*referent, path, ancestors, found);
+                path.pop();
+            }
+            CheckedNominalKind::Opaque => {}
         }
-        found
+        ancestors.pop();
+        recursive
+    }
+
+    /// Replays a finite owned projection against its actual operand type.
+    /// Element and range storage are not aggregate ownership projections.
+    fn measured_path_type(&self, mut ty: CheckedType, path: &[PlaceStep]) -> Option<CheckedType> {
+        for step in path {
+            let CheckedType::Nominal(nominal) = ty else {
+                return None;
+            };
+            ty = match (&self.context.nominals.get(nominal.0 as usize)?.kind, step) {
+                (CheckedNominalKind::Struct { fields }, PlaceStep::Field(field)) => {
+                    fields.get(*field as usize)?.ty
+                }
+                (CheckedNominalKind::Box { referent, .. }, PlaceStep::Deref) => *referent,
+                (CheckedNominalKind::Enum { variants }, PlaceStep::Payload { variant, field }) => {
+                    variants
+                        .iter()
+                        .find(|candidate| candidate.tag == *variant)?
+                        .fields
+                        .get(*field as usize)?
+                        .ty
+                }
+                _ => return None,
+            };
+        }
+        super::measured_kind(ty).map(|_| ty)
     }
 
     /// [MSR-3] the rebind placement, second half: after the transfer, the

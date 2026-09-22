@@ -1,7 +1,9 @@
 # Containers over the x1 language
 
-This investigation now uses the merged PR #70 baseline,
-`36be8784e84a26d34bc24668babd789e0f4c96fb`, kernel v0.60. The initial study
+The reassessment and first Vector trial below use the merged PR #70 baseline,
+`36be8784e84a26d34bc24668babd789e0f4c96fb`, kernel v0.60, and their stated
+subsequent implementation revisions. The Box-placement and consumption
+follow-up at the end starts from kernel v0.61. The initial study
 used the earlier published snapshot `efd6ebc9`; its dated observations remain
 in the [probe results](../../experiments/container-representation/x1/RESULTS.md).
 The merged-baseline reassessment below supersedes outstanding-work claims
@@ -531,20 +533,21 @@ Before measuring, use these discriminators:
   representation or proposing language support. O(n) alone is not a parity
   claim, and no percentage threshold is invented for all workloads.
 
-The adopted consumption decision is recorded in
+The original consumption decision is recorded in
 [`design/language/data-model/vector-consumption.md`](../../../design/language/data-model/vector-consumption.md).
-Its current baseline retains the measured performance limitations below.
+The follow-up below proposes replacing its separate reversal pass.
 
-The trial now implements the selected operations, including explicit cleanup
+The initial trial implemented the selected operations, including explicit cleanup
 of a nodrop element vector. The formal bundle observes original callback order,
 retained contents and capacity, reuse and 25 exact-once allocation releases in
-sequential and parallel lowering. The current
+sequential and parallel lowering. The initial
 [cost comparison](../../experiments/container-representation/vector-library/RESULTS.md)
-uses the actual library, matched reverse C and direct C, and scalar/256-byte
-elements. It isolates an unnecessary Slots wrap computation and retains the
-measured cost of suffix reversal after that repair. The source form is an O(n)
-baseline, not native parity across workloads. The residual performance question
-and a separate Box-measure placement defect remain in `docs/todo.md`.
+used the actual library, matched reverse C and direct C, and scalar/256-byte
+elements. It isolated an unnecessary Slots wrap computation and retained the
+measured cost of suffix reversal after that repair. That source form established
+an O(n) baseline, not native parity across workloads. Both its residual
+performance question and the separate Box-measure placement defect motivated
+the follow-up below.
 
 ### Vector source obligations
 
@@ -590,19 +593,27 @@ nodrop residuals in that inventory even when their release emits no action.
 Positive and negative compiler tests cover that distinction; the library's
 nodrop chain exercises the complete source-to-native cleanup path.
 
-Taking the wrapper apart first is not a substitute for that repair:
+The approved ENT-2/MSR-3 clarification makes the owned descendants explicit
+at an ordinary naming event such as taking this wrapper apart:
 
 ```whitefoot
 let GrowVector(storage: storage) = move values;
 free_empty(window: move storage);
 ```
 
-The initial compiler loses `values.storage.inner.len == 0` at that naming
-event and rejects the second line under OP-14. Its placement walk stops at
-Box content. This is recorded in `docs/todo.md` as a separate implementation
-gap against ordinary field-based measure placement, not as evidence that the
-language cannot represent an empty owning vector. The direct consume above
-needs no workaround branch and no new proof mechanism.
+The `efe41016` compiler loses `values.storage.inner.len == 0` at that naming
+event and rejects the second line under OP-14 because its placement walk
+stops at Box content. The follow-up carries the established emptiness fact
+through both forms. The
+[`descriptor_invalidation` regressions](../../../compiler/src/semantic/tests/descriptor_invalidation.rs)
+cover this exact generic witness, projected and recursive Box moves,
+constructor placement into Box content and elements, and overlapping writes
+that must still kill an old fact. Completion review found that v0.62's
+placement table did not explicitly cover measured descendants of an unmeasured
+owner and that its datum identity omitted their relative projection. The
+owner-approved v0.63 amendment states that boundary and identity; the repair
+implements it using existing measure datums. This does not require a new
+representation of an empty owning vector.
 
 FN-8's Signed Goal affine route has a separate spelling boundary [ENT-6]:
 
@@ -617,3 +628,135 @@ not equality. The equivalent `requires deref(values).storage.inner.len <=
 0_u64;` succeeds because the length is an unsigned measure. The reuse work
 helper and empty-owner consumer use that spelling, without a runtime test or
 weaker domain. FN-9's numeric postcondition route still permits equality.
+
+## Box placement and Vector consumption follow-up
+
+This comparison starts from `efe41016d10379325ed4513d0ac7457ec7f24c5b`,
+kernel v0.61, including the Vector trial and the wildcard-reference amendment.
+Earlier observations retain their recorded baselines; the old absence of
+wildcard traversal is not a premise of this follow-up. The two remaining
+questions are ordinary Box-content measure transport and the extra transfers
+required by ordered Vector consumption.
+The integrated measurement revision also includes main `f3cf41d4`, kernel
+v0.62. Paired source measurements use one rebuilt integrated compiler; earlier
+v0.61 compiler comparisons retain their own identities and conditions.
+Following completion review, the owner approved the v0.63 ENT-2/MSR-3
+clarification: existing within-body placements carry current facts through
+exact owned fields, enum payloads and Box content, with the relative descendant
+projection included in datum identity. Existing kills, cross-function contract
+boundaries and the exclusion of implicit window slots remain. The amendment
+adds no runtime check and does not change the measured lowering or library
+source. The dated measurements remain v0.62 evidence, not a new v0.63 run.
+
+The Box witness above is a naming event, not a new relation theorem. The
+selected repair transfers available measure facts through the owned descendants
+now explicit in MSR-3 and preserves ENT-5's invalidation after an overlapping write,
+replacement or call. Check both directions: an admitted consume becomes
+provable after rebinding, and an obsolete pre-mutation measure cannot authorize
+a later operation. Recursive nominal types must not cause infinite path
+enumeration or an arbitrary depth limit. The v0.61 distinction between a
+possible descendant cover and an exact captured target still applies.
+
+For consumption, reuse the actual library and the existing reverse-C and
+direct-C controls. Keep callback order, retained prefix and capacity, nodrop
+ownership, allocation policy and helper-retention settings fixed. A candidate
+that introduces scratch allocation, omits consuming callbacks or weakens their
+allowed effects does not meet this operation contract. Distinguish an ordinary
+algorithm or representation change from a general lowering repair and from an
+operation the current source rules cannot express.
+
+Before selecting a candidate, compare it with both the unchanged WF baseline
+and the native controls in paired runs. Count the source-required element
+transfers and inspect optimized IR with helpers retained; then measure the
+existing scalar/large-record and short/long-window cases with ordinary and
+retained helpers. The candidate must remove or demonstrably reduce the
+identified consumption cost, with reproducible improvement in the affected
+large-record path and an explicit account of changes to the other operations.
+A new attribution alone is not an improvement result. Any native-parity claim
+must be supported by the resulting comparisons, including measurement
+variation, rather than inferred from O(n) complexity or fewer IR instructions.
+
+The placement repair uses the existing measure datums and invalidation path.
+Owned fields, payloads and Box content share the structural inventory. When
+a nominal recurs, the structural walk stops and exact already-interned source
+measure paths supply deeper descendants after replay against the operand's
+type. Earlier numeric evidence already requires those finite terms; even a
+capacity- or head-only read registers the sibling length term. Unmentioned
+descendants need only their ordinary standing type facts. The inventory does
+not retain old facts or convert an alias cover into an exact owner: a datum
+is equated to its source only in the current fact state. Each placement
+finishes collecting paths before minting datums, and the entailment walk
+visits each static statement once, including loop bodies. Acyclic operands
+skip the supplementary scan.
+
+Unbounded type unfolding cannot terminate on a recursive nominal; merely
+cutting the cycle loses known facts at deeper written paths, and a fixed
+depth cutoff has no language ground. Reusing existing exact terms avoids a
+second path-analysis pass. The approved compiler-tree addition records this
+choice. The focused `descriptor_invalidation` group passes all 17 cases,
+including distinct measures beyond two recursive nominal cycles,
+capacity/head-only evidence, an overwritten recursive descendant and a cursor
+whose possible-descendant fact cannot establish the owner's measure. The
+original generic witness fails under `efe41016` and passes after the repair.
+The recursive cases also exposed a constructor-placement omission at
+`set Box.inner = ...`; using the existing exact destination path repairs that
+naming event without changing commit order or invalidation. These focused
+checks distinguish the placement repair; the canonical gate also covers its
+other semantic, lowering and native-program consumers. The normative
+[`owned-descendant` positive](../../../tests/conformance/cases/msr3-pos-owned-descendant-measures.wf)
+carries two distinct lengths through fields, Box content, owner rebinding,
+an enum payload and destructuring. Its
+[`replacement` negative](../../../tests/conformance/cases/msr3-neg-replaced-owned-descendant-measure.wf)
+requires an overlapping replacement to invalidate the old length.
+
+The consumption candidate takes a rear element into an owned local before
+exchanging it with the next suffix slot and calling the consumer. At offset
+`k < floor(removed / 2)`, the post-take length still exceeds `retained + k`;
+the source writes that bound as an ordinary finite certificate. The reversed
+remainder is then consumed from the back. Only removed elements move, so
+almost complete retention does not turn truncation into a prefix walk. The
+interface, permitted callback effects, retained contents and capacity are
+unchanged. This still relocates rear elements and is not a minimum-transfer
+algorithm.
+
+Two target choices address the demonstrated extra temporary copies. A complete
+take captures the old physical slot, updates the window descriptor, then
+transfers the element. Its header and element bytes are disjoint, and no call,
+release or source observation occurs between those steps. Zero-size elements
+touch no bytes. Separately, unrelated storage groups become independent entry
+stack allocations only after complete target qualification establishes positive
+sizes, one common natural alignment, no requested-alignment discrepancy and
+no inter-group or tail padding. Every eligible ordering has the same complete
+extent. Mixed alignment, padding and zero-size roots retain the qualified
+frame struct; complete parents, storage interference, result destinations,
+probing and parallel lifetimes are unchanged. The old canonical offsets
+remain qualification accounting, not physical offsets between independent
+objects.
+
+The [transfer experiment](../../experiments/container-representation/vector-library/RESULTS.md)
+records the alternatives and isolating evidence. Early capture annotations or
+independent slots alone did not reduce the candidate's four transfers per
+first-half iteration; the descriptor order and independent slots together
+reduced them to two after local Clang 21 optimization. Apple Clang 15 retains
+an additional immutable argument snapshot in the straight-line regression,
+so this is not an optimizer-independent copy-count guarantee. The regression
+checks the compiler-owned allocation and descriptor-order properties and the
+native result; optimized transfer counts remain toolchain-specific evidence.
+Forwarding a consumed mutable local into an ordinary call is a separate
+opportunity: it needs a liveness and interference argument across all arguments
+and result/input reuse, and the existing result-coalescing path does not cover
+a consumer returning unit. That opportunity is retained in the maintained
+TODO rather than broadening the present changes without that argument.
+The unchanged v0.61 compiler emits one aggregate frame for the regression's
+distinct roots and copies the taken element before updating the descriptor;
+each new raw-IR assertion therefore distinguishes its corresponding lowering
+change without depending on a downstream optimizer.
+Broad ABI promises and
+unrestricted frame splitting were therefore not adopted. The general mixed-
+alignment case needs a separate complete-frame argument if a concrete workload
+later demonstrates a benefit. The owner approved the library and compiler
+choices, including the measured large-record benefit alongside the repeatable
+8.2–10.6 percent short-scalar regression. Remaining consumption and lowering
+costs stay in `docs/todo.md`; the selection claims neither uniform improvement
+nor native parity. Measurements compare both source algorithms through the
+same integrated compiler and keep the historical compiler comparisons separate.

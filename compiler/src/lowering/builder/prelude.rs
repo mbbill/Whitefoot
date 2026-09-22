@@ -324,9 +324,8 @@ impl IrBuilder<'_> {
         self.return_value(placed)
     }
 
-    /// `take_back` and `take_front`: read the boundary slot out and move the
-    /// boundary by one. The read precedes the move, which is what makes the
-    /// element the row hands back the one the window held [OP-10].
+    /// `take_back` and `take_front`: one complete [OP-10] operation captures
+    /// the old boundary slot, moves the boundary and hands the element back.
     fn row_take(&mut self, row: IrBoundary) -> Result<(), LoweringFailure> {
         let [window] = self.row_parameters()?;
         let (_, element, _) = self.window_parameter(window)?;
@@ -335,14 +334,6 @@ impl IrBuilder<'_> {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         let taken = self.define(element_type, IrOperation::RunTaken { row, run: window })?;
-        self.define(
-            IrType::Unit,
-            IrOperation::RunBoundary {
-                row,
-                run: window,
-                value: None,
-            },
-        )?;
         self.return_value(taken)
     }
 
