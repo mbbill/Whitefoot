@@ -14479,11 +14479,11 @@ impl Analyzer<'_, '_> {
         // the place this commit writes, which is a plain place or one element
         // position of a run.
         let placement = self.mint_commit_placement(node_path, 0, target, value, state);
-        let constructed = self
-            .set_target_place(target)
-            .is_some()
-            .then(|| self.mint_construct_placements(node_path, value, state))
-            .unwrap_or_default();
+        let constructed = if self.set_target_place(target).is_some() {
+            self.mint_construct_placements(node_path, value, state)
+        } else {
+            Vec::new()
+        };
         // [SET-1]: the target's base and offset are evaluated before the
         // right-hand side; both are judged at this point, then the commit
         // kill applies.

@@ -533,20 +533,21 @@ Before measuring, use these discriminators:
   representation or proposing language support. O(n) alone is not a parity
   claim, and no percentage threshold is invented for all workloads.
 
-The adopted consumption decision is recorded in
+The original consumption decision is recorded in
 [`design/language/data-model/vector-consumption.md`](../../../design/language/data-model/vector-consumption.md).
-Its current baseline retains the measured performance limitations below.
+The follow-up below proposes replacing its separate reversal pass.
 
-The trial now implements the selected operations, including explicit cleanup
+The initial trial implemented the selected operations, including explicit cleanup
 of a nodrop element vector. The formal bundle observes original callback order,
 retained contents and capacity, reuse and 25 exact-once allocation releases in
-sequential and parallel lowering. The current
+sequential and parallel lowering. The initial
 [cost comparison](../../experiments/container-representation/vector-library/RESULTS.md)
-uses the actual library, matched reverse C and direct C, and scalar/256-byte
-elements. It isolates an unnecessary Slots wrap computation and retains the
-measured cost of suffix reversal after that repair. The source form is an O(n)
-baseline, not native parity across workloads. The residual performance question
-and a separate Box-measure placement defect remain in `docs/todo.md`.
+used the actual library, matched reverse C and direct C, and scalar/256-byte
+elements. It isolated an unnecessary Slots wrap computation and retained the
+measured cost of suffix reversal after that repair. That source form established
+an O(n) baseline, not native parity across workloads. Both its residual
+performance question and the separate Box-measure placement defect motivated
+the follow-up below.
 
 ### Vector source obligations
 
@@ -631,6 +632,10 @@ Earlier observations retain their recorded baselines; the old absence of
 wildcard traversal is not a premise of this follow-up. The two remaining
 questions are ordinary Box-content measure transport and the extra transfers
 required by ordered Vector consumption.
+The integrated validation revision also includes main `f3cf41d4`, kernel
+v0.62. The repairs themselves amend no source-language rule. Paired source
+measurements use one rebuilt integrated compiler; earlier v0.61 compiler
+comparisons retain their own identities and conditions.
 
 The Box witness above is a naming event, not a new relation theorem. A repair
 must transfer the available measure facts through the placements MSR-3

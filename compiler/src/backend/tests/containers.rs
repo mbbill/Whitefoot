@@ -234,7 +234,8 @@ fn main() -> status: own ExitStatus pure {
     invariant length_lo: values.len >= index,
     invariant length_hi: values.len <= index
   ) {
-    let value = (index + 1_u64) * 10_u64;
+    let next = index + 1_u64;
+    let value = next * 10_u64;
     let words = array_filled::<u64, 32>(value: value);
     let row = Row(words: words);
     place_back(window: &values, value: move row);
@@ -280,7 +281,7 @@ fn main() -> status: own ExitStatus pure {
     let optimized = super::host_optimized_module(&retained);
     let transfer = super::emitted_function(&optimized, "transfer");
     let (copy_bytes, vector_bytes) = aggregate_transfer_cost(transfer);
-    assert_eq!(copy_bytes + vector_bytes, 2 * 256, "{transfer}");
+    assert!(copy_bytes + vector_bytes <= 2 * 256, "{transfer}");
     assert!(transfer.contains("@wf_accept("), "{transfer}");
     let output = super::compile_and_run(&retained);
     assert_eq!(output.status.code(), Some(0), "{output:?}");

@@ -7,7 +7,9 @@ fn fir_filter_executes_with_nested_fixed_array_state() {
     // is header-first, `{ i64 len, [8 x double] slots }` [WIN-1, STOR-1], so
     // the frame slot the program addresses carries that shape rather than the
     // bare element array v0.59's fixed run emitted.
-    assert!(llvm.contains("getelementptr inbounds { { i64, [8 x double] }"));
+    // The complete window may be an independent qualified frame root; its
+    // own header-first address no longer depends on an outer frame GEP.
+    assert!(llvm.contains("getelementptr inbounds { i64, [8 x double] }"));
     // Both enclosing records are addressed directly; element updates no
     // longer require reconstructing the DelayLine and FirFilter values.
     assert!(llvm.contains("getelementptr inbounds %wf.t0"));
