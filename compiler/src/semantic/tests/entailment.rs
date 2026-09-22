@@ -1966,9 +1966,11 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 match outcome.family {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
-                    // [EFF-5] a range separation submits its four orderings as
-                    // one occurrence and never carries a conjunct of its own.
-                    ObligationFamily::CallSeparation | ObligationFamily::ExchangeSeparation => {
+                    // Separation for a call, exchange or reference preservation
+                    // is one occurrence, without a conjunct of its own.
+                    ObligationFamily::CallSeparation
+                    | ObligationFamily::ExchangeSeparation
+                    | ObligationFamily::ReferencePreservation(_) => {
                         assert_eq!(outcome.conjunct, 0)
                     }
                     // [REF-4] the two formation goals `lo <= hi` and
@@ -1982,14 +1984,17 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 }
                 assert_eq!(outcome.derivation, Some(root.node));
                 assert!(!outcome.node_path.components().is_empty());
-                // [EFF-5] a range separation has no canonical goal or single
-                // normalized component; its retained wrapper names the exact
-                // pair and selected ordering. Another family may lack an L0
-                // component when its source operands have only the canonical
-                // goal plus an affine normalization. That root must conclude
+                // Call and reference-preservation separations have no canonical
+                // goal or single normalized component; their retained wrapper
+                // names the exact pair and selected ordering. Another family
+                // may lack an L0 component when its source operands have only
+                // the canonical goal plus an affine normalization. That root must conclude
                 // the exact retained positive goal (or the actual entering
                 // contradiction), rather than being accepted by shape alone.
-                if outcome.family == ObligationFamily::CallSeparation {
+                if matches!(
+                    outcome.family,
+                    ObligationFamily::CallSeparation | ObligationFamily::ReferencePreservation(_)
+                ) {
                     assert!(outcome.components.is_empty());
                     assert!(outcome.canonical_goal.is_none());
                     assert!(matches!(

@@ -52,7 +52,7 @@ impl IrBuilder<'_> {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         self.define(
-            element.ty(),
+            self.element_type(element)?,
             IrOperation::BufferIndex {
                 buffer,
                 offset,
@@ -82,7 +82,7 @@ impl IrBuilder<'_> {
         let address = self.project_address_path(base, &root.path)?;
         if self.value_type(address)?
             != IrType::Address(IrAddressed::Buffer {
-                element: lower_flat_element(self.erasure, root.element)?,
+                element: lower_element(self.erasure, root.element)?,
             })
         {
             return Err(LoweringFailure::InvalidCheckedProgram);

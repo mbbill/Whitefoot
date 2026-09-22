@@ -6,9 +6,9 @@
 //! judgment.
 
 use crate::semantic::{
-    CheckedBooleanOperation, CheckedElement, CheckedEnumType, CheckedFlatElement,
-    CheckedFloatOperation, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
-    CheckedNumericType, CheckedProgram, CheckedTargetDomainObligation, CheckedType,
+    CheckedBooleanOperation, CheckedElement, CheckedEnumType, CheckedFloatOperation,
+    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedNumericType,
+    CheckedProgram, CheckedTargetDomainObligation, CheckedType,
 };
 
 mod physical_types;
@@ -104,39 +104,10 @@ impl IrConstantId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum IrFlatElement {
-    Unit,
-    Bool,
-    Integer {
-        width: u8,
-        signed: bool,
-    },
-    Float {
-        width: u8,
-    },
-    TagOnlyNominal(IrNominalId),
-    /// One affine aggregate element: a non-copy nominal stored by value.
-    /// Only `buffer` element positions carry this variant [TYPE-2].
-    Nominal(IrNominalId),
-}
-
-impl IrFlatElement {
-    pub const fn ty(self) -> IrType {
-        match self {
-            Self::Unit => IrType::Unit,
-            Self::Bool => IrType::Bool,
-            Self::Integer { width, signed } => IrType::Integer { width, signed },
-            Self::Float { width } => IrType::Float { width },
-            Self::TagOnlyNominal(id) | Self::Nominal(id) => IrType::Nominal(id),
-        }
-    }
-}
-
 /// The complete type of an array or run element, interned in its program's type table.
 /// Structural nesting uses handles; only nominal edges can close a type graph.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct IrElement(u32);
+pub struct IrElement(pub(crate) u32);
 
 impl IrElement {
     pub(crate) const fn index(self) -> usize {
@@ -161,7 +132,7 @@ pub enum IrAddressed {
     },
     Nominal(IrNominalId),
     Buffer {
-        element: IrFlatElement,
+        element: IrElement,
     },
     /// Dense inline array storage reached through a checked borrow or target.
     Array {
@@ -263,7 +234,7 @@ pub enum IrType {
     /// the `Box` value is that pointer — and no value of this type is ever
     /// copied, passed, or stored.
     Buffer {
-        element: IrFlatElement,
+        element: IrElement,
     },
     /// One `&[T]` range reference [REF-4]: a pointer to the first element of
     /// the range and the element count, which is its one measure [MSR-1].
@@ -345,35 +316,6 @@ fn lower_element(
         .copied()
         .flatten()
         .ok_or(LoweringFailure::InvalidCheckedProgram)
-}
-
-fn lower_flat_element(
-    erasure: TypeLowering<'_>,
-    value: CheckedFlatElement,
-) -> Result<IrFlatElement, LoweringFailure> {
-    Ok(match value {
-        CheckedFlatElement::Unit => IrFlatElement::Unit,
-        CheckedFlatElement::Bool => IrFlatElement::Bool,
-        CheckedFlatElement::Integer(integer) => IrFlatElement::Integer {
-            width: integer.width(),
-            signed: integer.signed(),
-        },
-        CheckedFlatElement::Float(float) => IrFlatElement::Float {
-            width: float.width(),
-        },
-        // [FN-2] a symbolic element belongs to the pre-IR pass alone: every
-        // lowered instance is concrete.
-        CheckedFlatElement::GenericInt(_) | CheckedFlatElement::Generic(_) => {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        CheckedFlatElement::GenericFloat(_) => {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        CheckedFlatElement::TagOnlyNominal(id) => {
-            IrFlatElement::TagOnlyNominal(erased_nominal(erasure, id))
-        }
-        CheckedFlatElement::Nominal(id) => IrFlatElement::Nominal(erased_nominal(erasure, id)),
-    })
 }
 
 /// Whether a value of this type derives any release work at all [STOR-3].
@@ -491,7 +433,7 @@ fn lower_type(erasure: TypeLowering<'_>, value: CheckedType) -> Result<IrType, L
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?,
         },
         CheckedType::Buffer { element } => IrType::Buffer {
-            element: lower_flat_element(erasure, element)?,
+            element: lower_element(erasure, element)?,
         },
         CheckedType::Window {
             shape,
