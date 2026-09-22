@@ -12,7 +12,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   `set index = replacement`, lets the old goal survive. Repeating the guard
   makes its false branch contradictory to that stale goal, and an unproved
   `rows[index][0]` read is accepted and lowered there. A called witness with
-  row lengths one and zero, index zero and replacement one reaches that
+  row lengths one and zero, index zero and replacement one would reach that
   empty-row read; the same read without the stale guard is rejected by OP-4.
   This violates ENT-5's explicit offset support and can admit uninitialized
   reads. In
