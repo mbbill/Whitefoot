@@ -10,22 +10,30 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 - **Modular incremental checking and optimized code generation.** The compiler
   currently rechecks one source bundle and emits one LLVM module. The proposed
   [architecture](../research/investigations/modular-compilation/DESIGN.md)
-  targets one explicit `.wfm` descriptor per module, reusable source proofs and
+  targets one self-contained public `.wfm` interface per module, reusable source proofs and
   generic instances, dependency-tracked cross-module optimization, and ordinary
-  full final linking. The descriptor owns membership, namespaces, imports and
-  export selection; ordinary definitions remain the source of semantic APIs.
+  full final linking. Complete public declarations are checked against ordinary
+  implementations; implementation files share one namespace, with membership
+  and private dependencies supplied by explicit build selection.
   Its selected direction remains an amendment, not implemented capability.
-  Validate descriptor/qualified grammars, order-independent top-level formation,
-  generated-interface comparison and field access. Compare thin descriptors
-  against full public declarations on matched module collaboration tasks;
-  descriptor contention, API-reading accuracy and useful module sizes remain
-  unmeasured. The prior review's private-contract composition gap is unresolved:
+  Validate interface/qualified grammars, normalized declaration correspondence,
+  public semantic closure, order-independent top-level formation and checked
+  abstract nominal capabilities/representation. Qualify private build selection,
+  interface comparison and cross-file private calls without interface entries.
+  Public declaration duplication, build-selection contention and useful module
+  sizes remain unmeasured; measure matched collaboration tasks before claiming
+  benefits. A flat namespace may increase local naming collisions; reopen purely
+  naming groups for a cohesive module that cannot be organized clearly with
+  descriptive names. The prior private-contract composition gap is unresolved:
   accessor facts in a body cannot express a private requirement in a wrapper
   or function-kind formal while FN-8 forbids ordinary calls in contracts; await
   owner direction on the proposed checked proof-expression/abbreviation route.
+  Copying hidden paths into a public interface does not satisfy self-containment.
   Establish the component-proof composition argument, exercise graph edge
   deletion and SCC changes despite acyclic module imports, and qualify complete
-  LLVM planning/cache dependencies.
+  LLVM planning/cache dependencies. Compare one indivisible LLVM unit per module
+  with file-independent backend partitions, separating frontend/proof reuse from
+  LLVM/object rebuild cost, runtime quality, peak memory and final linking.
   Require cold/incremental agreement, no unchanged-body proof work on a no-op
   build, precise isolated-edit invalidation, and causal investigation of every
   repeatable runtime loss against matched optimized baselines. Fragment sizes,

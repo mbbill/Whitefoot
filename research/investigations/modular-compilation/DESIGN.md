@@ -88,276 +88,314 @@ to coincide.
 
 ### Selection criteria and alternatives
 
-The module declaration should give an agent one authoritative account of
-membership, direct dependencies and exported names. Ordinary implementation
-edits should stay within that module, and module size must not determine the
-incremental checking or LLVM partition size. These are required properties;
-a particular file extension, an optimal module size and improved multi-agent
-throughput are not established facts.
+The handwritten module interface must itself expose the complete public
+source contract. A client reads this module's `.wfm` and any explicitly
+referenced dependency interfaces, without looking through its implementation
+files or requiring a generated interface to discover missing declarations.
+Self-containment is relative to explicit interface imports, not duplication
+of every dependency's API into one file. Compiler inputs for layout,
+specialization and optimization are a separate concern.
 
-Before an authoring or performance trial, distinguish the candidates by:
-(1) whether adding a private definition can silently publish it; (2) where a
-reader must look to determine an exported name's origin and complete contract;
-(3) whether the same semantic declaration must be maintained twice; (4) which
-files independent changes touch; and (5) whether reorganizing unchanged source
-forces semantic work. Keep the same APIs, algorithms and proof obligations
-across candidates. No multi-agent trial or module benchmark has been run.
+This requirement selects full public declarations over the earlier thin
+export-list candidate. Checked repetition of a function declaration is an
+acceptable cost of an independently readable contract; minimizing repeated
+text does not meet the requirement by itself. Ordinary private implementation
+edits must not change the public interface file. Module size still does not
+select incremental checking or LLVM partition size.
 
 | Candidate | Benefit | Cost and disposition |
 |---|---|---|
-| Per-source module/import headers and `pub` declarations | Definition and visibility appear together | Refused for this proposal: the boundary is distributed across implementation files and can expand without editing a single module declaration |
-| Central export list plus per-definition `pub` | Two explicit visibility checks | Refused: two independently editable publication controls serve the same module boundary |
-| One `.wfm` descriptor naming sources, imports and exports; declarations remain in `.wf` | One boundary map and one source for each signature/contract | Proposed; `.wfm` alone does not contain the complete semantic API, so a generated interface view and comparison are necessary |
-| Full public declarations in `.wfm`, with implementations checked against them | Public contracts can be read and held fixed in one source file | Viable alternative, not an assumed-contract scheme; repeating headers creates consistency work, while body-only implementations need a new binding form and rules for public nominal representations |
-| Directory discovery and automatic export | Few written entries | Refused: adding or moving a file can change membership or public names without an explicit boundary edit |
+| Per-source module/import headers and `pub` declarations | Definition and visibility appear together | Refused: the public contract is spread across implementation files |
+| Thin export list plus generated complete interface | Each signature and contract is written once | Superseded: the handwritten file alone does not satisfy public-interface self-containment |
+| Complete public declarations in one `.wfm`, with checked ordinary implementations | A caller or agent can read and hold the written contract fixed independently of implementation | Selected; the compiler must enforce declaration correspondence and the implementation must prove the declared obligations |
+| Complete interface with body-only implementation bindings | Avoids repeated function headers | Not selected: ordinary complete definitions remain locally readable and avoid a second body-binding form; repeated declarations are mechanically checked |
+| Directory discovery and automatic export | Few written entries | Refused: adding a file or definition can change ownership or publication without an explicit selection |
 
-Clang module maps demonstrate separate membership descriptions [E8]; Java
-separates module dependence/export declarations from package organization
-[E9]. Their header discovery, transitive exports and multiple visibility
-controls are not adopted. Haskell illustrates a named export list [E10], and
-OCaml illustrates an explicitly checked interface/implementation pair [E11].
-Those are mechanisms to compare, not evidence that one is best for WF.
+OCaml's checked interface/implementation pair [E11] supports this mechanism;
+it does not establish WF's proof composition. Clang module maps [E8], Java
+module declarations [E9] and Haskell export lists [E10] remain useful
+comparators, but their existence does not make a name list a complete WF API.
+No collaboration or performance trial has been run. Before such a trial,
+hold APIs, algorithms and proof obligations fixed and record interface-reading
+errors, declaration-mismatch diagnostics, concurrent edits and coordination.
+These observations may improve tooling or layout; they do not override the
+selected requirement that the handwritten public contract stand on its own.
 
-Select the thin descriptor provisionally because its boundary map combines
-with WF's existing explicit declarations without duplicating their types,
-effects and proof clauses. A compiler-derived interface is already needed by
-incremental consumers. Reopen the full-declaration alternative if reading only
-the handwritten descriptor must expose the complete API, or matched agent
-trials show that derived-interface review fails to keep agreed contracts fixed.
-An unchanged descriptor must never be advertised as evidence of an unchanged API.
+### One complete public interface file
 
-### One module declaration file
+Each source module has exactly one `.wfm`. It owns the module name, public
+interface imports and complete public declarations. Every ordinary top-level
+declaration in that file belongs to the public API; there is no separate
+export list or implementation-side `pub` switch. Public function declarations
+include generic parameters and bounds, parameter/result labels and modes,
+types, capabilities, effects, and complete `requires`/`ensures` clauses.
+Public constants and interface/binding groups include their public definitions.
+Public concrete records and enums declare their externally visible schema
+there. No interface fragment, textual include, wildcard export or forwarding
+alias can fill in an omitted part from an implementation file.
 
-Each source module has exactly one declarative `.wfm` record. It owns the
-module name, source membership, namespace assignments, direct imports and the
-explicit export list. Its filename is a locator, not nominal identity; a build
-selects it explicitly. The `.wfm` extension makes the record's role visible to
-tools and readers, but is not claimed to improve optimization or proof strength.
+The interface filename is a locator, not nominal identity. The build
+explicitly selects the interface, its implementation records and dependency
+identities. Keep implementation file membership and implementation-only
+dependencies in the private build selection rather than the public API file:
+adding a helper file should not edit a caller's contract. This selection is a
+mapping to the module already declared by `.wfm`, not a second module
+declaration or publication control. Its concrete configuration spelling is
+not selected here; it must explicitly enumerate source records and dependency
+roots, without ambient directory discovery. A record has one source-module
+owner; different compiler/target instances do not create another ownership.
 
-The selected `.wf` records contain ordinary definitions. They cannot declare
-another module, add an import, export an item, or use a second `pub` mechanism.
-The descriptor names files explicitly; it has no includes, wildcard sources,
-directory scanning, executable build script or conditional export list. A
-selected source record has one owning descriptor and one namespace assignment;
-sharing a library uses a module dependency rather than compiling the same
-record as two different local owners. Compiler/target instances of that module
-do not change this source ownership.
+An interface import identifies an external module required to interpret that
+interface, never one of its own source files. Each root resolves to one build-
+selected dependency identity. Implementation-only dependencies are visible to
+implementation records, but cannot resolve an interface declaration. Public
+and private dependency bindings for the same root must agree; the build cannot
+inject public declarations or override interface imports. Version acquisition
+and package solving remain outside the language.
 
-Paths in the source list are resolved relative to the descriptor's source
-location into the build's explicit source-record selection. This locates
-bytes; it does not derive a namespace from a directory name. A build binding
-resolves each declared import to exactly one selected dependency identity and
-source or compiler-owned artifact. It cannot silently add sources, imports
-or exports to the descriptor. Package acquisition and dependency-version
-solving remain outside the language; ambient installations never choose meaning.
-
-Illustrative descriptor spelling, not an accepted grammar or complete library:
+Illustrative public-interface spelling, not an accepted grammar:
 
 ```text
-module collections;
-import memory;
+module counters;
 
-namespace vector {
-  source "vector.wf";
-  source "vector_growth.wf";
-  export type Vector;
-  export fn new;
-  export fn append;
-}
-
-namespace queue {
-  source "queue.wf";
-  export type Queue;
-  export fn new;
-}
+fn advance(value: own u64) -> next: own u64 pure contract {
+  requires value < 18446744073709551615_u64;
+  ensures next == value + 1_u64;
+};
 ```
 
-There is no body, function signature or proof axiom in an export entry. It
-selects an existing local declaration of the stated kind. Missing targets,
-duplicate exports and a selected kind that does not match the declaration
-are errors at that entry, with the defining source cited where applicable.
-Exporting a namespace wholesale, renaming an export, and forwarding another
-module's exports are not selected. Their potential consumer is a stable facade
-over independently changing modules; reopen explicit forwarding for such a
-consumer rather than adding a chain of public aliases without one. A facade
-over files in one module already uses its own explicit export list.
+An ordinary implementation in one selected `.wf` repeats that function's
+declaration and supplies its body. Other selected files may define private
+helpers without mentioning them in `.wfm`. There are no per-file module,
+import, export or namespace declarations.
 
-### Namespaces and declaration formation
+Interface formation can check names, types and contract well-formedness
+without implementation bodies. That does not prove an implementation exists
+or satisfies the interface. Lowering and accepted composition still require
+current checked implementations and the existing recursive summary rules.
+An interface file is neither a theorem assumption nor an object-code promise.
 
-A namespace is a path inside a module, not another module, visibility boundary,
-dependency owner, build task or LLVM partition. Descriptor namespace groups
-assign their source records; the files do not repeat namespace declarations.
-Several files may contribute to the same namespace. Different modules cannot
-extend one another's namespaces. Exported children make their path prefixes
-addressable without a second namespace-level visibility switch.
+### Checked interface and implementation correspondence
 
-Within its namespace, a source may use ordinary unqualified local names.
-Other namespaces are selected by an explicit path rooted in the current
-module; imported names use their explicit dependency root. For example,
-`collections::vector::append` identifies a declaration in the selected
-`collections` module. Module roots and namespace path components have
-unambiguous ownership; an import binding cannot compete with a local path
-root. There is no wildcard import, implicit transitive import, alias search
-or type-directed overload selection. The build can select dependency versions
-under distinct explicit roots, and nominal identity includes that selection,
-the namespace and declaration, not just a printed path or filename.
+Resolve the public declarations first, then collect the complete local
+implementation inventory. A public function definition binds to the
+interface's stable identity; it does not introduce a second function or
+overload. Exactly one selected definition must implement each required public
+callable, subject to the existing compiler-owned native binding rules. Missing,
+duplicate and mismatched implementations reject at the related declarations.
+An unlisted ordinary function is private even when another source file uses it.
 
-Collect all top-level declaration identities before resolving headers and
-bodies. Top-level functions, nominals, constants and interface/binding groups
-are visible throughout their namespace independent of file or item ordering;
-qualified references to other local namespaces follow the same rule. This
-deliberately replaces TYPE-6's lexical visibility of non-function top-level
-declarations and CONST-2's earlier-declaration requirement. Merely sorting a
-file list or moving a definition to another file in the same namespace must
-not change its meaning.
+Require equality of the normalized declaration: generic arity/kinds and bounds,
+named-call labels, parameter/result modes and types, capabilities, effect row
+and contract clauses. Normalization follows the specified deterministic rules;
+it may identify permitted bound-variable renamings while retaining every
+caller-visible name. It is not arbitrary logical equivalence or a solver for
+whether one contract refines another. The body is checked against this same
+declaration. A stronger local fact does not silently enlarge the public
+postcondition; a different public contract requires an explicit interface edit.
+Internal calls to a public function use the matched contract and normal
+summary availability, not a second private strengthening.
 
-Availability of a name does not establish a well-formed value or type.
-Const dependencies and binding-group expansion remain acyclic; finite generic
-recursion and finite target layout retain their ordinary rules, including
-recursion through indirection when those rules admit it. There is no new
-recursive value equation or fixed-point assumption. Parameters, generic
-binders, fields, contract definitions and body-local bindings keep their
-existing owner-local and lexical scope rules. Existing reservation,
-collision and no-shadowing judgments still apply in their selected domains.
-New top-level names can therefore invalidate prior failed lookups or scope
-checks; those dependencies must be recorded.
+Public concrete type, constant and group definitions in `.wfm` are directly
+available to implementations. They need not be redeclared in every `.wf`,
+and must not acquire a fresh nominal identity there. Representation-hiding
+nominal interfaces require an explicit public capability description and a
+checked match to the implementation representation. The exact nominal
+correspondence judgment and its logical vocabulary remain required language
+design work; the existing `opaque` modifier is not repurposed, since it
+already restricts construction even in its declaring scope.
 
-Qualification must reach every affected grammar role together: types,
-constructors, callees, function arguments, interface/binding groups, named
-constants, match variants, enum payload projections, destructuring and
-postcondition result routes. Fixed operation-table names and numeric bounds
-do not gain module-dependent lookup. The existing `::` before a function's
-generic arguments remains; qualified-name productions must be factored and
-checked by the specification's strong-LL(2) generator. This selects the naming
-rule, not an untested complete EBNF patch.
+### One module namespace and declaration formation
 
-The build selects a module/namespace-qualified entry through PROG-3's ordinary
-boundary. `program no_heap;` belongs to the selected root descriptor. It
-constrains the complete selected dependency
-closure, including concrete instances and linked prelude definitions; moving
-an allocation into a library does not hide it.
+All implementation files form one module namespace and one local declaration
+inventory. A helper defined in one file can be used by another, including
+mutual function recursion, without an interface entry, import or export.
+File boundaries are locations for authorship and diagnostics, not privacy,
+name-resolution or source linking boundaries. The public interface selects
+which of these identities external modules may use; it does not mediate
+internal references.
 
-### Visibility, representation and proof paths
+For this candidate, the module itself supplies the namespace. Separate nested
+namespace syntax is deferred until a concrete naming consumer needs it; files
+do not implicitly create one. This replaces the previous descriptor-assigned
+namespace groups. A flat module can have more spelling collisions, and
+internal code sees all module-private declarations. Neither cost should be
+hidden by claiming that files provide encapsulation. Reopen purely naming
+groups if descriptive local names cease to serve a cohesive module, without
+turning those groups into imports or compilation boundaries.
 
-Top-level declarations and struct fields are module-private unless selected
-by the descriptor. A field export names a field of an exported local struct;
-it does not redeclare its type, make it writable, or override `readonly`.
-All source-level field access is governed by this one selection, with no
-per-field `pub` annotation in the implementation.
-Public type positions, including callable types, public fields, enum payloads,
-generic bounds and groups, must have a public naming closure. A public struct does not grant access to private fields. Its constructor
-and whole destructuring are available externally only when all required fields
-are public and the existing `opaque` rule permits them. Ordinary non-opaque
-construction remains available inside the module. `opaque` keeps its existing
-meaning even in its declaring module; it is not redefined as privacy. A public
-enum exports its complete variant and payload schema so ordinary exhaustive
-matching remains available. Partially hidden enums are not introduced here.
+Local uses resolve against the full inventory; dependency uses have an
+explicit module root such as `counters::advance`. Module roots and local
+names have unambiguous ownership. There is no wildcard import, implicit
+transitive import, overload search or cross-module namespace extension.
+Selected dependency identity and local declaration identity determine a
+nominal, not its filename or printed module path alone. Re-exports and export
+renaming remain unselected; a stable facade over independently changing
+modules is the concrete consumer that would reopen that choice.
 
-A dependency's public nominal used in an exported signature retains its
-defining-module identity. A consumer that needs to spell that type imports its
-defining module explicitly; the descriptor does not forward it automatically.
-Composition checks that the selected identity matches. The extra direct
-dependency is a real cost of omitting facade re-exports, not an invisible import.
+Collect all top-level names before resolving definitions. Functions, nominals,
+constants and interface/binding groups are visible independently of file/item
+order. This changes TYPE-6's lexical visibility of non-function top-level
+declarations and CONST-2's earlier-declaration requirement. Name availability
+does not establish a valid value, type or proof: constant dependencies and
+group expansion remain acyclic, and finite instantiation and finite layout
+retain their actual rules, including admitted recursion through indirection.
+Parameters, fields, generic binders, contract definitions and local bindings
+keep their owner-local/lexical scope. Existing reserved-name, collision and
+no-shadowing rules remain; new globals can invalidate lookup or scope checks.
 
-Privacy controls source access, not information available to the compiler.
-Compiler interfaces retain private layout and release descriptions needed for
-by-value representation, generic checking, cleanup and optimization. No forced
-pointer indirection, exported destructor call, stable public layout or runtime
-dictionary follows from privacy. Dropping still requires the ordinary release
-capability; private linear fields cannot be discarded through an external
-destructor-shaped escape.
+Qualification must reach types, constructors, callees, function arguments,
+binding groups, constants, match variants, projections, destructuring and
+postcondition routes together. Fixed operation-table names and numeric bounds
+do not gain dependency lookup. Existing `::` generic-call syntax requires
+factoring with qualified names in the strong-LL(2) grammar; this document does
+not claim that the complete productions have been checked.
 
-A contract written in a module may name that module's private field paths.
-They remain in its generated semantic interface with ordinary types and stable
-identities. A caller cannot write an otherwise-private selection, but the
-checker can substitute and transport the published relation through the same
-CALL rules. A public `length` function can publish its result equal to a private
-window's length; a caller's branch on that result can then discharge another
-exported function's requirement over the same length. No new fact constructor
-or unchecked abstraction axiom is introduced.
+The build selects a module-qualified entry. The selected root interface owns
+`program no_heap;`, which constrains the entire selected dependency closure,
+including implementation-only dependencies, concrete instances and prelude
+definitions. Moving an allocation into a private dependency cannot hide it.
 
-This gives access encapsulation without promising representation-independent
-proof interfaces. Changing a private projection named by an exported contract
-changes that semantic interface and can require client reproof. A private
-layout change read only by code generation invalidates layout consumers.
-Representation-independent logical views are a separate language capability
-needing their own proof and performance grounds. This proposal exposes the
-actual dependency and does not prevent that extension.
+### Public semantic closure, representation and proof paths
 
-The independent review of `00daff760cf420136ed600ebdc6125aa49a0d841`
-identified a remaining contract-composition gap: FN-8 forbids ordinary calls
-inside `requires` and `ensures`, so an external wrapper or function-kind
-formal cannot restate a private-field requirement by calling that accessor.
-Receiving the relation in a body does not make it expressible in a new
-declaration. A centralized descriptor or generated interface does not fix
-this. Publicly composable checked proof expressions or contract abbreviations
-remain a pending owner-direction question; this revision records the finding
-without selecting or implementing that extension. This is an expressiveness
-gap, not evidence that every caller must pay runtime overhead.
+A public declaration must be understandable using its interface, explicit
+dependency interfaces and the ordinary language/prelude rules. Its type,
+effect and proof expressions cannot name an implementation-only helper,
+constant, group or private representation path. This is stronger than making
+a generated interface carry private field identities behind a reader's back.
+Private implementation contracts may still use private projections normally.
 
-### One written interface, several generated projections
+Public concrete records expose their declared schema; construction,
+destructuring, `readonly`, ownership and release retain their ordinary rules.
+Public enums expose all variants and payloads needed for exhaustive matching.
+An abstract public nominal can hide representation only after its caller-
+visible capabilities and any usable logical observations have been declared
+and checked against that representation. Declaring an abstract name alone
+does not grant layout, copying, dropping or proof capabilities.
 
-The descriptor is the authority for membership and visibility; each selected
-WF declaration is the sole source of its types, effects and proof clauses.
-These responsibilities do not overlap. Generate interface projections from
-both rather than maintaining a second copy of a declaration. Resolve module
-interfaces in import order and collect each module's local declaration
-identities before resolving its definitions. A collected signature is not a
-verified postcondition and grants no lowering authority.
+The earlier independent review identified a contract-composition gap: under
+FN-8, a client cannot call an ordinary accessor inside `requires`/`ensures`,
+and source privacy prevents restating a private-field condition. Complete
+public declarations make this gap explicit; copying the old private path into
+`.wfm` would not satisfy semantic closure. The current GrowVector contracts
+therefore still need a public representation or a separately designed checked
+logical vocabulary before serving as an abstract module API. Public proof
+projections/contract abbreviations remain an unresolved owner-direction
+question. This revision does not select a remedy or claim the P2 is closed.
+
+Self-containment concerns the source API, not all compiler information.
+Compiler-owned artifacts retain checked implementation evidence, generic
+bodies and private layout/release descriptions for specialization, by-value
+representation and optimization. A client author need not read those bodies.
+Source privacy creates no mandatory boxing, dynamic dispatch, runtime checks
+or destructor escape. A layout change may invalidate code generation even
+when the written interface is unchanged; dependency interface changes can
+also alter resolved API meaning without editing this module's `.wfm`.
+Composition validates those actual identities and inputs.
+
+### Public interface and generated compiler projections
+
+The handwritten interface is the public contract's authority. Resolved
+interface data, checked implementations and the selected build inputs
+generate distinct projections:
 
 | Projection | Content | Readers |
 |---|---|---|
-| Name surface | Exported identities, kinds, visibility and signatures | Lookup and declaration formation |
-| Semantic boundary | Modes/types, capabilities, effect paths, normalized requires/ensures, constants and bounds | Source checking and proofs |
-| Verification evidence | Checked implementation identity, obligations, derivations and proof dependencies | Composition and audit |
-| Generic template | Resolved body, symbolic check and explicit parameters | Concrete instantiation |
+| Name surface | Public declaration identities, kinds and signatures | External lookup and declaration formation |
+| Semantic boundary | Modes/types, capabilities, effects, normalized contracts, constants and bounds | Source checking and proofs |
+| Verification evidence | Matched interface, checked implementation, obligations, derivations and proof dependencies | Composition and audit |
+| Generic template | Resolved implementation body, symbolic check and explicit parameters | Concrete instantiation |
 | Physical description | Target layout, ABI, release shape and target obligations | Lowering and code generation |
-| Optimization description | Checked IR, call edges, allocation facts, proven target facts, cost/profile summaries | Planning and body import |
+| Optimization description | Checked IR, call edges, justified facts and cost/profile summaries | Planning and body import |
 
-One artifact can hold these sections with lazy access and independent keys.
-These are not six public file formats or six checking paths. The format is
-compiler-version-private; cache compatibility is not a language guarantee.
+An internal inventory additionally contains private definitions and their
+contracts. Public and internal views reference the same declaration identities
+rather than serializing an interface and reading it back to call a local helper.
+One compiler-private artifact may contain these lazily loaded sections; these
+are not six public formats or a promise of cache compatibility across versions.
 
-### Module collaboration and interface review
+A generated interface renderer/comparison remains useful for resolved dependency
+identities, normalized contracts and ABI differences. It supplements the
+complete handwritten API rather than supplying its missing clauses. Compare
+the same metadata that incremental checking consumes; use conservative
+structural comparison, not a semantic equivalence oracle or checked-in API
+lockfile. Changing only an implementation header to strengthen a requirement
+now fails correspondence instead of silently changing the exported API.
 
-A module is a useful default responsibility boundary for agent work. An agent
-changing an implementation reads its descriptor and the current generated
-interface of each dependency; it need not load those dependencies' bodies
-unless the task concerns them. This does not establish an optimal module size,
-limit how many agents may work on one module, or make a module an atomic
-compiler scheduling unit. Cohesive contracts and independent changes are
-better splitting criteria than a fixed line or file count.
+### Module collaboration and incremental ownership
 
-The compiler must render a read-only interface view and compare two selected
-revisions using the same resolved metadata that incremental checking consumes.
-The comparison includes exported identities, callable types, capabilities,
-effects, normalized requirements/postconditions and visible type descriptions.
-It is conservative structural comparison under WF's existing identities, not
-an equivalence theorem prover. Physical ABI/layout changes are reported
-separately where relevant. This view is generated output, not a checked-in
-lockfile, second handwritten header, stable exchange format or proof authority.
+An implementation task can hold the public `.wfm` fixed while changing several
+files in the module's shared namespace. Public signature changes edit both
+interface and corresponding function definition; private helper/file changes
+do not edit the public interface. File selection and implementation dependency
+changes still touch private build configuration, where concurrent edits can
+conflict. Neither duplication checks nor a flat namespace proves improved
+multi-agent throughput. Cohesive contracts and independent changes remain
+better module boundaries than a fixed file/line count or an exclusive agent lock.
 
-For example, changing `grow_vector_append` from a requirement `len < ceiling`
-to `len + 1 < ceiling` leaves an export-name list unchanged but changes its
-semantic interface. Conversely, adding a private helper to an existing file
-need not change either interface. A collaboration task that requires a fixed
-API compares against its selected starting revision; the language does not
-forbid deliberate API changes or add a repository approval rule.
+Cache interface declarations, implementation declarations, correspondence,
+body checks and lookup results separately. Adding a private file checks its
+definitions and affected lookup/scope consumers, not all module bodies.
+Reordering selected files changes no semantic identity. Moving a definition
+between files in the same module preserves its semantic identity and proof
+dependencies; source maps and debug-information consumers may still change.
+Never key every body or object by the entire `.wfm` or build-file digest.
 
-Ordinary body edits touch `.wf` only. Adding/removing a file, changing a
-dependency or changing exported names touches `.wfm` intentionally. Parallel
-file additions can still conflict in that descriptor; grouping source/export
-entries by namespace limits the overlap but does not prove better collaboration
-throughput. The requirement for one declaration file rules out descriptor
-fragments and includes. Measure contention before choosing a different layout.
+## Compilation units and file boundaries
 
-The descriptor's projections are separately cached. Adding a private file
-checks its new definitions and affected lookup/scope consumers, not every
-function in the module. Reordering source entries changes no semantic identity.
-Moving a declaration between files while preserving its module, namespace and
-meaning updates source maps without intrinsically requiring reproof. Renaming
-its namespace does change its qualified identity. Never put the entire `.wfm`
-digest into every body-check or object key.
+One source module is one logical compilation unit: it has one public interface,
+one private declaration inventory, and a checked composition of all selected
+definitions. Several implementation files are inputs to that unit. No file
+needs its own exported header, object identity, source import or native link
+step just to call a helper in another file.
+
+This does not choose the units of compiler computation:
+
+| Boundary | Selected responsibility |
+|---|---|
+| Source file | Storage, editing, parsing and source coordinates |
+| WF module | Public API, shared internal namespace, privacy and implementation ownership |
+| Checking query / proof component | Reuse of declarations, correspondence, body judgments and recursive proof publication |
+| LLVM optimization region | Bodies that need joint optimization under the chosen policy |
+| Cached backend unit / native object | Machine-code reuse and final native-link input |
+
+Merging the parsed declarations into one inventory is name resolution, not
+linking separate source files. The compiler can cache a helper's checked body
+while resolving all files against that inventory. Repeated declarations in the
+public interface and definition are compared once per affected identity;
+private helpers never need public interface entries. This is compatible with
+fine-grained parsing, checking, proof and lowered-IR reuse.
+
+An indivisible LLVM module per WF module is a different, viable backend choice.
+It gives LLVM direct visibility of all local bodies and usually produces one
+native object without internal backend partition references. Unchanged modules
+can reuse that result; a changed module can still reuse WF frontend queries.
+With the ordinary LLVM pipeline, however, changed bitcode generally causes
+that backend unit's optimization and object generation to run again. Retaining
+parsed ASTs or unoptimized function IR does not make those LLVM stages
+incremental. One object per module also does not remove final cross-module
+linking or the need for cross-module optimization.
+
+The selected endpoint therefore makes the WF module a logical unit without
+requiring one permanent LLVM module or object. Compiler-owned backend units
+may contain functions from several source files, and an optimization region
+may cross WF modules. No source filename determines that partition. Native
+references between different backend objects are resolved by the permitted
+final link; this proposal does not pretend those references disappear. They
+require no writer-facing file interfaces or stable file ABI, and do not by
+themselves require a dynamic call or runtime indirection. Inlining availability,
+code layout and construction costs still depend on the actual optimization
+plan and must be measured.
+
+This distinction is supported by the separation of source organization and
+codegen partitioning in E2, and summary/import/backend stages in E3. Neither
+source proves the selected WF policy fastest. A single LLVM unit remains a
+comparison and may be a measured joint region where useful; fixing every WF
+module to that indivisible unit is not selected, since it limits backend reuse
+without being necessary for the requested internal source semantics. If the
+requirement becomes literally no inter-object references inside a WF module,
+state the resulting whole-unit LLVM rebuild cost explicitly, or demonstrate
+a different incremental LLVM backend; do not claim both from a cache flag.
 
 ## Persistent computation and identity
 
@@ -368,8 +406,9 @@ These families name responsibilities, not a proposed public Rust API:
 
 | Query | Relevant inputs | Reusable output |
 |---|---|---|
-| Source formation | Descriptor/source bytes, grammar/spec identity | Tokens, canonical trees, source maps |
-| Module surface / lookup | Descriptor projections, namespace inventories, selected imports, lookup role and spelling | Stable declaration or diagnostic |
+| Source formation | Interface/source bytes, explicit build selection, grammar/spec identity | Tokens, canonical trees, source maps |
+| Module surface / lookup | Public and private inventories, selected dependency roots, lookup role and spelling | Stable declaration or diagnostic |
+| Interface correspondence | Resolved public declaration and selected implementation declaration | Matching identity and checked normalized declaration, or diagnostic |
 | Contract / type shape | Resolved declaration, arguments, capabilities and projections | Normalized semantic boundary |
 | Template check | Symbolic body, bounds, callee boundaries and summary availability | Symbolic checked body |
 | Concrete body check | Body, complete substitution and semantic query results | Typed body, ownership/effects and obligations |
@@ -395,7 +434,7 @@ unprofitable inline candidate can become relevant. Do not place the hash of
 every imported module's entire source in every consumer key.
 
 Separate stable identity from revision. Declaration identity uses selected
-module identity, namespace path, domain and name; item-local node identities plus the current
+module identity, declaration domain and name; item-local node identities plus the current
 source map recover diagnostic locations. Concrete instances add the complete
 normalized type, const and function argument vector. Dense FunctionId/NominalId
 values and whole-program NodePaths can remain in-memory indices, never
@@ -469,11 +508,11 @@ proof-replay acceptance path.
 
 ### Keep module, call and proof graphs distinct
 
-The selected descriptor import graph is acyclic. A module owns an explicit
-external dependence direction, while multiple files and namespaces can form
-one cooperating implementation. If two proposed modules require each other's
-declarations, either combine them under one descriptor while retaining their
-namespaces, extract a common dependency, or express the reverse behavior
+The selected module dependency graph is acyclic, including interface imports
+and implementation-only dependencies. A module owns an explicit external
+dependence direction, while multiple files form one cooperating implementation.
+If two proposed modules require each other's declarations, either combine
+them in one module, extract a common dependency, or express the reverse behavior
 through an ordinary function-kind contract when that fits the API. None of
 these choices requires dynamic dispatch. The source graph restriction must
 not turn a combined module into one indivisible checking or LLVM unit.
@@ -482,18 +521,18 @@ This revises the earlier candidate permitting arbitrary module cycles. That
 candidate is technically compatible with incremental compilation; a cycle
 does not imply rebuilding all its bodies. It needs joint interface formation,
 and preserves distinct module privacy boundaries within the cycle. The new
-choice prefers explicit directed module boundaries now that namespaces carry
-internal organization. Its cost is a constraint on decomposition: combining
+choice prefers explicit directed module boundaries while source files organize
+one shared internal namespace. Its cost is a constraint on decomposition: combining
 modules also combines their module-private access domain, and extracting a
 common interface may change the public API. Reopen this choice if a concrete
-consumer needs distinct cyclic privacy/distribution boundaries that namespace
-organization and an ordinary interface cannot preserve satisfactorily.
+consumer needs distinct cyclic privacy/distribution boundaries that a shared
+module and ordinary interfaces cannot preserve satisfactorily.
 
 An acyclic module graph does not make actual calls acyclic. Functions inside
 a module may recurse, and binding a function-kind parameter can create
 cross-module concrete call cycles without a reverse source import. Use the
 actual template/binding graph for FN-6 and the concrete call graph for FN-9;
-a proof component need not coincide with a module or a namespace. Header
+a proof component need not coincide with a module. Header
 formation still checks constant/group dependency cycles, finite nominal
 instantiation and finite layout. Name availability is not evidence for those
 judgments.
@@ -719,11 +758,12 @@ or LLVM optimization of unchanged units.
 |---|---|---|
 | Whole-program checking followed by LLVM splitting | Small backend change | Refused: every edit still repeats frontend/proof work |
 | Whole-module timestamp/object cache | Simple scheduling | Refused: coarse invalidation; timestamps are not exact semantic inputs |
+| One indivisible LLVM module/object per WF module | Direct local optimization visibility and no internal backend-object references | Viable comparison, not a language guarantee or the selected incremental endpoint; frontend reuse survives but LLVM work is generally module-grained |
 | Independent native objects with permanently opaque bodies | Easy code generation | Refused: source boundaries unnecessarily restrict specialization/inlining |
 | Full LTO after every edit | Broad implementation visibility | Quality comparator, not the persistent incremental architecture |
 | ThinLTO flag alone | Parallel backends and object cache | Insufficient: supplies neither WF proof reuse nor persistent WF optimization planning |
 | Handwritten interfaces accepted as facts | Easy isolated checking | Refused: contracts require verified implementation evidence |
-| Cyclic module imports with joint interface formation | Retains separate module boundaries in a cyclic decomposition | Technically viable, superseded provisionally by an acyclic descriptor graph plus internal namespaces; reopen for a concrete cyclic-boundary consumer |
+| Cyclic module dependencies with joint interface formation | Retains separate module boundaries in a cyclic decomposition | Technically viable, superseded provisionally by an acyclic graph including private dependencies and shared module interiors; reopen for a concrete cyclic-boundary consumer |
 | Portable proof/object certificates and new verifier | Untrusted distribution | Not selected: version-private results under the existing compiler trust boundary serve this consumer |
 | Fast unoptimized incremental path plus optimized full rebuild | Easy performance split | Refused: optimized incremental compilation is itself required |
 | Dependency-tracked checking, specialization and optimization; ordinary final link | Independent reuse with implementation visibility | Proposed; correctness, cost and runtime quality require the evidence below |
@@ -748,31 +788,33 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 
 | Owner | Before | Proposed change |
 |---|---|---|
-| PROG-1/2/3 | One ordered bundle, no modules, unqualified entry | Closed acyclic descriptor graph; explicit member records and namespaces; qualified ordinary entry and composition |
-| FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Separate descriptor/source formation, canonical export selectors, namespace-qualified roles and current source/descriptor coordinates |
-| TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Namespace-qualified identities; all top-level names available independent of file/item order; constant/group dependency cycles still reject; local binder scope stays lexical |
+| PROG-1/2/3 | One ordered bundle, no modules, unqualified entry | Closed acyclic module graph including private dependencies; explicit build-selected records; qualified entry and checked composition |
+| FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Separate complete interface/source forms, module-qualified names and diagnostics joining declarations and definitions |
+| TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | One namespace per module; order-independent top-level names; constant/group dependency validity and lexical local scope retained |
+| Public declaration correspondence / type representation | No separate interface or public/private source boundary | Self-contained public semantic declarations, exact normalized callable correspondence, one nominal identity, and checked abstract representation/capability correspondence |
 | Type/ownership/release consumers | Descriptions in one inventory | Same judgments over imported descriptions; privacy grants no storage or release exemption |
 | FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities | Same instance and SCC rules across modules, with current cached claims and availability |
 | DIAG-2 | One exact-program value owns/discards all evidence | Checked component fragments and assembled receipt; failed composition grants no authority, unrelated valid entries survive |
 | STOR-6/8, EFF-3, PAR-1/2 | Whole-program target/allocation/parallel metadata | Same rules over complete tracked layout, allocation and call-summary dependencies |
 | PRE-1 / native binding | Compiler-owned declarations and linked bodies | Bind selected prelude, runtime and target identity into composition/codegen inputs |
 
-The candidate places module, import, namespace, source and export forms in
-the descriptor grammar, omits implementation-side `pub`, and reuses `::` for
-qualified source names. The examples do not specify a complete descriptor
-grammar or field-export spelling. Exact META-5 token, production and rule
-deltas require both complete grammars and the judgment patch with strong-LL(2)
-checks. This architecture document does not invent a count before that work.
+The candidate places module/interface-import forms and complete public
+declarations in `.wfm`, omits implementation-side `pub` and nested namespaces,
+and reuses `::` for qualified names. Source membership and private dependency
+bindings belong to explicit build selection. Exact declaration terminators,
+abstract nominal/capability syntax, normalized correspondence rules and build
+selection syntax remain to be specified. META-5 deltas require the complete
+grammars and judgments with strong-LL(2) checks; no count is invented here.
 
 | Current implementation owner | Required structural change |
 |---|---|
-| `source.rs`, syntax/canonical rendering | Descriptor-selected records/namespaces, separate grammar roots, stable item identity and source maps |
-| `resolution/engine*` | Complete namespace inventories, dependency-based declaration formation, explicit export selection and positive/negative lookup dependencies |
+| `source.rs`, syntax/canonical rendering | Explicit build-selected records, interface/source grammar roots, stable item identity and source maps |
+| `resolution/engine*` | Shared module inventories, interface-only public closure, exact declaration correspondence and positive/negative lookup dependencies |
 | `semantic/check.rs`, `check/generics*` | Query-owned body/instance checking and reusable owned results instead of whole-unit borrow chains |
 | `semantic/entailment*`, `postcondition.rs` | Stable claims, retained derivations, current SCC availability and composition |
 | `semantic/model.rs`, allocation/permission consumers | Stable identities and tracked fixed-point/target dependencies |
 | `lowering*`, `backend/emitter*` | Owned IR fragments, external declarations, helper ownership and reusable plans |
-| `driver.rs`, `bin/whitefootc.rs` | Descriptor loading, generated interface view/comparison, persistent scheduling, backend tasks, cached runtime objects and ordinary final linking |
+| `driver.rs`, `bin/whitefootc.rs` | Interface/build selection, supplementary interface comparison, persistent scheduling, file-independent backend tasks, cached runtime objects and ordinary final linking |
 | Diagnostics, stack/parallel ledgers, conformance adapter | Current locations, composition-wide reports and one cold/incremental checker entry |
 
 Do not retain the old whole-program checker as a second semantic path.
@@ -822,47 +864,61 @@ and expose limits; they are not measurements of WF or proofs of this design.
   wildcard forwarding from that system.
 - **E9 — [Java module declarations](https://docs.oracle.com/javase/specs/jls/se25/html/jls-7.html#jls-7.7).**
   A dedicated declaration centralizes module dependencies and package exports.
-  Java also checks public access on declarations; WF's proposed single export
-  selection deliberately does not reproduce both publication controls.
+  Java also checks public access on declarations; WF instead puts its full
+  public declarations in the one interface without a second publication switch.
 - **E10 — [Haskell export lists](https://www.haskell.org/onlinereport/haskell2010/haskellch5.html).**
   An export list selects declared/imported entities without duplicating their
-  definitions. WF's candidate selects local entities only and has no omitted
-  list meaning export-all or module-wide re-export.
+  definitions. This is a comparator for the superseded thin-list candidate,
+  not the selected self-contained handwritten interface.
 - **E11 — [OCaml interface checking](https://ocaml.org/docs/compiler-frontend).**
   Explicit interfaces are checked against implementations. This supports the
-  full-declaration alternative as a legitimate checked design, not as an
-  inherently unverified boundary. Its WF authoring costs remain unmeasured.
+  selected full-declaration mechanism as a legitimate checked design, not as
+  an inherently unverified boundary. WF's contract and nominal correspondence
+  rules still need specification and evidence.
 
 ## Discriminating validation criteria
 
 These criteria precede any experiment for selecting this design. No performance
 measurements have been made for this proposal.
 
-### Descriptor and collaboration qualification
+### Interface, module and collaboration qualification
 
-Compare the thin descriptor against full public declarations using the same
-GrowVector interface and consumers, plus a larger existing application split
-into several namespaces. Preserve contracts rather than simplifying them to
-make a candidate easier to author. Record interface-reading mistakes, repeated
-declaration edits, semantic API changes missed by review, descriptor conflicts
-and cross-module coordination; do not infer optimal module size or agent
-capability from one trial. No such observations are yet available.
+Verify that a caller can determine every public signature, capability, effect
+and proof clause from the handwritten interface and explicit dependency
+interfaces, without implementation browsing or generated missing clauses.
+Use ordinary complete declarations, including generic/function-kind APIs.
+Preserve GrowVector's actual proof requirements when evaluating an abstract
+interface; its unresolved logical-vocabulary gap is not permission to weaken
+the library contract. Record declaration-edit costs, reading errors, interface
+and private build-selection conflicts and cross-module coordination before
+claiming collaboration benefits. No such trial has been performed.
 
-Require negative witnesses for duplicate ownership, missing exports, export
-kind mismatch, undeclared dependencies, inaccessible fields and module import
-cycles. Verify that the generated interface reports a changed requirement or
-effect when the export list is unchanged, and does not publish a new private
-helper. Exercise explicit field selection, a dependency type in a public
-signature, and diagnostics spanning a descriptor entry and its definition.
+Require negative witnesses for absent/duplicate implementations, mismatched
+labels, modes, bounds, effects or contracts, public references to private
+definitions, conflicting dependency roots and cycles involving private
+dependencies. Changing only an implementation requirement must diagnose a
+correspondence failure. Interface-only declaration checking must not authorize
+lowering without a checked implementation. A private helper in one file must
+be usable from another without a public declaration or per-file import.
 
-Permute source-list and independent top-level item order without changing
-meaning; preserve local declaration-before-use and reject constant/group
-cycles and invalid recursive layouts under their actual rules. Move a function
-between files in the same namespace, add a private file, change one export,
-and compare query counts and current-source diagnostics. A whole-descriptor
-fingerprint invalidating all bodies fails the precision criterion. The known
-private-contract wrapper/formal gap remains a separate acceptance question;
-neither candidate descriptor layout answers it by itself.
+Permute source-list and top-level item order; preserve local lexical scope
+and reject constant/group cycles and invalid recursive layouts by their actual
+rules. Move a function between files, add a private file, and change one public
+declaration with its implementation. Compare checking, correspondence and
+backend query counts plus current-source diagnostics. A whole-interface or
+build-file fingerprint invalidating all bodies fails precision. Verify public
+concrete type identity is shared with implementation uses, then separately
+qualify abstract representation/capability correspondence and public logical
+expressions before claiming a representation-hiding API.
+
+Compare an indivisible LLVM module per WF module with compiler-owned backend
+partitions on the same source and optimization policy. Count frontend/proof
+reuse separately from LLVM work: retaining source judgments while regenerating
+a whole module object is not fine-grained backend reuse. Record object counts,
+link cost, peak memory and missed inlining/layout opportunities. File moves
+must not define new semantic compilation boundaries; debug-info updates may
+still require output changes. Runtime quality and required edit precision,
+not the number of object files alone, select the backend grouping.
 
 ### Correctness and dependency precision
 
@@ -890,9 +946,9 @@ must be rebuilt. Invalidating every importer solely because a whole module's
 source hash changed fails the precision criterion.
 
 Cross-module privacy also needs executable/negative witnesses: private source
-field selection rejects, exported accessor contracts transport their private
-projection facts, and field construction/destructuring cannot bypass linear
-release or existing opacity. Cache eviction and an unrelated failed module
+field selection and hidden paths in public declarations reject, interface
+capabilities must match checked representations, and construction/destructuring
+cannot bypass linear release or existing opacity. Cache eviction and an unrelated failed module
 never grant authority to an unverified component. Keep normative cold conformance
 execution and targeted incremental edit sequences distinct; do not replace
 conformance execution with shared cached test verdicts.
@@ -930,9 +986,10 @@ remote cache service, new theorem language and incremental native linker do
 not have a requirement here and are not selected.
 
 The pending tree revision replaces the language root's closed-single-unit
-decision with an acyclic selected descriptor graph, replaces name-resolution's
-global inventory and top-level order dependence with descriptor-owned namespace
-inventories and explicit exports, clarifies the compiler root's artifact
+decision with an acyclic selected module graph including private dependencies,
+replaces name-resolution's global inventory and top-level order dependence with
+one shared namespace per module and complete checked public interfaces,
+clarifies the compiler root's artifact
 boundary, and adds one compiler child
 for persistent incremental computation. The constitution's safety and
 performance priorities, fixed deterministic proof families, generic
@@ -943,15 +1000,16 @@ verification contexts cannot share proofs merely because IDs are stable.
 
 Four uncertainties are implementation acceptance work, not weaker endpoints:
 
-- Verify both descriptor/source grammars, order-independent top-level formation,
-  public/private construction rules, generated-interface comparison and exact
-  specification deltas. Compare authoring alternatives under the stated
-  criteria before claiming an advantage for multi-agent work.
+- Verify interface/source grammars, exact declaration correspondence, public
+  semantic closure, abstract representation/capability matching, order-independent
+  formation and exact specification deltas. Qualify explicit build selection
+  and interface comparison; measure collaboration before claiming an advantage.
 - Establish a compositional soundness argument for claim rebinding and
   component receipts, including cycle edits, deletion and failed-build cases;
   differential edit-sequence tests alone do not prove soundness.
 - Qualify complete LLVM planning dependencies and choose fragment/optimization
-  region granularity using measured runtime quality and edit costs.
+  region granularity using measured runtime quality and edit costs, including
+  the single-LLVM-module comparison without conflating frontend and backend reuse.
 - Demonstrate useful cold and warm costs on real module consumers. Start with
   the existing GrowVector library/caller separation, then modularize the
   existing wfgrep and SHA-256 programs without changing algorithms, and add a
@@ -962,5 +1020,5 @@ The maintained TODO links these unresolved capabilities and criteria. This
 design review can judge the architecture and its stated limits; it cannot
 certify an unimplemented incremental checker or claim unmeasured performance.
 The prior review's private-contract composition finding remains unresolved;
-the descriptor refinement neither supplies a logical-view mechanism nor
+the complete-interface refinement neither supplies a logical-view mechanism nor
 treats that finding as closed.
