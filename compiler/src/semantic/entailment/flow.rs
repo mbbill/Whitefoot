@@ -29,12 +29,12 @@ use super::super::model::expression_children;
 use super::super::model::{
     BindingId, CheckedAffineExpression, CheckedAffineExpressionKind, CheckedAffineRelation,
     CheckedArrayRoot, CheckedBooleanOperation, CheckedConst, CheckedConstructor,
-    CheckedContainerRoot, CheckedDrop, CheckedEnumType, CheckedExpression, CheckedFloatOperation,
+    CheckedContainerRoot, CheckedEnumType, CheckedExpression, CheckedFloatOperation,
     CheckedFunction, CheckedIntegerOperation, CheckedLoopId, CheckedLoopInvariant, CheckedMatchArm,
     CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedPlaceStep,
-    CheckedProofMultiplicity, CheckedProofUseSource, CheckedRangeSource, CheckedReleaseMode,
-    CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType,
-    MeasureCell, MeasuredKind, ValueInitializerKind,
+    CheckedProofMultiplicity, CheckedProofUseSource, CheckedRangeSource, CheckedSetTarget,
+    CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType, MeasureCell, MeasuredKind,
+    ValueInitializerKind,
 };
 use super::super::permission::{PermissionSeparationProof, PermissionSeparationQuery};
 use super::super::places::{
@@ -325,6 +325,10 @@ struct ProofClosure {
     term_revision: usize,
     goal_revision: usize,
     state: Rc<ClosedState>,
+    /// The ordered L0-to-affine index of this same entering value map. The
+    /// premise loop borrows that map immutably for the view's entire life.
+    /// Registering a term or changing goal metadata invalidates both views.
+    affine_index: std::cell::RefCell<Option<Rc<AffineL0Index>>>,
 }
 
 impl ProofClosure {
@@ -338,11 +342,18 @@ impl ProofClosure {
             term_revision: terms.revision(),
             goal_revision: goals.revision(),
             state: close(facts, terms, goals, ledger),
+            affine_index: std::cell::RefCell::new(None),
         }
     }
 
     fn matches(&self, terms: &TermTable, goals: &GoalTable) -> bool {
         self.term_revision == terms.revision() && self.goal_revision == goals.revision()
+    }
+
+    fn affine_index(&self, terms: &TermTable, goals: &GoalTable) -> Option<Rc<AffineL0Index>> {
+        self.matches(terms, goals)
+            .then(|| self.affine_index.borrow().as_ref().map(Rc::clone))
+            .flatten()
     }
 }
 
@@ -564,7 +575,7 @@ struct AffineL0Entry {
 #[derive(Default)]
 struct AffineL0Index {
     entries: Vec<AffineL0Entry>,
-    by_terms: HashMap<Box<[AffineCoefficient]>, usize>,
+    by_terms: WordHashMap<Box<[AffineCoefficient]>, usize>,
 }
 
 impl AffineL0Index {
@@ -7078,96 +7089,6 @@ impl Analyzer<'_, '_> {
             .all(|outcome| outcome.discharged)
     }
 
-    /// [PROV-6, ENT-6] proves every empty-run release before the edge removes
-    /// the released binding from the fact state. Full release records carry
-    /// no proof obligation here.
-    fn judge_release_drops(&mut self, drops: &[CheckedDrop], states: &ProofFlowState) {
-        for drop in drops {
-            if drop.release != CheckedReleaseMode::EmptyRun {
-                continue;
-            }
-            self.judge_empty_run_release(
-                drop.binding,
-                &drop.fields,
-                drop.ty,
-                drop.source_edge.clone(),
-                states,
-            );
-        }
-    }
-
-    fn judge_empty_run_release(
-        &mut self,
-        binding: BindingId,
-        fields: &[u32],
-        ty: CheckedType,
-        node_path: crate::NodePath,
-        states: &ProofFlowState,
-    ) {
-        let Some(measured) = ty.measured() else {
-            return;
-        };
-        let place = ResolvedPlace::spelled(
-            PlaceRoot::Binding(binding),
-            self.is_holder(binding),
-            fields.to_vec(),
-        );
-        let length = self.place_measure_term(CheckedMeasure::Length, place.clone(), measured, None);
-        let request = BoundsRequest {
-            left: Some(length),
-            right: ZERO,
-            bound: 0,
-            distinct: false,
-        };
-        let length_affine = self.measure_atom(length, &states.affine);
-        let zero_affine = AffineForm::constant(0);
-        let direct_affine = AffineInequality::from_bounded_forms(
-            &length_affine,
-            &zero_affine,
-            0,
-            &mut AffineCheckState::new(),
-        )
-        .ok();
-        let proof = self.prove(
-            ProofContext::new(&states.facts, &states.affine),
-            ProofGoal::BoundedRelation(BoundedRelationGoal {
-                canonical: None,
-                request: Some(request),
-                direct_affine: direct_affine.as_ref(),
-                fixed_affine_bridge: None,
-                affine_left: None,
-            }),
-        );
-        let discharged = proof.disposition == ProofDisposition::Proved;
-        let refuted = proof.disposition == ProofDisposition::Refuted;
-        let contradictory = proof.route == Some(ProofRoute::Contradiction);
-        let derivation = proof.derivation;
-        let residual = (!discharged).then(|| format!("{}.len <= 0_u64", self.render_place(&place)));
-        let ordinal = u32::try_from(self.obligations.len())
-            .expect("ENT obligation-root ordinal exceeds the u32 identity space");
-        if let Some(root) = derivation {
-            self.derivations
-                .add_root(DerivationRootKind::EmptyRunRelease(ordinal), root);
-        }
-        self.obligations.push(ObligationOutcome {
-            node_path,
-            family: ObligationFamily::EmptyRunRelease,
-            conjunct: 0,
-            canonical_goal: None,
-            components: vec![request],
-            discharged,
-            refuted,
-            contradictory,
-            residual,
-            overlap_targets: None,
-            derivation,
-            allocation_length_upper_bound: None,
-            allocation_length_upper_bound_derivation: None,
-            affine_index_maps: Vec::new(),
-            range_partitions: Vec::new(),
-        });
-    }
-
     fn judge_expression(
         &mut self,
         expression: &CheckedExpression,
@@ -12355,15 +12276,6 @@ impl Analyzer<'_, '_> {
     }
 
     fn walk_block(&mut self, statements: &[CheckedStatement], state: &mut ProofFlowState) -> bool {
-        self.walk_block_with_releases(statements, &[], state)
-    }
-
-    fn walk_block_with_releases(
-        &mut self,
-        statements: &[CheckedStatement],
-        fallthrough_drops: &[CheckedDrop],
-        state: &mut ProofFlowState,
-    ) -> bool {
         self.scopes.push(Vec::new());
         let mut continues = true;
         for statement in statements {
@@ -12374,7 +12286,6 @@ impl Analyzer<'_, '_> {
         }
         if continues {
             let depth = self.scopes.len() - 1;
-            self.judge_release_drops(fallthrough_drops, state);
             self.exit_scopes_to(state, depth);
         }
         self.scopes.pop();
@@ -14229,7 +14140,24 @@ impl Analyzer<'_, '_> {
         let mut check = AffineCheckState::new();
         let candidates = self.affine_l0_candidates(values);
         let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
-        let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
+        // Every relation-form use in a certificate sees the same entering
+        // facts and value images. Its target and residual still run through
+        // all ordinary rules; only the unchanged ordered query index is
+        // shared. Candidate formation precedes the revision check because it
+        // may register a previously unseen term.
+        let l0 = context
+            .closed
+            .and_then(|view| view.affine_index(&self.terms, &self.goals))
+            .unwrap_or_else(|| {
+                let index = Rc::new(self.affine_l0_index(&candidates, &closed, &mut check));
+                if let Some(view) = context
+                    .closed
+                    .filter(|view| view.matches(&self.terms, &self.goals))
+                {
+                    *view.affine_index.borrow_mut() = Some(Rc::clone(&index));
+                }
+                index
+            });
         let mut query = AffineDirectQuery::new(&l0, values, &closed);
         if let Ok(Some(parents)) = self.affine_residual_proof(target, &mut query, &mut check) {
             return Some(AffineConsequenceProof {
@@ -14973,7 +14901,6 @@ impl Analyzer<'_, '_> {
                 binding,
                 scrutinee,
                 ok_type,
-                error_drops,
                 ..
             } => {
                 // The Err edge leaves the function; the normal continuation
@@ -14981,10 +14908,6 @@ impl Analyzer<'_, '_> {
                 // call's own kill events, and the binder gains no fact
                 // [ENT-5].
                 let _ = self.expression_effects(scrutinee, state);
-                // The Err projection leaves the function after this common
-                // evaluation point; its derived releases must be provable on
-                // that edge even though the Ok continuation remains here.
-                self.judge_release_drops(error_drops, state);
                 self.declare(*binding);
                 if self.affine_binding_type(*binding).is_some()
                     && let Some(value) = self.affine_unknown_integer(*ok_type)
@@ -15265,7 +15188,7 @@ impl Analyzer<'_, '_> {
             CheckedStatement::Return {
                 node_path,
                 value,
-                drops,
+                drops: _,
             } => {
                 let affine_result = self.affine_pure_expression_form(value, &mut state.affine);
                 // [FN-9] the relation is queried "immediately before return
@@ -15301,16 +15224,14 @@ impl Analyzer<'_, '_> {
                     judgment.reached,
                 );
                 self.apply_kills(state, &events);
-                self.judge_release_drops(drops, state);
                 false
             }
             CheckedStatement::Give {
                 node_path,
                 value,
-                drops,
+                drops: _,
             } => {
                 let judgment = self.expression_effects(value, state);
-                self.judge_release_drops(drops, state);
                 if let Some((scope_depth, loop_depth, kind, binding, result_type)) =
                     self.gives.last().map(|frame| {
                         (
@@ -15355,8 +15276,7 @@ impl Analyzer<'_, '_> {
                 }
                 false
             }
-            CheckedStatement::Break { target, drops } => {
-                self.judge_release_drops(drops, state);
+            CheckedStatement::Break { target, drops: _ } => {
                 if let Some(position) = self.loops.iter().rposition(|frame| frame.id == *target) {
                     let depth = self.loops[position].scope_depth;
                     let mut exit = state.clone();
@@ -15466,7 +15386,7 @@ impl Analyzer<'_, '_> {
                 id,
                 invariants,
                 body,
-                backedge_drops,
+                backedge_drops: _,
                 carried_references: _,
             } => {
                 for invariant in invariants {
@@ -15503,8 +15423,7 @@ impl Analyzer<'_, '_> {
                     breaks: Vec::new(),
                 });
                 let mut body_state = state.clone();
-                let body_falls_through =
-                    self.walk_block_with_releases(body, backedge_drops, &mut body_state);
+                let body_falls_through = self.walk_block(body, &mut body_state);
 
                 let mut step = vec![None; invariants.len()];
                 if body_falls_through {
@@ -15544,7 +15463,7 @@ impl Analyzer<'_, '_> {
                 upper,
                 invariants,
                 body,
-                backedge_drops,
+                backedge_drops: _,
                 carried_references: _,
             } => {
                 let occurrence = self.encountered_counted;
@@ -15682,8 +15601,7 @@ impl Analyzer<'_, '_> {
                     body_event,
                 );
                 self.retain_counted_derivations(occurrence, counted);
-                let body_falls_through =
-                    self.walk_block_with_releases(body, backedge_drops, &mut body_state);
+                let body_falls_through = self.walk_block(body, &mut body_state);
 
                 let mut step = vec![None; invariants.len()];
                 let mut hidden_update = !body_falls_through;
@@ -15953,7 +15871,6 @@ impl Analyzer<'_, '_> {
         }
         if continues {
             let depth = self.scopes.len() - 1;
-            self.judge_release_drops(&arm.fallthrough_drops, &state);
             self.exit_scopes_to(&mut state, depth);
         }
         self.scopes.pop();
@@ -17162,6 +17079,8 @@ mod proof_closure_tests {
         let goals = GoalTable::default();
         let mut ledger = DerivationLedger::default();
         let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        let index = Rc::new(AffineL0Index::default());
+        closed.affine_index.replace(Some(Rc::clone(&index)));
         let context = ProofContext {
             facts: &facts,
             affine: &affine,
@@ -17171,6 +17090,10 @@ mod proof_closure_tests {
             let view = context.close(&terms, &goals, &mut ledger);
             assert!(Rc::ptr_eq(&view, &closed.state));
             assert!(view.derives_bound(ZERO, ZERO, 0));
+            assert!(Rc::ptr_eq(
+                &closed.affine_index(&terms, &goals).unwrap(),
+                &index
+            ));
         }
     }
 
@@ -17182,6 +17105,7 @@ mod proof_closure_tests {
         let goals = GoalTable::default();
         let mut ledger = DerivationLedger::default();
         let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        closed.affine_index.replace(Some(Rc::default()));
         let term = terms.intern(TermKind::Measure(
             CheckedMeasure::Length,
             ResolvedPlace::spelled(PlaceRoot::Binding(BindingId(0)), false, Vec::new()),
@@ -17191,15 +17115,18 @@ mod proof_closure_tests {
             affine: &affine,
             closed: Some(&closed),
         };
+        assert!(closed.affine_index(&terms, &goals).is_none());
         assert!(!Rc::ptr_eq(
             &context.close(&terms, &goals, &mut ledger),
             &closed.state
         ));
 
         let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        closed.affine_index.replace(Some(Rc::default()));
         let count = terms.ids().count();
         terms.set_measure_bound(term, MeasureBound::Constant(7));
         assert_eq!(count, terms.ids().count());
+        assert!(closed.affine_index(&terms, &goals).is_none());
         let context = ProofContext {
             facts: &facts,
             affine: &affine,
@@ -17221,6 +17148,7 @@ mod proof_closure_tests {
         let expression = GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Bool(true)));
         let goal = goals.intern(expression.clone(), None, None, Vec::new());
         let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        closed.affine_index.replace(Some(Rc::default()));
         let count = goals.ids().count();
         let same = goals.intern(
             expression,
@@ -17234,6 +17162,7 @@ mod proof_closure_tests {
         );
         assert_eq!(goal, same);
         assert_eq!(count, goals.ids().count());
+        assert!(closed.affine_index(&terms, &goals).is_none());
         let context = ProofContext {
             facts: &facts,
             affine: &affine,

@@ -1,5 +1,10 @@
 # Container architecture reassessment
 
+The current framework assessment is [Containers over x1](X1-LIBRARY.md), which
+uses PR #70's decided language. The selection below retains its original
+September 2026 semantics and measurements; its provider and region interfaces
+are not requirements of that newer framework.
+
 This is the container architecture selection from the independent workload,
 critical-case, and semantic reviews of 2026-09-06, their executable experiments,
 and adversarial cross-review, supplemented by the pinned external workload traces.

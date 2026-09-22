@@ -65,6 +65,7 @@ pub(in crate::semantic::check) struct CheckedBufferPlace {
     declaration: DeclarationId,
     element_type: CheckedType,
     resolved: ResolvedPlaceSet,
+    offsets: CarriedOperands,
 }
 
 #[derive(Clone)]
@@ -143,6 +144,23 @@ impl CheckedIndexedPlace {
     /// Mutable array owners use the same typed storage path as run slots.
     /// Keep constant arrays on their immutable-global read path.
     fn into_element_storage(self) -> Result<Self, CheckStop> {
+        if let Self::Buffer(buffer) = self {
+            let CheckedBufferRoot {
+                binding,
+                path,
+                element,
+            } = buffer.root;
+            return Ok(Self::Container(CheckedContainerPlace {
+                root: CheckedContainerRoot {
+                    root: PlaceRoot::Binding(binding),
+                    path,
+                    ty: CheckedType::Buffer { element },
+                },
+                resolved: buffer.resolved,
+                declaration: Some(buffer.declaration),
+                offsets: buffer.offsets,
+            }));
+        }
         let Self::Array(array) = self else {
             return Ok(self);
         };
@@ -198,12 +216,15 @@ impl CheckedIndexedPlace {
             Self::Array(array) => Ok(array.element_type),
             Self::Buffer(buffer) => Ok(buffer.element_type),
             Self::Range(range) => Ok(range.element_type),
-            Self::Container(container) => checker.element_type(
-                container
-                    .root
-                    .element()
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-            ),
+            Self::Container(container) => match container.root.ty {
+                CheckedType::Buffer { element } => Ok(element.ty()),
+                _ => checker.element_type(
+                    container
+                        .root
+                        .element()
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                ),
+            },
         }
     }
 }
@@ -1600,9 +1621,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                     self.element_type(element)?
                 }
-                CheckedType::Buffer { .. } => {
-                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, suffix);
-                }
+                CheckedType::Buffer { element } => element.ty(),
                 _ => {
                     return self.issue_node(
                         SemanticRule::Op4,
@@ -1797,6 +1816,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration: place.declaration,
                     element_type: element.ty(),
                     resolved: place.resolved,
+                    offsets,
                 }))
             }
             // [OP-4] the indexable bases, reached through `deref` exactly as
@@ -2043,6 +2063,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration,
                     element_type: element.ty(),
                     resolved: ResolvedPlaceSet::one(resolved),
+                    offsets,
                 }))
             }
             // [TYPE-7] a `Box` is not a reference, so no implicit read and no

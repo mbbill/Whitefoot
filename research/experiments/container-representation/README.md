@@ -6,6 +6,10 @@ before production implementation or migration. The design question belongs to
 reproducible source probes, finite checker model, native controls, and measurements.
 Its parts answer different questions:
 
+- `x1/`: explicit post-PR-70 source probes separating ordinary vacancy
+  exchange, ordered drain and copy-element spans from specified interface
+  limits; results and reproduction are in `x1/RESULTS.md`.
+
 - `dense/`: executable Whitefoot construction/update probes, helper boundaries,
   and native controls for aggregate versus final-destination storage; source
   capability and machine cost are reported separately.
@@ -50,13 +54,16 @@ such as C++, Rust, and Go; that external study is not part of this bundle.
 From the repository root:
 
 ```sh
-make -C research/experiments/container-representation check
-make -C research/experiments/container-representation measure
+perl .github/run-check.pl container-research-check make -C research/experiments/container-representation check
+perl .github/run-check.pl container-research-measure make -C research/experiments/container-representation measure
 ```
 
-`check` is maintained by the root `research-tests` target. It builds the current
-compiler, checks the finite models, validates the expected current source outcomes,
-and verifies native comparisons. `measure` also records timing samples and retains
+These are explicitly invoked research targets, never dependencies of daily CI
+or canonical `make check`. Historical sub-experiments retain their recorded
+language conditions; their sources and verdicts are not an x1 capability claim.
+The focused x1 entry is `make -C research/experiments/container-representation x1-observe`,
+run under the shared guard as `x1/RESULTS.md` describes.
+`measure` also records timing samples and retains
 the foundation probe's producer boundary for generated-storage inspection;
 timing is descriptive evidence, not a host-speed-dependent acceptance threshold.
 The C harnesses in `dense/` and `families/` include `native.mk` to link the

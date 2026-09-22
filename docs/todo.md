@@ -1,7 +1,11 @@
-# Known compiler defects and open costs
+# Defects and follow-up work
 
-Defects, capability gaps, and unresolved costs of the current compiler. None
-of them is a decision. Remove an item when its fix and test land.
+Known defects, capability gaps, unresolved costs, and improvement opportunities
+found during design or implementation, including unverified ones. An unverified
+opportunity is a validation task: state its expected benefit, uncertainty, and
+criterion for deciding whether to pursue it. Entries do not select a design.
+Remove an item when its implementation and checks land, or its validation
+concludes with a recorded disposition; retain any selected follow-up work here.
 
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
@@ -77,15 +81,6 @@ of them is a decision. Remove an item when its fix and test land.
   aggregates, logical window order, and content-before-Box-free order. Close
   this item when a general implementation and native regressions establish
   those properties, or a different resource tradeoff is selected explicitly.
-- **Retired implicit empty-window release leaves unused proof scaffolding.**
-  No source operation constructs the checked `EmptyRun` release mode, but its
-  release-graph branch, obligation family and derivation plumbing remain.
-  This is maintenance debt, not a promise to restore implicit dropping of
-  linear windows. Remove the unused paths when next changing cleanup or its
-  proof inventory, retaining `free_empty` and its active OP-14 requirement
-  diagnostic; the similarly named diagnostic is not the retired mechanism.
-  The current semantic fixes take precedence over this deletion. Close the
-  item with the normal release and explicit-empty-release regressions intact.
 - **Box/window representation costs remain unqualified.** The current runtime-
   capacity Box is one pointer to one header-first allocation; `grow` uses
   allocation, memmove and free. A one-word owner, one allocation and header
@@ -99,15 +94,21 @@ of them is a decision. Remove an item when its fix and test land.
   `records` failure nor proves that any one general layout choice caused it.
   Keep the deferred general representation study separate, and close this item
   only when the relevant costs and chosen tradeoffs have discriminating evidence.
-- **Runtime-capacity Array element suffixes retain a flat-buffer limitation.**
-  A valid field selection such as `values.inner[i].field` on a
-  `Box<Array<CopyStruct>>` can still reach `CompositeValues` instead of the
-  general storage-place path. The checker resolves the suffix before reporting
-  this capability gap; it is not a source-language rejection. Whole-element
-  reads into a copy local and whole-element replacements avoid this path,
-  while range-reference element suffixes already use the general path. Unify
-  the remaining flat-buffer projections with it and cover field reads, writes,
-  and borrows before removing this item.
+- **Descendant references retain precision opportunities.** A write through a
+  widened range can discard its previously established length facts, and
+  independent cursors within one descendant cover cannot use suffix spelling
+  alone to establish separation. The
+  [cursor investigation](../research/investigations/wildcard-path/DESIGN.md)
+  records these limits and the current checking-cost qualification. Preserving
+  unaffected extent facts or proving a relation between independently selected
+  targets could reduce repeated bound proofs and admit more range-edit programs;
+  the benefit and a sound representation remain unverified. Defer this work
+  because the maintained list/tree/cursor program needs neither extension.
+  Reopen when a concrete program needs that precision. Validate the proposed
+  gain with positive editing cases, ancestor/window/stale-capture negative
+  controls and the investigation's checking-cost criterion; do not equate
+  targets merely because their covers agree. Close this item when the gain is
+  implemented and qualified or the measured tradeoff supports declining it.
 - **Pair-scoped parallel proofs need scaling and coverage work.** The current
   PAR-1 planner constructs questions for every ordered source pair in a segment
   and retains range separation only for that pair's first-statement state;
@@ -121,27 +122,28 @@ of them is a decision. Remove an item when its fix and test land.
   nonadjacent and stale-capture negative controls.
 
 - **Large entering proof contexts still have substantial checking cost.**
-  In the [pinned row-summary comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#row-summary-selection-2026-09-15),
-  256 independent inequality pairs with 256 uses still take a median 5.50 s;
-  the same context with only three uses takes 0.626 s. Query-preparation reuse
-  and conservative closure-product pruning remove repeated and non-improving
-  work, but complete matrix/index construction and long-target AUTO traversal
+  In the [post-x1 comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection),
+  256 independent inequality pairs with 256 uses still take a median 2.337 s;
+  the same context with only three uses takes 0.264 s. Reusing the ordered
+  affine index within a certificate removes repeated premise preparation,
+  but complete matrix/index construction and long-target AUTO traversal
   remain. This is not certificate-length cost alone: a fixed three-pair
-  context admits all 4096 uses in 295 ms. Larger growing contexts remain
-  unmeasured; these results establish neither linear total cost nor a
-  universal cost for the full use ceiling.
+  context admits all 4096 uses in 377 ms. The 512-pair context was accepted
+  in exploratory runs; these results establish neither linear total cost
+  nor a universal cost for the full use ceiling.
   Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
 - **Ordinary-fallback views still copy a fact state per materialization.**
-  After [incremental closure](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#selection),
-  the [retained-proof follow-up](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#retained-proof-follow-up-results)
-  checks `tests/programs/fixed_run_library.wf` in 1.21 s and
-  `tests/programs/wfgrep.wf` in 0.94 s. The previously attributed largest
-  fixed-run cost is `materialize_closure_at` in
+  The [current comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection)
+  checks `tests/programs/fixed_run_library.wf` in 134 ms and
+  `tests/programs/wfgrep.wf` in 834 ms. In `materialize_closure_at` in
   [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs):
   whenever a selected proof depends on a postcondition call, it clones the
   state, removes the call-dependent candidates and closes that view again.
-  Kill-time edge insertion and derivation interning for recreated cells are
-  the next costs.
+  A [query-only ordinary projection](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#ordinary-fallback-attribution-and-candidate)
+  passed the transition checks but improved fixed-run only 1.03x and left
+  wfgrep unchanged, so it was not retained. Revisit the representation when
+  a current workload attributes a substantial share to this path. Kill-time
+  edge insertion and derivation interning for recreated cells also remain.
 - **Connection-level concurrency is not supplied by ordinary source order.**
   A loop that accepts and serves connections in source order
   completes the current handler before entering the next, so a handler waiting
@@ -180,50 +182,17 @@ Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
 - **Sparse containers over must-consume linear elements need ownership-visible
-  slot state.** The behavior-map growth witness previously wrote
-  `formal Key<K: linear, ...>` while replacing `progress.held` and disposing
-  the returned `Slot<K>`. That depended on a compiler defect which failed to
-  apply PROV-6 to a symbolic linear bound. The current checker correctly
-  rejects `dispose previous_held`: a numeric phase does not prove that the
-  returned enum is `Vacant`, and an `Occupied` value contains a `K` that must
-  be consumed. The maintained witness is narrowed to `K: affine`, which still
-  covers its scalar and store-branded owning instances. Investigate a state
-  encoding or checked variant-state relation that lets rehash move every
-  must-consume key without an impossible cleanup branch; do not add a discard
-  behavior merely to satisfy the checker.
-
-- **Local region introduction and explicit region blocks.** Revisit whether
-  an ordinary function body should introduce a local region, and which
-  borrows need a writer-spelled `region` block. In the
-  [buffer checksum case](../tests/conformance/cases/x-buffer-mutable-checksum-run.wf),
-  a region encloses allocation and the `place_back` calls that fill the vector.
-  The temporary loans already end at their statement boundaries under OWN-6;
-  their region's formation and storage-validity extent is a different matter
-  under OWN-3 and OWN-10. Compare explicit blocks, function-body regions and
-  implicit regions for non-escaping temporaries without conflating those two
-  boundaries. Cover locals declared partway through a body, bound holders,
-  surviving views, returned borrows, loops and control headers; preserve
-  storage validity and exclusivity with deterministic checking. The owner
-  requested this investigation during PR #30 review; no alternative is selected.
-  Defer bulk cleanup of the repeated per-call region wrappers in migrated
-  tests until this question is settled, preserving each case's intended
-  behavior or rejection reason when the selected spelling is applied.
-- **Last-use endpoints for ordinary borrow holders.** Investigate ending a
-  `let`-bound shared or unique borrow after its last required use instead of
-  retaining it to region-block exit under [OWN-4]. Keep loan liveness separate
-  from region selection and type validity: this need not introduce inference
-  of region arguments from expected result types or later uses. Shared
-  `Slice` values already have last-use endpoints under [OWN-5]/[VIEW-1] in the
-  [current specification](../spec/kernel-spec.md). Cover reference copies,
-  returned borrows, surviving child loans and unique-parent suspension,
-  branches, loops, and statement-scoped temporaries. Compare the current
-  lexical endpoints with deterministic, terminating last-use analysis while
-  preserving storage validity, exclusivity, and signature-only call checking.
-  No change to the ordinary borrow rules is selected.
-- **A view-valued match or if.** [OWN-5] rejects a `match` or `if` expression
-  whose value is a view, rather than joining the arms' origin sets, which the
-  origin machinery could represent. If the join can be admitted it should be;
-  until then the rejection stands without a recorded reason.
+  slot state.** The maintained
+  [owning-map witness](../tests/programs/containers/owning-behavior.wf)
+  uses `interface Key<K: drop, E>`, so it covers copyable and droppable keys,
+  including Box owners, but excludes keys with a must-consume obligation.
+  An unconstrained `K` also admits those linear values under OWN-1 and
+  PROV-6. A numeric phase alone cannot prove that a returned enum slot is
+  vacant; an occupied variant still contains a key that must be consumed.
+  Investigate an ordinary state encoding or checked variant-state relation
+  that lets rehash move every must-consume key without an impossible cleanup
+  branch. Retain occupancy as program data, and do not add an implicit
+  discard merely to satisfy the checker.
 - **The automatic-fact menu is a leftover.** [ENT-3] admits a narrow and
   asymmetric set of arithmetic idioms as automatic facts, each added for one
   proof pattern, with no general criterion and no counterpart for rows it
