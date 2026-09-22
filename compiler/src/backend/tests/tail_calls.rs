@@ -1,7 +1,9 @@
 //! Implementation obligations beyond the source-level FN-10 corpus verdicts.
 
 use super::system::with_mutated_ir_lowering;
-use super::{build_executable, compile_rejection, emitted_function, test_directory};
+use super::{
+    build_executable, compile, compile_and_run, compile_rejection, emitted_function, test_directory,
+};
 use crate::{IrNominalKind, IrTerminator, IrType, OverlapLowering, emit_llvm};
 
 #[test]
@@ -143,7 +145,9 @@ fn ineligible_unmarked_calls_keep_their_ordinary_lowering() {
                     .into_string();
                 let body = emitted_function(&module, caller);
                 assert!(
-                    body.contains(&format!("call void @wf_{callee}(")),
+                    body.lines()
+                        .any(|line| line.contains("call ")
+                            && line.contains(&format!("@wf_{callee}("))),
                     "the ineligible transfer must remain a call: {body}"
                 );
             });
@@ -156,4 +160,41 @@ fn automatic_tail_selection_cannot_discharge_an_ordinary_requirement() {
     let source = include_str!("../../../../tests/conformance/cases/fn10-neg-requires.wf")
         .replace("musttail ", "");
     assert_eq!(compile_rejection(source.as_bytes()).rule_id(), Some("FN-8"));
+}
+
+#[test]
+fn one_function_can_mix_tail_transfers_with_calls_retaining_local_storage() {
+    let module = compile(
+        br#"fn walk(n: own u64, value: &u64) -> result: own u64 reads(value) {
+  if n == 0_u64 {
+    return deref(value);
+  }
+  let next = n - 1_u64;
+  if n == 2_u64 {
+    let local = deref(value) +wrap 1_u64;
+    return walk(n: next, value: &local);
+  }
+  return walk(n: next, value: value);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let value = 10_u64;
+  let seen = walk(n: 100002_u64, value: &value);
+  if seen != 11_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    let body = emitted_function(&module, "walk");
+    assert_eq!(body.matches("@wf_walk(").count(), 2, "{body}");
+    assert!(
+        body.contains("phi "),
+        "the safe edge must become a backedge"
+    );
+    let output = compile_and_run(&module);
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
 }
