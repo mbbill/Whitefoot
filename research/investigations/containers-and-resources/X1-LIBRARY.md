@@ -760,3 +760,67 @@ choices, including the measured large-record benefit alongside the repeatable
 costs stay in `docs/todo.md`; the selection claims neither uniform improvement
 nor native parity. Measurements compare both source algorithms through the
 same integrated compiler and keep the historical compiler comparisons separate.
+
+## Slab and Deque trial over v0.63
+
+The next comparison uses merged `3a969235`, kernel v0.63. Box descendant
+placement and the selected Vector consumption repair are available; the
+remaining Vector timing costs retain their explicit reopening conditions.
+The next end-to-end question is whether stable-slot reuse and a two-ended
+queue can support copyable, owning droppable and must-consume elements over
+ordinary values at an attributable native cost. The candidates below are
+implementation trials, not owner-approved library decisions or claims of
+native parity.
+
+For Slab, first try one boxed backing of cells, each containing an inline
+`Slots<T, 1>`, a generation and a free-list link. The inner window expresses
+vacancy with its ordinary zero-or-one length; insertion and removal use the
+existing place/take rows. An enum of vacant/live cells is a useful compact
+native control, but a generic source exchange currently loses the variant
+needed to consume an extracted vacant enum without an impossible ownership
+arm. Separate metadata plus dense payloads is another ordinary alternative;
+it spends a second backing and repairs reverse indexes on removal. The
+single-slot candidate is selected for a trial because it keeps one backing,
+constant-time reuse and each live payload in its slot without that repair.
+Its possible extra metadata word must be measured, not treated as free.
+
+The Slab constructor accepts a runtime capacity within a written const ceiling,
+which bounds allocation size, and materializes cells only on first insertion.
+Free-list reuse concerns already materialized empty cells. A slot retires
+when its generation reaches a caller-selected limit rather than wrapping;
+small limits exercise that same production rule. Exhaustion returns the
+uninserted owner. Handles are relative to the supplied slab and are ordinary
+data, not brands authenticating the allocation. The membership caller compares
+weak indexes with a composite retained protocol: removing one index preserves
+a remaining reader, object deletion expires weak handles, and the retained
+protocol refuses object deletion until its memberships are removed. This is
+not a theorem about arbitrary clients maintaining or being unable to forge
+ordinary bookkeeping fields.
+
+For Deque, keep endpoint mutation over references to `Box<Ring<T>>` and make
+reallocation an explicit consuming rebase that returns a newly allocated
+owner. A counted front-take/back-place loop can prove exact length
+preservation and release the emptied old backing for arbitrary T. This is a
+new-owner conversion, not an automatic-growth promise on a reference helper.
+The ordinary `swap` row does not publish exchanged measures, so exchanging
+old/new owners does not by itself establish the old-empty and new-length
+relations needed by that other interface. REF-4 also still refuses a Ring
+range, including an empty one: per-slot visitation does not supply zero-copy
+two-span access. Retain the exact rejected programs and these distinctions
+alongside the executable candidate.
+
+Before selecting either representation, require complete operation and cleanup
+chains with independent results, generation/expiry and wrap boundary cases,
+and exact allocation-release accounting through the ordinary formal tests.
+Reuse their existing sequential and parallel construction paths; the older
+three-mode and allocation-refusal prescriptions are not the v0.63 contract.
+Experiments stay outside daily correctness checking. For each candidate,
+compare the actual library with C implementing the same representation and
+operation contract, then a compact-slot or bulk-rebase control where it
+separates a source/layout cost. Record actual bytes per capacity unit,
+construction cost separately from steady-state lookup or churn, allocation
+counts, and emitted transfers with ordinary and retained helpers. Use scalar
+and large owning records, short and longer capacities, and checksum-sensitive
+operation sequences. A runtime branch or extra word is a measured cost;
+acceptance alone does not select it, and a changed ownership or callback
+contract is not a faster implementation of the same operation.
