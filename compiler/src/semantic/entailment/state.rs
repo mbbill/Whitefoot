@@ -3830,12 +3830,12 @@ fn for_each_implicit_bound(
 ) {
     emit(id, id, 0, ImplicitBoundKind::Reflexive);
     match terms.kind(id) {
-        TermKind::Zero | TermKind::ConstParameter(_) => {}
+        TermKind::Zero => {}
         TermKind::Constant(value) => {
             emit(id, ZERO, *value, ImplicitBoundKind::Constant);
             emit(ZERO, id, -value, ImplicitBoundKind::Constant);
         }
-        TermKind::Place(_, ty) => {
+        TermKind::Place(_, ty) | TermKind::ConstParameter(_, ty) => {
             let (minimum, maximum) = type_range(*ty);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
@@ -6236,6 +6236,7 @@ pub(crate) mod tests {
         let mut terms = TermTable::new();
         let parameter = terms.intern(TermKind::ConstParameter(
             DeclarationId::from_index(0).expect("zero declaration identity exists"),
+            IntegerType::U64,
         ));
         let length = |terms: &mut TermTable, binding| {
             let term = terms.intern(TermKind::Measure(

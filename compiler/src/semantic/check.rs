@@ -2103,6 +2103,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<PostconditionSchedule, CheckStop> {
         let selected = |index: usize| analyzed.is_none_or(|analyzed| analyzed[index]);
         let contract_queries = self.contract_queries.borrow().clone();
+        let const_parameter_types = self.const_generic_types().collect();
         // ENT is the single acceptance-bearing proof path for ordinary
         // obligations, call requirements, invariants and postconditions.
         let mut schedule =
@@ -2117,6 +2118,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     callees,
                     constants: &self.checked_constants,
                     constant_ids: &self.constants,
+                    const_parameter_types: &const_parameter_types,
                     nominals: &self.nominals,
                     elements: &self.elements.borrow(),
                     contract_queries: &contract_queries,
@@ -2189,6 +2191,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         callees,
                         constants: &self.checked_constants,
                         constant_ids: &self.constants,
+                        const_parameter_types: &const_parameter_types,
                         nominals: &self.nominals,
                         elements: &self.elements.borrow(),
                         contract_queries: &contract_queries,

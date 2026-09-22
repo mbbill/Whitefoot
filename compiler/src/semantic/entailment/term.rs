@@ -34,8 +34,9 @@ pub(crate) enum TermKind {
     /// const. Interning constants as terms lets disequalities and bounds share
     /// one representation; the implicit equality to Z folds them back.
     Constant(i128),
-    /// An in-scope integer-typed const-generic parameter, judged symbolically.
-    ConstParameter(DeclarationId),
+    /// An in-scope const-generic parameter with its exact written integer
+    /// type [MSR-6], which supplies its implicit bounds under [ENT-2].
+    ConstParameter(DeclarationId, IntegerType),
     /// A tracked place [ENT-2] clause (a) whose final selected type is one
     /// fragment type, carried as the one resolved path the checker has
     /// [REF-1].

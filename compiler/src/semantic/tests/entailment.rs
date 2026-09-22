@@ -481,14 +481,14 @@ fn assert_join_parents(
 
 fn term_integer_range(kind: &TermKind) -> Option<(i128, i128)> {
     match kind {
-        TermKind::Place(_, ty) => Some(type_range(*ty)),
+        TermKind::Place(_, ty) | TermKind::ConstParameter(_, ty) => Some(type_range(*ty)),
         TermKind::Measure(..)
         | TermKind::CountedCapture { .. }
         | TermKind::IndexCapture { .. }
         | TermKind::EntryDatum { .. }
         | TermKind::MeasureDatum { .. } => Some(type_range(IntegerType::U64)),
         TermKind::CommitValue { ty, .. } | TermKind::CallDatum { ty, .. } => Some(type_range(*ty)),
-        TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => None,
+        TermKind::Zero | TermKind::Constant(_) => None,
     }
 }
 
@@ -1294,7 +1294,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                                     || *term == TermKind::Constant(i128::from(value))
                             }
                             CapturedTerm::Const(declaration) => {
-                                *term == TermKind::ConstParameter(declaration)
+                                matches!(term, TermKind::ConstParameter(candidate, _) if *candidate == declaration)
                             }
                             CapturedTerm::Binding(_) => matches!(
                                 term,
@@ -5879,7 +5879,7 @@ fn main() -> status: own ExitStatus pure {
                     .inventory
                     .terms
                     .iter()
-                    .all(|term| !matches!(term, TermKind::ConstParameter(_))),
+                    .all(|term| !matches!(term, TermKind::ConstParameter(..))),
                 "concrete instances retain no symbolic const term"
             );
             // [MSR-1] the window place carries three measures, and [MSR-2]'s

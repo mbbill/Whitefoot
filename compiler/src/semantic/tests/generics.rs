@@ -619,6 +619,174 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+const CONST_GENERIC_INTEGER_DOMAINS: [(&str, i128, i128); 8] = [
+    ("u8", 0, 255),
+    ("u16", 0, 65_535),
+    ("u32", 0, 4_294_967_295),
+    ("u64", 0, 18_446_744_073_709_551_615),
+    ("i8", -128, 127),
+    ("i16", -32_768, 32_767),
+    ("i32", -2_147_483_648, 2_147_483_647),
+    ("i64", -9_223_372_036_854_775_808, 9_223_372_036_854_775_807),
+];
+
+/// [ENT-2, MSR-6] the branch relates the runtime value to the const parameter,
+/// whose own written type closes the arithmetic domain. An alias or an extra
+/// invariant must not be needed to introduce that standing bound.
+#[test]
+fn const_generic_type_bounds_discharge_strictly_guarded_arithmetic() {
+    for (ty, _, _) in CONST_GENERIC_INTEGER_DOMAINS {
+        let source = format!(
+            "fn increment<const limit: {ty}>(value: own {ty}) -> result: own {ty} pure {{
+  if value < limit {{
+    return value + 1_{ty};
+  }}
+  return value;
+}}
+
+fn decrement<const limit: {ty}>(value: own {ty}) -> result: own {ty} pure {{
+  if value > limit {{
+    return value - 1_{ty};
+  }}
+  return value;
+}}
+
+fn forward<const limit: {ty}>(value: own {ty}) -> result: own {ty} pure {{
+  let increased = increment::<limit>(value: value);
+  return decrement::<limit>(value: increased);
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  let value = forward::<0>(value: 0_{ty});
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{ty}: {outcome:?}"
+            );
+        });
+    }
+}
+
+/// The source invariant uses the affine image of the same const term. Its
+/// interval is the declared type's interval, including signed lower bounds.
+#[test]
+fn const_generic_affine_images_keep_every_declared_integer_domain() {
+    for (ty, minimum, maximum) in CONST_GENERIC_INTEGER_DOMAINS {
+        let source = format!(
+            "fn bounded<const limit: {ty}>() -> result: own unit pure {{
+  invariant lower: limit >= {minimum}_{ty};
+  invariant upper: limit <= {maximum}_{ty};
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  bounded::<0>();
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{ty}: {outcome:?}"
+            );
+        });
+    }
+}
+
+/// A u8 parameter used as a u64 storage extent is still the same symbolic
+/// constant; neither the measure nor a forwarded formal may widen its bound.
+#[test]
+fn const_generic_extent_and_forwarding_keep_one_declared_type_identity() {
+    let source = br#"fn extent<const n: u8>() -> result: own unit pure {
+  let values = slots_new::<u8, n>();
+  invariant same: values.cap == n;
+  invariant bounded: values.cap <= 255_u64;
+  return unit;
+}
+
+fn increment<const limit: u64>(value: own u64) -> result: own u64 pure {
+  if value < limit {
+    return value + 1_u64;
+  }
+  return value;
+}
+
+fn forward<const n: u8>(value: own u64) -> result: own u64 pure {
+  extent::<n>();
+  return increment::<n>(value: value);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let value = forward::<3>(value: 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn const_generic_bounds_do_not_prove_a_narrower_domain() {
+    for (ty, minimum, maximum) in CONST_GENERIC_INTEGER_DOMAINS {
+        for (comparison, boundary) in [(">=", minimum + 1), ("<=", maximum - 1)] {
+            // Neither an unused template nor a safe concrete use grants a
+            // stronger bound to the canonical symbolic instance [FN-2].
+            for call in ["", "  invalid::<0>();\n"] {
+                let source = format!(
+                    "fn invalid<const limit: {ty}>() -> result: own unit pure {{
+  invariant narrowed: limit {comparison} {boundary}_{ty};
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+{call}  return exit_status(code: 0_u8);
+}}
+"
+                );
+                assert_rule_kind(source.as_bytes(), SemanticRule::Inv1, |kind| {
+                    matches!(kind, SemanticIssueKind::UndischargedLocalInvariant { .. })
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn const_generic_type_bounds_do_not_make_inclusive_arithmetic_guards_strict() {
+    for (ty, _, _) in CONST_GENERIC_INTEGER_DOMAINS {
+        for (comparison, operation) in [("<=", "+"), (">=", "-")] {
+            let source = format!(
+                "fn invalid<const limit: {ty}>(value: own {ty}) -> result: own {ty} pure {{
+  if value {comparison} limit {{
+    return value {operation} 1_{ty};
+  }}
+  return value;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+            );
+            assert_rule_kind(source.as_bytes(), SemanticRule::Op2, |kind| {
+                matches!(
+                    kind,
+                    SemanticIssueKind::UndischargedIntegerDomainObligation { .. }
+                )
+            });
+        }
+    }
+}
+
 #[test]
 fn unbounded_type_parameters_build_only_explicit_reachable_instances() {
     let source = br#"fn marker<T: drop>() -> result: own unit pure {

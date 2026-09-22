@@ -2323,9 +2323,18 @@ impl Analyzer<'_, '_> {
         self.postcondition_place_term(root, projections, ty)
     }
 
+    /// [ENT-2, MSR-6] every occurrence of a symbolic const parameter names
+    /// its original declaration and keeps that declaration's written type.
+    /// A storage extent or a differently typed formal does not create another
+    /// constant identity or grant that parameter a different interval.
+    fn const_parameter_term(&mut self, declaration: crate::DeclarationId) -> TermId {
+        let ty = self.context.const_parameter_types[&declaration];
+        self.terms.intern(TermKind::ConstParameter(declaration, ty))
+    }
+
     fn postcondition_constant_term(&mut self, value: &CheckedValue) -> Option<TermId> {
         if let CheckedValue::ConstGeneric { declaration, .. } = value {
-            return Some(self.terms.intern(TermKind::ConstParameter(*declaration)));
+            return Some(self.const_parameter_term(*declaration));
         }
         let value = match value {
             CheckedValue::Integer { ty, bits } => integer_value(*ty, *bits),
@@ -2434,9 +2443,9 @@ impl Analyzer<'_, '_> {
                     Some(CheckedConst::Value(value)) => {
                         Some(MeasureBound::Constant(i128::from(value)))
                     }
-                    Some(CheckedConst::Parameter(declaration)) => Some(MeasureBound::Equal(
-                        self.terms.intern(TermKind::ConstParameter(declaration)),
-                    )),
+                    Some(CheckedConst::Parameter(declaration)) => {
+                        Some(MeasureBound::Equal(self.const_parameter_term(declaration)))
+                    }
                     // A symbolic derived length has no [ENT-2] term form; the
                     // concrete instance, whose length is a value, restates the
                     // constant bound.
@@ -2452,9 +2461,9 @@ impl Analyzer<'_, '_> {
                     Some(CheckedConst::Value(value)) => {
                         Some(MeasureBound::Constant(i128::from(value)))
                     }
-                    Some(CheckedConst::Parameter(declaration)) => Some(MeasureBound::Equal(
-                        self.terms.intern(TermKind::ConstParameter(declaration)),
-                    )),
+                    Some(CheckedConst::Parameter(declaration)) => {
+                        Some(MeasureBound::Equal(self.const_parameter_term(declaration)))
+                    }
                     Some(CheckedConst::Derived(_)) | None => None,
                 },
                 // An independent runtime quantity of the value's own
@@ -2673,7 +2682,7 @@ impl Analyzer<'_, '_> {
                 let (_, projected_holders) = self.resolve_goal_support(&support);
                 holders.extend(projected_holders);
             }
-            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => {}
+            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(..) => {}
             TermKind::CountedCapture { .. }
             | TermKind::IndexCapture { .. }
             | TermKind::CommitValue { .. }
@@ -3073,7 +3082,7 @@ impl Analyzer<'_, '_> {
             self.terms.kind(term),
             TermKind::Zero
                 | TermKind::Constant(_)
-                | TermKind::ConstParameter(_)
+                | TermKind::ConstParameter(..)
                 | TermKind::CountedCapture { .. }
                 | TermKind::IndexCapture { .. }
                 | TermKind::CommitValue { .. }
@@ -4548,7 +4557,7 @@ impl Analyzer<'_, '_> {
         event: &KillEvent,
     ) -> bool {
         match self.terms.kind(term) {
-            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
+            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(..) => false,
             // Counted captures and commit values are immutable. A counted
             // capture dies with its construct-scope exit, handled separately
             // from source-place write/consume events; a commit value names one
@@ -4719,7 +4728,7 @@ impl Analyzer<'_, '_> {
     /// every holder read through, which is the spelling root here.
     fn scope_kills_term(&self, term: TermId, exited: &HashSet<BindingId>) -> bool {
         match self.terms.kind(term) {
-            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
+            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(..) => false,
             TermKind::CountedCapture { .. }
             | TermKind::IndexCapture { .. }
             | TermKind::CommitValue { .. }
@@ -5225,7 +5234,7 @@ impl Analyzer<'_, '_> {
             // constant term [ENT-2] clause (c) fixes; a concrete [FN-2]
             // instance has already folded it to an integer constant.
             CheckedExpression::Constant(CheckedValue::ConstGeneric { declaration, .. }) => {
-                return Some(self.terms.intern(TermKind::ConstParameter(*declaration)));
+                return Some(self.const_parameter_term(*declaration));
             }
             CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
             | CheckedExpression::NamedConstant {
@@ -6490,7 +6499,7 @@ impl Analyzer<'_, '_> {
             GoalExpression::Datum(GoalDatum::Literal(CheckedValue::ConstGeneric {
                 declaration,
                 ..
-            })) => Some(self.terms.intern(TermKind::ConstParameter(*declaration))),
+            })) => Some(self.const_parameter_term(*declaration)),
             GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Integer { ty, bits })) => Some(
                 self.terms
                     .intern(TermKind::Constant(integer_value(*ty, *bits))),
@@ -9725,9 +9734,7 @@ impl Analyzer<'_, '_> {
             CapturedTerm::Literal(value) => {
                 Some(self.terms.intern(TermKind::Constant(i128::from(value))))
             }
-            CapturedTerm::Const(declaration) => {
-                Some(self.terms.intern(TermKind::ConstParameter(declaration)))
-            }
+            CapturedTerm::Const(declaration) => Some(self.const_parameter_term(declaration)),
             CapturedTerm::Binding(_) if matches!(value.capture, CaptureId::Source(_)) => {
                 self.terms.interned(&TermKind::IndexCapture {
                     capture: value.capture,
@@ -10167,7 +10174,7 @@ impl Analyzer<'_, '_> {
             // [MSR-3] a measure datum inherits the atom of the term it
             // denotes, and [MSR-6] gives one immutable image to a symbolic
             // const parameter throughout the generic body.
-            TermKind::ConstParameter(_)
+            TermKind::ConstParameter(..)
             | TermKind::Measure(..)
             | TermKind::EntryDatum { .. }
             | TermKind::MeasureDatum { .. }
@@ -11230,7 +11237,7 @@ impl Analyzer<'_, '_> {
             // spelling of the parameter; treating the endpoint as an
             // unrelated unknown loses the exhaustion fact at the return.
             CheckedExpression::Constant(CheckedValue::ConstGeneric { declaration, .. }) => {
-                let term = self.terms.intern(TermKind::ConstParameter(*declaration));
+                let term = self.const_parameter_term(*declaration);
                 Some(self.measure_atom(term, state))
             }
             CheckedExpression::Binding { binding, ty, .. } => {
@@ -12503,7 +12510,7 @@ impl Analyzer<'_, '_> {
             // declaration-anchored image as an invariant or contract
             // spelling of the symbolic const parameter.
             CheckedExpression::Constant(CheckedValue::ConstGeneric { declaration, .. }) => {
-                let term = self.terms.intern(TermKind::ConstParameter(*declaration));
+                let term = self.const_parameter_term(*declaration);
                 Some(self.measure_atom(term, state))
             }
             CheckedExpression::Binding { binding, ty, .. } => {
@@ -12614,7 +12621,7 @@ impl Analyzer<'_, '_> {
                     // no [ENT-5] event kills it, so its image is one
                     // immutable atom for the whole walk.
                     CheckedAffineExpressionKind::ConstGeneric { declaration, .. } => {
-                        let term = self.terms.intern(TermKind::ConstParameter(*declaration));
+                        let term = self.const_parameter_term(*declaration);
                         values.push(self.measure_atom(term, state));
                     }
                     CheckedAffineExpressionKind::Add(left, right) => {
@@ -13611,7 +13618,7 @@ impl Analyzer<'_, '_> {
                     out.push(self.checked_measure_term(measure)?);
                 }
                 CheckedAffineExpressionKind::ConstGeneric { declaration, .. } => {
-                    out.push(self.terms.intern(TermKind::ConstParameter(*declaration)));
+                    out.push(self.const_parameter_term(*declaration));
                 }
             }
         }
@@ -13624,7 +13631,7 @@ impl Analyzer<'_, '_> {
         self.goal_operand(&goal)
     }
 
-    /// The image this program point holds for one measure term.
+    /// The image this program point holds for one measure or const-generic term.
     ///
     /// [MSR-4]'s automatic derivation reads the current edge's immutable
     /// value image. A written invariant captures that image in its theorem;
@@ -13668,7 +13675,15 @@ impl Analyzer<'_, '_> {
                 .insert(anchor, atom.clone());
             return atom;
         }
-        let atom = self.new_affine_atom(IntegerType::U64);
+        // [MSR-6] a symbolic const parameter has its declaration's integer
+        // type; measures and their immutable datums instead have type u64.
+        // Sharing the image path cannot give a signed parameter the unsigned
+        // nonnegativity bound or widen a narrower parameter's range.
+        let ty = match self.terms.kind(anchor) {
+            TermKind::ConstParameter(_, ty) => *ty,
+            _ => IntegerType::U64,
+        };
+        let atom = self.new_affine_atom(ty);
         state
             .measure_atoms
             .borrow_mut()
@@ -16482,7 +16497,7 @@ impl Analyzer<'_, '_> {
         match self.terms.kind(term) {
             TermKind::Zero => "0".to_owned(),
             TermKind::Constant(value) => value.to_string(),
-            TermKind::ConstParameter(_) => "<const parameter>".to_owned(),
+            TermKind::ConstParameter(..) => "<const parameter>".to_owned(),
             TermKind::Place(place, _) => self.render_place(place),
             TermKind::Measure(measure, place) => {
                 format!("{}.{}", self.render_place(place), measure.spelling())
