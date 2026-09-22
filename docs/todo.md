@@ -7,6 +7,35 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
+- **Ordered Vector consumption still makes avoidable transfers.** The ordinary
+  prefix-window library reverses a removed suffix before consuming it in
+  original order. It is O(n), but the
+  [matched native comparison](../research/experiments/container-representation/vector-library/RESULTS.md#lowering-attribution)
+  retains three whole-record transfers per reversed pair that a direct
+  consumer does not need. With retained helpers, the 4096-element 256-byte
+  reuse chain is 18.4 percent slower than direct C; ordinary optimization
+  also exposes a separate WF/reverse-C gap and short-vector overhead. The
+  Slots wrap-arithmetic repair does not remove either source-required movement
+  or every lowering cost. Retain the tested composition as the current
+  implementation, without claiming minimum-transfer or general native parity.
+  Reopen before relying on ordered consumption in a performance-critical
+  container: compare a representation or operation that avoids reversal under
+  the same original-order, disjoint-callback, nodrop-ownership contract, and
+  separately attribute alignment/alias facts and ordinary inlining against
+  the retained-helper controls. No new language operation is selected yet.
+
+- **Measure placement stops at Box content.** Destructuring an owner with a
+  `Box<Slots<T>>` field loses established facts about its `.inner.len`;
+  `free_empty` on the resulting binding then fails OP-14. The exact
+  [Vector example](../research/investigations/containers-and-resources/X1-LIBRARY.md#vector-source-obligations)
+  is a naming event covered by MSR-3, whose implementation's `measured_paths`
+  currently traverses inline nominal fields but stops at a Box. The Vector
+  can consume its sole storage field directly, so this does not block its
+  cleanup. Repair the general placement path when a consumer needs the
+  destructured or rebound owner; account for recursive nominal types without
+  enumerating infinitely many content paths and test kills as well as fact
+  retention.
+
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
@@ -116,27 +145,28 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   nonadjacent and stale-capture negative controls.
 
 - **Large entering proof contexts still have substantial checking cost.**
-  In the [pinned row-summary comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#row-summary-selection-2026-09-15),
-  256 independent inequality pairs with 256 uses still take a median 5.50 s;
-  the same context with only three uses takes 0.626 s. Query-preparation reuse
-  and conservative closure-product pruning remove repeated and non-improving
-  work, but complete matrix/index construction and long-target AUTO traversal
+  In the [post-x1 comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection),
+  256 independent inequality pairs with 256 uses still take a median 2.337 s;
+  the same context with only three uses takes 0.264 s. Reusing the ordered
+  affine index within a certificate removes repeated premise preparation,
+  but complete matrix/index construction and long-target AUTO traversal
   remain. This is not certificate-length cost alone: a fixed three-pair
-  context admits all 4096 uses in 295 ms. Larger growing contexts remain
-  unmeasured; these results establish neither linear total cost nor a
-  universal cost for the full use ceiling.
+  context admits all 4096 uses in 377 ms. The 512-pair context was accepted
+  in exploratory runs; these results establish neither linear total cost
+  nor a universal cost for the full use ceiling.
   Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
 - **Ordinary-fallback views still copy a fact state per materialization.**
-  After [incremental closure](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#selection),
-  the [retained-proof follow-up](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#retained-proof-follow-up-results)
-  checks `tests/programs/fixed_run_library.wf` in 1.21 s and
-  `tests/programs/wfgrep.wf` in 0.94 s. The previously attributed largest
-  fixed-run cost is `materialize_closure_at` in
+  The [current comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection)
+  checks `tests/programs/fixed_run_library.wf` in 134 ms and
+  `tests/programs/wfgrep.wf` in 834 ms. In `materialize_closure_at` in
   [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs):
   whenever a selected proof depends on a postcondition call, it clones the
   state, removes the call-dependent candidates and closes that view again.
-  Kill-time edge insertion and derivation interning for recreated cells are
-  the next costs.
+  A [query-only ordinary projection](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#ordinary-fallback-attribution-and-candidate)
+  passed the transition checks but improved fixed-run only 1.03x and left
+  wfgrep unchanged, so it was not retained. Revisit the representation when
+  a current workload attributes a substantial share to this path. Kill-time
+  edge insertion and derivation interning for recreated cells also remain.
 - **Connection-level concurrency is not supplied by ordinary source order.**
   A loop that accepts and serves connections in source order
   completes the current handler before entering the next, so a handler waiting

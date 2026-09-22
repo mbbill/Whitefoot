@@ -325,6 +325,10 @@ struct ProofClosure {
     term_revision: usize,
     goal_revision: usize,
     state: Rc<ClosedState>,
+    /// The ordered L0-to-affine index of this same entering value map. The
+    /// premise loop borrows that map immutably for the view's entire life.
+    /// Registering a term or changing goal metadata invalidates both views.
+    affine_index: std::cell::RefCell<Option<Rc<AffineL0Index>>>,
 }
 
 impl ProofClosure {
@@ -338,11 +342,18 @@ impl ProofClosure {
             term_revision: terms.revision(),
             goal_revision: goals.revision(),
             state: close(facts, terms, goals, ledger),
+            affine_index: std::cell::RefCell::new(None),
         }
     }
 
     fn matches(&self, terms: &TermTable, goals: &GoalTable) -> bool {
         self.term_revision == terms.revision() && self.goal_revision == goals.revision()
+    }
+
+    fn affine_index(&self, terms: &TermTable, goals: &GoalTable) -> Option<Rc<AffineL0Index>> {
+        self.matches(terms, goals)
+            .then(|| self.affine_index.borrow().as_ref().map(Rc::clone))
+            .flatten()
     }
 }
 
@@ -564,7 +575,7 @@ struct AffineL0Entry {
 #[derive(Default)]
 struct AffineL0Index {
     entries: Vec<AffineL0Entry>,
-    by_terms: HashMap<Box<[AffineCoefficient]>, usize>,
+    by_terms: WordHashMap<Box<[AffineCoefficient]>, usize>,
 }
 
 impl AffineL0Index {
@@ -14124,7 +14135,24 @@ impl Analyzer<'_, '_> {
         let mut check = AffineCheckState::new();
         let candidates = self.affine_l0_candidates(values);
         let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
-        let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
+        // Every relation-form use in a certificate sees the same entering
+        // facts and value images. Its target and residual still run through
+        // all ordinary rules; only the unchanged ordered query index is
+        // shared. Candidate formation precedes the revision check because it
+        // may register a previously unseen term.
+        let l0 = context
+            .closed
+            .and_then(|view| view.affine_index(&self.terms, &self.goals))
+            .unwrap_or_else(|| {
+                let index = Rc::new(self.affine_l0_index(&candidates, &closed, &mut check));
+                if let Some(view) = context
+                    .closed
+                    .filter(|view| view.matches(&self.terms, &self.goals))
+                {
+                    *view.affine_index.borrow_mut() = Some(Rc::clone(&index));
+                }
+                index
+            });
         let mut query = AffineDirectQuery::new(&l0, values, &closed);
         if let Ok(Some(parents)) = self.affine_residual_proof(target, &mut query, &mut check) {
             return Some(AffineConsequenceProof {
@@ -17038,6 +17066,8 @@ mod proof_closure_tests {
         let goals = GoalTable::default();
         let mut ledger = DerivationLedger::default();
         let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        let index = Rc::new(AffineL0Index::default());
+        closed.affine_index.replace(Some(Rc::clone(&index)));
         let context = ProofContext {
             facts: &facts,
             affine: &affine,
@@ -17047,6 +17077,10 @@ mod proof_closure_tests {
             let view = context.close(&terms, &goals, &mut ledger);
             assert!(Rc::ptr_eq(&view, &closed.state));
             assert!(view.derives_bound(ZERO, ZERO, 0));
+            assert!(Rc::ptr_eq(
+                &closed.affine_index(&terms, &goals).unwrap(),
+                &index
+            ));
         }
     }
 
@@ -17058,6 +17092,7 @@ mod proof_closure_tests {
         let goals = GoalTable::default();
         let mut ledger = DerivationLedger::default();
         let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        closed.affine_index.replace(Some(Rc::default()));
         let term = terms.intern(TermKind::Measure(
             CheckedMeasure::Length,
             ResolvedPlace::spelled(PlaceRoot::Binding(BindingId(0)), false, Vec::new()),
@@ -17067,15 +17102,18 @@ mod proof_closure_tests {
             affine: &affine,
             closed: Some(&closed),
         };
+        assert!(closed.affine_index(&terms, &goals).is_none());
         assert!(!Rc::ptr_eq(
             &context.close(&terms, &goals, &mut ledger),
             &closed.state
         ));
 
         let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        closed.affine_index.replace(Some(Rc::default()));
         let count = terms.ids().count();
         terms.set_measure_bound(term, MeasureBound::Constant(7));
         assert_eq!(count, terms.ids().count());
+        assert!(closed.affine_index(&terms, &goals).is_none());
         let context = ProofContext {
             facts: &facts,
             affine: &affine,
@@ -17097,6 +17135,7 @@ mod proof_closure_tests {
         let expression = GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Bool(true)));
         let goal = goals.intern(expression.clone(), None, None, Vec::new());
         let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        closed.affine_index.replace(Some(Rc::default()));
         let count = goals.ids().count();
         let same = goals.intern(
             expression,
@@ -17110,6 +17149,7 @@ mod proof_closure_tests {
         );
         assert_eq!(goal, same);
         assert_eq!(count, goals.ids().count());
+        assert!(closed.affine_index(&terms, &goals).is_none());
         let context = ProofContext {
             facts: &facts,
             affine: &affine,
