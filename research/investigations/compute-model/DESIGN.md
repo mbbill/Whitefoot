@@ -1196,3 +1196,54 @@ Runtime profile-guided compilation and online adaptation are candidate
 directions in [the research ideas](../../../docs/ideas.md#parallel-grain-policies-and-runtime-profiles),
 with the unresolved cost tracked in [TODO](../../../docs/todo.md). No profile
 collection, adaptive policy or further timing trial is implemented here.
+
+### Read-only Box-array helper work pricing
+
+The current compiler at `3402048f` loses the runtime extent in a helper over
+`&Box<Array<u64>>`: a native observer sees an outer iteration price of 123 at
+input lengths 0, 1, 17, 4,096 and 65,536. An equivalent range helper retains
+prices 10, 15, 95, 20,490 and 327,690, respectively. Both forms return the
+independently checked result `14 * length`. Their per-element lowering costs
+differ, so equal prices are not the criterion; retaining the helper's extent
+is. This is a current representation-dependent summary gap, separate from the
+historical grain-policy trial and its continuation-accounting correction.
+
+The proposed repair follows only the checked direct Box-to-runtime-Array
+projection. Lowering copies the existing checked absence of writes to an
+original reference formal's root. An exact direct chunk capture retains that
+fact; rebinding and reconstructed owned captures do not. Work estimation can
+then carry a typed Box-array length observation, and the emitter uses the
+ordinary Box/header projection. The source call establishes the original
+referent's validity, effects exclude replacing or consuming it through that
+formal, and EFF-5 separates aliasing writes through other formals. Those facts
+hold throughout the call, including a zero-trip map. A reference type alone
+does not establish this lifetime: capture-all can retain an already consumed
+owner, and pricing must not dereference it. The precise proposed extension is
+in the [pending amendment](../../../design/amendments/array-reference-work.md).
+
+The focused native regression requires increasing prices for original Box,
+range and shared read-only alias helpers, unchanged static estimates for
+mutable formals, rebound values, local owners and an unrelated `Box<u64>`, and
+correct complete results at zero and nonzero inner lengths and outer trip
+counts. The existing EFF-5 substituted read/write-alias rejection covers the
+checker fact used by lowering. Existing total-estimate and post-loop
+continuation-accounting regressions remain protected. Compare emitted modules
+for prefix, histogram, BFS and the five formal performance kernels on identical
+source; any changed module needs explanation before extending this narrow
+comparison to an affected workload.
+
+Before timing the candidate, the performance witness and criterion are fixed:
+a batch of 512 independently seeded sequential hashes over 16,384 words,
+called through a read-only Box-array helper, with every result and the unchanged
+input checked against a separate C calculation. The intended primary W4 result
+is actual useful steals where the baseline has none, at least ten percent lower
+median paired wall time and a faster candidate in at least four of five pairs.
+Report process CPU separately and investigate an increase over fifteen percent.
+Protect W1's sequential entry and a 17-word, two-result case without applying a
+percentage verdict to the latter's sub-microsecond work; W2 and W8 provide
+bounded scaling context. Five rotated passes use one checked warmup and five
+warm calls per process, alternating arm order. Fixture construction, oracle
+work, checking and release remain outside the interval. An identical-image
+control precedes the compiler comparison; a failing control makes the timing
+inconclusive. This comparison selects no scheduler constant or new grain
+policy. Candidate native and timing results are still pending.
