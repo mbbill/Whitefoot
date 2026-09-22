@@ -10,48 +10,42 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 - **Modular incremental checking and optimized code generation.** The compiler
   currently rechecks one source bundle and emits one LLVM module. The proposed
   [architecture](../research/investigations/modular-compilation/DESIGN.md)
-  targets one self-contained public `.wfm` interface per module, reusable source proofs and
-  generic instances, dependency-tracked cross-module optimization, and ordinary
+  targets self-contained public `.wfm` interfaces, reusable source proofs and
+  generic instances, dependency-tracked cross-module optimization and ordinary
   full final linking. Complete public declarations are checked against ordinary
-  implementations; direct `.wf` files share one local namespace, canonical
-  `.wfm` paths mirror directory namespaces, and private dependencies are explicit.
-  Its selected direction remains an amendment, not implemented capability.
-  Validate interface/qualified grammars, normalized declaration correspondence,
-  public semantic closure, order-independent top-level formation and checked
-  abstract nominal capabilities/representation. Qualify canonical roots and
-  path/case/alias rules, direct directory membership without child collection,
-  namespace/declaration collisions, private dependency selection,
-  interface comparison and cross-file private calls without interface entries.
-  Public declaration duplication, build-selection contention and useful module
-  sizes remain unmeasured; measure matched collaboration tasks before claiming
-  benefits. Revisit dependency-certificate layout before selecting it: compare
-  ordered namespace subtrees, distributed module ranks and a central module
-  sequence on matched dependency edits with unchanged APIs, recording renamed
-  paths/imports/uses separately from order edits, rank propagation, shared-file
-  contention and permission-query invalidation. A small acyclic change can
-  require broad source edits under subtree ordering; independent order preserves
-  names but does not guarantee a local certificate repair. Costs are unmeasured,
-  and no replacement is selected. For the tree candidate, qualify explicit
-  complete sibling-subtree orders, canonical module
-  positions and all selected roots, then validate descendant imports, earlier-
-  branch imports and rejection of self/ancestor/reverse edges for both public
-  and private dependencies. The design supplies a strict postorder argument and
-  a bounded exploratory model check, not a verified implementation. Check order-
-  change invalidation without global-rank churn. The rule forbids some acyclic
-  interleaving across intact subtrees; this is a required comparison witness for
-  the reopened certificate choice, while retaining local structural acyclicity.
-  Preserve the absence of transitive access and parent/child privileges. Subtree-
-  private separately compiled modules remain an unselected capability: reopen
-  for a concrete consumer that cannot use one module's private files, judging
-  the extra visibility rules against interface clarity and needed decomposition.
+  implementations; direct `.wf` files share one local namespace and canonical
+  `.wfm` paths mirror directory namespaces. One project-root graph file is the
+  proposed sole dependency authority, with ordered module rows listing exact
+  earlier targets; `.wfm` and `.wf` do not duplicate dependency lists.
+  This remains an amendment, not implemented capability. Specify the complete
+  graph grammar and filename, canonical roots, row uniqueness, earlier-target
+  checks, graph closure and public/implementation lookup against the same row.
+  Reject undeclared references even to earlier or transitively reachable
+  modules. Qualify parent/child edges in either permitted order and acyclic
+  cross-branch interleaving without namespace moves. Check graph-only edits,
+  used-edge deletion and order-only changes without global-position churn or a
+  whole-file digest in every body key. Count moved graph rows and concurrent
+  editing conflicts separately from source changes required by actual API use;
+  one file does not promise one-line repairs or conflict-free collaboration.
+  These costs remain unmeasured; compare matched dependency edits before
+  claiming an advantage over distributed ranks or subtree ordering.
+  Validate complete interface/qualified grammars, normalized declaration
+  correspondence, public semantic closure, order-independent top-level
+  formation and checked abstract nominal capabilities/representation. Qualify
+  direct directory membership without child collection, path/case/alias
+  ambiguity, namespace/declaration collisions and cross-file private calls.
+  Public declaration duplication and useful module sizes remain unmeasured.
+  Preserve ordinary privacy without transitive access or parent/child
+  privileges. Subtree-private separately compiled modules remain unselected:
+  reopen for a concrete consumer that cannot use one module's private files.
   The prior private-contract composition gap is unresolved:
   accessor facts in a body cannot express a private requirement in a wrapper
   or function-kind formal while FN-8 forbids ordinary calls in contracts; await
   owner direction on the proposed checked proof-expression/abbreviation route.
   Copying hidden paths into a public interface does not satisfy self-containment.
-  Establish the component-proof composition argument, exercise graph edge
-  deletion and SCC changes despite acyclic module imports, and qualify complete
-  LLVM planning/cache dependencies. Compare one indivisible LLVM unit per module
+  Establish component-proof composition, exercise graph-edge deletion and
+  SCC changes despite acyclic module imports, and qualify complete LLVM
+  planning/cache dependencies. Compare one indivisible LLVM unit per module
   with file-independent backend partitions, separating frontend/proof reuse from
   LLVM/object rebuild cost, runtime quality, peak memory and final linking.
   Require cold/incremental agreement, no unchanged-body proof work on a no-op

@@ -14,12 +14,12 @@ language decisions; revise it in place when evidence changes the proposal.
 Remove it only after its grounds are superseded or preserved elsewhere and it
 contains no unique useful evidence.
 
-Revisit: the structural acyclicity requirement remains, but coupling its
-certificate to whole namespace subtrees is under reconsideration. A small
-acyclic dependency change can otherwise require module moves, qualified-name
-changes and edits across consumers. The ordered-tree argument below remains
-valid; it does not establish acceptable change locality. An independently
-declared module order is a comparison candidate, not a selected replacement.
+The proposed dependency authority is one project-root graph file containing
+ordered module declarations and their exact direct dependencies. Directory
+paths still determine names and implementation ownership, but no longer
+determine dependency direction. Earlier-only references certify acyclicity;
+changing the declared graph does not itself rename modules. The format below
+is a design sketch, not implemented grammar.
 
 ## Required outcome
 
@@ -99,8 +99,10 @@ The handwritten module interface must itself expose the complete public
 source contract. A client reads this module's `.wfm` and any explicitly
 referenced dependency interfaces, without looking through its implementation
 files or requiring a generated interface to discover missing declarations.
-Self-containment is relative to explicit interface imports, not duplication
-of every dependency's API into one file. Compiler inputs for layout,
+Self-containment is relative to explicitly named external interfaces, not
+duplication of every dependency's API into one file. External references are
+fully qualified in the public declarations; dependency permission comes only
+from the root graph file, not a second import list. Compiler inputs for layout,
 specialization and optimization are a separate concern.
 
 This requirement selects full public declarations over the earlier thin
@@ -132,8 +134,8 @@ selected requirement that the handwritten public contract stand on its own.
 ### One complete public interface file
 
 Each source module has exactly one `.wfm`. Its root-relative path owns the
-module name; its contents own public interface imports and complete public
-declarations. Every ordinary top-level
+module name; its contents own complete public declarations, including fully
+qualified references to external declarations. Every ordinary top-level
 declaration in that file belongs to the public API; there is no separate
 export list or implementation-side `pub` switch. Public function declarations
 include generic parameters and bounds, parameter/result labels and modes,
@@ -143,21 +145,23 @@ Public concrete records and enums declare their externally visible schema
 there. No interface fragment, textual include, wildcard export or forwarding
 alias can fill in an omitted part from an implementation file.
 
-The build explicitly selects canonical source roots and dependency identities.
-The filesystem rule below determines module paths and direct implementation
-membership within that selected source snapshot; there is no separately
-editable module-name or member-file map. Implementation-only dependencies
-remain explicit private build inputs, since adding one should not rewrite the
-public interface. Their configuration spelling is not selected here; they
-name exact module paths under selected roots, not arbitrary file aliases.
+The project-root graph file explicitly binds canonical source roots and names
+each selected module's direct dependencies. The filesystem rule below determines
+module paths and direct implementation membership within that source snapshot;
+there is no separately editable module-name or member-file map. Neither
+`.wfm` nor `.wf` repeats a dependency-permission list. Adding an implementation
+dependency therefore need not rewrite the public interface.
 
-An interface import identifies an external module required to interpret that
-interface, never one of its own source files. Each root resolves to one build-
-selected dependency identity. Implementation-only dependencies are visible to
-implementation records, but cannot resolve an interface declaration. Public
-and private dependency bindings for the same root must agree; the build cannot
-inject public declarations or override interface imports. Version acquisition
-and package solving remain outside the language.
+One direct-dependency set applies to both the public interface and private
+implementation. An edge permits reference to the target's public declarations;
+it does not re-export them or grant private access. Whether an edge is used by
+a public signature, an implementation, both, or neither is determined from
+checked references, not a second writer-maintained `api`/`impl` classification.
+A dependency used only in implementation remains absent from the handwritten
+public API. The graph cannot inject declarations, rename qualified source
+references or change their meaning through per-module aliases. Each canonical
+root has one selected identity. Version acquisition and package solving remain
+outside the language.
 
 Illustrative contents of `counters.wfm`, not an accepted grammar. The path
 already declares the module, so no second written module name is needed:
@@ -318,208 +322,173 @@ root while retaining its selected source identity and relative paths does not
 rename every module. Path-derived naming deliberately trades free module
 relocation for one inspectable relationship between source layout and names.
 
-### Structural dependency order
+### One root file for the explicit module graph
 
-The required property is stronger than rejecting a cyclic set of imports:
-the declared architecture must make every permitted set of module edges
-acyclic. An added dependency should have a locally decidable architectural
-direction, without searching an existing import graph for a cycle or choosing
-which edge of that cycle to remove. The previous arbitrary-edge DAG proposal
-does not meet that requirement and is superseded.
+The required property remains stronger than discovering a cycle among source
+imports: the declared architecture must certify source-module acyclicity
+through simple consistency and per-edge checks. The dependency graph is now
+independent of the namespace tree. Keep canonical path-derived names, but
+declare all source-module edges in one file at the project root.
 
-Select a structural candidate by these criteria: legality uses only the two
-module paths and declared architecture metadata; every permitted edge strictly
-descends one finite order; public and private dependencies follow the same
-rule; shared services can have several consumers; and an illegal direction is
-reported against an existing architectural boundary. Also assess how much
-source and architecture metadata must change when dependencies evolve without
-changing module APIs. These requirements do not imply a uniquely best grouping
-of application responsibilities.
+Use `modules.wfg` as a provisional filename in this design; its final spelling
+and complete grammar remain to be specified. This investigation does not add
+a placeholder file at the repository root. The graph file contains canonical
+source-root bindings and one ordered declaration for each module in the
+selected graph. Each declaration lists exact direct dependencies, all of which
+must have been declared earlier. For example, after binding the `app` source
+root, the following is illustrative notation, not accepted build grammar:
 
-| Candidate | Structural guarantee | Cost and disposition |
+```text
+app::shared::memory : [];
+app::vector::other  : [app::shared::memory];
+app::vector         : [app::shared::memory, app::vector::other];
+app::main           : [app::vector];
+```
+
+Each row supplies two distinct pieces of information: its listed edges are
+the declared graph, and its position certifies those edges' direction.
+Merely appearing earlier does not grant another module access. A bare ordered
+list without adjacency would not expose which dependencies the program
+actually declares.
+
+For this candidate, the graph file is the sole source of module-dependency
+permission. Source files contain ordinary qualified references, not additional
+imports that create or repeat graph edges. There are no wildcard edges,
+automatic transitive imports, per-directory dependency files, includes,
+conditional edge expressions or dependency-generating scripts in this graph
+format. The build selects the graph and entry; it cannot add hidden source
+edges through another channel. These restrictions concern the source graph,
+not the compiler's separate semantic/optimization queries.
+
+### Local validation and the DAG argument
+
+Validate the graph against the selected canonical source snapshot:
+
+1. Root bindings are unambiguous. Every selected module has one canonical
+   identity and exactly one graph declaration, resolving to its `.wfm`;
+   canonical aliases cannot create distinct positions for one module.
+2. Each dependency list names exact modules without duplicates. Every target
+   must already have a valid declaration in this same graph. Self, forward
+   and unknown references reject at the row and offending edge.
+3. Every external source reference must name a public declaration in an
+   explicitly listed direct dependency. Both interface and implementation
+   references obey this rule. A missing edge rejects even if the target row
+   occurs earlier or is transitively reachable.
+4. The selected program is closed over declared dependencies and all selected
+   definitions receive ordinary checking, including unused definitions.
+   Every selected external source root/module participates in this same
+   certificate; package, path or native-binding spelling supplies no bypass.
+
+Only insert a module into the earlier-declaration lookup after validating its
+row. If `position(M)` denotes its declaration position, every edge `A -> B`
+then has `position(B) < position(A)`. A directed cycle would strictly decrease
+positions and return to its starting position, which is impossible. Any closed
+subset of this declared graph inherits acyclicity.
+
+Every finite DAG has a dependency-first declaration order: a nonempty DAG has
+a module with no outgoing dependency edge among the remaining modules; declare
+one such module and repeat. This is a representability argument, not an order
+inference step performed by the compiler. Fixed directory grouping therefore
+adds no further restriction to which acyclic module graphs can be written.
+
+The compiler need not infer a topological order, search for a module cycle,
+or discover the graph by inspecting implementation bodies. It still parses
+the declarations and checks every explicit edge. With a canonical-name lookup,
+this is one pass over module/edge records plus name-resolution cost; no
+measured speedup is claimed. Actual consumed semantic dependencies and
+concrete generic/callback FN-6/FN-9 graphs still need their own analysis.
+The source-module DAG is not the function, proof or optimizer graph.
+
+Declaration position is a certificate, not module identity, a promise that
+the module's body is correct, or a mandate for serial compilation. Independent
+modules may compile in parallel. An earlier declaration grants neither
+unlisted access nor unchecked implementation evidence.
+
+### Paths, parents, children and sharing
+
+A module may directly depend on any explicitly listed earlier module,
+regardless of directory distance. Thus `a/b/c -> d/e/f` requires an earlier
+`d/e/f` row and an edge in `a/b/c`'s row; no directory move or intermediate
+forwarding is needed. A parent may depend on a child, or a child on a parent,
+when that target is earlier and explicitly listed. The file cannot permit both
+directions simultaneously. Ancestry alone grants no dependency or private
+access; prefixes without `.wfm` are still namespaces rather than modules.
+
+The former ordered-subtree counterexample becomes directly expressible:
+
+```text
+app::A::a2 : [];
+app::B::b1 : [];
+app::B::b2 : [app::A::a2];
+app::A::a1 : [app::B::b1];
+```
+
+Both `A/a1 -> B/b1` and `B/b2 -> A/a2` are legal with unchanged paths. No
+complete subtree has to come before another. Shared providers can have many
+incoming edges without relocation into a special `shared` namespace. Moving
+a provider into such a directory is an organization choice, not an acyclicity
+repair.
+
+A new edge to a later module requires a compatible reordering within the
+graph file. If no order works, the requested graph is cyclic and the desired
+dependencies or module boundaries must change. Lower shared contracts,
+explicit generic policies, client adapters or a combined module remain
+possible API-specific responses; changing the file alone cannot resolve
+a genuine cycle or find the correct business abstraction. A cyclic graph
+cannot become legal through ordering, aliases or native linkage.
+
+Parents and children retain ordinary interface privacy. Java's package
+hierarchy [E9] is evidence only for separating names from private access, not
+for this proposed DAG certificate. A separately compiled module private to a
+parent subtree remains an unselected visibility capability with its own
+reopening consumer.
+
+### Dependency edits, source stability and collaboration
+
+All direct-dependency declarations and their order live in this one root
+file. Changing the declared graph does not require moving source directories,
+renaming modules, editing distributed ranks or synchronizing a second import
+list. The statement concerns dependency metadata: adding a new call, changing
+a public type or replacing an API can still require the corresponding source,
+interface and proof edits. Removing an edge with remaining source uses must
+reject those uses rather than silently admitting an undeclared dependency.
+
+One file is not a constant-size diff. Existing edges may require multiple rows
+to move, and concurrent agents can edit the same graph. Keep one explicit row
+per module, no hand-written numeric ranks, and preserve unrelated ordering
+rather than globally sorting the file after each edit. Textual merges still
+require ordinary graph validation. These choices reduce avoidable churn; their
+effect on collaboration has not been measured.
+
+A source-path rename still changes its canonical identity and affected source
+references. The graph cannot act as a namespace alias or prevent that ordinary
+cost. In contrast, an order-only edit preserves identities, public declarations
+and source references. Incremental queries must separate graph formation,
+per-module adjacency, edge-order validity and semantic consumers: a whole-file
+hash or changed numeric position must not invalidate all body proofs.
+
+The graph file makes dependency declarations inspectable in one place. A
+reader of a `.wfm` still sees its complete public signatures, contracts and
+explicitly qualified external references without implementation browsing;
+reading the graph establishes whether those references are authorized, not
+what an otherwise ambiguous public name means.
+
+### Alternatives and selection grounds
+
+| Candidate | Useful property | Cost and disposition |
 |---|---|---|
-| Imports only to strict descendants | Increasing finite tree depth prevents cycles | Too restrictive for shared services across branches without another mechanism |
-| Imports only to greater directory depth anywhere | Depth alone certifies acyclicity | Rejects equal-depth sharing and makes dependency levels depend on incidental nesting |
-| An explicit rank for every module, with imports only to lower ranks | Each edge can be checked without graph analysis | Revisit alongside a centralized sequence of canonical module paths: preserves names when order changes, but rank propagation or shared-order editing can still require coordination |
-| Ordered sibling subtrees, with each parent after its descendants | Paths and local sibling orders certify acyclicity | Revisit: direction is explicit, but some acyclic edits force regrouping and path changes; the proof does not establish practical evolution costs |
-| Arbitrary imports followed by cycle detection | Detects a cycle after composition | Superseded: no structural certificate or prior direction tells an author which new dependency is disallowed |
+| Filesystem descendants only, or whole ordered subtrees | Tree relationships certify acyclicity | Superseded: acyclic cross-branch edits can force path/namespace changes across consumers |
+| Numeric ranks in individual module files | Local strict-decrease check, independent of directory grouping | Not selected: order repair can spread edits across module files and separates adjacency from its order certificate |
+| One central order plus dependency lists in source files | Names stay stable and order is explicit | Not selected: a graph change still has multiple writer-maintained locations |
+| One root ordered adjacency file | Explicit edges and a locally checked order in one place; paths remain independent | Selected proposal: no distributed ranks or repeated import lists; shared-file editing and row movement remain costs to qualify |
+| One root unordered adjacency file plus cycle detection | Explicit graph without ordering edits | Viable under a weaker requirement, but not selected while the architecture must provide a checked order rather than infer one |
+| Bare central order granting every earlier module | Very short configuration | Not selected: expresses possible directions but hides the intended direct dependency graph |
 
-### Ordered namespace tree: candidate under reconsideration
-
-Annotate each branching namespace with an explicit order of its immediate
-child namespace components, from dependency providers to consumers. This is
-architectural input in the existing build description, separate from complete
-public `.wfm` declarations. It adds order to the filesystem-derived tree;
-it does not rename paths or override file ownership. Exact configuration
-syntax remains to be specified. For example, the following is mathematical
-notation for two local lists, not accepted WF or build grammar:
-
-```text
-children(root)   = [shared, d, a]
-children(shared) = [memory, f]
-```
-
-Every branching node lists each existing immediate namespace child once, with
-no duplicate or unknown entries. Every selected module identity has exactly
-one canonical position; aliases cannot give it different positions. Zero or
-one child needs no choice of order.
-The finite namespace inventory includes module paths and their directory
-prefixes; prefixes without `.wfm` can therefore own child-order metadata
-without becoming modules. Multiple selected source roots sit under one
-virtual root with its own declared order. An out-of-tree dependency is not an
-exemption: first bind its root and include it in this architecture. Order is
-never inferred from imports, alphabetical names or directory enumeration.
-
-A module is conceptually after all modules in its own descendant subtrees.
-For a declared dependency `A -> B`, apply exactly these local cases:
-
-1. If B is a strict descendant of A, allow it.
-2. If B is A or a strict ancestor of A, reject it.
-3. Otherwise find their lowest common namespace ancestor. Allow the edge
-   exactly when B's immediate branch there precedes A's immediate branch.
-
-These rules apply to public interface imports and private implementation
-dependencies alike. No source reference gains an exemption through re-export,
-a path alias, a native binding or an implementation-only declaration.
-Interface access still requires the direct dependency and B's public API;
-there is no automatic visibility of earlier branches, transitive dependency
-or familial private access.
-
-A parent may therefore directly depend on a child or grandchild. A descendant
-cannot depend on its ancestor's module interface, even when that isolated
-edge would be acyclic. Cross-branch imports may target any depth of an earlier
-branch; no intermediate interface forwarding is required. A naming prefix
-without `.wfm` cannot itself be an import destination.
-
-### Why local checks guarantee a DAG
-
-For the proof, traverse the finite ordered namespace tree in postorder: visit
-each child subtree in its declared order, then the node's own module if one
-exists. Give each visited module a distinct position `rank(M)`. The compiler
-does not need to materialize these global numbers to check an import.
-
-In case 1, a descendant B is visited before its ancestor A. In case 3, all of
-B's branch is visited before any module of A's branch. Thus every allowed
-`A -> B` satisfies `rank(B) < rank(A)`. A directed cycle would require a
-strictly decreasing sequence of finite positions to return to its starting
-position, which is impossible. Rejecting self and ancestor edges covers the
-remaining cases. Restricting the tree to any selected module subset preserves
-this argument.
-
-Only namespace-tree consistency and per-dependency direction checks are
-required to establish source-module acyclicity; no import-graph SCC, cycle
-search or inferred topological sorting is needed for that property. Reading
-each declared dependency is still necessary, and incremental checking still
-records actual consumed dependencies. Concrete generic/callback calls and
-proof publication retain their separate FN-6/FN-9 graph checks; this theorem
-is about source module dependencies, not every compiler or runtime graph.
-
-As a supporting exploratory check, enumerate all ordered rooted tree shapes
-with 1 through 9 nodes using preorder child-count sequences. Start with one
-open node slot; consuming a node with k children changes slots to slots-1+k,
-never exhaust slots before the final node, and finish at zero. Build each
-tree from that sequence, independently assign postorder positions, and compare
-the three-case path predicate against `rank(target) < rank(source)` for every
-ordered pair including self-pairs. All 2,056 trees and 151,719 pairs agreed;
-67,071 pairs were allowed. The tree counts by size were
-`1, 1, 2, 5, 14, 42, 132, 429, 1430`. This finite model is not a compiler
-test or the proof of the general theorem; it checks the candidate's case
-definition against the argument. No performance conclusion follows from it.
-
-### Shared services and directed architectural changes
-
-With `children(root) = [shared, d, a]`, the original
-`a/b/c -> d/e/f` example is legal: its target lies in the earlier d branch.
-The reverse cross-branch direction is forbidden by the declared architecture,
-without inspecting either branch's existing imports. Both subtrees may use
-`shared/f`. Merely having a root order does not add any of those edges.
-
-If d and a each need part of the other's behavior, the existing order identifies
-the offending direction: d cannot acquire an a dependency. The adjustment is
-to place genuinely shared contracts or implementation below both consumers,
-for example in the earlier shared branch, while keeping d-specific and
-a-specific adapters in their own branches. Existing type/constant/function-kind
-parameters may express differing policies under their ordinary WF rules.
-A lower component can receive behavior through such an explicit contract
-without importing its higher-level caller; concrete call cycles still undergo
-ordinary proof checks.
-
-A shared f must itself obey its position. It cannot become shared merely by
-moving its files while retaining dependencies on d or a. Extract its neutral
-part and leave higher-level adapters behind, move a genuinely cohesive set
-to the earlier branch, or revise the declared architecture deliberately.
-Unrelated or incompatible requirements may need distinct implementations
-instead of a common abstraction.
-
-This gives a rule for which direction is disallowed, not an automatic choice
-of the correct business abstraction. Changing sibling order is an explicit
-architecture change: revalidate affected declared edges, rather than accepting
-a new order just because one new import requests it. Where two parts truly
-need unrestricted static mutual access, one WF module with several files
-remains the existing organizational option. The policy does not suppress
-ordinary recursion inside that module.
-
-The additional subtree constraint is real. Consider two branches A and B
-with independent modules and only these edges:
-
-```text
-A/a1 -> B/b1
-B/b2 -> A/a2
-```
-
-This module graph is acyclic, yet neither ordering of the two intact branches
-admits both edges. The tree policy requires separating lower shared providers
-from their consumers or regrouping the branches. If preserving such
-interleaving inside fixed directory groups becomes a requirement, the explicit
-per-module rank alternative is preferable; it retains local acyclicity checks
-without imposing one direction on entire subtrees. Do not hide this difference
-by claiming the ordered-tree model represents every DAG under every layout.
-
-### Dependency changes and source edit locality
-
-Distinguish three cases. Adding an already permitted edge changes its explicit
-dependency declaration and actual uses. Changing a child order can remain one
-architecture edit if all existing edges still pass. A change that requires
-interleaved directions across intact subtrees cannot be repaired by either
-sibling order; regrouping then changes path-derived identities and may require
-many imports, qualified uses and public references to be edited. Only the last
-case necessarily exposes the naming cost of that repair; do not describe every
-dependency edit as a repository-wide move.
-
-Compare an explicit sequence of canonical module paths in the existing build
-description, independent of directory grouping. An import may target only an
-earlier entry. Unique complete membership and strict position descent provide
-the same kind of local acyclicity certificate, while changing the sequence
-does not rename modules or rewrite unchanged qualified references. For the
-two-branch example, `[A/a2, B/b1, B/b2, A/a1]` admits both edges. This candidate
-would apply one position rule to parent/child pairs too; it must not also grant
-unconditional parent-to-descendant permission that bypasses that rule.
-
-This does not promise constant-size repairs. Moving an entry can invalidate
-existing edges and require several entries to move. A genuinely cyclic new
-dependency set has no valid sequence. A centralized order reduces the number
-of files holding the certificate, but becomes shared architectural input for
-concurrent agents; numeric ranks distributed among modules avoid that single
-file while risking multi-module relabeling. Neither representation can be
-claimed to solve edit locality merely because its DAG proof is simple.
-
-Under a fixed certificate and an independent per-edge predicate, both opposing
-directions cannot be permitted: each edge alone is acyclic, but permitting
-both would admit their cycle. Consequently some acyclic additions must change
-the certificate or be refused. This is not a proof that many source files must
-change; certificate maintenance and source-name changes are different costs.
-
-The owner's change-locality concern reopens the ordered-tree recommendation.
-Keep the structural guarantee and path-derived names; compare where the
-dependency certificate lives before selecting their coupling. No replacement
-policy or automatic reordering tool is selected in this discussion refinement.
-
-Parents and children continue to share no private access. A separately
-declared child interface is directly usable when the structural direction
-allows it, not private merely because it is nested. Java's package hierarchy
-[E9] is a precedent only for separating naming from private access, not evidence
-for this new structural order. A parent-private separately compiled subtree
-remains an unselected visibility capability with its own reopening consumer.
+The [earlier ordered-tree argument and exploratory enumeration](https://github.com/mbbill/Whitefoot/blob/17a5fbbf01397975801d957aa590b9c1173e556e/research/investigations/modular-compilation/DESIGN.md#why-local-checks-guarantee-a-dag)
+remain evidence only for that superseded predicate, not this file format,
+a future resolver, collaboration costs or performance. The new candidate
+rests on the strict declaration-position argument above and needs its own
+grammar/resolver and edit-locality qualification.
 
 ### Public semantic closure, representation and proof paths
 
@@ -593,8 +562,8 @@ An implementation task can hold the public `.wfm` fixed while changing several
 files in the module's shared namespace. Public signature changes edit both
 interface and corresponding function definition; private helper/file changes
 do not edit the public interface. Direct directory membership is a tracked
-source input; implementation dependency changes still touch private build
-configuration, where concurrent edits can conflict. Neither duplication checks
+source input; dependency declaration changes touch the root graph file, where
+concurrent edits can conflict. Neither duplication checks
 nor a flat namespace proves improved
 multi-agent throughput. Cohesive contracts and independent changes remain
 better module boundaries than a fixed file/line count or an exclusive agent lock.
@@ -607,14 +576,15 @@ a definition between files in the same module preserves its semantic identity an
 dependencies; source maps and debug-information consumers may still change.
 Never key every body or object by the entire `.wfm` or build-file digest.
 
-Validate each import against its actual path relationship and relevant child
-order. Inserting another sibling may change conceptual postorder numbers but
-need not change existing legality results or declaration identity. Changing
-an order revalidates affected edges; unchanged semantic claims retain their
-ordinary reuse conditions. Do not put a global rank or whole architecture-file
-digest into every body-check key. The architecture constrains permitted edges;
-it neither creates all permitted dependencies nor forces serial compilation
-of modules that do not actually depend on one another.
+Validate each external reference against the source module's normalized
+direct-dependency row and the graph's earlier-target checks. Inserting or
+moving an unrelated row may change declaration positions without changing
+edge validity or identity. Revalidate affected graph checks; unchanged
+semantic claims retain their ordinary reuse conditions. Do not put a row
+position or whole graph-file digest into every body-check key. Listed edges
+are the declared dependencies, while consumed semantic and optimizer inputs
+remain separately tracked. File order does not force serial compilation of
+modules that do not actually depend on one another.
 
 ## Compilation units and file boundaries
 
@@ -683,7 +653,8 @@ These families name responsibilities, not a proposed public Rust API:
 |---|---|---|
 | Source formation | Interface/source bytes, selected canonical roots, direct directory inventory, grammar/spec identity | Tokens, canonical trees, source maps |
 | Module surface / lookup | Canonical path components, public/private inventories, direct dependency paths, lookup role and spelling | Stable declaration or diagnostic |
-| Module dependency permission | Canonical source/target paths and consumed architecture-certificate relations; descendant/divergent-branch order in the tree candidate | Allowed direct dependency or architectural direction diagnostic |
+| Graph formation / edge validation | Root graph bytes, canonical module inventory, exact adjacency rows and earlier-target relations | Stable per-module dependency sets and valid order certificate, or located graph diagnostic |
+| Module dependency permission | Canonical source/target identities and membership in the source's normalized adjacency row | Allowed direct dependency or missing-edge diagnostic |
 | Interface correspondence | Resolved public declaration and selected implementation declaration | Matching identity and checked normalized declaration, or diagnostic |
 | Contract / type shape | Resolved declaration, arguments, capabilities and projections | Normalized semantic boundary |
 | Template check | Symbolic body, bounds, callee boundaries and summary availability | Symbolic checked body |
@@ -784,9 +755,9 @@ proof-replay acceptance path.
 
 ### Keep module, call and proof graphs distinct
 
-An explicitly declared descending order certifies source-module acyclicity by local checks
-on both interface imports and implementation dependencies. Its declared order
-identifies the forbidden direction before a new edge can form a cycle. Shared
+The root graph's explicit edges and declaration order certify source-module
+acyclicity through local checks. Both interface and implementation references
+require a listed edge; neither can introduce another source-graph direction. Shared
 lower contracts, ordinary function-kind parameters and a combined module are
 the organizational choices described above; their actual suitability depends
 on the API. No such choice requires dynamic dispatch, whole-module checking
@@ -803,8 +774,8 @@ common interface may change the public API. Reopen this choice if a concrete
 consumer needs distinct cyclic privacy/distribution boundaries that a shared
 module and ordinary interfaces cannot preserve satisfactorily; doing so would
 reopen the structural source-DAG requirement itself. An acyclic but interleaved
-directory decomposition is part of the reopened comparison with independent
-module orders while preserving that requirement.
+directory decomposition is expressible by independent module rows in the root
+graph while preserving that requirement.
 
 An acyclic module graph does not make actual calls acyclic. Functions inside
 a module may recurse, and binding a function-kind parameter can create
@@ -1042,9 +1013,9 @@ or LLVM optimization of unchanged units.
 | ThinLTO flag alone | Parallel backends and object cache | Insufficient: supplies neither WF proof reuse nor persistent WF optimization planning |
 | Handwritten interfaces accepted as facts | Easy isolated checking | Refused: contracts require verified implementation evidence |
 | Cyclic module dependencies with joint interface formation | Retains separate module boundaries in a cyclic decomposition | Technically viable, but contradicts the structural source-DAG requirement; reopening needs a concrete cyclic-boundary consumer |
-| Only adjacent or descendant directory imports | Tree alone certifies acyclicity | Too restrictive for shared providers across branches; ordered sibling subtrees add a checked sharing direction |
+| Only adjacent/descendant imports or ordered namespace subtrees | Tree structure certifies acyclicity | Superseded: dependency changes can require unnecessary regrouping and path changes |
 | Arbitrary cross-subtree imports plus cycle detection | Permits any acyclic grouping | Superseded: the required architecture must certify every permitted edge set before graph analysis |
-| Explicit rank per module or central module sequence | Local strict-decrease proof without requiring subtree direction | Revisit for change locality: names can remain stable, but distributed relabeling or shared-order contention remain costs to evaluate |
+| Distributed ranks or a central order separate from source imports | Local strict-decrease proof without subtree direction | Not selected: dependency metadata still has several authorities; use one root ordered adjacency file |
 | Direct deep imports plus automatic transitive source visibility | Short import lists | Refused: changing an intermediate module's dependencies would silently change a client's lookup surface |
 | Parent or child inherits private access | Convenient family implementation | Not selected: separately declared modules use one uniform interface rule; keep private cooperating files in one module, and reopen family visibility only for a concrete separate-module consumer |
 | Portable proof/object certificates and new verifier | Untrusted distribution | Not selected: version-private results under the existing compiler trust boundary serve this consumer |
@@ -1071,8 +1042,8 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 
 | Owner | Before | Proposed change |
 |---|---|---|
-| PROG-1/2/3 | One ordered bundle, no modules, unqualified entry | Explicit finite architecture order certifying public/private source dependency acyclicity by local direction checks; revisit subtree coupling versus independent module order; path-derived modules, direct .wf ownership and checked composition |
-| FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Separate complete interface/source forms, module-qualified names and diagnostics joining declarations and definitions |
+| PROG-1/2/3 | One ordered bundle, no modules, unqualified entry | One project-root ordered adjacency file is the sole source-module graph; earlier-target checks certify acyclicity independently of path-derived names and direct .wf ownership; checked composition remains required |
+| FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Complete interface/source and root-graph forms, module-qualified names and diagnostics joining graph rows, declarations and definitions |
 | TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Path-qualified modules with shared local names; only structurally permitted direct interfaces are visible; ordinary privacy, order-independent top-level names, dependency validity and lexical local scope retained |
 | Public declaration correspondence / type representation | No separate interface or public/private source boundary | Self-contained public semantic declarations, exact normalized callable correspondence, one nominal identity, and checked abstract representation/capability correspondence |
 | Type/ownership/release consumers | Descriptions in one inventory | Same judgments over imported descriptions; privacy grants no storage or release exemption |
@@ -1081,22 +1052,22 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 | STOR-6/8, EFF-3, PAR-1/2 | Whole-program target/allocation/parallel metadata | Same rules over complete tracked layout, allocation and call-summary dependencies |
 | PRE-1 / native binding | Compiler-owned declarations and linked bodies | Bind selected prelude, runtime and target identity into composition/codegen inputs |
 
-The candidate uses the .wfm path as the module declaration, places direct
-interface imports and complete public declarations in that file, omits a
-second written module name, implementation-side `pub` and namespace blocks,
-and reuses `::` for qualified names. Direct directory membership determines
-implementation records; roots and private dependency bindings are explicit
-build inputs together with an explicit dependency-order certificate whose
-subtree or independent-module representation is under reconsideration. Exact declaration
-terminators, canonical path/collision and order-consistency rules,
-abstract nominal/capability syntax, normalized correspondence and dependency
-selection syntax remain to be specified. META-5 deltas require the complete
-grammars and judgments with strong-LL(2) checks; no count is invented here.
+The candidate uses the .wfm path as the module declaration and puts complete
+public declarations with fully qualified external references in that file.
+There is no second module-name declaration, source import list,
+implementation-side `pub` or namespace block. Direct directory membership
+determines implementation records. One project-root graph file binds source
+roots and lists ordered modules with their exact direct dependencies. Its
+provisional name is `modules.wfg`; exact graph syntax, declaration terminators,
+canonical path/collision rules, abstract nominal/capability syntax and
+normalized correspondence remain to be specified. META-5 deltas require the
+complete grammars and judgments with strong-LL(2) checks; no count is invented
+here.
 
 | Current implementation owner | Required structural change |
 |---|---|
-| `source.rs`, syntax/canonical rendering | Canonical selected roots, direct directory snapshots, interface/source grammar roots, stable path/item identity and source maps |
-| `resolution/engine*` | Ordered path namespaces, local dependency permission checks, exact direct interfaces, shared local inventories, public closure, correspondence and positive/negative lookup dependencies |
+| `source.rs`, syntax/canonical rendering | Canonical selected roots, direct directory snapshots, interface/source and graph grammar roots, stable path/item identity and source maps |
+| `resolution/engine*` | Canonical path namespaces, root-graph adjacency and earlier-target validation, direct-dependency permission checks, shared local inventories, public closure, correspondence and positive/negative lookup dependencies |
 | `semantic/check.rs`, `check/generics*` | Query-owned body/instance checking and reusable owned results instead of whole-unit borrow chains |
 | `semantic/entailment*`, `postcondition.rs` | Stable claims, retained derivations, current SCC availability and composition |
 | `semantic/model.rs`, allocation/permission consumers | Stable identities and tracked fixed-point/target dependencies |
@@ -1180,7 +1151,7 @@ Use ordinary complete declarations, including generic/function-kind APIs.
 Preserve GrowVector's actual proof requirements when evaluating an abstract
 interface; its unresolved logical-vocabulary gap is not permission to weaken
 the library contract. Record declaration-edit costs, reading errors, interface
-and private dependency-selection conflicts and cross-module coordination before
+and root-graph editing conflicts and cross-module coordination before
 claiming collaboration benefits. No such trial has been performed.
 
 Require negative witnesses for absent/duplicate implementations, mismatched
@@ -1220,41 +1191,43 @@ member addition/removal, duplicate declarations, namespace/declaration clashes
 and ambiguous root/path bindings have deterministic results across supported
 hosts. No implementation filename introduces another namespace.
 
-Require a direct grandchild import and a cross-subtree `a/b/c -> d/e/f` import
-when d precedes a at their divergence, including prefix directories with no
-`.wfm`. No intermediate API forwarding is needed. Reject the opposite branch
-direction and a child-to-parent dependency even in isolation, with a diagnostic
-naming the violated ancestor/order boundary rather than an import-graph cycle.
-Check self-import, missing/duplicate/unknown order entries, root-order bypasses
-and canonical alias ambiguity. Public and private edges use the same rule.
-Validate transitive-use and familial-private-access failures independently.
-An attempted cycle must contain an individually illegal edge under every valid
-tree order; changing names alone cannot make all its edges legal.
+Require a declared direct grandchild dependency and a cross-subtree
+`a/b/c -> d/e/f` edge when the target row is earlier. Exercise child-to-parent
+and parent-to-child dependencies in separate valid graphs; ancestry grants
+neither a permission nor a prohibition. Admit the two-branch interleaving
+example without moving directories. Reject missing/duplicate module records,
+missing/duplicate/forward/self edges, unknown paths, ambiguous roots/aliases,
+hidden source imports and unlisted use of an earlier or transitive module.
+Public-interface and implementation references use the same adjacency
+authority. Preserve private-access failures independently of graph validity.
 
-Retain the acyclic two-branch interleaving counterexample as a qualification
-witness for the policy's extra restriction. Before selecting the dependency
-certificate, compare ordered subtrees, distributed module ranks and a central
-module sequence on matched dependency additions, removals and reversals with
-unchanged APIs, including that interleaving witness. Count renamed module paths,
-changed imports and qualified uses separately from edited order/rank entries,
-shared configuration conflicts and revalidated permission queries. An existing
-permitted edge needs no order edit; a real cycle must remain impossible. Do not
-claim a locality improvement if it only moves widespread source edits into
-widespread rank edits. Representative consumer and concurrent-writer costs are
-unmeasured; the structural proof alone does not select a certificate layout.
-The strict postorder argument establishes the abstract policy's acyclicity;
-the bounded model check does not certify a future resolver or root loader.
+For any attempted cycle, at least one edge must fail the earlier-target check
+under every declaration order. Validate that the checker never infers or
+silently repairs ordering. Test a valid explicit edge to an earlier module and
+an invalid reference to an unlisted earlier module separately: order is not
+adjacency. A graph edge also does not make the target's implementation proved.
 
-Check invalidation separately for interface/body edits, directory inventory
-changes, child-order changes and module-path renames. An unrelated ancestor API edit must not
-recheck a client's source proofs merely because the imported leaf has that
-ancestor's path prefix. Real namespace lookup and optimizer dependencies still
-count. Changing a relevant ancestor's child order must revalidate affected
-imports; inserting an unrelated sibling must not invalidate proofs merely by
-shifting conceptual ranks. Per-directory queries must not put a whole source-
-root or architecture-file digest into every module key. Compare explicit
-generic policies and client adapters with shared lower contracts; verify that
-moving a provider while retaining a forbidden higher dependency still fails.
+Compare matched graph additions, removals and reorderings with unchanged API
+definitions, including the former subtree interleaving witness. Confirm that
+all dependency declarations are edited in the root file, with no repeated
+source import list or distributed rank. Count graph rows moved, concurrent
+textual conflicts, source edits required by actual API use, and revalidated
+queries separately. A single-file declaration does not imply a one-line diff,
+no merge conflicts or a solution for truly cyclic requirements. Consumer-scale
+coordination costs remain unmeasured.
+
+Check incremental invalidation for graph edges, graph row ordering, root
+bindings, directory inventory, interface/body edits and path renames. A valid
+order-only edit must preserve module/declaration identities and unchanged
+source proofs; it can revalidate order checks and source locations. An unused
+edge addition must not by itself reprove every body; selected-graph closure
+and current checked-composition obligations still apply. Deleting a used edge
+must invalidate the corresponding permission/use query even if target APIs
+are unchanged. Root/graph-file digests and numeric row positions must not
+become all-body cache keys. Changing an ancestor's API has no effect on a leaf
+consumer solely because the names share a directory prefix. The strict
+position argument establishes the abstract guarantee, not implementation or
+performance.
 
 ### Correctness and dependency precision
 
@@ -1322,13 +1295,14 @@ remote cache service, new theorem language and incremental native linker do
 not have a requirement here and are not selected.
 
 The pending tree revision replaces the language root's closed-single-unit
-decision with structurally acyclic module dependencies under a declared finite
-order, including private dependencies; its coupling to namespace subtrees is
-under reconsideration for change locality. It replaces name-resolution's
+decision with one project-root ordered adjacency file for all source-module
+dependencies, including those used only by implementation. Earlier-target
+checks certify acyclicity without coupling dependency direction to directories. It replaces name-resolution's
 global inventory and top-level order dependence with
 filesystem-qualified modules, direct directory ownership, shared local names
-and complete checked public interfaces. The declared certificate constrains
-permitted edges without creating dependencies or access privileges.
+and complete checked public interfaces. Root graph rows declare the exact
+direct dependencies; row order certifies them without adding unlisted edges
+or private access privileges.
 The proposal also clarifies the compiler root's artifact boundary and adds one
 compiler child for persistent incremental computation. The constitution's safety and
 performance priorities, fixed deterministic proof families, generic
@@ -1342,15 +1316,16 @@ Four uncertainties are implementation acceptance work, not weaker endpoints:
 - Verify interface/source grammars, exact declaration correspondence, public
   semantic closure, abstract representation/capability matching, order-independent
   formation and exact specification deltas. Qualify canonical root/path rules,
-  direct directory membership, namespace/declaration collisions, complete child
-  orders and the three-case import predicate. Qualify deep imports, ancestor
-  rejection, root binding and ordinary parent/child privacy. Compare explicit
-  module ranks and a central module sequence for dependency-change locality;
-  the ordered-tree rule is stricter than arbitrary DAG acceptance. A separately compiled module
-  private to a parent subtree remains a possible capability with no selected
-  rule; reopen only for a concrete consumer that cannot use one module's private
-  files. Qualify explicit private dependency selection and interface comparison;
-  measure collaboration before claiming an advantage.
+  direct directory membership and namespace/declaration collisions. Specify
+  the root graph's complete ordered adjacency format, one canonical row per
+  selected module, earlier-target checks and sole dependency authority.
+  Qualify deep, parent/child and interleaved dependencies with ordinary privacy,
+  complete public qualification and no duplicate import lists. A separately
+  compiled module private to a parent subtree remains a possible capability
+  with no selected rule; reopen only for a concrete consumer that cannot use
+  one module's private files. Qualify edge deletion, reordering and root binding;
+  measure single-file coordination and query invalidation before claiming an
+  edit-locality or collaboration advantage.
 - Establish a compositional soundness argument for claim rebinding and
   component receipts, including cycle edits, deletion and failed-build cases;
   differential edit-sequence tests alone do not prove soundness.
