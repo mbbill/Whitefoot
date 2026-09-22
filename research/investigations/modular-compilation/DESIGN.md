@@ -109,7 +109,8 @@ select incremental checking or LLVM partition size.
 | Thin export list plus generated complete interface | Each signature and contract is written once | Superseded: the handwritten file alone does not satisfy public-interface self-containment |
 | Complete public declarations in one `.wfm`, with checked ordinary implementations | A caller or agent can read and hold the written contract fixed independently of implementation | Selected; the compiler must enforce declaration correspondence and the implementation must prove the declared obligations |
 | Complete interface with body-only implementation bindings | Avoids repeated function headers | Not selected: ordinary complete definitions remain locally readable and avoid a second body-binding form; repeated declarations are mechanically checked |
-| Directory discovery and automatic export | Few written entries | Refused: adding a file or definition can change ownership or publication without an explicit selection |
+| Canonical module directory with direct implementation-file membership | Filesystem and module ownership have one spelling | Selected under the path-based namespace requirement; snapshot and track the directory inventory, while complete .wfm declarations still exclusively control publication |
+| Recursive directory collection or automatic export | Few written entries | Refused: recursively collecting a child implementation confuses ownership, and adding a private definition must not publish it |
 
 OCaml's checked interface/implementation pair [E11] supports this mechanism;
 it does not establish WF's proof composition. Clang module maps [E8], Java
@@ -123,8 +124,9 @@ selected requirement that the handwritten public contract stand on its own.
 
 ### One complete public interface file
 
-Each source module has exactly one `.wfm`. It owns the module name, public
-interface imports and complete public declarations. Every ordinary top-level
+Each source module has exactly one `.wfm`. Its root-relative path owns the
+module name; its contents own public interface imports and complete public
+declarations. Every ordinary top-level
 declaration in that file belongs to the public API; there is no separate
 export list or implementation-side `pub` switch. Public function declarations
 include generic parameters and bounds, parameter/result labels and modes,
@@ -134,16 +136,13 @@ Public concrete records and enums declare their externally visible schema
 there. No interface fragment, textual include, wildcard export or forwarding
 alias can fill in an omitted part from an implementation file.
 
-The interface filename is a locator, not nominal identity. The build
-explicitly selects the interface, its implementation records and dependency
-identities. Keep implementation file membership and implementation-only
-dependencies in the private build selection rather than the public API file:
-adding a helper file should not edit a caller's contract. This selection is a
-mapping to the module already declared by `.wfm`, not a second module
-declaration or publication control. Its concrete configuration spelling is
-not selected here; it must explicitly enumerate source records and dependency
-roots, without ambient directory discovery. A record has one source-module
-owner; different compiler/target instances do not create another ownership.
+The build explicitly selects canonical source roots and dependency identities.
+The filesystem rule below determines module paths and direct implementation
+membership within that selected source snapshot; there is no separately
+editable module-name or member-file map. Implementation-only dependencies
+remain explicit private build inputs, since adding one should not rewrite the
+public interface. Their configuration spelling is not selected here; they
+name exact module paths under selected roots, not arbitrary file aliases.
 
 An interface import identifies an external module required to interpret that
 interface, never one of its own source files. Each root resolves to one build-
@@ -153,11 +152,10 @@ and private dependency bindings for the same root must agree; the build cannot
 inject public declarations or override interface imports. Version acquisition
 and package solving remain outside the language.
 
-Illustrative public-interface spelling, not an accepted grammar:
+Illustrative contents of `counters.wfm`, not an accepted grammar. The path
+already declares the module, so no second written module name is needed:
 
 ```text
-module counters;
-
 fn advance(value: own u64) -> next: own u64 pure contract {
   requires value < 18446744073709551615_u64;
   ensures next == value + 1_u64;
@@ -215,22 +213,22 @@ name-resolution or source linking boundaries. The public interface selects
 which of these identities external modules may use; it does not mediate
 internal references.
 
-For this candidate, the module itself supplies the namespace. Separate nested
-namespace syntax is deferred until a concrete naming consumer needs it; files
-do not implicitly create one. This replaces the previous descriptor-assigned
-namespace groups. A flat module can have more spelling collisions, and
-internal code sees all module-private declarations. Neither cost should be
-hidden by claiming that files provide encapsulation. Reopen purely naming
-groups if descriptive local names cease to serve a cohesive module, without
-turning those groups into imports or compilation boundaries.
+Each module's own implementation has a flat local inventory. Directory paths
+organize modules into qualified namespaces as specified below; a child `.wfm`
+introduces another module, not another file in the parent's private scope.
+No separate `namespace` block is introduced. Internal code sees its own
+module-private declarations, and local spelling collisions still need ordinary
+diagnostics. Splitting a file inside the same module does not grant privacy.
 
 Local uses resolve against the full inventory; dependency uses have an
-explicit module root such as `counters::advance`. Module roots and local
+explicit root-qualified path such as `app::counters::advance`. Module roots and
+local
 names have unambiguous ownership. There is no wildcard import, implicit
 transitive import, overload search or cross-module namespace extension.
-Selected dependency identity and local declaration identity determine a
-nominal, not its filename or printed module path alone. Re-exports and export
-renaming remain unselected; a stable facade over independently changing
+Selected source/dependency identity, canonical module path and local declaration
+identity determine a nominal, not its printed path without the selected root.
+Implementation filenames do not determine declaration identities. Re-exports
+and export renaming remain unselected; a stable facade over independently changing
 modules is the concrete consumer that would reopen that choice.
 
 Collect all top-level names before resolving definitions. Functions, nominals,
@@ -255,6 +253,133 @@ The build selects a module-qualified entry. The selected root interface owns
 `program no_heap;`, which constrains the entire selected dependency closure,
 including implementation-only dependencies, concrete instances and prelude
 definitions. Moving an allocation into a private dependency cannot hide it.
+
+### Filesystem namespace paths and module ownership
+
+Bind a canonical source root to one explicit root name, such as `app`. Within
+that root, `vector.wfm` declares `app::vector`, and `vector/other.wfm`
+declares `app::vector::other`. Qualified module paths mirror directories and
+the interface basename; there is no independent module-name declaration or
+directory-to-namespace remapping. An external dependency root also identifies
+the selected dependency instance, so equal relative paths in different roots
+do not identify the same nominal.
+
+```text
+vector.wfm
+vector/
+  core.wf
+  growth.wf
+  other.wfm
+  other/
+    core.wf
+```
+
+The direct `.wf` records in `vector/` implement `app::vector`. The direct
+`.wf` records in `vector/other/` implement `app::vector::other`. Neither the
+child interface nor its implementation is part of the parent implementation.
+Do not recursively collect `**/*.wf`. A selected implementation record must
+have the matching interface for its immediate owning directory; an unmatched
+record cannot silently inherit some distant ancestor's ownership. A directory
+prefix such as `a/b/` may organize `a/b/c.wfm` without `a.wfm` or `a/b.wfm`:
+such prefixes name locations, not implicit modules or dependency graph nodes.
+
+This replaces explicit member-file lists for the selected layout. Input
+formation captures a closed source snapshot and inventories direct entries
+deterministically; changes to membership are tracked inputs. Directory entry
+order, working directory and an ambient search path cannot choose meaning.
+Adding a private file changes the implementation inventory but cannot add a
+public declaration, since `.wfm` remains the complete publication authority.
+The earlier objection to discovery coupled with automatic publication does
+not justify maintaining a second ownership map under this requirement.
+
+Filesystem path uniqueness is only part of naming correctness. The compiler
+still rejects duplicate declarations across a module's implementation files,
+conflicting root bindings and ambiguous canonical source paths. Reserve a
+child namespace component against a top-level declaration with the same name
+in its parent module: `vector/other.wfm` can coexist on disk with an exported
+function called `other` in `vector.wfm`, but that conflicting namespace is not
+accepted. The namespace inventory records those path components and negative
+lookups; it does not infer access privileges from their existence. Canonical
+path/case/alias rules must yield the same names on supported hosts, with
+ambiguity diagnosed rather than resolved by filesystem iteration order. Their
+complete acceptance spelling remains part of grammar/input qualification.
+
+Moving a function between direct files of the same module preserves semantic
+identity. Moving or renaming a module path changes its qualified identity and
+requires affected imports and uses to change. Moving only the bound physical
+root while retaining its selected source identity and relative paths does not
+rename every module. Path-derived naming deliberately trades free module
+relocation for one inspectable relationship between source layout and names.
+
+### Namespace tree and explicit dependency DAG
+
+The namespace tree answers where a module is named. The dependency graph
+answers which modules it uses. The graph is a DAG over modules, not a tree
+constrained to follow directory edges. An edge `A -> B` means that A directly
+depends on B's public interface. Public interface imports and implementation-
+only dependencies contribute edges equally, and the complete selected graph
+must be acyclic. Merely placing a module under another creates no edge.
+
+| Relationship | Rule |
+|---|---|
+| Parent uses child | Explicit direct dependency; no automatic inclusion |
+| Parent uses grandchild | Explicit direct dependency allowed; no intermediate-module forwarding |
+| Sibling or unrelated subtree uses a module | Same explicit dependency rule, regardless of directory depth |
+| Child uses parent | Allowed if the resulting full graph remains acyclic; no automatic access |
+| A uses B and B uses C | A does not thereby obtain source access to C; an A use needs its own direct dependency |
+
+Exact root-qualified paths select the destination. An implementation of
+`app::a::b::c` can declare an implementation dependency on
+`app::d::e::f`; if f appears in its public types or contracts, its `.wfm`
+instead includes that direct interface import. No `d` or `d::e` import is
+needed merely to traverse the path. Intermediate `.wfm` interfaces are neither
+consulted as access gates nor re-exported. Importing a module never imports
+all descendants, and prefix directories without a `.wfm` cannot be imported
+as modules. Dependency resolution may traverse path metadata; that is not a
+semantic dependency on every ancestor's declarations.
+
+Parents, children, siblings and unrelated modules have identical access to a
+dependency: only its `.wfm` API. There is no inherited import, ancestor-private
+access, child export switch, or transitive re-export. In the selected model,
+every `.wfm` is directly addressable through an explicit dependency when its
+root is available; nesting does not make a child module private to its parent.
+Code that is solely a parent's private implementation stays in its `.wf`
+files. A subtree containing separately compiled but parent-private modules
+would need an additional visibility rule; that capability is not implied by
+the directory spelling and is not selected without its own consumer.
+
+Java's package hierarchy explicitly separates hierarchical names from special
+parent/child access [E9]. This is useful precedent for the distinction, not a
+proposal to copy Java's module/package visibility layers into WF.
+
+### Sharing a dependency across different consumers
+
+`app::a::b::c -> app::d::e::f` and `app::d::e -> app::d::e::f` can coexist.
+There is no requirement to move f to a common directory ancestor. A move may
+improve organization if f has become a broadly shared library, but it changes
+names, not the validity of those edges. Changing directory location alone
+also cannot break a cycle: `c -> f -> c` remains cyclic after renaming f.
+
+Different consumer requirements need an API decision, not a path rule:
+
+- If semantics are shared but types, bounds or policy functions differ, use
+  WF's existing explicit type/constant/function-kind parameters where they
+  express that difference. No new module functor or runtime dictionary follows.
+- If clients need different public shapes over shared semantics, use ordinary
+  adapters near each client, privately within its module unless independently
+  reusable. Verify each adapter's contracts; do not automatically grant two
+  inconsistent contracts to the same implementation.
+- If behaviors or ownership/resource contracts are incompatible, keep separate
+  implementations and share a smaller core only when it has a coherent API.
+  A common directory does not justify a universal implementation with unrelated
+  switches. Distinct modules retain distinct nominal identities.
+
+When a real dependency cycle appears, examine the declarations that create
+both directions. Factor a genuinely shared contract/core into a module both
+can import, or use an existing function-kind contract for reverse behavior
+where the ordinary proof rules admit it. Do not require this factoring merely
+because consumers occupy different directory branches. The concrete callback
+graph can still be recursive and remains subject to FN-6/FN-9.
 
 ### Public semantic closure, representation and proof paths
 
@@ -327,17 +452,18 @@ now fails correspondence instead of silently changing the exported API.
 An implementation task can hold the public `.wfm` fixed while changing several
 files in the module's shared namespace. Public signature changes edit both
 interface and corresponding function definition; private helper/file changes
-do not edit the public interface. File selection and implementation dependency
-changes still touch private build configuration, where concurrent edits can
-conflict. Neither duplication checks nor a flat namespace proves improved
+do not edit the public interface. Direct directory membership is a tracked
+source input; implementation dependency changes still touch private build
+configuration, where concurrent edits can conflict. Neither duplication checks
+nor a flat namespace proves improved
 multi-agent throughput. Cohesive contracts and independent changes remain
 better module boundaries than a fixed file/line count or an exclusive agent lock.
 
 Cache interface declarations, implementation declarations, correspondence,
 body checks and lookup results separately. Adding a private file checks its
 definitions and affected lookup/scope consumers, not all module bodies.
-Reordering selected files changes no semantic identity. Moving a definition
-between files in the same module preserves its semantic identity and proof
+Reordering the canonical source inventory changes no semantic identity. Moving
+a definition between files in the same module preserves its semantic identity and proof
 dependencies; source maps and debug-information consumers may still change.
 Never key every body or object by the entire `.wfm` or build-file digest.
 
@@ -406,8 +532,8 @@ These families name responsibilities, not a proposed public Rust API:
 
 | Query | Relevant inputs | Reusable output |
 |---|---|---|
-| Source formation | Interface/source bytes, explicit build selection, grammar/spec identity | Tokens, canonical trees, source maps |
-| Module surface / lookup | Public and private inventories, selected dependency roots, lookup role and spelling | Stable declaration or diagnostic |
+| Source formation | Interface/source bytes, selected canonical roots, direct directory inventory, grammar/spec identity | Tokens, canonical trees, source maps |
+| Module surface / lookup | Canonical path components, public/private inventories, direct dependency paths, lookup role and spelling | Stable declaration or diagnostic |
 | Interface correspondence | Resolved public declaration and selected implementation declaration | Matching identity and checked normalized declaration, or diagnostic |
 | Contract / type shape | Resolved declaration, arguments, capabilities and projections | Normalized semantic boundary |
 | Template check | Symbolic body, bounds, callee boundaries and summary availability | Symbolic checked body |
@@ -434,8 +560,8 @@ unprofitable inline candidate can become relevant. Do not place the hash of
 every imported module's entire source in every consumer key.
 
 Separate stable identity from revision. Declaration identity uses selected
-module identity, declaration domain and name; item-local node identities plus the current
-source map recover diagnostic locations. Concrete instances add the complete
+module identity, declaration domain and name; item-local node identities plus
+the current source map recover diagnostic locations. Concrete instances add the complete
 normalized type, const and function argument vector. Dense FunctionId/NominalId
 values and whole-program NodePaths can remain in-memory indices, never
 persistent identity. Adding an unrelated declaration must not rename all later
@@ -764,6 +890,9 @@ or LLVM optimization of unchanged units.
 | ThinLTO flag alone | Parallel backends and object cache | Insufficient: supplies neither WF proof reuse nor persistent WF optimization planning |
 | Handwritten interfaces accepted as facts | Easy isolated checking | Refused: contracts require verified implementation evidence |
 | Cyclic module dependencies with joint interface formation | Retains separate module boundaries in a cyclic decomposition | Technically viable, superseded provisionally by an acyclic graph including private dependencies and shared module interiors; reopen for a concrete cyclic-boundary consumer |
+| Dependencies follow only adjacent or downward directory edges | Directory tree also describes allowed communication | Refused: cross-subtree clients need unnecessary forwarding or relocation; no proof or optimization requirement makes directory depth determine usable interfaces |
+| Direct deep imports plus automatic transitive source visibility | Short import lists | Refused: changing an intermediate module's dependencies would silently change a client's lookup surface |
+| Parent or child inherits private access | Convenient family implementation | Not selected: separately declared modules use one uniform interface rule; keep private cooperating files in one module, and reopen family visibility only for a concrete separate-module consumer |
 | Portable proof/object certificates and new verifier | Untrusted distribution | Not selected: version-private results under the existing compiler trust boundary serve this consumer |
 | Fast unoptimized incremental path plus optimized full rebuild | Easy performance split | Refused: optimized incremental compilation is itself required |
 | Dependency-tracked checking, specialization and optimization; ordinary final link | Independent reuse with implementation visibility | Proposed; correctness, cost and runtime quality require the evidence below |
@@ -788,9 +917,9 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 
 | Owner | Before | Proposed change |
 |---|---|---|
-| PROG-1/2/3 | One ordered bundle, no modules, unqualified entry | Closed acyclic module graph including private dependencies; explicit build-selected records; qualified entry and checked composition |
+| PROG-1/2/3 | One ordered bundle, no modules, unqualified entry | Closed acyclic dependency graph independent of directory ancestry; root-relative .wfm modules with direct .wf membership, qualified entry and checked composition |
 | FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Separate complete interface/source forms, module-qualified names and diagnostics joining declarations and definitions |
-| TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | One namespace per module; order-independent top-level names; constant/group dependency validity and lexical local scope retained |
+| TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Path-qualified modules with shared local names; direct-only dependency visibility and ordinary cross-module privacy; order-independent top-level names with dependency validity and lexical local scope retained |
 | Public declaration correspondence / type representation | No separate interface or public/private source boundary | Self-contained public semantic declarations, exact normalized callable correspondence, one nominal identity, and checked abstract representation/capability correspondence |
 | Type/ownership/release consumers | Descriptions in one inventory | Same judgments over imported descriptions; privacy grants no storage or release exemption |
 | FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities | Same instance and SCC rules across modules, with current cached claims and availability |
@@ -798,18 +927,20 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 | STOR-6/8, EFF-3, PAR-1/2 | Whole-program target/allocation/parallel metadata | Same rules over complete tracked layout, allocation and call-summary dependencies |
 | PRE-1 / native binding | Compiler-owned declarations and linked bodies | Bind selected prelude, runtime and target identity into composition/codegen inputs |
 
-The candidate places module/interface-import forms and complete public
-declarations in `.wfm`, omits implementation-side `pub` and nested namespaces,
-and reuses `::` for qualified names. Source membership and private dependency
-bindings belong to explicit build selection. Exact declaration terminators,
-abstract nominal/capability syntax, normalized correspondence rules and build
+The candidate uses the .wfm path as the module declaration, places direct
+interface imports and complete public declarations in that file, omits a
+second written module name, implementation-side `pub` and namespace blocks,
+and reuses `::` for qualified names. Direct directory membership determines
+implementation records; roots and private dependency bindings are explicit
+build inputs. Exact declaration terminators, canonical path/collision rules,
+abstract nominal/capability syntax, normalized correspondence and dependency
 selection syntax remain to be specified. META-5 deltas require the complete
 grammars and judgments with strong-LL(2) checks; no count is invented here.
 
 | Current implementation owner | Required structural change |
 |---|---|
-| `source.rs`, syntax/canonical rendering | Explicit build-selected records, interface/source grammar roots, stable item identity and source maps |
-| `resolution/engine*` | Shared module inventories, interface-only public closure, exact declaration correspondence and positive/negative lookup dependencies |
+| `source.rs`, syntax/canonical rendering | Canonical selected roots, direct directory snapshots, interface/source grammar roots, stable path/item identity and source maps |
+| `resolution/engine*` | Path namespaces without ancestral privileges, exact direct dependencies, shared local inventories, public closure, correspondence and positive/negative lookup dependencies |
 | `semantic/check.rs`, `check/generics*` | Query-owned body/instance checking and reusable owned results instead of whole-unit borrow chains |
 | `semantic/entailment*`, `postcondition.rs` | Stable claims, retained derivations, current SCC availability and composition |
 | `semantic/model.rs`, allocation/permission consumers | Stable identities and tracked fixed-point/target dependencies |
@@ -866,6 +997,9 @@ and expose limits; they are not measurements of WF or proofs of this design.
   A dedicated declaration centralizes module dependencies and package exports.
   Java also checks public access on declarations; WF instead puts its full
   public declarations in the one interface without a second publication switch.
+  [Package naming and access](https://docs.oracle.com/javase/specs/jls/se25/html/jls-7.html#jls-7.1)
+  separately show that hierarchical names need not grant parent/child access,
+  and that filesystem organization does not eliminate declaration-name conflicts.
 - **E10 — [Haskell export lists](https://www.haskell.org/onlinereport/haskell2010/haskellch5.html).**
   An export list selects declared/imported entities without duplicating their
   definitions. This is a comparator for the superseded thin-list candidate,
@@ -890,7 +1024,7 @@ Use ordinary complete declarations, including generic/function-kind APIs.
 Preserve GrowVector's actual proof requirements when evaluating an abstract
 interface; its unresolved logical-vocabulary gap is not permission to weaken
 the library contract. Record declaration-edit costs, reading errors, interface
-and private build-selection conflicts and cross-module coordination before
+and private dependency-selection conflicts and cross-module coordination before
 claiming collaboration benefits. No such trial has been performed.
 
 Require negative witnesses for absent/duplicate implementations, mismatched
@@ -901,7 +1035,7 @@ correspondence failure. Interface-only declaration checking must not authorize
 lowering without a checked implementation. A private helper in one file must
 be usable from another without a public declaration or per-file import.
 
-Permute source-list and top-level item order; preserve local lexical scope
+Permute directory enumeration and top-level item order; preserve local lexical scope
 and reject constant/group cycles and invalid recursive layouts by their actual
 rules. Move a function between files, add a private file, and change one public
 declaration with its implementation. Compare checking, correspondence and
@@ -919,6 +1053,34 @@ link cost, peak memory and missed inlining/layout opportunities. File moves
 must not define new semantic compilation boundaries; debug-info updates may
 still require output changes. Runtime quality and required edit precision,
 not the number of object files alone, select the backend grouping.
+
+### Namespace and dependency qualification
+
+Exercise the paired `vector.wfm` / `vector/*.wf` and
+`vector/other.wfm` / `vector/other/*.wf` layout. Parent compilation must not
+collect child implementation files; an unmatched implementation directory must
+not acquire an ancestor owner. Check that canonical directory enumeration,
+member addition/removal, duplicate declarations, namespace/declaration clashes
+and ambiguous root/path bindings have deterministic results across supported
+hosts. No implementation filename introduces another namespace.
+
+Require a direct grandchild import, a cross-subtree `a/b/c -> d/e/f` import,
+and importing a leaf whose directory prefixes have no `.wfm`. None may need
+intermediate API forwarding. Require negative witnesses for a transitive use
+without a direct dependency, private access across every familial relation,
+importing a prefix directory as a module, and a cycle containing a private
+dependency. A child-to-parent dependency alone is allowed; adding the reverse
+edge must report the actual cycle. Moving the same cyclic graph to other
+directories must not change that verdict.
+
+Check invalidation separately for interface/body edits, directory inventory
+changes and module-path renames. An unrelated ancestor API edit must not
+recheck a client's source proofs merely because the imported leaf has that
+ancestor's path prefix. Real namespace lookup and optimizer dependencies still
+count. Per-directory inventory queries must not put a whole source-root digest
+into every module key. Compare distinct generic arguments and ordinary client
+adapters before claiming that divergent requirements need module-system
+parameterization or directory relocation.
 
 ### Correctness and dependency precision
 
@@ -988,7 +1150,9 @@ not have a requirement here and are not selected.
 The pending tree revision replaces the language root's closed-single-unit
 decision with an acyclic selected module graph including private dependencies,
 replaces name-resolution's global inventory and top-level order dependence with
-one shared namespace per module and complete checked public interfaces,
+filesystem-qualified modules, direct directory ownership, shared local names
+and complete checked public interfaces, while namespace ancestry adds neither
+dependency edges nor access privileges,
 clarifies the compiler root's artifact
 boundary, and adds one compiler child
 for persistent incremental computation. The constitution's safety and
@@ -1002,8 +1166,13 @@ Four uncertainties are implementation acceptance work, not weaker endpoints:
 
 - Verify interface/source grammars, exact declaration correspondence, public
   semantic closure, abstract representation/capability matching, order-independent
-  formation and exact specification deltas. Qualify explicit build selection
-  and interface comparison; measure collaboration before claiming an advantage.
+  formation and exact specification deltas. Qualify canonical root/path rules,
+  direct directory membership, namespace/declaration collisions, deep direct
+  dependencies and ordinary parent/child privacy. A separately compiled module
+  private to a parent subtree remains a possible capability with no selected
+  rule; reopen only for a concrete consumer that cannot use one module's private
+  files. Qualify explicit private dependency selection and interface comparison;
+  measure collaboration before claiming an advantage.
 - Establish a compositional soundness argument for claim rebinding and
   component receipts, including cycle edits, deletion and failed-build cases;
   differential edit-sequence tests alone do not prove soundness.

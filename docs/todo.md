@@ -13,18 +13,24 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   targets one self-contained public `.wfm` interface per module, reusable source proofs and
   generic instances, dependency-tracked cross-module optimization, and ordinary
   full final linking. Complete public declarations are checked against ordinary
-  implementations; implementation files share one namespace, with membership
-  and private dependencies supplied by explicit build selection.
+  implementations; direct `.wf` files share one local namespace, canonical
+  `.wfm` paths mirror directory namespaces, and private dependencies are explicit.
   Its selected direction remains an amendment, not implemented capability.
   Validate interface/qualified grammars, normalized declaration correspondence,
   public semantic closure, order-independent top-level formation and checked
-  abstract nominal capabilities/representation. Qualify private build selection,
+  abstract nominal capabilities/representation. Qualify canonical roots and
+  path/case/alias rules, direct directory membership without child collection,
+  namespace/declaration collisions, private dependency selection,
   interface comparison and cross-file private calls without interface entries.
   Public declaration duplication, build-selection contention and useful module
   sizes remain unmeasured; measure matched collaboration tasks before claiming
-  benefits. A flat namespace may increase local naming collisions; reopen purely
-  naming groups for a cohesive module that cannot be organized clearly with
-  descriptive names. The prior private-contract composition gap is unresolved:
+  benefits. Validate direct grandchild and cross-subtree imports, absence of
+  transitive source access or parent/child privileges, and cycle checks including
+  private edges; directory relocation alone must not change cyclicity. Subtree-
+  private separately compiled modules remain an unselected capability: reopen
+  for a concrete consumer that cannot use one module's private files, judging
+  the extra visibility rules against interface clarity and needed decomposition.
+  The prior private-contract composition gap is unresolved:
   accessor facts in a body cannot express a private requirement in a wrapper
   or function-kind formal while FN-8 forbids ordinary calls in contracts; await
   owner direction on the proposed checked proof-expression/abbreviation route.
