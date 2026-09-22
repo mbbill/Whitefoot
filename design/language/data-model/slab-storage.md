@@ -1,5 +1,3 @@
-Node: design/language/data-model/slab-storage.md
-
 Decision: The bounded Slab library reserves one backing and represents each materialized cell's vacancy by an inline one-slot window, reusing cells through an ordinary free list and retiring a cell when its generation cannot advance, because this preserves slot positions, supports must-consume payloads without a dummy value or per-payload allocation, and makes cleanup ownership visible to the existing window rules. The comparison in research/experiments/container-representation/slab-library/RESULTS.md isolates the extra word per cell from helper and result-transfer costs; this selects an executable ordinary representation, not a universally compact layout or native-performance ceiling, instead of adding a compiler-known sparse shape on the evidence of one library. Handles remain relative indices and generations, not unforgeable identities or retained ownership.
 
 Rejected:

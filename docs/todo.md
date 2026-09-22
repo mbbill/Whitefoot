@@ -348,8 +348,8 @@ each is resolved by a discussion and a tree change.
   two contiguous extents. A fully initialized Array works for copy elements
   but adds spare-capacity initialization and does not provide arbitrary T.
   The [exact rejection and correspondence evidence](../research/investigations/containers-and-resources/X1-LIBRARY.md#ring-range-correspondence)
-  also record the live tree's wider wording and the unrecovered narrowing
-  ground. Settle that correspondence with the owner; an extension needs a
+  record the historical mismatch and the fresh ruling retaining REF-4;
+  the tree and specification now agree. An extension needs a
   concrete span consumer, precise empty/non-wrap formation and invalidation
   rules, native-cost comparison and negative wrap/stale-reference cases.
   Defer extension while this library tests endpoint and rebase costs; reopen

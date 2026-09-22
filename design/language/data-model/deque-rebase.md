@@ -1,5 +1,3 @@
-Node: design/language/data-model/deque-rebase.md
-
 Decision: The Deque library exposes the ordinary boxed Ring directly, performs endpoint mutation through references with the operation's exact effects, and makes rebase an explicit consuming conversion to a newly allocated backing, because the direct shape retains the existing measure vocabulary and a counted element transfer proves exact resulting length, capacity and head while consuming an emptied old owner even for must-consume elements. The same-loop and two-extent controls in research/experiments/container-representation/deque-library/RESULTS.md separate this source interface from remaining lowering costs, instead of a wrapper that loses public measure contracts or an automatic reference-based replacement whose exchanged-owner facts are not yet expressible. This choice establishes an endpoint and rebase library; it does not supply two-span access or promise one native copy per element.
 
 Rejected:

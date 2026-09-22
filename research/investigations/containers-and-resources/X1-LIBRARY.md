@@ -94,8 +94,7 @@ Three different questions must not be collapsed:
 
 The family sketches below started as recommendations for implementation trials,
 not adopted library interfaces. The later Vector and v0.63 sections identify
-the executable libraries and their evidence; pending tree revisions stay in
-`design/amendments/` until an owner ruling. Existing temporary-reference,
+the executable libraries, their evidence and the selected boundaries. Existing temporary-reference,
 global-heap, no-hole and no-stored-reference choices remain premises. Their grounds are in
 the [data-model](../../../design/language/data-model.md),
 [ownership](../../../design/language/ownership.md) and
@@ -768,14 +767,14 @@ same integrated compiler and keep the historical compiler comparisons separate.
 
 ## Slab and Deque trial over v0.63
 
-The next comparison uses merged `3a969235`, kernel v0.63. Box descendant
-placement and the selected Vector consumption repair are available; the
+This comparison began at merged `3a969235`, kernel v0.63. Box descendant
+placement and the selected Vector consumption repair were available; the
 remaining Vector timing costs retain their explicit reopening conditions.
-The next end-to-end question is whether stable-slot reuse and a two-ended
+The end-to-end question is whether stable-slot reuse and a two-ended
 queue can support copyable, owning droppable and must-consume elements over
-ordinary values at an attributable native cost. The candidates below are
-implementation trials, not owner-approved library decisions or claims of
-native parity.
+ordinary values at an attributable native cost. The candidates below began as
+implementation trials; the selection and remaining-cost sections record their
+outcomes without a claim of native parity.
 
 For Slab, first try one boxed backing of cells, each containing an inline
 `Slots<T, 1>`, a generation and a free-list link. The inner window expresses
@@ -861,7 +860,7 @@ above are not performance selection evidence.
 
 ### Selection and remaining costs
 
-The proposed Slab choice keeps one allocation and stable cell positions for
+The selected Slab choice keeps one allocation and stable cell positions for
 arbitrary owned T. Its scalar cell costs 32 bytes against the tagged C
 control's 24; the 256-byte payload costs 280 against 272. The C window/tagged
 comparison isolates that extra word, while WF/window timings also include
@@ -869,31 +868,34 @@ result layout and call lowering. Retained wide removal and consumption still
 perform redundant transfers, so these results do not select the representation
 as a performance ceiling. Keep this ordinary implementation available for
 composition, and test the remaining transfers before using a Slab cost alone
-to justify a compiler-known sparse layout. The new pending
+to justify a compiler-known sparse layout. The approved
 `slab-storage` decision records that qualified choice.
 
-The proposed Deque choice keeps precise endpoint rows and an explicit new-owner
+The selected Deque choice keeps precise endpoint rows and an explicit new-owner
 conversion. Its strongest measured gap is ordinary scalar forward churn;
 retaining helpers largely removes that gap, exposing optimization of the
 inlined address path rather than an unavoidable reference-interface cost.
 A bounded GEP-fact probe removes the redundant descriptor traffic, but its
 general target qualification and timing recovery remain unverified. Keep the
 library interface and the measured baseline while qualifying that optimization;
-do not add a Ring growth primitive solely from this comparison. The pending
+do not add a Ring growth primitive solely from this comparison. The approved
 `deque-rebase` decision records the interface and its two-span limitation.
 
-These proposals supplement the pending typed-constant representation choice
-and the two corrections to storage/range correspondence. They add two proposed
-leaf nodes, with no new depth, and leave the live tree unchanged until a ruling.
+These selected library choices supplement the typed-constant representation
+choice and the two approved corrections to storage/range correspondence. The
+two new leaf nodes do not increase the tree's depth.
 The affected current guidance is the container writer pattern and library
 README; unresolved source interfaces and lowering opportunities remain in
-`docs/todo.md`. No specification or conformance verdict changes are proposed.
+`docs/todo.md`. No specification or conformance verdict change is part of this
+library slice.
 
 The original CSVs and artifact hashes remain evidence for the recorded
 pre-merge compiler. Main `7127bcb6` adds checker and aggregate-lowering repairs;
 its clean merge also required supplying the const-type inventory to a newly
-added unit-test context. Integrated emission comparisons are recorded in each
-experiment's RESULTS rather than silently relabelling earlier timings.
+added unit-test context. The earlier emission comparison established only the
+const-forwarding repair's correspondence, not the main integration. The
+integrated comparison remains separate evidence; the original timings keep
+their original compiler identity.
 
 ### Exact unavailable source forms
 
@@ -955,8 +957,8 @@ append's current lower-bound contract does not state the two-entry sum.
 
 ### Ring range correspondence
 
-The current [range-reference decision](../../../design/language/ownership/range-reference.md)
-still lists Ring. Commit `a907d9d6` adopted that candidate text. The earlier
+The [range-reference decision](../../../design/language/ownership/range-reference.md)
+previously listed Ring. Commit `a907d9d6` adopted that candidate text. The earlier
 `c79188a1` investigation's
 [amendment map](../access-effects/SPEC-AMENDMENT-MAP.md) had asked whether to
 refuse Ring ranges or admit proved non-wrapping ones, recommending refusal
@@ -964,14 +966,16 @@ under its owner-rulings-needed heading. The subsequent `7bc07c04` specification
 draft introduced today's blanket refusal. Neither its commit message nor the
 retained PR #70 discussion supplies a Ring-specific ruling. The earlier
 released v0.59 VIEW-2 had admitted proved non-wrapping views, including empty
-ones. This establishes current tree/spec drift and an unrecovered selection
+ones. This established tree/spec drift and an unrecovered selection
 ground; it does not establish that the narrowing was unauthorized.
 
-An owner ruling can retain REF-4 and narrow the tree, admit proved contiguous
-Ring ranges with an explicit empty-range rule, or design arbitrary wrapped
-logical ranges. The second requires formation, invalidation and lowering
-evidence; the third also exceeds the currently selected pointer/count range
-representation. This library trial follows REF-4 and leaves that ruling open.
+The owner selected retention of REF-4 as a fresh ruling: the tree now excludes
+Ring ranges, including empty and non-wrapping ones. The alternative of admitting
+proved-contiguous Ring ranges still needs an explicit empty-range rule plus
+formation, invalidation and lowering evidence. Arbitrary wrapped logical ranges
+would also exceed the selected pointer/count representation. The ruling does
+not reconstruct the missing historical ground and does not make slot visitation
+a replacement for a two-span consumer; that capability remains a follow-up.
 
 ### Compiler corrections exposed by composition
 
@@ -1009,6 +1013,6 @@ entailment and isolated refinement contexts, avoiding type propagation through
 every storage-extent and captured-index representation. This distinction
 matters when a u8 const parameter supplies a u64 formal or storage extent:
 the constant must remain one identity with its source bounds. It adds no
-automatic proof family. The corresponding compiler choice is a pending
-checker-facts amendment; domain, insufficient-guard and forwarding regressions
+automatic proof family. The corresponding compiler choice is recorded in
+checker-facts; domain, insufficient-guard and forwarding regressions
 exercise the existing proof checker.
