@@ -447,6 +447,7 @@ compiler:
 # Explicit helper-pricing experiment only; no framework or correctness caller.
 # Retire this target and its three sources when that experiment is superseded.
 # The ordinary adapter chooses the sequential world at WF_WORKERS=1.
+ARRAY_REFERENCE_REPEATS ?= 1
 array-reference-build: compiler $(RUNTIME_OBJS)
 	@mkdir -p $(BUILD)
 	$(WFC) --par --emit-llvm array_reference.wf -o $(BUILD)/array_reference.ll
@@ -454,7 +455,8 @@ array-reference-build: compiler $(RUNTIME_OBJS)
 	sed -e 's/@main(/@wf_bench_original_main(/g' \
 	    -e 's/@wf__main_body(/@wf_bench_original_body(/g' \
 	    $(BUILD)/array_reference-adapted.ll > $(BUILD)/array_reference-linked.ll
-	$(CC) $(WF_FLAGS) $(BUILD)/array_reference-linked.ll array_reference_bench.c \
+	$(CC) $(WF_FLAGS) -DWF_BENCH_REPEATS=$(ARRAY_REFERENCE_REPEATS) \
+	    $(BUILD)/array_reference-linked.ll array_reference_bench.c \
 	    $(RUNTIME_OBJS) -lm -o $(BUILD)/array_reference
 	$(SHA256) array_reference.wf array_reference_bench.c array_reference_host.ll $(BUILD)/array_reference
 

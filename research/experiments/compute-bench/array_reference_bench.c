@@ -6,6 +6,10 @@
 #ifdef __APPLE__
 #include <mach/mach.h>
 #endif
+#ifndef WF_BENCH_REPEATS
+#define WF_BENCH_REPEATS 1
+#endif
+_Static_assert(WF_BENCH_REPEATS > 0, "the measured interval must contain a call");
 extern int wf__floor_run(int, char **);
 extern uint64_t wf_bench_batch(uint64_t **, uint64_t *, uint64_t);
 extern unsigned long wf__par_grants(void);
@@ -60,7 +64,9 @@ int wf__main_body(int argc, char **argv) {
     for (unsigned sample = 0; sample <= 5; ++sample) {
         unsigned long before_grants = wf__par_grants();
         uint64_t cpu_before = cpu_ns(), wall_before = wall_ns();
-        uint64_t actual = wf_bench_batch(&input, output, rows);
+        uint64_t actual = 0;
+        for (unsigned call = 0; call < WF_BENCH_REPEATS; ++call)
+            actual = wf_bench_batch(&input, output, rows);
         uint64_t wall = wall_ns() - wall_before, cpu = cpu_ns() - cpu_before;
         unsigned long grants = wf__par_grants() - before_grants;
         if (actual != rows) return 26;

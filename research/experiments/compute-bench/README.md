@@ -5,8 +5,9 @@ One question, one table per host:
 > **For each kernel, at each width, is the Whitefoot program built by this
 > tree's `whitefootc` with plain `--par` the fastest thing in the row?**
 
-Everything in this directory exists to make that one comparison honest, and
-nothing else is here at all. **No number in a table printed by this bundle
+The framework scoreboard exists to make that comparison honest. The separate
+helper-pricing experiment below uses the same native build support.
+**No number in a framework scoreboard table
 fails a build or a check**: there is no band, no threshold, no timeout, no
 budget and no heuristic anywhere that selects a row, a ranking or a ratio, and
 `compare` fails only on a missing or malformed row.
@@ -29,19 +30,35 @@ WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl array-reference-build \
   WFC=/absolute/path/to/whitefootc WORK=/absolute/scratch/array-reference-arm
 ```
 
-Run `WF_WORKERS=4 /absolute/scratch/array-reference-arm/build/array_reference
-candidate 1 16384 512` inside the same verification guard. The arguments are
-arm label, pass number, input words and output rows. Each process checks one
-warmup and five measured calls against a separate complete-output oracle and
-checks the unchanged input after every call. The TSV fields are arm, workers,
+Run the image separately from construction:
+
+```sh
+WHITEFOOT_CHECK_TIMEOUT=10 perl .github/run-check.pl array-reference-oracle \
+  env WF_WORKERS=4 /absolute/scratch/array-reference-arm/build/array_reference \
+  candidate 1 16384 512
+```
+
+The arguments are arm label, pass number, input words and output rows. Each
+process checks one warmup and five measured calls against a separate
+complete-output oracle and checks the unchanged input after every call.
+The TSV fields are arm, workers,
 pass, words, rows, sample, wall nanoseconds, process CPU nanoseconds and actual
 steals; sample zero is the warmup. Allocation, oracle calculation, checking
 and release are outside the interval. The LLVM adapter is needed for the
 ordinary range argument ABI and uses the formal host adapter's world selection.
 The recorded five-pass rotation, null comparison, medians and selection
 criterion are in the investigation. The [retained stream](array-reference-work-2026-09-22.tsv)
-adds a leading `comparison` column. Tiny calls have unresolved wall intervals
-on this host and receive no ratio verdict.
+adds a leading `comparison` column. Individual tiny calls have unresolved wall
+intervals on this host and receive no ratio verdict. The separate resolution
+diagnostic builds with `ARRAY_REFERENCE_REPEATS=4096` and runs only `17 2` at
+W1/W4. Its
+`batched-null-4096` and `batched-matched-4096` rows record interval totals;
+divide wall and CPU by 4,096 for per-call observations. The allocations,
+inputs, WF code and checks surrounding each interval are unchanged. The
+default remains one call per interval, with no LTO or floating-point changes.
+The diagnostic reports absolute per-call wall and CPU differences separately;
+the recorded CPU interval quantum is 1,000 ns, or 0.244 ns per call after
+normalization. Its fixed paired order and results are in the investigation.
 
 ## What "WF" means here, and what it does not
 

@@ -1291,8 +1291,9 @@ The retained [WF source](../../experiments/compute-bench/array_reference.wf),
 [ordinary ABI adapter](../../experiments/compute-bench/array_reference_host.ll)
 have an explicit manual build target in the existing compute-bench Makefile.
 Their [raw rows](../../experiments/compute-bench/array-reference-work-2026-09-22.tsv)
-retain both the identical-image control and matched comparison, including
-warmups. They are research evidence, with no daily correctness dependency.
+retain the identical-image control, matched comparison and separately labelled
+tiny-call resolution diagnostic, including warmups. They are research evidence,
+with no daily correctness dependency.
 
 The host is MacBookPro18,3 with eight physical/logical CPUs in performance
 levels of six and two cores, Apple clang 21.0.0 and Rust 1.98.1. The baseline
@@ -1337,8 +1338,8 @@ five of five faster pairs and actual useful steals, with 5.2 percent more
 process CPU. W1 selects the identical sequential world and has no offers.
 The tiny W1/W4 fixture also has no offers, but its single-call wall readings
 quantize to 0 or 1,000 ns and cannot establish an absolute overhead bound;
-no tiny ratio is interpreted. A separate fixed batching diagnostic is pending
-to resolve that observation while retaining these original images and rows.
+no tiny ratio is interpreted. The post-hoc resolution diagnostic below retains
+these original images and rows.
 
 W8's 19.2 percent CPU increase is a real tradeoff in this comparison. Its
 per-pair CPU ratios range from 1.150 to 1.227. The unchanged policy allows
@@ -1350,3 +1351,48 @@ experiment does not isolate their shares. W8 buys a further roughly
 uncertainty without selecting a new grain, queue or worker-width policy.
 The bounded pricing repair meets its primary criterion; full gate and
 independent completion review remain pending.
+
+#### Tiny-call resolution diagnostic
+
+Before this separate diagnostic ran, its scope was fixed at 4,096 calls of
+the unchanged 17-word, two-result WF case per interval, at the protected W1
+and W4 widths only. It addresses the unresolved possibility of more than
+one microsecond added cost per call, using absolute differences and an
+identical-image control rather than a percentage verdict. Each process
+contains one warmup interval and five measured intervals. Five paired passes
+alternate arm order; odd passes use widths W1 then W4 and baseline then
+candidate, while even passes reverse both. The null comparison runs the
+candidate image under both arm labels before the matched comparison. No
+fixture, work-size, worker-width or policy search follows the observation.
+
+The manual target's `ARRAY_REFERENCE_REPEATS=4096` changes only the C host's
+number of calls inside an interval. The same allocations, inputs, WF code,
+whole-output and unchanged-input checks surround each interval. Both emitted
+WF modules compare byte-for-byte with the corresponding primary modules;
+all calls remain externally linked without LTO or floating-point changes.
+The diagnostic image SHA-256 identities are
+`6ace664888bf39971a28d96a8a3f03f33a57bab9cdc6ed300c4ed616fcc997ff`
+(baseline) and
+`c6db980e863a7bb92fb7bd8702ea86f8df15444ecbb4979c525c164d32f2ddc0`
+(candidate). Original primary image hashes are unchanged. The retained raw
+rows are labelled `batched-null-4096` and `batched-matched-4096`; their wall and
+CPU columns contain interval totals, divided by 4,096 before the same
+within-process median reduction. All output and input checks pass, with zero
+actual steals throughout. Image construction took 1.25 s, null execution
+0.63 s and matched execution 0.41 s.
+
+The largest absolute null paired wall difference is 4.151 ns per call. The
+largest matched candidate increase is 5.616 ns per call; even adding the
+observed null variation gives less than 0.01 microseconds, well below the
+one-microsecond question. Median paired wall differences are 0 ns at W1 and
++0.244 ns at W4. One W1 baseline pair is much slower and yields a -31.494 ns
+candidate difference; it remains in the raw data and is not treated as a
+speedup. These are observed differences on this host, not a universal cost
+bound or a percentage improvement claim.
+
+CPU resolution is separate: the recorded 1,000 ns interval quantum becomes
+0.244 ns per call. The largest null paired CPU difference is 2.930 ns per
+call and the largest matched candidate increase is 5.372 ns per call; median
+paired CPU differences are 0 ns at W1 and +0.488 ns at W4. The diagnostic
+resolves the original tiny-call protection question without replacing the
+primary experiment or its clock-unresolved individual-call rows.
