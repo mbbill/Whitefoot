@@ -145,6 +145,10 @@ enum StableCheckedType {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct StableElement(Box<StableCheckedType>);
 
+/// One symbolic generic requirement while its scratch nominal suffix is
+/// rolled back. The checked predicate remains exact, but every scratch
+/// nominal it mentions has a structural bridge that can be re-interned only
+/// after the executable nominal prefix is closed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct PendingGenericRequirement {
     declaration: DeclarationId,

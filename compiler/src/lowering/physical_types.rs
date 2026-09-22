@@ -341,14 +341,8 @@ impl<'a> PhysicalTypes<'a> {
             .iter()
             .map(|id| IrNominalId(id.0))
             .collect::<Vec<_>>();
-        let mut pending = vec![ty];
-        while let Some(ty) = pending.pop() {
-            match ty {
-                CheckedType::Nominal(id) => {
-                    map[id.0 as usize] = self.nominal(id, releases)?;
-                }
-                _ => {}
-            }
+        if let CheckedType::Nominal(id) = ty {
+            map[id.0 as usize] = self.nominal(id, releases)?;
         }
         lower_type(
             TypeLowering {
