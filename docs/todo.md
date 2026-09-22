@@ -107,7 +107,14 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   fields nor its impossibility. Retain the existing lowering while researching
   how every suspended aggregate, enum, array and window traversal records its
   continuation. Preserve reverse binding order, declaration order within
-  aggregates, logical window order, and content-before-Box-free order. Close
+  aggregates, logical window order, and content-before-Box-free order.
+  The [post-tail-call study](../research/investigations/access-effects/cleanup-continuations/README.md#current-compiler-investigation-2026-09-22)
+  reproduces a 32-byte-per-level optimized release cycle on its arm64 host
+  after PR #75. A continuation-controller model separates quadratic root
+  rescanning from direct resumption with reserved state; it does not establish
+  a general object layout. Next derive and check continuation storage per
+  release state, comparing consumed-field reuse with explicit reservation
+  where needed, without presuming spare pointer bits or vacant capacity. Close
   this item when a general implementation and native regressions establish
   those properties, or a different resource tradeoff is selected explicitly.
 - **Box/window representation costs remain unqualified.** The current runtime-
