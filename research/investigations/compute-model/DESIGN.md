@@ -2038,6 +2038,55 @@ median of those five ratios, not a ratio of the arm medians. The retained recipe
 is execution evidence, not a new maintained benchmark runner or a default flag
 change.
 
+### Zero-budget stencil dispatch control
+
+Static inspection of the frozen wide stencil identifies 65,504 row executions
+per call, each querying the inner split budget with span 1,022 and weight 17.
+The retained runtime's 150,000 work floor returns zero affordable chunks; the
+harness clears the diagnostic floor override. Nevertheless, each row resolves
+thread-local state in the runtime query and enters a recursive splitter whose
+frozen machine-code prologue reserves 240 bytes before testing that budget.
+The pixel loop already has the same eight-output packed arithmetic shape as
+the optimized native callback. This selects an investigation of unused inner
+dispatch work, without attributing the whole-call CPU increase to scheduling.
+
+The needed-capture candidate CLI has SHA-256
+`480b8b56c8dca5b4469307026a10643d142ee46fff5b937634e3618699e17adf`.
+Emitting the unchanged stencil source, SHA-256
+`69a94c11eac439e44bd50b81dabf2c1d5da4398878836bfad478a8e46004e352`,
+took 0.10 seconds under the shared guard. Pixel, initialization and row captures
+fall from 6/6/9 to 4/2/3, and their actual frame sizes from 120/88/112 to
+104/56/64 bytes. All eight parallel/sequential chunk bodies retain identical
+non-phi operations and the emitted work computations are unchanged. All old
+frames already fit the 256-byte limit. Candidate optimized code and stencil
+performance remain unqualified at this selection point.
+
+The selected scratch control starts from that ordinary `--par` emission.
+Arm A retains it; arm B changes only the pixel-loop site in `stencil_row` to
+call its existing chunk directly, removing the inner budget query, its span
+computations and recursive splitter entry together. It measures that combined
+cost, including any resulting optimization, without separating query cost from
+splitter cost. Outer split sites, estimates, allocation, arithmetic, cleanup,
+the W1 clone, driver, runtime and dependency objects remain fixed. This is a
+diagnostic LLVM variant, not a production lowering rule. Direct use of the
+existing chunk preserves the subrange loop and the two-world boundary; a
+general zero-budget path would need its own evidence if this control earns it.
+
+Before timing, require the exact IR diff and anchor checks, full existing
+stencil oracle matrices for both arms at W1/W4, and inspection of optimized
+pixel work and the W1 clone. Then use the existing harness on only
+1,024 by 4,096 by 16, five paired W1/W4 passes, one warm-up and five warm calls
+per process, zero call gap, with adjacent arm order and width order alternating.
+Run matched identical-image A/A pairs and retain all outcomes. A useful lead
+requires W4 B/A wall time at most 0.95 in at least four of five pairs and a
+median fractional benefit greater than the largest absolute paired null drift
+at W4. Report W1, process CPU, first calls and steals as well. A failed criterion
+or null control ends this bounded trial as inconclusive, without rerunning to
+obtain a favorable result. Construction, full oracles, inspection and each
+timing action are separate guarded stages capped at 30 seconds. No core
+pinning, runtime constant change, phase instrumentation or wider sweep is part
+of this control, and no research artifact enters correctness CI.
+
 ## Needed loop captures
 
 The sparse-frontier source at `139fc2d1d74480d58ab878c0eb67bca12b5144f1`,
